@@ -1,15 +1,15 @@
 ## Project Context
 
 - **App**: Tars — an Electron desktop app that runs many AI coding-agent CLIs in parallel, each in its own PTY terminal, and orchestrates them
-- **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and ten API-key providers) work on your projects at once, are delegated to, report back, and are billed
+- **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and nine API-key providers) work on your projects at once, are delegated to, report back, and are billed
 - **Repo**: https://github.com/JeanBrasse/Tars — a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
-- **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published from and fetched from the fork (`GITHUB_REPO` in `electron/constants/index.ts`)
-- **Docs**: `SPECS.md` (what it is), `DESIGN.md` (tokens + components), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). Read `SPECS.md` before touching architecture, `DESIGN.md` before touching a pixel
+- **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork — `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `JeanBrasse/Tars`
+- **Docs**: `DESIGN.md` (tokens + components) is the only one written so far. Read it before touching a pixel. `SPECS.md` (what it is), `OPERATIONS.md` (runbook) and `ETHOS.md` (how decisions get made) are still to be written — do not cite them as if they existed
 
 ## Stack
 
 - **Shell**: Electron 43, main process in `electron/` (~23k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
-- **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~30k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
+- **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~39.5k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
 - **Terminals**: `node-pty` + `xterm` 5 / `xterm-addon-fit`
 - **State**: React hooks over IPC (`src/hooks/`), plus a small `zustand` store (`src/store/`) for sidebar/vault UI state
 - **Local API**: a plain `node:http` server on **31415**, bearer-token authenticated, so the CLIs' hooks and the bundled MCP servers can call back into the app
@@ -30,11 +30,11 @@
 | `electron/core/agent-manager.ts` | The agent `Map`, persistence to `agents.json`, `initAgentPty`, `ensureProjectTrusted` (pre-writes `hasTrustDialogAccepted` in `~/.claude.json`), `killStalePty` |
 | `electron/core/pty-manager.ts` | Four PTY maps (agent / quick / skill / plugin), `killAllPty`, and `writeProgrammaticInput` — the bracket-paste + delayed `\r` dance Claude Code's TUI requires |
 | `electron/core/window-manager.ts` | `BrowserWindow` (1600×1000, `hiddenInset`, `#121212`), window hardening, and the `app://` and `local-file://` protocol handlers |
-| `electron/handlers/ipc-handlers.ts` | 2577 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
+| `electron/handlers/ipc-handlers.ts` | 2581 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
 | `electron/providers/index.ts` | Registry of the 15 providers. Unknown ids (and `local`) fall back to Claude |
-| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/hooks/*` is exempt from auth |
-| `electron/services/api-routes/agent-routes.ts` | `spawnAgentSession()` — the **single** spawn path — plus `/start`, `/dispatch`, `/message`, `/delegate`, `/bootstrap`, `/health`, and the cross-project guard |
+| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health`, `/api/hooks/*` and `/api/kanban/complete` are exempt from auth |
+| `electron/services/api-routes/agent-routes.ts` | `spawnAgentSession()` — the **single** path for API-driven sessions — plus `/start`, `/dispatch`, `/message`, `/delegate`, `/bootstrap`, `/health`, and the cross-project guard |
 | `electron/services/api-routes/hooks-routes.ts` | The session-ownership contract: SessionStart registers via the `source` field; posts from any other session, or from the `lastKilledSessionId` tombstone, are rejected as `stale` |
 | `electron/services/acp/` | `client.ts`, `delegate.ts`, `registry.ts`. Delegation that returns — stop reason, tools used, tokens, cost |
 | `electron/services/mcp-orchestrator.ts` | Resolves the seven bundled servers under `process.resourcesPath` and writes them into each CLI's MCP config |
@@ -49,8 +49,8 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry — icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/dorothy-redesign.pen` | Pencil source of truth, 62 frames. **Encrypted** — reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
-| `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it |
+| `design/dorothy-redesign.pen` | Pencil source of truth, 63 frames. **Encrypted** — reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
+| `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header still names the document `design/tars.pen` — that file does not exist, the Pencil source is `dorothy-redesign.pen` |
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
@@ -77,7 +77,7 @@ APPLE_TEAM_ID
 Injected by Tars **into** the processes it spawns — never set them yourself:
 
 ```
-CLAUDE_AGENT_ID       # PTY + MCP child env; the MCP client sends it as X-Dorothy-Caller-Id
+CLAUDE_AGENT_ID       # PTY + MCP child env; the MCP client sends it as X-Tars-Caller-Id
 CLAUDE_AGENT_NAME     # used by mcp-vault as the document author
 CLAUDE_PROJECT_PATH   # scopes /api/agents and the cross-project guard
 CLAUDE_SKILLS         # comma-separated skill list for the session
@@ -96,7 +96,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 ### Frontend Agent
 - **Owns**: `src/app/`, `src/components/`, `src/hooks/`, `src/lib/`, `src/store/`, `landing/`
 - **Never touches**: `electron/`, `mcp-*/`, `hooks/`, `__tests__/`, `e2e/`
-- **Design rule**: the frames in `design/dorothy-redesign.pen` and the tokens in `DESIGN.md` are the specification. Never invent a layout, a colour, or a control height. Controls are **26px** (small) or **32px** (standard) — nothing else. The shell is identical on every page: sidebar 216 wide, header 84 tall with padding `22/26/14/26`, content `0/26/22/26`
+- **Design rule**: the frames in `design/dorothy-redesign.pen` and the tokens in `DESIGN.md` are the specification. Never invent a layout, a colour, or a control height. Controls are **26px** (small) or **32px** (standard) — nothing else. The shell is identical on every page: sidebar 240 wide (72 collapsed), header 84 tall with padding `22/26/14/26`, content `0/26/22/26`
 - **Never** mark an active state with an accent rule — no 2px orange line under a tab, beside a menu item, or under a button. Active is a **box**: tinted fill, or surface plus border
 - **Never** hardcode a hex or a raw Tailwind palette class outside `src/components/ui/`. `npm run lint:design` will catch you
 - The mark is the orange square grid (`public/icon.svg`, `src/components/Splash.tsx`), never a `>_` terminal prompt
@@ -106,10 +106,10 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 - **Owns**: `electron/`, `mcp-*/`, `hooks/`, `scripts/`
 - **Never touches**: `src/components/`, `src/app/`, `design/`
 - **Owns the contract**: `electron/preload.ts` and `src/types/electron.d.ts` change together, in one commit, or the renderer breaks silently
-- **Spawn rule**: `spawnAgentSession()` in `electron/services/api-routes/agent-routes.ts` is the only place an agent process is started. Do not add a second spawn path — the skills prefix, MCP config, model flag, `--disallowed-tools`, workspace trust, identity header and `--add-dir ~/.dorothy` all live there
+- **Spawn rule**: `spawnAgentSession()` in `electron/services/api-routes/agent-routes.ts` is the only place an API-driven session is started — the skills prefix, MCP config, model flag, `--disallowed-tools`, workspace trust, identity header and `--add-dir ~/.dorothy` all live there. Underneath it, `initAgentPty()` in `electron/core/agent-manager.ts` is the one function that spawns a PTY; `main.ts`, `ipc-handlers.ts` and the Telegram/Slack bots already call it directly. Route new work through one of those two — do not add a third way in
 - **Session rule**: status, output and task-completed posts are authoritative only from `agent.currentSessionId`. Anything from another session, or matching `lastKilledSessionId`, is `stale` and must be dropped. Never clear `currentSessionId` on idle
 - **Shell rule**: no `exec`/`execSync` with an interpolated string. `execFile` with an argv array, as in `git-review.ts`. Paths derived from user input go through the guards in `electron/utils/worktree-path.ts`
-- **Auth rule**: only `/api/hooks/*` is exempt from the bearer token. Anything you add under `/api/` is authenticated
+- **Auth rule**: exactly four routes are exempt from the bearer token — `/api/local-file`, `/api/health`, `/api/hooks/*` and `/api/kanban/complete`. Anything you add under `/api/` is authenticated
 
 ### QA Agent
 - **Owns**: `__tests__/`, `e2e/`, `vitest.config.mts`, `playwright.config.ts`
@@ -211,9 +211,7 @@ When you are delegated a task by Tars or an orchestrator agent, **always act aut
 
 ## Core Principles
 
-Read `ETHOS.md` before any architecture or prioritization decision. It is the tie-breaker, and it is not restated here.
-
-The three that apply to every diff:
+There is no `ETHOS.md` yet — until one exists, these three are the tie-breaker. They apply to every diff:
 
 - **Simplicity first** — make every change as simple as it can be, and touch as little as possible
 - **No laziness** — find the root cause, senior-developer standards, no temporary fixes
