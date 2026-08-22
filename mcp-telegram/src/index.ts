@@ -21,6 +21,58 @@ interface AppSettings {
   telegramAuthorizedChatIds?: string[];
 }
 
+/**
+ * What this server is allowed to upload, and to whom.
+ *
+ * This process runs beside the app, not inside it, and reads app-settings.json
+ * itself - so the `isSafeTelegramPath` check on the app's own HTTP routes never
+ * applied here. An agent that can call these tools could name any absolute path
+ * and any chat id: `send_telegram_document` with
+ * `~/.dorothy/app-settings.json` and the attacker's own chat id is a one-call
+ * exfiltration of every API key the app holds.
+ *
+ * Both halves of the guard are enforced here, in the same shape the app uses.
+ */
+const BLOCKED_DIRS = [
+  ".ssh", ".gnupg", ".aws", ".claude", ".dorothy", ".config",
+  ".kube", ".docker", ".env", ".netrc", ".git-credentials",
+];
+
+function assertSendablePath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  const home = os.homedir();
+
+  if (resolved !== home && !resolved.startsWith(home + path.sep)) {
+    throw new Error(`Refused: ${resolved} is outside the home directory`);
+  }
+  for (const dir of BLOCKED_DIRS) {
+    const blocked = path.join(home, dir);
+    if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
+      throw new Error(`Refused: ${dir} holds credentials and cannot be sent`);
+    }
+  }
+  return resolved;
+}
+
+/**
+ * A chat id the user has actually approved. Without this an agent picks the
+ * destination, which makes the path guard the only thing standing between a
+ * prompt injection and the user's files.
+ */
+function assertAuthorizedChat(settings: AppSettings, chatId: string): string {
+  const allowed = [settings.telegramChatId, ...(settings.telegramAuthorizedChatIds ?? [])]
+    .filter((id): id is string => !!id)
+    .map(String);
+
+  if (!allowed.includes(String(chatId))) {
+    throw new Error(
+      `Refused: chat ${chatId} is not in this install's authorized chats. ` +
+      `Add it in Settings > Telegram first.`
+    );
+  }
+  return String(chatId);
+}
+
 function loadSettings(): AppSettings {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
@@ -160,10 +212,11 @@ server.tool(
       }
 
       // Use provided chat_id, or fall back to default from settings
-      const targetChatId = chat_id || settings.telegramChatId;
-      if (!targetChatId) {
+      const requestedChatId = chat_id || settings.telegramChatId;
+      if (!requestedChatId) {
         throw new Error("No chat_id provided and no default chat ID configured");
       }
+      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
 
       await telegramApiRequest(settings.telegramBotToken, "sendMessage", {
         chat_id: targetChatId,
@@ -209,16 +262,17 @@ server.tool(
         throw new Error("Telegram not configured - missing bot token in settings");
       }
 
-      const targetChatId = chat_id || settings.telegramChatId;
-      if (!targetChatId) {
+      const requestedChatId = chat_id || settings.telegramChatId;
+      if (!requestedChatId) {
         throw new Error("No chat_id provided and no default chat ID configured");
       }
+      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
 
       await sendFile(
         settings.telegramBotToken,
         targetChatId,
         "sendPhoto",
-        photo_path,
+        assertSendablePath(photo_path),
         "photo",
         caption
       );
@@ -261,16 +315,17 @@ server.tool(
         throw new Error("Telegram not configured - missing bot token in settings");
       }
 
-      const targetChatId = chat_id || settings.telegramChatId;
-      if (!targetChatId) {
+      const requestedChatId = chat_id || settings.telegramChatId;
+      if (!requestedChatId) {
         throw new Error("No chat_id provided and no default chat ID configured");
       }
+      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
 
       await sendFile(
         settings.telegramBotToken,
         targetChatId,
         "sendVideo",
-        video_path,
+        assertSendablePath(video_path),
         "video",
         caption
       );
@@ -313,16 +368,17 @@ server.tool(
         throw new Error("Telegram not configured - missing bot token in settings");
       }
 
-      const targetChatId = chat_id || settings.telegramChatId;
-      if (!targetChatId) {
+      const requestedChatId = chat_id || settings.telegramChatId;
+      if (!requestedChatId) {
         throw new Error("No chat_id provided and no default chat ID configured");
       }
+      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
 
       await sendFile(
         settings.telegramBotToken,
         targetChatId,
         "sendDocument",
-        document_path,
+        assertSendablePath(document_path),
         "document",
         caption
       );

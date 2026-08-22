@@ -5,6 +5,7 @@ import * as os from 'os';
 
 let tmpDir: string;
 let mockExecSync: ReturnType<typeof vi.fn>;
+let mockExecFileSync: ReturnType<typeof vi.fn>;
 
 vi.mock('os', async (importOriginal) => {
   const mod = await importOriginal<typeof import('os')>();
@@ -13,12 +14,18 @@ vi.mock('os', async (importOriginal) => {
 
 vi.mock('child_process', () => ({
   execSync: (...args: unknown[]) => mockExecSync(...args),
+  execFileSync: (...args: unknown[]) => mockExecFileSync(...args),
 }));
 
 beforeEach(() => {
   vi.resetModules();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-prov-test-'));
   mockExecSync = vi.fn();
+  // registerMcpServer moved from execSync to execFileSync (argv, no shell).
+  // Delegating by default keeps every existing test that configures the CLI
+  // outcome through mockExecSync working, while the argv assertion still reads
+  // mockExecFileSync directly.
+  mockExecFileSync = vi.fn((...args: unknown[]) => mockExecSync(...args));
 });
 
 afterEach(() => {
@@ -48,13 +55,13 @@ describe('GeminiProvider', () => {
 
       await provider.registerMcpServer('my-mcp', 'node', ['/path/to/bundle.js']);
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('gemini mcp add -s user my-mcp node'),
+      // argv, not a shell string: the previous form wrapped each arg in
+      // double quotes and handed the line to execSync, where $() still
+      // expands.
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'gemini',
+        ['mcp', 'add', '-s', 'user', 'my-mcp', 'node', '/path/to/bundle.js'],
         expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
-      );
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('/path/to/bundle.js'),
-        expect.any(Object),
       );
     });
 
@@ -70,7 +77,7 @@ describe('GeminiProvider', () => {
 
     it('falls back to settings.json when CLI fails', async () => {
       const provider = await getProvider();
-      mockExecSync.mockImplementation(() => { throw new Error('command not found'); });
+      mockExecFileSync.mockImplementation(() => { throw new Error('command not found'); });
 
       await provider.registerMcpServer('my-mcp', 'node', ['/path/to/bundle.js']);
 
@@ -116,7 +123,7 @@ describe('GeminiProvider', () => {
   describe('removeMcpServer', () => {
     it('calls gemini mcp remove', async () => {
       const provider = await getProvider();
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       await provider.removeMcpServer('my-mcp');
 
@@ -128,7 +135,7 @@ describe('GeminiProvider', () => {
 
     it('also cleans settings.json', async () => {
       const provider = await getProvider();
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       const geminiDir = path.join(tmpDir, '.gemini');
       fs.mkdirSync(geminiDir, { recursive: true });
@@ -148,7 +155,7 @@ describe('GeminiProvider', () => {
 
     it('does not throw when settings.json does not exist', async () => {
       const provider = await getProvider();
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       await expect(provider.removeMcpServer('nonexistent')).resolves.not.toThrow();
     });
