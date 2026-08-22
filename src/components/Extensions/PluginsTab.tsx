@@ -28,6 +28,8 @@ import {
 import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
+import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { Button } from '@/components/ui';
 // Import xterm CSS
 import 'xterm/css/xterm.css';
 

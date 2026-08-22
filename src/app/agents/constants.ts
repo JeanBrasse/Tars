@@ -1,27 +1,22 @@
-import {
-  Circle,
-  Activity,
-  CheckCircle,
-  AlertCircle,
-  Pause,
-} from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
+import type { StatusTone } from '@/components/ui/StatusBadge';
 
-export const STATUS_COLORS: Record<AgentStatus['status'], { bg: string; text: string; icon: typeof Circle }> = {
-  idle: { bg: 'bg-emerald-500/15', text: 'text-emerald-700', icon: Circle },
-  running: { bg: 'bg-primary/10', text: 'text-primary', icon: Activity },
-  completed: { bg: 'bg-blue-500/20', text: 'text-blue-400', icon: CheckCircle },
-  error: { bg: 'bg-red-500/20', text: 'text-red-400', icon: AlertCircle },
-  waiting: { bg: 'bg-amber-500/20', text: 'text-amber-700', icon: Pause },
+// Status is ink only — the status token colours the raw status word.
+// No background fill, no pill: consumers render the status key itself.
+export const STATUS_COLORS: Record<AgentStatus['status'], { text: string }> = {
+  idle: { text: 'text-status-idle' },
+  running: { text: 'text-status-running' },
+  completed: { text: 'text-status-idle' },
+  error: { text: 'text-status-error' },
+  waiting: { text: 'text-status-waiting' },
 };
 
-export const STATUS_LABELS: Record<AgentStatus['status'], string> = {
-  idle: 'ready to work',
-  running: 'working',
-  completed: 'done',
-  error: 'error',
-  waiting: 'waiting for inputs',
-};
+/**
+ * Folds the runtime status set onto the design's four-word vocabulary (R6).
+ * `completed` is a real runtime state but not a design status — it reads as idle.
+ */
+export const statusTone = (status: AgentStatus['status']): StatusTone =>
+  status === 'completed' ? 'idle' : status;
 
 export const CHARACTER_FACES: Record<string, string> = {
   robot: '🤖',

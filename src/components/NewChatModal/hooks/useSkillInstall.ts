@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
+import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 import type { Skill } from '@/lib/skills-database';
 
 export interface SkillInstallState {
@@ -18,6 +19,7 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
   const [installComplete, setInstallComplete] = useState(false);
   const [installExitCode, setInstallExitCode] = useState<number | null>(null);
   const [terminalReady, setTerminalReady] = useState(false);
+  const xtermTheme = useTerminalTheme();
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -31,31 +33,8 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
       const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
-        theme: {
-          background: '#0D0B08',
-          foreground: '#e4e4e7',
-          cursor: '#3D9B94',
-          cursorAccent: '#0D0B08',
-          selectionBackground: '#3D9B9433',
-          black: '#18181b',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#a855f7',
-          cyan: '#3D9B94',
-          white: '#e4e4e7',
-          brightBlack: '#52525b',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#c084fc',
-          brightCyan: '#67e8f9',
-          brightWhite: '#fafafa',
-        },
+        ...createXtermOptions(),
         fontSize: 13,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 10000,
@@ -101,6 +80,13 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
       setTerminalReady(false);
     };
   }, [showInstallTerminal]);
+
+  // Follow the app theme — xterm holds literal colours, so re-apply on toggle
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = xtermTheme;
+    }
+  }, [xtermTheme, terminalReady]);
 
   // Start PTY after terminal is ready
   useEffect(() => {

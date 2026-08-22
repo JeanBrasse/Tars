@@ -2,35 +2,56 @@
 
 import type { ReactNode } from 'react';
 
+/** Raw status vocabulary - no friendly strings ("working", "ready to work", "done"). */
+export type StatusTone = 'running' | 'waiting' | 'error' | 'idle';
+
+/** Semantic aliases kept so older callers keep compiling; they fold onto the four above. */
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
-const TONES: Record<Tone, string> = {
-  success: 'bg-success/10 text-success border-success/25',
-  warning: 'bg-warning/10 text-warning border-warning/25',
-  danger: 'bg-danger/10 text-danger border-danger/25',
-  info: 'bg-primary/10 text-primary border-primary/25',
-  neutral: 'bg-secondary text-muted-foreground border-border',
+export type AnyTone = StatusTone | Tone;
+
+/** One tone table - ink for the word, fill for the square, and the word itself. */
+const TONES: Record<AnyTone, { text: string; fill: string; word: StatusTone }> = {
+  running: { text: 'text-status-running', fill: 'bg-status-running', word: 'running' },
+  waiting: { text: 'text-status-waiting', fill: 'bg-status-waiting', word: 'waiting' },
+  error: { text: 'text-status-error', fill: 'bg-status-error', word: 'error' },
+  idle: { text: 'text-status-idle', fill: 'bg-status-idle', word: 'idle' },
+  success: { text: 'text-status-running', fill: 'bg-status-running', word: 'running' },
+  warning: { text: 'text-status-waiting', fill: 'bg-status-waiting', word: 'waiting' },
+  danger: { text: 'text-status-error', fill: 'bg-status-error', word: 'error' },
+  info: { text: 'text-primary', fill: 'bg-primary', word: 'running' },
+  neutral: { text: 'text-status-idle', fill: 'bg-status-idle', word: 'idle' },
 };
 
-/** Every success/error/warning pill in the app - one tone table, no raw colors. */
+/**
+ * The status mark: a 6px solid square, no radius. Replaces emoji tiles, pulsing
+ * dots and `rounded-full` status pills everywhere a status is shown.
+ */
+export function StatusSquare({ tone = 'idle', className = '' }: {
+  tone?: AnyTone;
+  className?: string;
+}) {
+  return <span className={`inline-block w-1.5 h-1.5 shrink-0 ${TONES[tone].fill} ${className}`} />;
+}
+
+/**
+ * The status word itself, coloured by the status token - no background fill, no
+ * radius, no border. Defaults to the raw word for the tone; pass children only to
+ * print something else. Callers that sit in a mono column add `font-mono` themselves.
+ */
 export function StatusBadge({ tone = 'neutral', children, className = '' }: {
-  tone?: Tone;
-  children: ReactNode;
+  tone?: AnyTone;
+  children?: ReactNode;
   className?: string;
 }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs border ${TONES[tone]} ${className}`}>
-      {children}
+    <span className={`inline-flex items-center gap-1.5 text-xs ${TONES[tone].text} ${className}`}>
+      {children ?? TONES[tone].word}
     </span>
   );
 }
 
-/** Small state dot - the only place a fully-round shape is legitimate. */
-export function StatusDot({ tone = 'neutral', className = '' }: { tone?: Tone; className?: string }) {
-  const color = tone === 'success' ? 'bg-success'
-    : tone === 'warning' ? 'bg-warning'
-    : tone === 'danger' ? 'bg-danger'
-    : tone === 'info' ? 'bg-primary'
-    : 'bg-muted-foreground';
-  return <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${color} ${className}`} />;
+/** @deprecated Round dot - use `<StatusSquare>`; the design marks status with a 6px square. */
+export function StatusDot({ tone = 'neutral', className = '' }: { tone?: AnyTone; className?: string }) {
+  return <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${TONES[tone].fill} ${className}`} />;
 }

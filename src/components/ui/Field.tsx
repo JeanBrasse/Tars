@@ -1,23 +1,83 @@
 'use client';
 
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ReactNode } from 'react';
 
-const BASE = 'w-full px-2 bg-secondary border border-border text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 transition-colors';
+const BASE = 'px-2 bg-secondary border text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 /** Same 32px as a md Button, so a field and the button beside it share edges. */
 const CONTROL_HEIGHT = 'h-8';
+
+/** Fills its column, or the fixed 300px settings control column. One source for both. */
+type Width = 'full' | 'control';
+const WIDTHS: Record<Width, string> = {
+  full: 'w-full',
+  control: 'w-[300px]',
+};
+
+interface FieldProps {
+  width?: Width;
+  error?: boolean;
+}
+
+// Four states, not two: default, focus, error, disabled. Disabled lives in BASE
+// because the browser owns it; the other three are all border colour.
+const border = (error?: boolean) =>
+  error ? 'border-danger focus:border-danger' : 'border-border focus:border-primary/40';
 
 export function Label({ children }: { children: ReactNode }) {
   return <label className="block text-xs font-medium text-foreground mb-1">{children}</label>;
 }
 
-export function Input({ className = '', mono, ...rest }: InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }) {
-  return <input className={`${BASE} ${CONTROL_HEIGHT} ${mono ? 'font-mono' : ''} ${className}`} {...rest} />;
+/** The caption under a field in its error state. Pair with `error` on the field itself. */
+export function FieldError({ children }: { children: ReactNode }) {
+  return <p className="mt-1 text-[11px] text-danger">{children}</p>;
 }
 
-export function Select({ className = '', children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`${BASE} ${CONTROL_HEIGHT} ${className}`} {...rest}>{children}</select>;
+export function Input({ className = '', mono, width = 'full', error, ...rest }: InputHTMLAttributes<HTMLInputElement> & FieldProps & { mono?: boolean }) {
+  return <input className={`${BASE} ${CONTROL_HEIGHT} ${WIDTHS[width]} ${border(error)} ${mono ? 'font-mono' : ''} ${className}`} {...rest} />;
 }
 
-export function Textarea({ className = '', ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={`${BASE} py-1.5 resize-y ${className}`} {...rest} />;
+/**
+ * A secret with a word, not a glyph: the reveal affordance reads `show`/`hide`
+ * in muted mono at the right inside edge instead of an eye icon.
+ */
+export function PasswordInput({ className = '', width = 'full', error, disabled, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & FieldProps) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className={`relative block ${WIDTHS[width]} ${className}`}>
+      <input
+        type={shown ? 'text' : 'password'}
+        disabled={disabled}
+        className={`${BASE} ${CONTROL_HEIGHT} w-full ${border(error)} font-mono pr-11`}
+        {...rest}
+      />
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        disabled={disabled}
+        className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+      >
+        {shown ? 'hide' : 'show'}
+      </button>
+    </span>
+  );
+}
+
+/**
+ * The native indicator is a grey square no theme can reach, so it is suppressed
+ * and a chevron drawn over the right inside edge. `className` lands on the
+ * wrapper - it is the element that carries the field's box in the layout.
+ */
+export function Select({ className = '', children, width = 'full', error, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & FieldProps) {
+  return (
+    <span className={`relative block ${WIDTHS[width]} ${className}`}>
+      <select className={`${BASE} ${CONTROL_HEIGHT} w-full ${border(error)} appearance-none pr-7`} {...rest}>{children}</select>
+      <ChevronDown className="w-3 h-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+    </span>
+  );
+}
+
+export function Textarea({ className = '', width = 'full', error, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps) {
+  return <textarea className={`${BASE} ${WIDTHS[width]} ${border(error)} py-1.5 resize-y ${className}`} {...rest} />;
 }

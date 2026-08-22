@@ -6,8 +6,6 @@ import {
   FolderKanban,
   Sparkles,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   Bot,
   BarChart2,
   Columns,
@@ -41,6 +39,22 @@ const navItems = [
   { href: '/usage', icon: BarChart2, label: 'Usage', shortcut: '0' },
   { href: '/memory', icon: Brain, label: 'Brain' },
 ];
+
+/**
+ * Every row in the column is the same 32px box on the same inset: the nav's
+ * px-2 plus the row's px-2.5 puts the icon slot at x=18 and, after a 10px gap,
+ * the label at x=42 - the same two columns the brand row uses.
+ * Active is a filled box, never a rule and never an inverted fill.
+ */
+const rowClass = (isActive: boolean) =>
+  `flex items-center gap-[10px] h-8 px-2.5 transition-colors cursor-pointer ${
+    isActive ? 'bg-accent-dim' : 'hover:bg-secondary'
+  }`;
+const iconClass = (isActive: boolean) =>
+  `w-3.5 h-3.5 shrink-0 ${isActive ? 'text-primary' : 'text-status-idle'}`;
+const labelClass = (isActive: boolean) =>
+  `text-sm flex-1 truncate ${isActive ? 'text-foreground' : 'text-text-secondary'}`;
+const badgeClass = 'min-w-[16px] h-4 flex items-center justify-center px-1 text-[9px] font-medium';
 
 interface SidebarProps {
   isMobile?: boolean;
@@ -93,9 +107,8 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
   const { mobileMenuOpen, setMobileMenuOpen, darkMode, toggleDarkMode, vaultUnreadCount } = useStore();
   const whatsNewHasNew = useWhatsNewBadge();
 
-  // For mobile, sidebar is always expanded (240px) when open
-  const sidebarWidth = 240;
-  const showLabels = true;
+  // Matches --sidebar-w; ClientLayout offsets the content by the same number.
+  const sidebarWidth = 216;
 
   // Close mobile menu when navigating
   const handleNavClick = () => {
@@ -103,6 +116,17 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
       setMobileMenuOpen(false);
     }
   };
+
+  const isSettingsActive = pathname === '/settings' || pathname.startsWith('/settings/');
+  const isWhatsNewActive = pathname === '/whats-new';
+
+  // The column is one uniform surface - the only border is its right edge.
+  const connectedLine = (
+    <div className="flex items-center gap-2 pl-[18px] pt-3 pb-[14px] shrink-0">
+      <span className="w-1.5 h-1.5 bg-status-running shrink-0" />
+      <span className="font-mono text-[11px] text-status-idle">Connected</span>
+    </div>
+  );
 
   // Desktop sidebar
   if (!isMobile) {
@@ -113,52 +137,31 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className="fixed left-0 top-0 h-screen bg-card border-r border-border flex-col z-50 hidden lg:flex"
       >
-        {/* Logo - top area also serves as drag region for macOS traffic lights */}
-        {/* px-6 + a 20px mark slot + gap-3 puts the mark on the nav icons'
-            left edge and the wordmark on the nav labels'. */}
-        <div className="window-drag flex items-center px-6 pt-5 pb-4 border-b border-border shrink-0">
+        {/* Logo - top area also serves as drag region for macOS traffic lights.
+            54px tall so the first nav row starts at y=54; the 18px inset and the
+            14px mark slot line the mark up with the nav icons and the wordmark
+            with the nav labels. */}
+        <div className="window-drag flex items-center h-[54px] px-[18px] shrink-0">
           <Brand
-            showWordmark={showLabels}
-            markClassName="w-2.5 h-2.5"
+            markClassName="w-[13px] h-[13px]"
             wordmarkClassName="font-serif text-xl text-foreground"
-            markSlotClassName="w-5"
-            gapClassName="gap-3"
+            markSlotClassName="w-3.5"
+            gapClassName="gap-[10px]"
           />
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-2 pb-2 space-y-px overflow-y-auto">
           {navItems.map((item) => {
             const isActive = item.href === '/'
               ? pathname === '/'
               : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`
-                  group flex items-center gap-3 px-3 py-2.5 transition-all duration-150 cursor-pointer
-                  ${isActive
-                    ? 'bg-primary/20 text-primary font-medium'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                  }
-                `}
-              >
-                <div className="relative">
-                  <item.icon className="w-5 h-5" />
-                  {item.href === '/vault' && vaultUnreadCount > 0 && !showLabels && (
-                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] flex items-center justify-center text-[8px] font-bold bg-primary text-primary-foreground rounded-full px-0.5">
-                      {vaultUnreadCount}
-                    </span>
-                  )}
-                </div>
-                {showLabels && (
-                  <span className="text-sm flex-1">
-                    {item.label}
-                  </span>
-                )}
-                {item.href === '/vault' && vaultUnreadCount > 0 && showLabels && (
-                  <span className="min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground rounded-full px-1">
+              <Link key={item.href} href={item.href} className={rowClass(isActive)}>
+                <item.icon className={iconClass(isActive)} />
+                <span className={labelClass(isActive)}>{item.label}</span>
+                {item.href === '/vault' && vaultUnreadCount > 0 && (
+                  <span className={`${badgeClass} bg-primary text-primary-foreground`}>
                     {vaultUnreadCount}
                   </span>
                 )}
@@ -167,82 +170,36 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
           })}
         </nav>
 
-        {/* What's New + Status indicator */}
-        <div className="border-t border-border">
-          {showLabels && (
-            <>
-              <Link
-                href="/whats-new"
-                className={`flex items-center gap-3 px-5 py-3 transition-colors cursor-pointer ${
-                  pathname === '/whats-new'
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }`}
-              >
-                <div className="relative">
-                  <Gift className="w-5 h-5" />
-                  {whatsNewHasNew && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full" />
-                  )}
-                </div>
-                <span className="text-sm flex-1">What&apos;s New</span>
-                {whatsNewHasNew && (
-                  <span className="min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-bold bg-danger text-white rounded-full px-1">
-                    1
-                  </span>
-                )}
-              </Link>
-              <div className="flex items-center gap-3 px-5 py-3 border-t border-border text-muted-foreground text-sm">
-                <span className="relative flex w-5 h-5 items-center justify-center">
-                  <span className=" absolute inline-flex h-2 w-2 rounded-full bg-success opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
-                </span>
-                <span>Connected</span>
-              </div>
-            </>
-          )}
-          {!showLabels && (
-            <Link
-              href="/whats-new"
-              className={`flex items-center px-3 py-2.5 transition-colors ${
-                pathname === '/whats-new'
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
-            >
-              <div className="relative">
-                <Gift className="w-5 h-5" />
-                {whatsNewHasNew && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full" />
-                )}
-              </div>
-            </Link>
-          )}
-        </div>
-
-        {/* Settings */}
-        <div className="border-t border-border">
-          <Link
-            href="/settings"
-            className={`
-              flex items-center gap-3 px-5 py-3 transition-colors cursor-pointer
-              ${pathname === '/settings' || pathname.startsWith('/settings/')
-                ? 'bg-primary/20 text-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }
-            `}
-          >
-            <Settings className="w-5 h-5" />
-            {showLabels && <span className="text-sm">Settings</span>}
+        {/* What's New, Settings and the theme toggle ride the same rhythm as the
+            nav rows; the nav's flex-1 pins them to the bottom. */}
+        <div className="px-2 space-y-px shrink-0">
+          <Link href="/whats-new" className={rowClass(isWhatsNewActive)}>
+            <div className="relative shrink-0">
+              <Gift className={iconClass(isWhatsNewActive)} />
+              {whatsNewHasNew && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full" />
+              )}
+            </div>
+            <span className={labelClass(isWhatsNewActive)}>What&apos;s New</span>
+            {whatsNewHasNew && (
+              <span className={`${badgeClass} bg-danger text-background`}>1</span>
+            )}
           </Link>
-          <button
-            onClick={toggleDarkMode}
-            className="w-full flex items-center gap-3 px-5 py-3 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
-          >
-            {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            {showLabels && <span className="text-sm">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>}
+
+          <Link href="/settings" className={rowClass(isSettingsActive)}>
+            <Settings className={iconClass(isSettingsActive)} />
+            <span className={labelClass(isSettingsActive)}>Settings</span>
+          </Link>
+
+          <button onClick={toggleDarkMode} className={`w-full ${rowClass(false)}`}>
+            {darkMode ? <Sun className={iconClass(false)} /> : <Moon className={iconClass(false)} />}
+            <span className={`${labelClass(false)} text-left`}>
+              {darkMode ? 'Light Mode' : 'Dark Mode'}
+            </span>
           </button>
         </div>
+
+        {connectedLine}
       </motion.aside>
     );
   }
@@ -260,12 +217,17 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
           style={{ width: sidebarWidth }}
         >
           {/* Logo */}
-          <div className="h-14 flex items-center px-4 border-b border-border">
-            <Brand markClassName="w-2.5 h-2.5" wordmarkClassName="font-serif text-xl text-foreground" />
+          <div className="flex items-center h-[54px] px-[18px] shrink-0">
+            <Brand
+              markClassName="w-[13px] h-[13px]"
+              wordmarkClassName="font-serif text-xl text-foreground"
+              markSlotClassName="w-3.5"
+              gapClassName="gap-[10px]"
+            />
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-2 pb-2 space-y-px overflow-y-auto">
             {navItems.map((item) => {
               const isActive = item.href === '/'
                 ? pathname === '/'
@@ -275,22 +237,12 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   onClick={handleNavClick}
-                  className={`
-                    group flex items-center gap-3 px-3 py-2.5 transition-all duration-150
-                    ${isActive
-                      ? 'bg-primary/20 text-primary font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                    }
-                  `}
+                  className={rowClass(isActive)}
                 >
-                  <div className="relative">
-                    <item.icon className="w-5 h-5" />
-                  </div>
-                  <span className="text-sm flex-1">
-                    {item.label}
-                  </span>
+                  <item.icon className={iconClass(isActive)} />
+                  <span className={labelClass(isActive)}>{item.label}</span>
                   {item.href === '/vault' && vaultUnreadCount > 0 && (
-                    <span className="min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground rounded-full px-1">
+                    <span className={`${badgeClass} bg-primary text-primary-foreground`}>
                       {vaultUnreadCount}
                     </span>
                   )}
@@ -299,65 +251,42 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
             })}
           </nav>
 
-          {/* What's New + Status indicator */}
-          <div className="border-t border-border">
+          <div className="px-2 space-y-px shrink-0">
             <Link
               href="/whats-new"
               onClick={handleNavClick}
-              className={`flex items-center gap-3 px-5 py-3 transition-colors cursor-pointer ${
-                pathname === '/whats-new'
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
+              className={rowClass(isWhatsNewActive)}
             >
-              <div className="relative">
-                <Gift className="w-5 h-5" />
+              <div className="relative shrink-0">
+                <Gift className={iconClass(isWhatsNewActive)} />
                 {whatsNewHasNew && (
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full" />
                 )}
               </div>
-              <span className="text-sm flex-1">What&apos;s New</span>
+              <span className={labelClass(isWhatsNewActive)}>What&apos;s New</span>
               {whatsNewHasNew && (
-                <span className="min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-bold bg-danger text-white rounded-full px-1">
-                  1
-                </span>
+                <span className={`${badgeClass} bg-danger text-background`}>1</span>
               )}
             </Link>
-            <div className="px-4 py-3 border-t border-border">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="relative flex h-2 w-2">
-                  <span className=" absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
-                </span>
-                <span>Connected</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Settings & Theme Toggle */}
-          <div className="border-t border-border">
             <Link
               href="/settings"
               onClick={handleNavClick}
-              className={`
-                flex items-center gap-3 px-5 py-3 transition-colors cursor-pointer
-                ${pathname === '/settings' || pathname.startsWith('/settings/')
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }
-              `}
+              className={rowClass(isSettingsActive)}
             >
-              <Settings className="w-5 h-5" />
-              <span className="text-sm">Settings</span>
+              <Settings className={iconClass(isSettingsActive)} />
+              <span className={labelClass(isSettingsActive)}>Settings</span>
             </Link>
-            <button
-              onClick={toggleDarkMode}
-              className="w-full flex items-center gap-3 px-5 py-3 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
-            >
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-              <span className="text-sm">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+
+            <button onClick={toggleDarkMode} className={`w-full ${rowClass(false)}`}>
+              {darkMode ? <Sun className={iconClass(false)} /> : <Moon className={iconClass(false)} />}
+              <span className={`${labelClass(false)} text-left`}>
+                {darkMode ? 'Light Mode' : 'Dark Mode'}
+              </span>
             </button>
           </div>
+
+          {connectedLine}
         </motion.aside>
       )}
     </AnimatePresence>

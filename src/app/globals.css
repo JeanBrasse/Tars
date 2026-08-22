@@ -26,6 +26,9 @@
   --card-foreground: #1E1E1E;
   --popover: #FFFFFF;
   --popover-foreground: #1E1E1E;
+  --term-bg: #F3F1EE;              /* terminal canvas — xterm needs the literal, see lib/terminal-theme.ts */
+  --scrim: #1E1E1E66;              /* the only legal modal backdrop */
+  --knob: #FFFFFF;                 /* toggle knob fill — decoupled from --primary-foreground */
 
   /* Primary - Tangerine 500 */
   --primary: #C77012;
@@ -39,9 +42,14 @@
   --muted: #F3F1EE;
   --muted-foreground: #4A4A4A;
 
-  /* Accent - Tangerine */
+  /* Accent - Tangerine.
+     NOTE: in this codebase --accent is the BRAND ORANGE, not shadcn's subtle
+     hover surface. `hover:bg-accent` / `hover:bg-accent/50` is a bug, not a
+     hover state — use `hover:bg-secondary`. --accent-dim is the 8% wash used
+     for active rows and boxes (R2a). */
   --accent: #C77012;
   --accent-foreground: #1E1E1E;
+  --accent-dim: #C7701214;
 
   /* Destructive */
   --destructive: #CF222E;
@@ -55,7 +63,6 @@
   --bg-primary: #FAF9F7;
   --bg-secondary: #FFFFFF;
   --bg-tertiary: #F3F1EE;
-  --bg-elevated: #FFFFFF;
   --border-primary: #DAD6CE;
   --border-accent: #BFBAB1;
   --text-primary: #1E1E1E;
@@ -71,6 +78,12 @@
   --danger-muted: rgba(207, 34, 46, 0.10);
   --info: #C77012;
   --info-muted: rgba(199, 112, 18, 0.10);
+  /* Idle is its own token, not an alias of --text-muted: the two are decided
+     independently (body copy must clear AA, an idle mark does not). */
+  --status-idle: #9B9B9B;
+
+  /* Layout */
+  --sidebar-w: 216px;
 
   /* Accent colors */
   --accent-blue: #C77012;
@@ -105,10 +118,13 @@
   --card-foreground: #F5F4F2;
   --popover: #1A1A1A;
   --popover-foreground: #F5F4F2;
+  --term-bg: #0F0F0F;
+  --scrim: #00000099;
+  --knob: #121212;
 
   /* Primary - Tangerine 400 */
   --primary: #FF9E42;
-  --primary-foreground: #1E1E1E;
+  --primary-foreground: #121212;
 
   /* Secondary */
   --secondary: #222222;
@@ -120,7 +136,8 @@
 
   /* Accent - Tangerine */
   --accent: #FF9E42;
-  --accent-foreground: #1E1E1E;
+  --accent-foreground: #121212;
+  --accent-dim: #FF9E4216;
 
   /* Destructive */
   --destructive: #E5534B;
@@ -134,7 +151,6 @@
   --bg-primary: #121212;
   --bg-secondary: #1A1A1A;
   --bg-tertiary: #222222;
-  --bg-elevated: #262626;
   --border-primary: #2A2A2A;
   --border-accent: #3A3A3A;
   --text-primary: #F5F4F2;
@@ -150,6 +166,7 @@
   --danger-muted: rgba(229, 83, 75, 0.12);
   --info: #FF9E42;
   --info-muted: rgba(255, 158, 66, 0.12);
+  --status-idle: #727272;
 
   /* Accent colors */
   --accent-blue: #FF9E42;
@@ -173,32 +190,17 @@
   --chart-5: #F5F4F2;
 }
 
-/* Dark mode scrollbar overrides */
-.dark * {
-  scrollbar-color: #3A3A3A #1A1A1A;
-}
-.dark *::-webkit-scrollbar-track {
-  background: #1A1A1A;
-}
-.dark *::-webkit-scrollbar-thumb {
-  background: #3A3A3A;
-}
-.dark *::-webkit-scrollbar-thumb:hover {
-  background: #FF9E42;
-}
-.dark *::-webkit-scrollbar-corner {
-  background: #1A1A1A;
-}
-.dark .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #3A3A3A;
-}
+/* Scrollbars read the tokens directly (see SCROLLBAR STYLING below), so there
+   is no dark-mode override block. */
 
 @theme inline {
-  /* Radius - Hard corners, one small radius */
+  /* Radius - Hard corners, one small radius. Every step is flattened to 2px on
+     purpose, so the `!important` neutraliser is gone: rounded-2xl/3xl now show
+     their real radius instead of being silently papered over (R5). */
   --radius-sm: 2px;
   --radius-md: 2px;
-  --radius-lg: 4px;
-  --radius-xl: 6px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
 
   /* Core colors */
   --color-background: var(--background);
@@ -215,10 +217,16 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-dim: var(--accent-dim);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Chrome surfaces */
+  --color-scrim: var(--scrim);
+  --color-term-bg: var(--term-bg);
+  --color-knob: var(--knob);
 
   /* Semantic feedback colors (exposed to Tailwind as bg-success etc.) */
   --color-success: var(--success);
@@ -229,13 +237,12 @@
   --color-status-running: var(--success);
   --color-status-waiting: var(--warning);
   --color-status-error: var(--danger);
-  --color-status-idle: var(--text-muted);
+  --color-status-idle: var(--status-idle);
 
   /* Legacy color mappings */
   --color-bg-primary: var(--bg-primary);
   --color-bg-secondary: var(--bg-secondary);
   --color-bg-tertiary: var(--bg-tertiary);
-  --color-bg-elevated: var(--bg-elevated);
   --color-border-primary: var(--border-primary);
   --color-border-accent: var(--border-accent);
   --color-text-primary: var(--text-primary);
@@ -271,6 +278,34 @@
   --font-sans: var(--font-sans-loaded), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-serif: var(--font-serif-loaded), Georgia, serif;
   --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type scale — the legal target for the arbitrary text-[Npx] literals still
+     in src/. Additive only: --spacing is deliberately NOT set, because in
+     Tailwind v4 that redefines the whole numeric scale (p-1 would become 8px). */
+  --text-9: 9px;
+  --text-9_5: 9.5px;
+  --text-10: 10px;
+  --text-10_5: 10.5px;
+  --text-11: 11px;
+  --text-11_5: 11.5px;
+  --text-12: 12px;
+  --text-12_5: 12.5px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-15: 15px;
+  --text-16: 16px;
+  --text-18: 18px;
+  --text-20: 20px;
+  --text-24: 24px;
+  --text-28: 28px;
+  --text-32: 32px;
+  --text-36: 36px;
+  --text-40: 40px;
+  --text-44: 44px;
+
+  /* Control heights — the only two the app has (R1) */
+  --height-control-sm: 26px;
+  --height-control: 32px;
 }
 
 /* ============================================
@@ -325,11 +360,13 @@
     font-size: 1.25rem;
     line-height: 1.75rem;
   }
-  /* Remove default focus outlines in favor of our custom styling */
+  /* Remove default focus outlines in favor of our custom styling.
+     Fields are excluded: they carry their own 1px accent border on focus and
+     would otherwise stack a second ring on top of it. */
   *:focus {
     outline: none;
   }
-  *:focus-visible {
+  *:focus-visible:not(input):not(textarea):not(select) {
     outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
@@ -350,16 +387,9 @@ input, textarea, select {
   border-radius: 2px;
 }
 
-/* Neutralize leftover retro rounding on containers (xterm excluded).
-   rounded-full survives only on small status dots and avatars — anything
-   bigger than 12px gets squared off. */
-.rounded-md:not([class*="xterm"]),
-.rounded-lg:not([class*="xterm"]),
-.rounded-xl:not([class*="xterm"]),
-.rounded-2xl:not([class*="xterm"]),
-.rounded-3xl:not([class*="xterm"]) {
-  border-radius: var(--radius-sm) !important;
-}
+/* No `rounded-*` neutraliser here on purpose: --radius-lg/xl are 2px in the
+   @theme block, and anything left over (rounded-2xl/3xl, rounded-full on text)
+   must stay visible so it can be fixed at the call site rather than hidden. */
 
 /* Flat surfaces: no elevation anywhere in the app chrome */
 [class*="shadow-"]:not([class*="xterm"]) {
@@ -371,7 +401,7 @@ input, textarea, select {
    ============================================ */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #CFCBC4 #F3F1EE;
+  scrollbar-color: var(--border-accent) var(--bg-tertiary);
 }
 
 *::-webkit-scrollbar {
@@ -380,19 +410,19 @@ input, textarea, select {
 }
 
 *::-webkit-scrollbar-track {
-  background: #F3F1EE;
+  background: var(--bg-tertiary);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #CFCBC4;
+  background: var(--border-accent);
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #C77012;
+  background: var(--primary);
 }
 
 *::-webkit-scrollbar-corner {
-  background: #F3F1EE;
+  background: var(--bg-tertiary);
 }
 
 /* ============================================
@@ -411,70 +441,6 @@ input, textarea, select {
   .text-danger {
     color: var(--danger);
     font-weight: 600;
-  }
-
-  /* Card hover effect - clean border transition */
-  .card-hover {
-    transition: all 0.2s ease;
-    border: 1px solid var(--border);
-  }
-  .card-hover:hover {
-    border-color: rgba(61, 155, 148, 0.4);
-    box-shadow: 0 2px 12px rgba(44, 36, 24, 0.08);
-  }
-
-  /* Subtle color touches - colored bottom borders */
-  .card-accent {
-    transition: all 0.3s ease;
-    border-bottom: 1px solid rgba(61, 155, 148, 0.2);
-  }
-  .card-accent:hover {
-    border-bottom-color: rgba(61, 155, 148, 0.4);
-  }
-
-  .card-success {
-    transition: all 0.3s ease;
-    border-bottom: 1px solid rgba(34, 197, 94, 0.2);
-  }
-  .card-success:hover {
-    border-bottom-color: rgba(34, 197, 94, 0.4);
-  }
-
-  .card-warning {
-    transition: all 0.3s ease;
-    border-bottom: 1px solid rgba(234, 179, 8, 0.2);
-  }
-  .card-warning:hover {
-    border-bottom-color: rgba(234, 179, 8, 0.4);
-  }
-
-  .card-danger {
-    transition: all 0.3s ease;
-    border-bottom: 1px solid rgba(239, 68, 68, 0.2);
-  }
-  .card-danger:hover {
-    border-bottom-color: rgba(239, 68, 68, 0.4);
-  }
-
-  /* Elevated shadow - soft */
-  .shadow-elevated {
-    box-shadow: 0 2px 8px rgba(44, 36, 24, 0.08);
-  }
-
-  /* Minimal hover effects */
-  .hover-lift {
-    transition: all 0.2s ease;
-  }
-  .hover-lift:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(44, 36, 24, 0.1);
-  }
-
-  .hover-scale {
-    transition: transform 0.2s ease;
-  }
-  .hover-scale:hover {
-    transform: scale(1.01);
   }
 
   .hover-border-accent {
@@ -555,10 +521,10 @@ input, textarea, select {
   transition: border-color 0.15s ease;
 }
 
+/* Focus is a 1px accent border and nothing else — no halo. */
 input:focus, textarea:focus, select:focus {
   border-color: var(--primary);
   outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
 input::placeholder, textarea::placeholder {
@@ -616,7 +582,7 @@ button, a, input, textarea, select {
   width: 6px;
 }
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #CFCBC4;
+  background: var(--border-accent);
 }
 
 

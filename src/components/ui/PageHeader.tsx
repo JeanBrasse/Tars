@@ -11,6 +11,12 @@
  *
  * Height comes out at 84px with the standard 22px top gutter above it, which
  * is what every frame measures.
+ *
+ * That 22px gutter is the *page container's* job, not this component's - the
+ * shell supplies it once so the band lines up across every screen. A page must
+ * never re-add `pt-4 lg:pt-6` (or any other top padding) around a PageHeader;
+ * doing so double-counts the gutter and pushes the title off the measured
+ * baseline.
  */
 export function PageHeader({
   title,

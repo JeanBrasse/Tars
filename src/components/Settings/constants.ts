@@ -17,11 +17,20 @@ import { SlackIcon } from './SlackIcon';
 import { TasmaniaIcon } from './TasmaniaIcon';
 import type { SettingsSection } from './types';
 
+/** A leaf is one sub-page: its own title and its own one-line subtitle in the page header. */
+export interface SettingsLeaf {
+  id: SettingsSection;
+  label: string;
+  /** Sentence shown under the sub-page title. One line, no trailing context. */
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
 export interface SettingsGroup {
   id: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  children: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[];
+  children: SettingsLeaf[];
 }
 
 /**
@@ -34,10 +43,10 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     label: 'General',
     icon: Settings,
     children: [
-      { id: 'general', label: 'Preferences', icon: Settings },
-      { id: 'terminal', label: 'Terminal', icon: Terminal },
-      { id: 'notifications', label: 'Notifications', icon: Bell },
-      { id: 'system', label: 'System', icon: Monitor },
+      { id: 'general', label: 'Preferences', description: 'How Tars behaves before anything else.', icon: Settings },
+      { id: 'terminal', label: 'Terminal', description: 'Type size and theme for every terminal Tars opens.', icon: Terminal },
+      { id: 'notifications', label: 'Notifications', description: 'What Tars tells you about, and when it stays quiet.', icon: Bell },
+      { id: 'system', label: 'System', description: 'Updates, the machine, and what it already provides.', icon: Monitor },
     ],
   },
   {
@@ -45,9 +54,9 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     label: 'AI & Providers',
     icon: Zap,
     children: [
-      { id: 'ai-providers', label: 'Providers', icon: Zap },
-      { id: 'cli', label: 'CLI Paths', icon: Terminal },
-      { id: 'permissions', label: 'Permissions', icon: Shield },
+      { id: 'ai-providers', label: 'Providers', description: 'Every CLI and API Tars can run. They are all equal here.', icon: Zap },
+      { id: 'cli', label: 'CLI Paths', description: 'Where each command line tool lives on this machine.', icon: Terminal },
+      { id: 'permissions', label: 'Permissions', description: 'How far an agent may go before it asks you.', icon: Shield },
     ],
   },
   {
@@ -55,7 +64,7 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     label: 'Hermes',
     icon: Send,
     children: [
-      { id: 'hermes', label: 'Connection', icon: Send },
+      { id: 'hermes', label: 'Connection', description: 'Where your Hermes gateway lives.', icon: Send },
     ],
   },
   {
@@ -63,10 +72,10 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     label: 'Integrations',
     icon: Plug,
     children: [
-      { id: 'telegram', label: 'Telegram', icon: Send },
-      { id: 'slack', label: 'Slack', icon: SlackIcon },
-      { id: 'socialdata', label: 'X (Twitter)', icon: Twitter },
-      { id: 'google-workspace', label: 'Google Workspace', icon: Cloud },
+      { id: 'telegram', label: 'Telegram', description: 'Reach your agents from a Telegram chat.', icon: Send },
+      { id: 'slack', label: 'Slack', description: 'Reach your agents from a Slack workspace.', icon: SlackIcon },
+      { id: 'socialdata', label: 'X (Twitter)', description: 'Read and post on X with your own keys.', icon: Twitter },
+      { id: 'google-workspace', label: 'Google Workspace', description: 'Gmail, Calendar and Drive, through your own account.', icon: Cloud },
     ],
   },
   {
@@ -74,9 +83,9 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     label: 'Extensions',
     icon: Sparkles,
     children: [
-      { id: 'skills', label: 'Skills & Plugins', icon: Sparkles },
-      { id: 'mcp', label: 'Custom MCP', icon: Plug },
-      { id: 'tasmania', label: 'Tasmania', icon: TasmaniaIcon },
+      { id: 'skills', label: 'Skills & Plugins', description: 'Everything installed on top of the agents you already have.', icon: Sparkles },
+      { id: 'mcp', label: 'Custom MCP', description: 'Servers Tars did not install, listed as they are.', icon: Plug },
+      { id: 'tasmania', label: 'Tasmania', description: 'The Tasmania server, and where it runs from.', icon: TasmaniaIcon },
     ],
   },
   {
@@ -84,15 +93,14 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     label: 'Workspace',
     icon: GitCommit,
     children: [
-      { id: 'git', label: 'Git', icon: GitCommit },
-      { id: 'memory', label: 'Memory Backends', icon: Brain },
+      { id: 'git', label: 'Git', description: 'How Tars commits, branches and worktrees on your behalf.', icon: GitCommit },
+      { id: 'memory', label: 'Memory Backends', description: 'Where memory goes once it leaves the files on disk.', icon: Brain },
     ],
   },
 ];
 
 /** Flat view of the same sections, for deep-links and the mobile picker. */
-export const SECTIONS: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[] =
-  SECTION_GROUPS.flatMap(g => g.children);
+export const SECTIONS: SettingsLeaf[] = SECTION_GROUPS.flatMap(g => g.children);
 
 export const DEFAULT_APP_SETTINGS = {
   notificationsEnabled: true,

@@ -67,8 +67,8 @@ export default function TerminalPanelHeader({
       <span className="text-base">{emoji}</span>
       <span className="text-xs font-medium text-foreground truncate max-w-[120px]">{name}</span>
 
-      {/* Status badge */}
-      <span className={`text-[10px] px-1.5 py-0.5 font-medium ${status.bg} ${status.text}`}>
+      {/* Raw status word — ink only, no fill (R6) */}
+      <span className={`text-[10px] font-mono ${status.text}`}>
         {agent.status}
       </span>
 

@@ -2,7 +2,8 @@
 
 import { Loader2, AlertTriangle, GitBranch, Pencil, Crown, Cpu } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { STATUS_COLORS, STATUS_LABELS, CHARACTER_FACES, getProjectColor, isSuperAgentCheck } from '@/app/agents/constants';
+import { STATUS_COLORS, CHARACTER_FACES, getProjectColor, isSuperAgentCheck, statusTone } from '@/app/agents/constants';
+import { StatusSquare } from '@/components/ui';
 import { getProviderDef } from '@/lib/providers';
 
 /** Renders the provider icon for a given provider id using the shared registry. */
@@ -53,7 +54,7 @@ interface AgentCardProps {
 
 export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProps) {
   const statusConfig = STATUS_COLORS[agent.status];
-  const StatusIcon = statusConfig.icon;
+  const tone = statusTone(agent.status);
   const projectName = agent.projectPath.split('/').pop() || 'Unknown';
   const projectColor = getProjectColor(projectName);
   const isSuper = isSuperAgentCheck(agent);
@@ -79,7 +80,7 @@ export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProp
             ? 'bg-primary/20 ring-1 ring-primary/30'
             : agent.name?.toLowerCase() === 'bitwonka'
               ? 'bg-accent-green/20'
-              : statusConfig.bg
+              : 'bg-bg-tertiary'
         }`}>
           {isSuper ? (
             <span className="text-xl">👑</span>
@@ -90,7 +91,7 @@ export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProp
           ) : agent.status === 'running' ? (
             <Loader2 className={`w-5 h-5 ${statusConfig.text} animate-spin`} />
           ) : (
-            <StatusIcon className={`w-5 h-5 ${statusConfig.text}`} />
+            <StatusSquare tone={tone} />
           )}
           {agent.status === 'running' && (agent.character || agent.name?.toLowerCase() === 'bitwonka' || isSuper) && (
             <span className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full animate-pulse ${isSuper ? 'bg-warning' : 'bg-accent-blue'}`} />
@@ -116,12 +117,8 @@ export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProp
               >
                 <Pencil className="w-3.5 h-3.5 text-text-muted hover:text-accent-blue" />
               </button>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                isSuper && agent.status === 'running'
-                  ? 'bg-warning/20 text-warning'
-                  : `${statusConfig.bg} ${statusConfig.text}`
-              }`}>
-                {STATUS_LABELS[agent.status]}
+              <span className={`text-xs ${statusConfig.text}`}>
+                {tone}
               </span>
             </div>
           </div>

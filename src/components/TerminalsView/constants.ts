@@ -41,13 +41,16 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   { key: 'Escape', description: 'Exit fullscreen', action: 'exit-fullscreen' },
 ];
 
-// Status colors (light theme compatible)
-export const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  running: { bg: 'bg-success/12', text: 'text-success', dot: 'bg-success' },
-  waiting: { bg: 'bg-warning/12', text: 'text-warning', dot: 'bg-warning' },
-  idle: { bg: 'bg-muted', text: 'text-muted-foreground', dot: 'bg-muted-foreground' },
-  error: { bg: 'bg-danger/12', text: 'text-danger', dot: 'bg-danger' },
-  completed: { bg: 'bg-primary/12', text: 'text-primary', dot: 'bg-primary' },
+// Status colors — status tokens only, no filled pill (R6).
+// `dot` feeds <StatusSquare>, `text` colours the raw status word.
+export const STATUS_COLORS: Record<string, { text: string; dot: string }> = {
+  running: { text: 'text-status-running', dot: 'bg-status-running' },
+  waiting: { text: 'text-status-waiting', dot: 'bg-status-waiting' },
+  idle: { text: 'text-status-idle', dot: 'bg-status-idle' },
+  error: { text: 'text-status-error', dot: 'bg-status-error' },
+  // `completed` is a real runtime status but not part of the design vocabulary —
+  // it reads as idle rather than as a second accent colour.
+  completed: { text: 'text-status-idle', dot: 'bg-status-idle' },
 };
 
 // Local storage key for persisting sidebar state

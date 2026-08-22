@@ -19,7 +19,7 @@ import {
   ProjectFilterTabs,
   AgentManagementCard,
 } from '@/components/AgentList';
-import { STATUS_LABELS, STATUS_COLORS } from './constants';
+import { STATUS_COLORS } from './constants';
 
 type SortBy = 'created' | 'status' | 'activity' | 'name';
 
@@ -248,20 +248,22 @@ export default function AgentsPage() {
               {agents.length}
             </span>
           </button>
-          {Object.entries(STATUS_LABELS).map(([key, label]) => {
+          {Object.keys(STATUS_COLORS).map((key) => {
             const count = agents.filter(a => a.status === key).length;
             const colors = STATUS_COLORS[key as keyof typeof STATUS_COLORS];
             return (
               <button
                 key={key}
                 onClick={() => setStatusFilter(statusFilter === key ? null : key)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors capitalize ${
-                  statusFilter === key ? `${colors.bg} ${colors.text}` : 'text-muted-foreground hover:text-foreground'
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
+                  statusFilter === key
+                    ? 'bg-secondary border border-border-accent text-foreground'
+                    : `${colors.text} hover:text-foreground`
                 }`}
               >
-                {label}
+                {key}
                 {count > 0 && (
-                  <span className={`px-1 py-px text-[10px] ${statusFilter === key ? 'bg-background/20' : colors.bg} ${statusFilter !== key ? colors.text : ''}`}>
+                  <span className="px-1 py-px text-[10px] text-muted-foreground">
                     {count}
                   </span>
                 )}

@@ -217,7 +217,6 @@ interface AppState {
   selectedProject: string | null;
   selectedAgent: string | null;
   selectedChat: string | null;
-  sidebarCollapsed: boolean;
   mobileMenuOpen: boolean;
   darkMode: boolean;
   vaultUnreadCount: number;
@@ -248,7 +247,6 @@ interface AppState {
   setSelectedProject: (id: string | null) => void;
   setSelectedAgent: (id: string | null) => void;
   setSelectedChat: (id: string | null) => void;
-  toggleSidebar: () => void;
   setMobileMenuOpen: (open: boolean) => void;
   toggleMobileMenu: () => void;
   setDarkMode: (dark: boolean) => void;
@@ -275,7 +273,6 @@ export const useStore = create<AppState>((set, get) => ({
   selectedProject: null,
   selectedAgent: null,
   selectedChat: null,
-  sidebarCollapsed: false,
   mobileMenuOpen: false,
   darkMode: true,
   vaultUnreadCount: 0,
@@ -403,7 +400,6 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedProject: (id) => set({ selectedProject: id }),
   setSelectedAgent: (id) => set({ selectedAgent: id }),
   setSelectedChat: (id) => set({ selectedChat: id }),
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setMobileMenuOpen: (open) => set({ mobileMenuOpen: open }),
   toggleMobileMenu: () => set((state) => ({ mobileMenuOpen: !state.mobileMenuOpen })),
   setDarkMode: (dark) => set({ darkMode: dark }),

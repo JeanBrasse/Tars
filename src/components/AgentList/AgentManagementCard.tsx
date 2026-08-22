@@ -4,9 +4,9 @@ import { Play, Square, Pencil, Trash2, AlertTriangle, Crown, Clock, BookmarkPlus
 import type { AgentStatus } from '@/types/electron';
 import {
   STATUS_COLORS,
-  STATUS_LABELS,
   CHARACTER_FACES,
   isSuperAgentCheck,
+  statusTone,
 } from '@/app/agents/constants';
 
 function formatTimeAgo(isoDate: string): string {
@@ -32,6 +32,7 @@ interface AgentManagementCardProps {
 
 export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, onRemove, onSaveAsTemplate }: AgentManagementCardProps) {
   const statusConfig = STATUS_COLORS[agent.status];
+  const tone = statusTone(agent.status);
   const isSuper = isSuperAgentCheck(agent);
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   const isError = agent.status === 'error';
@@ -53,7 +54,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
         {/* Row 1: Avatar + Name + Status (top-right) */}
         <div className="flex items-center gap-2.5">
           <div className={`w-8 h-8 flex items-center justify-center shrink-0 text-base ${
-            isSuper ? 'bg-primary/20' : statusConfig.bg
+            isSuper ? 'bg-primary/20' : 'bg-bg-tertiary'
           }`}>
             {isSuper ? '👑' : agent.character ? (CHARACTER_FACES[agent.character] || '🤖') : '🤖'}
           </div>
@@ -67,13 +68,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
             </div>
           </div>
 
-          {/* Status pill - top right */}
-          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
-            isSuper && isRunning
-              ? 'bg-warning/20 text-warning'
-              : `${statusConfig.bg} ${statusConfig.text}`
-          }`}>
-            {STATUS_LABELS[agent.status]}
+          {/* Raw status word - top right, ink only (R6) */}
+          <span className={`text-[11px] font-mono shrink-0 ${statusConfig.text}`}>
+            {tone}
           </span>
         </div>
 

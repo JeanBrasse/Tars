@@ -93,7 +93,6 @@ export function KanbanCardDetail({ task, onClose, onUpdate, onDelete }: KanbanCa
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${columnConfig.accentColor}`} />
               <span className="text-sm font-medium text-muted-foreground">
                 {columnConfig.title}
               </span>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { attachShiftEnterHandler } from '@/lib/terminal';
-import { QUICK_TERMINAL_THEME } from './constants';
+import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
 // Module-level map: persist PTY sessions across dialog open/close
@@ -30,6 +30,9 @@ export function useQuickTerminal({
   const quickFitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const quickPtyIdRef = useRef<string | null>(null);
 
+  // App theme, as an xterm theme — re-applied below so the terminal follows light mode
+  const xtermTheme = useTerminalTheme();
+
   const hasActiveTerminal = agentId ? persistentTerminals.has(agentId) : false;
 
   // Initialize quick terminal when "Shell" panel opens
@@ -54,9 +57,10 @@ export function useQuickTerminal({
       const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
-        theme: QUICK_TERMINAL_THEME,
+        // Read at creation time so a theme switch mid-session cannot go stale
+        theme: createXtermTheme(),
         fontSize: 12,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
+        fontFamily: getTerminalFontFamily(),
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 5000,
@@ -137,6 +141,11 @@ export function useQuickTerminal({
       setQuickTerminalReady(false);
     };
   }, [expandedPanels, agentId, projectPath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Follow the app theme without tearing down the PTY session
+  useEffect(() => {
+    if (quickXtermRef.current) quickXtermRef.current.options.theme = xtermTheme;
+  }, [xtermTheme]);
 
   // Dispose xterm UI when dialog closes (keep PTY alive in persistentTerminals)
   useEffect(() => {

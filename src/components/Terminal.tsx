@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
+import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 
 interface TerminalProps {
   ptyId?: string;
@@ -16,35 +17,16 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
 
+  // Follows the app theme; applied to the live terminal below instead of at
+  // init, so a theme flip never tears down the PTY-attached instance.
+  const terminalTheme = useTerminalTheme();
+
   const initTerminal = useCallback(() => {
     if (!terminalRef.current || xtermRef.current) return;
 
     const term = new XTerm({
-      theme: {
-        background: '#0D0B08',
-        foreground: '#e4e4e7',
-        cursor: '#3D9B94',
-        cursorAccent: '#0D0B08',
-        selectionBackground: '#3D9B9433',
-        black: '#18181b',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#a855f7',
-        cyan: '#3D9B94',
-        white: '#e4e4e7',
-        brightBlack: '#52525b',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#facc15',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#c084fc',
-        brightCyan: '#67e8f9',
-        brightWhite: '#fafafa',
-      },
+      ...createXtermOptions(),
       fontSize: 13,
-      fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
       cursorBlink: true,
       cursorStyle: 'bar',
       scrollback: 10000,
@@ -98,6 +80,13 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
     return cleanup;
   }, [initTerminal]);
 
+  // Repaint on app theme change
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = terminalTheme;
+    }
+  }, [terminalTheme]);
+
   // Listen for PTY data
   useEffect(() => {
     if (!ptyId || !window.electronAPI?.pty) return;
@@ -126,7 +115,7 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
   return (
     <div
       ref={terminalRef}
-      className={`bg-[#0D0B08] rounded-none overflow-hidden ${className}`}
+      className={`${TERMINAL_SURFACE_CLASS} rounded-none overflow-hidden ${className}`}
       style={{ minHeight: '200px' }}
     />
   );
