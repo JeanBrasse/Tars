@@ -46,6 +46,14 @@ matter once there is more than one.
 **Every agent on one screen.** Real terminals in a grid, grouped by project.
 Watch six at once, jump into any of them, broadcast one instruction to all.
 
+**Someone watching the whole thing.** A Hermes agent sees every agent in every
+project and tells you what they are doing, which decisions are in flight, and
+which ones are stuck on you rather than on the work. It talks to you before it
+talks to any of them: an instruction arrives as a proposal naming the agent, its
+project, its CLI and the exact words, and nothing is sent until you say so. The
+target is resolved from the live fleet when you confirm, not from what the model
+remembered, so it cannot write to the wrong terminal.
+
 **Delegation that reports back.** An orchestrator hands work to another agent
 over the [Agent Client Protocol](https://agentclientprotocol.com), not by
 typing into its terminal and hoping. The call returns the agent's answer, why
@@ -164,6 +172,7 @@ completion hook, it simply has no screen of its own.
 | Screen | What it is for |
 |---|---|
 | **Dashboard** | The terminal grid. Every agent, live, grouped by project |
+| **Chat** | A Hermes agent watching every project, reporting to you, asking before it acts |
 | **Agents** | Create, configure, start and stop. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |

@@ -9,6 +9,10 @@ const FEATURES = [
     body: 'Real terminals in a grid, grouped by project. Watch six agents work at once, jump into any of them, broadcast one instruction to all.',
   },
   {
+    title: 'Someone watching the whole thing',
+    body: 'A Hermes agent sees every agent in every project and tells you what they are doing, which decisions are in flight, and which ones are stuck on you. It asks before it writes to any of them.',
+  },
+  {
     title: 'Delegation that reports back',
     body: 'An orchestrator hands work over the Agent Client Protocol, not by typing into a terminal and hoping. Every task returns a stop reason and what it cost.',
   },
@@ -18,7 +22,7 @@ const FEATURES = [
   },
   {
     title: 'Any CLI, any model',
-    body: 'Claude, Codex, Gemini, Grok, OpenCode, DeepSeek, Kimi, MiniMax and a dozen more. Model lists and prices come from a live catalogue, so today\u2019s release is here today.',
+    body: 'Claude, Codex, Gemini, Grok, OpenCode, Ollama, Venice, DeepSeek, Kimi, MiniMax and a dozen more. Model lists and prices come from a live catalogue, so today\u2019s release is here today.',
   },
   {
     title: 'One memory, five sources',
