@@ -128,6 +128,11 @@ export class VeniceProvider implements CLIProvider {
       // token (the same one api-server.ts already guards /api/* with) and
       // only then reads the real Venice key from app-settings.json itself to
       // attach to the outbound call. See services/venice-shim.ts.
+      //
+      // Lazy require, not a top-level import: providers/index.ts pulls this
+      // file in, and api-server.ts's route registration pulls in agent-routes.ts,
+      // which imports providers/index.ts back - the same cycle-avoidance
+      // agent-manager.ts already uses for tasmania-client.
       const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
       vars.ANTHROPIC_API_KEY = getApiToken();
     }
