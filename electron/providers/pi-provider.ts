@@ -86,9 +86,9 @@ export class PiProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[], _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
     return {
-      DOROTHY_SKILLS: skills.join(','),
+      DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
       DOROTHY_PROJECT_PATH: projectPath,
       // The orchestrator MCP and the hooks both read the CLAUDE_ names. Without

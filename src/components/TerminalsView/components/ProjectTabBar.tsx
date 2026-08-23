@@ -1,11 +1,17 @@
 'use client';
 
-import { useMemo } from 'react';
-import type { AgentStatus } from '@/types/electron';
+import { memo, useMemo } from 'react';
 import type { ActiveTab } from '../types';
 
 interface ProjectTabBarProps {
-  agents: AgentStatus[];
+  // Distinct project paths, in order - the already-stabilized derivation
+  // (agentProjectPaths in TerminalsView/index.tsx) rather than the raw
+  // agents array. `agents` gets a new identity on every agents:tick even for
+  // an unrelated status/task change, and this bar is mounted above the grid
+  // on every tab, so an unmemoized component fed that array re-ran its Set
+  // computation and re-rendered twice a second regardless of the grid-level
+  // memoization work (see TerminalPanel.tsx's memo comment for that story).
+  projectPaths: string[];
   activeTab: ActiveTab;
   onSelectProject: (projectPath: string) => void;
   /** @deprecated the panel toggle no longer lives on the tab strip; kept optional until the call site drops it */
@@ -14,20 +20,18 @@ interface ProjectTabBarProps {
   onTogglePanel?: () => void;
 }
 
-export default function ProjectTabBar({
-  agents,
+function ProjectTabBar({
+  projectPaths,
   activeTab,
   onSelectProject,
 }: ProjectTabBarProps) {
   // tabs are label-only now: the strip only needs the distinct project paths, in order
-  const projects = useMemo(() => {
-    const paths = new Set<string>();
-    for (const agent of agents) paths.add(agent.projectPath);
-    return Array.from(paths).map(path => ({
+  const projects = useMemo(() => (
+    projectPaths.map(path => ({
       path,
       name: path.split('/').pop() || path,
-    }));
-  }, [agents]);
+    }))
+  ), [projectPaths]);
 
   const isActive = (path: string) =>
     activeTab.type === 'project' && activeTab.projectPath === path;
@@ -61,3 +65,5 @@ export default function ProjectTabBar({
     </div>
   );
 }
+
+export default memo(ProjectTabBar);

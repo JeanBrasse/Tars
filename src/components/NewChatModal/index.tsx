@@ -115,6 +115,12 @@ export default function NewChatModal({
   const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true, grok: true, opencode: true, pi: true });
   const [cliPath, setCliPath] = useState('');
   const agentPersonaRef = useRef<AgentPersonaValues>({ character: 'robot', name: '' });
+  // The Name field lives on the Task step (StepTask) and needs to re-render on
+  // every keystroke, so it is real state rather than the character ref above
+  // (a ref write is invisible to React and the input would never reflect it).
+  // agentPersonaRef.current.name is kept in sync alongside it for the one
+  // consumer (StepModel's deprecated prop) that still reads the combined shape.
+  const [agentName, setAgentName] = useState('');
   // Armed when the open-effect programmatically changes the provider (edit
   // prepopulation) so the provider-change effect doesn't wipe the agent's
   // pre-filled skills.
@@ -177,6 +183,7 @@ export default function NewChatModal({
           character: editAgent.character || 'robot',
           name: editAgent.name || '',
         };
+        setAgentName(editAgent.name || '');
         setShowSecondaryProject(!!editAgent.secondaryProjectPath);
         setSelectedSecondaryProject(editAgent.secondaryProjectPath || '');
         setCustomSecondaryPath('');
@@ -215,10 +222,12 @@ export default function NewChatModal({
 
         if (initialOrchestrator) {
           agentPersonaRef.current = { character: 'wizard', name: 'Super Agent (Orchestrator)' };
+          setAgentName('Super Agent (Orchestrator)');
           setPermissionMode('bypass');
           setIsOrchestrator(true);
         } else {
           agentPersonaRef.current = { character: 'robot', name: '' };
+          setAgentName('');
           setPermissionMode('normal');
           setIsOrchestrator(false);
         }
@@ -379,6 +388,7 @@ export default function NewChatModal({
     setSelectedObsidianVaults(t.obsidianVaultPaths ?? []);
     setPrompt(t.savedPrompt || '');
     agentPersonaRef.current = { character: t.character, name: t.displayName };
+    setAgentName(t.displayName);
     setIsOrchestrator(false);
     setAppliedTemplateId(t.id);
   }, [provider]);
@@ -389,68 +399,83 @@ export default function NewChatModal({
     );
   }, []);
 
-  const handleSubmit = useCallback(() => {
+  // Handlers are async (they create the agent, then optionally start it) and
+  // already swallow their own errors internally so the dialog can decide what
+  // to do next; a `false` return is the one signal they use to say "it did
+  // not work". Previously this function fired onSubmit and wiped every field
+  // in the same tick without waiting for either - on failure the dialog was
+  // left open but blank, with everything the user typed already gone.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const handleSubmit = useCallback(async () => {
     if (!projectPath) return;
     if (useWorktree && !branchName.trim()) return;
 
-    const { character: agentCharacter, name: agentName } = agentPersonaRef.current;
+    const agentCharacter = agentPersonaRef.current.character;
     const projectName = projectPath.split('/').pop() || 'project';
     const finalName = agentName.trim() || `${CHARACTER_OPTIONS.find(c => c.id === agentCharacter)?.name || 'Agent'} on ${projectName}`;
     const secondaryPath = showSecondaryProject ? (selectedSecondaryProject || customSecondaryPath) : undefined;
 
-    if (isEditMode && editAgent && onUpdate) {
-      // Edit mode: update existing agent with all fields
-      const worktreeConfig = useWorktree && !editAgent.branchName
-        ? { enabled: true, branchName: branchName.trim() }
-        : undefined;
-      onUpdate(editAgent.id, {
-        projectPath,
-        skills: selectedSkills,
-        secondaryProjectPath: secondaryPath || null,
-        permissionMode,
-        effort: effort || undefined,
-        name: finalName,
-        character: agentCharacter,
-        model: (model && model !== 'default') ? model : null,
-        provider,
-        localModel: localModel || null,
-        savedPrompt: prompt.trim() || null,
-        obsidianVaultPaths: selectedObsidianVaults.length > 0 ? selectedObsidianVaults : [],
-        worktree: worktreeConfig,
-        orchestratorMode: isOrchestrator,
-        cliPath: cliPath || null,
-      });
-      onClose();
-      return;
+    setIsSubmitting(true);
+    try {
+      if (isEditMode && editAgent && onUpdate) {
+        // Edit mode: update existing agent with all fields
+        const worktreeConfig = useWorktree && !editAgent.branchName
+          ? { enabled: true, branchName: branchName.trim() }
+          : undefined;
+        const result = await onUpdate(editAgent.id, {
+          projectPath,
+          skills: selectedSkills,
+          secondaryProjectPath: secondaryPath || null,
+          permissionMode,
+          effort: effort || undefined,
+          name: finalName,
+          character: agentCharacter,
+          model: (model && model !== 'default') ? model : null,
+          provider,
+          localModel: localModel || null,
+          savedPrompt: prompt.trim() || null,
+          obsidianVaultPaths: selectedObsidianVaults.length > 0 ? selectedObsidianVaults : [],
+          worktree: worktreeConfig,
+          orchestratorMode: isOrchestrator,
+          cliPath: cliPath || null,
+        });
+        if (result === false) return;
+        onClose();
+        return;
+      }
+
+      // Create mode
+      const finalPrompt = prompt.trim()
+        || (selectedSkills.length > 0 ? `Use the following skills: ${selectedSkills.join(', ')}` : '');
+      const worktreeConfig = useWorktree ? { enabled: true, branchName: branchName.trim() } : undefined;
+
+      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, secondaryPath, permissionMode, provider, localModel, selectedObsidianVaults.length > 0 ? selectedObsidianVaults : undefined, effort, isOrchestrator, cliPath || undefined);
+      if (result === false) return;
+
+      // Reset form
+      setStep(1);
+      setSelectedProject('');
+      setCustomPath('');
+      setSelectedSkills([]);
+      setPrompt('');
+      setUseWorktree(false);
+      setBranchName('');
+      agentPersonaRef.current = { character: 'robot', name: '' };
+      setAgentName('');
+      setShowSecondaryProject(false);
+      setSelectedSecondaryProject('');
+      setPermissionMode('normal');
+      setEffort('medium');
+      setCustomSecondaryPath('');
+      setProvider('claude');
+      setModel('default');
+      setLocalModel('');
+      setCliPath('');
+      setSelectedObsidianVaults([]);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Create mode
-    const finalPrompt = prompt.trim()
-      || (selectedSkills.length > 0 ? `Use the following skills: ${selectedSkills.join(', ')}` : '');
-    const worktreeConfig = useWorktree ? { enabled: true, branchName: branchName.trim() } : undefined;
-
-    onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, secondaryPath, permissionMode, provider, localModel, selectedObsidianVaults.length > 0 ? selectedObsidianVaults : undefined, effort, isOrchestrator, cliPath || undefined);
-
-    // Reset form
-    setStep(1);
-    setSelectedProject('');
-    setCustomPath('');
-    setSelectedSkills([]);
-    setPrompt('');
-    setUseWorktree(false);
-    setBranchName('');
-    agentPersonaRef.current = { character: 'robot', name: '' };
-    setShowSecondaryProject(false);
-    setSelectedSecondaryProject('');
-    setPermissionMode('normal');
-    setEffort('medium');
-    setCustomSecondaryPath('');
-    setProvider('claude');
-    setModel('default');
-    setLocalModel('');
-    setCliPath('');
-    setSelectedObsidianVaults([]);
-  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, showSecondaryProject, selectedSecondaryProject, customSecondaryPath, model, permissionMode, effort, provider, localModel, cliPath, selectedObsidianVaults, onSubmit, isEditMode, editAgent, onUpdate, onClose]);
+  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, showSecondaryProject, selectedSecondaryProject, customSecondaryPath, model, permissionMode, effort, provider, localModel, cliPath, selectedObsidianVaults, agentName, onSubmit, isEditMode, editAgent, onUpdate, onClose]);
 
   // Can proceed from current step?
   const canContinue = step === 1 ? !!projectPath : true;
@@ -486,8 +511,8 @@ export default function NewChatModal({
                 Next
               </Button>
             ) : (
-              <Button variant="primary" onClick={handleSubmit} disabled={!canStart}>
-                {isEditMode ? 'Save changes' : 'Start agent'}
+              <Button variant="primary" onClick={handleSubmit} disabled={!canStart || isSubmitting}>
+                {isSubmitting ? 'Working...' : isEditMode ? 'Save changes' : 'Start agent'}
               </Button>
             )}
           </>
@@ -600,6 +625,8 @@ export default function NewChatModal({
 
           {step === 4 && (
             <StepTask
+              name={agentName}
+              onNameChange={setAgentName}
               prompt={prompt}
               onPromptChange={setPrompt}
               selectedSkills={selectedSkills}

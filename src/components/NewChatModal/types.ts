@@ -57,7 +57,7 @@ export interface NewChatModalProps {
     effort?: AgentEffort,
     orchestratorMode?: boolean,
     cliPath?: string,
-  ) => void;
+  ) => void | Promise<boolean | void>;
   onUpdate?: (id: string, updates: {
     projectPath?: string;
     skills?: string[];
@@ -74,7 +74,7 @@ export interface NewChatModalProps {
     worktree?: WorktreeConfig;
     orchestratorMode?: boolean;
     cliPath?: string | null;
-  }) => void;
+  }) => void | Promise<boolean | void>;
   editAgent?: EditAgentData | null;
   projects: Project[];
   onBrowseFolder?: () => Promise<string | null>;

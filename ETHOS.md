@@ -265,3 +265,47 @@ the fork; upstream's push remote is set to `DISABLED-no-push`.
 - Reading a corrupt file, getting nothing, and carrying on with an empty state.
 - Dropping a stored key during a rename without deciding, in writing, what happens to
   the users who have one.
+
+## 8. Fix the Class, Not the Instance
+
+Three audits and two sweeps in one night, and the individual findings mattered less
+than the shape they kept taking. This is the one to internalise, because it produced
+the worst bug in the app's history.
+
+**The correct guard is usually sitting next to the missing one.** `local-file://`
+resolves its path and checks containment; the `app://` handler nine lines above it did
+not, so a percent-encoded traversal read every provider API key out of a vault note
+with no click. `registerMcpServer` was fixed to use `execFileSync`; `removeMcpServer`
+was left on a shell string in three separate providers, each one directly under the
+comment explaining why the sibling had been changed. `loadAgents` normalises a missing
+`output` array with a comment describing exactly that class of crash; `skills`, two
+lines away, was not, and no agent with an older record could start. `/status`,
+`/output` and `/task-completed` check session ownership; `/agent-stopped` and
+`/notification` on the same router did not.
+
+So: **when a fix lands on a function, read its siblings in the same file before you
+call the class of bug closed.** Not "consider whether"; read them. It costs two
+minutes and it is the difference between a fix and the appearance of one.
+
+**Success is assumed rather than confirmed.** The new-agent form reset every field
+before `onSubmit` resolved, so a failure lost everything typed. The permission-mode
+control moved its displayed value outside its own success check, which is the one
+place in this app where being wrong about the state is dangerous. In every case a
+`.catch` or an `if (success)` was already sitting in a sibling function in the same
+file. The fix is never a new capability; it is finishing the existing one.
+
+**"No current caller passes hostile data" means "safe until the next caller."** That
+is a note to write down, not a reason to skip the guard.
+
+**Verify with something that cannot lie to you.** `grep` on this machine is `ugrep`,
+where `\|` is a literal, and `/usr/bin/grep` is BSD with no `-P`. Both answer "nothing
+found" on a file full of em dashes, and three separate sweeps "passed" over
+twenty-nine of them. That is why `scripts/check-dashes.mjs` exists and why
+`npm run check:dashes` is in the release checklist. If a check can quietly succeed on
+a broken input, it is not a check.
+
+**Anti-patterns:**
+- Fixing the reported instance and closing the ticket.
+- A comment that says a class of bug was addressed, next to an instance that was not.
+- Trusting a search tool's silence.
+- A test that asserts a function was called, rather than what it was called with.

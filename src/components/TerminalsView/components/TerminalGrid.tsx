@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { memo, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ReactGridLayout, { verticalCompactor } from 'react-grid-layout';
 import type { Layout, GridLayoutProps } from 'react-grid-layout';
 import { LoadingPanel } from '@/components/ui';
@@ -33,7 +33,12 @@ interface TerminalGridProps {
   onFitAll: () => void;
 }
 
-export default function TerminalGrid({
+// Memoized for the same reason TerminalPanel is: TerminalsView re-renders on
+// every agents:tick, and without this the whole grid (and, pre-TerminalPanel-
+// memo, every panel in it) re-ran even when the board it's showing didn't
+// change at all - e.g. unrelated top-level state like the New Chat modal or
+// the start-error banner toggling.
+function TerminalGrid({
   agents,
   visiblePanels,
   rglLayout,
@@ -238,3 +243,5 @@ export default function TerminalGrid({
     </div>
   );
 }
+
+export default memo(TerminalGrid);

@@ -4,7 +4,7 @@
 - **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and nine API-key providers) work on your projects at once, are delegated to, report back, and are billed
 - **Repo**: https://github.com/JeanBrasse/Tars, a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
 - **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `JeanBrasse/Tars`
-- **Docs**: `DESIGN.md` (tokens + components) is the only one written so far. Read it before touching a pixel. `SPECS.md` (what it is), `OPERATIONS.md` (runbook) and `ETHOS.md` (how decisions get made) are still to be written. Do not cite them as if they existed
+- **Docs**: all four exist and are current. `DESIGN.md` (tokens + components) before touching a pixel, `SPECS.md` (what it is), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). This line used to say only DESIGN.md had been written; the other three were added on 2026-08-23 and the README links to all of them
 
 ## Stack
 
@@ -231,7 +231,7 @@ When you are delegated a task by Tars or an orchestrator agent, **always act aut
 
 ## Core Principles
 
-There is no `ETHOS.md` yet. Until one exists, these three are the tie-breaker. They apply to every diff:
+`ETHOS.md` carries the long form. These three are the short one, and they apply to every diff:
 
 - **Simplicity first**: make every change as simple as it can be, and touch as little as possible
 - **No laziness**: find the root cause, senior-developer standards, no temporary fixes

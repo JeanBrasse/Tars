@@ -115,9 +115,9 @@ export class DeepSeekProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[], appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     const vars: Record<string, string> = {
-      CLAUDE_SKILLS: skills.join(','),
+      CLAUDE_SKILLS: (skills ?? []).join(','),
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,

@@ -88,7 +88,16 @@ export const useSettings = () => {
     if (!window.electronAPI?.appSettings) return;
 
     try {
-      const result = await window.electronAPI.appSettings.save(updated);
+      // Send only the delta, not the full local snapshot: the main process
+      // merges this onto its own current settings, so shipping our whole
+      // (possibly stale) copy would silently overwrite any field changed
+      // through another path since this page last fetched - e.g. Slack's
+      // auto-detected channel id, or a Telegram auth token generated while
+      // this page was open. It also made every save look like a Telegram/
+      // Slack credential change to the main process, since those fields are
+      // always present on the full object, re-initializing both bots on
+      // every unrelated toggle.
+      const result = await window.electronAPI.appSettings.save(newSettings);
       if (!result.success) {
         setError(result.error || 'Failed to save notification settings');
       }

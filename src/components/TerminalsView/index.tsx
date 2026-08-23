@@ -45,6 +45,19 @@ export default function TerminalsView() {
   const { projects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
 
+  // Read-only snapshot for callbacks that need the current agent list at call
+  // time (e.g. a name lookup) without taking `agents` itself as a dependency:
+  // `agents` gets a new identity on every agents:tick, even for a change to
+  // an agent the callback has nothing to do with, so depending on it directly
+  // recreates the callback - and every memoized prop built from it - twice a
+  // second. The write happens in an effect, not inline during render: refs
+  // may be torn under concurrent rendering, so only effects/handlers may
+  // touch `.current`.
+  const agentsRef = useRef(agents);
+  useEffect(() => {
+    agentsRef.current = agents;
+  });
+
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [focusedPanelId, setFocusedPanelId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -148,11 +161,28 @@ export default function TerminalsView() {
     }
   }, [activeTab, agentProjectPaths, isLoading, setActiveTab]);
 
-  // Derive agents for current active tab
-  const filteredAgents = useMemo(() => {
+  // Derive agents for current active tab.
+  //
+  // `agents` (the state array from useElectronAgents) gets a new top-level
+  // identity whenever ANY agent's status/currentTask changes via agents:tick
+  // - including agents on a project or tab that isn't even visible right
+  // now. Recomputing the filtered list straight off `agents` therefore
+  // builds a brand new array here every ~500ms, with the same agent objects
+  // in it, and hands it down as a new `agents`/`filteredAgents` prop to
+  // TerminalGrid/Sidebar/StatusBar. Nothing downstream is memoized against
+  // object identity carefully enough to survive that: one agent's tick,
+  // anywhere, re-renders the whole board.
+  //
+  // Same trick as agentProjectPathsKey above, one step further: build a
+  // string signature of the filtered set (it only changes when a member is
+  // added, removed, reordered, or has new status/task/activity data - see
+  // useElectronAgents' onTick reducer for why that's exactly when an agent
+  // object gets a new reference), then key the final useMemo on that string
+  // instead of on computedFilteredAgents. Strings compare by value, so this
+  // needs no ref and stays pure during render.
+  const computedFilteredAgents = useMemo(() => {
     if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
       // Custom tab: agents in tab order
-      const idSet = new Set(tabManager.activeCustomTab.agentIds);
       const agentMap = new Map(agents.map(a => [a.id, a]));
       return tabManager.activeCustomTab.agentIds
         .map(id => agentMap.get(id))
@@ -164,6 +194,20 @@ export default function TerminalsView() {
     }
     return [];
   }, [agents, tabManager.isCustomTabActive, tabManager.isProjectTabActive, tabManager.activeCustomTab, tabManager.activeProjectPath]);
+  // NUL-joined, same reasoning as agentProjectPathsKey above: currentTask is
+  // free text (the prompt the agent was launched with), so a visible
+  // delimiter could in principle appear inside a field and fold two
+  // different agent lists into the same key. NUL is the one byte none of
+  // these fields can contain.
+  const filteredAgentsKey = useMemo(
+    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}`).join('\u0000'),
+    [computedFilteredAgents]
+  );
+  const filteredAgents = useMemo(
+    () => computedFilteredAgents,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on filteredAgentsKey on purpose, see comment above
+    [filteredAgentsKey]
+  );
 
   // Derive grid preset and editable state. A project tab has no stored layout,
   // so it follows the agent count instead of being frozen at 3x3 (four agents
@@ -231,12 +275,36 @@ export default function TerminalsView() {
   const search = useTerminalSearch(filteredAgents);
   const contextMenu = useTerminalContextMenu();
 
-  // Dnd hook
-  const dnd = useTerminalDnd({
-    onSkillDrop: async (skillName, agentId) => {
-      await sendInput(agentId, `use this skill: ${skillName}\n`);
-    },
-  });
+  // Dnd hook. onSkillDrop must be stable: useTerminalDnd threads it into
+  // DndContext's onDragEnd, and a fresh closure every render defeats the
+  // sensor/dropData memoization documented in useTerminalDnd.ts and
+  // TerminalPanel.tsx.
+  const handleSkillDrop = useCallback(async (skillName: string, agentId: string) => {
+    await sendInput(agentId, `use this skill: ${skillName}\n`);
+  }, [sendInput]);
+  const dnd = useTerminalDnd({ onSkillDrop: handleSkillDrop });
+
+  // ProjectTabBar is memoized and reads a stable `projectPaths` array (see
+  // its own comment), which only helps if the click handler is stable too -
+  // an inline arrow here would give it a new `onSelectProject` every render
+  // and defeat that memo just as surely as the unstable array did.
+  const handleSelectProject = useCallback((path: string) => {
+    if (tabManager.activeTab.type === 'project' && tabManager.activeTab.projectPath === path) {
+      // Toggle off: restore last custom tab, or fallback to first
+      const restore = lastCustomTabRef.current;
+      const target = restore && tabManager.customTabs.find(t => t.id === restore.tabId)
+        ? restore
+        : tabManager.customTabs[0] ? { type: 'custom' as const, tabId: tabManager.customTabs[0].id } : null;
+      if (target) tabManager.setActiveTab(target);
+    } else {
+      // Save current custom tab before switching to project view
+      if (tabManager.activeTab.type === 'custom') {
+        lastCustomTabRef.current = { type: 'custom', tabId: tabManager.activeTab.tabId };
+      }
+      tabManager.setActiveTab({ type: 'project', projectPath: path });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager, not the object itself; see the comment on handleRemoveFromTab below
+  }, [tabManager.activeTab, tabManager.customTabs, tabManager.setActiveTab]);
 
   // Handler callbacks
   // The main process refuses to start an agent whose folder is gone. That
@@ -259,25 +327,40 @@ export default function TerminalsView() {
   }, [stopAgent]);
 
   // Remove from tab (custom tabs): stop agent + remove from tab membership
+  //
+  // Deps here and below name the specific fields read, not `tabManager` or
+  // `multiTerminal` themselves: both hooks return a fresh object literal on
+  // every render (their individual fields are the stable, memoized part -
+  // see the comments in useTabManager/useMultiTerminal), so depending on the
+  // whole object recreated this callback - and every prop built from it -
+  // every single render, defeating memoization on everything downstream.
   const handleRemoveFromTab = useCallback(async (agentId: string) => {
     if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
       await stopAgent(agentId);
       tabManager.removeAgentFromTab(tabManager.activeCustomTab.id, agentId);
     }
-  }, [stopAgent, tabManager]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager, not the object itself; see comment above
+  }, [stopAgent, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.removeAgentFromTab]);
 
   // For project tabs: full remove (backwards compat)
   const handleRemoveAgent = useCallback(async (agentId: string) => {
     if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
-      // Custom tab: remove from tab, stop agent
+      // Custom tab: remove from tab, stop agent. The agent itself survives -
+      // it still shows up under its project tab - so this needs no confirm.
       await stopAgent(agentId);
       tabManager.removeAgentFromTab(tabManager.activeCustomTab.id, agentId);
     } else {
-      // Project tab: actual remove
+      // Project tab: this is the only place a project-tab agent can be
+      // permanently deleted from, so it kills the PTY and drops agents.json's
+      // only record of it. Confirm first - the same pattern agents/page.tsx
+      // already uses for "save as template".
+      const agentName = agentsRef.current.find(a => a.id === agentId)?.name || 'this agent';
+      if (!window.confirm(`Delete "${agentName}"? This stops it and cannot be undone.`)) return;
       multiTerminal.unregisterContainer(agentId);
       await removeAgent(agentId);
     }
-  }, [stopAgent, removeAgent, multiTerminal, tabManager]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
+  }, [stopAgent, removeAgent, multiTerminal.unregisterContainer, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.removeAgentFromTab]);
 
   const handleFocusPanel = useCallback((agentId: string) => {
     setFocusedPanelId(agentId);
@@ -285,7 +368,8 @@ export default function TerminalsView() {
     if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
       lastFocusedByTabRef.current.set(tabManager.activeCustomTab.id, agentId);
     }
-  }, [multiTerminal, tabManager]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
+  }, [multiTerminal.focusTerminal, tabManager.isCustomTabActive, tabManager.activeCustomTab]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab: cycle through custom tabs (browser-style),
   // restoring focus to the last focused agent in the destination tab.
@@ -318,7 +402,8 @@ export default function TerminalsView() {
       // (no-op if it's not yet registered).
       multiTerminal.focusTerminal(targetAgentId);
     }
-  }, [tabManager, multiTerminal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
+  }, [tabManager.customTabs, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.setActiveTab, multiTerminal.focusTerminal]);
 
   // Keyboard shortcuts (must come after handler declarations to avoid TDZ)
   const visibleAgentIds = useMemo(
@@ -337,6 +422,8 @@ export default function TerminalsView() {
     onCycleTab: handleCycleTab,
     isFullscreen: !!grid.fullscreenPanelId,
   });
+
+  const handleClosePanel = useCallback(() => setPanelOpen(false), []);
 
   const handleCopyOutput = useCallback(async (agentId: string) => {
     // The list no longer carries the scrollback, so ask for this one agent.
@@ -362,34 +449,44 @@ export default function TerminalsView() {
     orchestratorMode?: boolean,
     cliPath?: string,
   ) => {
-    const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
-    const agent = await createAgent({
-      projectPath,
-      skills,
-      worktree,
-      character: character as import('@/types/electron').AgentCharacter,
-      name,
-      secondaryProjectPath,
-      permissionMode,
-      effort,
-      provider,
-      model: resolvedModel,
-      localModel,
-      obsidianVaultPaths,
-      orchestratorMode,
-      cliPath,
-    });
-    // Auto-add to active custom tab
-    if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
-      tabManager.addAgentToTab(tabManager.activeCustomTab.id, agent.id);
+    try {
+      const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
+      const agent = await createAgent({
+        projectPath,
+        skills,
+        worktree,
+        character: character as import('@/types/electron').AgentCharacter,
+        name,
+        secondaryProjectPath,
+        permissionMode,
+        effort,
+        provider,
+        model: resolvedModel,
+        localModel,
+        obsidianVaultPaths,
+        orchestratorMode,
+        cliPath,
+      });
+      // Auto-add to active custom tab
+      if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
+        tabManager.addAgentToTab(tabManager.activeCustomTab.id, agent.id);
+      }
+      // Defer start until the terminal for this agent is initialized.
+      // The onTerminalReady callback will fire startAgent once xterm is ready.
+      if (prompt) {
+        pendingStartRef.current = { agentId: agent.id, prompt, options: { model: resolvedModel, provider, localModel } };
+      }
+      setShowNewChatModal(false);
+    } catch (error) {
+      // This used to be an unhandled rejection: the dialog's own submit
+      // handler now awaits this promise and wipes every field it just
+      // collected the instant it resolves, success or not. Catching here and
+      // reporting failure back keeps a failed create from losing the form.
+      console.error('Failed to create agent:', error);
+      return false;
     }
-    // Defer start until the terminal for this agent is initialized.
-    // The onTerminalReady callback will fire startAgent once xterm is ready.
-    if (prompt) {
-      pendingStartRef.current = { agentId: agent.id, prompt, options: { model: resolvedModel, provider, localModel } };
-    }
-    setShowNewChatModal(false);
-  }, [createAgent, tabManager]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager, not the object itself; see comment on handleRemoveFromTab above
+  }, [createAgent, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.addAgentToTab]);
 
   // Each project starts its agents once, the first time you look at it.
   //
@@ -476,24 +573,9 @@ export default function TerminalsView() {
             of the frame: the layout and + Terminal controls live in the page
             header now, not in a toolbar above the strip. */}
         <ProjectTabBar
-          agents={agents}
+          projectPaths={agentProjectPaths}
           activeTab={tabManager.activeTab}
-          onSelectProject={(path) => {
-            if (tabManager.activeTab.type === 'project' && tabManager.activeTab.projectPath === path) {
-              // Toggle off: restore last custom tab, or fallback to first
-              const restore = lastCustomTabRef.current;
-              const target = restore && tabManager.customTabs.find(t => t.id === restore.tabId)
-                ? restore
-                : tabManager.customTabs[0] ? { type: 'custom' as const, tabId: tabManager.customTabs[0].id } : null;
-              if (target) tabManager.setActiveTab(target);
-            } else {
-              // Save current custom tab before switching to project view
-              if (tabManager.activeTab.type === 'custom') {
-                lastCustomTabRef.current = { type: 'custom', tabId: tabManager.activeTab.tabId };
-              }
-              tabManager.setActiveTab({ type: 'project', projectPath: path });
-            }
-          }}
+          onSelectProject={handleSelectProject}
         />
 
         {/* A start that was refused. The main process explains why - a folder
@@ -543,7 +625,7 @@ export default function TerminalsView() {
           {/* Sidebar panel - overlays grid from the right */}
           <Sidebar
             open={panelOpen}
-            onClose={() => setPanelOpen(false)}
+            onClose={handleClosePanel}
             agents={filteredAgents}
             focusedPanelId={focusedPanelId}
             onFocusPanel={handleFocusPanel}

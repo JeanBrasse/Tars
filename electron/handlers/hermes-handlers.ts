@@ -23,6 +23,9 @@ import {
   updateHermesTask,
   deleteHermesTask,
   addHermesTaskComment,
+  fetchHermesMcpServers,
+  fetchHermesMemoryProviders,
+  setHermesMemoryProvider,
 } from '../services/hermes-client';
 import {
   HermesConnection,
@@ -315,6 +318,18 @@ export function registerHermesHandlers(): void {
   ipcMain.handle('hermes:kanban:addComment', async (_event, params: { taskId: string; body: string }) => {
     return addHermesTaskComment(readConnection(), params.taskId, params.body);
   });
+
+  // ── MCP servers the gateway itself has registered (gbrain, pencil, …) ──
+  // Distinct from Tars' own mcp-* fleet: this asks the gateway what it knows,
+  // so Settings > Memory Backends can offer a found URL instead of an empty
+  // field, and can say plainly when that URL is the gateway's own loopback.
+  ipcMain.handle('hermes:mcp:servers', async () => fetchHermesMcpServers(readConnection()));
+
+  // ── Gateway's own pluggable memory provider (holographic, mem0, …) ──
+  ipcMain.handle('hermes:memory:providers', async () => fetchHermesMemoryProviders(readConnection()));
+
+  ipcMain.handle('hermes:memory:setProvider', async (_event, params: { provider: string }) =>
+    setHermesMemoryProvider(readConnection(), params.provider));
 
   // Reachability check of the remote Hermes gateway (any HTTP response counts:
   // we only prove the tailnet route works, not the gateway's API shape).

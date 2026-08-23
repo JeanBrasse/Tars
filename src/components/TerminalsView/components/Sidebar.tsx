@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, Sparkles, FolderKanban, X } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
@@ -21,7 +21,7 @@ interface SidebarProps {
 
 type SidebarTab = 'agents' | 'skills' | 'projects';
 
-export default function Sidebar({
+function Sidebar({
   open,
   onClose,
   agents,
@@ -122,3 +122,5 @@ export default function Sidebar({
     </AnimatePresence>
   );
 }
+
+export default memo(Sidebar);

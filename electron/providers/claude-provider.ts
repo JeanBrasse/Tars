@@ -164,9 +164,9 @@ export class ClaudeProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[], _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
     return {
-      CLAUDE_SKILLS: skills.join(','),
+      CLAUDE_SKILLS: (skills ?? []).join(','),
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,

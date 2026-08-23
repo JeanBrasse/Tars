@@ -13,11 +13,18 @@ interface UseTerminalDndOptions {
   onAgentReorder?: (agentId: string, newIndex: number) => void;
 }
 
+// Hoisted: dnd-kit's useSensor memoizes on this exact object's identity
+// (it's the whole second argument, not just activationConstraint), and a
+// fresh literal here every render defeated that. That gave DndContext's
+// internal context value (which every useDroppable/useDraggable in the tree
+// subscribes to via useContext, bypassing React.memo entirely) a new
+// identity on every agents:tick - see the comment on dropData in
+// TerminalPanel.tsx for how that cascades into every panel.
+const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
+
 export function useTerminalDnd({ onSkillDrop, onAgentReorder }: UseTerminalDndOptions) {
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    })
+    useSensor(PointerSensor, POINTER_SENSOR_OPTIONS)
   );
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {

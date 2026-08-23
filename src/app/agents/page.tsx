@@ -120,6 +120,9 @@ export default function AgentsPage() {
       setShowNewChatModal(false);
     } catch (error) {
       console.error('Failed to create agent:', error);
+      // Tells the modal not to wipe what the user typed - there is nothing to
+      // resume into otherwise, since the failure never reaches the screen.
+      return false;
     }
   }, [createAgent, startAgent]);
 
@@ -145,6 +148,7 @@ export default function AgentsPage() {
       setEditAgentId(null);
     } catch (error) {
       console.error('Failed to update agent:', error);
+      return false;
     }
   }, [updateAgent]);
 
