@@ -647,6 +647,8 @@ export interface ElectronAPI {
         error?: string;
       };
       terminalFontSize?: number;
+      /** Resume idle agents once at launch (not on navigation). */
+      autoStartAgentsOnLaunch?: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -708,6 +710,8 @@ export interface ElectronAPI {
         error?: string;
       };
       terminalFontSize?: number;
+      /** Resume idle agents once at launch (not on navigation). */
+      autoStartAgentsOnLaunch?: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;

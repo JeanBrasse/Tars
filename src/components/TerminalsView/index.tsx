@@ -28,6 +28,10 @@ import 'react-resizable/css/styles.css';
 import dynamic from 'next/dynamic';
 const NewChatModal = dynamic(() => import('@/components/NewChatModal'), { ssr: false });
 
+/** Set once per window: this is what makes autostart a launch event rather
+ *  than a navigation one. */
+const LAUNCH_AUTOSTART_KEY = 'tars-launch-autostart-done';
+
 export default function TerminalsView() {
   const {
     agents,
@@ -56,6 +60,9 @@ export default function TerminalsView() {
   // tab's terminal finishes async init. Also consumed inline if the terminal is
   // already mounted (fast tab cycling).
   const pendingFocusRef = useRef<string | null>(null);
+  // undefined until settings load, so the autostart effect waits rather than
+  // guessing and starting agents the user has turned this off for.
+  const [autoStartOnLaunch, setAutoStartOnLaunch] = useState<boolean | undefined>(undefined);
 
   // Load terminal settings from app settings
   useEffect(() => {
@@ -67,6 +74,7 @@ export default function TerminalsView() {
       if (settings) {
         if (settings.terminalFontSize) setTerminalFontSize(settings.terminalFontSize);
         if (settings.terminalTheme) setTerminalTheme(settings.terminalTheme);
+        setAutoStartOnLaunch(settings.autoStartAgentsOnLaunch !== false);
       }
       setTerminalSettingsLoaded(true);
     });
@@ -372,11 +380,40 @@ export default function TerminalsView() {
     setShowNewChatModal(false);
   }, [createAgent, tabManager]);
 
-  // Agents are NEVER started by navigation. Opening the dashboard used to
-  // resume every idle agent that had no PTY, which meant leaving the page and
-  // coming back silently spawned sessions the user never asked for (and burned
-  // tokens). Starting is an explicit action: the panel's Start button, Start
-  // All, or a dispatch.
+  // Navigation never starts an agent; a cold launch may.
+  //
+  // These were one behaviour and had to be separated. The old code resumed
+  // every idle agent on every mount, so leaving the dashboard and coming back
+  // silently spawned sessions the user never asked for and burned tokens -
+  // which is why it was removed wholesale. But that also took away the thing
+  // people actually want: open the app, and the agents you left running are
+  // running again.
+  //
+  // The sessionStorage key is what distinguishes the two. It is set once per
+  // window, so this fires on the first dashboard render after launch and never
+  // again for that session - re-navigating here is still inert.
+  const autoStartRef = useRef(false);
+  useEffect(() => {
+    if (autoStartRef.current) return;
+    if (isLoading) return;                           // wait for the real list
+    autoStartRef.current = true;
+
+    if (typeof window === 'undefined') return;
+    if (sessionStorage.getItem(LAUNCH_AUTOSTART_KEY)) return;
+    sessionStorage.setItem(LAUNCH_AUTOSTART_KEY, '1');
+
+    if (autoStartOnLaunch === undefined) { autoStartRef.current = false; return; }
+    if (!autoStartOnLaunch) return;
+
+    // Only agents that were left with no live terminal. An agent already
+    // attached to a PTY is mid-session and must not be resumed underneath it.
+    const toResume = agents.filter(a => !a.ptyId && a.status === 'idle' && !a.pathMissing);
+    for (const agent of toResume) {
+      startAgent(agent.id, '', { resume: true }).catch(err => {
+        console.error(`[autostart] ${agent.name || agent.id}:`, err);
+      });
+    }
+  }, [agents, isLoading, autoStartOnLaunch, startAgent]);
 
   // Exit view fullscreen on Escape
   useEffect(() => {

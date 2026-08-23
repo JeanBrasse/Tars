@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileDiff, Loader2 } from 'lucide-react';
-import { Button, PageHeader, Panel, PanelCaption } from '@/components/ui';
+import { FileDiff } from 'lucide-react';
+import { Button, LoadingState, PageHeader, Panel, PanelCaption } from '@/components/ui';
 import type { AgentStatus, ChangedFile, ReviewDiff } from '@/types/electron';
 
 /**
@@ -170,11 +170,12 @@ export default function ReviewPage() {
 
           {/* Files */}
           <Panel fill className="w-[300px] shrink-0">
-            {loading && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-4">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading the working tree…
-              </div>
-            )}
+            <LoadingState
+              loading={loading}
+              rows={5}
+              what="Still reading the working tree…"
+              detail="git diff against the base branch"
+            />
             {error && <p className="text-xs text-danger py-4">{error}</p>}
             {diff && !loading && (
               <>

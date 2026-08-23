@@ -23,6 +23,13 @@ export const CHANGELOG: Release[] = [
       'Statusline costs half what it did (115ms to 49ms per render): it spawned 32 subprocesses per turn, per agent, one per field read',
       'Agents stopped re-registering their MCP servers on every boot — the check looked in the wrong file and always answered "not registered"',
       'A new icon, and the app finally packages itself as Tars rather than Dorothy',
+      'The whole app redesigned: one shell on every screen, two control heights instead of nine, and the orange accent reserved for actions — the 2px orange rules that marked every active tab, row and menu item are gone',
+      'Dark is the launch default again. A stale preference under the old brand\'s key was opening the app in light mode',
+      'Light mode is readable: its muted text was using the dark theme\'s grey, which measured 2.6:1 on a light page — under half of what is legible. Every text colour now clears WCAG AA in both themes, solved for rather than eyeballed',
+      'A launch screen and loading states — the window used to appear as a bare shell while providers were detected, which reads as a hang',
+      'Security: registering an MCP server ran its arguments through a shell, so a filename could execute code in the main process at every launch. app-settings.json — which holds every provider API key — was world-readable. The bundled Telegram server could send any file on disk to any chat. A worktree branch name could place an agent\'s working directory anywhere on the filesystem. All closed, with tests',
+      'A delegated task\'s waiter never woke: /run-task announced status changes on a channel /wait was not listening to, so the caller hung until its own timeout',
+      'The Logs page crashed for anyone who had agents and restarted the app — it read a buffer that only exists while an agent is running',
     ],
   },
   {

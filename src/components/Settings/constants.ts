@@ -133,6 +133,7 @@ export const DEFAULT_APP_SETTINGS = {
   verboseModeEnabled: false,
   chromeEnabled: false,
   autoCheckUpdates: true,
+  autoStartAgentsOnLaunch: true,
   opencodeEnabled: false,
   opencodeDefaultModel: '',
   openRouterEnabled: false,

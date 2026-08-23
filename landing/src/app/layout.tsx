@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Tars - Run a team of AI coding agents",
   description: "A desktop control room for AI coding agents: run them in parallel across your projects, deploy whole teams, share one memory, and drive it all from Hermes.",
   keywords: ["Tars", "Claude", "Codex", "Gemini", "AI", "Agent", "Manager", "Claude Code", "OpenAI", "Google"],
-  icons: { icon: "/tars/favicon-32.png", apple: "/tars/icon-192.png" },
+  icons: { icon: "/favicon-32.png", apple: "/icon-192.png" },
   openGraph: {
     title: "Tars - Run a team of AI coding agents",
     description: "A desktop control room for AI coding agents: parallel terminals, team deployment, shared memory, Hermes-driven.",

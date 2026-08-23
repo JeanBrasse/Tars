@@ -24,7 +24,10 @@ export function createTrayPanel(): BrowserWindow {
     fullscreenable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    backgroundColor: '#F0E8D5',
+    // Matches --background in the dark theme, which is the launch default.
+    // This was the retired cream (#F0E8D5), so the tray panel flashed a light
+    // rectangle before the renderer painted over it.
+    backgroundColor: '#121212',
     hasShadow: true,
     roundedCorners: true,
     webPreferences: {

@@ -161,6 +161,7 @@ function loadAppSettings(): AppSettings {
     statusLineEnabled: false,
     chromeEnabled: false,
     autoCheckUpdates: true,
+    autoStartAgentsOnLaunch: true,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
     defaultProvider: 'claude',

@@ -47,6 +47,17 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
       />
 
       <SettingsRow
+        label="Start agents when Tars opens"
+        description="Resumes the agents you left idle, once, at launch. Navigating back to the dashboard never starts anything."
+        control={
+          <Toggle
+            enabled={appSettings.autoStartAgentsOnLaunch !== false}
+            onChange={() => onSaveAppSettings({ autoStartAgentsOnLaunch: appSettings.autoStartAgentsOnLaunch === false })}
+          />
+        }
+      />
+
+      <SettingsRow
         label="Default provider"
         description="Used for Telegram-spawned agents and webhook dispatches."
         control={

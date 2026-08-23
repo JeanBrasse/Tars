@@ -3,9 +3,9 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
-import { Button, PageHeader } from '@/components/ui';
+import { Button, LoadingState, PageHeader } from '@/components/ui';
 import {
   SettingsSidebar,
   SettingsCard,
@@ -215,10 +215,7 @@ function SettingsPageInner() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading settings...</p>
-        </div>
+        <LoadingState loading rows={6} what="Still loading your settings…" detail="reading ~/.dorothy/app-settings.json" />
       </div>
     );
   }

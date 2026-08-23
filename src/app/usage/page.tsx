@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
 import { getProviderDef } from '@/lib/providers';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
 import { BudgetAndLimits } from '@/components/Usage/BudgetAndLimits';
-import { PageHeader, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
+import { LoadingState, PageHeader, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';
 
 // Token pricing per million tokens (MTok)
@@ -472,10 +472,7 @@ export default function UsagePage() {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading usage data...</p>
-        </div>
+        <LoadingState loading rows={4} what="Still adding up what you spent…" detail="parsing session transcripts" />
       </div>
     );
   }

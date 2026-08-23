@@ -71,6 +71,8 @@ export interface AppSettings {
   verboseModeEnabled: boolean;
   chromeEnabled: boolean;
   autoCheckUpdates: boolean;
+  /** Resume idle agents once at launch (not on navigation). */
+  autoStartAgentsOnLaunch?: boolean;
   cliPaths: CLIPaths;
   defaultProvider?: string;
   obsidianVaultPaths?: string[];
