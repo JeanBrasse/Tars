@@ -8,14 +8,9 @@ import {
   Package,
   CheckCircle,
   XCircle,
-  Terminal as TerminalIcon,
-  Plus,
   X,
-  Copy,
   Check,
-  Download,
   MonitorDown,
-  ChevronDown,
 } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
 import { useElectronSkills } from '@/hooks/useElectron';
@@ -23,6 +18,7 @@ import { SKILLS_DATABASE, fetchSkillsPaginated, type Skill } from '@/lib/skills-
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import TerminalDialog from '@/components/TerminalDialog';
 import ProviderBadge from '@/components/ProviderBadge';
+import { Button, DialogShell, Input, Label } from '@/components/ui';
 
 /** Providers with a local CLI binary that have their own skill directory */
 const CLI_PROVIDER_IDS = PROVIDER_REGISTRY.filter((p) => p.requiresCli).map((p) => p.id);
@@ -224,7 +220,7 @@ export default function SkillsTab() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-white mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">Loading skills...</p>
         </div>
       </div>
@@ -253,20 +249,15 @@ export default function SkillsTab() {
               : 'Browse and copy install commands for skills'
             }
           </p>
-          <button
-            onClick={() => setShowCustomInstall(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors text-sm shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Custom Install</span>
-            <span className="sm:hidden">Custom</span>
-          </button>
+          <Button variant="primary" onClick={() => setShowCustomInstall(true)} className="shrink-0">
+            + Custom Install
+          </Button>
         </div>
 
         {/* Badges row - below on mobile */}
         <div className="flex flex-wrap items-center gap-2">
           {!hasElectron && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-warning/10 text-warning text-xs">
+            <div className="flex items-center gap-1.5 h-[26px] px-2.5 bg-warning/10 text-warning text-xs">
               <MonitorDown className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Desktop app for direct install</span>
               <span className="sm:hidden">Desktop only</span>
@@ -300,7 +291,7 @@ export default function SkillsTab() {
               ? 'bg-primary/10 border-primary/30 text-primary'
               : showToast.type === 'error'
                 ? 'bg-danger/10 border-danger/30 text-danger'
-                : 'bg-white/10 border-white/30 text-white'
+                : 'bg-secondary border-border text-foreground'
               }`}
           >
             <div className="flex items-center gap-3">
@@ -319,95 +310,65 @@ export default function SkillsTab() {
       </AnimatePresence>
 
       {/* Custom Install Modal */}
-      <AnimatePresence>
-        {showCustomInstall && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowCustomInstall(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md bg-card border border-border rounded-none p-6"
+      <DialogShell
+        open={showCustomInstall}
+        onClose={() => setShowCustomInstall(false)}
+        title="Install Custom Skill"
+        subtitle="Point at a GitHub repository and Tars runs the installer for you."
+        footerRight={
+          <>
+            <Button onClick={() => setShowCustomInstall(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={handleCustomInstall}
+              disabled={!customRepo || installingSkill === 'custom'}
             >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <TerminalIcon className="w-5 h-5 text-muted-foreground" />
-                  Install Custom Skill
-                </h3>
-                <button onClick={() => setShowCustomInstall(false)} className="p-1 hover:bg-secondary rounded-none">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              {installingSkill === 'custom'
+                ? 'Installing...'
+                : hasElectron
+                  ? 'Install Skill'
+                  : 'Copy Install Command'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <Label>Repository (owner/repo)</Label>
+            <Input
+              type="text"
+              mono
+              value={customRepo}
+              onChange={(e) => setCustomRepo(e.target.value)}
+              placeholder="e.g., anthropics/skills"
+            />
+          </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Repository (owner/repo)</label>
-                  <input
-                    type="text"
-                    value={customRepo}
-                    onChange={(e) => setCustomRepo(e.target.value)}
-                    placeholder="e.g., anthropics/skills"
-                    className="w-full px-4 py-2.5 rounded-none font-mono text-sm"
-                  />
-                </div>
+          <div>
+            <Label>Skill Name (optional)</Label>
+            <Input
+              type="text"
+              mono
+              value={customSkillName}
+              onChange={(e) => setCustomSkillName(e.target.value)}
+              placeholder="e.g., frontend-design"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Leave empty to install all skills from the repository
+            </p>
+          </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-2">Skill Name (optional)</label>
-                  <input
-                    type="text"
-                    value={customSkillName}
-                    onChange={(e) => setCustomSkillName(e.target.value)}
-                    placeholder="e.g., frontend-design"
-                    className="w-full px-4 py-2.5 rounded-none font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Leave empty to install all skills from the repository
-                  </p>
-                </div>
+          <div className="p-3 bg-secondary border border-border font-mono text-xs text-muted-foreground">
+            npx skills add https://github.com/{customRepo}{customSkillName ? ` --skill ${customSkillName}` : ''}
+          </div>
 
-                <div className="p-3 rounded-none bg-secondary/50 border border-border font-mono text-xs text-muted-foreground">
-                  npx skills add https://github.com/{customRepo}{customSkillName ? ` --skill ${customSkillName}` : ''}
-                </div>
-
-                <button
-                  onClick={handleCustomInstall}
-                  disabled={!customRepo || installingSkill === 'custom'}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-foreground text-background font-medium rounded-none hover:bg-foreground/90 transition-colors disabled:opacity-50"
-                >
-                  {installingSkill === 'custom' ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Installing...
-                    </>
-                  ) : hasElectron ? (
-                    <>
-                      <Download className="w-4 h-4" />
-                      Install Skill
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      Copy Install Command
-                    </>
-                  )}
-                </button>
-
-                {!hasElectron && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    After copying, open your terminal and paste the command to install
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {!hasElectron && (
+            <p className="text-xs text-muted-foreground">
+              After copying, open your terminal and paste the command to install
+            </p>
+          )}
+        </div>
+      </DialogShell>
 
       {/* Search */}
       <div className="flex gap-3 mt-3">
@@ -418,7 +379,7 @@ export default function SkillsTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search all skills on skills.sh..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-none text-sm"
+            className="w-full h-8 pl-10 pr-4 rounded-none text-sm"
           />
         </div>
       </div>
@@ -493,15 +454,11 @@ export default function SkillsTab() {
                             </span>
                           </div>
                         ) : (
-                          <button
+                          <Button
+                            size="sm"
+                            variant={isInstalling || justCopied ? 'secondary' : 'primary'}
                             onClick={() => handleDirectInstall(skill.repo, skill.name)}
                             disabled={isInstalling}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${isInstalling
-                              ? 'bg-secondary text-muted-foreground'
-                              : justCopied
-                                ? 'bg-primary/10 text-primary'
-                                : 'bg-foreground text-background hover:bg-foreground/90'
-                              }`}
                           >
                             {isInstalling ? (
                               <>
@@ -509,22 +466,13 @@ export default function SkillsTab() {
                                 Installing...
                               </>
                             ) : justCopied ? (
-                              <>
-                                <Check className="w-3 h-3" />
-                                Copied!
-                              </>
+                              'Copied!'
                             ) : hasElectron ? (
-                              <>
-                                <Download className="w-3 h-3" />
-                                Install
-                              </>
+                              'Install'
                             ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                Copy
-                              </>
+                              'Copy'
                             )}
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -537,21 +485,19 @@ export default function SkillsTab() {
           {/* Load More button */}
           {hasMore && !loadingSkills && (
             <div className="flex justify-center py-6 border-t border-border/50">
-              <button
+              <Button
                 onClick={() => loadSkills(currentPage + 1, activeSearch, true)}
                 disabled={loadingMore}
-                className="px-6 py-2.5 bg-secondary border border-border text-sm text-foreground hover:bg-secondary/80 transition-colors flex items-center gap-2 disabled:opacity-50"
               >
                 {loadingMore ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading...
+                  </>
                 ) : (
-                  <ChevronDown className="w-4 h-4" />
+                  `Load More (${Math.max(0, totalSkills - (liveSkills?.length || 0)).toLocaleString()} remaining)`
                 )}
-                {loadingMore
-                  ? 'Loading...'
-                  : `Load More (${Math.max(0, totalSkills - (liveSkills?.length || 0)).toLocaleString()} remaining)`
-                }
-              </button>
+              </Button>
             </div>
           )}
         </div>

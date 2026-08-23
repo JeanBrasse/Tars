@@ -11,6 +11,7 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { readAppSettingsFromDisk , safeEffort } from './cli-provider';
+import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 const ZHIPU_BASE_URL = 'https://open.bigmodel.cn/api/anthropic'; // Anthropic-compatible endpoint
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'; // claude appends /v1/messages
@@ -58,7 +59,7 @@ export class ZhipuProvider implements CLIProvider {
     if (params.permissionMode === 'auto') command += ' --permission-mode auto';
     else if (params.permissionMode === 'bypass') command += ' --permission-mode bypassPermissions';
     if (safeEffort(params.effort) && params.effort !== 'medium') command += ` --effort ${safeEffort(params.effort)}`;
-    command += ` --add-dir '${os.homedir()}/.dorothy'`;
+    command += ` --add-dir '${DATA_DIR}'`;
     let finalPrompt = params.prompt;
     if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills: ${params.skills.join(', ')}.] ${params.prompt}`;
@@ -73,7 +74,7 @@ export class ZhipuProvider implements CLIProvider {
     if (params.outputFormat) command += ` --output-format ${params.outputFormat}`;
     if (params.verbose) command += ' --verbose';
     if (params.mcpConfigPath) command += ` --mcp-config "${params.mcpConfigPath}"`;
-    command += ` --add-dir "${os.homedir()}/.dorothy"`;
+    command += ` --add-dir "${DATA_DIR}"`;
     command += ` -p '${params.prompt.replace(/'/g, "'\\''")}'`;
     return command;
   }
@@ -156,7 +157,7 @@ export class ZhipuProvider implements CLIProvider {
     const direct = !!settings.zhipuApiKey;
     const schedBase = direct ? ZHIPU_BASE_URL : OPENROUTER_BASE_URL;
     const schedKeyJq = direct ? '.zhipuApiKey' : '.openRouterApiKey';
-    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "$HOME/.dorothy/app-settings.json")"\n`;
+    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "${DATA_DIR_SHELL}/app-settings.json")"\n`;
 
     return `#!/bin/bash
 export HOME="${params.homeDir}"
@@ -167,7 +168,7 @@ cd "${params.projectPath}"
 echo "=== Task started at $(date) ===" >> "${params.logPath}"
 unset CLAUDECODE
 export CLAUDE_PROVIDER="zhipu"
-${envExports}"${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${params.homeDir}/.dorothy" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
+${envExports}"${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
 echo "=== Task completed at $(date) ===" >> "${params.logPath}"
 `;
   }

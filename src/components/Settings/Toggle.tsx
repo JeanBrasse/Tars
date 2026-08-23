@@ -11,13 +11,13 @@ export const Toggle = ({ enabled, onChange, disabled }: ToggleProps) => (
     aria-checked={enabled}
     onClick={onChange}
     disabled={disabled}
-    className={`w-10 h-5 border transition-colors relative shrink-0 ${
+    className={`w-[30px] h-4 border transition-colors relative shrink-0 ${
       enabled ? 'bg-primary border-primary' : 'bg-secondary border-border'
     } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
   >
     <span
-      className={`block w-3.5 h-3.5 transition-all absolute top-[2px] ${
-        enabled ? 'bg-primary-foreground left-[22px]' : 'bg-muted-foreground left-[2px]'
+      className={`block w-3 h-3 transition-all absolute top-[1px] ${
+        enabled ? 'bg-knob left-[16px]' : 'bg-muted-foreground left-[2px]'
       }`}
     />
   </button>

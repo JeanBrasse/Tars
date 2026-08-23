@@ -9,8 +9,50 @@ const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_RE
     })
   : null;
 
-// Download URL - update this to your actual release URL
-const DOWNLOAD_URL = 'https://github.com/Charlie85270/dorothy/releases/download/1.2.9/dorothy-1.2.9-arm64.dmg';
+/**
+ * Where the download comes from.
+ *
+ * This used to be a hardcoded URL, and it pointed at
+ * `Charlie85270/dorothy/releases/download/1.2.9/dorothy-1.2.9-arm64.dmg` — the
+ * upstream project's build, three minor versions behind, from a repository this
+ * fork deliberately never touches. Every visitor who clicked "Download for Mac"
+ * got someone else's app.
+ *
+ * Resolving the latest release at request time means the button cannot go stale
+ * again, and it can only ever serve a build from this repository.
+ */
+const REPO = 'JeanBrasse/Tars';
+const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
+
+interface ReleaseAsset {
+  name: string;
+  browser_download_url: string;
+}
+
+/** Prefer an Apple-silicon dmg, then any dmg, then any asset at all. */
+function pickMacAsset(assets: ReleaseAsset[]): string | undefined {
+  const dmgs = assets.filter(a => a.name.toLowerCase().endsWith('.dmg'));
+  const arm = dmgs.find(a => /arm64|aarch64|apple.?silicon/i.test(a.name));
+  return (arm ?? dmgs[0])?.browser_download_url;
+}
+
+async function latestDownloadUrl(): Promise<string> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      // A release lands rarely; an hour of cache keeps us well inside the
+      // unauthenticated rate limit.
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return RELEASES_PAGE;
+
+    const release = (await res.json()) as { assets?: ReleaseAsset[] };
+    return pickMacAsset(release.assets ?? []) ?? RELEASES_PAGE;
+  } catch {
+    // Send people to the releases page rather than to a wrong binary.
+    return RELEASES_PAGE;
+  }
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -43,6 +85,5 @@ export async function GET(request: NextRequest) {
     console.error('Failed to track download:', error);
   }
 
-  // Redirect to the actual download
-  return NextResponse.redirect(DOWNLOAD_URL);
+  return NextResponse.redirect(await latestDownloadUrl());
 }

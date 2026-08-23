@@ -4,6 +4,7 @@ import * as path from 'path';
 import { agents } from '../../core/agent-manager';
 import { performDispatch } from './agent-routes';
 import { RouteApp, RouteContext } from './types';
+import { dataPath } from '../../constants';
 
 /**
  * Incoming webhooks — lets an external scheduler (the user's Hermes instance)
@@ -34,12 +35,12 @@ export function registerWebhookRoutes(app: RouteApp, ctx: RouteContext): void {
     const provided = String(req.raw.headers.authorization || '').replace(/^Bearer\s+/i, '');
     let expected = '';
     try {
-      const secretFile = path.join(os.homedir(), '.dorothy', 'hermes-webhook-secret');
+      const secretFile = dataPath('hermes-webhook-secret');
       if (fs.existsSync(secretFile)) expected = fs.readFileSync(secretFile, 'utf-8').trim();
     } catch { /* fall through */ }
     if (expected && provided !== expected) {
       const apiToken = (() => {
-        try { return fs.readFileSync(path.join(os.homedir(), '.dorothy', 'api-token'), 'utf-8').trim(); }
+        try { return fs.readFileSync(dataPath('api-token'), 'utf-8').trim(); }
         catch { return ''; }
       })();
       // The master token still works so an existing setup keeps running.

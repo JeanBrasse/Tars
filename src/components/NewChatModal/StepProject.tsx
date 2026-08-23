@@ -1,25 +1,19 @@
-import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  FolderOpen,
-  FolderPlus,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  X,
-  Layers,
-  Search,
-  Star,
-  Pin,
-} from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Chip, Input, PanelCaption, Select } from '@/components/ui';
+import { Toggle } from '@/components/Settings/Toggle';
 import type { Project } from './types';
 
-const INITIAL_VISIBLE = 8;
+/** How many one-click project chips the RECENT row offers. */
+const RECENT_COUNT = 3;
+
+/** `/Users/noah/Dorothy-fix` reads as `~/Dorothy-fix` on this step. */
+const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
 
 interface StepProjectProps {
   projects: Project[];
   projectPath: string;
   selectedProject: string;
+  /** Still taken from the parent - the custom-path row itself is gone from this step. */
   customPath: string;
   onSelectProject: (path: string) => void;
   onCustomPathChange: (path: string) => void;
@@ -34,283 +28,121 @@ interface StepProjectProps {
   favoriteProjects?: string[];
   hiddenProjects?: string[];
   defaultProjectPath?: string;
+  /**
+   * WORKTREE + BRANCH belong to the project, not to the task, so they live on
+   * this step now. Optional until the modal hands them over, so the step still
+   * renders while the call site is being moved.
+   */
+  useWorktree?: boolean;
+  onToggleWorktree?: () => void;
+  /** Edit mode with an existing worktree: the branch can't be changed here. */
+  worktreeLocked?: boolean;
+  branchName?: string;
+  onBranchNameChange?: (name: string) => void;
 }
 
 const StepProject = React.memo(function StepProject({
   projects,
   projectPath,
   selectedProject,
-  customPath,
   onSelectProject,
-  onCustomPathChange,
-  onBrowseFolder,
-  showSecondaryProject,
-  onToggleSecondary,
-  selectedSecondaryProject,
-  onSelectSecondaryProject,
-  customSecondaryPath,
-  onCustomSecondaryPathChange,
-  onClearSecondary,
   favoriteProjects = [],
   hiddenProjects = [],
   defaultProjectPath,
+  useWorktree = false,
+  onToggleWorktree,
+  worktreeLocked,
+  branchName = '',
+  onBranchNameChange,
 }: StepProjectProps) {
-  const [search, setSearch] = useState('');
-  const [showAll, setShowAll] = useState(false);
+  // Default first, then favorites, then the rest. The dropdown and the RECENT
+  // chips read the same order, so the chips are simply its first three rows.
+  const orderedProjects = useMemo(() => {
+    const rank = (p: Project) =>
+      defaultProjectPath === p.path ? 0 : favoriteProjects.includes(p.path) ? 1 : 2;
 
-  const isFavorite = (project: Project) => favoriteProjects.includes(project.path);
-
-  const filteredProjects = useMemo(() => {
-    const checkFav = (p: Project) => favoriteProjects.includes(p.path);
-    const isDefault = (p: Project) => defaultProjectPath === p.path;
-
-    // Filter out hidden projects
-    let list = hiddenProjects.length > 0
-      ? projects.filter(p => !hiddenProjects.includes(p.path))
+    const list = hiddenProjects.length > 0
+      ? projects.filter((p) => !hiddenProjects.includes(p.path))
       : projects;
 
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)
-      );
-    }
-    // Sort: default first, then favorites, then rest
-    list = [...list].sort((a, b) => {
-      const aRank = isDefault(a) ? 0 : checkFav(a) ? 1 : 2;
-      const bRank = isDefault(b) ? 0 : checkFav(b) ? 1 : 2;
-      return aRank - bRank;
-    });
-    return list;
-  }, [projects, search, favoriteProjects, hiddenProjects, defaultProjectPath]);
+    return [...list].sort((a, b) => rank(a) - rank(b));
+  }, [projects, favoriteProjects, hiddenProjects, defaultProjectPath]);
 
-  // When searching, show all results; otherwise cap at INITIAL_VISIBLE unless expanded
-  const visibleProjects = search
-    ? filteredProjects
-    : showAll
-      ? filteredProjects
-      : filteredProjects.slice(0, INITIAL_VISIBLE);
+  const recent = orderedProjects.slice(0, RECENT_COUNT);
+  // An agent being edited can sit on a project that isn't in the list.
+  const current = selectedProject || projectPath;
+  const currentIsListed = orderedProjects.some((p) => p.path === current);
 
-  const hasMore = !search && filteredProjects.length > INITIAL_VISIBLE && !showAll;
+  const branchDisabled = !useWorktree || !!worktreeLocked;
 
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-lg font-medium mb-1 flex items-center gap-2">
-          <FolderOpen className="w-5 h-5 text-accent-blue" />
-          Select Project
-        </h3>
-        <p className="text-text-secondary text-sm">
-          Choose the codebase your agent will work in
-        </p>
-      </div>
-
-      {/* Search (only show if enough projects to warrant it) */}
-      {projects.length > INITIAL_VISIBLE && (
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setShowAll(false); }}
-            placeholder="Search projects..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg text-sm"
-          />
-        </div>
-      )}
-
-      {/* Project Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        {visibleProjects.map((project) => (
-          <button
-            key={project.path}
-            onClick={() => onSelectProject(project.path)}
-            className={`
-              text-left p-3 rounded-lg border transition-all
-              ${selectedProject === project.path
-                ? 'border-accent-blue bg-accent-blue/10'
-                : 'border-border-primary hover:border-border-accent bg-bg-tertiary/30'
-              }
-            `}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                {defaultProjectPath === project.path ? (
-                  <Pin className="w-4 h-4 text-warning" />
-                ) : isFavorite(project) ? (
-                  <Star className="w-4 h-4 text-warning fill-current" />
-                ) : (
-                  <FolderOpen className="w-4 h-4 text-accent-purple" />
-                )}
-                <span className="font-medium">{project.name}</span>
-              </div>
-              {selectedProject === project.path && (
-                <Check className="w-4 h-4 text-accent-blue" />
-              )}
-            </div>
-            <p className="text-xs text-text-muted mt-1 truncate font-mono">
-              {project.path}
-            </p>
-          </button>
-        ))}
-      </div>
-
-      {/* Show All / collapse toggle */}
-      {hasMore && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="w-full text-center text-sm text-text-muted hover:text-foreground transition-colors py-1.5"
+        <PanelCaption className="mb-1.5">Project</PanelCaption>
+        <Select
+          value={current}
+          onChange={(e) => onSelectProject(e.target.value)}
         >
-          Show all {filteredProjects.length} projects
-        </button>
-      )}
-      {showAll && !search && filteredProjects.length > INITIAL_VISIBLE && (
-        <button
-          onClick={() => setShowAll(false)}
-          className="w-full text-center text-sm text-text-muted hover:text-foreground transition-colors py-1.5"
-        >
-          Show less
-        </button>
-      )}
-
-      {/* No results */}
-      {search && filteredProjects.length === 0 && (
-        <p className="text-sm text-text-muted text-center py-2">No projects match &ldquo;{search}&rdquo;</p>
-      )}
-
-      {/* Custom Path */}
-      <div className="relative">
-        <label className="block text-sm font-medium mb-2">Or enter a custom path:</label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={customPath}
-            onChange={(e) => onCustomPathChange(e.target.value)}
-            placeholder="/path/to/your/project"
-            className="flex-1 px-4 py-3 rounded-lg font-mono text-sm"
-          />
-          {onBrowseFolder && (
-            <button
-              type="button"
-              onClick={async () => {
-                const path = await onBrowseFolder();
-                if (path) onCustomPathChange(path);
-              }}
-              className="px-4 py-3 rounded-lg bg-bg-tertiary border border-border-primary hover:border-accent-blue transition-colors flex items-center gap-2"
-            >
-              <FolderOpen className="w-4 h-4 text-accent-blue" />
-              <span className="text-sm">Browse</span>
-            </button>
+          {!current && <option value="">Select a project</option>}
+          {!!current && !currentIsListed && (
+            <option value={current}>{tildePath(current)}</option>
           )}
-        </div>
+          {orderedProjects.map((project) => (
+            <option key={project.path} value={project.path}>
+              {tildePath(project.path)}
+            </option>
+          ))}
+        </Select>
       </div>
 
-      {/* Secondary Project (Collapsible) */}
-      <div className="border border-border-primary rounded-lg overflow-hidden">
-        <button
-          onClick={onToggleSecondary}
-          className="w-full flex items-center justify-between px-4 py-3 bg-bg-tertiary/30 hover:bg-bg-tertiary/50 transition-colors"
-        >
-          <span className="font-medium text-sm flex items-center gap-2">
-            {showSecondaryProject ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-            <Layers className="w-4 h-4 text-accent-purple" />
-            Add second project for context (optional)
+      {recent.length > 0 && (
+        <div>
+          <PanelCaption className="mb-1.5">Recent</PanelCaption>
+          <div className="flex flex-wrap gap-2">
+            {recent.map((project) => (
+              <Chip
+                key={project.path}
+                active={current === project.path}
+                onClick={() => onSelectProject(project.path)}
+                title={project.path}
+                className="font-mono"
+              >
+                {project.name}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <PanelCaption className="mb-1.5">Worktree</PanelCaption>
+        <div className="flex items-center gap-2.5">
+          <Toggle
+            enabled={useWorktree}
+            onChange={() => onToggleWorktree?.()}
+            disabled={worktreeLocked}
+          />
+          <span className="text-xs text-foreground">
+            Give this agent its own branch and directory
           </span>
-          {(selectedSecondaryProject || customSecondaryPath) && (
-            <span className="text-xs text-accent-purple px-2 py-0.5 rounded bg-accent-purple/10">
-              Selected
-            </span>
-          )}
-        </button>
+        </div>
+      </div>
 
-        <AnimatePresence>
-          {showSecondaryProject && (
-            <motion.div
-              initial={{ height: 0 }}
-              animate={{ height: 'auto' }}
-              exit={{ height: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="p-4 space-y-4 border-t border-border-primary">
-                <p className="text-xs text-text-muted">
-                  The agent will have access to this project via <code className="bg-bg-tertiary px-1 rounded">--add-dir</code>
-                </p>
-
-                {projects.filter(p => p.path !== projectPath).length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {projects.filter(p => p.path !== projectPath).map((project) => (
-                      <button
-                        key={project.path}
-                        onClick={() => onSelectSecondaryProject(project.path)}
-                        className={`
-                          text-left p-3 rounded-lg border transition-all text-sm
-                          ${selectedSecondaryProject === project.path
-                            ? 'border-accent-purple bg-accent-purple/10'
-                            : 'border-border-primary hover:border-border-accent bg-bg-tertiary/30'
-                          }
-                        `}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <FolderPlus className="w-3.5 h-3.5 text-accent-amber" />
-                            <span className="font-medium">{project.name}</span>
-                          </div>
-                          {selectedSecondaryProject === project.path && (
-                            <Check className="w-3.5 h-3.5 text-accent-purple" />
-                          )}
-                        </div>
-                        <p className="text-xs text-text-muted mt-1 truncate font-mono">
-                          {project.path}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-text-muted italic">No other projects available</p>
-                )}
-
-                {/* Custom secondary path */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={customSecondaryPath}
-                    onChange={(e) => onCustomSecondaryPathChange(e.target.value)}
-                    placeholder="/path/to/secondary/project"
-                    className="flex-1 px-3 py-2 rounded-lg font-mono text-sm"
-                  />
-                  {onBrowseFolder && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const path = await onBrowseFolder();
-                        if (path) onCustomSecondaryPathChange(path);
-                      }}
-                      className="px-3 py-2 rounded-lg bg-bg-tertiary border border-border-primary hover:border-accent-purple transition-colors flex items-center gap-2"
-                    >
-                      <FolderOpen className="w-4 h-4 text-accent-purple" />
-                      <span className="text-sm">Browse</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Clear button */}
-                {(selectedSecondaryProject || customSecondaryPath) && (
-                  <button
-                    onClick={onClearSecondary}
-                    className="text-xs text-text-muted hover:text-accent-red transition-colors flex items-center gap-1"
-                  >
-                    <X className="w-3 h-3" />
-                    Clear selection
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <div>
+        <PanelCaption className="mb-1.5">Branch</PanelCaption>
+        <Input
+          mono
+          value={branchName}
+          onChange={(e) => onBranchNameChange?.(e.target.value.replace(/\s+/g, '-'))}
+          placeholder="feat/frontend"
+          disabled={branchDisabled}
+        />
+        {worktreeLocked && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            The worktree of an existing agent can&apos;t be changed here. To move it to another
+            branch, remove the agent and create a new one.
+          </p>
+        )}
       </div>
     </div>
   );

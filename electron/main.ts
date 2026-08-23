@@ -18,7 +18,7 @@ import * as os from 'os';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE } from './constants';
+import { APP_SETTINGS_FILE, API_TOKEN_FILE } from './constants';
 
 // Core modules
 import {
@@ -97,6 +97,8 @@ import { registerHermesHandlers } from './handlers/hermes-handlers';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
+import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
+import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
 // Utils
 import {
@@ -191,7 +193,9 @@ function loadAppSettings(): AppSettings {
 function saveAppSettingsToFile(settings: AppSettings) {
   try {
     ensureDataDir();
-    fs.writeFileSync(APP_SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    // 0600 and atomic: this file carries every provider API key, the Hermes
+    // gateway token and the memory-backend credentials.
+    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settings, null, 2));
   } catch (err) {
     console.error('Failed to save app settings:', err);
   }
@@ -322,6 +326,13 @@ app.whenReady().then(async () => {
 
   // Ensure data directory exists
   ensureDataDir();
+
+  // Narrow the credential files on installs that predate the 0600 write.
+  // A `mode` passed to writeFileSync only applies at creation, so an
+  // app-settings.json already sitting at 0644 would keep it forever.
+  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
+    ensureSecretFileMode(secret);
+  }
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureTarsClaudeMd();

@@ -73,7 +73,7 @@ export default function TerminalPanel({
       ref={setDropRef}
       className={`
         flex flex-col overflow-hidden h-full bg-background border transition-colors
-        ${isOver ? 'border-primary' : isFocused ? 'border-primary/50' : 'border-border'}
+        ${isOver ? 'border-primary' : isFocused ? 'border-border-accent' : 'border-border'}
         ${isFullscreen ? 'fixed inset-0 z-[80] window-no-drag pt-7' : ''}
       `}
       onClick={handleClick}

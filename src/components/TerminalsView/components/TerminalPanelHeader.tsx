@@ -1,20 +1,10 @@
 'use client';
 
-import {
-  Play,
-  Square,
-  Maximize2,
-  Minimize2,
-  X,
-  RotateCcw,
-  GripVertical,
-  ShieldOff,
-  Bot,
-  Shield,
-  Gauge,
-} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { GripVertical, ShieldOff, Bot, Shield, Gauge } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { CHARACTER_FACES, STATUS_COLORS } from '../constants';
+import { StatusSquare } from '@/components/ui';
+import type { StatusTone } from '@/components/ui';
 
 interface TerminalPanelHeaderProps {
   agent: AgentStatus;
@@ -30,6 +20,11 @@ interface TerminalPanelHeaderProps {
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
+/** `completed` is a real runtime status but not part of the design vocabulary — it reads as idle. */
+function statusTone(status: AgentStatus['status']): StatusTone {
+  return status === 'completed' ? 'idle' : status;
+}
+
 export default function TerminalPanelHeader({
   agent,
   isFullscreen,
@@ -43,19 +38,41 @@ export default function TerminalPanelHeader({
   onRemove,
   onContextMenu,
 }: TerminalPanelHeaderProps) {
-  const emoji = agent.name?.toLowerCase() === 'bitwonka'
-    ? '🐸'
-    : CHARACTER_FACES[agent.character || 'robot'] || '🤖';
   const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
-  const projectName = agent.projectPath.split('/').pop() || '';
-  const status = STATUS_COLORS[agent.status] || STATUS_COLORS.idle;
+  const branch = agent.branchName || '';
+  // Local (Tasmania) agents carry their model under localModel instead.
+  const model = agent.model || agent.localModel || '';
+  const isLive = agent.status === 'running' || agent.status === 'waiting';
 
   const showDragHandle = tabType === 'custom';
   const showRemoveButton = tabType === 'custom';
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  // Every overflow row is a 26px bordered lowercase-mono text button (R7).
+  const menuItemClass =
+    'w-full h-[26px] px-3 flex items-center text-left text-[11px] font-mono lowercase text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors';
+
+  const run = (action: () => void) => () => { setMenuOpen(false); action(); };
+
   return (
     <div
-      className={`${showDragHandle ? 'terminal-drag-handle' : ''} window-no-drag flex items-center gap-2 px-3 py-1.5 !rounded-none bg-secondary border-b border-border select-none`}
+      className={`${showDragHandle ? 'terminal-drag-handle' : ''} window-no-drag flex items-center gap-2 h-8 px-3 bg-card border-b border-border select-none`}
       onContextMenu={onContextMenu}
     >
       {/* Drag handle grip - custom tabs only */}
@@ -63,23 +80,18 @@ export default function TerminalPanelHeader({
         <GripVertical className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
       )}
 
-      {/* Agent identity */}
-      <span className="text-base">{emoji}</span>
-      <span className="text-xs font-medium text-foreground truncate max-w-[120px]">{name}</span>
-
-      {/* Status badge */}
-      <span className={`text-[10px] px-1.5 py-0.5 font-medium ${status.bg} ${status.text}`}>
-        {agent.status}
-      </span>
-
-      {/* Project name */}
-      <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden lg:inline">
-        {projectName}
-      </span>
+      {/* Agent identity: status square, name, git branch */}
+      <StatusSquare tone={statusTone(agent.status)} />
+      <span className="text-[11.5px] font-semibold text-foreground truncate max-w-[140px]">{name}</span>
+      {branch && (
+        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px]">
+          {branch}
+        </span>
+      )}
 
       {/* Broadcast indicator */}
       {isBroadcasting && (
-        <span className="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary font-medium animate-pulse">
+        <span className="text-[10px] px-1.5 py-0.5 bg-accent-dim text-primary font-medium">
           BROADCAST
         </span>
       )}
@@ -111,56 +123,53 @@ export default function TerminalPanelHeader({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Session ID (truncated) */}
-      <span className="text-[10px] text-muted-foreground font-mono hidden xl:inline">
-        {agent.id.slice(0, 8)}
-      </span>
+      {/* Model */}
+      {model && (
+        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[90px]">
+          {model}
+        </span>
+      )}
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-0.5 [&_button]:cursor-pointer" onMouseDown={e => e.stopPropagation()}>
-        {agent.status === 'running' || agent.status === 'waiting' ? (
-          <button
-            onClick={onStop}
-            className="p-1 hover:bg-primary/10 transition-colors text-danger hover:text-danger"
-            title="Stop agent"
-          >
-            <Square className="w-3 h-3" />
-          </button>
-        ) : (
-          <button
-            onClick={onStart}
-            className="p-1 hover:bg-primary/10 transition-colors text-success hover:text-success"
-            title="Start agent"
-          >
-            <Play className="w-3 h-3" />
-          </button>
-        )}
-
+      {/* Overflow menu — carries start/stop, clear, fullscreen and remove */}
+      <div
+        ref={menuRef}
+        className="relative [&_button]:cursor-pointer"
+        onMouseDown={e => e.stopPropagation()}
+      >
         <button
-          onClick={onClear}
-          className="p-1 hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
-          title="Clear terminal"
+          type="button"
+          onClick={() => setMenuOpen(o => !o)}
+          className={`h-[26px] px-1.5 leading-none text-sm transition-colors ${
+            menuOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+          }`}
+          title="Panel actions"
         >
-          <RotateCcw className="w-3 h-3" />
+          ···
         </button>
 
-        <button
-          onClick={isFullscreen ? onExitFullscreen : onFullscreen}
-          className="p-1 hover:bg-primary/10 transition-colors text-muted-foreground hover:text-foreground"
-          title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        >
-          {isFullscreen ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-        </button>
+        {menuOpen && (
+          <div className="absolute right-0 top-full mt-1 z-[90] min-w-[140px] bg-card border border-border">
+            {isLive ? (
+              <button type="button" onClick={run(onStop)} className={menuItemClass}>stop</button>
+            ) : (
+              <button type="button" onClick={run(onStart)} className={menuItemClass}>start</button>
+            )}
 
-        {/* Remove button - custom tabs only */}
-        {showRemoveButton && !isFullscreen && (
-          <button
-            onClick={onRemove}
-            className="p-1 hover:bg-primary/10 transition-colors text-muted-foreground hover:text-danger"
-            title="Remove from tab"
-          >
-            <X className="w-3 h-3" />
-          </button>
+            <button type="button" onClick={run(onClear)} className={menuItemClass}>clear</button>
+
+            <button
+              type="button"
+              onClick={run(isFullscreen ? onExitFullscreen : onFullscreen)}
+              className={menuItemClass}
+            >
+              {isFullscreen ? 'exit fullscreen' : 'fullscreen'}
+            </button>
+
+            {/* Remove - custom tabs only */}
+            {showRemoveButton && !isFullscreen && (
+              <button type="button" onClick={run(onRemove)} className={menuItemClass}>remove</button>
+            )}
+          </div>
         )}
       </div>
     </div>

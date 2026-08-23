@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import type { AgentProvider } from '@/types/electron';
-import { getTerminalTheme } from '@/components/AgentWorld/constants';
+import { getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import { attachShiftEnterHandler } from '@/lib/terminal';
 
 interface UseAgentTerminalProps {
   selectedAgentId: string | null;
   terminalRef: React.RefObject<HTMLDivElement | null>;
   provider?: AgentProvider;
+  /**
+   * @deprecated Terminals follow the app theme now (R9) — this is ignored.
+   * Kept so existing callers keep compiling.
+   */
   terminalTheme?: 'dark' | 'light';
   terminalFontSize?: number;
   onReady?: (agentId: string) => void;
@@ -36,13 +40,25 @@ function stripCursorSequences(data: string): string {
     .replace(/\x1b\[\?1049[hl]/g, '');
 }
 
-export function useAgentTerminal({ selectedAgentId, terminalRef, provider, terminalTheme = 'dark', terminalFontSize = 13, onReady }: UseAgentTerminalProps) {
+export function useAgentTerminal({ selectedAgentId, terminalRef, provider, terminalFontSize = 13, onReady }: UseAgentTerminalProps) {
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const fitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const [terminalReady, setTerminalReady] = useState(false);
   const selectedAgentIdRef = useRef<string | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+
+  // Terminals follow the app theme (R9). Held in a ref so a theme flip repaints
+  // the live terminal instead of tearing it down and losing the scrollback.
+  const xtermTheme = useTerminalTheme();
+  const xtermThemeRef = useRef(xtermTheme);
+  xtermThemeRef.current = xtermTheme;
+
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = xtermTheme;
+    }
+  }, [xtermTheme]);
 
   // Keep track of selected agent ID for event handling
   useEffect(() => {
@@ -81,9 +97,9 @@ export function useAgentTerminal({ selectedAgentId, terminalRef, provider, termi
       if (!container || cancelled) return;
 
       const term = new Terminal({
-        theme: getTerminalTheme(terminalTheme),
+        theme: xtermThemeRef.current,
         fontSize: terminalFontSize,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
+        fontFamily: getTerminalFontFamily(),
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 10000,
@@ -237,7 +253,7 @@ export function useAgentTerminal({ selectedAgentId, terminalRef, provider, termi
       }
       setTerminalReady(false);
     };
-  }, [selectedAgentId, terminalRef, provider, terminalTheme, terminalFontSize]);
+  }, [selectedAgentId, terminalRef, provider, terminalFontSize]);
 
   // Listen for agent output events
   useEffect(() => {

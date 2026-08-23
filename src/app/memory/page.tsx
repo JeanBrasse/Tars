@@ -1,149 +1,95 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Brain,
-  FileText,
-  FolderOpen,
-  RefreshCw,
-  Search,
-  Plus,
-  Trash2,
-  Save,
-  ChevronRight,
-  Edit3,
-  X,
-  AlertCircle,
-  Loader2,
-  Database,
-  Clock,
-  HardDrive,
-  Share2,
-  Server,
-  ExternalLink,
-  Settings as SettingsIcon,
-} from 'lucide-react';
-import Link from 'next/link';
+import { useState, useCallback, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { useMemory, formatBytes, timeAgo } from '@/hooks/useMemory';
 import type { ProjectMemory, MemoryFile } from '@/types/electron';
 import AgentKnowledgeGraph from '@/components/Memory/AgentKnowledgeGraph';
 import { getProviderDef } from '@/lib/providers';
+import {
+  Button,
+  DialogShell,
+  Input,
+  PageHeader,
+  Panel,
+  PanelCaption,
+  SegmentedControl,
+  StatusBadge,
+  StatusSquare,
+} from '@/components/ui';
 
-// ─── Inline editor with save/cancel ────────────────────────────────────────
+type Tab = 'projects' | 'agents' | 'backends';
 
-function FileEditor({
+const TABS = [
+  { value: 'projects' as const, label: 'Projects' },
+  { value: 'agents' as const, label: 'Agents' },
+  { value: 'backends' as const, label: 'Backends' },
+];
+
+// ─── File pane (always editable) ────────────────────────────────────────────
+
+/**
+ * The right pane. There is no view/edit toggle any more: the file is open, and
+ * the three words at the top of it are everything you can do to it. Mount it
+ * with `key={file.path}` - the draft lives here.
+ */
+function FilePane({
   file,
-  onSave,
-  onCancel,
   saving,
+  deleting,
+  onSave,
+  onNewFile,
+  onDelete,
 }: {
   file: MemoryFile;
-  onSave: (content: string) => void;
-  onCancel: () => void;
   saving: boolean;
+  deleting: boolean;
+  onSave: (content: string) => void;
+  onNewFile: () => void;
+  onDelete: () => void;
 }) {
   const [content, setContent] = useState(file.content);
   const dirty = content !== file.content;
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary/30 shrink-0">
-        <span className="text-xs font-mono text-muted-foreground flex items-center gap-2">
-          <Edit3 className="w-3 h-3" />
-          Editing {file.name}
-          {dirty && <span className="text-warning">•</span>}
+      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border shrink-0">
+        <span className="font-mono text-xs text-foreground truncate">
+          {file.name}
+          {dirty && <span className="text-warning"> •</span>}
         </span>
-        <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 transition-colors"
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" className="font-mono" onClick={() => onSave(content)} disabled={!dirty || saving}>
+            save
+          </Button>
+          <Button size="sm" className="font-mono" onClick={onNewFile}>
+            new file
+          </Button>
+          <Button
+            size="sm"
+            className="font-mono"
+            onClick={onDelete}
+            disabled={file.isEntrypoint || deleting}
+            title={file.isEntrypoint ? 'The entrypoint file cannot be deleted' : undefined}
           >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(content)}
-            disabled={!dirty || saving}
-            className="px-3 py-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
-          >
-            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            Save
-          </button>
+            delete
+          </Button>
         </div>
       </div>
       <textarea
-        className="flex-1 w-full resize-none bg-background font-mono text-xs leading-relaxed p-4 focus:outline-none text-foreground placeholder:text-muted-foreground/50"
+        className="flex-1 w-full resize-none bg-card font-mono text-xs leading-relaxed p-3 focus:outline-none text-foreground"
         value={content}
         onChange={e => setContent(e.target.value)}
         spellCheck={false}
-        autoFocus
       />
     </div>
   );
 }
 
-// ─── File viewer (read mode) ────────────────────────────────────────────────
+// ─── Project row ─────────────────────────────────────────────────────────────
 
-function FileViewer({
-  file,
-  onEdit,
-  onDelete,
-}: {
-  file: MemoryFile;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary/30 shrink-0">
-        <div className="flex items-center gap-2">
-          <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-xs font-mono text-foreground font-medium">{file.name}</span>
-          {file.isEntrypoint && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 font-medium">
-              ENTRYPOINT
-            </span>
-          )}
-          <span className="text-[10px] text-muted-foreground">{formatBytes(file.size)}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground mr-2">{timeAgo(file.lastModified)}</span>
-          <button
-            onClick={onEdit}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            title="Edit file"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-          </button>
-          {!file.isEntrypoint && (
-            <button
-              onClick={onDelete}
-              className="p-1.5 text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
-              title="Delete file"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {file.content ? (
-          <pre className="font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
-            {file.content}
-          </pre>
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground/50 text-xs">
-            File is empty
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Project card ────────────────────────────────────────────────────────────
-
-function ProjectCard({
+function ProjectRow({
   project,
   isSelected,
   activeAgents,
@@ -157,15 +103,14 @@ function ProjectCard({
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-3 py-3 transition-all duration-100 border !rounded-none group ${isSelected
-        ? 'bg-secondary border-border text-foreground'
-        : 'border-transparent hover:bg-secondary/60 text-muted-foreground hover:text-foreground'
+      className={`w-full text-left px-2 py-2 border transition-colors ${isSelected
+        ? 'bg-secondary border-border-accent text-foreground'
+        : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary'
         }`}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <FolderOpen className={`w-4 h-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
-          <span className="text-sm font-medium truncate">{project.projectName}</span>
+          <span className="text-xs font-medium truncate">{project.projectName}</span>
           {project.provider && project.provider !== 'claude' && (
             <span className={`text-[9px] px-1 py-0.5 font-medium uppercase tracking-wider shrink-0 ${
               getProviderDef(project.provider)?.badgeClass ?? 'bg-secondary text-muted-foreground'
@@ -174,44 +119,26 @@ function ProjectCard({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {activeAgents > 0 && (
-            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-success/15 text-success dark:text-success font-medium">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className=" absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success" />
-              </span>
-              {activeAgents}
-            </span>
-          )}
-          {project.hasMemory && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-mono ${isSelected ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'}`}>
-              {project.files.length}f
-            </span>
-          )}
-        </div>
+        {activeAgents > 0 && (
+          <span className="flex items-center gap-1 shrink-0 font-mono text-[10px] text-status-running">
+            <StatusSquare tone="running" />
+            {activeAgents}
+          </span>
+        )}
       </div>
-      {project.hasMemory ? (
-        <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground ml-6">
-          <span className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {timeAgo(project.lastModified)}
-          </span>
-          <span className="flex items-center gap-1">
-            <HardDrive className="w-3 h-3" />
-            {formatBytes(project.totalSize)}
-          </span>
-        </div>
-      ) : (
-        <p className="mt-1 text-[10px] text-muted-foreground/50 ml-6 italic">No memory yet</p>
-      )}
+      {/* The counts the stats bar used to hold, on the row they belong to. */}
+      <p className="mt-1 font-mono text-[10px] text-muted-foreground truncate">
+        {project.hasMemory
+          ? `${project.files.length} files · ${formatBytes(project.totalSize)} · ${timeAgo(project.lastModified)}`
+          : 'no memory yet'}
+      </p>
     </button>
   );
 }
 
-// ─── New file modal ──────────────────────────────────────────────────────────
+// ─── New file dialog ─────────────────────────────────────────────────────────
 
-function NewFileModal({
+function NewFileDialog({
   onConfirm,
   onClose,
 }: {
@@ -219,7 +146,6 @@ function NewFileModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = () => {
     const trimmed = name.trim();
@@ -228,56 +154,30 @@ function NewFileModal({
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-card border border-border p-6 w-80"
-        onClick={e => e.stopPropagation()}
-      >
-        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Plus className="w-4 h-4 text-primary" />
-          New Memory File
-        </h3>
-        <input
-          ref={inputRef}
-          autoFocus
-          type="text"
-          placeholder="e.g. debugging or api-conventions"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') onClose(); }}
-          className="w-full px-3 py-2 text-sm bg-background border border-border focus:outline-none focus:border-primary transition-colors font-mono"
-        />
-        <p className="mt-1.5 text-[10px] text-muted-foreground">.md will be appended automatically</p>
-        <div className="flex gap-2 mt-4">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2 text-xs text-muted-foreground border border-border hover:border-foreground/30 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!name.trim()}
-            className="flex-1 py-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
-          >
+    <DialogShell
+      onClose={onClose}
+      title="New memory file"
+      subtitle="A topic file beside MEMORY.md. .md is appended automatically."
+      footerRight={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={!name.trim()}>
             Create
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
+          </Button>
+        </>
+      }
+    >
+      <Input
+        autoFocus
+        mono
+        placeholder="e.g. debugging or api-conventions"
+        value={name}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') onClose(); }}
+      />
+    </DialogShell>
   );
 }
-
-// ─── Main page ───────────────────────────────────────────────────────────────
 
 // ─── Shared memory backends (gbrain / Honcho) status ───────────────────────
 
@@ -290,34 +190,82 @@ interface SourceStatus {
   tools?: string[];
 }
 
-const SOURCE_DOCS: Record<string, { description: string; docUrl: string }> = {
-  project: {
-    description: 'The project\'s own memory files. Injected into every agent at session start and browsable in the Projects tab.',
-    docUrl: 'https://code.claude.com/docs/en/memory',
-  },
-  observations: {
-    description: 'What other sessions did on this project, captured after each significant tool use.',
-    docUrl: 'https://code.claude.com/docs/en/hooks',
-  },
-  hermes: {
-    description: 'Your gateway\'s own MEMORY.md and USER.md, plus full-text search over every past Hermes session.',
-    docUrl: 'https://hermes.computer',
-  },
-  gbrain: {
-    description: 'Shared semantic memory, reached over MCP. Available to agents on every CLI through the memory tools.',
-    docUrl: 'https://github.com/garrytan/gbrain',
-  },
-  honcho: {
-    description: 'Plastic Labs\' memory layer (peers, sessions, working representations), served over MCP.',
-    docUrl: 'https://honcho.dev/docs/v3/guides/integrations/mcp',
-  },
-};
+/** Probing state and the Re-check action both live on the page - the header owns them. */
+function BackendsTab({ sources }: { sources: SourceStatus[] | null }) {
+  if (!sources) {
+    return (
+      <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+        Probing memory sources…
+      </div>
+    );
+  }
 
-function BackendsTab({ projectPath }: { projectPath?: string }) {
+  return (
+    <Panel fill className="flex-1 min-h-0">
+      <p className="text-xs text-muted-foreground shrink-0">
+        Each source below was contacted just now. Every agent reaches them through the
+        memory tools, whatever CLI it runs.
+      </p>
+      <div className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-3">
+        {sources.map(s => {
+          const tone = !s.configured ? 'idle' : s.reachable ? 'running' : 'error';
+          const state = !s.configured ? 'not configured' : s.reachable ? 'reachable' : 'unreachable';
+          return (
+            <div key={s.id} className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <StatusSquare tone={tone} />
+                  <span className="text-xs font-medium text-foreground">{s.label}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground font-mono break-all">{s.detail}</p>
+                {s.tools && s.tools.length > 0 && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground font-mono break-all">
+                    tools: {s.tools.join(', ')}
+                  </p>
+                )}
+              </div>
+              <StatusBadge tone={tone} className="shrink-0 font-mono">{state}</StatusBadge>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Main page ───────────────────────────────────────────────────────────────
+
+export default function MemoryPage() {
+  const {
+    filteredProjects,
+    agentCountByPath,
+    selectedProject,
+    selectedFile,
+    loading,
+    saving,
+    error,
+    isElectron,
+    selectProject,
+    selectFile,
+    saveFile,
+    createFile,
+    deleteFile,
+    refresh,
+  } = useMemory();
+
+  const [activeTab, setActiveTab] = useState<Tab>('projects');
+  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  // Remounting the canvas is how the graph re-reads; it owns its own fetch.
+  const [graphKey, setGraphKey] = useState(0);
+
+  // ── Backends probe: hoisted so the page header can carry the Re-check ──
   const [sources, setSources] = useState<SourceStatus[] | null>(null);
   const [checking, setChecking] = useState(false);
+  const projectPath = selectedProject?.projectPath;
 
-  const probe = useCallback(async () => {
+  const probeSources = useCallback(async () => {
     setChecking(true);
     try {
       const res = await window.electronAPI?.memoryHub?.sources(projectPath);
@@ -329,120 +277,10 @@ function BackendsTab({ projectPath }: { projectPath?: string }) {
     }
   }, [projectPath]);
 
-  useEffect(() => { void probe(); }, [probe]);
-
-  if (!sources) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-        Probing memory sources…
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto space-y-3 max-w-3xl">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Each source below was contacted just now. Every agent reaches them through the
-          memory tools, whatever CLI it runs.
-        </p>
-        <button
-          onClick={probe}
-          disabled={checking}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3 h-3 ${checking ? 'animate-spin' : ''}`} />
-          Re-check
-        </button>
-      </div>
-
-      {sources.map(s => {
-        const doc = SOURCE_DOCS[s.id];
-        const state = !s.configured ? 'Not configured' : s.reachable ? 'Reachable' : 'Unreachable';
-        const tone = !s.configured
-          ? 'bg-secondary text-muted-foreground'
-          : s.reachable
-            ? 'bg-success/15 text-success'
-            : 'bg-danger/15 text-danger';
-        return (
-          <div key={s.id} className="bg-card border border-border p-4">
-            <div className="flex items-center justify-between gap-3 mb-1.5">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                {s.label}
-                {doc && (
-                  <a href={doc.docUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground" title="Documentation">
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </h3>
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 ${tone}`}>{state}</span>
-            </div>
-            {doc && <p className="text-xs text-muted-foreground mb-2">{doc.description}</p>}
-            <p className="text-[11px] text-muted-foreground font-mono break-all">{s.detail}</p>
-            {s.tools && s.tools.length > 0 && (
-              <p className="text-[11px] text-muted-foreground mt-1 font-mono break-all">
-                tools: {s.tools.join(', ')}
-              </p>
-            )}
-          </div>
-        );
-      })}
-
-      <Link
-        href="/settings?section=memory"
-        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
-      >
-        <SettingsIcon className="w-3.5 h-3.5" />
-        Configure backends in Settings
-      </Link>
-    </div>
-  );
-}
-
-export default function MemoryPage() {
-  const {
-    filteredProjects,
-    agentCountByPath,
-    selectedProject,
-    selectedFile,
-    loading,
-    saving,
-    error,
-    searchQuery,
-    setSearchQuery,
-    totalFiles,
-    totalSize,
-    projectsWithMemory,
-    isElectron,
-    selectProject,
-    selectFile,
-    saveFile,
-    createFile,
-    deleteFile,
-    refresh,
-  } = useMemory();
-
-  const [activeTab, setActiveTab] = useState<'projects' | 'agents' | 'backends'>('agents');
-  const [editingFile, setEditingFile] = useState<MemoryFile | null>(null);
-  const [showNewFileModal, setShowNewFileModal] = useState(false);
-  const [deletingFile, setDeletingFile] = useState<string | null>(null);
-
-  const handleSelectProject = useCallback((project: ProjectMemory) => {
-    selectProject(project);
-    setEditingFile(null);
-  }, [selectProject]);
-
-  const handleSelectFile = useCallback((file: MemoryFile) => {
-    selectFile(file);
-    setEditingFile(null);
-  }, [selectFile]);
-
-  const handleSave = useCallback(async (content: string) => {
-    if (!editingFile) return;
-    const ok = await saveFile(editingFile.path, content);
-    if (ok) setEditingFile(null);
-  }, [editingFile, saveFile]);
+  useEffect(() => {
+    if (activeTab !== 'backends') return;
+    void probeSources();
+  }, [activeTab, probeSources]);
 
   const handleDelete = useCallback(async (filePath: string) => {
     setDeletingFile(filePath);
@@ -452,99 +290,58 @@ export default function MemoryPage() {
 
   const handleCreateFile = useCallback(async (name: string) => {
     if (!selectedProject) return;
-    setShowNewFileModal(false);
+    setShowNewFileDialog(false);
     await createFile(selectedProject.memoryDir, name);
   }, [selectedProject, createFile]);
 
   if (!isElectron) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-center">
-        <div>
-          <Brain className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Memory is only available in the desktop app.</p>
-        </div>
+        <p className="text-sm text-muted-foreground">Memory is only available in the desktop app.</p>
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-4 lg:pt-6 overflow-hidden">
+  // Exactly one action, whichever tab is open.
+  const headerAction = activeTab === 'backends' ? (
+    <Button onClick={probeSources} disabled={checking}>Re-check</Button>
+  ) : activeTab === 'agents' ? (
+    <Button onClick={() => setGraphKey(k => k + 1)}>Refresh</Button>
+  ) : (
+    <Button onClick={refresh} disabled={loading}>Refresh</Button>
+  );
 
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Brain className="w-6 h-6 text-primary" />
-            Brain
-          </h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            What your agents know - native project memory plus shared backends (gbrain, Honcho)
-          </p>
-        </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {activeTab === 'projects' && (
-            <button
-              onClick={refresh}
-              disabled={loading}
-              className="px-3 lg:px-4 py-2 border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors flex items-center gap-2 text-sm"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-          )}
-        </div>
-      </div>
+  return (
+    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-[22px] overflow-hidden">
+
+      <PageHeader
+        title="Brain"
+        subtitle="What your agents know — native project memory plus shared backends (gbrain, Honcho)."
+        actions={headerAction}
+      />
 
       {/* ── Tabs ── */}
-      <div className="flex items-center gap-1.5 border-b border-border pb-2 mb-4 shrink-0">
-        {([
-          { id: 'agents', label: 'Agents', icon: Share2 },
-          { id: 'projects', label: 'Projects', icon: FolderOpen },
-          { id: 'backends', label: 'Backends', icon: Server },
-        ] as const).map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-3.5 py-2 text-sm font-medium border transition-colors !rounded-none ${activeTab === id
-              ? 'bg-secondary border-border text-foreground'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
+      <div className="mb-3 shrink-0">
+        <SegmentedControl
+          options={TABS}
+          value={activeTab}
+          onChange={setActiveTab}
+          ariaLabel="Brain section"
+        />
       </div>
 
       {/* ── Agents graph tab ── */}
       {activeTab === 'agents' && (
         <div className="flex-1 min-h-0">
-          <AgentKnowledgeGraph />
+          <AgentKnowledgeGraph key={graphKey} />
         </div>
       )}
 
       {/* ── Shared backends tab ── */}
-      {activeTab === 'backends' && <BackendsTab projectPath={selectedProject?.projectPath} />}
+      {activeTab === 'backends' && <BackendsTab sources={sources} />}
 
       {/* ── Projects tab content ── */}
       {activeTab === 'projects' && <>
-
-        {/* ── Stats bar ── */}
-        <div className="grid grid-cols-3 gap-3 mb-4 shrink-0">
-          {[
-            { icon: Database, label: 'Projects', value: projectsWithMemory },
-            { icon: FileText, label: 'Memory Files', value: totalFiles },
-            { icon: HardDrive, label: 'Total Size', value: formatBytes(totalSize) },
-          ].map(({ icon: Icon, label, value }) => (
-            <div key={label} className="bg-card border border-border px-4 py-3 flex items-center gap-3">
-              <Icon className="w-4 h-4 text-primary/60 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground truncate">{label}</p>
-                <p className="text-sm font-semibold tabular-nums">{loading ? '-' : value}</p>
-              </div>
-            </div>
-          ))}
-        </div>
 
         {/* ── Error ── */}
         {error && (
@@ -554,46 +351,21 @@ export default function MemoryPage() {
           </div>
         )}
 
-        {/* ── Main 3-pane layout ── */}
-        <div className="flex-1 flex gap-0 border border-border overflow-hidden min-h-0 bg-card">
+        {/* ── Three panels ── */}
+        <div className="flex-1 flex gap-2 min-h-0">
 
-          {/* ── Left: Project list ── */}
-          <div className="w-56 lg:w-64 shrink-0 flex flex-col border-r border-border overflow-hidden">
-            {/* Search */}
-            <div className="p-2 border-b border-border shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Filter projects…"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border focus:outline-none focus:border-primary transition-colors"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Project list */}
-            <div className="flex-1 overflow-y-auto">
+          {/* ── Left: projects ── */}
+          <Panel fill className="w-56 lg:w-64 shrink-0">
+            <PanelCaption className="shrink-0">Projects with memory</PanelCaption>
+            <div className="flex-1 overflow-y-auto mt-2">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                 </div>
               ) : filteredProjects.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                  <Brain className="w-8 h-8 text-muted-foreground/30 mb-3" />
-                  <p className="text-xs text-muted-foreground">
-                    {searchQuery ? 'No projects match your search' : 'No Claude projects found'}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">
+                <div className="px-1 py-8 text-center">
+                  <p className="text-xs text-muted-foreground">No Claude projects found</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">
                     Memory is created automatically as you work with Claude Code
                   </p>
                 </div>
@@ -614,142 +386,84 @@ export default function MemoryPage() {
                         visible: { opacity: 1, x: 0 },
                       }}
                     >
-                      <ProjectCard
+                      <ProjectRow
                         project={project}
                         isSelected={selectedProject?.id === project.id}
                         activeAgents={agentCountByPath.get(project.projectPath) ?? 0}
-                        onClick={() => handleSelectProject(project)}
+                        onClick={() => selectProject(project)}
                       />
                     </motion.div>
                   ))}
                 </motion.div>
               )}
             </div>
-          </div>
+          </Panel>
 
-          {/* ── Middle: File list ── */}
-          <div className="w-44 lg:w-52 shrink-0 flex flex-col border-r border-border overflow-hidden">
-            {selectedProject ? (
-              <>
-                {/* Project header */}
-                <div className="px-3 py-2 border-b !rounded-none border-border !border-t-0 shrink-0 bg-secondary/20">
-                  <p className="text-xs font-semibold truncate">{selectedProject.projectName}</p>
-                  <p className="text-[10px] text-muted-foreground truncate mt-0.5" title={selectedProject.projectPath}>
-                    {selectedProject.projectPath}
-                  </p>
-                </div>
-
-                {/* File list */}
-                <div className="flex-1 overflow-y-auto">
-                  {!selectedProject.hasMemory ? (
-                    <div className="flex flex-col items-center justify-center py-8 px-3 text-center">
-                      <FileText className="w-7 h-7 text-muted-foreground/30 mb-2" />
-                      <p className="text-[10px] text-muted-foreground">No memory files yet</p>
-                    </div>
-                  ) : (
-                    <div className="py-1">
-                      {selectedProject.files.map((file) => (
-                        <button
-                          key={file.path}
-                          onClick={() => handleSelectFile(file)}
-                          className={`w-full flex items-center gap-2 px-3 py-2.5 text-left transition-all group ${selectedFile?.path === file.path
-                            ? 'bg-primary/10 text-foreground'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-                            }`}
-                        >
-                          <FileText className="w-3.5 h-3.5 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-mono truncate">{file.name}</p>
-                            {file.isEntrypoint && (
-                              <p className="text-[9px] text-primary/70 mt-0.5">entrypoint</p>
-                            )}
-                          </div>
-                          {selectedFile?.path === file.path && (
-                            <ChevronRight className="w-3 h-3 text-primary shrink-0" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* New file button */}
-                <div className="border-t border-border shrink-0">
+          {/* ── Middle: files ── */}
+          <Panel fill className="w-44 lg:w-52 shrink-0">
+            <PanelCaption className="shrink-0">
+              {selectedProject ? `${selectedProject.files.length} files` : 'Files'}
+            </PanelCaption>
+            <div className="flex-1 overflow-y-auto mt-2">
+              {!selectedProject ? (
+                <p className="px-1 py-8 text-center text-xs text-muted-foreground">Select a project</p>
+              ) : !selectedProject.hasMemory ? (
+                <p className="px-1 py-8 text-center text-xs text-muted-foreground">No memory files yet</p>
+              ) : (
+                selectedProject.files.map((file) => (
                   <button
-                    onClick={() => setShowNewFileModal(true)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    key={file.path}
+                    onClick={() => selectFile(file)}
+                    className={`w-full text-left px-2 py-1.5 border transition-colors ${selectedFile?.path === file.path
+                      ? 'bg-secondary border-border-accent text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary'
+                      }`}
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    New topic file
+                    <span className="block text-xs font-mono truncate">{file.name}</span>
+                    {file.isEntrypoint && (
+                      <span className="block text-[10px] text-muted-foreground mt-0.5">entrypoint</span>
+                    )}
                   </button>
-                </div>
-              </>
+                ))
+              )}
+            </div>
+          </Panel>
+
+          {/* ── Right: file ── */}
+          <Panel fill padded={false} className="flex-1 min-w-0">
+            {selectedFile ? (
+              <FilePane
+                key={selectedFile.path}
+                file={selectedFile}
+                saving={saving}
+                deleting={deletingFile === selectedFile.path}
+                onSave={(content) => { void saveFile(selectedFile.path, content); }}
+                onNewFile={() => setShowNewFileDialog(true)}
+                onDelete={() => handleDelete(selectedFile.path)}
+              />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full px-3 text-center">
-                <FolderOpen className="w-8 h-8 text-muted-foreground/20 mb-2" />
-                <p className="text-xs text-muted-foreground/60">Select a project</p>
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
+                <p className="text-sm text-muted-foreground">
+                  {selectedProject
+                    ? 'Select a memory file to read or edit'
+                    : 'Select a project to explore its memory'}
+                </p>
+                {selectedProject && (
+                  <Button size="sm" className="font-mono" onClick={() => setShowNewFileDialog(true)}>
+                    new file
+                  </Button>
+                )}
               </div>
             )}
-          </div>
-
-          {/* ── Right: Content viewer / editor ── */}
-          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <AnimatePresence mode="wait">
-              {selectedFile ? (
-                <motion.div
-                  key={selectedFile.path}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.1 }}
-                  className="flex-1 flex flex-col overflow-hidden"
-                >
-                  {editingFile?.path === selectedFile.path ? (
-                    <FileEditor
-                      file={editingFile}
-                      onSave={handleSave}
-                      onCancel={() => setEditingFile(null)}
-                      saving={saving}
-                    />
-                  ) : (
-                    <FileViewer
-                      file={selectedFile}
-                      onEdit={() => setEditingFile(selectedFile)}
-                      onDelete={() => handleDelete(selectedFile.path)}
-                    />
-                  )}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex-1 flex flex-col items-center justify-center text-center px-8"
-                >
-                  <Brain className="w-12 h-12 text-muted-foreground/20 mb-4" />
-                  <p className="text-sm text-muted-foreground">
-                    {selectedProject
-                      ? 'Select a memory file to view or edit'
-                      : 'Select a project to explore its memory'}
-                  </p>
-                  <p className="text-xs text-muted-foreground/50 mt-2 max-w-xs leading-relaxed">
-                    Claude Code automatically saves learnings, patterns, and architectural notes here as you work.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          </Panel>
         </div>
 
-        {/* ── New file modal ── */}
-        <AnimatePresence>
-          {showNewFileModal && (
-            <NewFileModal
-              onConfirm={handleCreateFile}
-              onClose={() => setShowNewFileModal(false)}
-            />
-          )}
-        </AnimatePresence>
+        {showNewFileDialog && (
+          <NewFileDialog
+            onConfirm={handleCreateFile}
+            onClose={() => setShowNewFileDialog(false)}
+          />
+        )}
 
       </>}
     </div>

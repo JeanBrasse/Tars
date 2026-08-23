@@ -12,9 +12,8 @@ import { useTerminalKeyboard } from './hooks/useTerminalKeyboard';
 import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTerminalContextMenu } from './hooks/useTerminalContextMenu';
 import { useTerminalDnd } from './hooks/useTerminalDnd';
-import { LAYOUT_PRESETS } from './constants';
+import { getAutoLayout } from './constants';
 import type { LayoutPreset } from './types';
-import GlobalToolbar from './components/GlobalToolbar';
 import TerminalGrid from './components/TerminalGrid';
 import ProjectTabBar from './components/ProjectTabBar';
 import Sidebar from './components/Sidebar';
@@ -122,24 +121,15 @@ export default function TerminalsView() {
     return [];
   }, [agents, tabManager.isCustomTabActive, tabManager.isProjectTabActive, tabManager.activeCustomTab, tabManager.activeProjectPath]);
 
-  // Derive grid preset and editable state
-  const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout || '3x3';
+  // Derive grid preset and editable state. A project tab has no stored layout,
+  // so it follows the agent count instead of being frozen at 3x3 (four agents
+  // must read as 2x2, not three on row one plus an orphan).
+  const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout ?? getAutoLayout(filteredAgents.length);
   const isEditable = tabManager.isCustomTabActive;
   const tabType: 'custom' | 'project' = tabManager.isCustomTabActive ? 'custom' : 'project';
   const tabId = tabManager.isCustomTabActive && tabManager.activeCustomTab
     ? tabManager.activeCustomTab.id
     : tabManager.activeProjectPath || 'default';
-
-  // Compute disabled presets for layout selector
-  const agentCount = filteredAgents.length;
-  const disabledPresets = useMemo(() => {
-    return (Object.keys(LAYOUT_PRESETS) as LayoutPreset[]).filter(
-      preset => LAYOUT_PRESETS[preset].maxPanels < agentCount
-    );
-  }, [agentCount]);
-
-  // Current tab agent IDs (for AddAgentDropdown)
-  const currentTabAgentIds = tabManager.activeCustomTab?.agentIds || [];
 
   // Agent IDs for grid
   const agentIds = useMemo(() => filteredAgents.map(a => a.id), [filteredAgents]);
@@ -234,18 +224,6 @@ export default function TerminalsView() {
     }
   }, [stopAgent, removeAgent, multiTerminal, tabManager]);
 
-  const handleAddAgentsToTab = useCallback((agentIds: string[]) => {
-    if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
-      tabManager.addAgentsToTab(tabManager.activeCustomTab.id, agentIds);
-    }
-  }, [tabManager]);
-
-  const handleAddAgentToTab = useCallback((agentId: string) => {
-    if (tabManager.activeCustomTab) {
-      tabManager.addAgentToTab(tabManager.activeCustomTab.id, agentId);
-    }
-  }, [tabManager]);
-
   const handleFocusPanel = useCallback((agentId: string) => {
     setFocusedPanelId(agentId);
     multiTerminal.focusTerminal(agentId);
@@ -305,34 +283,12 @@ export default function TerminalsView() {
     isFullscreen: !!grid.fullscreenPanelId,
   });
 
-  const handleStartAll = useCallback(async () => {
-    const needsStart = filteredAgents.filter(a =>
-      a.status === 'idle' || a.status === 'completed' || a.status === 'error'
-    );
-    for (const agent of needsStart) {
-      await startAgent(agent.id, '', { resume: true });
-    }
-  }, [filteredAgents, startAgent]);
-
-  const handleStopAll = useCallback(async () => {
-    const running = filteredAgents.filter(a => a.status === 'running' || a.status === 'waiting');
-    for (const agent of running) {
-      await stopAgent(agent.id);
-    }
-  }, [filteredAgents, stopAgent]);
-
   const handleCopyOutput = useCallback(async (agentId: string) => {
     // The list no longer carries the scrollback, so ask for this one agent.
     const full = await window.electronAPI?.agent?.get(agentId);
     const output = full?.output?.join('') ?? '';
     if (output) navigator.clipboard.writeText(output).catch(() => { });
   }, []);
-
-  const handleLayoutChange = useCallback((preset: LayoutPreset) => {
-    if (tabManager.activeCustomTab) {
-      tabManager.setTabLayout(tabManager.activeCustomTab.id, preset);
-    }
-  }, [tabManager]);
 
   const handleNewAgent = useCallback(async (
     projectPath: string,
@@ -410,7 +366,12 @@ export default function TerminalsView() {
     return () => clearTimeout(timer);
   }, [viewFullscreen]);
 
-  const runningCount = filteredAgents.filter(a => a.status === 'running' || a.status === 'waiting').length;
+  // Branch of the tab the board is showing - the focused agent wins, otherwise
+  // the first one in the tab. Feeds the status bar's right-hand slot.
+  const currentBranch = useMemo(() => {
+    const focused = filteredAgents.find(a => a.id === focusedPanelId);
+    return (focused ?? filteredAgents[0])?.branchName;
+  }, [filteredAgents, focusedPanelId]);
 
   return (
     <DndContext sensors={dnd.sensors} onDragEnd={dnd.handleDragEnd}>
@@ -418,32 +379,9 @@ export default function TerminalsView() {
         {/* Broadcast overlay */}
         <BroadcastIndicator active={broadcast.broadcastMode} />
 
-        {/* Top toolbar */}
-        <GlobalToolbar
-          layout={gridPreset}
-          onLayoutChange={handleLayoutChange}
-          broadcastMode={broadcast.broadcastMode}
-          onToggleBroadcast={broadcast.toggleBroadcast}
-          onStartAll={handleStartAll}
-          onStopAll={handleStopAll}
-          onNewAgent={() => setShowNewChatModal(true)}
-          runningCount={runningCount}
-          totalCount={filteredAgents.length}
-          fontSize={multiTerminal.fontSize}
-          onZoomIn={multiTerminal.zoomIn}
-          onZoomOut={multiTerminal.zoomOut}
-          onZoomReset={multiTerminal.zoomReset}
-          isViewFullscreen={viewFullscreen}
-          onToggleViewFullscreen={() => setViewFullscreen(prev => !prev)}
-          isCustomTabActive={tabManager.isCustomTabActive}
-          allAgents={agents}
-          currentTabAgentIds={currentTabAgentIds}
-          onAddAgentToTab={handleAddAgentToTab}
-            onAddAgentsToTab={handleAddAgentsToTab}
-          disabledPresets={disabledPresets}
-        />
-
-        {/* Project tabs - the board follows your project folders */}
+        {/* Project tabs - the board follows your project folders. First element
+            of the frame: the layout and + Terminal controls live in the page
+            header now, not in a toolbar above the strip. */}
         <ProjectTabBar
           agents={agents}
           activeTab={tabManager.activeTab}
@@ -463,12 +401,10 @@ export default function TerminalsView() {
               tabManager.setActiveTab({ type: 'project', projectPath: path });
             }
           }}
-          panelOpen={panelOpen}
-          onTogglePanel={() => setPanelOpen(prev => !prev)}
         />
 
         {/* Terminal grid - takes full space, relative for sidebar panel */}
-        <div className="flex-1 min-h-0 relative">
+        <div className="flex-1 min-h-0 relative mt-2">
           <TerminalGrid
             agents={filteredAgents}
             visiblePanels={grid.visiblePanels}
@@ -507,8 +443,8 @@ export default function TerminalsView() {
           />
         </div>
 
-        {/* Status bar */}
-        <StatusBar agents={filteredAgents} />
+        {/* Status bar - full-bleed chrome at the bottom of the frame */}
+        <StatusBar agents={filteredAgents} branch={currentBranch} />
 
         {/* Context menu */}
         <ContextMenu

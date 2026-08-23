@@ -1,8 +1,9 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import type { AppSettings } from '../types';
+import { DATA_DIR } from '../constants';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -66,7 +67,7 @@ export class GeminiProvider implements CLIProvider {
     }
 
     // Include Tars directory
-    command += ` --include-directories '${os.homedir()}/.dorothy'`;
+    command += ` --include-directories '${DATA_DIR}'`;
 
     // Prompt with skills directive
     let finalPrompt = params.prompt;
@@ -96,7 +97,7 @@ export class GeminiProvider implements CLIProvider {
       command += ' --debug';
     }
 
-    command += ` --include-directories "${os.homedir()}/.dorothy"`;
+    command += ` --include-directories "${DATA_DIR}"`;
 
     const escaped = params.prompt.replace(/'/g, "'\\''");
     command += ` -p '${escaped}'`;
@@ -226,8 +227,12 @@ export class GeminiProvider implements CLIProvider {
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
     // Try gemini mcp add first (proper CLI registration)
     try {
-      const argsStr = args.map(a => `"${a}"`).join(' ');
-      execSync(`gemini mcp add -s user ${name} ${command} ${argsStr}`, {
+      // execFileSync passes argv as a structured array, so name/command/args are
+      // never seen by a shell. The previous form wrapped each arg in double
+      // quotes and handed the whole line to execSync (/bin/sh -c), where
+      // $(...) and backticks inside an argument are still expanded - and one of
+      // those args is `tasmaniaServerPath` straight out of app-settings.json.
+      execFileSync('gemini', ['mcp', 'add', '-s', 'user', name, command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
@@ -376,7 +381,7 @@ fi
 export PATH="${params.binaryDir}:$PATH"
 cd "${params.projectPath}"
 echo "=== Task started at $(date) ===" >> "${params.logPath}"
-"${params.binaryPath}" --output-format stream-json --debug --include-directories "${params.homeDir}/.dorothy" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
+"${params.binaryPath}" --output-format stream-json --debug --include-directories "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
 echo "=== Task completed at $(date) ===" >> "${params.logPath}"
 `;
   }

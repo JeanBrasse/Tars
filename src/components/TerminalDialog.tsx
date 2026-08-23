@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, CheckCircle, XCircle, X, Link2 } from 'lucide-react';
 import { isElectron } from '@/hooks/useElectron';
 import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
+import { Button } from '@/components/ui';
+import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
 interface TerminalDialogProps {
@@ -28,6 +30,10 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
 
+  // Follows the app theme; applied to the live terminal below instead of at
+  // init, so a theme flip never tears down the PTY-attached instance.
+  const terminalTheme = useTerminalTheme();
+
   // Reset state when opening with new repo
   useEffect(() => {
     if (open) {
@@ -48,31 +54,8 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
       const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
-        theme: {
-          background: '#0D0B08',
-          foreground: '#e4e4e7',
-          cursor: '#3D9B94',
-          cursorAccent: '#0D0B08',
-          selectionBackground: '#3D9B9433',
-          black: '#18181b',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#a855f7',
-          cyan: '#3D9B94',
-          white: '#e4e4e7',
-          brightBlack: '#52525b',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#c084fc',
-          brightCyan: '#67e8f9',
-          brightWhite: '#fafafa',
-        },
+        ...createXtermOptions(),
         fontSize: 13,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 10000,
@@ -133,6 +116,13 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
       setTerminalReady(false);
     };
   }, [open]);
+
+  // Repaint the live terminal when the app theme flips
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = terminalTheme;
+    }
+  }, [terminalTheme]);
 
   // Start PTY only after terminal is ready
   useEffect(() => {
@@ -275,7 +265,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-scrim backdrop-blur-sm z-[70] flex items-center justify-center p-4"
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
@@ -300,7 +290,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
                       <XCircle className="w-4 h-4 text-danger" />
                     )
                   ) : (
-                    <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
                   )}
                 </div>
                 <div>
@@ -338,10 +328,10 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
                       key={id}
                       onClick={() => toggleProvider(id)}
                       disabled={isClaude || installComplete}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1.5 h-[26px] px-2.5 text-xs font-medium transition-colors border ${
                         isSelected
-                          ? 'bg-secondary text-foreground'
-                          : 'bg-secondary/50 text-muted-foreground hover:text-foreground'
+                          ? 'border-border-accent bg-secondary text-foreground'
+                          : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
                       } ${isClaude ? 'opacity-90 cursor-default' : ''}`}
                     >
                       {typeof icon === 'string' ? (
@@ -371,7 +361,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
               </p>
               <div
                 ref={terminalRef}
-                className="bg-[#0D0B08] rounded-none overflow-hidden"
+                className={`${TERMINAL_SURFACE_CLASS} rounded-none overflow-hidden`}
                 style={{ height: '400px' }}
               />
             </div>
@@ -382,16 +372,13 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
                   ? `Exited with code ${installExitCode}`
                   : 'Waiting for installation to complete...'}
               </p>
-              <button
+              <Button
+                variant={installComplete ? 'primary' : 'danger'}
+                size="md"
                 onClick={handleClose}
-                className={`px-4 py-2 rounded-none font-medium ${
-                  installComplete
-                    ? 'bg-foreground text-background hover:bg-foreground/90'
-                    : 'bg-danger/20 text-danger hover:bg-danger/30'
-                }`}
               >
                 {installComplete ? 'Close' : 'Cancel'}
-              </button>
+              </Button>
             </div>
           </motion.div>
         </motion.div>

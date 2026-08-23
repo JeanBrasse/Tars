@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export interface DropdownOption<T extends string = string> {
   value: T;
@@ -56,7 +56,9 @@ export function Dropdown<T extends string = string>({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 bg-secondary border border-border text-xs text-foreground hover:border-border-accent transition-colors ${mono ? 'font-mono' : ''}`}
+        className={`w-full h-8 px-3 flex items-center justify-between gap-2 bg-secondary border text-sm text-foreground transition-colors ${
+          open ? 'border-primary' : 'border-border hover:border-border-accent'
+        } ${mono ? 'font-mono' : ''}`}
       >
         <span className={`truncate ${current ? '' : 'text-muted-foreground'}`}>
           {current?.label ?? placeholder}
@@ -74,15 +76,16 @@ export function Dropdown<T extends string = string>({
               type="button"
               disabled={o.disabled}
               onClick={() => { onChange(o.value); setOpen(false); }}
-              className={`w-full flex items-start gap-2 px-2.5 py-1.5 text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                o.value === value ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-primary/5 hover:text-foreground'
+              className={`w-full h-8 px-3 flex items-center gap-2 text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                o.value === value ? 'bg-accent-dim text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
               }`}
             >
-              <Check className={`w-3 h-3 mt-0.5 shrink-0 ${o.value === value ? 'text-primary' : 'opacity-0'}`} />
-              <span className="min-w-0">
-                <span className={`block truncate ${mono ? 'font-mono' : ''}`}>{o.label}</span>
-                {o.hint && <span className="block text-[10px] text-muted-foreground truncate">{o.hint}</span>}
-              </span>
+              {/* 4px accent square marks the selection; kept in flow when unselected so labels stay aligned */}
+              <span className={`w-1 h-1 shrink-0 ${o.value === value ? 'bg-primary' : 'opacity-0'}`} />
+              <span className={`min-w-0 truncate ${mono ? 'font-mono' : ''}`}>{o.label}</span>
+              {o.hint && (
+                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{o.hint}</span>
+              )}
             </button>
           ))}
         </div>

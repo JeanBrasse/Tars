@@ -4,10 +4,11 @@ import { useStore } from '@/store';
 import { Brand, BrandMark } from '@/components/Brand';
 import Sidebar from './Sidebar';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Download, ExternalLink, RotateCw, Loader2 } from 'lucide-react';
+import { Menu, X, Loader2 } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { Splash } from '@/components/Splash';
+import { Button } from '@/components/ui';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -75,7 +76,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 }
 
 function ClientLayoutInner({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed, mobileMenuOpen, setMobileMenuOpen, darkMode, setDarkMode, setVaultUnreadCount } = useStore();
+  const { mobileMenuOpen, setMobileMenuOpen, darkMode, setDarkMode, setVaultUnreadCount } = useStore();
   const isMobile = useIsMobile();
 
   // Only on a genuine cold start: navigating between pages must never replay it.
@@ -202,13 +203,17 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [isMobile, mobileMenuOpen, setMobileMenuOpen]);
 
-  const mainMarginLeft = isMobile ? 0 : (sidebarCollapsed ? 72 : 240);
+  // One flat width — the collapsed state is gone. Must stay in step with
+  // `sidebarWidth` in Sidebar.tsx and with `--sidebar-w` in globals.css.
+  const mainMarginLeft = isMobile ? 0 : 216;
 
   return (
     <div className="min-h-screen bg-bg-primary relative">
       {showSplash && <Splash onDone={() => setShowSplash(false)} />}
-      {/* Full-width window drag bar at the very top (desktop only) */}
-      <div className="window-drag hidden lg:block fixed top-0 left-0 right-0 h-7 z-[60]" />
+      {/* Window drag strip, sidebar-wide only (desktop). Full width it sat on
+          z-[60] across every page header and swallowed the clicks on the
+          actions that live there; the traffic lights only need this column. */}
+      <div className="window-drag hidden lg:block fixed top-0 left-0 h-7 z-[60]" style={{ width: 'var(--sidebar-w)' }} />
 
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-bg-secondary border-b border-border-primary z-40 flex items-center px-4">
@@ -232,7 +237,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="lg:hidden fixed inset-0 bg-black/50 z-40"
+            className="lg:hidden fixed inset-0 bg-scrim z-40"
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
@@ -241,12 +246,14 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
       {/* Sidebar - Desktop: always visible, Mobile: drawer */}
       <Sidebar isMobile={isMobile} />
 
-      {/* Main Content */}
+      {/* Main Content. 26px side gutters, 22px at the bottom, no top padding:
+          the 22px header gutter is the page's own job via <PageHeader>, so no
+          page may re-add `pt-4 lg:pt-6` here. */}
       <motion.main
         initial={false}
         animate={{ marginLeft: mainMarginLeft }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
-        className="min-h-screen pt-16 lg:pt-0 p-4 lg:p-6 pb-6"
+        className="min-h-screen p-4 pt-16 lg:px-[26px] lg:pb-[22px] lg:pt-0"
       >
         {children}
       </motion.main>
@@ -258,7 +265,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
+            className="fixed inset-0 bg-scrim z-[100] flex items-center justify-center p-4"
             onClick={() => setUpdateDismissed(true)}
           >
             <motion.div
@@ -302,63 +309,49 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
                     <span>Downloading... {downloadPercent.toFixed(0)}%</span>
                     <span>{downloadSpeed > 0 ? `${(downloadSpeed / 1024 / 1024).toFixed(1)} MB/s` : ''}</span>
                   </div>
-                  <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                  <div className="w-full h-2 bg-secondary overflow-hidden">
                     <div
-                      className="h-full bg-foreground rounded-full transition-all duration-300"
+                      className="h-full bg-primary transition-all duration-300"
                       style={{ width: `${downloadPercent}%` }}
                     />
                   </div>
                 </div>
               )}
 
+              {/* The label carries what the icon used to say, so the download
+                  and restart glyphs are gone; the spinners stay because they
+                  report progress, not the action. */}
               <div className="flex gap-2">
                 {updateFlowState === 'available' && (
-                  <button
-                    onClick={handleDownloadUpdate}
-                    className="flex-1 px-4 py-2 text-sm bg-foreground text-background hover:bg-foreground/90 transition-colors flex items-center justify-center gap-2 rounded"
-                  >
-                    {isFallbackUpdate ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                    Download Update
-                  </button>
+                  <Button variant="primary" className="flex-1" onClick={handleDownloadUpdate}>
+                    {isFallbackUpdate ? 'Download in Browser' : 'Download Update'}
+                  </Button>
                 )}
 
                 {updateFlowState === 'downloading' && (
-                  <button
-                    disabled
-                    className="flex-1 px-4 py-2 text-sm bg-foreground/50 text-background cursor-not-allowed flex items-center justify-center gap-2 rounded"
-                  >
+                  <Button variant="primary" className="flex-1" disabled>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Downloading...
-                  </button>
+                  </Button>
                 )}
 
                 {updateFlowState === 'ready' && (
-                  <button
-                    onClick={handleQuitAndInstall}
-                    className="flex-1 px-4 py-2 text-sm bg-success text-white hover:bg-success transition-colors flex items-center justify-center gap-2 rounded"
-                  >
-                    <RotateCw className="w-4 h-4" />
+                  <Button variant="primary" className="flex-1" onClick={handleQuitAndInstall}>
                     Restart to Apply
-                  </button>
+                  </Button>
                 )}
 
                 {updateFlowState === 'restarting' && (
-                  <button
-                    disabled
-                    className="flex-1 px-4 py-2 text-sm bg-foreground/50 text-background cursor-not-allowed flex items-center justify-center gap-2 rounded"
-                  >
+                  <Button variant="primary" className="flex-1" disabled>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Restarting...
-                  </button>
+                  </Button>
                 )}
 
                 {updateFlowState !== 'restarting' && (
-                  <button
-                    onClick={() => setUpdateDismissed(true)}
-                    className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded"
-                  >
+                  <Button variant="ghost" onClick={() => setUpdateDismissed(true)}>
                     Later
-                  </button>
+                  </Button>
                 )}
               </div>
             </motion.div>

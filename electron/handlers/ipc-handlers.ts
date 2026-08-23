@@ -8,7 +8,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { DATA_DIR } from '../constants';
+import { DATA_DIR, dataPath } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
 import * as pty from 'node-pty';
 import TelegramBot from 'node-telegram-bot-api';
@@ -18,6 +18,7 @@ import { App as SlackApp, LogLevel } from '@slack/bolt';
 import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort } from '../types';
 import { buildFullPath } from '../utils/path-builder';
 import { decodeProjectPath } from '../utils/decode-project-path';
+import { resolveWorktreePath } from '../utils/worktree-path';
 import { getProvider, getAllProviders } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput } from '../core/agent-manager';
@@ -281,11 +282,14 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Create git worktree if enabled
     if (config.worktree?.enabled && config.worktree?.branchName) {
       branchName = config.worktree.branchName;
-      if (!/^[a-zA-Z0-9._\-\/]+$/.test(branchName)) {
+      const worktreesDir = path.join(cwd, '.worktrees');
+      // resolveWorktreePath refuses `..`: the old regex allowed both `.` and
+      // `/`, so `../../../etc` passed it, resolved outside the project, and
+      // the "already exists, reusing it" branch below then made it the cwd.
+      worktreePath = resolveWorktreePath(cwd, branchName);
+      if (!worktreePath) {
         throw new Error('Invalid branch name');
       }
-      const worktreesDir = path.join(cwd, '.worktrees');
-      worktreePath = path.join(worktreesDir, branchName);
 
       console.log(`Creating git worktree for agent ${id} at ${worktreePath} on branch ${branchName}`);
 
@@ -892,11 +896,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // (worktree changes on a running agent could be destructive)
       if (params.worktree.enabled && params.worktree.branchName) {
         const branchName = params.worktree.branchName;
-        if (!/^[a-zA-Z0-9._\-\/]+$/.test(branchName)) {
+        const worktreesDir = path.join(agent.projectPath, '.worktrees');
+        const worktreePath = resolveWorktreePath(agent.projectPath, branchName);
+        if (!worktreePath) {
           return { success: false, error: 'Invalid branch name' };
         }
-        const worktreesDir = path.join(agent.projectPath, '.worktrees');
-        const worktreePath = path.join(worktreesDir, branchName);
         try {
           if (!fs.existsSync(worktreesDir)) {
             fs.mkdirSync(worktreesDir, { recursive: true });
@@ -1379,7 +1383,7 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
       // Read rate limits from statusline cache file
       let rateLimits = null;
       try {
-        const rateLimitsFile = path.join(os.homedir(), '.dorothy', 'rate-limits.json');
+        const rateLimitsFile = dataPath('rate-limits.json');
         if (fs.existsSync(rateLimitsFile)) {
           rateLimits = JSON.parse(fs.readFileSync(rateLimitsFile, 'utf-8'));
         }
@@ -1390,7 +1394,7 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
       // Read accumulated token stats from statusline
       let tokenStats = null;
       try {
-        const tokenStatsFile = path.join(os.homedir(), '.dorothy', 'token-stats.json');
+        const tokenStatsFile = dataPath('token-stats.json');
         if (fs.existsSync(tokenStatsFile)) {
           const raw = JSON.parse(fs.readFileSync(tokenStatsFile, 'utf-8'));
           // Sum all sessions

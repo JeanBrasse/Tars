@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, CheckCircle, XCircle, Play, Square, RefreshCw, Cpu, Server } from 'lucide-react';
+import { Button, Input, Select } from '@/components/ui';
+import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
-import { TasmaniaIcon } from './TasmaniaIcon';
 import type { AppSettings } from './types';
 
 interface TasmaniaSectionProps {
@@ -33,6 +33,12 @@ interface LocalModel {
   parameters: string | null;
   architecture: string | null;
 }
+
+/** Row actions are words, never glyphs: 26px bordered lowercase mono. */
+const ACTION = 'font-mono lowercase';
+
+/** A readout, not a control: the state of something Tars only reports on. */
+const READOUT = 'font-mono text-[11px] text-muted-foreground';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -193,52 +199,63 @@ export const TasmaniaSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
     }
   };
 
-  const statusColor = serverStatus?.status === 'running'
-    ? 'bg-success'
-    : serverStatus?.status === 'starting'
-      ? 'bg-warning'
-      : 'bg-secondary';
+  // Picking a model loads it; picking the empty option stops the server. The
+  // select is the loaded-model state, so there is nothing else to press.
+  const handleModelChange = (modelPath: string) => {
+    if (modelPath) {
+      handleLoadModel(modelPath);
+    } else {
+      handleStopModel();
+    }
+  };
 
-  const statusText = serverStatus?.status === 'running'
-    ? 'Running'
-    : serverStatus?.status === 'starting'
-      ? 'Starting...'
-      : 'Stopped';
+  const enableDescription = settingUpMcp
+    ? 'Registering the MCP server with Claude Code…'
+    : mcpConfigured
+      ? 'Registered with Claude Code. Every agent can reach the local model.'
+      : 'Registers Tasmania as an MCP server so agents can run a local model.';
+
+  // The test tells the whole story of the path, so it takes the row's one line.
+  const pathDescription = testResult ? (
+    <span className={testResult.success ? 'text-status-running' : 'text-status-error'}>{testResult.message}</span>
+  ) : (
+    'Where the Tasmania MCP server lives on disk.'
+  );
+
+  // Raw status vocabulary, and the server's own words when it errors.
+  const modelsDescription = !appSettings.tasmaniaEnabled
+    ? 'Enable Tasmania to read the GGUF models on disk.'
+    : !serverStatus
+      ? 'Tasmania is not answering. Make sure the app is running.'
+      : serverStatus.status === 'running'
+        ? `running · ${serverStatus.modelName ?? 'model loaded'} · ${serverStatus.endpoint ?? ''} · ${formatUptime(serverStatus.startedAt)}`
+        : serverStatus.status === 'starting'
+          ? 'starting'
+          : serverStatus.status === 'error'
+            ? serverStatus.error || 'error'
+            : 'idle · nothing loaded';
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Tasmania Integration</h2>
-        <p className="text-sm text-muted-foreground">Connect to Tasmania for local LLM inference. Agents gain access to local model tools via MCP.</p>
-      </div>
+    <>
+      <SettingsRow
+        label="Enable Tasmania"
+        description={enableDescription}
+        control={
+          <Toggle
+            enabled={appSettings.tasmaniaEnabled}
+            onChange={handleToggleEnabled}
+          />
+        }
+      />
 
-      {/* Enable/Disable Toggle */}
-      <div className="border border-border bg-card p-6">
-        <div className="flex items-center justify-between pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <TasmaniaIcon className="w-5 h-5 text-muted-foreground" />
-            <div>
-              <p className="font-medium">Enable Tasmania</p>
-              <p className="text-sm text-muted-foreground">
-                Register Tasmania MCP server with Claude Code
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {settingUpMcp && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
-            <Toggle
-              enabled={appSettings.tasmaniaEnabled}
-              onChange={handleToggleEnabled}
-            />
-          </div>
-        </div>
-
-        {/* MCP Server Path */}
-        <div className="pt-4 space-y-4">
-          <div>
-            <label className="text-sm font-medium mb-2 block">MCP Server Path</label>
-            <input
-              type="text"
+      <SettingsRow
+        label="Server path"
+        description={pathDescription}
+        control={
+          <div className="flex w-full items-center justify-end gap-2">
+            <Input
+              mono
+              className="min-w-0 flex-1"
               value={appSettings.tasmaniaServerPath}
               onChange={(e) => onUpdateLocalSettings({ tasmaniaServerPath: e.target.value })}
               onBlur={() => {
@@ -247,214 +264,44 @@ export const TasmaniaSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
                 }
               }}
               placeholder="/path/to/tasmania/src/main/mcp/server.ts"
-              className="w-full px-3 py-2 bg-secondary border border-border text-sm font-mono focus:border-foreground focus:outline-none"
             />
+            <Button size="sm" className={ACTION} onClick={handleTestConnection} disabled={testing}>
+              {testing ? 'testing' : 'test'}
+            </Button>
           </div>
+        }
+      />
 
-          {/* Test Connection */}
-          <div>
-            <button
-              onClick={handleTestConnection}
-              disabled={testing}
-              className="px-4 py-2 bg-secondary text-foreground hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm flex items-center gap-2"
+      <SettingsRow
+        label="Installed models"
+        description={modelsDescription}
+        control={
+          models.length === 0 ? (
+            <span className={READOUT}>{loadingModels ? 'looking…' : 'none detected'}</span>
+          ) : (
+            <Select
+              width="control"
+              value={serverStatus?.modelPath ?? ''}
+              onChange={(e) => handleModelChange(e.target.value)}
+              disabled={loadingModel !== null || stoppingModel}
             >
-              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
-              Test Connection
-            </button>
-          </div>
+              <option value="">none loaded</option>
+              {models.map((model) => (
+                <option key={model.path} value={model.path}>
+                  {model.name} · {formatBytes(model.sizeBytes)}
+                  {model.quantization ? ` · ${model.quantization}` : ''}
+                </option>
+              ))}
+            </Select>
+          )
+        }
+      />
 
-          {testResult && (
-            <div className={`p-3 text-sm flex items-center gap-2 ${testResult.success
-              ? 'bg-success/10 text-success border border-success/20'
-              : 'bg-danger/10 text-danger border border-danger/20'
-              }`}>
-              {testResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-              {testResult.message}
-            </div>
-          )}
-
-          {/* MCP Registration Status */}
-          <div className="flex items-center gap-2 text-sm">
-            <div className={`w-2 h-2 rounded-full ${mcpConfigured ? 'bg-success' : 'bg-secondary'}`} />
-            <span className="text-muted-foreground">
-              MCP: {mcpConfigured ? 'Registered with Claude Code' : 'Not registered'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Server Status + Model Browser - only rendered when Tasmania is enabled */}
-      {appSettings.tasmaniaEnabled && (
-        <>
-          <div className="border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">Server Status</h3>
-              <button
-                onClick={fetchStatus}
-                className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
-                <span className="font-medium">{statusText}</span>
-              </div>
-
-              {serverStatus?.status === 'running' && (
-                <>
-                  {serverStatus.modelName && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Model</span>
-                      <span className="font-mono text-xs">{serverStatus.modelName}</span>
-                    </div>
-                  )}
-                  {serverStatus.endpoint && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Endpoint</span>
-                      <span className="font-mono text-xs">{serverStatus.endpoint}</span>
-                    </div>
-                  )}
-                  {serverStatus.backend && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Backend</span>
-                      <span>{serverStatus.backend}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Uptime</span>
-                    <span>{formatUptime(serverStatus.startedAt)}</span>
-                  </div>
-
-                  <button
-                    onClick={handleStopModel}
-                    disabled={stoppingModel}
-                    className="mt-2 px-3 py-1.5 bg-danger/10 text-danger hover:bg-danger/20 border border-danger/20 transition-colors text-sm flex items-center gap-2"
-                  >
-                    {stoppingModel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
-                    Stop Model
-                  </button>
-                </>
-              )}
-
-              {!serverStatus && (
-                <p className="text-muted-foreground text-xs">Unable to reach Tasmania. Make sure the app is running.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Model Browser */}
-          <div className="border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">Local Models</h3>
-              <button
-                onClick={fetchModels}
-                disabled={loadingModels}
-                className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {loadingModels ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              </button>
-            </div>
-
-            {models.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {loadingModels ? 'Loading models...' : 'No local models found. Make sure Tasmania is running.'}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {models.map((model) => {
-                  const isLoaded = serverStatus?.modelPath === model.path;
-                  return (
-                    <div
-                      key={model.path}
-                      className={`flex items-center justify-between p-3 border transition-colors ${
-                        isLoaded ? 'border-success/30 bg-success/5' : 'border-border'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 mr-3">
-                        <div className="flex items-center gap-2">
-                          <Cpu className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="font-medium text-sm truncate">{model.name}</span>
-                          {isLoaded && (
-                            <span className="text-xs bg-success/20 text-success px-1.5 py-0.5 shrink-0">Active</span>
-                          )}
-                        </div>
-                        <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
-                          <span>{formatBytes(model.sizeBytes)}</span>
-                          {model.quantization && <span>{model.quantization}</span>}
-                          {model.architecture && <span>{model.architecture}</span>}
-                          {model.parameters && <span>{model.parameters}</span>}
-                        </div>
-                      </div>
-                      {!isLoaded && (
-                        <button
-                          onClick={() => handleLoadModel(model.path)}
-                          disabled={loadingModel !== null}
-                          className="px-3 py-1.5 bg-secondary text-foreground hover:bg-secondary/80 disabled:opacity-50 transition-colors text-xs flex items-center gap-1.5 shrink-0"
-                        >
-                          {loadingModel === model.path ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Play className="w-3 h-3" />
-                          )}
-                          Load
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Available MCP Tools */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="font-medium mb-4">Available Agent Tools</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Once enabled, all agents will have access to these MCP tools:
-        </p>
-        <div className="space-y-3 text-sm">
-          <div className="flex gap-3">
-            <code className="bg-secondary px-2 py-0.5 text-xs font-mono shrink-0">query_llm</code>
-            <span className="text-muted-foreground">Send a prompt to the local LLM and get a response</span>
-          </div>
-          <div className="flex gap-3">
-            <code className="bg-secondary px-2 py-0.5 text-xs font-mono shrink-0">list_models</code>
-            <span className="text-muted-foreground">List all locally available GGUF models</span>
-          </div>
-          <div className="flex gap-3">
-            <code className="bg-secondary px-2 py-0.5 text-xs font-mono shrink-0">load_model</code>
-            <span className="text-muted-foreground">Load and start a specific local model</span>
-          </div>
-          <div className="flex gap-3">
-            <code className="bg-secondary px-2 py-0.5 text-xs font-mono shrink-0">get_server_status</code>
-            <span className="text-muted-foreground">Check llama-server status, loaded model, and endpoint</span>
-          </div>
-          <div className="flex gap-3">
-            <code className="bg-secondary px-2 py-0.5 text-xs font-mono shrink-0">download_model</code>
-            <span className="text-muted-foreground">Download a model from HuggingFace by repo and filename</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Setup Guide */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="font-medium mb-4">Setup Guide</h3>
-        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-          <li>Install Tasmania from <code className="bg-secondary px-1">github.com/mbaril010/tasmania</code></li>
-          <li>Launch Tasmania and download a GGUF model</li>
-          <li>Click &quot;Test Connection&quot; above to verify connectivity</li>
-          <li>Enable the integration with the toggle</li>
-          <li>Your agents can now use local LLM tools via MCP</li>
-        </ol>
-        <p className="text-xs text-muted-foreground mt-4">
-          Tasmania runs entirely locally. No API keys or external services required.
-        </p>
-      </div>
-    </div>
+      <SettingsRow
+        label="Metering"
+        description="Inference runs on this machine, so nothing is billed and nothing is counted."
+        control={<span className={READOUT}>no cost tracking</span>}
+      />
+    </>
   );
 };

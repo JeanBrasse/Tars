@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { getAppBasePath } from '../utils';
-import { MIME_TYPES } from '../constants';
+import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
 
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
@@ -133,7 +133,7 @@ export function hardenWindow(window: BrowserWindow): void {
 /** Roots local-file:// may read from: the user's own project and app data. */
 function isUnderAllowedRoot(filePath: string): boolean {
   const roots = [
-    path.join(os.homedir(), '.dorothy'),
+    DATA_DIR,
     path.join(os.homedir(), '.claude'),
     ...listKnownProjectRoots(),
   ];
@@ -146,7 +146,7 @@ function isUnderAllowedRoot(filePath: string): boolean {
 /** Project folders the user added, read fresh so a new project works at once. */
 function listKnownProjectRoots(): string[] {
   try {
-    const file = path.join(os.homedir(), '.dorothy', 'projects.json');
+    const file = dataPath('projects.json');
     if (!fs.existsSync(file)) return [];
     const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
     return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];

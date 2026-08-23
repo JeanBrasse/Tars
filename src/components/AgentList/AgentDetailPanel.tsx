@@ -17,6 +17,7 @@ import {
 import type { AgentStatus } from '@/types/electron';
 import { STATUS_COLORS, CHARACTER_FACES } from '@/app/agents/constants';
 import { getProviderDef } from '@/lib/providers';
+import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 
 interface AgentDetailPanelProps {
   agent: AgentStatus;
@@ -42,7 +43,7 @@ export function AgentDetailPanel({
       {/* Agent Header */}
       <div className="px-3 lg:px-5 py-3 lg:py-4 border-b border-border-primary flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-bg-tertiary/30">
         <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 rounded-none ${agent.name?.toLowerCase() === 'bitwonka' ? 'bg-accent-green/20' : statusConfig.bg} flex items-center justify-center relative`}>
+          <div className={`w-12 h-12 rounded-none ${agent.name?.toLowerCase() === 'bitwonka' ? 'bg-accent-green/20' : 'bg-bg-tertiary'} flex items-center justify-center relative`}>
             {agent.name?.toLowerCase() === 'bitwonka' ? (
               <span className="text-2xl">🐸</span>
             ) : agent.character ? (
@@ -152,11 +153,11 @@ export function AgentDetailPanel({
       <div className="flex-1 min-h-0 relative overflow-hidden">
         <div
           ref={terminalRef}
-          className="absolute inset-0 bg-[#0D0B08] p-2"
+          className={`absolute inset-0 ${TERMINAL_SURFACE_CLASS} p-2`}
           style={{ cursor: 'text' }}
         />
         {!terminalReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0D0B08]">
+          <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
             <div className="flex items-center gap-2 text-text-muted">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Initializing terminal...</span>

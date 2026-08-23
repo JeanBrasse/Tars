@@ -5,6 +5,7 @@ import * as os from 'os';
 
 let tmpDir: string;
 let mockExecSync: ReturnType<typeof vi.fn>;
+let mockExecFileSync: ReturnType<typeof vi.fn>;
 
 vi.mock('os', async (importOriginal) => {
   const mod = await importOriginal<typeof import('os')>();
@@ -13,12 +14,18 @@ vi.mock('os', async (importOriginal) => {
 
 vi.mock('child_process', () => ({
   execSync: (...args: unknown[]) => mockExecSync(...args),
+  execFileSync: (...args: unknown[]) => mockExecFileSync(...args),
 }));
 
 beforeEach(() => {
   vi.resetModules();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-prov-test-'));
   mockExecSync = vi.fn();
+  // registerMcpServer moved from execSync to execFileSync (argv, no shell).
+  // Delegating by default keeps every existing test that configures the CLI
+  // outcome through mockExecSync working, while the argv assertion still reads
+  // mockExecFileSync directly.
+  mockExecFileSync = vi.fn((...args: unknown[]) => mockExecSync(...args));
 });
 
 afterEach(() => {
@@ -85,19 +92,23 @@ describe('ClaudeProvider', () => {
   describe('registerMcpServer', () => {
     it('uses claude mcp add when CLI succeeds', async () => {
       const provider = await getProvider();
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       await provider.registerMcpServer('test-server', 'node', ['/path/to/bundle.js']);
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('claude mcp add -s user test-server'),
+      // argv, not a shell string: the previous form wrapped each arg in
+      // double quotes and handed the line to execSync, where $() still
+      // expands.
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'claude',
+        ['mcp', 'add', '-s', 'user', 'test-server', 'node', '/path/to/bundle.js'],
         expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
       );
     });
 
     it('falls back to mcp.json when CLI fails', async () => {
       const provider = await getProvider();
-      mockExecSync.mockImplementation(() => { throw new Error('command not found'); });
+      mockExecFileSync.mockImplementation(() => { throw new Error('command not found'); });
 
       await provider.registerMcpServer('test-server', 'node', ['/path/to/bundle.js']);
 
@@ -141,7 +152,7 @@ describe('ClaudeProvider', () => {
   describe('removeMcpServer', () => {
     it('calls claude mcp remove', async () => {
       const provider = await getProvider();
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       await provider.removeMcpServer('test-server');
 
@@ -153,7 +164,7 @@ describe('ClaudeProvider', () => {
 
     it('also cleans mcp.json', async () => {
       const provider = await getProvider();
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       const mcpDir = path.join(tmpDir, '.claude');
       fs.mkdirSync(mcpDir, { recursive: true });

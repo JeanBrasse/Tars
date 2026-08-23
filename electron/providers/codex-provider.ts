@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import type { AppSettings } from '../types';
 import type {
   CLIProvider,
@@ -144,8 +144,12 @@ export class CodexProvider implements CLIProvider {
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
     // Try codex mcp add first (proper CLI registration)
     try {
-      const argsStr = args.map(a => `"${a}"`).join(' ');
-      execSync(`codex mcp add ${name} -- ${command} ${argsStr}`, {
+      // execFileSync passes argv as a structured array, so name/command/args are
+      // never seen by a shell. The previous form wrapped each arg in double
+      // quotes and handed the whole line to execSync (/bin/sh -c), where
+      // $(...) and backticks inside an argument are still expanded - and one of
+      // those args is `tasmaniaServerPath` straight out of app-settings.json.
+      execFileSync('codex', ['mcp', 'add', name, '--', command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });

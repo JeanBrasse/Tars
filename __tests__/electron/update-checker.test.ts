@@ -26,7 +26,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../electron/constants', () => ({
-  GITHUB_REPO: 'JeanBrasse/Dorothy',
+  GITHUB_REPO: 'JeanBrasse/Tars',
 }));
 
 vi.stubGlobal('fetch', mockFetch);
@@ -174,7 +174,7 @@ describe('update-checker', () => {
         ok: true,
         json: async () => ({
           tag_name: 'v2.0.0',
-          html_url: 'https://github.com/JeanBrasse/Dorothy/releases/tag/v2.0.0',
+          html_url: 'https://github.com/JeanBrasse/Tars/releases/tag/v2.0.0',
           body: 'Release notes here',
           assets: [
             { name: 'Tars-2.0.0.dmg', browser_download_url: 'https://github.com/.../Tars-2.0.0.dmg' },
@@ -185,7 +185,7 @@ describe('update-checker', () => {
       const result = await checkForUpdates();
       expect(result).toEqual({ devMode: false, fallback: true });
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/JeanBrasse/Dorothy/releases/latest',
+        'https://api.github.com/repos/JeanBrasse/Tars/releases/latest',
         expect.objectContaining({
           headers: expect.objectContaining({
             'Accept': 'application/vnd.github.v3+json',
@@ -204,7 +204,7 @@ describe('update-checker', () => {
         ok: true,
         json: async () => ({
           tag_name: 'v2.0.0',
-          html_url: 'https://github.com/JeanBrasse/Dorothy/releases/tag/v2.0.0',
+          html_url: 'https://github.com/JeanBrasse/Tars/releases/tag/v2.0.0',
           body: 'Big update',
           assets: [
             { name: 'Tars-2.0.0.dmg', browser_download_url: 'https://example.com/Tars-2.0.0.dmg' },
@@ -219,7 +219,7 @@ describe('update-checker', () => {
         latestVersion: '2.0.0',
         hasUpdate: true,
         downloadUrl: 'https://example.com/Tars-2.0.0.dmg',
-        releaseUrl: 'https://github.com/JeanBrasse/Dorothy/releases/tag/v2.0.0',
+        releaseUrl: 'https://github.com/JeanBrasse/Tars/releases/tag/v2.0.0',
       }));
     });
 
@@ -233,7 +233,7 @@ describe('update-checker', () => {
         ok: true,
         json: async () => ({
           tag_name: 'v1.2.1',
-          html_url: 'https://github.com/JeanBrasse/Dorothy/releases/tag/v1.2.1',
+          html_url: 'https://github.com/JeanBrasse/Tars/releases/tag/v1.2.1',
           body: '',
           assets: [],
         }),

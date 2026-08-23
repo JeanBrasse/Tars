@@ -2,27 +2,22 @@ import type { KanbanColumn } from '@/types/kanban';
 
 export const COLUMN_CONFIG: Record<KanbanColumn, {
   title: string;
-  accentColor: string;
   emptyText: string;
 }> = {
   backlog: {
     title: 'TODO',
-    accentColor: 'bg-zinc-500',
     emptyText: 'No tasks yet',
   },
   planned: {
     title: 'PLANNED',
-    accentColor: 'bg-blue-500',
     emptyText: 'Drop tasks here',
   },
   ongoing: {
     title: 'IN WORK',
-    accentColor: 'bg-amber-500',
     emptyText: 'No tasks in progress',
   },
   done: {
     title: 'COMPLETED',
-    accentColor: 'bg-green-500',
     emptyText: 'No completed tasks',
   },
 };

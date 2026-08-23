@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { attachShiftEnterHandler, stripCursorSequences } from '@/lib/terminal';
-import { TERMINAL_THEME } from './constants';
+import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 // Clean xterm query/focus escape sequences out of user input before forwarding.
 function cleanInput(data: string): string {
@@ -30,6 +30,7 @@ export function useAgentDialogTerminal({
 }: UseAgentDialogTerminalOptions) {
   const [terminalReady, setTerminalReady] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const xtermTheme = useTerminalTheme();
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const fitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
@@ -71,9 +72,8 @@ export function useAgentDialogTerminal({
       const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
-        theme: TERMINAL_THEME,
+        ...createXtermOptions(),
         fontSize: 13,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 10000,
@@ -178,6 +178,13 @@ export function useAgentDialogTerminal({
       setTerminalReady(false);
     };
   }, [open, agent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Follow the app theme — xterm holds literal colours, so re-apply on toggle
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = xtermTheme;
+    }
+  }, [xtermTheme, terminalReady]);
 
   // Subscribe to live agent output
   useEffect(() => {

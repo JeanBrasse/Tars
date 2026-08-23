@@ -1,35 +1,13 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import type { Terminal } from 'xterm';
+import type { Terminal, ITheme } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
-
-interface TerminalTheme {
-  background: string;
-  foreground: string;
-  cursor: string;
-  cursorAccent: string;
-  selectionBackground: string;
-  black: string;
-  red: string;
-  green: string;
-  yellow: string;
-  blue: string;
-  magenta: string;
-  cyan: string;
-  white: string;
-  brightBlack: string;
-  brightRed: string;
-  brightGreen: string;
-  brightYellow: string;
-  brightBlue: string;
-  brightMagenta: string;
-  brightCyan: string;
-  brightWhite: string;
-}
+import { getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseXtermTerminalOptions {
-  theme: TerminalTheme;
+  /** Optional override; defaults to the app theme via `useTerminalTheme()`. */
+  theme?: ITheme;
   fontSize?: number;
   fontFamily?: string;
   scrollback?: number;
@@ -56,6 +34,14 @@ export function useXtermTerminal(
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [isReady, setIsReady] = useState(false);
+
+  const appTheme = useTerminalTheme();
+  const theme = options.theme ?? appTheme;
+
+  // The theme is read through a ref so a light/dark switch repaints the live
+  // terminal instead of re-running init and dropping the scrollback.
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   // Initialize terminal
   useEffect(() => {
@@ -84,9 +70,9 @@ export function useXtermTerminal(
       if (!mounted) return;
 
       const term = new Terminal({
-        theme: options.theme,
+        theme: themeRef.current,
         fontSize: options.fontSize ?? 13,
-        fontFamily: options.fontFamily ?? 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
+        fontFamily: options.fontFamily ?? getTerminalFontFamily(),
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: options.scrollback ?? 10000,
@@ -144,7 +130,13 @@ export function useXtermTerminal(
       cleanupFn?.();
       setIsReady(false);
     };
-  }, [isActive, options.theme, options.fontSize, options.fontFamily, options.scrollback]);
+  }, [isActive, options.fontSize, options.fontFamily, options.scrollback]);
+
+  // Follow the app theme without tearing the terminal down
+  useEffect(() => {
+    if (!isReady || !terminalRef.current) return;
+    terminalRef.current.options.theme = theme;
+  }, [isReady, theme]);
 
   // Handle resize
   useEffect(() => {

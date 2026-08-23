@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { Loader2, RefreshCw, ZoomIn, ZoomOut, Maximize2, X, Save, Eye, Pencil } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Loader2 } from 'lucide-react';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
+import { Button, Panel, StatusSquare } from '@/components/ui';
+import type { StatusTone } from '@/components/ui';
 
 // ── Node / edge types ─────────────────────────────────────────────────────────
 
-type NodeKind = 'agent' | 'skill' | 'memory' | 'instructions' | 'plugin' | 'mcp';
-type NodeShape = 'circle' | 'tag';
+type NodeKind = 'project' | 'agent' | 'skill' | 'memory' | 'instructions' | 'plugin' | 'mcp';
 
 interface NodeMeta {
   filePath?: string;     // for memory / instructions
@@ -23,28 +24,14 @@ interface GraphNode {
   id: string;
   label: string;
   kind: NodeKind;
-  shape?: NodeShape;
-  character?: string;
+  /** Mono second line inside the box - `3 memory files`, `mcp server`, a model name. */
+  sub?: string;
+  tone?: StatusTone;
   meta?: NodeMeta;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  r: number;
-  fixed?: boolean;
 }
 
-const CHARACTER_EMOJIS: Record<string, string> = {
-  robot:     '🤖',
-  ninja:     '🥷',
-  wizard:    '🧙',
-  astronaut: '👨‍🚀',
-  knight:    '⚔️',
-  pirate:    '🏴‍☠️',
-  alien:     '👽',
-  viking:    '🪓',
-  frog:      '🐸',
-};
+/** A node once the static layout has given it a place in the diagram. */
+type PlacedNode = GraphNode & { x: number; y: number };
 
 interface GraphEdge {
   source: string;
@@ -56,113 +43,107 @@ interface GraphData {
   edges: GraphEdge[];
 }
 
-// ── Visual config ─────────────────────────────────────────────────────────────
+// ── Static diagram geometry ───────────────────────────────────────────────────
+//
+// The graph used to be a force simulation drawn on a canvas: coloured glowing
+// circles that moved for a second every time anything changed. It is a box
+// diagram now - the same nodes and the same edges, but placed once, in rings
+// around the project, so the picture is the same every time you open it.
 
-const KIND_COLOR: Record<NodeKind, { fill: string; glow: string; label: string; text: string }> = {
-  agent:        { fill: '#8b5cf6', glow: 'rgba(139,92,246,0.7)',  label: '#ede9fe', text: '#ffffff' },
-  skill:        { fill: '#3b82f6', glow: 'rgba(59,130,246,0.5)',  label: '#bfdbfe', text: '#dbeafe' },
-  memory:       { fill: '#10b981', glow: 'rgba(16,185,129,0.5)',  label: '#a7f3d0', text: '#d1fae5' },
-  instructions: { fill: '#0ea5e9', glow: 'rgba(14,165,233,0.5)',  label: '#bae6fd', text: '#e0f2fe' },
-  plugin:       { fill: '#f59e0b', glow: 'rgba(245,158,11,0.5)',  label: '#fde68a', text: '#fef3c7' },
-  mcp:          { fill: '#ec4899', glow: 'rgba(236,72,153,0.5)',  label: '#fbcfe8', text: '#fce7f3' },
+const BOX_W = 176;
+const BOX_H = 46;
+/** Horizontal breathing room between two boxes sharing a ring. */
+const BOX_GAP = 28;
+/** Minimum distance between one ring and the next. */
+const RING_GAP = 132;
+
+const RING_OF: Record<NodeKind, number> = {
+  project: 0,
+  agent: 1,
+  memory: 2,
+  instructions: 2,
+  skill: 3,
+  plugin: 3,
+  mcp: 3,
 };
 
-const KIND_RADIUS: Record<NodeKind, number> = {
-  agent:        20,
-  skill:        10,
-  memory:       9,
-  instructions: 9,
-  plugin:       10,
-  mcp:          10,
+/** The mono sub-line for everything that is not an agent or a project. */
+const KIND_SUB: Record<NodeKind, string> = {
+  project: '',
+  agent: '',
+  skill: 'skill',
+  memory: 'memory file',
+  instructions: 'instructions',
+  plugin: 'plugin',
+  mcp: 'mcp server',
 };
 
-// ── Rounded rect helper (avoids ctx.roundRect browser/TS compatibility) ────────
-
-function strokeRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number, r: number,
-) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-  ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
-  ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
-  ctx.closePath();
+function agentTone(status: AgentStatus['status']): StatusTone {
+  if (status === 'running') return 'running';
+  if (status === 'waiting') return 'waiting';
+  if (status === 'error') return 'error';
+  return 'idle';
 }
-
-// ── Force simulation ──────────────────────────────────────────────────────────
-
-const REPULSION   = 4500;
-const ATTRACTION  = 0.032;
-const DAMPING     = 0.85;
-const ITERATIONS  = 1;
 
 /**
- * One step of the layout.
+ * Places every node on a ring: project in the middle, agents around it, the
+ * files they read next, then the tools they share on the outside.
  *
- * Returns the total kinetic energy so the caller can stop once the graph has
- * settled: this used to run forever at 60fps, O(n²) per frame with a fresh Map
- * each time, burning a core for as long as the page was open.
+ * A ring is widened until its circumference can hold its boxes, so the diagram
+ * grows outwards instead of overlapping itself; the scroller around it takes
+ * care of the rest.
  */
-function tickForce(nodes: GraphNode[], edges: GraphEdge[], idx: Map<string, number>): number {
-  const n = nodes.length;
+function layoutGraph(graph: GraphData): { nodes: PlacedNode[]; size: number } {
+  const agentRank = new Map<string, number>();
+  graph.nodes.filter(n => n.kind === 'agent').forEach((n, i) => agentRank.set(n.id, i));
 
-  for (let iter = 0; iter < ITERATIONS; iter++) {
-    // Repulsion between all pairs
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = nodes[i], b = nodes[j];
-        const dx = b.x - a.x || 0.1;
-        const dy = b.y - a.y || 0.1;
-        const dist2 = Math.max(dx * dx + dy * dy, 100);
-        const d = Math.sqrt(dist2);
-        const force = REPULSION / dist2;
-        const fx = force * dx / d;
-        const fy = force * dy / d;
-        a.vx -= fx; a.vy -= fy;
-        b.vx += fx; b.vy += fy;
-      }
+  // Keep everything hanging off the same agent together on its ring, so the
+  // edges fan out instead of crossing the whole diagram.
+  const ownerRank = (id: string) => {
+    for (const edge of graph.edges) {
+      if (edge.target === id && agentRank.has(edge.source)) return agentRank.get(edge.source)!;
+      if (edge.source === id && agentRank.has(edge.target)) return agentRank.get(edge.target)!;
     }
+    return Number.MAX_SAFE_INTEGER;
+  };
 
-    // Spring attraction along edges
-    for (const edge of edges) {
-      const ai = idx.get(edge.source);
-      const bi = idx.get(edge.target);
-      if (ai === undefined || bi === undefined) continue;
-      const a = nodes[ai], b = nodes[bi];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const idealLen = (a.r + b.r) * 5;
-      const delta = (dist - idealLen) * ATTRACTION;
-      const fx = (dx / dist) * delta;
-      const fy = (dy / dist) * delta;
-      a.vx += fx; a.vy += fy;
-      b.vx -= fx; b.vy -= fy;
-    }
-
-    // Integrate
-    for (const nd of nodes) {
-      if (nd.fixed) continue;
-      nd.vx *= DAMPING;
-      nd.vy *= DAMPING;
-      nd.x += nd.vx;
-      nd.y += nd.vy;
-    }
+  const rings: GraphNode[][] = [[], [], [], []];
+  for (const nd of graph.nodes) rings[RING_OF[nd.kind]].push(nd);
+  for (let r = 2; r < rings.length; r++) {
+    rings[r].sort((a, b) => ownerRank(a.id) - ownerRank(b.id) || a.label.localeCompare(b.label));
   }
 
-  let energy = 0;
-  for (const nd of nodes) energy += nd.vx * nd.vx + nd.vy * nd.vy;
-  return energy;
-}
+  const radii: number[] = [];
+  let previous = 0;
+  rings.forEach((ring, r) => {
+    if (!ring.length) { radii[r] = previous; return; }
+    if (r === 0 && ring.length === 1) { radii[0] = 0; previous = 0; return; }
+    const needed = (ring.length * (BOX_W + BOX_GAP)) / (2 * Math.PI);
+    const radius = Math.max(previous + RING_GAP, needed);
+    radii[r] = radius;
+    previous = radius;
+  });
 
-/** Below this the graph has stopped moving in any way a person can see. */
-const SETTLED_ENERGY = 0.05;
+  const outer = radii.length ? Math.max(...radii) : 0;
+  const size = Math.max(480, Math.round(2 * (outer + BOX_W / 2 + 32)));
+  const centre = size / 2;
+
+  const nodes: PlacedNode[] = [];
+  rings.forEach((ring, r) => {
+    const radius = radii[r] ?? 0;
+    const step = (2 * Math.PI) / Math.max(ring.length, 1);
+    ring.forEach((nd, i) => {
+      const angle = -Math.PI / 2 + i * step;
+      nodes.push({
+        ...nd,
+        x: radius === 0 ? centre : centre + Math.cos(angle) * radius,
+        y: radius === 0 ? centre : centre + Math.sin(angle) * radius,
+      });
+    });
+  });
+
+  return { nodes, size };
+}
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -180,24 +161,34 @@ type InstructionFiles = Record<string, string[] | 'global'>;
 
 // ── Build graph ───────────────────────────────────────────────────────────────
 
+const normalPath = (p: string) => p?.replace(/\/$/, '').toLowerCase();
+
+/** The memory folder that belongs to a project path, matched loosely by tail. */
+function findMemory(memories: ProjectMemory[], projectPath: string) {
+  const wanted = normalPath(projectPath ?? '');
+  if (!wanted) return undefined;
+  return memories.find(m =>
+    normalPath(m.projectPath) === wanted ||
+    normalPath(m.projectPath).endsWith('/' + wanted.split('/').pop())
+  );
+}
+
 function buildGraph(
   agents: AgentStatus[],
   claudeData: ClaudeDataType | null,
   memories: ProjectMemory[],
   instructions: InstructionFiles,
   selectedAgentId: string | null,
-  cx: number,
-  cy: number,
 ): GraphData {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const added = new Set<string>();
   const edgeSet = new Set<string>();
 
-  const addNode = (node: Omit<GraphNode, 'vx' | 'vy'> & { vx?: number; vy?: number }) => {
+  const addNode = (node: GraphNode) => {
     if (added.has(node.id)) return;
     added.add(node.id);
-    nodes.push({ vx: 0, vy: 0, ...node });
+    nodes.push(node);
   };
 
   const addEdge = (source: string, target: string) => {
@@ -211,34 +202,37 @@ function buildGraph(
     ? agents.filter(a => a.id === selectedAgentId)
     : agents;
 
-  const count = Math.max(relevantAgents.length, 1);
-  const angleStep = (2 * Math.PI) / count;
+  // ── Project nodes (the middle of the diagram) ──
+  for (const projectPath of [...new Set(relevantAgents.map(a => a.projectPath).filter(Boolean))]) {
+    const memory = findMemory(memories, projectPath);
+    const fileCount = memory?.hasMemory ? memory.files?.length ?? 0 : 0;
+    addNode({
+      id: `project:${projectPath}`,
+      label: memory?.projectName || projectPath.split('/').filter(Boolean).pop() || projectPath,
+      kind: 'project',
+      sub: `${fileCount} memory file${fileCount === 1 ? '' : 's'}`,
+    });
+  }
 
   // ── Agent nodes ──
-  relevantAgents.forEach((agent, i) => {
-    const spread = Math.min(180, 60 + count * 28);
-    const ax = cx + Math.cos(i * angleStep) * spread * 0.5;
-    const ay = cy + Math.sin(i * angleStep) * spread * 0.5;
-
+  relevantAgents.forEach(agent => {
     addNode({
       id: agent.id,
       label: agent.name || `Agent ${agent.id.slice(0, 6)}`,
       kind: 'agent',
-      character: agent.character ?? 'robot',
-      x: ax, y: ay,
-      r: KIND_RADIUS.agent,
+      sub: agent.model || agent.localModel || agent.provider || 'claude',
+      tone: agentTone(agent.status),
     });
+
+    if (agent.projectPath) addEdge(`project:${agent.projectPath}`, agent.id);
 
     // ── Agent skills ──
     for (const skillName of agent.skills ?? []) {
       const skillId = `skill:${skillName}`;
       if (!added.has(skillId)) {
-        const theta = Math.random() * 2 * Math.PI;
         const skillMeta = claudeData?.skills?.find(s => s.name === skillName);
         addNode({
-          id: skillId, label: skillName, kind: 'skill',
-          x: ax + Math.cos(theta) * 75, y: ay + Math.sin(theta) * 75,
-          r: KIND_RADIUS.skill,
+          id: skillId, label: skillName, kind: 'skill', sub: KIND_SUB.skill,
           meta: { skillPath: skillMeta?.path, description: skillMeta?.description },
         });
       }
@@ -246,22 +240,15 @@ function buildGraph(
     }
 
     // ── Memory files (MEMORY.md etc.) for this agent's project ──
-    const normalPath = (p: string) => p?.replace(/\/$/, '').toLowerCase();
-    const agentPath = normalPath(agent.projectPath ?? '');
-    const agentMemory = memories.find(m =>
-      normalPath(m.projectPath) === agentPath ||
-      normalPath(m.projectPath).endsWith('/' + agentPath.split('/').pop())
-    );
+    const agentMemory = findMemory(memories, agent.projectPath ?? '');
 
     if (agentMemory?.hasMemory && agentMemory.files?.length) {
-      agentMemory.files.forEach((file, fi) => {
+      agentMemory.files.forEach(file => {
         const memId = `mem:${file.path}`;
         if (!added.has(memId)) {
-          const theta = fi * (2 * Math.PI / agentMemory.files.length) + Math.PI * 0.3;
           addNode({
-            id: memId, label: file.name, kind: 'memory', shape: 'tag',
-            x: ax + Math.cos(theta) * 95, y: ay + Math.sin(theta) * 95,
-            r: 9, meta: { filePath: file.path, editable: true },
+            id: memId, label: file.name, kind: 'memory', sub: KIND_SUB.memory,
+            meta: { filePath: file.path, editable: true },
           });
         }
         addEdge(agent.id, memId);
@@ -281,12 +268,9 @@ function buildGraph(
     const connectTo = scope === 'global' ? relevantAgents.map(a => a.id) : (scope as string[]);
 
     if (!added.has(instrId)) {
-      const theta = Math.random() * 2 * Math.PI;
-      const dist = 110 + Math.random() * 60;
       addNode({
-        id: instrId, label, kind: 'instructions', shape: 'tag',
-        x: cx + Math.cos(theta) * dist, y: cy + Math.sin(theta) * dist,
-        r: 9, meta: { filePath, editable: true },
+        id: instrId, label, kind: 'instructions', sub: KIND_SUB.instructions,
+        meta: { filePath, editable: true },
       });
     }
     for (const agentId of connectTo) {
@@ -301,13 +285,9 @@ function buildGraph(
       const name = (p.name ?? p.displayName ?? 'plugin').toString();
       const pluginId = `plugin:${name}`;
       if (!added.has(pluginId)) {
-        const theta = Math.random() * 2 * Math.PI;
-        const dist = 150 + Math.random() * 70;
         const pFull = plugin as { name?: string; displayName?: string; description?: string };
         addNode({
-          id: pluginId, label: name, kind: 'plugin',
-          x: cx + Math.cos(theta) * dist, y: cy + Math.sin(theta) * dist,
-          r: KIND_RADIUS.plugin,
+          id: pluginId, label: name, kind: 'plugin', sub: KIND_SUB.plugin,
           meta: { description: pFull.description ?? '' },
         });
       }
@@ -323,12 +303,8 @@ function buildGraph(
     for (const [mcpName, mcpCfg] of Object.entries(mcpServers).slice(0, 20)) {
       const mcpId = `mcp:${mcpName}`;
       if (!added.has(mcpId)) {
-        const theta = Math.random() * 2 * Math.PI;
-        const dist = 160 + Math.random() * 60;
         addNode({
-          id: mcpId, label: mcpName, kind: 'mcp',
-          x: cx + Math.cos(theta) * dist, y: cy + Math.sin(theta) * dist,
-          r: KIND_RADIUS.mcp,
+          id: mcpId, label: mcpName, kind: 'mcp', sub: KIND_SUB.mcp,
           meta: {
             command: mcpCfg?.command ?? '',
             args: mcpCfg?.args ? JSON.stringify(mcpCfg.args) : '',
@@ -350,12 +326,8 @@ function buildGraph(
         if (!hasAccess) continue;
         const mcpId = `mcp:${mcpName}`;
         if (!added.has(mcpId)) {
-          const theta = Math.random() * 2 * Math.PI;
-          const dist = 160 + Math.random() * 60;
           addNode({
-            id: mcpId, label: mcpName, kind: 'mcp',
-            x: cx + Math.cos(theta) * dist, y: cy + Math.sin(theta) * dist,
-            r: KIND_RADIUS.mcp,
+            id: mcpId, label: mcpName, kind: 'mcp', sub: KIND_SUB.mcp,
             meta: { command: entry.command ?? '', args: entry.args ? JSON.stringify(entry.args) : '' },
           });
         }
@@ -367,174 +339,9 @@ function buildGraph(
   return { nodes, edges };
 }
 
-// ── Canvas renderer ───────────────────────────────────────────────────────────
-
-function drawGraph(
-  ctx: CanvasRenderingContext2D,
-  graph: GraphData,
-  hoveredId: string | null,
-  transform: { x: number; y: number; scale: number },
-) {
-  const dpr = window.devicePixelRatio || 1;
-  const w = ctx.canvas.offsetWidth;
-  const h = ctx.canvas.offsetHeight;
-
-  // DPR-aware clear: draw in CSS pixel space
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  ctx.save();
-  ctx.translate(transform.x, transform.y);
-  ctx.scale(transform.scale, transform.scale);
-
-  // Build a node lookup for edge drawing
-  const nodeMap = new Map(graph.nodes.map(n => [n.id, n]));
-
-  // ── Draw edges ──
-  for (const edge of graph.edges) {
-    const a = nodeMap.get(edge.source);
-    const b = nodeMap.get(edge.target);
-    if (!a || !b) continue;
-    const hovered = hoveredId === a.id || hoveredId === b.id;
-
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-
-    if (hovered) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-      ctx.lineWidth = 1.8;
-    } else {
-      ctx.strokeStyle = 'rgba(255,255,255,0.30)';
-      ctx.lineWidth = 1.2;
-    }
-    ctx.stroke();
-  }
-
-  // ── Draw nodes ──
-  for (const nd of graph.nodes) {
-    const colors = KIND_COLOR[nd.kind];
-    const hovered = nd.id === hoveredId;
-
-    if (nd.shape === 'tag') {
-      // Tag / pill shape for memory files
-      const TAG_FONT = `500 9.5px ui-sans-serif,system-ui,sans-serif`;
-      ctx.font = TAG_FONT;
-      const textW = ctx.measureText(nd.label).width;
-      const tw = textW + 16;
-      const th = 20;
-      const rx = nd.x - tw / 2;
-      const ry = nd.y - th / 2;
-
-      ctx.shadowColor = colors.glow;
-      ctx.shadowBlur = hovered ? 14 : 6;
-
-      strokeRoundRect(ctx, rx, ry, tw, th, 5);
-      ctx.fillStyle = hovered ? colors.fill + 'ee' : colors.fill + '2a';
-      ctx.fill();
-      ctx.strokeStyle = hovered ? colors.fill + 'ff' : colors.fill + 'aa';
-      ctx.lineWidth = hovered ? 1.5 : 1;
-      strokeRoundRect(ctx, rx, ry, tw, th, 5);
-      ctx.stroke();
-
-      ctx.shadowBlur = 0;
-
-      ctx.font = TAG_FONT;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      // Readable text shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillText(nd.label, nd.x + 0.5, nd.y + 0.5);
-      ctx.fillStyle = hovered ? '#ffffff' : colors.text;
-      ctx.fillText(nd.label, nd.x, nd.y);
-
-    } else if (nd.kind === 'agent') {
-      // Agent node: emoji avatar inside a circle
-      const r = nd.r * (hovered ? 1.3 : 1);
-      const emoji = CHARACTER_EMOJIS[nd.character ?? 'robot'] ?? '🤖';
-
-      // Subtle glow on hover only
-      if (hovered) {
-        ctx.shadowColor = 'rgba(255,255,255,0.4)';
-        ctx.shadowBlur = 22;
-        ctx.beginPath();
-        ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = '#0d0d14';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-
-      // Solid background circle matching canvas bg
-      ctx.beginPath();
-      ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#0d0d14';
-      ctx.fill();
-
-      // Clip emoji to circle
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(nd.x, nd.y, r - 1, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.font = `${Math.round(r * 1.5)}px serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(emoji, nd.x, nd.y + r * 0.05);
-      ctx.restore();
-
-      // Label below
-      ctx.font = `600 11px ui-sans-serif,system-ui,sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const ly = nd.y + r + 5;
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(nd.label, nd.x + 0.5, ly + 0.5);
-      ctx.fillStyle = hovered ? '#ffffff' : colors.label;
-      ctx.fillText(nd.label, nd.x, ly);
-
-    } else {
-      // Circle node (skill, plugin, mcp)
-      const r = nd.r * (hovered ? 1.3 : 1);
-
-      ctx.shadowColor = colors.glow;
-      ctx.shadowBlur = hovered ? 16 : 8;
-
-      ctx.beginPath();
-      ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = hovered ? colors.fill : colors.fill + 'dd';
-      ctx.fill();
-
-      ctx.shadowBlur = 0;
-
-      // Labels: always for plugin/mcp, threshold for others
-      const showLabel = hovered || nd.kind === 'plugin' || nd.kind === 'mcp' || nd.r >= 9;
-      if (showLabel) {
-        ctx.font = `400 9px ui-sans-serif,system-ui,sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const ly = nd.y + r + 4;
-        ctx.fillStyle = 'rgba(0,0,0,0.75)';
-        ctx.fillText(nd.label, nd.x + 0.5, ly + 0.5);
-        ctx.fillStyle = hovered ? '#ffffff' : colors.label;
-        ctx.fillText(nd.label, nd.x, ly);
-      }
-    }
-  }
-
-  ctx.restore();
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AgentKnowledgeGraph() {
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const animRef      = useRef<number>(0);
-  /** Set by the render loop; kicks it back off after an interaction. */
-  const restartRef   = useRef<() => void>(() => undefined);
-  const graphRef     = useRef<GraphData>({ nodes: [], edges: [] });
-  const transformRef = useRef({ x: 0, y: 0, scale: 1 });
-  const hoveredRef   = useRef<string | null>(null);
-  const dragRef      = useRef<{ nodeId: string | null; panStart: { x: number; y: number } | null }>({ nodeId: null, panStart: null });
-  const warmupRef    = useRef(0);
   const claudeDataRef    = useRef<ClaudeDataType | null>(null);
   const memoriesRef      = useRef<ProjectMemory[]>([]);
   const instructionsRef  = useRef<InstructionFiles>({});
@@ -543,9 +350,7 @@ export default function AgentKnowledgeGraph() {
   const [graphBuilding, setGraphBuilding] = useState(false);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [legendOpen, setLegendOpen] = useState(true);
-  const [nodeCount, setNodeCount] = useState(0);
-  const [edgeCount, setEdgeCount] = useState(0);
+  const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
 
   // ── Side panel state ──
   const [panelNode, setPanelNode] = useState<GraphNode | null>(null);
@@ -661,20 +466,12 @@ export default function AgentKnowledgeGraph() {
 
       setAgents(typedAgents);
 
-      // Default to first agent
-      const firstId = typedAgents[0]?.id ?? null;
-      setSelectedAgentId(firstId);
+      // The whole project, not one agent: the diagram is about what the agents
+      // share. Clicking an agent box still isolates it (and clicking it again
+      // brings the others back) - that is what the filter pills used to do.
+      setSelectedAgentId(null);
 
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const cx = canvas.offsetWidth / 2;
-      const cy = canvas.offsetHeight / 2;
-
-      const graph = buildGraph(typedAgents, enrichedClaude, memories, instrFiles, firstId, cx, cy);
-      graphRef.current = graph;
-      setNodeCount(graph.nodes.length);
-      setEdgeCount(graph.edges.length);
-      warmupRef.current = 150;
+      setGraph(buildGraph(typedAgents, enrichedClaude, memories, instrFiles, null));
     } finally {
       setLoading(false);
     }
@@ -686,169 +483,21 @@ export default function AgentKnowledgeGraph() {
   useEffect(() => {
     if (loading) return;
     setGraphBuilding(true);
-    const canvas = canvasRef.current;
-    if (!canvas) { setGraphBuilding(false); return; }
-    const cx = canvas.offsetWidth / 2;
-    const cy = canvas.offsetHeight / 2;
-    const graph = buildGraph(
+    setGraph(buildGraph(
       agents,
       claudeDataRef.current,
       memoriesRef.current,
       instructionsRef.current,
       selectedAgentId,
-      cx, cy,
-    );
-    graphRef.current = graph;
-    setNodeCount(graph.nodes.length);
-    setEdgeCount(graph.edges.length);
-    warmupRef.current = 120;
+    ));
     // Brief delay so the spinner is visible before the new graph renders
-    setTimeout(() => setGraphBuilding(false), 300);
+    const timer = setTimeout(() => setGraphBuilding(false), 300);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgentId, agents]);
 
-  // ── Animation loop ──
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // The node index is stable for a given graph, so it is built once rather
-    // than allocated on every frame.
-    let idx = new Map(graphRef.current.nodes.map((nd, i) => [nd.id, i]));
-    let indexedCount = graphRef.current.nodes.length;
-
-    const loop = () => {
-      const graph = graphRef.current;
-      const t = transformRef.current;
-
-      if (graph.nodes.length !== indexedCount) {
-        idx = new Map(graph.nodes.map((nd, i) => [nd.id, i]));
-        indexedCount = graph.nodes.length;
-      }
-
-      const energy = tickForce(graph.nodes, graph.edges, idx);
-      if (warmupRef.current > 0) {
-        warmupRef.current--;
-      } else {
-        drawGraph(ctx, graph, hoveredRef.current, t);
-      }
-
-      // Settled: draw one last frame and stop. Interaction restarts it.
-      if (energy < SETTLED_ENERGY && warmupRef.current <= 0) {
-        animRef.current = 0;
-        return;
-      }
-      animRef.current = requestAnimationFrame(loop);
-    };
-
-    restartRef.current = () => {
-      if (!animRef.current) animRef.current = requestAnimationFrame(loop);
-    };
-
-    animRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [loading]);
-
-  // ── Canvas resize (DPR-aware) ──
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width  = canvas.offsetWidth  * dpr;
-      canvas.height = canvas.offsetHeight * dpr;
-    };
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
-    resize();
-    return () => ro.disconnect();
-  }, []);
-
-  // ── Hit-test ──
-  const hitTest = useCallback((ex: number, ey: number) => {
-    const t = transformRef.current;
-    const wx = (ex - t.x) / t.scale;
-    const wy = (ey - t.y) / t.scale;
-    for (const nd of [...graphRef.current.nodes].reverse()) {
-      if (nd.shape === 'tag') {
-        const canvas = canvasRef.current;
-        if (!canvas) continue;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) continue;
-        ctx.font = '500 9.5px ui-sans-serif,system-ui,sans-serif';
-        const tw = ctx.measureText(nd.label).width + 16;
-        if (Math.abs(wx - nd.x) <= tw / 2 + 4 && Math.abs(wy - nd.y) <= 14) return nd;
-      } else {
-        const dx = wx - nd.x, dy = wy - nd.y;
-        if (dx * dx + dy * dy <= (nd.r + 6) ** 2) return nd;
-      }
-    }
-    return null;
-  }, []);
-
-  // ── Pointer handlers ──
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const ex = e.clientX - rect.left;
-    const ey = e.clientY - rect.top;
-
-    if (dragRef.current.nodeId) {
-      const t = transformRef.current;
-      const nd = graphRef.current.nodes.find(n => n.id === dragRef.current.nodeId);
-      if (nd) { nd.x = (ex - t.x) / t.scale; nd.y = (ey - t.y) / t.scale; nd.vx = 0; nd.vy = 0; }
-      return;
-    }
-    if (dragRef.current.panStart) {
-      const { x: sx, y: sy } = dragRef.current.panStart;
-      transformRef.current = { ...transformRef.current, x: transformRef.current.x + (ex - sx), y: transformRef.current.y + (ey - sy) };
-      dragRef.current.panStart = { x: ex, y: ey };
-      return;
-    }
-
-    const hit = hitTest(ex, ey);
-    const prev = hoveredRef.current;
-    hoveredRef.current = hit?.id ?? null;
-    restartRef.current();
-    if (canvasRef.current) canvasRef.current.style.cursor = hit ? 'pointer' : 'grab';
-    if (prev !== hoveredRef.current) warmupRef.current = 0;
-  }, [hitTest]);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const ex = e.clientX - rect.left;
-    const ey = e.clientY - rect.top;
-    const hit = hitTest(ex, ey);
-    if (hit) dragRef.current.nodeId = hit.id;
-    else dragRef.current.panStart = { x: ex, y: ey };
-  }, [hitTest]);
-
-  const handleMouseUp = useCallback(() => {
-    // Pin dragged node so it stays where dropped
-    if (dragRef.current.nodeId) {
-      const nd = graphRef.current.nodes.find(n => n.id === dragRef.current.nodeId);
-      if (nd) { nd.fixed = true; nd.vx = 0; nd.vy = 0; }
-    }
-    dragRef.current.nodeId = null;
-    dragRef.current.panStart = null;
-    if (canvasRef.current) canvasRef.current.style.cursor = 'grab';
-  }, []);
-
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const ex = e.clientX - rect.left;
-    const ey = e.clientY - rect.top;
-    const delta = e.deltaY < 0 ? 1.1 : 0.9;
-    const t = transformRef.current;
-    const newScale = Math.min(5, Math.max(0.15, t.scale * delta));
-    transformRef.current = {
-      scale: newScale,
-      x: ex - (ex - t.x) * (newScale / t.scale),
-      y: ey - (ey - t.y) * (newScale / t.scale),
-    };
-  }, []);
+  const { nodes, size } = useMemo(() => layoutGraph(graph), [graph]);
+  const placedById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
 
   const openPanel = useCallback(async (node: GraphNode) => {
     setPanelNode(node);
@@ -900,122 +549,95 @@ export default function AgentKnowledgeGraph() {
     setPanelContent(panelDraft);
   }, [panelNode, panelDraft]);
 
-  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-    if (!hit) return;
-    if (hit.kind === 'agent') {
-      setSelectedAgentId(hit.id);
-    } else if (['memory', 'instructions', 'skill', 'plugin', 'mcp'].includes(hit.kind)) {
-      openPanel(hit);
+  const handleNodeClick = useCallback((node: GraphNode) => {
+    if (node.kind === 'agent') {
+      setSelectedAgentId(prev => (prev === node.id ? null : node.id));
+    } else if (node.kind !== 'project') {
+      openPanel(node);
     }
-  }, [hitTest, openPanel]);
-
-  const resetView = () => { transformRef.current = { x: 0, y: 0, scale: 1 }; warmupRef.current = 0; };
-
-  const zoom = (factor: number) => {
-    const t = transformRef.current;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const cx = canvas.offsetWidth / 2;
-    const cy = canvas.offsetHeight / 2;
-    const newScale = Math.min(5, Math.max(0.15, t.scale * factor));
-    transformRef.current = { scale: newScale, x: cx - (cx - t.x) * (newScale / t.scale), y: cy - (cy - t.y) * (newScale / t.scale) };
-    warmupRef.current = 0;
-  };
+  }, [openPanel]);
 
   return (
-    <div className="relative w-full h-full bg-[#0d0d14] rounded-xl overflow-hidden border border-border">
-      {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full"
-        style={{ cursor: 'grab' }}
-        onMouseMove={handleMouseMove}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-        onClick={handleClick}
-      />
+    <Panel fill padded={false} className="relative w-full overflow-hidden">
+      {/* Diagram */}
+      <div className="absolute inset-0 overflow-auto">
+        <div className="min-w-full min-h-full flex items-center justify-center p-4">
+          {nodes.length === 0 && !loading ? (
+            <p className="text-xs text-muted-foreground">No agents to map yet.</p>
+          ) : (
+            <div className="relative shrink-0" style={{ width: size, height: size }}>
+              <svg
+                width={size}
+                height={size}
+                className="absolute inset-0 pointer-events-none"
+                aria-hidden
+              >
+                {graph.edges.map(edge => {
+                  const a = placedById.get(edge.source);
+                  const b = placedById.get(edge.target);
+                  if (!a || !b) return null;
+                  return (
+                    <line
+                      key={`${edge.source}>${edge.target}`}
+                      x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                      stroke="var(--border-accent)"
+                      strokeWidth={1}
+                    />
+                  );
+                })}
+              </svg>
+
+              {nodes.map(node => (
+                <button
+                  key={node.id}
+                  onClick={() => handleNodeClick(node)}
+                  style={{
+                    left: node.x - BOX_W / 2,
+                    top: node.y - BOX_H / 2,
+                    width: BOX_W,
+                    height: BOX_H,
+                  }}
+                  className={`absolute flex flex-col justify-center gap-0.5 px-2.5 text-left border transition-colors cursor-pointer ${
+                    node.kind === 'project'
+                      ? 'border-primary bg-accent-dim'
+                      : selectedAgentId === node.id
+                        ? 'border-border-accent bg-secondary'
+                        : 'border-border bg-card hover:bg-secondary'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <StatusSquare tone={node.tone ?? 'idle'} />
+                    <span className="text-[12px] text-foreground truncate">{node.label}</span>
+                  </span>
+                  {node.sub && (
+                    <span className="pl-3 text-[10px] font-mono text-muted-foreground truncate">
+                      {node.sub}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Loading overlay */}
       {(loading || graphBuilding) && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] transition-opacity">
+        <div className="absolute inset-0 flex items-center justify-center bg-card transition-opacity">
           <div className="flex flex-col items-center gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             {graphBuilding && !loading && (
-              <span className="text-[11px] text-white/50">Switching agent…</span>
+              <span className="text-[11px] text-muted-foreground">Switching agent…</span>
             )}
           </div>
         </div>
       )}
 
-      {/* Top controls */}
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-        {/* Agent filter pills */}
-        <div className="flex flex-wrap gap-1.5 pointer-events-auto">
-          {agents.map(agent => (
-            <button
-              key={agent.id}
-              onClick={() => setSelectedAgentId(prev => prev === agent.id ? null : agent.id)}
-              className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-colors ${
-                selectedAgentId === agent.id
-                  ? 'bg-violet-500/30 border-violet-500/60 text-violet-200'
-                  : 'bg-black/40 border-white/10 text-white/50 hover:text-white/80'
-              }`}
-            >
-              {agent.name || agent.id.slice(0, 8)}
-            </button>
-          ))}
-        </div>
-
-        {/* Zoom + reset */}
-        <div className="flex items-center gap-1 pointer-events-auto">
-          <button onClick={() => zoom(1.25)} className="p-1.5 rounded-lg bg-black/50 border border-white/10 text-white/60 hover:text-white transition-colors">
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => zoom(0.8)} className="p-1.5 rounded-lg bg-black/50 border border-white/10 text-white/60 hover:text-white transition-colors">
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={resetView} className="p-1.5 rounded-lg bg-black/50 border border-white/10 text-white/60 hover:text-white transition-colors">
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={loadData} className="p-1.5 rounded-lg bg-black/50 border border-white/10 text-white/60 hover:text-white transition-colors">
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div className="absolute bottom-3 right-3">
-        {legendOpen ? (
-          <div className="bg-black/70 border border-white/10 rounded-xl p-3 text-[10px] text-white/70 space-y-1.5 backdrop-blur-sm min-w-[140px]">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-white/40 uppercase tracking-wider text-[9px]">Legend</span>
-              <button onClick={() => setLegendOpen(false)} className="text-white/30 hover:text-white/70">✕</button>
-            </div>
-            {(Object.entries(KIND_COLOR) as [NodeKind, typeof KIND_COLOR[NodeKind]][]).map(([kind, c]) => (
-              <div key={kind} className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.fill }} />
-                <span className="capitalize">{kind === 'mcp' ? 'MCP server' : kind === 'instructions' ? 'CLAUDE.md' : kind}</span>
-              </div>
-            ))}
-            <p className="text-white/30 text-[9px] mt-2 border-t border-white/10 pt-2">Scroll to zoom · drag to pan<br/>Click agent to isolate</p>
-          </div>
-        ) : (
-          <button
-            onClick={() => setLegendOpen(true)}
-            className="px-2.5 py-1 text-[10px] bg-black/50 border border-white/10 rounded-lg text-white/40 hover:text-white/70 transition-colors"
-          >
-            Legend
-          </button>
-        )}
-      </div>
-
-      {/* Node/edge count */}
-      <div className="absolute bottom-3 left-3 text-[10px] text-white/25">
-        {nodeCount} nodes · {edgeCount} edges
+      {/* What the picture means - the legend box and its coloured dots are gone
+          with the colour-coded circles they described. */}
+      <div className="absolute bottom-3 left-3 text-[11px] leading-relaxed text-muted-foreground pointer-events-none">
+        <p>agents share this project&apos;s memory</p>
+        <p>edges = files each one has written</p>
       </div>
 
       {/* Side panel */}
@@ -1023,35 +645,30 @@ export default function AgentKnowledgeGraph() {
         <div className="absolute top-0 right-0 bottom-0 w-[360px] bg-background border-l border-border flex flex-col z-20">
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
-            <div
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ background: KIND_COLOR[panelNode.kind].fill }}
-            />
             <span className="flex-1 text-sm font-medium text-foreground truncate">{panelNode.label}</span>
             {panelNode.meta?.editable && (
-              <div className="flex items-center gap-1">
-                <button
+              <>
+                <Button
+                  size="sm"
+                  className="font-mono"
+                  active={panelTab === 'write'}
                   onClick={() => setPanelTab('write')}
-                  className={`p-1.5 rounded transition-colors ${panelTab === 'write' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  title="Edit"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
+                  edit
+                </Button>
+                <Button
+                  size="sm"
+                  className="font-mono"
+                  active={panelTab === 'preview'}
                   onClick={() => setPanelTab('preview')}
-                  className={`p-1.5 rounded transition-colors ${panelTab === 'preview' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  title="Preview"
                 >
-                  <Eye className="w-3.5 h-3.5" />
-                </button>
-              </div>
+                  preview
+                </Button>
+              </>
             )}
-            <button
-              onClick={() => setPanelNode(null)}
-              className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <Button size="sm" className="font-mono" onClick={() => setPanelNode(null)}>
+              close
+            </Button>
           </div>
 
           {/* Content */}
@@ -1080,18 +697,19 @@ export default function AgentKnowledgeGraph() {
               {panelDraft !== panelContent && (
                 <span className="text-[10px] text-muted-foreground">Unsaved changes</span>
               )}
-              <button
+              <Button
+                size="sm"
+                variant="primary"
+                className="ml-auto font-mono"
                 onClick={savePanel}
                 disabled={panelDraft === panelContent}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                <Save className="w-3 h-3" />
-                Save
-              </button>
+                save
+              </Button>
             </div>
           )}
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

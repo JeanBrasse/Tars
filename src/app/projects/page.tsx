@@ -2,56 +2,28 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  FolderKanban,
-  MessageSquare,
-  X,
-  Loader2,
-  ExternalLink,
-  Terminal,
-  FolderOpen,
-  Terminal as TerminalIcon,
-  Folder,
-  Star,
-  Layers,
-  Bot,
-  Play,
-  RotateCcw,
-  Plus,
-  Trash2,
-  FolderPlus,
-  ChevronDown,
-  GitBranch,
-  RefreshCw,
-  Search,
-  EyeOff,
-  Eye,
-  Pin,
-  PinOff,
-} from 'lucide-react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { useClaude, useSessionMessages } from '@/hooks/useClaude';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
+import {
+  Button,
+  DialogShell,
+  MetaChip,
+  PageHeader,
+  Panel,
+  PanelCaption,
+  StatusSquare,
+} from '@/components/ui';
+import { STATUS_COLORS, statusTone } from '@/app/agents/constants';
 
-// Generate consistent colors for projects based on name
-const getProjectColor = (name: string) => {
-  const colors = [
-    { main: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)' },   // blue
-    { main: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)' },   // purple
-    { main: '#22C55E', bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.3)' },     // green
-    { main: '#F59E0B', bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.3)' },   // amber
-    { main: '#EF4444', bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.3)' },     // red
-    { main: '#06B6D4', bg: 'rgba(6, 182, 212, 0.15)', border: 'rgba(6, 182, 212, 0.3)' },     // cyan
-    { main: '#EC4899', bg: 'rgba(236, 72, 153, 0.15)', border: 'rgba(236, 72, 153, 0.3)' },   // pink
-    { main: '#F97316', bg: 'rgba(249, 115, 22, 0.15)', border: 'rgba(249, 115, 22, 0.3)' },   // orange
-  ];
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[hash % colors.length];
-};
+// Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
+// button each.
+const ROW_ACTION = 'font-mono lowercase';
 
-// Storage key (custom projects still use localStorage, favorites/hidden use app settings)
+// Storage key (custom projects still use localStorage, hidden/default use app settings)
 const CUSTOM_PROJECTS_KEY = 'dorothy-custom-projects';
 
 interface CustomProject {
@@ -59,27 +31,6 @@ interface CustomProject {
   name: string;
   addedAt: string;
 }
-
-// Character emoji mapping for displaying agents
-const CHARACTER_EMOJIS: Record<string, string> = {
-  robot: '🤖',
-  ninja: '🥷',
-  wizard: '🧙',
-  astronaut: '👨‍🚀',
-  knight: '⚔️',
-  pirate: '🏴‍☠️',
-  alien: '👽',
-  viking: '🛡️',
-};
-
-// Agent status colors
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  running: { bg: 'bg-success/20', text: 'text-success' },
-  waiting: { bg: 'bg-warning/20', text: 'text-warning' },
-  idle: { bg: 'bg-white/10', text: 'text-white/60' },
-  completed: { bg: 'bg-primary/20', text: 'text-primary' },
-  error: { bg: 'bg-danger/20', text: 'text-danger' },
-};
 
 // Strip ANSI codes from git output
 const stripAnsi = (str: string): string => {
@@ -94,13 +45,10 @@ export default function ProjectsPage() {
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
   const [selectedProject, setSelectedProject] = useState<ClaudeProject | null>(null);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'favorites' | 'active' | 'hidden'>('active');
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [hiddenProjects, setHiddenProjects] = useState<string[]>([]);
   const [customProjects, setCustomProjects] = useState<CustomProject[]>([]);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [defaultProjectPath, setDefaultProjectPath] = useState<string>('');
 
   // Agent dialog state
@@ -203,51 +151,35 @@ export default function ProjectsPage() {
     return customProjects.some(p => p.path === projectPath);
   };
 
-  // Load favorites & hidden from app settings (file-based, persists across restarts)
+  // Load hidden & default from app settings (file-based, persists across restarts)
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electronAPI?.appSettings?.get) return;
     window.electronAPI.appSettings.get().then((settings: Record<string, unknown>) => {
-      if (Array.isArray(settings?.favoriteProjects)) setFavorites(settings.favoriteProjects as string[]);
       if (Array.isArray(settings?.hiddenProjects)) setHiddenProjects(settings.hiddenProjects as string[]);
       if (typeof settings?.defaultProjectPath === 'string') setDefaultProjectPath(settings.defaultProjectPath);
-    }).catch(() => {});
-    // Also migrate from localStorage if present
-    try {
-      const stored = localStorage.getItem('dorothy-favorite-projects');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setFavorites(prev => {
-            const merged = Array.from(new Set([...prev, ...parsed]));
-            window.electronAPI?.appSettings?.save({ favoriteProjects: merged });
-            return merged;
-          });
+      // Favourites are no longer shown on this page, but the setting is still
+      // read by NewChatModal - fold any legacy localStorage list into it once
+      // so nothing is stranded.
+      try {
+        const stored = localStorage.getItem('dorothy-favorite-projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const existing = Array.isArray(settings?.favoriteProjects) ? settings.favoriteProjects as string[] : [];
+            window.electronAPI?.appSettings?.save({
+              favoriteProjects: Array.from(new Set([...existing, ...parsed])),
+            });
+          }
           localStorage.removeItem('dorothy-favorite-projects');
         }
-      }
-    } catch {}
+      } catch {}
+    }).catch(() => {});
   }, []);
-
-  // Save favorites to app settings
-  const saveFavorites = (newFavorites: string[]) => {
-    setFavorites(newFavorites);
-    window.electronAPI?.appSettings?.save({ favoriteProjects: newFavorites });
-  };
 
   // Save hidden to app settings
   const saveHidden = (newHidden: string[]) => {
     setHiddenProjects(newHidden);
     window.electronAPI?.appSettings?.save({ hiddenProjects: newHidden });
-  };
-
-  // Toggle favorite (stored by path for cross-component compatibility)
-  const toggleFavorite = (projectPath: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (favorites.includes(projectPath)) {
-      saveFavorites(favorites.filter(p => p !== projectPath));
-    } else {
-      saveFavorites([...favorites, projectPath]);
-    }
   };
 
   // Toggle hidden (stored by path for cross-component compatibility)
@@ -257,14 +189,9 @@ export default function ProjectsPage() {
       saveHidden(hiddenProjects.filter(p => p !== projectPath));
     } else {
       saveHidden([...hiddenProjects, projectPath]);
-      // Also remove from favorites if hiding
-      if (favorites.includes(projectPath)) {
-        saveFavorites(favorites.filter(p => p !== projectPath));
-      }
     }
   };
 
-  const isFavorite = (projectPath: string) => favorites.includes(projectPath);
   const isHidden = (projectPath: string) => hiddenProjects.includes(projectPath);
 
   // Set default project (with confirmation if replacing)
@@ -400,36 +327,14 @@ export default function ProjectsPage() {
     return merged;
   }, [claudeProjects, customProjects]);
 
-  // Filter projects based on active tab and search query
+  // One grid, no tabs. Hidden projects sink to the end rather than vanishing:
+  // the tab strip that used to bring them back is gone, so the card's own
+  // `unhide` button is the only way out and it has to stay reachable.
   const projects = useMemo(() => {
-    let filtered: typeof allProjects;
-    switch (activeTab) {
-      case 'favorites':
-        filtered = allProjects.filter(p => favorites.includes(p.path) && !hiddenProjects.includes(p.path));
-        break;
-      case 'hidden':
-        filtered = allProjects.filter(p => hiddenProjects.includes(p.path));
-        break;
-      case 'active':
-      default:
-        filtered = allProjects.filter(p => !hiddenProjects.includes(p.path));
-        break;
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(p =>
-        p.name.toLowerCase().includes(query) ||
-        p.path.toLowerCase().includes(query)
-      );
-    }
-
-    return filtered;
-  }, [allProjects, activeTab, favorites, hiddenProjects, searchQuery]);
-
-  const favoritesCount = allProjects.filter(p => favorites.includes(p.path) && !hiddenProjects.includes(p.path)).length;
-  const activeCount = allProjects.filter(p => !hiddenProjects.includes(p.path)).length;
-  const hiddenCount = allProjects.filter(p => hiddenProjects.includes(p.path)).length;
+    const visible = allProjects.filter(p => !hiddenProjects.includes(p.path));
+    const hidden = allProjects.filter(p => hiddenProjects.includes(p.path));
+    return [...visible, ...hidden];
+  }, [allProjects, hiddenProjects]);
 
   const formatDate = (date: Date) => {
     const d = new Date(date);
@@ -472,7 +377,7 @@ export default function ProjectsPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-white mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">Loading projects...</p>
         </div>
       </div>
@@ -491,297 +396,102 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-4 lg:space-y-6 pt-4 lg:pt-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Projects</h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            {allProjects.length} project{allProjects.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        {hasElectron && (
-          <button
-            onClick={handleAddProject}
-            className="flex items-center gap-2 px-4 py-2 bg-foreground text-background text-sm font-medium hover:bg-foreground/90 transition-colors"
-          >
-            <FolderPlus className="w-4 h-4" />
-            Add Project
-          </button>
-        )}
-      </div>
-
-      {/* Tabs and Search */}
-      <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('favorites')}
-              className={`
-                flex items-center gap-2 px-3 py-2 text-sm font-medium transition-all
-                ${activeTab === 'favorites'
-                  ? 'bg-foreground text-background'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground border border-border'
-                }
-              `}
-            >
-              <Star className="w-4 h-4" />
-              Favorites
-              <span className={`px-1.5 py-0.5 text-xs ${activeTab === 'favorites' ? 'bg-black/10' : 'bg-white/10'
-                }`}>
-                {favoritesCount}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('active')}
-              className={`
-                flex items-center gap-2 px-3 py-2 text-sm font-medium transition-all
-                ${activeTab === 'active'
-                  ? 'bg-foreground text-background'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground border border-border'
-                }
-              `}
-            >
-              <Layers className="w-4 h-4" />
-              Active
-              <span className={`px-1.5 py-0.5 text-xs ${activeTab === 'active' ? 'bg-black/10' : 'bg-white/10'
-                }`}>
-                {activeCount}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('hidden')}
-              className={`
-                flex items-center gap-2 px-3 py-2 text-sm font-medium transition-all
-                ${activeTab === 'hidden'
-                  ? 'bg-foreground text-background'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground border border-border'
-                }
-              `}
-            >
-              <EyeOff className="w-4 h-4" />
-              Hidden
-              {hiddenCount > 0 && (
-                <span className={`px-1.5 py-0.5 text-xs ${activeTab === 'hidden' ? 'bg-black/10' : 'bg-white/10'
-                  }`}>
-                  {hiddenCount}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search projects..."
-              className="w-64 pl-9 pr-3 py-2 bg-secondary border border-border text-sm placeholder:text-muted-foreground focus:border-white/50 focus:outline-none transition-colors"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-white transition-colors"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-        </div>
-
-      {/* Default Project Banner */}
-      <div className="border border-border bg-card p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Pin className="w-4 h-4 text-warning shrink-0" />
-          <div>
-            <p className="text-sm font-medium">Default Project</p>
-            <p className="text-xs text-muted-foreground">
-              {defaultProjectPath
-                ? <>Auto-selected when creating agents or tasks &mdash; <span className="text-foreground font-mono">{defaultProjectPath.split('/').pop()}</span></>
-                : 'Pin a project to auto-select it when creating agents or kanban tasks'}
-            </p>
-          </div>
-        </div>
-        {defaultProjectPath && (
-          <button
-            onClick={() => { setDefaultProjectPath(''); window.electronAPI?.appSettings?.save({ defaultProjectPath: '' }); }}
-            className="px-3 py-1.5 text-xs border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors flex items-center gap-1.5"
-          >
-            <PinOff className="w-3 h-3" />
-            Unpin
-          </button>
-        )}
-      </div>
+    <div className="pt-[22px]">
+      <PageHeader
+        title="Projects"
+        subtitle="Every folder Tars knows about, and what is running in it."
+        actions={hasElectron ? (
+          <Button variant="primary" size="md" onClick={handleAddProject}>
+            + Project
+          </Button>
+        ) : undefined}
+      />
 
       {/* Projects Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {projects.map((project) => {
           const isSelected = selectedProject?.id === project.id;
           const linkedAgents = agents.filter(a => pathsMatch(a.projectPath, project.path));
-          const color = getProjectColor(project.name);
+          const hidden = isHidden(project.path);
+          const custom = isCustomProject(project.path);
 
           return (
-            <motion.div
+            <div
               key={project.id}
-              layoutId={project.id}
-              onClick={() => setSelectedProject(isSelected ? null : project)}
-              className="group relative cursor-pointer"
-              whileHover={{ y: -4 }}
-              whileTap={{ scale: 0.98 }}
+              className={`flex flex-col gap-2 border bg-card p-3 transition-colors ${
+                isSelected ? 'border-border-accent' : 'border-border'
+              } ${hidden ? 'opacity-50' : ''}`}
             >
-              {/* Folder Card */}
-              <div
-                className={`
-                  relative bg-card border p-4 transition-all h-full
-                  ${isSelected
-                    ? 'border-white '
-                    : 'border-border hover:border-white/30'
-                  }
-                `}
-                style={{
-                  borderBottomColor: isSelected ? color.main : undefined,
-                  borderBottomWidth: isSelected ? '2px' : undefined,
-                }}
-              >
-                {/* Folder Icon with Color */}
-                <div className="flex items-center justify-center mb-3 pt-1">
-                  <div
-                    className="relative w-14 h-11 flex items-center justify-center rounded-sm"
-                    style={{ backgroundColor: color.bg }}
-                  >
-                    {isSelected ? (
-                      <FolderOpen className="w-8 h-8" style={{ color: color.main }} />
-                    ) : (
-                      <Folder
-                        className="w-8 h-8 transition-colors"
-                        style={{ color: color.main }}
-                      />
-                    )}
-                    {/* Agent badge */}
-                    {linkedAgents.length > 0 && (
-                      <div
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 text-[9px] font-bold flex items-center justify-center text-white"
-                        style={{ backgroundColor: color.main }}
-                      >
-                        {linkedAgents.length}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Project Info */}
-                <div className="text-center space-y-1">
-                  <h3 className="font-normal text-sm truncate font-sans" title={project.name}>
-                    {project.name}
-                  </h3>
-                  <p className="text-[10px] text-muted-foreground font-mono truncate" title={project.path}>
-                    {getShortPath(project.path)}
-                  </p>
-                  <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
-                    <span>{project.sessions.length} sessions</span>
-                    <span>·</span>
-                    <span>{formatDate(project.lastActivity)}</span>
-                  </div>
-                </div>
-
-                {/* Pin + Favorite buttons */}
-                <div className="absolute top-2 right-2 flex items-center gap-0.5">
-                  <button
-                    onClick={(e) => handleSetDefault(project.path, e)}
-                    className={`
-                      p-1.5 transition-all
-                      ${isDefaultProject(project.path)
-                        ? 'opacity-100 text-warning'
-                        : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-warning'
-                      }
-                    `}
-                    title={isDefaultProject(project.path) ? 'Unpin default' : 'Set as default project'}
-                  >
-                    <Pin className={`w-3.5 h-3.5 ${isDefaultProject(project.path) ? 'fill-current' : ''}`} />
-                  </button>
-                  <button
-                    onClick={(e) => toggleFavorite(project.path, e)}
-                    className={`
-                      p-1.5 transition-all
-                      ${isFavorite(project.path)
-                        ? 'opacity-100 text-warning'
-                        : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-warning'
-                      }
-                    `}
-                  >
-                    <Star className={`w-4 h-4 ${isFavorite(project.path) ? 'fill-current' : ''}`} />
-                  </button>
-                </div>
-
-                {/* Hide / Unhide */}
-                <button
-                  onClick={(e) => toggleHidden(project.path, e)}
-                  className={`
-                    absolute top-2 left-2 p-1.5 transition-all
-                    ${isHidden(project.path)
-                      ? 'opacity-100 text-muted-foreground hover:text-foreground'
-                      : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground'
-                    }
-                  `}
-                  title={isHidden(project.path) ? 'Unhide project' : 'Hide project'}
-                >
-                  {isHidden(project.path) ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                </button>
-
-                {/* Badges */}
-                {(isDefaultProject(project.path) || isCustomProject(project.path)) && (
-                  <div className="flex items-center justify-center gap-1 mt-1">
-                    {isDefaultProject(project.path) && (
-                      <span className="text-[9px] px-1.5 py-0.5 bg-warning/20 text-warning">
-                        Default
-                      </span>
-                    )}
-                    {isCustomProject(project.path) && (
-                      <span className="text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary">
-                        Custom
-                      </span>
-                    )}
-                  </div>
-                )}
+              {/* Name, and how many agents are living in the folder */}
+              <div className="flex items-baseline justify-between gap-2">
+                <h3 className="min-w-0 truncate text-[12.5px] text-foreground" title={project.name}>
+                  {project.name}
+                </h3>
+                <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                  {linkedAgents.length} agents
+                </span>
               </div>
-            </motion.div>
+
+              <p className="truncate font-mono text-[10.5px] text-muted-foreground" title={project.path}>
+                {getShortPath(project.path)}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <MetaChip>{project.sessions.length} sessions</MetaChip>
+                <MetaChip>{formatDate(project.lastActivity)}</MetaChip>
+                {isDefaultProject(project.path) && <MetaChip>default</MetaChip>}
+                {custom && <MetaChip>custom</MetaChip>}
+              </div>
+
+              <div className="flex items-center gap-2 pt-0.5">
+                <Button
+                  size="sm"
+                  className={ROW_ACTION}
+                  onClick={() => setSelectedProject(isSelected ? null : project)}
+                >
+                  open
+                </Button>
+                <Button
+                  size="sm"
+                  className={ROW_ACTION}
+                  onClick={(e) => toggleHidden(project.path, e)}
+                >
+                  {hidden ? 'unhide' : 'hide'}
+                </Button>
+                <Button
+                  size="sm"
+                  className={ROW_ACTION}
+                  disabled={!custom}
+                  title={custom ? undefined : 'Only folders you added yourself can be removed'}
+                  onClick={(e) => handleRemoveProject(project.path, e)}
+                >
+                  remove
+                </Button>
+              </div>
+            </div>
           );
         })}
-
-        {/* Add Project Card */}
-        {hasElectron && (
-          <motion.div
-            onClick={handleAddProject}
-            className="cursor-pointer"
-            whileHover={{ y: -4 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <div className="relative bg-card border border-dashed border-border p-4 hover:border-white/30 transition-all h-full min-h-[140px] flex flex-col items-center justify-center gap-2">
-              <div className="w-14 h-11 flex items-center justify-center rounded-sm bg-white/5">
-                <Plus className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <span className="text-xs text-muted-foreground">Add Project</span>
-            </div>
-          </motion.div>
-        )}
       </div>
 
       {/* Empty State */}
       {projects.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20">
-          <FolderKanban className="w-16 h-16 text-muted-foreground/30 mb-4" />
-          <h3 className="font-medium text-lg mb-2">
-            {activeTab === 'favorites' ? 'No favorite projects' : activeTab === 'hidden' ? 'No hidden projects' : 'No projects found'}
-          </h3>
-          <p className="text-muted-foreground text-sm">
-            {activeTab === 'favorites'
-              ? 'Click the star icon on a project to add it to favorites'
-              : activeTab === 'hidden'
-                ? 'Hidden projects will appear here'
-                : 'Start using Claude Code to see projects here'}
+        <div className="border border-border bg-card p-6 text-center">
+          <p className="text-[12.5px] text-foreground">No projects yet</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Add a folder, or start using Claude Code and its projects show up here.
           </p>
         </div>
+      )}
+
+      {/* The add affordance is one row under the grid, not a dashed tile in it */}
+      {hasElectron && (
+        <button
+          onClick={handleAddProject}
+          className="mt-2 flex h-8 w-full cursor-pointer items-center gap-2 border border-border bg-card px-3 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <span className="h-1.5 w-1.5 shrink-0 bg-border-accent" />
+          Add a folder &mdash; remembered on disk, so an update never loses it
+        </button>
       )}
 
       {/* Project Detail Panel (Slide-out) */}
@@ -794,7 +504,7 @@ export default function ProjectsPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedProject(null)}
-              className="fixed inset-0 bg-black/60 z-40"
+              className="fixed inset-0 bg-scrim z-40"
             />
 
             {/* Panel */}
@@ -805,54 +515,37 @@ export default function ProjectsPage() {
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-background border-l border-border z-50 overflow-y-auto"
             >
-              {/* Header with color accent */}
-              <div
-                className="sticky top-0 bg-card border-b border-border z-10"
-                style={{ borderBottomColor: getProjectColor(selectedProject.name).main, borderBottomWidth: '2px' }}
-              >
-                <div className="p-4 flex items-start justify-between">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div
-                      className="w-12 h-12 flex items-center justify-center shrink-0"
-                      style={{ backgroundColor: getProjectColor(selectedProject.name).bg }}
-                    >
-                      <FolderOpen className="w-7 h-7" style={{ color: getProjectColor(selectedProject.name).main }} />
-                    </div>
-                    <div className="min-w-0 pt-1">
-                      <h2 className="font-semibold text-lg truncate">{selectedProject.name}</h2>
-                      <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">
-                        {selectedProject.path}
-                      </p>
-                    </div>
+              {/* Header - no coloured rule under it (R2), no icon-only close (R7) */}
+              <div className="sticky top-0 bg-card border-b border-border z-10">
+                <div className="p-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="font-serif text-2xl leading-[1.15] truncate">{selectedProject.name}</h2>
+                    <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">
+                      {selectedProject.path}
+                    </p>
                   </div>
-                  <button
-                    onClick={() => setSelectedProject(null)}
-                    className="p-2 hover:bg-secondary transition-colors shrink-0"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                  <Button size="sm" className={ROW_ACTION} onClick={() => setSelectedProject(null)}>
+                    close
+                  </Button>
                 </div>
 
                 {/* Git Branch */}
                 {hasElectron && (
                   <div className="px-4 pb-3 flex items-center gap-2">
-                    <GitBranch className="w-4 h-4 text-warning" />
                     {gitLoading ? (
                       <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-                    ) : gitBranch ? (
-                      <span className="text-sm px-2 py-0.5 bg-warning/15 text-warning font-mono">
-                        {gitBranch}
-                      </span>
                     ) : (
-                      <span className="text-sm text-muted-foreground">Not a git repository</span>
+                      <span className="text-xs font-mono text-muted-foreground truncate">
+                        {gitBranch || 'not a git repository'}
+                      </span>
                     )}
-                    <button
+                    <Button
+                      size="sm"
+                      className={`${ROW_ACTION} ml-auto`}
                       onClick={() => loadGitBranch(selectedProject.path)}
-                      className="p-1 hover:bg-secondary rounded transition-colors ml-auto"
-                      title="Refresh"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 text-muted-foreground ${gitLoading ? 'animate-spin' : ''}`} />
-                    </button>
+                      refresh
+                    </Button>
                   </div>
                 )}
               </div>
@@ -861,74 +554,68 @@ export default function ProjectsPage() {
               <div className="p-4 space-y-4">
                 {/* Quick Actions */}
                 <div className="flex gap-2">
-                  <button
+                  <Button
+                    size="md"
+                    className="flex-1"
                     onClick={() => window.electronAPI?.shell?.reveal(selectedProject.path)}
-                    className="flex-1 px-4 py-2.5 border border-border bg-secondary text-sm flex items-center justify-center gap-2 hover:bg-accent/50 transition-colors"
                     title="Reveal this folder in Finder"
                   >
-                    <FolderOpen className="w-4 h-4" />
                     Reveal in Finder
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    size="md"
+                    className="flex-1"
                     onClick={() => window.electronAPI?.shell?.openTerminal({ cwd: selectedProject.path })}
-                    className="flex-1 px-4 py-2.5 border border-border bg-secondary text-sm flex items-center justify-center gap-2 hover:bg-accent/50 transition-colors"
                     title="Open a terminal in this folder"
                   >
-                    <TerminalIcon className="w-4 h-4" />
                     Terminal
-                  </button>
+                  </Button>
                   {hasElectron && (
-                    <button
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="flex-1"
                       onClick={() => setShowAgentDialog(true)}
-                      className="flex-1 px-4 py-2.5 bg-foreground text-background text-sm font-medium flex items-center justify-center gap-2 hover:bg-foreground/90 transition-colors"
                     >
-                      <Plus className="w-4 h-4" />
                       Launch Agent
-                    </button>
+                    </Button>
                   )}
                 </div>
 
-                {/* Set as default */}
-                <button
+                {/* Set as default - selected is a box, not a warning-tinted fill */}
+                <Button
+                  size="md"
+                  className="w-full"
+                  active={isDefaultProject(selectedProject.path)}
                   onClick={() => handleSetDefault(selectedProject.path)}
-                  className={`w-full px-4 py-2 text-sm flex items-center justify-center gap-2 border transition-colors ${
-                    isDefaultProject(selectedProject.path)
-                      ? 'border-warning/50 bg-warning/10 text-warning'
-                      : 'border-border bg-secondary text-muted-foreground hover:text-foreground hover:border-warning/30'
-                  }`}
                 >
-                  <Pin className={`w-4 h-4 ${isDefaultProject(selectedProject.path) ? 'fill-current text-warning' : ''}`} />
-                  {isDefaultProject(selectedProject.path) ? 'Default Project' : 'Pin as Default'}
-                </button>
+                  {isDefaultProject(selectedProject.path) ? 'Default project' : 'Pin as default'}
+                </Button>
 
                 {/* Stats */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-card border border-border p-3 text-center">
-                    <p className="text-2xl font-bold">{selectedProject.sessions.length}</p>
-                    <p className="text-xs text-muted-foreground">Sessions</p>
-                  </div>
-                  <div className="bg-card border border-border p-3 text-center">
-                    <p className="text-2xl font-bold">{projectAgents.length}</p>
-                    <p className="text-xs text-muted-foreground">Agents</p>
-                  </div>
-                  <div className="bg-card border border-border p-3 text-center">
-                    <p className="text-sm font-medium">{formatDate(selectedProject.lastActivity)}</p>
-                    <p className="text-xs text-muted-foreground">Last Active</p>
-                  </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Panel className="text-center">
+                    <p className="font-serif text-2xl leading-none">{selectedProject.sessions.length}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Sessions</p>
+                  </Panel>
+                  <Panel className="text-center">
+                    <p className="font-serif text-2xl leading-none">{projectAgents.length}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Agents</p>
+                  </Panel>
+                  <Panel className="text-center">
+                    <p className="text-sm">{formatDate(selectedProject.lastActivity)}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Last active</p>
+                  </Panel>
                 </div>
 
                 {/* Project Agents */}
                 {hasElectron && projectAgents.length > 0 && (
-                  <div className="border border-border bg-card p-4">
-                    <h3 className="text-sm font-medium flex items-center gap-2 mb-3">
-                      <Bot className="w-4 h-4" />
-                      Agents ({projectAgents.length})
-                    </h3>
+                  <Panel>
+                    <PanelCaption className="mb-3">AGENTS ({projectAgents.length})</PanelCaption>
 
                     <div className="space-y-2">
                       {projectAgents.map((agent) => {
-                        const statusColor = STATUS_COLORS[agent.status] || STATUS_COLORS.idle;
-                        const charEmoji = CHARACTER_EMOJIS[agent.character || 'robot'] || '🤖';
+                        const tone = statusTone(agent.status);
                         const isIdle = agent.status === 'idle' || agent.status === 'completed';
 
                         return (
@@ -936,35 +623,33 @@ export default function ProjectsPage() {
                             key={agent.id}
                             className="p-3 bg-secondary border border-border"
                           >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-lg">{charEmoji}</span>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-sm truncate">
-                                    {agent.name || `Agent ${agent.id.slice(0, 6)}`}
-                                  </p>
-                                  <span className={`text-[10px] px-1.5 py-0.5 ${statusColor.bg} ${statusColor.text}`}>
-                                    {agent.status}
-                                  </span>
-                                </div>
+                                <StatusSquare tone={tone} />
+                                <span className="truncate text-xs font-semibold text-foreground">
+                                  {agent.name || `Agent ${agent.id.slice(0, 6)}`}
+                                </span>
+                                <span className={`text-[11px] font-mono shrink-0 ${STATUS_COLORS[agent.status].text}`}>
+                                  {tone}
+                                </span>
                               </div>
 
                               {isIdle && (
-                                <div className="flex items-center gap-1">
-                                  <button
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Button
+                                    size="sm"
+                                    className={ROW_ACTION}
                                     onClick={() => handleRestartAgent(agent, true)}
-                                    className="p-1.5 text-muted-foreground hover:text-white hover:bg-white/10 transition-colors"
-                                    title="Resume"
                                   >
-                                    <RotateCcw className="w-4 h-4" />
-                                  </button>
-                                  <button
+                                    resume
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className={ROW_ACTION}
                                     onClick={() => handleRestartAgent(agent, false)}
-                                    className="p-1.5 text-muted-foreground hover:text-white hover:bg-white/10 transition-colors"
-                                    title="Start"
                                   >
-                                    <Play className="w-4 h-4" />
-                                  </button>
+                                    start
+                                  </Button>
                                 </div>
                               )}
                             </div>
@@ -972,15 +657,12 @@ export default function ProjectsPage() {
                         );
                       })}
                     </div>
-                  </div>
+                  </Panel>
                 )}
 
                 {/* Sessions */}
-                <div className="border border-border bg-card p-4">
-                  <h3 className="text-sm font-medium flex items-center gap-2 mb-3">
-                    <Terminal className="w-4 h-4" />
-                    Sessions ({selectedProject.sessions.length})
-                  </h3>
+                <Panel>
+                  <PanelCaption className="mb-3">SESSIONS ({selectedProject.sessions.length})</PanelCaption>
 
                   {selectedProject.sessions.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No sessions yet</p>
@@ -991,10 +673,10 @@ export default function ProjectsPage() {
                           key={session.id}
                           onClick={() => setSelectedSession(selectedSession === session.id ? null : session.id)}
                           className={`
-                            w-full text-left p-3 transition-all border
+                            w-full text-left p-3 transition-colors border
                             ${selectedSession === session.id
-                              ? 'bg-white/10 border-white/30'
-                              : 'bg-secondary border-border hover:border-white/20'
+                              ? 'bg-secondary border-border-accent'
+                              : 'bg-bg-tertiary border-border hover:border-border-accent'
                             }
                           `}
                         >
@@ -1017,7 +699,7 @@ export default function ProjectsPage() {
                       )}
                     </div>
                   )}
-                </div>
+                </Panel>
 
                 {/* Session Messages */}
                 <AnimatePresence>
@@ -1026,12 +708,9 @@ export default function ProjectsPage() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="border border-border bg-card p-4 overflow-hidden"
+                      className="border border-border bg-card p-3 overflow-hidden"
                     >
-                      <h3 className="text-sm font-medium flex items-center gap-2 mb-3">
-                        <MessageSquare className="w-4 h-4" />
-                        Messages
-                      </h3>
+                      <PanelCaption className="mb-3">MESSAGES</PanelCaption>
 
                       {messagesLoading ? (
                         <div className="flex items-center justify-center py-8">
@@ -1042,10 +721,7 @@ export default function ProjectsPage() {
                           {messages.slice(0, 10).map((message) => (
                             <div
                               key={message.uuid}
-                              className={`p-3 ${message.type === 'user'
-                                  ? 'bg-white/10 border-l border-border-accent'
-                                  : 'bg-secondary'
-                                }`}
+                              className={`p-3 ${message.type === 'user' ? 'bg-secondary' : 'bg-bg-tertiary'}`}
                             >
                               <p className="text-[10px] text-muted-foreground mb-1">
                                 {message.type === 'user' ? 'You' : 'Claude'}
@@ -1067,22 +743,23 @@ export default function ProjectsPage() {
                 </AnimatePresence>
 
                 {/* Project Path */}
-                <div className="border border-border bg-card p-4">
-                  <h3 className="text-sm font-medium mb-2">Full Path</h3>
+                <Panel>
+                  <PanelCaption className="mb-2">FULL PATH</PanelCaption>
                   <p className="font-mono text-xs text-muted-foreground break-all select-all">
                     {selectedProject.path}
                   </p>
-                </div>
+                </Panel>
 
                 {/* Delete Custom Project */}
                 {isCustomProject(selectedProject.path) && (
-                  <button
+                  <Button
+                    variant="danger"
+                    size="md"
+                    className="w-full"
                     onClick={(e) => handleRemoveProject(selectedProject.path, e)}
-                    className="w-full px-4 py-2.5 border border-danger/30 text-danger text-sm flex items-center justify-center gap-2 hover:bg-danger/10 transition-colors"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Remove Project
-                  </button>
+                    Remove project
+                  </Button>
                 )}
               </div>
             </motion.div>
@@ -1091,50 +768,27 @@ export default function ProjectsPage() {
       </AnimatePresence>
 
       {/* Replace Default Project Confirmation Dialog */}
-      <AnimatePresence>
-        {pendingDefaultPath && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setPendingDefaultPath(null)}
-              className="fixed inset-0 bg-black/60 z-[60]"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-full max-w-sm"
-            >
-              <div className="bg-card border border-border p-6 space-y-4">
-                <div className="flex items-center gap-3">
-                  <Pin className="w-5 h-5 text-warning" />
-                  <h3 className="font-medium">Replace Default Project?</h3>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  <span className="text-foreground font-mono">{defaultProjectPath.split('/').pop()}</span> is currently the default project. Replace it with{' '}
-                  <span className="text-foreground font-mono">{pendingDefaultPath.split('/').pop()}</span>?
-                </p>
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={() => setPendingDefaultPath(null)}
-                    className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmSetDefault}
-                    className="px-4 py-2 bg-foreground text-background text-sm font-medium hover:bg-foreground/90 transition-colors"
-                  >
-                    Replace
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {pendingDefaultPath && (
+        <DialogShell
+          onClose={() => setPendingDefaultPath(null)}
+          title="Replace default project?"
+          footerRight={
+            <>
+              <Button size="md" onClick={() => setPendingDefaultPath(null)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="md" onClick={confirmSetDefault}>
+                Replace
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-muted-foreground">
+            <span className="text-foreground font-mono">{defaultProjectPath.split('/').pop()}</span> is currently the default project. Replace it with{' '}
+            <span className="text-foreground font-mono">{pendingDefaultPath.split('/').pop()}</span>?
+          </p>
+        </DialogShell>
+      )}
 
       {/* Launch Agent Modal */}
       <NewChatModal

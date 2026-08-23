@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
 interface SkillInstallTerminalProps {
@@ -26,7 +27,7 @@ export default function SkillInstallTerminal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-scrim backdrop-blur-sm z-[60] flex items-center justify-center p-4"
           onClick={onClose}
         >
           <motion.div
@@ -82,7 +83,7 @@ export default function SkillInstallTerminal({
               </p>
               <div
                 ref={terminalRef}
-                className="bg-[#0D0B08] rounded-none overflow-hidden"
+                className={`${TERMINAL_SURFACE_CLASS} rounded-none overflow-hidden`}
                 style={{ height: '350px' }}
               />
             </div>

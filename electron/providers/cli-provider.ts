@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } from '../types';
+import { dataPath } from '../constants';
 
 /**
  * Synchronously read the persisted app settings. Providers use this in
@@ -10,7 +11,7 @@ import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } fro
  */
 export function readAppSettingsFromDisk(): Partial<AppSettings> {
   try {
-    const settingsFile = path.join(os.homedir(), '.dorothy', 'app-settings.json');
+    const settingsFile = dataPath('app-settings.json');
     return JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as Partial<AppSettings>;
   } catch {
     return {};

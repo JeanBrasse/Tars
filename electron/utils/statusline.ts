@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { DATA_DIR_SHELL, dataPath } from '../constants';
 
 const STATUSLINE_SCRIPT = `#!/usr/bin/env bash
 # Dev Bar statusline for Claude Code
@@ -42,18 +43,18 @@ INPUT_TOKENS="$T_IN"
 OUTPUT_TOKENS="$T_OUT"
 RAW_PCT=$(awk -v p="$RAW_PCT_RAW" 'BEGIN {printf "%d", p}')
 
-RATE_LIMITS_FILE="$HOME/.dorothy/rate-limits.json"
+RATE_LIMITS_FILE="${DATA_DIR_SHELL}/rate-limits.json"
 if [ -n "$RATE_LIMITS" ] && [ "$RATE_LIMITS" != "null" ]; then
   echo "$RATE_LIMITS" > "$RATE_LIMITS_FILE" 2>/dev/null || true
 fi
 
 # --- Accumulate token stats per session for the Usage page ---
-TOKEN_STATS_FILE="$HOME/.dorothy/token-stats.json"
+TOKEN_STATS_FILE="${DATA_DIR_SHELL}/token-stats.json"
 if [ -n "$SESSION_ID" ]; then
   IS_EXTRA=$(awk -v a="$PCT_5H" -v b="$PCT_7D" 'BEGIN { print (a > 100 || b > 100) ? "true" : "false" }')
 
   # Acquire lock to prevent concurrent read-modify-write races
-  LOCK_DIR="$HOME/.dorothy/token-stats.lock"
+  LOCK_DIR="${DATA_DIR_SHELL}/token-stats.lock"
   LOCK_ACQUIRED=false
   for _i in $(seq 1 20); do
     if mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -215,7 +216,7 @@ printf "\${DIM}↑%s ↓%s\${RESET}" "$IN_FMT" "$OUT_FMT"
 printf "\\n"
 `;
 
-const SCRIPT_PATH = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+const SCRIPT_PATH = dataPath('statusline.sh');
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
 /**
@@ -289,7 +290,7 @@ export function disableStatusLine(): void {
   removeScript();
 
   // Remove cached rate-limits data so Usage page no longer shows stale quota
-  const rateLimitsFile = path.join(os.homedir(), '.dorothy', 'rate-limits.json');
+  const rateLimitsFile = dataPath('rate-limits.json');
   if (fs.existsSync(rateLimitsFile)) {
     fs.unlinkSync(rateLimitsFile);
   }

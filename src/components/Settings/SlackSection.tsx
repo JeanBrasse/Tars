@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Eye, EyeOff, ExternalLink, Loader2 } from 'lucide-react';
+import { Button, Input, PasswordInput } from '@/components/ui';
 import { Toggle } from './Toggle';
-import { SlackIcon } from './SlackIcon';
+import { SettingsCard } from './SettingsCard';
+import { SettingsRow } from './SettingsRow';
 import type { AppSettings } from './types';
 
 interface SlackSectionProps {
@@ -13,8 +14,6 @@ interface SlackSectionProps {
 }
 
 export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: SlackSectionProps) => {
-  const [showSlackBotToken, setShowSlackBotToken] = useState(false);
-  const [showSlackAppToken, setShowSlackAppToken] = useState(false);
   const [testingSlack, setTestingSlack] = useState(false);
   const [slackTestResult, setSlackTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -54,175 +53,105 @@ export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSett
     }
   };
 
+  // The nine-step "Setup Guide" card is gone: what a token is and where it comes
+  // from is one line each, on the row that asks for it.
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Slack Integration</h2>
-        <p className="text-sm text-muted-foreground">Control agents remotely via Slack</p>
-      </div>
-
-      <div className="border border-border bg-card p-6">
-        <div className="flex items-center justify-between pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <SlackIcon className="w-5 h-5 text-muted-foreground" />
-            <div>
-              <p className="font-medium">Enable Slack Bot</p>
-              <p className="text-sm text-muted-foreground">Receive notifications and send commands via Slack</p>
-            </div>
-          </div>
+    <SettingsCard>
+      <SettingsRow
+        label="Enable"
+        description="Receive notifications and drive agents from Slack."
+        control={
           <Toggle
             enabled={appSettings.slackEnabled}
             onChange={() => onSaveAppSettings({ slackEnabled: !appSettings.slackEnabled })}
           />
-        </div>
+        }
+      />
 
-        <div className="space-y-6 pt-6">
-          {/* Bot Token */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">Bot Token (xoxb-...)</label>
-              <a
-                href="https://api.slack.com/apps"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                Get from Slack App
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-            <div className="relative">
-              <input
-                type={showSlackBotToken ? 'text' : 'password'}
-                value={appSettings.slackBotToken}
-                onChange={(e) => onUpdateLocalSettings({ slackBotToken: e.target.value })}
-                onBlur={() => {
-                  if (appSettings.slackBotToken) {
-                    onSaveAppSettings({ slackBotToken: appSettings.slackBotToken });
-                  }
-                }}
-                placeholder="xoxb-..."
-                className="w-full px-3 py-2 pr-10 bg-secondary border border-border text-sm font-mono focus:border-foreground focus:outline-none"
-              />
-              <button
-                onClick={() => setShowSlackBotToken(!showSlackBotToken)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-              >
-                {showSlackBotToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+      <SettingsRow
+        label="Bot token"
+        description="xoxb-… from OAuth & Permissions, once the app is installed to the workspace."
+        control={
+          <PasswordInput
+            width="control"
+            value={appSettings.slackBotToken}
+            onChange={(e) => onUpdateLocalSettings({ slackBotToken: e.target.value })}
+            onBlur={() => {
+              if (appSettings.slackBotToken) {
+                onSaveAppSettings({ slackBotToken: appSettings.slackBotToken });
+              }
+            }}
+            placeholder="xoxb-..."
+          />
+        }
+      />
 
-          {/* App Token */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">App Token (xapp-...)</label>
-              <span className="text-xs text-muted-foreground">Required for Socket Mode</span>
-            </div>
-            <div className="relative">
-              <input
-                type={showSlackAppToken ? 'text' : 'password'}
-                value={appSettings.slackAppToken}
-                onChange={(e) => onUpdateLocalSettings({ slackAppToken: e.target.value })}
-                onBlur={() => {
-                  if (appSettings.slackAppToken) {
-                    onSaveAppSettings({ slackAppToken: appSettings.slackAppToken });
-                  }
-                }}
-                placeholder="xapp-..."
-                className="w-full px-3 py-2 pr-10 bg-secondary border border-border text-sm font-mono focus:border-foreground focus:outline-none"
-              />
-              <button
-                onClick={() => setShowSlackAppToken(!showSlackAppToken)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-              >
-                {showSlackAppToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+      <SettingsRow
+        label="App token"
+        description="xapp-… Socket Mode token, scoped connections:write."
+        control={
+          <PasswordInput
+            width="control"
+            value={appSettings.slackAppToken}
+            onChange={(e) => onUpdateLocalSettings({ slackAppToken: e.target.value })}
+            onBlur={() => {
+              if (appSettings.slackAppToken) {
+                onSaveAppSettings({ slackAppToken: appSettings.slackAppToken });
+              }
+            }}
+            placeholder="xapp-..."
+          />
+        }
+      />
 
-          {/* Channel ID */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">Channel ID</label>
-              {appSettings.slackChannelId && (
-                <span className="text-xs text-success flex items-center gap-1">
-                  <Check className="w-3 h-3" />
-                  Connected
-                </span>
-              )}
-            </div>
-            <input
-              type="text"
-              value={appSettings.slackChannelId || 'Not connected yet'}
-              readOnly
-              className="w-full px-3 py-2 bg-secondary border border-border text-sm font-mono text-muted-foreground"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Auto-detected when you mention the bot or DM it
-            </p>
-          </div>
+      <SettingsRow
+        label="Channel"
+        description="Auto-detected when you mention the bot or DM it."
+        control={
+          <Input
+            mono
+            readOnly
+            width="control"
+            value={appSettings.slackChannelId || ''}
+            placeholder="not connected yet"
+          />
+        }
+      />
 
-          {/* Test Buttons */}
-          <div className="flex items-center gap-3 pt-2">
-            <button
+      <SettingsRow
+        label="Test"
+        description={
+          slackTestResult ? (
+            <span className={slackTestResult.success ? 'text-status-running' : 'text-status-error'}>
+              {slackTestResult.message}
+            </span>
+          ) : (
+            'Checks the tokens, then posts a message to the detected channel.'
+          )
+        }
+        control={
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="font-mono"
               onClick={handleTestTokens}
               disabled={!appSettings.slackBotToken || !appSettings.slackAppToken || testingSlack}
-              className="px-4 py-2 bg-secondary text-foreground hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm flex items-center gap-2"
             >
-              {testingSlack ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <SlackIcon className="w-4 h-4" />
-              )}
-              Test Tokens
-            </button>
-            <button
+              test tokens
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="font-mono"
               onClick={handleSendTest}
               disabled={!appSettings.slackChannelId || testingSlack}
-              className="px-4 py-2 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm flex items-center gap-2"
             >
-              <SlackIcon className="w-4 h-4" />
-              Send Test
-            </button>
+              send test
+            </Button>
           </div>
-
-          {slackTestResult && (
-            <div className={`p-3 text-sm ${
-              slackTestResult.success
-                ? 'bg-success/10 text-success border border-success/20'
-                : 'bg-danger/10 text-danger border border-danger/20'
-            }`}>
-              {slackTestResult.message}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Setup Guide */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="font-medium mb-4">Setup Guide</h3>
-        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-          <li>Go to <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">api.slack.com/apps</a> and click &quot;Create New App&quot;</li>
-          <li>Choose &quot;From scratch&quot;, name it &quot;Tars&quot;, select workspace</li>
-          <li>Go to &quot;Socket Mode&quot; Enable Generate App Token with scope &quot;connections:write&quot; (xapp-...)</li>
-          <li>Go to &quot;OAuth & Permissions&quot; Add Bot Token Scopes:
-            <ul className="ml-4 mt-1 space-y-0.5">
-              <li className="text-xs">• app_mentions:read, chat:write, im:history, im:read, im:write</li>
-            </ul>
-          </li>
-          <li>Install to Workspace Copy Bot Token (xoxb-...)</li>
-          <li>Go to &quot;Event Subscriptions&quot; Enable Subscribe to: app_mention, message.im</li>
-          <li>Go to &quot;App Home&quot; Scroll to &quot;Show Tabs&quot;:
-            <ul className="ml-4 mt-1 space-y-0.5">
-              <li className="text-xs">• Enable &quot;Messages Tab&quot;</li>
-              <li className="text-xs">• Check &quot;Allow users to send Slash commands and messages from the messages tab&quot;</li>
-            </ul>
-          </li>
-          <li>Paste both tokens above and enable the integration</li>
-          <li>Mention @Tars in any channel or DM the bot to start!</li>
-        </ol>
-      </div>
-    </div>
+        }
+      />
+    </SettingsCard>
   );
 };

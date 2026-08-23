@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow, Notification } from 'electron';
 import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
-import { AGENTS_FILE, DATA_DIR } from '../constants';
+import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { ptyProcesses } from './pty-manager';
 import { buildFullPath } from '../utils/path-builder';
@@ -463,7 +463,7 @@ export async function initAgentPty(
   const cliExtraPaths: string[] = [];
   let savedSettings: Record<string, unknown> = {};
   try {
-    const settingsFile = path.join(os.homedir(), '.dorothy', 'app-settings.json');
+    const settingsFile = dataPath('app-settings.json');
     if (fs.existsSync(settingsFile)) {
       savedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
       const cliPaths = savedSettings.cliPaths as Record<string, unknown> | undefined;

@@ -5,11 +5,12 @@ import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import type { AppSettings, CLIPaths } from '../types';
+import { dataPath } from '../constants';
 
 const execAsync = promisify(exec);
 
 // Shared config file path that MCP can read
-const CLI_PATHS_CONFIG_FILE = path.join(os.homedir(), '.dorothy', 'cli-paths.json');
+const CLI_PATHS_CONFIG_FILE = dataPath('cli-paths.json');
 
 export interface CLIPathsHandlerDependencies {
   getAppSettings: () => AppSettings;

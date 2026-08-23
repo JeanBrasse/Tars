@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { defaultHermesConnection, type HermesConnection } from '../types/hermes';
+import { writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * The gateway connection, read from one place. The IPC handlers and the local
@@ -24,7 +25,8 @@ export function readHermesConnection(): HermesConnection {
 
 export function writeHermesConnection(conn: HermesConnection): void {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(HERMES_CONNECTION_FILE, JSON.stringify(conn, null, 2));
+  // Holds the gateway session token - same treatment as app-settings.json.
+  writeSecretFileSync(HERMES_CONNECTION_FILE, JSON.stringify(conn, null, 2));
 }
 
 /** A connection worth attempting: configured, and not the empty default. */

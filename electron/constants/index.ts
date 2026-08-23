@@ -5,7 +5,31 @@ import * as os from 'os';
 export const API_PORT = Number(process.env.DOROTHY_API_PORT) || 31415;
 
 export const OLD_DATA_DIR = path.join(os.homedir(), '.claude-manager');
-export const DATA_DIR = path.join(os.homedir(), '.dorothy');
+
+/**
+ * Everything the app owns on disk lives here.
+ *
+ * The directory still carries the pre-rename name because it holds live user
+ * data - agents, settings, the API token, observations, memory - and moving it
+ * is a migration, not a rename. This constant is the single place that decides;
+ * it used to be ignored by ~70 call sites that each rebuilt the path by hand,
+ * which is what made the rename look impossible.
+ */
+export const DATA_DIR_NAME = '.dorothy';
+export const DATA_DIR = path.join(os.homedir(), DATA_DIR_NAME);
+
+/** Join a path inside the data directory. */
+export const dataPath = (...segments: string[]) => path.join(DATA_DIR, ...segments);
+
+/**
+ * The data directory as it must appear inside a generated shell script.
+ *
+ * Uses $HOME rather than the resolved path so a script written on one machine
+ * and run under another HOME (an E2E sandbox, a scheduled job) still resolves
+ * correctly. Quote it at the use site.
+ */
+export const DATA_DIR_SHELL = `$HOME/${DATA_DIR_NAME}`;
+
 export const AGENTS_FILE = path.join(DATA_DIR, 'agents.json');
 export const APP_SETTINGS_FILE = path.join(DATA_DIR, 'app-settings.json');
 export const KANBAN_FILE = path.join(DATA_DIR, 'kanban-tasks.json');
@@ -16,7 +40,7 @@ export const API_TOKEN_FILE = path.join(DATA_DIR, 'api-token');
 
 // Updates come from the fork. Pointing this at the upstream repo offered an
 // upstream build as an update to a fork install, which would overwrite it.
-export const GITHUB_REPO = 'JeanBrasse/Dorothy';
+export const GITHUB_REPO = 'JeanBrasse/Tars';
 
 export const MIME_TYPES: { [key: string]: string } = {
   '.html': 'text/html',

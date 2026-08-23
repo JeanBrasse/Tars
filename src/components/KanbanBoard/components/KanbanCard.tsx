@@ -3,20 +3,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
-import {
-  Bot,
-  MessageSquare,
-  Paperclip,
-  Calendar,
-  CheckCircle2,
-  StopCircle,
-  FolderGit2,
-  Wrench,
-  Play,
-  Terminal,
-} from 'lucide-react';
 import type { KanbanTask, KanbanColumn } from '@/types/kanban';
-import { getLabelColor } from '../constants';
 
 interface KanbanCardProps {
   task: KanbanTask;
@@ -27,6 +14,10 @@ interface KanbanCardProps {
   isDragging?: boolean;
   isBeingDragged?: boolean;
 }
+
+// Row actions are 26px bordered lowercase mono text buttons — never glyphs (R7)
+const ACTION_CLASS =
+  'h-[26px] px-2 border border-border font-mono text-[11px] lowercase text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors';
 
 export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, isDragging, isBeingDragged }: KanbanCardProps) {
   // Disable drag for ongoing and done tasks
@@ -86,45 +77,38 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
       {...attributes}
       {...listeners}
       className={`
-        group relative bg-card rounded-xl p-4 transition-all duration-200
-        border border-border/50
-        cursor-pointer hover: hover:border-border
+        group relative bg-bg-tertiary p-3 transition-all duration-200
+        border ${isAgentWorking ? 'border-border-accent' : 'border-border'}
+        cursor-pointer hover:border-border-accent
         ${isTaskDragging ? 'scale-105 z-50 rotate-2' : ''}
-        ${isAgentWorking ? 'ring-2 ring-border' : ''}
         ${isDone ? 'opacity-70' : ''}
         ${isBeingDragged ? 'pointer-events-none' : ''}
       `}
     >
-      {/* Start button for backlog tasks */}
+      {/* Start action for backlog tasks */}
       {isBacklog && onStart && (
-        <div className="absolute top-2 right-2 z-10">
-          <button
-            onClick={handleStart}
-            className="p-1.5 rounded-lg bg-success/10 hover:bg-success/20 transition-colors opacity-0 group-hover:opacity-100"
-            title="Start task"
-          >
-            <Play className="w-4 h-4 text-success fill-green-500" />
+        <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100">
+          <button onClick={handleStart} className={ACTION_CLASS} title="Start task">
+            start
           </button>
         </div>
       )}
 
-      {/* Agent working indicator + terminal/stop buttons for ongoing tasks */}
+      {/* Agent working marker + terminal/stop actions for ongoing tasks */}
       {isAgentWorking && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-          {/* Terminal button */}
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
           {onOpenTerminal && task.assignedAgentId && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenTerminal(task.assignedAgentId!);
               }}
-              className="p-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors"
+              className={ACTION_CLASS}
               title="View terminal"
             >
-              <Terminal className="w-4 h-4 text-primary" />
+              terminal
             </button>
           )}
-          {/* Stop button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -132,115 +116,39 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
                 onDelete?.(task.id);
               }
             }}
-            className="p-1 rounded hover:bg-danger/20 transition-colors opacity-0 group-hover:opacity-100"
+            className={`${ACTION_CLASS} opacity-0 group-hover:opacity-100`}
             title="Stop task"
           >
-            <StopCircle className="w-4 h-4 text-danger" />
+            stop
           </button>
-          {/* Working indicator */}
-          <span className="relative flex h-2.5 w-2.5 ml-1">
-            <span className=" absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
-          </span>
+          {/* Working indicator — 6px solid square (R5) */}
+          <span className="w-1.5 h-1.5 bg-status-running" />
         </div>
       )}
 
-      {/* Project name */}
-      <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
-        <FolderGit2 className="w-3 h-3" />
-        <span className="truncate">{projectName}</span>
-      </div>
-
       {/* Title */}
-      <h4 className={`font-medium text-sm text-foreground mb-2 line-clamp-2 font-sans ${isDone ? 'line-through opacity-60' : ''}`}>
+      <h4 className={`font-medium text-[13px] text-foreground line-clamp-2 font-sans ${isDone ? 'line-through opacity-60' : ''}`}>
         {task.title}
       </h4>
 
-      {/* Description */}
-      {task.description && (
-        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-          {task.description}
-        </p>
-      )}
-
       {/* Progress bar for ongoing tasks */}
       {task.column === 'ongoing' && task.progress > 0 && (
-        <div className="mb-3">
-          <div className="h-1 bg-secondary rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-success"
-              initial={{ width: 0 }}
-              animate={{ width: `${task.progress}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-            />
-          </div>
+        <div className="mt-2 h-1 bg-secondary overflow-hidden">
+          <motion.div
+            className="h-full bg-status-running"
+            initial={{ width: 0 }}
+            animate={{ width: `${task.progress}%` }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+          />
         </div>
       )}
 
-      {/* Labels */}
-      {task.labels.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {task.labels.slice(0, 3).map((label) => {
-            const colors = getLabelColor(label);
-            return (
-              <span
-                key={label}
-                className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors.bg} ${colors.text}`}
-              >
-                {label}
-              </span>
-            );
-          })}
-          {task.labels.length > 3 && (
-            <span className="text-xs text-muted-foreground">
-              +{task.labels.length - 3}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Footer with meta info */}
-      <div className="flex items-center justify-between pt-2 border-t border-border/50">
-        <div className="flex items-center gap-3 text-muted-foreground">
-          {/* Agent indicator */}
-          {task.assignedAgentId && (
-            <div className="flex items-center gap-1 text-success">
-              <Bot className="w-3.5 h-3.5" />
-            </div>
-          )}
-
-          {/* Skills count */}
-          {task.requiredSkills.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground" title={task.requiredSkills.join(', ')}>
-              <Wrench className="w-3 h-3" />
-              <span>{task.requiredSkills.length}</span>
-            </div>
-          )}
-
-          {/* Attachments count */}
-          {task.attachments && task.attachments.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-primary" title={task.attachments.map(a => a.name).join(', ')}>
-              <Paperclip className="w-3 h-3" />
-              <span>{task.attachments.length}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Done indicator */}
-        {isDone && (
-          <div className="flex items-center gap-1 text-success text-xs font-medium">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Done</span>
-          </div>
+      {/* Meta row: lowercase mono tag left, project right */}
+      <div className="flex items-center gap-2 mt-2 text-[11px]">
+        {task.labels.length > 0 && (
+          <span className="font-mono lowercase text-muted-foreground truncate">{task.labels[0]}</span>
         )}
-
-        {/* Date */}
-        {!isDone && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Calendar className="w-3 h-3" />
-            <span>{new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-          </div>
-        )}
+        <span className="ml-auto text-muted-foreground truncate">{projectName}</span>
       </div>
     </motion.div>
   );

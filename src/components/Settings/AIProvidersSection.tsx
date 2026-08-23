@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Loader2, BarChart3 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Button, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge } from '@/components/ui';
+import type { AnyTone } from '@/components/ui';
 import { Toggle } from './Toggle';
+import { SettingsRow } from './SettingsRow';
 import type { AppSettings } from './types';
 
 interface AIProvidersSectionProps {
@@ -11,99 +14,20 @@ interface AIProvidersSectionProps {
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
 }
 
-interface ProviderCardProps {
-  title: string;
-  description: string;
-  docsUrl: string;
-  enabled: boolean;
-  onToggle: () => void;
-  apiKey: string;
-  apiKeyPlaceholder: string;
-  onApiKeyChange: (val: string) => void;
-  onApiKeyBlur: () => void;
-  badge?: string;
-  badgeColor?: string;
-  models: string[];
-  routingNote?: string;
-}
-
-function ProviderCard({
-  title, description, docsUrl, enabled, onToggle,
-  apiKey, apiKeyPlaceholder, onApiKeyChange, onApiKeyBlur,
-  badge, badgeColor = 'bg-secondary text-muted-foreground', models, routingNote,
-}: ProviderCardProps) {
-  const [showKey, setShowKey] = useState(false);
-
-  return (
-    <div className="border border-border bg-card p-5 space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-medium">{title}</span>
-            {badge && (
-              <span className={`text-xs px-1.5 py-0.5 rounded ${badgeColor}`}>{badge}</span>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-        <div className="flex items-center gap-3 ml-4 shrink-0">
-          <a
-            href={docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            title="Get API key"
-          >
-            <ExternalLink className="w-4 h-4" />
-          </a>
-          <Toggle enabled={enabled} onChange={onToggle} />
-        </div>
-      </div>
-
-      {/* API Key Input */}
-      <div>
-        <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wide">API Key</label>
-        <div className="relative">
-          <input
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={(e) => onApiKeyChange(e.target.value)}
-            onBlur={onApiKeyBlur}
-            placeholder={apiKeyPlaceholder}
-            className="w-full px-3 py-2 pr-10 bg-secondary border border-border text-sm font-mono focus:border-foreground focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Models */}
-      <div>
-        <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Available Models</p>
-        <div className="flex flex-wrap gap-1.5">
-          {models.map((m) => (
-            <code key={m} className="text-xs bg-secondary px-2 py-0.5 border border-border text-muted-foreground font-mono">
-              {m}
-            </code>
-          ))}
-        </div>
-      </div>
-
-      {/* Routing note */}
-      {routingNote && (
-        <p className="text-xs text-muted-foreground bg-secondary/50 border border-border px-3 py-2">
-          {routingNote}
-        </p>
-      )}
-    </div>
-  );
-}
+/**
+ * The CLIs Tars can drive. Claude Code is first because its own options - key,
+ * default model, verbose, Chrome sharing, status line - are that row's
+ * expansion; they are Claude's flags, not the app's settings.
+ */
+const CLI_BINARIES = [
+  { name: 'Claude Code', binary: 'claude' },
+  { name: 'Codex', binary: 'codex' },
+  { name: 'Gemini', binary: 'gemini' },
+  { name: 'Qwen Code', binary: 'qwen-code' },
+  { name: 'OpenCode', binary: 'opencode' },
+  { name: 'Pi', binary: 'pi' },
+  { name: 'MiniMax', binary: 'minimax' },
+];
 
 interface CLIProviderStatus {
   name: string;
@@ -112,22 +36,52 @@ interface CLIProviderStatus {
   loading: boolean;
 }
 
+/** 12px mark: lit when the provider can actually run, flat when it cannot. */
+const Mark = ({ on }: { on: boolean }) => (
+  <span className={`w-3 h-3 shrink-0 ${on ? 'bg-primary' : 'bg-border-accent'}`} />
+);
+
+/**
+ * The label half of a provider row: mark, name, and the status word beside it -
+ * `ready`, `not installed`, `key set`, `no key`. The word carries the status
+ * colour and nothing else: no fill, no pill.
+ */
+const ProviderLabel = ({ name, status, tone, on }: {
+  name: string;
+  status: string;
+  tone: AnyTone;
+  on: boolean;
+}) => (
+  <span className="inline-flex items-center gap-2 min-w-0">
+    <Mark on={on} />
+    <span className="truncate">{name}</span>
+    <StatusBadge tone={tone} className="font-mono shrink-0">{status}</StatusBadge>
+  </span>
+);
+
+/** Everything a row hides behind `configure`, on its own raised surface. */
+const ConfigureArea = ({ children }: { children: ReactNode }) => (
+  <div className="bg-secondary divide-y divide-border">{children}</div>
+);
+
+const ConfigureButton = ({ open, onClick }: { open: boolean; onClick: () => void }) => (
+  <Button size="sm" variant="ghost" aria-expanded={open} onClick={onClick}>
+    configure
+  </Button>
+);
+
 export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: AIProvidersSectionProps) => {
-  const [showClaudeKey, setShowClaudeKey] = useState(false);
-  const [cliProviders, setCliProviders] = useState<CLIProviderStatus[]>([
-    { name: 'Claude', binary: 'claude', version: null, loading: true },
-    { name: 'Codex', binary: 'codex', version: null, loading: true },
-    { name: 'Gemini', binary: 'gemini', version: null, loading: true },
-    { name: 'Qwen Code', binary: 'qwen-code', version: null, loading: true },
-    { name: 'OpenCode', binary: 'opencode', version: null, loading: true },
-    { name: 'Pi', binary: 'pi', version: null, loading: true },
-    { name: 'MiniMax', binary: 'minimax', version: null, loading: true },
-  ]);
+  // One row at a time is open: the keys and model lists are reference material,
+  // not a form you fill top to bottom.
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [cliProviders, setCliProviders] = useState<CLIProviderStatus[]>(
+    CLI_BINARIES.map((cli) => ({ ...cli, version: null, loading: true })),
+  );
 
   useEffect(() => {
     const detect = async () => {
       const results = await Promise.all(
-        cliProviders.map(async (cli) => {
+        CLI_BINARIES.map(async (cli) => {
           try {
             const result = await window.electronAPI?.shell?.version(cli.binary);
             const version = result?.success && result.output && !result.output.includes('not found') && !result.output.includes('command not found')
@@ -142,284 +96,286 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       setCliProviders(results);
     };
     detect();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleExpanded = (id: string) => setExpanded((cur) => (cur === id ? null : id));
+
+  // Same fields the provider cards carried, one entry per provider. The key
+  // handlers are unchanged: type into local settings, persist on blur.
+  const apiProviders = [
+    {
+      id: 'openrouter',
+      name: 'OpenRouter',
+      detail: 'openrouter · one key, 300+ models',
+      note: 'The fallback every other provider uses when it has no key of its own.',
+      docsUrl: 'https://openrouter.ai/keys',
+      placeholder: 'sk-or-v1-...',
+      enabled: !!appSettings.openRouterEnabled,
+      onToggle: () => onSaveAppSettings({ openRouterEnabled: !appSettings.openRouterEnabled }),
+      apiKey: appSettings.openRouterApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ openRouterApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ openRouterApiKey: appSettings.openRouterApiKey }),
+      models: ['deepseek/deepseek-r1', 'moonshotai/kimi-k2', 'xiaomi/mimo-v2-pro', 'qwen/qwq-32b', 'openai/gpt-4.1', 'google/gemini-2.5-pro', '300+ more…'],
+    },
+    {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      detail: 'deepseek · anthropic-compatible',
+      note: 'Direct via api.deepseek.com. Falls back to OpenRouter with no key.',
+      docsUrl: 'https://platform.deepseek.com/api_keys',
+      placeholder: 'sk-...',
+      enabled: !!appSettings.deepSeekEnabled,
+      onToggle: () => onSaveAppSettings({ deepSeekEnabled: !appSettings.deepSeekEnabled }),
+      apiKey: appSettings.deepSeekApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ deepSeekApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ deepSeekApiKey: appSettings.deepSeekApiKey }),
+      models: ['deepseek/deepseek-r1', 'deepseek/deepseek-chat', 'deepseek/deepseek-r1-distill-llama-70b'],
+    },
+    {
+      id: 'moonshot',
+      name: 'MoonshotAI (Kimi)',
+      detail: 'moonshot · anthropic-compatible',
+      note: 'Direct via api.moonshot.ai. Falls back to OpenRouter with no key.',
+      docsUrl: 'https://platform.moonshot.cn/console/api-keys',
+      placeholder: 'sk-...',
+      enabled: !!appSettings.moonshotEnabled,
+      onToggle: () => onSaveAppSettings({ moonshotEnabled: !appSettings.moonshotEnabled }),
+      apiKey: appSettings.moonshotApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ moonshotApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ moonshotApiKey: appSettings.moonshotApiKey }),
+      models: ['moonshotai/kimi-k2', 'moonshotai/moonlight-16k', 'moonshotai/kimi-vl-a3b-thinking'],
+    },
+    {
+      id: 'mimo',
+      name: 'MiMo (Xiaomi)',
+      detail: 'mimo · routes via openrouter',
+      note: 'No Anthropic-compatible endpoint: requests always use your OpenRouter key.',
+      docsUrl: 'https://platform.xiaomimimo.com',
+      placeholder: 'sk-...',
+      enabled: !!appSettings.mimoEnabled,
+      onToggle: () => onSaveAppSettings({ mimoEnabled: !appSettings.mimoEnabled }),
+      apiKey: appSettings.mimoApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ mimoApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ mimoApiKey: appSettings.mimoApiKey }),
+      models: ['xiaomi/mimo-v2-pro', 'xiaomi/mimo-v2-flash', 'xiaomi/mimo-v2-omni'],
+    },
+    {
+      id: 'qwen',
+      name: 'Qwen (Alibaba)',
+      detail: 'qwen · routes via openrouter',
+      note: 'No Anthropic-compatible endpoint: requests always use your OpenRouter key.',
+      docsUrl: 'https://dashscope.console.aliyun.com/apiKey',
+      placeholder: 'sk-...',
+      enabled: !!appSettings.qwenEnabled,
+      onToggle: () => onSaveAppSettings({ qwenEnabled: !appSettings.qwenEnabled }),
+      apiKey: appSettings.qwenApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ qwenApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ qwenApiKey: appSettings.qwenApiKey }),
+      models: ['qwen/qwq-32b', 'qwen/qwen-2.5-72b-instruct', 'qwen/qwen-2.5-coder-32b-instruct', 'qwen/qwen3-235b-a22b'],
+    },
+    {
+      id: 'zhipu',
+      name: 'Zai (GLM)',
+      detail: 'zhipu · anthropic-compatible',
+      note: 'Direct via open.bigmodel.cn. Falls back to OpenRouter with no key.',
+      docsUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+      placeholder: '...',
+      enabled: !!appSettings.zhipuEnabled,
+      onToggle: () => onSaveAppSettings({ zhipuEnabled: !appSettings.zhipuEnabled }),
+      apiKey: appSettings.zhipuApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ zhipuApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ zhipuApiKey: appSettings.zhipuApiKey }),
+      models: ['zhipuai/glm-4.6', 'zhipuai/glm-4.5', 'zhipuai/glm-4-plus', 'zhipuai/glm-4-air', 'zhipuai/glm-4-flash'],
+    },
+    {
+      id: 'minimax',
+      name: 'MiniMax',
+      detail: 'minimax · anthropic-compatible',
+      note: 'Direct via api.minimax.io. Falls back to OpenRouter with no key.',
+      docsUrl: 'https://www.minimax.chat/platform',
+      placeholder: '...',
+      enabled: !!appSettings.minimaxEnabled,
+      onToggle: () => onSaveAppSettings({ minimaxEnabled: !appSettings.minimaxEnabled }),
+      apiKey: appSettings.minimaxApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ minimaxApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ minimaxApiKey: appSettings.minimaxApiKey }),
+      models: ['minimax/minimax-m2', 'minimax/minimax-m1', 'minimax/minimax-01'],
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Providers</h2>
-        <p className="text-sm text-muted-foreground">
-          Every CLI and API Tars can run. They are all equal here — the options below each one
-          are that provider&apos;s own, not the app&apos;s.
-        </p>
+    <>
+      <div className="px-4 pt-4 pb-2">
+        <PanelCaption>INSTALLED CLIs</PanelCaption>
       </div>
 
-      <div>
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Claude Code</h3>
-      </div>
-
-      <div className="border border-border bg-card p-5 space-y-4">
-        {/* API Key */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wide">API Key</label>
-          <div className="relative">
-            <input
-              type={showClaudeKey ? 'text' : 'password'}
-              value={appSettings.anthropicApiKey || ''}
-              onChange={(e) => onUpdateLocalSettings({ anthropicApiKey: e.target.value })}
-              onBlur={() => onSaveAppSettings({ anthropicApiKey: appSettings.anthropicApiKey })}
-              placeholder="Uses system env ANTHROPIC_API_KEY"
-              className="w-full px-3 py-2 pr-10 bg-secondary border border-border text-sm font-mono focus:border-foreground focus:outline-none"
+      {cliProviders.map((cli) => {
+        const isClaude = cli.binary === 'claude';
+        const ready = !!cli.version;
+        const open = expanded === cli.binary;
+        return (
+          <div key={cli.binary}>
+            <SettingsRow
+              label={
+                <ProviderLabel
+                  name={cli.name}
+                  status={cli.loading ? 'checking' : ready ? 'ready' : 'not installed'}
+                  tone={cli.loading ? 'idle' : ready ? 'running' : 'idle'}
+                  on={ready}
+                />
+              }
+              description={
+                <span className="font-mono">
+                  {cli.version ? `${cli.binary} · ${cli.version}` : cli.binary}
+                </span>
+              }
+              control={isClaude ? <ConfigureButton open={open} onClick={() => toggleExpanded(cli.binary)} /> : undefined}
             />
-            <button
-              type="button"
-              onClick={() => setShowClaudeKey(!showClaudeKey)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {showClaudeKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
+
+            {isClaude && open && (
+              <ConfigureArea>
+                <SettingsRow
+                  label="API key"
+                  description="Most users rely on the system variable. Set this only to override it."
+                  control={
+                    <PasswordInput
+                      width="control"
+                      value={appSettings.anthropicApiKey || ''}
+                      onChange={(e) => onUpdateLocalSettings({ anthropicApiKey: e.target.value })}
+                      onBlur={() => onSaveAppSettings({ anthropicApiKey: appSettings.anthropicApiKey })}
+                      placeholder="Uses system env ANTHROPIC_API_KEY"
+                    />
+                  }
+                />
+                <SettingsRow
+                  label="Default model"
+                  description="The model a new Claude agent starts on."
+                  control={
+                    <Select
+                      width="control"
+                      value={appSettings.defaultClaudeModel || 'sonnet'}
+                      onChange={(e) => onSaveAppSettings({ defaultClaudeModel: e.target.value })}
+                    >
+                      <option value="sonnet">Sonnet - Daily coding</option>
+                      <option value="opus">Opus - Complex reasoning</option>
+                      <option value="haiku">Haiku - Fast &amp; efficient</option>
+                    </Select>
+                  }
+                />
+                <SettingsRow
+                  label="Verbose mode"
+                  description="Starts agents with --verbose for detailed output."
+                  control={
+                    <Toggle
+                      enabled={!!appSettings.verboseModeEnabled}
+                      onChange={() => onSaveAppSettings({ verboseModeEnabled: !appSettings.verboseModeEnabled })}
+                    />
+                  }
+                />
+                <SettingsRow
+                  label="Chrome browser sharing"
+                  description={
+                    <>
+                      Shares your logged-in Chrome via --chrome. Needs Claude Code 2.0.73+ and the{' '}
+                      <a
+                        href="https://chromewebstore.google.com/detail/claude-in-chrome/ofnckddkabkmfmjkfgiofpofhpgjdlda"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-foreground"
+                      >
+                        Claude in Chrome
+                      </a>{' '}
+                      extension.
+                    </>
+                  }
+                  control={
+                    <Toggle
+                      enabled={!!appSettings.chromeEnabled}
+                      onChange={() => onSaveAppSettings({ chromeEnabled: !appSettings.chromeEnabled })}
+                    />
+                  }
+                />
+                <SettingsRow
+                  label="Status line"
+                  description="Model, context, branch, session time and tokens, live inside the CLI."
+                  control={
+                    <Toggle
+                      enabled={appSettings.statusLineEnabled === true}
+                      onChange={() => onSaveAppSettings({ statusLineEnabled: !appSettings.statusLineEnabled })}
+                    />
+                  }
+                />
+              </ConfigureArea>
+            )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Most users rely on the system environment variable. Only set this to override it.</p>
-        </div>
+        );
+      })}
 
-        {/* Default Model */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wide">Default Model</label>
-          <select
-            value={appSettings.defaultClaudeModel || 'sonnet'}
-            onChange={(e) => onSaveAppSettings({ defaultClaudeModel: e.target.value })}
-            className="w-full sm:w-64 bg-secondary border border-border text-sm text-foreground px-3 py-2 focus:outline-none focus:border-foreground appearance-none"
-          >
-            <option value="sonnet">Sonnet - Daily coding</option>
-            <option value="opus">Opus - Complex reasoning</option>
-            <option value="haiku">Haiku - Fast &amp; efficient</option>
-          </select>
-        </div>
+      <div className="px-4 pt-4 pb-2">
+        <PanelCaption>API PROVIDERS</PanelCaption>
+      </div>
 
-        {/* Agent Settings */}
-        <div className="border-t border-border pt-4 space-y-0">
-          <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
-            Claude Code options
-          </p>
-          <p className="text-xs text-muted-foreground mb-3">
-            These are flags the Claude CLI understands. Other providers have their own, set in
-            their own rows.
-          </p>
-          <div className="flex items-center justify-between py-3 border-b border-border">
-            <div>
-              <span className="text-sm">Verbose Mode</span>
-              <p className="text-xs text-muted-foreground mt-0.5">Start agents with --verbose flag for detailed output</p>
-            </div>
-            <Toggle
-              enabled={!!appSettings.verboseModeEnabled}
-              onChange={() => onSaveAppSettings({ verboseModeEnabled: !appSettings.verboseModeEnabled })}
+      {apiProviders.map((p) => {
+        const hasKey = p.apiKey.trim().length > 0;
+        const open = expanded === p.id;
+        return (
+          <div key={p.id}>
+            <SettingsRow
+              label={
+                <ProviderLabel
+                  name={p.name}
+                  status={hasKey ? 'key set' : 'no key'}
+                  tone={hasKey ? 'running' : 'idle'}
+                  on={hasKey}
+                />
+              }
+              description={<span className="font-mono">{p.detail}</span>}
+              control={<ConfigureButton open={open} onClick={() => toggleExpanded(p.id)} />}
+              secondaryControl={<Toggle enabled={p.enabled} onChange={p.onToggle} />}
             />
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <span className="text-sm">Chrome Browser Sharing</span>
-              <p className="text-xs text-muted-foreground mt-0.5">Share your logged-in Chrome browser with agents via --chrome flag</p>
-            </div>
-            <Toggle
-              enabled={!!appSettings.chromeEnabled}
-              onChange={() => onSaveAppSettings({ chromeEnabled: !appSettings.chromeEnabled })}
-            />
-          </div>
-          <div className="px-3 py-2 bg-muted/50 border border-border text-xs text-muted-foreground">
-            Requires Claude Code v2.0.73 or later and the{' '}
-            <a
-              href="https://chromewebstore.google.com/detail/claude-in-chrome/ofnckddkabkmfmjkfgiofpofhpgjdlda"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Claude in Chrome
-            </a>{' '}
-            extension installed.
-          </div>
-        </div>
 
-        {/* Status Line */}
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <div className="flex items-start gap-3">
-            <BarChart3 className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm font-medium">Status Line</p>
-              <p className="text-xs text-muted-foreground">
-                Show a real-time status bar in Claude Code with model, context usage, git branch, session time, and token stats
-              </p>
-            </div>
+            {open && (
+              <ConfigureArea>
+                <SettingsRow
+                  label="API key"
+                  description={p.note}
+                  control={
+                    <PasswordInput
+                      width="control"
+                      value={p.apiKey}
+                      onChange={(e) => p.onKeyChange(e.target.value)}
+                      onBlur={p.onKeyBlur}
+                      placeholder={p.placeholder}
+                    />
+                  }
+                />
+                <div className="px-4 py-3 flex flex-wrap items-center gap-1.5">
+                  {p.models.map((m) => (
+                    <MetaChip key={m}>{m}</MetaChip>
+                  ))}
+                  <a
+                    href={p.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto font-mono text-[10.5px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    get a key
+                  </a>
+                </div>
+              </ConfigureArea>
+            )}
           </div>
-          <Toggle
-            enabled={appSettings.statusLineEnabled === true}
-            onChange={() => onSaveAppSettings({ statusLineEnabled: !appSettings.statusLineEnabled })}
-          />
-        </div>
-      </div>
+        );
+      })}
 
-      <div>
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">API providers</h3>
-        <p className="text-sm text-muted-foreground">
-          Model lists and prices for all of these come from the live catalogue, so you do not
-          need a key just to see what a provider offers. A key is what lets an agent run on it.
+      {/* What used to be a four-paragraph card explaining routing. One line is
+          the whole rule; the per-provider detail lines say the rest. */}
+      <div className="px-4 py-3">
+        <p className="bg-bg-tertiary px-3 py-2 text-[11px] text-muted-foreground">
+          Every provider runs on the Claude CLI with its base URL pointed at that provider - its own
+          key when you set one, the OpenRouter key otherwise.
         </p>
       </div>
-
-      {/* CLI-based Providers */}
-      <div className="border border-border bg-card p-5 space-y-3">
-        <div>
-          <h3 className="font-medium mb-0.5">CLI-based Providers</h3>
-          <p className="text-xs text-muted-foreground">
-            Providers that run as local CLI tools. Configure paths in Settings &gt; CLI Paths.
-          </p>
-        </div>
-        <div className="space-y-0">
-          {cliProviders.map((cli) => (
-            <div key={cli.binary} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
-              <span className="text-sm font-medium">{cli.name}</span>
-              <div className="flex items-center gap-2">
-                {cli.loading ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                ) : cli.version ? (
-                  <>
-                    <CheckCircle className="w-3.5 h-3.5 text-success" />
-                    <span className="text-xs font-mono text-muted-foreground">{cli.version}</span>
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="w-3.5 h-3.5 text-danger" />
-                    <span className="text-xs text-muted-foreground">Not installed</span>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* OpenRouter */}
-      <ProviderCard
-        title="OpenRouter"
-        description="Universal gateway - one API key to access 300+ models from all providers."
-        docsUrl="https://openrouter.ai/keys"
-        badge="Recommended"
-        badgeColor="bg-success/20 text-success border border-success/30"
-        enabled={!!appSettings.openRouterEnabled}
-        onToggle={() => onSaveAppSettings({ openRouterEnabled: !appSettings.openRouterEnabled })}
-        apiKey={appSettings.openRouterApiKey || ''}
-        apiKeyPlaceholder="sk-or-v1-..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ openRouterApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ openRouterApiKey: appSettings.openRouterApiKey })}
-        models={['deepseek/deepseek-r1', 'moonshotai/kimi-k2', 'xiaomi/mimo-v2-pro', 'qwen/qwq-32b', 'openai/gpt-4.1', 'google/gemini-2.5-pro', '300+ more…']}
-        routingNote="Provider: openrouter - Claude CLI with ANTHROPIC_BASE_URL=https://openrouter.ai/api (Anthropic-compatible)."
-      />
-
-      {/* DeepSeek */}
-      <ProviderCard
-        title="DeepSeek"
-        description="DeepSeek R1 reasoning model and V3 flagship chat. Competitive pricing."
-        docsUrl="https://platform.deepseek.com/api_keys"
-        enabled={!!appSettings.deepSeekEnabled}
-        onToggle={() => onSaveAppSettings({ deepSeekEnabled: !appSettings.deepSeekEnabled })}
-        apiKey={appSettings.deepSeekApiKey || ''}
-        apiKeyPlaceholder="sk-..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ deepSeekApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ deepSeekApiKey: appSettings.deepSeekApiKey })}
-        models={['deepseek/deepseek-r1', 'deepseek/deepseek-chat', 'deepseek/deepseek-r1-distill-llama-70b']}
-        routingNote="Provider: deepseek - direct via https://api.deepseek.com/anthropic (Anthropic-compatible). Falls back to OpenRouter if no DeepSeek key set."
-      />
-
-      {/* Moonshot / Kimi */}
-      <ProviderCard
-        title="MoonshotAI (Kimi)"
-        description="Kimi K2 - long-context agentic model optimized for real-world tasks."
-        docsUrl="https://platform.moonshot.cn/console/api-keys"
-        enabled={!!appSettings.moonshotEnabled}
-        onToggle={() => onSaveAppSettings({ moonshotEnabled: !appSettings.moonshotEnabled })}
-        apiKey={appSettings.moonshotApiKey || ''}
-        apiKeyPlaceholder="sk-..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ moonshotApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ moonshotApiKey: appSettings.moonshotApiKey })}
-        models={['moonshotai/kimi-k2', 'moonshotai/moonlight-16k', 'moonshotai/kimi-vl-a3b-thinking']}
-        routingNote="Provider: moonshot - direct via https://api.moonshot.ai/anthropic (Anthropic-compatible). Falls back to OpenRouter if no Moonshot key set."
-      />
-
-      {/* Xiaomi MiMo */}
-      <ProviderCard
-        title="MiMo (Xiaomi)"
-        description="MiMo V2 Pro - Xiaomi's flagship agentic model at $1/M input tokens."
-        docsUrl="https://platform.xiaomimimo.com"
-        enabled={!!appSettings.mimoEnabled}
-        onToggle={() => onSaveAppSettings({ mimoEnabled: !appSettings.mimoEnabled })}
-        apiKey={appSettings.mimoApiKey || ''}
-        apiKeyPlaceholder="sk-..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ mimoApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ mimoApiKey: appSettings.mimoApiKey })}
-        models={['xiaomi/mimo-v2-pro', 'xiaomi/mimo-v2-flash', 'xiaomi/mimo-v2-omni']}
-        routingNote="Provider: mimo - no Anthropic-compatible endpoint: requests always route via your OpenRouter key."
-      />
-
-      {/* Alibaba Qwen */}
-      <ProviderCard
-        title="Qwen (Alibaba)"
-        description="QwQ reasoning model and Qwen 2.5/3 series. Strong math & coding."
-        docsUrl="https://dashscope.console.aliyun.com/apiKey"
-        enabled={!!appSettings.qwenEnabled}
-        onToggle={() => onSaveAppSettings({ qwenEnabled: !appSettings.qwenEnabled })}
-        apiKey={appSettings.qwenApiKey || ''}
-        apiKeyPlaceholder="sk-..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ qwenApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ qwenApiKey: appSettings.qwenApiKey })}
-        models={['qwen/qwq-32b', 'qwen/qwen-2.5-72b-instruct', 'qwen/qwen-2.5-coder-32b-instruct', 'qwen/qwen3-235b-a22b']}
-        routingNote="Provider: qwen - no Anthropic-compatible endpoint: requests always route via your OpenRouter key."
-      />
-
-      {/* Zai GLM */}
-      <ProviderCard
-        title="Zai (GLM)"
-        description="GLM-4.6 flagship and GLM-4 Plus/Air/Flash. Strong Chinese + English performance."
-        docsUrl="https://open.bigmodel.cn/usercenter/apikeys"
-        enabled={!!appSettings.zhipuEnabled}
-        onToggle={() => onSaveAppSettings({ zhipuEnabled: !appSettings.zhipuEnabled })}
-        apiKey={appSettings.zhipuApiKey || ''}
-        apiKeyPlaceholder="..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ zhipuApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ zhipuApiKey: appSettings.zhipuApiKey })}
-        models={['zhipuai/glm-4.6', 'zhipuai/glm-4.5', 'zhipuai/glm-4-plus', 'zhipuai/glm-4-air', 'zhipuai/glm-4-flash']}
-        routingNote="Provider: zhipu - direct via https://open.bigmodel.cn/api/anthropic (Anthropic-compatible). Falls back to OpenRouter if no Zhipu key set."
-      />
-
-      {/* MiniMax */}
-      <ProviderCard
-        title="MiniMax"
-        description="MiniMax M-series - agentic flagship models for code and reasoning."
-        docsUrl="https://www.minimax.chat/platform"
-        enabled={!!appSettings.minimaxEnabled}
-        onToggle={() => onSaveAppSettings({ minimaxEnabled: !appSettings.minimaxEnabled })}
-        apiKey={appSettings.minimaxApiKey || ''}
-        apiKeyPlaceholder="..."
-        onApiKeyChange={(v) => onUpdateLocalSettings({ minimaxApiKey: v })}
-        onApiKeyBlur={() => onSaveAppSettings({ minimaxApiKey: appSettings.minimaxApiKey })}
-        models={['minimax/minimax-m2', 'minimax/minimax-m1', 'minimax/minimax-01']}
-        routingNote="Provider: minimax - direct via https://api.minimax.io/anthropic (Anthropic-compatible). Falls back to OpenRouter if no MiniMax key set."
-      />
-
-      {/* Routing note */}
-      <div className="border border-border bg-card p-5 text-sm text-muted-foreground space-y-2">
-        <p className="font-medium text-foreground">How routing works</p>
-        <p>
-          All providers use Claude CLI with <code className="bg-secondary px-1 text-xs">ANTHROPIC_BASE_URL</code> pointing to OpenRouter&apos;s
-          Anthropic-compatible endpoint. Your API key is injected via <code className="bg-secondary px-1 text-xs">ANTHROPIC_API_KEY</code>.
-        </p>
-        <p>
-          When creating an agent, select the provider in the &quot;Model&quot; dropdown -
-          each provider shows its own model list. If a provider-specific key is set, it is used;
-          otherwise the OpenRouter key is used as fallback.
-        </p>
-        <p>
-          Direct API routing (bypassing OpenRouter) is planned for a future release.
-        </p>
-      </div>
-    </div>
+    </>
   );
 };

@@ -3,27 +3,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store';
-import {
-  Search,
-  Plus,
-  X,
-  Archive,
-  Loader2,
-} from 'lucide-react';
+import { Archive, Loader2 } from 'lucide-react';
 import type { VaultDocumentElectron, VaultFolderElectron, VaultAttachmentElectron } from '@/types/electron';
 
+import { Button, PageHeader, Panel, PanelCaption } from '@/components/ui';
 import FolderTree from './components/FolderTree';
 import DocumentList from './components/DocumentList';
 import DocumentViewer from './components/DocumentViewer';
 import DocumentEditor from './components/DocumentEditor';
-import SearchResults from './components/SearchResults';
-import { VaultPanel, VaultPanelHeader, VaultEmptyState } from './shared';
+import { VaultEmptyState } from './shared';
 
 function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI?.vault;
 }
 
-type ViewMode = 'list' | 'view' | 'edit' | 'search';
+// The list no longer leaves the screen when a document opens, so the mode only
+// says what the right-hand panel is showing.
+type ViewMode = 'list' | 'view' | 'edit';
 
 const READ_DOCS_KEY = 'vault-read-docs';
 
@@ -52,14 +48,11 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
   const [folders, setFolders] = useState<VaultFolderElectron[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<VaultDocumentElectron | null>(null);
   const [selectedDocAttachments, setSelectedDocAttachments] = useState<VaultAttachmentElectron[]>([]);
-  const [searchResults, setSearchResults] = useState<VaultDocumentElectron[]>([]);
   const [readDocIds, setReadDocIds] = useState<Set<string>>(() => loadReadDocs());
 
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const setVaultUnreadCount = useStore(s => s.setVaultUnreadCount);
 
@@ -196,26 +189,6 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
     }
   };
 
-  // Search
-  const handleSearch = async (query: string) => {
-    if (!isElectron() || !query.trim()) {
-      setViewMode('list');
-      setSearchResults([]);
-      return;
-    }
-
-    setIsSearching(true);
-    try {
-      const result = await window.electronAPI!.vault!.search({ query: query.trim() });
-      setSearchResults(result.results || []);
-      setViewMode('search');
-    } catch (err) {
-      console.error('Search failed:', err);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
   // Attach pending files to a document
   const attachPendingFiles = async (documentId: string, files: string[]) => {
     if (!isElectron() || files.length === 0) return;
@@ -331,69 +304,44 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
     );
   }
 
+  // Below lg there is no room for three columns, so the body takes the list's
+  // place while a document is open - the two panels swap instead of stacking.
+  const showBody = viewMode === 'edit' || !!selectedDoc;
+
+  const newDocumentButton = (
+    <Button
+      variant="primary"
+      size="md"
+      onClick={() => {
+        setSelectedDoc(null);
+        setViewMode('edit');
+      }}
+    >
+      + Document
+    </Button>
+  );
+
   return (
-    <div className={embedded ? "flex flex-col h-full overflow-hidden" : "flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-4 lg:pt-6 overflow-hidden"}>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
-        {!embedded && (
-          <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Vault</h1>
-            <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-              Agent reports & knowledge base
-            </p>
-          </div>
-        )}
+    <div className={embedded ? 'flex flex-col h-full overflow-hidden' : 'flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-[22px] overflow-hidden'}>
+      {embedded ? (
+        // The route already carries the page header; this only holds the action.
+        <div className="flex justify-end pb-3.5 shrink-0">{newDocumentButton}</div>
+      ) : (
+        <PageHeader
+          title="Vault"
+          subtitle="Agent reports and working documents."
+          actions={newDocumentButton}
+        />
+      )}
 
-        {(viewMode === 'list' || viewMode === 'search') && (
-          <div className="flex items-center gap-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSearch(searchQuery);
-                  if (e.key === 'Escape') {
-                    setSearchQuery('');
-                    setViewMode('list');
-                  }
-                }}
-                placeholder="Search documents..."
-                className="w-48 sm:w-64 lg:w-80 pl-9 pr-8 py-2 text-sm bg-secondary border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => { setSearchQuery(''); setViewMode('list'); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-
-            {/* New document button */}
-            <button
-              onClick={() => {
-                setSelectedDoc(null);
-                setViewMode('edit');
-              }}
-              className="flex items-center gap-1.5 px-3 lg:px-4 py-2 text-sm bg-foreground text-background rounded hover:bg-foreground/90 transition-colors shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">New Document</span>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Main Content: sidebar + content area */}
-      <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-        {/* Folder sidebar */}
-        <VaultPanel className="w-64 shrink-0 hidden lg:flex flex-col">
-          <VaultPanelHeader>Folders</VaultPanelHeader>
-          <div className="flex-1 overflow-y-auto">
+      {/* Three panels sharing one top and one bottom edge: folders, the list of
+          documents, and the document itself. The list stays on screen while a
+          document is open - it used to unmount and the reader lost their place. */}
+      <div className="flex-1 flex gap-2 overflow-hidden min-h-0">
+        {/* Folders */}
+        <Panel fill padded={false} className="w-[236px] shrink-0 max-lg:hidden">
+          <PanelCaption className="px-3 pt-3 pb-2">FOLDERS</PanelCaption>
+          <div className="flex-1 overflow-y-auto pb-2">
             <FolderTree
               folders={folders}
               documents={allDocuments}
@@ -410,95 +358,85 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
               onDeleteFolder={handleDeleteFolder}
             />
           </div>
-        </VaultPanel>
+        </Panel>
 
-        {/* Content Area */}
-        <VaultPanel className="flex-1 min-w-0">
+        {/* Document list - the opened row stays boxed as active */}
+        <Panel
+          fill
+          padded={false}
+          className={`w-[300px] shrink-0 min-w-0 max-lg:w-auto max-lg:flex-1 ${showBody ? 'max-lg:hidden' : ''}`}
+        >
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <AnimatePresence mode="wait">
-              {viewMode === 'list' && (
-                <motion.div
-                  key="list"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="h-full overflow-y-auto"
-                >
-                  <DocumentList
-                    documents={documents}
-                    selectedDocId={selectedDoc?.id || null}
-                    onSelectDocument={handleSelectDocument}
-                    onCreateDocument={() => {
-                      setSelectedDoc(null);
-                      setViewMode('edit');
-                    }}
-                  />
-                </motion.div>
-              )}
-
-              {viewMode === 'search' && (
-                <motion.div
-                  key="search"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="h-full overflow-y-auto"
-                >
-                  <SearchResults
-                    results={searchResults}
-                    query={searchQuery}
-                    onSelectDocument={handleSelectDocument}
-                  />
-                </motion.div>
-              )}
-
-              {viewMode === 'view' && selectedDoc && (
-                <motion.div
-                  key="view"
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="h-full overflow-y-auto"
-                >
-                  <DocumentViewer
-                    document={selectedDoc}
-                    attachments={selectedDocAttachments}
-                    onBack={() => {
-                      setSelectedDoc(null);
-                      setViewMode('list');
-                    }}
-                    onEdit={() => setViewMode('edit')}
-                    onDelete={handleDeleteDocument}
-                  />
-                </motion.div>
-              )}
-
-              {viewMode === 'edit' && (
-                <motion.div
-                  key="edit"
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="h-full overflow-y-auto"
-                >
-                  <DocumentEditor
-                    document={selectedDoc}
-                    folders={folders}
-                    defaultFolderId={!selectedDoc ? selectedFolderId : undefined}
-                    onSave={selectedDoc ? handleUpdateDocument : handleCreateDocument}
-                    onCancel={() => {
-                      setViewMode(selectedDoc ? 'view' : 'list');
-                    }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <div className="flex-1 overflow-y-auto">
+              <DocumentList
+                documents={documents}
+                selectedDocId={selectedDoc?.id || null}
+                onSelectDocument={handleSelectDocument}
+                onCreateDocument={() => {
+                  setSelectedDoc(null);
+                  setViewMode('edit');
+                }}
+              />
+            </div>
           )}
-        </VaultPanel>
+        </Panel>
+
+        {/* Document body */}
+        <Panel fill padded={false} className={`flex-1 min-w-0 ${showBody ? '' : 'max-lg:hidden'}`}>
+          <AnimatePresence mode="wait">
+            {viewMode === 'edit' ? (
+              <motion.div
+                key="edit"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
+                className="h-full overflow-y-auto"
+              >
+                <DocumentEditor
+                  document={selectedDoc}
+                  folders={folders}
+                  defaultFolderId={!selectedDoc ? selectedFolderId : undefined}
+                  onSave={selectedDoc ? handleUpdateDocument : handleCreateDocument}
+                  onCancel={() => {
+                    setViewMode(selectedDoc ? 'view' : 'list');
+                  }}
+                />
+              </motion.div>
+            ) : selectedDoc ? (
+              <motion.div
+                key={`view-${selectedDoc.id}`}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
+                className="h-full overflow-y-auto"
+              >
+                <DocumentViewer
+                  document={selectedDoc}
+                  attachments={selectedDocAttachments}
+                  onBack={() => {
+                    setSelectedDoc(null);
+                    setViewMode('list');
+                  }}
+                  onEdit={() => setViewMode('edit')}
+                  onDelete={handleDeleteDocument}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground"
+              >
+                Pick a document on the left to read it.
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Panel>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Sparkles } from 'lucide-react';
+import { PageHeader, Panel } from '@/components/ui';
 import { CHANGELOG, LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 
 export default function WhatsNewPage() {
@@ -13,47 +13,41 @@ export default function WhatsNewPage() {
   }, []);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto w-full">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-1">What&apos;s New</h1>
-        <p className="text-sm text-muted-foreground">Release history and recent improvements to Tars</p>
-      </div>
+    <div className="flex-1 overflow-y-auto w-full">
+      <PageHeader
+        title="What's New"
+        subtitle="Release history and recent improvements to Tars"
+      />
 
-      <div className="relative">
-        {/* Timeline line */}
-        <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
-
-        <div className="space-y-8">
-          {CHANGELOG.map((release, i) => (
-            <div key={release.id} className="relative pl-8">
-              {/* Timeline dot */}
-              <div className={`absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full border-2 ${
-                i === 0
-                  ? 'bg-primary border-primary'
-                  : 'bg-card border-border'
-              }`} />
-
-              <div className="flex items-baseline gap-3 mb-2">
-                <span className="font-semibold text-base">v{release.version}</span>
-                {i === 0 && (
-                  <span className="text-[10px] font-medium bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
-                    Latest
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground ml-auto">{formatDate(release.date)}</span>
-              </div>
-
-              <ul className="space-y-1.5">
-                {release.updates.map((update, j) => (
-                  <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
-                    <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary/60" />
-                    <span>{update}</span>
-                  </li>
-                ))}
-              </ul>
+      {/* One panel per release. The old rail-and-dots timeline drew a shape the
+          releases already have - they are in order, and each one is a box. */}
+      <div className="space-y-2">
+        {CHANGELOG.map((release, i) => (
+          <Panel key={release.id}>
+            <div className="flex items-baseline gap-3">
+              <span className="font-serif text-[28px] leading-none text-foreground">
+                {release.version}
+              </span>
+              {i === 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-primary text-primary-foreground">
+                  new
+                </span>
+              )}
+              <span className="ml-auto font-mono text-xs text-muted-foreground">
+                {formatDate(release.date)}
+              </span>
             </div>
-          ))}
-        </div>
+
+            <ul className="mt-3 space-y-1.5">
+              {release.updates.map((update, j) => (
+                <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <span className="w-1 h-1 mt-[7px] shrink-0 bg-primary" />
+                  <span>{update}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ))}
       </div>
     </div>
   );
@@ -61,5 +55,5 @@ export default function WhatsNewPage() {
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }

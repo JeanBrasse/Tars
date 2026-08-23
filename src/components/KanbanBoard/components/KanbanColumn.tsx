@@ -6,8 +6,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MoreHorizontal } from 'lucide-react';
 import type { KanbanTask, KanbanColumn as KanbanColumnType } from '@/types/kanban';
+import { Panel, PanelCaption } from '@/components/ui';
 import { KanbanCard } from './KanbanCard';
 import { COLUMN_CONFIG } from '../constants';
 
@@ -43,29 +43,22 @@ export function KanbanColumn({
   });
 
   return (
-    <div className="flex flex-col flex-1 min-w-[200px]">
-      {/* Column header - minimal style */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h3 className="font-semibold text-sm text-foreground tracking-wide">
-            {config.title}
-          </h3>
-          <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-            {tasks.length}
-          </span>
-        </div>
-        <button className="p-1 rounded hover:bg-secondary transition-colors opacity-0 group-hover:opacity-100">
-          <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-        </button>
+    // One bordered track: the header band and the cards live inside the same
+    // box, so an empty column still reads as a drop target.
+    <Panel fill padded={false} className="flex-1 min-w-[200px]">
+      {/* Column header band */}
+      <div className="flex items-center justify-between gap-2 p-3">
+        <PanelCaption>{config.title}</PanelCaption>
+        <span className="text-[11px] text-muted-foreground">{tasks.length}</span>
       </div>
 
       {/* Tasks container */}
       <div
         ref={setNodeRef}
         className={`
-          flex-1 space-y-3 min-h-[200px] max-h-[calc(100vh-280px)] overflow-y-auto
-          rounded-lg transition-all duration-200 px-0.5
-          ${isOver ? 'bg-primary/5' : ''}
+          flex-1 min-h-0 space-y-2 overflow-y-auto p-3 pt-0
+          transition-colors duration-200
+          ${isOver ? 'bg-accent-dim' : ''}
         `}
       >
         <SortableContext
@@ -96,16 +89,7 @@ export function KanbanColumn({
             )}
           </AnimatePresence>
         </SortableContext>
-
-        {/* Drop indicator */}
-        {isOver && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 60 }}
-            className="border-2 border-dashed border-primary/30 rounded-xl bg-primary/5"
-          />
-        )}
       </div>
-    </div>
+    </Panel>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileDiff, GitBranch, Loader2, RefreshCw } from 'lucide-react';
+import { FileDiff, Loader2 } from 'lucide-react';
+import { Button, PageHeader, Panel, PanelCaption } from '@/components/ui';
 import type { AgentStatus, ChangedFile, ReviewDiff } from '@/types/electron';
 
 /**
@@ -114,23 +115,20 @@ export default function ReviewPage() {
   const current = workspaces.find(w => w.key === selected);
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col pt-4 lg:pt-6">
-      <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Review</h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            What your agents changed, per working tree.
-          </p>
-        </div>
-        <button
-          onClick={() => selected && load(selected)}
-          disabled={loading || !selected}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+      <PageHeader
+        title="Review"
+        subtitle="What your agents changed, per working tree."
+        actions={
+          <Button
+            size="md"
+            onClick={() => selected && load(selected)}
+            disabled={loading || !selected}
+          >
+            Refresh
+          </Button>
+        }
+      />
 
       {workspaces.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center">
@@ -139,32 +137,39 @@ export default function ReviewPage() {
           <p className="text-xs text-muted-foreground">Deploy a team, and their branches show up here.</p>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex gap-4">
-          {/* Working trees */}
-          <div className="w-56 shrink-0 overflow-y-auto space-y-1">
-            {workspaces.map(w => (
-              <button
-                key={w.key}
-                onClick={() => setSelected(w.key)}
-                className={`w-full text-left px-3 py-2 border transition-colors ${
-                  w.key === selected
-                    ? 'bg-secondary border-border-accent text-foreground'
-                    : 'bg-card border-border text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <span className="flex items-center gap-1.5 text-xs font-medium">
-                  <GitBranch className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{w.label}</span>
-                </span>
-                <span className="block text-[10px] text-muted-foreground truncate mt-0.5">
-                  {w.agents.join(', ')}
-                </span>
-              </button>
-            ))}
-          </div>
+        <div className="flex-1 min-h-0 flex gap-3">
+          {/* Three panels, not one strip cut up by `border-l`: the trees, the
+              files in the selected tree, and the patch of the selected file. */}
+          <Panel fill className="w-[236px] shrink-0">
+            <PanelCaption>Working trees</PanelCaption>
+            <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
+              {workspaces.map(w => (
+                <button
+                  key={w.key}
+                  onClick={() => setSelected(w.key)}
+                  className={`w-full text-left px-2.5 py-2 border transition-colors ${
+                    w.key === selected
+                      ? 'bg-secondary border-border-accent'
+                      : 'bg-card border-border hover:bg-secondary'
+                  }`}
+                >
+                  <span
+                    className={`block truncate text-[12.5px] ${
+                      w.key === selected ? 'text-foreground' : 'text-text-secondary'
+                    }`}
+                  >
+                    {w.label}
+                  </span>
+                  <span className="block text-[10px] text-muted-foreground truncate mt-0.5">
+                    {w.agents.join(', ')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Panel>
 
           {/* Files */}
-          <div className="w-72 shrink-0 overflow-y-auto border-l border-border pl-4">
+          <Panel fill className="w-[300px] shrink-0">
             {loading && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground py-4">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading the working tree…
@@ -173,12 +178,12 @@ export default function ReviewPage() {
             {error && <p className="text-xs text-danger py-4">{error}</p>}
             {diff && !loading && (
               <>
-                <p className="text-[11px] font-mono text-muted-foreground mb-2">
+                <p className="text-[11px] font-mono text-muted-foreground">
                   {diff.branch}
                   {diff.baseBranch ? ` vs ${diff.baseBranch}` : ''}
                   {diff.ahead ? ` · ${diff.ahead} commit${diff.ahead > 1 ? 's' : ''} ahead` : ''}
                 </p>
-                <p className="text-[11px] font-mono mb-3">
+                <p className="text-[11px] font-mono mt-1">
                   <span className="text-success">+{diff.totalAdditions}</span>{' '}
                   <span className="text-danger">-{diff.totalDeletions}</span>{' '}
                   <span className="text-muted-foreground">
@@ -186,15 +191,19 @@ export default function ReviewPage() {
                   </span>
                 </p>
                 {diff.files.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Nothing changed in this tree.</p>
+                  <p className="text-xs text-muted-foreground mt-3">Nothing changed in this tree.</p>
                 )}
-                <div className="space-y-0.5">
+                {/* The open file is a box the width of the panel's inside, with
+                    its path, counts and status in it - not a bare wash. */}
+                <div className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-1">
                   {diff.files.map(f => (
                     <button
                       key={f.path}
                       onClick={() => openFile(f.path)}
-                      className={`w-full text-left px-2 py-1 text-[11px] font-mono transition-colors ${
-                        f.path === activeFile ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
+                      className={`w-full text-left px-2 py-1.5 border text-[11px] font-mono transition-colors ${
+                        f.path === activeFile
+                          ? 'bg-secondary border-border-accent text-foreground'
+                          : 'border-transparent text-muted-foreground hover:text-foreground'
                       }`}
                     >
                       <span className="flex items-center justify-between gap-2">
@@ -210,23 +219,25 @@ export default function ReviewPage() {
                 </div>
               </>
             )}
-          </div>
+          </Panel>
 
           {/* Patch */}
-          <div className="flex-1 min-w-0 overflow-auto border-l border-border pl-4">
-            {activeFile ? (
-              <>
-                <p className="text-xs font-mono text-foreground mb-2 sticky top-0 bg-background py-1">{activeFile}</p>
-                {filePatch ? <PatchView patch={filePatch} /> : (
-                  <p className="text-xs text-muted-foreground">No textual change to show for this file.</p>
-                )}
-              </>
-            ) : diff?.patch ? (
-              <PatchView patch={diff.patch} />
-            ) : (
-              <p className="text-xs text-muted-foreground">Pick a file to read its patch.</p>
-            )}
-          </div>
+          <Panel fill className="flex-1 min-w-0">
+            <div className="flex-1 min-h-0 overflow-auto">
+              {activeFile ? (
+                <>
+                  <p className="text-xs font-mono text-foreground mb-2 sticky top-0 bg-card py-1">{activeFile}</p>
+                  {filePatch ? <PatchView patch={filePatch} /> : (
+                    <p className="text-xs text-muted-foreground">No textual change to show for this file.</p>
+                  )}
+                </>
+              ) : diff?.patch ? (
+                <PatchView patch={diff.patch} />
+              ) : (
+                <p className="text-xs text-muted-foreground">Pick a file to read its patch.</p>
+              )}
+            </div>
+          </Panel>
         </div>
       )}
     </div>

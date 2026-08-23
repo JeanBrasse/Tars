@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
-import { DATA_DIR } from '../constants';
+import { DATA_DIR, dataPath } from '../constants';
 import { readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import {
   fetchHermesCrons,
@@ -145,7 +145,7 @@ async function detectTailscale(): Promise<TailscaleInfo> {
 /** Dedicated secret for the incoming webhook: exposing the master API token
  *  over the tailnet would hand out full control of every route. */
 function readWebhookSecret(): string {
-  const file = path.join(os.homedir(), '.dorothy', 'hermes-webhook-secret');
+  const file = dataPath('hermes-webhook-secret');
   try {
     if (fs.existsSync(file)) return fs.readFileSync(file, 'utf-8').trim();
     const secret = randomBytes(32).toString('hex');
@@ -160,7 +160,7 @@ function readWebhookSecret(): string {
 
 function readApiToken(): string {
   try {
-    return fs.readFileSync(path.join(os.homedir(), '.dorothy', 'api-token'), 'utf-8').trim();
+    return fs.readFileSync(dataPath('api-token'), 'utf-8').trim();
   } catch {
     return '';
   }

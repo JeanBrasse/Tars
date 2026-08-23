@@ -7,6 +7,8 @@ export * from './constants';
 // Shared Components
 export { SlackIcon } from './SlackIcon';
 export { Toggle } from './Toggle';
+export { SettingsCard } from './SettingsCard';
+export { SettingsRow } from './SettingsRow';
 export { SettingsSidebar } from './SettingsSidebar';
 export { InstallTerminalModal } from './InstallTerminalModal';
 

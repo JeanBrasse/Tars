@@ -1,4 +1,5 @@
-import { Bell, BellOff, Music, X } from 'lucide-react';
+import { Button } from '@/components/ui';
+import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
 
@@ -9,13 +10,16 @@ interface NotificationsSectionProps {
 
 type SoundKey = 'waiting' | 'complete' | 'stop' | 'error';
 
+/**
+ * The sound picker for one event. It used to render on a second line under the
+ * row; it now lives in the row's own control column, left of the toggle, so
+ * every row stays 57px whether a sound is set or not.
+ */
 function SoundPicker({
-  label,
   soundKey,
   appSettings,
   onSaveAppSettings,
 }: {
-  label: string;
   soundKey: SoundKey;
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
@@ -43,129 +47,89 @@ function SoundPicker({
   };
 
   return (
-    <div className="flex items-center gap-2 mt-1.5">
-      <Music className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-      <span className="text-[10px] text-muted-foreground flex-shrink-0">{label}:</span>
-      {fileName ? (
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] font-mono text-foreground truncate max-w-[140px]">{fileName}</span>
-          <button
-            onClick={handleClear}
-            className="text-muted-foreground hover:text-foreground p-0.5 flex-shrink-0"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={handlePick}
-          className="text-[10px] text-muted-foreground hover:text-foreground underline"
-        >
-          Choose file
-        </button>
+    <div className="flex items-center gap-2 min-w-0">
+      <Button variant="secondary" onClick={handlePick} className="min-w-0 max-w-[200px] font-mono text-xs">
+        <span className="truncate">{fileName ?? 'choose sound'}</span>
+      </Button>
+      {fileName && (
+        <Button variant="ghost" onClick={handleClear} className="font-mono text-xs">
+          clear
+        </Button>
       )}
     </div>
   );
 }
 
 export const NotificationsSection = ({ appSettings, onSaveAppSettings }: NotificationsSectionProps) => {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Notifications</h2>
-        <p className="text-sm text-muted-foreground">Configure desktop notifications for agent events</p>
-      </div>
+  // Everything below the master toggle dims together when notifications are off.
+  // The dimming is per-row rather than on a wrapper so the card's own hairlines
+  // still fall between the rows.
+  const dimmed = appSettings.notificationsEnabled ? '' : 'opacity-50 pointer-events-none';
 
-      <div className="border border-border bg-card p-6">
-        <div className="flex items-center justify-between pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            {appSettings.notificationsEnabled ? (
-              <Bell className="w-5 h-5 text-muted-foreground" />
-            ) : (
-              <BellOff className="w-5 h-5 text-muted-foreground" />
-            )}
-            <div>
-              <p className="font-medium">Enable Notifications</p>
-              <p className="text-sm text-muted-foreground">Master toggle for all desktop notifications</p>
-            </div>
-          </div>
+  return (
+    <>
+      <SettingsRow
+        label="Enable notifications"
+        description="Master toggle for all desktop notifications."
+        secondaryControl={
           <Toggle
             enabled={appSettings.notificationsEnabled}
             onChange={() => onSaveAppSettings({ notificationsEnabled: !appSettings.notificationsEnabled })}
           />
-        </div>
+        }
+      />
 
-        <div className={`space-y-4 pt-4 ${!appSettings.notificationsEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="py-3 border-b border-border">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Waiting for Input</p>
-                <p className="text-xs text-muted-foreground">
-                  Triggered when a permission dialog appears or the agent needs user input.
-                  Uses the <span className="font-mono text-[10px] bg-muted px-1 rounded">PermissionRequest</span> and <span className="font-mono text-[10px] bg-muted px-1 rounded">Notification</span> hooks.
-                </p>
-              </div>
-              <Toggle
-                enabled={appSettings.notifyOnWaiting}
-                onChange={() => onSaveAppSettings({ notifyOnWaiting: !appSettings.notifyOnWaiting })}
-              />
-            </div>
-            <SoundPicker label="Sound" soundKey="waiting" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />
-          </div>
+      <SettingsRow
+        className={dimmed}
+        label="Waiting for input"
+        description="A permission dialog appeared, or the agent asked for something. PermissionRequest and Notification hooks."
+        control={<SoundPicker soundKey="waiting" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />}
+        secondaryControl={
+          <Toggle
+            enabled={appSettings.notifyOnWaiting}
+            onChange={() => onSaveAppSettings({ notifyOnWaiting: !appSettings.notifyOnWaiting })}
+          />
+        }
+      />
 
-          <div className="py-3 border-b border-border">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Response Finished</p>
-                <p className="text-xs text-muted-foreground">
-                  Triggered every time an agent finishes responding and is ready for the next prompt.
-                  Uses the <span className="font-mono text-[10px] bg-muted px-1 rounded">Stop</span> hook.
-                  Could spam your notifications if you have a lot of agents.
-                </p>
-              </div>
-              <Toggle
-                enabled={appSettings.notifyOnStop}
-                onChange={() => onSaveAppSettings({ notifyOnStop: !appSettings.notifyOnStop })}
-              />
-            </div>
-            <SoundPicker label="Sound" soundKey="stop" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />
-          </div>
+      <SettingsRow
+        className={dimmed}
+        label="Response finished"
+        description="Every time an agent finishes responding. Stop hook — noisy if you run a lot of agents."
+        control={<SoundPicker soundKey="stop" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />}
+        secondaryControl={
+          <Toggle
+            enabled={appSettings.notifyOnStop}
+            onChange={() => onSaveAppSettings({ notifyOnStop: !appSettings.notifyOnStop })}
+          />
+        }
+      />
 
-          <div className="py-3 border-b border-border">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Task Complete</p>
-                <p className="text-xs text-muted-foreground">
-                  Triggered when an agent explicitly marks a task as done.
-                  Uses the <span className="font-mono text-[10px] bg-muted px-1 rounded">TaskCompleted</span> hook.
-                </p>
-              </div>
-              <Toggle
-                enabled={appSettings.notifyOnComplete}
-                onChange={() => onSaveAppSettings({ notifyOnComplete: !appSettings.notifyOnComplete })}
-              />
-            </div>
-            <SoundPicker label="Sound" soundKey="complete" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />
-          </div>
+      <SettingsRow
+        className={dimmed}
+        label="Task complete"
+        description="An agent explicitly marked a task as done. TaskCompleted hook."
+        control={<SoundPicker soundKey="complete" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />}
+        secondaryControl={
+          <Toggle
+            enabled={appSettings.notifyOnComplete}
+            onChange={() => onSaveAppSettings({ notifyOnComplete: !appSettings.notifyOnComplete })}
+          />
+        }
+      />
 
-          <div className="py-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Error Alerts</p>
-                <p className="text-xs text-muted-foreground">
-                  Triggered when an agent process crashes or exits with a non-zero code.
-                  Fires from the PTY exit handler.
-                </p>
-              </div>
-              <Toggle
-                enabled={appSettings.notifyOnError}
-                onChange={() => onSaveAppSettings({ notifyOnError: !appSettings.notifyOnError })}
-              />
-            </div>
-            <SoundPicker label="Sound" soundKey="error" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />
-          </div>
-        </div>
-      </div>
-    </div>
+      <SettingsRow
+        className={dimmed}
+        label="Error alerts"
+        description="An agent process crashed or exited non-zero. Fires from the PTY exit handler."
+        control={<SoundPicker soundKey="error" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />}
+        secondaryControl={
+          <Toggle
+            enabled={appSettings.notifyOnError}
+            onChange={() => onSaveAppSettings({ notifyOnError: !appSettings.notifyOnError })}
+          />
+        }
+      />
+    </>
   );
 };
