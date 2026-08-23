@@ -12,6 +12,7 @@ import { readHermesConnection, writeHermesConnection } from '../services/hermes-
 import {
   fetchHermesCrons,
   hermesCronAction,
+  updateHermesCron,
   deleteHermesCron,
   probeHermes,
   signInHermes,
@@ -96,7 +97,7 @@ function hermesGet(baseUrl: string, pathname: string, token?: string, timeoutMs 
 const API_PORT = 31415;
 
 /**
- * Hermes integration handlers — everything the Settings → Hermes section
+ * Hermes integration handlers: everything the Settings → Hermes section
  * needs to wire a remote (VPS) Hermes instance to this Tars:
  * - connection info: the incoming-webhook URL/token to paste into Hermes
  *   cron jobs, plus Tailscale state (DNS name, serve status) so the user
@@ -279,6 +280,11 @@ export function registerHermesHandlers(): void {
   ipcMain.handle('hermes:crons:action', async (_event, params: { action: 'pause' | 'resume' | 'trigger'; jobId: string; profile?: string }) =>
     hermesCronAction(readConnection(), params.action, params.jobId, params.profile));
 
+  // Editing a schedule. The page could only run/pause/delete before this
+  // channel existed, so there was nothing behind an edit control to call.
+  ipcMain.handle('hermes:crons:update', async (_event, params: { jobId: string; updates: Record<string, unknown>; profile?: string }) =>
+    updateHermesCron(readConnection(), params.jobId, params.updates ?? {}, params.profile));
+
   ipcMain.handle('hermes:crons:delete', async (_event, params: { jobId: string; profile?: string }) =>
     deleteHermesCron(readConnection(), params.jobId, params.profile));
 
@@ -295,7 +301,7 @@ export function registerHermesHandlers(): void {
     return updateHermesTask(readConnection(), params.taskId, params.patch);
   });
 
-  // Reachability check of the remote Hermes gateway (any HTTP response counts —
+  // Reachability check of the remote Hermes gateway (any HTTP response counts:
   // we only prove the tailnet route works, not the gateway's API shape).
   ipcMain.handle('hermes:testGateway', async (_event, url: string) => {
     if (typeof url !== 'string' || !/^https?:\/\//.test(url.trim())) {

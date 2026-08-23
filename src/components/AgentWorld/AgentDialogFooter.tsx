@@ -8,7 +8,7 @@ interface AgentDialogFooterProps {
   prompt: string;
   onPromptChange: (value: string) => void;
   onStart: () => void;
-  /** Kept on the contract for the dialog's call site — stop now lives in AgentDialogHeader. */
+  /** Kept on the contract for the dialog's call site. Stop now lives in AgentDialogHeader. */
   onStop: () => void;
 }
 
@@ -28,7 +28,7 @@ export const AgentDialogFooter = memo(function AgentDialogFooter({
           </span>
         </div>
       )}
-      {/* One prompt line on the terminal surface. No submit button — Enter sends. */}
+      {/* One prompt line on the terminal surface. No submit button: Enter sends. */}
       <div className="flex items-start gap-2">
         <span className="shrink-0 py-[7px] font-mono text-[12.5px] leading-[18px] text-primary select-none">
           ❯
@@ -44,7 +44,7 @@ export const AgentDialogFooter = memo(function AgentDialogFooter({
             }
           }}
           placeholder={
-            agent.pathMissing ? 'cannot start — project path not found' : 'type to the agent, or paste a task'
+            agent.pathMissing ? 'cannot start: project path not found' : 'type to the agent, or paste a task'
           }
           disabled={agent.pathMissing}
           className={`flex-1 min-h-8 max-h-32 py-[7px] bg-transparent border-0 outline-none resize-none overflow-y-auto font-mono text-[12.5px] leading-[18px] text-foreground placeholder:text-muted-foreground [field-sizing:content] ${

@@ -5,7 +5,6 @@ import {
   Search,
   FileSearch,
   RefreshCw,
-  Loader2,
   FileText,
   Folder,
   Copy,
@@ -16,6 +15,7 @@ import {
   Code2,
 } from 'lucide-react';
 import { Highlight, themes } from 'prism-react-renderer';
+import { BrandSpinner } from '@/components/ui';
 import { getLanguageFromPath, type FileNode } from './constants';
 
 interface CodePanelProps {
@@ -369,7 +369,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
               placeholder={searchMode === 'file' ? 'Search files...' : 'Search in files...'}
               className="flex-1 bg-transparent text-xs outline-none text-text-primary placeholder:text-text-muted"
             />
-            {isSearching && <Loader2 className="w-3 h-3 animate-spin text-text-muted" />}
+            {isSearching && <BrandSpinner size={14} label="Searching" />}
           </div>
           <button
             onClick={() => setSearchMode(searchMode === 'file' ? 'content' : 'file')}
@@ -387,7 +387,11 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
             className="p-1.5 hover:bg-bg-tertiary rounded transition-colors"
             title="Refresh"
           >
-            <RefreshCw className={`w-3 h-3 text-text-muted ${loading ? 'animate-spin' : ''}`} />
+            {loading ? (
+              <BrandSpinner size={14} label="Refreshing" />
+            ) : (
+              <RefreshCw className="w-3 h-3 text-text-muted" />
+            )}
           </button>
         </div>
       </div>
@@ -436,7 +440,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
             </div>
           ) : loading ? (
             <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-5 h-5 animate-spin text-text-muted" />
+              <BrandSpinner size={30} label="Loading files" />
             </div>
           ) : fileTree.length === 0 ? (
             <div className="p-3 text-xs text-text-muted text-center">No files found</div>
@@ -494,7 +498,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
               <div className="flex-1 overflow-auto bg-[#0d0d14]">
                 {fileContent === 'Loading...' ? (
                   <div className="flex items-center justify-center h-full">
-                    <Loader2 className="w-5 h-5 animate-spin text-text-muted" />
+                    <BrandSpinner size={30} label="Loading file" />
                   </div>
                 ) : (
                   <Highlight theme={themes.nightOwl} code={fileContent} language={highlightLanguage}>

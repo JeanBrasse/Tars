@@ -1,18 +1,15 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { LoadingPanel } from '@/components/ui';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 // Dynamically import TerminalsView to avoid SSR issues with xterm
 const TerminalsView = dynamic(() => import('@/components/TerminalsView'), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-full bg-card border border-border">
-      <div className="text-center">
-        <Loader2 className="w-8 h-8 animate-spin text-foreground mx-auto mb-4" />
-        <p className="text-muted-foreground">Loading Terminals...</p>
-      </div>
+    <div className="h-full bg-card border border-border">
+      <LoadingPanel what="Loading Terminals" />
     </div>
   ),
 });

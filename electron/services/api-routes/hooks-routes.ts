@@ -10,7 +10,7 @@ import { scheduleTick } from '../../utils/agents-tick';
  * - A task dispatch (/start, /message respawn, /dispatch) kills the old PTY and
  *   clears `currentSessionId`. The freshly booted claude session announces
  *   itself via the SessionStart hook (recognizable by its `source` field) and
- *   is registered WITHOUT changing status — otherwise its startup "idle" would
+ *   is registered WITHOUT changing status. Otherwise its startup "idle" would
  *   resolve the orchestrator's long-poll before the task even begins.
  * - Status posts carrying a session_id that doesn't match the registered
  *   session are stale (hooks of a killed PTY still in flight) and are ignored.
@@ -18,7 +18,7 @@ import { scheduleTick } from '../../utils/agents-tick';
  *   still alive at its prompt and its later hooks must keep matching.
  */
 export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
-  // POST /api/hooks/output — capture clean text output from agent transcript
+  // POST /api/hooks/output: capture clean text output from agent transcript
   app.post('/api/hooks/output', (req, sendJson) => {
     const { agent_id, session_id, output } = req.body as {
       agent_id: string;
@@ -37,7 +37,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
         (agent.currentSessionId && session_id && session_id !== agent.currentSessionId) ||
         (session_id && session_id === agent.lastKilledSessionId);
       if (staleOutput) {
-        // Stale session — don't let a killed PTY's Stop hook overwrite the
+        // Stale session: don't let a killed PTY's Stop hook overwrite the
         // live task's output.
         console.log(`[hooks] Ignored stale output post for ${agent.id} (session ${session_id}, current ${agent.currentSessionId ?? 'none'})`);
         sendJson({ success: false, stale: true });
@@ -62,7 +62,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       current_task?: string;
     };
 
-    console.log(`[hooks] POST /api/hooks/status — agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
+    console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
 
     if (!agent_id || !status) {
       sendJson({ error: 'agent_id and status are required' }, 400);
@@ -77,7 +77,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
     // Tombstone guard: hooks of a killed PTY's session (separate processes
     // that survive the kill) may arrive during the window where the new
-    // session hasn't registered yet — never let them register or flip status.
+    // session hasn't registered yet. Never let them register or flip status.
     if (session_id && session_id === agent.lastKilledSessionId) {
       console.log(`[hooks] Ignored post from killed session ${session_id} for ${agent.id} (status=${status})`);
       sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
@@ -86,7 +86,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
     // SessionStart registration (source is only ever sent by session-start
     // hooks): record which session now owns this agent, but never touch
-    // status — the agent was just dispatched a task and is about to work.
+    // status: the agent was just dispatched a task and is about to work.
     if (source) {
       agent.currentSessionId = session_id;
       agent.lastActivity = new Date().toISOString();
@@ -142,7 +142,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
   });
 
-  // POST /api/hooks/task-completed — dedicated endpoint for TaskCompleted hook
+  // POST /api/hooks/task-completed: dedicated endpoint for TaskCompleted hook
   app.post('/api/hooks/task-completed', (req, sendJson) => {
     const { agent_id, session_id } = req.body as {
       agent_id: string;
@@ -202,7 +202,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
   });
 
-  // POST /api/hooks/agent-stopped — Send notification when agent finishes a response (Stop hook)
+  // POST /api/hooks/agent-stopped: Send notification when agent finishes a response (Stop hook)
   app.post('/api/hooks/agent-stopped', (req, sendJson) => {
     const { agent_id, session_id } = req.body as {
       agent_id: string;

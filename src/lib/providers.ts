@@ -1,5 +1,5 @@
 /**
- * Frontend provider registry — single source of truth for all AI providers.
+ * Frontend provider registry: single source of truth for all AI providers.
  *
  * Adding a new provider: add one entry here. NewChatModal and Settings
  * Default Provider both import from this file.
@@ -281,7 +281,7 @@ interface ProviderAvailabilitySettings {
 }
 
 /**
- * Single source of truth for "can this provider be selected?" — used by
+ * Single source of truth for "can this provider be selected?": used by
  * NewChatModal and Settings so the two can't diverge again.
  *
  * Semantics mirror the electron providers: deepseek/moonshot/zhipu/minimax

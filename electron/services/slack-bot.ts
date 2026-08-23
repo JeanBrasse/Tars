@@ -469,7 +469,7 @@ export async function handleSlackCommand(
         command += ` --add-dir '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
       }
       command += ` --add-dir '${require('os').homedir()}/.dorothy'`;
-      // BUG 5: orchestrator-mode agents cannot edit files — must delegate.
+      // BUG 5: orchestrator-mode agents cannot edit files: must delegate.
       if (isSuperAgent(agent) || agent.orchestratorMode) {
         command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
       }
@@ -592,7 +592,7 @@ export async function sendToSuperAgentFromSlack(
         "'\\''",
       );
 
-      // Build command with instructions file — use provider-aware binary
+      // Build command with instructions file, use provider-aware binary
       const superAgentSlackProvider = getProvider(superAgent.provider);
       const superAgentSlackBinary = superAgentSlackProvider.resolveBinaryPath(appSettings).replace(/'/g, "'\\''");
       let command = `'${superAgentSlackBinary}'`;
@@ -621,7 +621,7 @@ export async function sendToSuperAgentFromSlack(
 
       if (superAgent.permissionMode === 'auto' || superAgent.permissionMode === 'bypass' || (!superAgent.permissionMode && superAgent.skipPermissions)) command += ' --dangerously-skip-permissions';
 
-      // BUG 5: Super Agent is an orchestrator — block file-mutating tools.
+      // BUG 5: Super Agent is an orchestrator: block file-mutating tools.
       command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
 
       // Simple prompt with Slack context - the detailed instructions come from the file

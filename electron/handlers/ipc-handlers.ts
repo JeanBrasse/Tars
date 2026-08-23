@@ -542,7 +542,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       ptyJustCreated = true;
     }
 
-    // Determine provider — prefer agent-level, fallback to options, default to 'claude'
+    // Determine provider: prefer agent-level, fallback to options, default to 'claude'
     const provider = agent.provider || options?.provider || 'claude';
     const localModel = agent.localModel || options?.localModel;
 
@@ -563,7 +563,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       const model = localModel || tasmaniaStatus.modelName || 'default';
 
       // Kill the existing PTY and recreate with env vars in the process environment.
-      // Writing `export ...` to an already-running shell is racy — the shell may not
+      // Writing `export ...` to an already-running shell is racy: the shell may not
       // process the export before the claude command runs. Baking vars into pty.spawn()
       // guarantees they're in the process environment from the start.
       const oldPty = ptyProcesses.get(agent.ptyId!);
@@ -682,7 +682,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const isSuperAgentCheck = agent.name?.toLowerCase().includes('super agent') ||
                       agent.name?.toLowerCase().includes('orchestrator');
 
-    // Resolve MCP config path — pass for ALL agents using flag strategy (Claude)
+    // Resolve MCP config path: pass for ALL agents using flag strategy (Claude)
     let mcpConfigPath: string | undefined;
     let systemPromptFile: string | undefined;
     if (cliProvider.getMcpConfigStrategy() === 'flag') {
@@ -838,7 +838,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
       agent.projectPath = params.projectPath;
       agent.pathMissing = false;
-      // The old worktree belongs to the previous repository — detach it so the
+      // The old worktree belongs to the previous repository. Detach it so the
       // agent works directly in the new project (a new worktree can be set up
       // via the worktree param below).
       agent.worktreePath = undefined;
@@ -884,8 +884,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
     if (params.provider !== undefined) {
       if (params.provider !== agent.provider && agent.ptyId) {
-        // The live PTY still carries the OLD provider's ANTHROPIC_* env —
-        // messages would silently route to the previous vendor. Kill it so
+        // The live PTY still carries the OLD provider's ANTHROPIC_* env.
+        // Messages would silently route to the previous vendor. Kill it so
         // the next start/dispatch respawns with the new provider's env.
         const staleProviderPty = ptyProcesses.get(agent.ptyId);
         if (staleProviderPty) {
@@ -945,7 +945,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           if (!fs.existsSync(worktreePath)) {
             // argv, not a shell string: worktreePath comes from the project
             // path, so a quote or a space in it used to break the command (or
-            // run its own) — see the same fix in agent:create.
+            // run its own). See the same fix in agent:create.
             const { execFileSync } = await import('child_process');
             try {
               execFileSync('git', ['rev-parse', '--verify', branchName], { cwd: agent.projectPath, stdio: 'pipe' });
@@ -958,7 +958,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           agent.branchName = branchName;
           // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
           // It must be killed so the next agent:start respawns in the new
-          // worktree directory — otherwise writes leak into the main workspace.
+          // worktree directory. Otherwise writes leak into the main workspace.
           killStalePty(agent);
           agent.status = 'idle';
           agent.currentTask = undefined;
@@ -1022,7 +1022,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       try {
         // argv, not a shell string: an apostrophe in the project path used to
         // make this fail silently and leak a stale worktree behind the deleted
-        // agent — see the same fix in agent:create.
+        // agent. See the same fix in agent:create.
         const { execFileSync } = await import('child_process');
         console.log(`Removing worktree at ${agent.worktreePath}`);
         execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe' });
@@ -1109,7 +1109,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 function registerSkillHandlers(deps: IpcHandlerDependencies): void {
   const { skillPtyProcesses, getMainWindow } = deps;
 
-  // Start skill installation (spawns npx directly — no login shell to avoid
+  // Start skill installation (spawns npx directly: no login shell to avoid
   // users' zshrc/compdef issues breaking the install flow)
   ipcMain.handle('skill:install-start', async (_event, { repo, cols, rows }: { repo: string; cols?: number; rows?: number }) => {
     const id = uuidv4();
@@ -1222,7 +1222,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
     return { success: true, message: 'Use skill:install-start for interactive installation' };
   });
 
-  // Get installed skills from Claude config (backward compat — flat list)
+  // Get installed skills from Claude config (backward compat: flat list)
   ipcMain.handle('skill:list-installed', async () => {
     try {
       const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
@@ -2144,8 +2144,8 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * or attached to an agent) and the skill directories it enumerates.
    *
    * The handler used to accept any absolute base, unlike its confined siblings
-   * fs:read-text-file/fs:write-text-file, so one call —
-   * `{ paths: ['~/.ssh', '~/.dorothy'], relative: ['id_rsa', 'api-token'] }` —
+   * fs:read-text-file/fs:write-text-file, so one call
+   * (`{ paths: ['~/.ssh', '~/.dorothy'], relative: ['id_rsa', 'api-token'] }`)
    * turned it into a general file reader (neither `path.isAbsolute` nor
    * `!rel.includes('..')` says anything about where the base points).
    * DATA_DIR is deliberately not a root here: it holds api-token and
@@ -2376,7 +2376,7 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
       const appSettings = getAppSettings();
       const expectedPath = appSettings.tasmaniaServerPath || '';
 
-      // Check all providers — configured if registered in at least one
+      // Check all providers: configured if registered in at least one
       let configured = false;
       for (const provider of providers) {
         try {
@@ -2479,13 +2479,13 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
    * quote in either value closed the literal and the rest was parsed as
    * AppleScript: a cwd of `/tmp/x" & (do shell script "id > /tmp/PWNED") & "`
    * ran its own shell command before Terminal was ever involved, and
-   * `command` was a plain arbitrary-execution parameter — the primitive
+   * `command` was a plain arbitrary-execution parameter: the primitive
    * shell:exec was removed for. Project paths come from ~/.dorothy/projects.json
    * and from folders the user picks, so a quote in one is not exotic.
    *
    * So: no shell (execFile with an argv array), no `command` parameter (no
    * caller supplies one), and the directory is escaped for both layers it
-   * crosses — shell quoting for the `cd` that `do script` runs, then
+   * crosses: shell quoting for the `cd` that `do script` runs, then
    * AppleScript quoting for the string literal that holds it.
    */
   ipcMain.handle('shell:open-terminal', async (_event, { cwd }: { cwd: string; command?: string }) => {
@@ -2514,7 +2514,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
    * which made every other sandbox in the app decorative: anything that ran in
    * the renderer had full user-privilege command execution. The three real
    * uses are asking a CLI its version, reading a repository's branch, and
-   * revealing a path in Finder — so those are what it does now, through
+   * revealing a path in Finder. So those are what it does now, through
    * execFile with an argv array, or through Electron's own shell API.
    */
   /**

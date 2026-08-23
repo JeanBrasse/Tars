@@ -36,9 +36,9 @@ export class OpenCodeProvider implements CLIProvider {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     // OpenCode CLI:
-    //   opencode [project]       — start TUI (default, interactive)
-    //   opencode run [message..] — run non-interactively
-    //   --model provider/model   — model to use
+    //   opencode [project]:       start TUI (default, interactive)
+    //   opencode run [message..]: run non-interactively
+    //   --model provider/model:   model to use
     //
     // For interactive PTY sessions we launch the TUI (no subcommand).
     // The user types their prompt directly in the TUI interface.

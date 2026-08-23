@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, memo } from 'react';
 import {
   GitBranch,
   RefreshCw,
-  Loader2,
   GitCommit,
   Plus,
   Minus,
@@ -16,6 +15,7 @@ import {
   ChevronDown,
   Code2,
 } from 'lucide-react';
+import { BrandSpinner } from '@/components/ui';
 import type { GitData } from './constants';
 import { INITIAL_GIT_DATA } from './constants';
 
@@ -208,7 +208,11 @@ export default function GitPanel({ projectPath, className = '', hideHeader = fal
               className="p-1 hover:bg-bg-tertiary rounded transition-colors"
               title="Refresh"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-text-muted ${loading ? 'animate-spin' : ''}`} />
+              {loading ? (
+                <BrandSpinner size={14} label="Refreshing" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 text-text-muted" />
+              )}
             </button>
           </div>
         </div>
@@ -216,7 +220,7 @@ export default function GitPanel({ projectPath, className = '', hideHeader = fal
 
       {loading && gitData.status.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-warning" />
+          <BrandSpinner size={30} label="Loading git data" />
         </div>
       ) : (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">

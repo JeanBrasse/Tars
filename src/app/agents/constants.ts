@@ -1,7 +1,7 @@
 import type { AgentStatus } from '@/types/electron';
 import type { StatusTone } from '@/components/ui/StatusBadge';
 
-// Status is ink only — the status token colours the raw status word.
+// Status is ink only. The status token colours the raw status word.
 // No background fill, no pill: consumers render the status key itself.
 export const STATUS_COLORS: Record<AgentStatus['status'], { text: string }> = {
   idle: { text: 'text-status-idle' },
@@ -13,7 +13,7 @@ export const STATUS_COLORS: Record<AgentStatus['status'], { text: string }> = {
 
 /**
  * Folds the runtime status set onto the design's four-word vocabulary (R6).
- * `completed` is a real runtime state but not a design status — it reads as idle.
+ * `completed` is a real runtime state but not a design status: it reads as idle.
  */
 export const statusTone = (status: AgentStatus['status']): StatusTone =>
   status === 'completed' ? 'idle' : status;

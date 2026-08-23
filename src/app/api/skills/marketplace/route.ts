@@ -53,7 +53,7 @@ async function getAllSkills(): Promise<MappedSkill[] | null> {
     const raw = match[1].replace(/\\"/g, '"');
     const allRaw: RawSkill[] = JSON.parse(raw);
 
-    // Map ALL skills (no cap) — the SSR payload usually has ~300
+    // Map ALL skills (no cap): the SSR payload usually has ~300
     const skills = allRaw.map((s, i) => ({
       rank: i + 1,
       name: s.name,
@@ -69,7 +69,7 @@ async function getAllSkills(): Promise<MappedSkill[] | null> {
   }
 }
 
-/** Search skills.sh API — returns up to 100 fuzzy-matched results */
+/** Search skills.sh API: returns up to 100 fuzzy-matched results */
 async function searchSkillsRemote(query: string): Promise<MappedSkill[] | null> {
   const cacheKey = query.toLowerCase().trim();
   const cached = searchCache.get(cacheKey);
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       }
     }
   } else {
-    // No search query — return from the full cached list
+    // No search query: return from the full cached list
     skills = await getAllSkills();
   }
 

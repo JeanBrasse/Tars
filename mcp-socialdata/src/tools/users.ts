@@ -139,7 +139,7 @@ export function registerUserTools(server: McpServer): void {
         const formatted = result.tweets
           .map(
             (t) =>
-              `@${t.user.screen_name} — ${t.tweet_created_at}\n${t.full_text}\n  ❤️ ${t.favorite_count}  🔁 ${t.retweet_count}  💬 ${t.reply_count}  👁 ${t.views_count} | ID: ${t.id_str}`
+              `@${t.user.screen_name}, ${t.tweet_created_at}\n${t.full_text}\n  ❤️ ${t.favorite_count}  🔁 ${t.retweet_count}  💬 ${t.reply_count}  👁 ${t.views_count} | ID: ${t.id_str}`
           )
           .join("\n\n---\n\n");
 

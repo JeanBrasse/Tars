@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ReactGridLayout, { verticalCompactor } from 'react-grid-layout';
 import type { Layout, GridLayoutProps } from 'react-grid-layout';
-import { Loader2 } from 'lucide-react';
+import { LoadingPanel } from '@/components/ui';
 import type { AgentStatus } from '@/types/electron';
 import type { TerminalPanelState } from '../types';
 import TerminalPanel from './TerminalPanel';
@@ -138,14 +138,8 @@ export default function TerminalGrid({
 
   const renderContent = () => {
     if (isLoading) {
-      return (
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <div className="text-center">
-            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3 text-foreground" />
-            <p className="text-sm">Loading agents...</p>
-          </div>
-        </div>
-      );
+      // The mark, not a rotating ring. See BrandSpinner in ui/Loading.tsx.
+      return <LoadingPanel what="Loading agents" />;
     }
 
     // Empty states

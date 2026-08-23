@@ -14,20 +14,20 @@ export const CHARACTER_FACES: Record<AgentCharacter, string> = {
   frog: '🐸',
 };
 
-// Terminal themes live in src/lib/terminal-theme.ts — the single xterm source (R9).
+// Terminal themes live in src/lib/terminal-theme.ts, the single xterm source (R9).
 // The exports below are migration shims for the call sites that still read a theme
 // off this module; delete them once those imports are gone.
 
-/** @deprecated shim — import `createXtermTheme` from `@/lib/terminal-theme`. */
+/** @deprecated shim: import `createXtermTheme` from `@/lib/terminal-theme`. */
 export const TERMINAL_THEME = createXtermTheme('dark');
 
-/** @deprecated shim — import `createXtermTheme` from `@/lib/terminal-theme`. */
+/** @deprecated shim: import `createXtermTheme` from `@/lib/terminal-theme`. */
 export const TERMINAL_THEME_LIGHT = createXtermTheme('light');
 
-/** @deprecated shim — import `createXtermTheme` from `@/lib/terminal-theme`. */
+/** @deprecated shim: import `createXtermTheme` from `@/lib/terminal-theme`. */
 export const QUICK_TERMINAL_THEME = createXtermTheme();
 
-/** @deprecated shim — import `createXtermTheme` from `@/lib/terminal-theme`. */
+/** @deprecated shim: import `createXtermTheme` from `@/lib/terminal-theme`. */
 export function getTerminalTheme(theme: 'dark' | 'light' = getTerminalMode()) {
   return createXtermTheme(theme);
 }
@@ -35,7 +35,7 @@ export function getTerminalTheme(theme: 'dark' | 'light' = getTerminalMode()) {
 // Terminal configuration
 export const TERMINAL_CONFIG = {
   fontSize: 13,
-  /** @deprecated shim — import `getTerminalFontFamily` from `@/lib/terminal-theme`. */
+  /** @deprecated shim: import `getTerminalFontFamily` from `@/lib/terminal-theme`. */
   get fontFamily() {
     return getTerminalFontFamily();
   },

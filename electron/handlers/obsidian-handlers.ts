@@ -16,7 +16,7 @@ interface ObsidianHandlerDeps {
 export function registerObsidianHandlers(deps: ObsidianHandlerDeps): void {
   const { getAppSettings, setAppSettings, saveAppSettings } = deps;
 
-  // Scan all registered vaults — returns per-vault file list + folder tree
+  // Scan all registered vaults: returns per-vault file list + folder tree
   ipcMain.handle('obsidian:scan', async () => {
     const settings = getAppSettings();
     const vaultPaths = settings.obsidianVaultPaths || [];
@@ -42,7 +42,7 @@ export function registerObsidianHandlers(deps: ObsidianHandlerDeps): void {
     return { vaults };
   });
 
-  // Read a single file — validate vaultPath is in registered list
+  // Read a single file: validate vaultPath is in registered list
   ipcMain.handle('obsidian:readFile', async (_event, filePath: string, vaultPath: string) => {
     const settings = getAppSettings();
     const vaultPaths = settings.obsidianVaultPaths || [];
@@ -96,7 +96,7 @@ export function registerObsidianHandlers(deps: ObsidianHandlerDeps): void {
     }
   });
 
-  // Write content to a file — validate file is within a registered vault
+  // Write content to a file: validate file is within a registered vault
   ipcMain.handle('obsidian:writeFile', async (_event, filePath: string, content: string, vaultPath: string) => {
     const settings = getAppSettings();
     const registeredPaths = settings.obsidianVaultPaths || [];
@@ -111,7 +111,7 @@ export function registerObsidianHandlers(deps: ObsidianHandlerDeps): void {
     // resolved to a string that starts with the vault path and was accepted, so the
     // handler wrote outside the vault the user actually registered. isWithinVault()
     // appends path.sep (and allows the vault dir itself), which is what the read side
-    // already goes through via readVaultFile — read and write now share one check.
+    // already goes through via readVaultFile. Read and write now share one check.
     const fullPath = path.resolve(filePath);
     if (!isWithinVault(fullPath, vaultPath)) {
       return { error: 'File path is outside vault' };

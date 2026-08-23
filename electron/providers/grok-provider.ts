@@ -14,14 +14,14 @@ import type {
 import { safeEffort } from './cli-provider';
 
 /**
- * Provider for xAI's Grok CLI ("Grok Build" — https://x.ai/cli).
+ * Provider for xAI's Grok CLI ("Grok Build", https://x.ai/cli).
  *
  * Install:  curl -fsSL https://x.ai/cli/install.sh | bash
  *           (installs to ~/.grok/bin/grok, also symlinked into ~/.local/bin)
  * Binary:   `grok`
  * Auth:     `grok login` (interactive) or the GROK_DEPLOYMENT_KEY env var;
  *           credentials are cached in ~/.grok/auth.json.
- * Config:   ~/.grok/config.toml (TOML — MCP servers under [mcp_servers.<name>]).
+ * Config:   ~/.grok/config.toml (TOML: MCP servers under [mcp_servers.<name>]).
  *
  * Flags verified against grok 0.2.64:
  *   Interactive:  grok [-m <model>] [--permission-mode <mode>] [--effort <lvl>] [--debug] "<prompt>"

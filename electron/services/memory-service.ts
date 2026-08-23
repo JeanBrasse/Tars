@@ -30,7 +30,7 @@ const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const PROVIDER_MEMORY_DIRS: { provider: string; dir: string }[] = [
   { provider: 'claude', dir: CLAUDE_PROJECTS_DIR },
   // Codex and Gemini may store project memory in similar structures.
-  // These are checked only if they exist — no error if missing.
+  // These are checked only if they exist: no error if missing.
   { provider: 'codex', dir: path.join(os.homedir(), '.codex', 'projects') },
   { provider: 'gemini', dir: path.join(os.homedir(), '.gemini', 'projects') },
   { provider: 'grok', dir: path.join(os.homedir(), '.grok', 'projects') },
@@ -77,7 +77,7 @@ function encodeProjectPath(projectPath: string): string {
 
 /**
  * @param extraProjectPaths Tars's own projects (agent folders, projects
- * page). They belong in Brain even when Claude Code never opened them —
+ * page). They belong in Brain even when Claude Code never opened them:
  * otherwise a freshly added project is invisible here.
  */
 export function listProjectMemories(extraProjectPaths: string[] = []): ProjectMemory[] {

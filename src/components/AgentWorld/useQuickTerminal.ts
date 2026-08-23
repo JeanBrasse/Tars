@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
@@ -30,7 +30,7 @@ export function useQuickTerminal({
   const quickFitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const quickPtyIdRef = useRef<string | null>(null);
 
-  // App theme, as an xterm theme — re-applied below so the terminal follows light mode
+  // App theme, as an xterm theme, re-applied below so the terminal follows light mode
   const xtermTheme = useTerminalTheme();
 
   const hasActiveTerminal = agentId ? persistentTerminals.has(agentId) : false;
@@ -66,6 +66,12 @@ export function useQuickTerminal({
         scrollback: 5000,
         convertEol: true,
       });
+
+      // Before the first write. A full-screen program re-arms mouse tracking on
+      // almost every redraw, and honouring it disables xterm's selection service
+      // and swallows the wheel, so the pane can neither scroll nor be selected.
+      // The buffered output replayed below carries the same sequences.
+      suppressMouseTracking(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);

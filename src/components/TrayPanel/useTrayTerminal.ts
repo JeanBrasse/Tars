@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -54,6 +54,12 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
         overviewRulerWidth: 0,
       });
 
+      // Before the first write. Claude Code re-arms mouse tracking on almost
+      // every redraw, and honouring it disables xterm's selection service and
+      // swallows the wheel, so the pane can neither scroll nor be selected.
+      // The replayed transcript below carries the same sequences.
+      suppressMouseTracking(term);
+
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(container);
@@ -80,7 +86,7 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
         setTimeout(() => { if (!cancelled) doFitAndResize(); }, 350),
       );
 
-      // Replay full session output with cursor sequences intact — xterm is a
+      // Replay full session output with cursor sequences intact: xterm is a
       // proper terminal emulator and processes them correctly, rendering the
       // final screen state just like live output does.
       // Do NOT strip sequences: stripping causes duplicated/garbled text.

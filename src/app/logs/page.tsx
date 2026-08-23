@@ -164,7 +164,7 @@ export default function LogsPage() {
               </div>
             ) : tail ? (
               <>
-                <p className="text-xs font-mono text-foreground mb-2">{tail.agentName} — last {tail.lines.length} lines</p>
+                <p className="text-xs font-mono text-foreground mb-2">{tail.agentName}: last {tail.lines.length} lines</p>
                 <pre className="text-[11px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">
                   {tail.lines.join('\n')}
                 </pre>

@@ -60,7 +60,7 @@ export function useTabManager({ existingAgentIds, isLoading }: UseTabManagerOpti
   }, [state]);
 
   // Sync stale agent IDs: remove agents that no longer exist from all tabs.
-  // SKIP while loading — agents haven't been fetched yet, so the set would be
+  // SKIP while loading: agents haven't been fetched yet, so the set would be
   // empty and wipe every board.
   useEffect(() => {
     if (isLoading) return;
@@ -131,7 +131,7 @@ export function useTabManager({ existingAgentIds, isLoading }: UseTabManagerOpti
           const nextIdx = Math.min(idx, remaining.length - 1);
           activeTab = { type: 'custom', tabId: remaining[nextIdx].id };
         } else {
-          // No boards left — activeTab stays as-is, UI will show empty + create prompt
+          // No boards left: activeTab stays as-is, UI will show empty + create prompt
           activeTab = { type: 'custom', tabId: '' };
         }
       }
@@ -183,7 +183,7 @@ export function useTabManager({ existingAgentIds, isLoading }: UseTabManagerOpti
 
   /** Bulk membership: add every agent of a project (or any set) in one state
    *  update, with a single layout auto-upgrade at the end. Clamped to the
-   *  largest layout (3x3 = 9 panels) — members beyond that would be silently
+   *  largest layout (3x3 = 9 panels): members beyond that would be silently
    *  unrendered by the grid. */
   const addAgentsToTab = useCallback((tabId: string, agentIds: string[]) => {
     setState(prev => {

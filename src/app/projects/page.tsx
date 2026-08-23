@@ -3,13 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useClaude, useSessionMessages } from '@/hooks/useClaude';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
-import { Button, DialogShell, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
+import { BrandSpinner, Button, DialogShell, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone } from '@/app/agents/constants';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
@@ -514,25 +514,25 @@ export default function ProjectsPage() {
         })}
       </div>
 
-      {/* Empty State */}
+      {/* Empty state. The page used to also carry a full-width "Add a folder"
+          row under the grid, which called the very same handleAddProject as
+          "+ Project" in the header: two controls, one action, on screen at once.
+          The row is gone; the button here is the only place the header control
+          is worth repeating, because an empty grid is the one case where the
+          header is not the obvious next thing to look at. */}
       {projects.length === 0 && (
         <div className="border border-border bg-card p-6 text-center">
           <p className="text-[12.5px] text-foreground">No projects yet</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Add a folder, or start using Claude Code and its projects show up here.
+            A folder you add is remembered on disk, so an update never loses it.
           </p>
+          {hasElectron && (
+            <Button variant="primary" size="md" className="mt-3" onClick={handleAddProject}>
+              + Project
+            </Button>
+          )}
         </div>
-      )}
-
-      {/* The add affordance is one row under the grid, not a dashed tile in it */}
-      {hasElectron && (
-        <button
-          onClick={handleAddProject}
-          className="mt-2 flex h-8 w-full cursor-pointer items-center gap-2 border border-border bg-card px-3 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-        >
-          <span className="h-1.5 w-1.5 shrink-0 bg-border-accent" />
-          Add a folder &mdash; remembered on disk, so an update never loses it
-        </button>
       )}
 
       {/* Project Detail Panel (Slide-out) */}
@@ -574,7 +574,7 @@ export default function ProjectsPage() {
                 {hasElectron && (
                   <div className="px-4 pb-3 flex items-center gap-2">
                     {gitLoading ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                      <BrandSpinner size={14} />
                     ) : (
                       <span className="text-xs font-mono text-muted-foreground truncate">
                         {gitBranch || 'not a git repository'}
@@ -756,7 +756,7 @@ export default function ProjectsPage() {
 
                       {messagesLoading ? (
                         <div className="flex items-center justify-center py-8">
-                          <Loader2 className="w-6 h-6 animate-spin" />
+                          <BrandSpinner size={30} label="Loading messages" />
                         </div>
                       ) : (
                         <div className="space-y-2 max-h-64 overflow-y-auto">

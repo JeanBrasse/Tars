@@ -9,7 +9,7 @@ import { priceFor } from './model-catalog';
  * Claude Code only writes ~/.claude/stats-cache.json for some account types;
  * without it the Usage page had no tokens and therefore no cost at all. Every
  * assistant message in ~/.claude/projects/**\/*.jsonl carries its own usage
- * block, so the numbers are right there — that is what this reads.
+ * block, so the numbers are right there: that is what this reads.
  */
 
 export interface ModelUsage {
@@ -17,7 +17,7 @@ export interface ModelUsage {
   outputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
-  /** 1h cache writes cost 2x base, 5m writes 1.25x — kept apart to price them */
+  /** 1h cache writes cost 2x base, 5m writes 1.25x, kept apart to price them */
   cacheCreation1hTokens: number;
   cacheCreation5mTokens: number;
   webSearchRequests: number;
@@ -162,6 +162,20 @@ function listTranscripts(root: string): string[] {
 let cache: { at: number; value: TranscriptUsage } | null = null;
 const CACHE_TTL = 60_000;
 
+/**
+ * `YYYY-MM-DD` in the machine's own timezone.
+ *
+ * Costs are read by a person who means their own calendar day. A turn at 01:00
+ * local in Tbilisi is 21:00 UTC the day before; counting it as yesterday makes
+ * "what did I spend today" wrong for everyone east of Greenwich.
+ */
+function localDateKey(isoTimestamp: string): string | null {
+  const d = new Date(isoTimestamp);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage {
   if (cache && Date.now() - cache.at < CACHE_TTL) return cache.value;
 
@@ -251,7 +265,13 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
       bucket.costUSD += cost;
 
       const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
-      const date = timestamp ? timestamp.slice(0, 10) : null;
+      // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
+      // the first ten characters gave the UTC date, while the chart labelled
+      // its bars with the LOCAL date. At UTC+4 that put every bar one day out:
+      // the bar marked 23 carried the 22nd's spend, which is why the chart and
+      // the "latest day" card disagreed by a whole day while each was
+      // internally consistent.
+      const date = timestamp ? localDateKey(timestamp) : null;
       if (date) {
         const day = dailyMap.get(date) ?? {};
         day[model] = (day[model] || 0) + delta.input + delta.output;

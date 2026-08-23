@@ -1,5 +1,5 @@
 /**
- * Hermes connection model — mirrors the contract implemented by Hermes
+ * Hermes connection model: mirrors the contract implemented by Hermes
  * Desktop in apps/desktop/electron/connection-config.ts, so a Tars config
  * can be imported from (and stay compatible with) the user's existing setup.
  *

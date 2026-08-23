@@ -20,7 +20,7 @@ interface TerminalPanelHeaderProps {
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-/** `completed` is a real runtime status but not part of the design vocabulary — it reads as idle. */
+/** `completed` is a real runtime status but not part of the design vocabulary. It reads as idle. */
 function statusTone(status: AgentStatus['status']): StatusTone {
   return status === 'completed' ? 'idle' : status;
 }
@@ -158,7 +158,7 @@ export default function TerminalPanelHeader({
         {isLive ? 'stop' : 'start'}
       </button>
 
-      {/* Overflow menu — clear, fullscreen and remove */}
+      {/* Overflow menu: clear, fullscreen and remove */}
       <div
         ref={menuRef}
         className="relative [&_button]:cursor-pointer"

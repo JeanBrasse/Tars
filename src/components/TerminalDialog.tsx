@@ -1,10 +1,10 @@
 'use client';
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, CheckCircle, XCircle, X, Link2 } from 'lucide-react';
+import { CheckCircle, XCircle, X, Link2 } from 'lucide-react';
 import { isElectron } from '@/hooks/useElectron';
 import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
-import { Button } from '@/components/ui';
+import { BrandSpinner, Button } from '@/components/ui';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
@@ -290,7 +290,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
                       <XCircle className="w-4 h-4 text-danger" />
                     )
                   ) : (
-                    <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                    <BrandSpinner size={14} />
                   )}
                 </div>
                 <div>
@@ -299,7 +299,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
                       ? installExitCode === 0
                         ? 'Installation Complete'
                         : 'Installation Failed'
-                      : title || 'Installing...'}
+                      : title || 'Installing'}
                   </h3>
                   <p className="text-xs text-muted-foreground font-mono">{command || repo}</p>
                 </div>
@@ -342,7 +342,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
                       <span>{config.label}</span>
                       {status === 'done' && <CheckCircle className="w-3 h-3" />}
                       {status === 'error' && <XCircle className="w-3 h-3 text-danger" />}
-                      {status === 'pending' && <Loader2 className="w-3 h-3 animate-spin" />}
+                      {status === 'pending' && <BrandSpinner size={14} />}
                     </button>
                   );
                 })}

@@ -5,7 +5,7 @@ export type { Tone, StatusTone, AnyTone } from './StatusBadge';
 export { Label, FieldError, Input, PasswordInput, Select, Textarea } from './Field';
 export { Dropdown } from './Dropdown';
 export type { DropdownOption } from './Dropdown';
-export { LoadingState, SkeletonRows, SlowOperation, useLoadingStage } from './Loading';
+export { BrandSpinner, LoadingPanel, LoadingState, SkeletonRows, SlowOperation, useLoadingStage } from './Loading';
 export { PageHeader } from './PageHeader';
 export { SegmentedControl } from './SegmentedControl';
 export type { SegmentedOption } from './SegmentedControl';

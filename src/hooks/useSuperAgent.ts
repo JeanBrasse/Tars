@@ -25,7 +25,7 @@ export function useSuperAgent({
   }, [agents]);
 
   const handleSuperAgentClick = useCallback(async () => {
-    // If super agent exists, just open its edit modal — don't auto-start it
+    // If super agent exists, just open its edit modal: don't auto-start it
     if (superAgent) {
       onAgentCreated?.(superAgent.id);
       return;

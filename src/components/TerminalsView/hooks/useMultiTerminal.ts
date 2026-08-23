@@ -7,7 +7,7 @@ import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -75,7 +75,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     return xtermModuleRef.current;
   }, []);
 
-  // Debounced fit — coalesces rapid resize events into one fit+resize
+  // Debounced fit: coalesces rapid resize events into one fit+resize
   const debouncedFit = useCallback((agentId: string, delay = 80) => {
     const prev = fitTimersRef.current.get(agentId);
     if (prev) clearTimeout(prev);
@@ -111,7 +111,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
       const rect = container.getBoundingClientRect();
       if (rect.width < 10 || rect.height < 10) {
-        // Container too small — wait for it to get real dimensions via ResizeObserver
+        // Container too small: wait for it to get real dimensions via ResizeObserver
         const ready = await new Promise<boolean>(resolve => {
           let resolved = false;
           const observer = new ResizeObserver((entries) => {
@@ -127,7 +127,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
             }
           });
           observer.observe(container);
-          // Safety timeout — don't wait forever
+          // Safety timeout: don't wait forever
           setTimeout(() => {
             if (!resolved) {
               resolved = true;
@@ -155,6 +155,11 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         allowProposedApi: true,
       });
 
+      // Must come before the first write: the replay below carries the mouse
+      // tracking sequences Claude Code emits, and honouring them is what left
+      // every panel unscrollable and unselectable. See suppressMouseTracking.
+      suppressMouseTracking(term);
+
       const fitAddon = new modules.FitAddon();
       term.loadAddon(fitAddon);
       term.open(container);
@@ -171,7 +176,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
       terminalsRef.current.set(agentId, entry);
 
-      // Step 1: Initial fit — determines correct cols/rows for this panel size
+      // Step 1: Initial fit, determines correct cols/rows for this panel size
       safeFit(agentId, entry);
 
       // Step 2: Replay historical output from Electron main process.
@@ -185,8 +190,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
           if (isInactive && !hasPty) {
             // Truly stopped agents (no PTY): show status placeholder.
-            // Don't replay output only to clear it — just show the status.
-            term.write(`\x1b[90m— Session ${agent.status} —\x1b[0m\r\n`);
+            // Don't replay output only to clear it. Just show the status.
+            term.write(`\x1b[90m(Session ${agent.status})\x1b[0m\r\n`);
           } else if (agent?.output?.length) {
             // Active agents or agents with PTY still alive: replay output
             term.write(agent.output.join(''));
@@ -219,7 +224,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
       // Forward keyboard input from xterm to PTY
       // Filter out terminal query responses (DA, CPR, focus) that xterm.js emits
-      // automatically — these must not be forwarded as user input.
+      // automatically: these must not be forwarded as user input.
       term.onData((data) => {
         if (/^(\x1b\[\?[\d;]*c|\d+;\d+c)+$/.test(data)) return;
         const cleaned = data
@@ -231,7 +236,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         sendOrBroadcast(cleaned);
       });
 
-      // ResizeObserver — auto-fit when container dimensions change
+      // ResizeObserver: auto-fit when container dimensions change
       const resizeObserver = new ResizeObserver(() => {
         if (!entry.disposed) {
           debouncedFit(agentId);

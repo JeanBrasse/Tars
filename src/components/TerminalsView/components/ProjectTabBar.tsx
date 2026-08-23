@@ -19,7 +19,7 @@ export default function ProjectTabBar({
   activeTab,
   onSelectProject,
 }: ProjectTabBarProps) {
-  // tabs are label-only now — the strip only needs the distinct project paths, in order
+  // tabs are label-only now: the strip only needs the distinct project paths, in order
   const projects = useMemo(() => {
     const paths = new Set<string>();
     for (const agent of agents) paths.add(agent.projectPath);

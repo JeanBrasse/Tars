@@ -13,7 +13,7 @@ const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_RE
  * Where the download comes from.
  *
  * This used to be a hardcoded URL, and it pointed at
- * `Charlie85270/dorothy/releases/download/1.2.9/dorothy-1.2.9-arm64.dmg` — the
+ * `Charlie85270/dorothy/releases/download/1.2.9/dorothy-1.2.9-arm64.dmg`: the
  * upstream project's build, three minor versions behind, from a repository this
  * fork deliberately never touches. Every visitor who clicked "Download for Mac"
  * got someone else's app.

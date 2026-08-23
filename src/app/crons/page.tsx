@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle } from 'lucide-react';
-import { Button, LoadingState, PageHeader, StatusSquare } from '@/components/ui';
+import {
+  Button, DialogShell, FieldError, Input, Label, LoadingState, PageHeader, StatusSquare, Textarea,
+} from '@/components/ui';
 // Hermes sends `schedule` as an object, not a string. Putting it straight into
 // JSX threw React error #31 and killed the whole document - see schedule-text.ts.
-import { formatSchedule, type CronSchedule } from './schedule-text';
+import { formatSchedule, scheduleExpression, type CronSchedule } from './schedule-text';
 
 // Row actions are words, not glyphs (R7): 26px bordered lowercase-mono
 // buttons, 8px apart, in the same order on every row.
@@ -69,12 +71,38 @@ function asJobs(payload: unknown): CronJob[] {
   return [];
 }
 
+/** What the edit dialog holds while it is open. */
+interface EditDraft {
+  job: CronJob;
+  name: string;
+  schedule: string;
+  prompt: string;
+  enabled: boolean;
+}
+
+function draftFor(job: CronJob): EditDraft {
+  return {
+    job,
+    name: job.name || job.title || '',
+    schedule: scheduleExpression(job),
+    // `prompt` only: `command` is a defensive alias this page renders, but it
+    // is not a field Hermes stores, so an edit must never write into it.
+    prompt: job.prompt || '',
+    // A row reads as paused from three different fields; the editable flag is
+    // the one Hermes actually stores.
+    enabled: job.enabled !== false,
+  };
+}
+
 export default function CronsPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +141,47 @@ export default function CronsPage() {
       await load();
     } finally {
       setBusyId(null);
+    }
+  }
+
+  /**
+   * Save an edit. Only the fields the user actually changed go up: Hermes
+   * leaves out-of-band keys alone, and re-sending an untouched expression
+   * would put it back through the parser for nothing.
+   */
+  async function save() {
+    if (!draft) return;
+    const original = draftFor(draft.job);
+    const updates: Record<string, unknown> = {};
+    if (draft.name !== original.name) updates.name = draft.name;
+    if (draft.schedule.trim() !== original.schedule) updates.schedule = draft.schedule.trim();
+    if (draft.prompt !== original.prompt) updates.prompt = draft.prompt;
+    if (draft.enabled !== original.enabled) updates.enabled = draft.enabled;
+
+    if (Object.keys(updates).length === 0) { setDraft(null); return; }
+    if (typeof updates.schedule === 'string' && updates.schedule === '') {
+      setSaveError('A schedule cannot be empty.');
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const r = await window.electronAPI?.hermes?.cronUpdate({
+        jobId: draft.job.id, updates, profile: draft.job.profile,
+      });
+      if (!r?.success) {
+        // The gateway rejects a bad expression with its own list of the forms
+        // it accepts. Show that, keep the dialog open with the text in it.
+        setSaveError(r?.error || 'Hermes refused the change');
+        return;
+      }
+      setDraft(null);
+      await load();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -212,6 +281,17 @@ export default function CronsPage() {
                   >
                     {paused ? 'resume' : 'pause'}
                   </Button>
+                  {/* The missing control: the gateway has taken PUT
+                      /api/cron/jobs/{id} all along, the page just never
+                      offered a way to reach it. */}
+                  <Button
+                    size="sm"
+                    className={ROW_ACTION}
+                    onClick={() => { setSaveError(null); setDraft(draftFor(job)); }}
+                    disabled={busyId === job.id}
+                  >
+                    edit
+                  </Button>
                   <Button
                     size="sm"
                     className={ROW_ACTION}
@@ -226,6 +306,78 @@ export default function CronsPage() {
           })}
         </div>
       </div>
+
+      {draft && (
+        <DialogShell
+          open
+          onClose={() => { if (!saving) setDraft(null); }}
+          title="Edit schedule"
+          subtitle={`Saved straight into Hermes${draft.job.profile_name ? `, profile ${draft.job.profile_name}` : ''}.`}
+          footerRight={
+            <>
+              <Button size="md" onClick={() => setDraft(null)} disabled={saving}>Cancel</Button>
+              <Button size="md" variant="primary" onClick={save} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <Label>Name</Label>
+              <Input
+                value={draft.name}
+                onChange={e => setDraft({ ...draft, name: e.target.value })}
+                placeholder={draft.job.id}
+              />
+            </div>
+
+            <div>
+              <Label>Schedule</Label>
+              <Input
+                mono
+                value={draft.schedule}
+                error={!!saveError && /schedule/i.test(saveError)}
+                onChange={e => setDraft({ ...draft, schedule: e.target.value })}
+                placeholder="0 9 * * *"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                A cron expression (0 9 * * *), an interval (every 30m), a delay (2h), or a timestamp.
+              </p>
+            </div>
+
+            <div>
+              <Label>Prompt</Label>
+              <Textarea
+                rows={6}
+                value={draft.prompt}
+                onChange={e => setDraft({ ...draft, prompt: e.target.value })}
+                placeholder="What Hermes should run"
+              />
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={draft.enabled}
+                onChange={e => setDraft({ ...draft, enabled: e.target.checked })}
+              />
+              <span className="text-xs text-foreground">Enabled</span>
+            </label>
+
+            {/* Not a field: the gateway takes `profile` in the body and
+                ignores it, so a job cannot move profiles from here. */}
+            <p className="text-[11px] text-muted-foreground">
+              Profile {draft.job.profile_name || draft.job.profile || 'default'} and job id {draft.job.id} are fixed. Move a job between profiles in Hermes.
+            </p>
+
+            {/* Hermes' rejection for a bad expression is a multi-line list of
+                the forms it accepts, so the newlines have to survive. */}
+            {saveError && <FieldError><span className="whitespace-pre-line">{saveError}</span></FieldError>}
+          </div>
+        </DialogShell>
+      )}
     </div>
   );
 }

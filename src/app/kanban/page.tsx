@@ -1,52 +1,33 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import KanbanBoard from '@/components/KanbanBoard';
 import HermesBoard from '@/components/KanbanBoard/HermesBoard';
-import { PageHeader, SegmentedControl } from '@/components/ui';
-import type { SegmentedOption } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
 
-type Source = 'hermes' | 'local';
-
-const SOURCE_KEY = 'dorothy-kanban-source';
-
-const SOURCES: readonly SegmentedOption<Source>[] = [
-  { value: 'hermes', label: 'Hermes' },
-  { value: 'local', label: 'Local' },
-];
-
+/**
+ * Kanban is the Hermes board, full stop.
+ *
+ * The failure this replaces: the page offered a Hermes/Local segmented control
+ * and remembered the pick in localStorage, so a user who only wants Hermes was
+ * still asked every time, and a stale 'local' pick silently opened a different
+ * board. Hermes owns the task harness, so there is nothing to choose.
+ *
+ * The local board is NOT dead code and was deliberately left in place: its store
+ * (~/.dorothy/kanban-tasks.json) is shared by non-UI consumers - the bundled
+ * mcp-kanban MCP server, the /api/kanban/complete hook route, and the
+ * kanban-automation service that assigns and spawns agents. Only the on-screen
+ * choice was removed; the data, the IPC handlers and the local board component
+ * are untouched.
+ */
 export default function KanbanPage() {
-  // Hermes owns the task harness, so it is the default board; the local board
-  // stays available for projects that aren't driven by a gateway.
-  const [source, setSource] = useState<Source>('hermes');
-
-  useEffect(() => {
-    const saved = localStorage.getItem(SOURCE_KEY);
-    if (saved === 'local' || saved === 'hermes') setSource(saved);
-  }, []);
-
-  function pick(next: Source) {
-    setSource(next);
-    localStorage.setItem(SOURCE_KEY, next);
-  }
-
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
         title="Kanban"
-        subtitle="Task board. Hermes runs the work; the local board is for projects without a gateway."
-        actions={
-          <SegmentedControl
-            options={SOURCES}
-            value={source}
-            onChange={pick}
-            ariaLabel="Board source"
-          />
-        }
+        subtitle="The Hermes board. Hermes owns the tasks, the workers and the runs."
       />
 
       <div className="flex-1 min-h-0">
-        {source === 'hermes' ? <HermesBoard /> : <KanbanBoard />}
+        <HermesBoard />
       </div>
     </div>
   );

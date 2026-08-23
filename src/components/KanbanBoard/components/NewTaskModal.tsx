@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Button, DialogShell, Input, Select, Textarea } from '@/components/ui';
+import { Button, DialogShell, Dropdown, Input, Textarea } from '@/components/ui';
 import type { KanbanTaskCreate } from '@/types/kanban';
 import { isElectron } from '@/hooks/useElectron';
 
@@ -141,19 +141,16 @@ export function NewTaskModal({ onClose, onCreate }: NewTaskModalProps) {
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={CAPTION} htmlFor="new-task-project">Project</label>
-            <Select
-              id="new-task-project"
+            <label className={CAPTION}>Project</label>
+            <Dropdown
+              ariaLabel="Project"
+              placeholder="Select a project"
+              searchable={projects.length > 12}
+              searchPlaceholder={`filter ${projects.length} projects`}
               value={selectedProjectPath}
-              onChange={(e) => setSelectedProjectPath(e.target.value)}
-            >
-              {projects.length === 0 && <option value="">Select a project</option>}
-              {projects.map((p) => (
-                <option key={p.path} value={p.path}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
+              options={projects.map((p) => ({ value: p.path, label: p.name }))}
+              onChange={setSelectedProjectPath}
+            />
           </div>
 
           <div>

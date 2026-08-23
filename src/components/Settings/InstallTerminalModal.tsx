@@ -168,7 +168,7 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
       title="Installing"
       subtitle={
         <>
-          <span className="font-mono">{command}</span> — this runs in a real terminal, so you see
+          <span className="font-mono">{command}</span>: this runs in a real terminal, so you see
           exactly what it does.
         </>
       }
@@ -190,7 +190,7 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
       <div className="mt-2 flex items-center justify-between gap-3 bg-bg-tertiary px-3 py-2">
         <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <StatusSquare tone={tone} />
-          You can type here — it is a real PTY, not a log view.
+          You can type here; it is a real PTY, not a log view.
         </span>
         {!installComplete && <StatusBadge tone="running" className="font-mono" />}
         {failed && (

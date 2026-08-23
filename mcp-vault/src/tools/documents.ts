@@ -32,7 +32,7 @@ async function resolveFolder(folderName: string): Promise<string> {
   );
   if (match) return match.id;
 
-  // No match — create a new folder at root level
+  // No match: create a new folder at root level
   const created = await apiRequest("POST", "/api/vault/folders", {
     name: folderName,
   }) as { success: boolean; folder: VaultFolder };
@@ -43,7 +43,7 @@ export function registerDocumentTools(server: McpServer): void {
   // vault_create_document
   server.tool(
     "vault_create_document",
-    "Create a new document in the Vault. Use this to write reports, analyses, research findings, or any structured knowledge. You MUST specify a folder name — the document will be placed in an existing folder with that name, or a new folder will be created automatically.",
+    "Create a new document in the Vault. Use this to write reports, analyses, research findings, or any structured knowledge. You MUST specify a folder name: the document will be placed in an existing folder with that name, or a new folder will be created automatically.",
     {
       title: z.string().describe("Document title"),
       content: z.string().describe("Document content (supports Markdown)"),

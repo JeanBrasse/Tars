@@ -120,7 +120,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
             value={projectPath ?? ''}
             options={projectOptions}
             onChange={setProjectPath}
-            placeholder={projectOptions.length ? 'Select a project…' : 'No projects yet — pick a folder'}
+            placeholder={projectOptions.length ? 'Select a project…' : 'No projects yet: pick a folder'}
           />
           {projectPath && (
             <p className="mt-1.5 font-mono text-[11px] text-muted-foreground truncate">{projectPath}</p>

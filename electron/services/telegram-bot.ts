@@ -1179,7 +1179,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
   try {
     // BUG 4 guard: if worktreePath changed since the PTY was spawned, its
-    // cwd is stale — kill it so initAgentPty respawns in the right directory.
+    // cwd is stale: kill it so initAgentPty respawns in the right directory.
     killStalePty(superAgent);
 
     // Initialize PTY if needed

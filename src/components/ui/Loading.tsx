@@ -52,6 +52,87 @@ export function SkeletonRows({ rows = 4, className = '' }: { rows?: number; clas
   );
 }
 
+/**
+ * The mark, waiting.
+ *
+ * This replaces `<Loader2 className="animate-spin" />`, which was on 47 call
+ * sites. A rotating ring is the same ring every other application uses; it says
+ * nothing about whose wait this is. The 4x4 grid is the app icon, the sidebar
+ * mark and the launch screen already, so a wait that shows it is recognisably
+ * Tars working rather than a generic pause.
+ *
+ * The lit band sweeps diagonally: cell (col, row) runs the `square-sweep`
+ * keyframes on a delay of `((col + row) mod 4) * 300ms`. Unlit cells rest at
+ * 0.16 rather than disappearing, which is what keeps the silhouette readable.
+ * Frame: `Loading · brand mark`.
+ */
+export function BrandSpinner({
+  size = 30,
+  className = '',
+  label,
+}: {
+  /** Outer edge in px. 56 on the splash, 30 on a page, 14 inside a control. */
+  size?: number;
+  className?: string;
+  /** Announced to screen readers. The animation itself is decorative. */
+  label?: string;
+}) {
+  // 4 cells and 3 gaps, gap a quarter of a cell, so the mark keeps its
+  // proportions at every size instead of the gaps swallowing a small one.
+  const cell = size / 4.75;
+  const gap = cell / 4;
+
+  return (
+    <span
+      role={label ? 'status' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      className={`relative inline-block shrink-0 ${className}`}
+      style={{ width: size, height: size }}
+    >
+      {Array.from({ length: 16 }).map((_, i) => {
+        const col = i % 4;
+        const row = Math.floor(i / 4);
+        return (
+          <span
+            key={i}
+            className="square-sweep-cell absolute bg-primary"
+            style={{
+              left: col * (cell + gap),
+              top: row * (cell + gap),
+              width: cell,
+              height: cell,
+              animation: `square-sweep 1.2s ease-in-out ${((col + row) % 4) * 0.3}s infinite`,
+            }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * A whole panel given over to waiting: the mark, centred, over one line saying
+ * what is being waited on. For the case where there is no content shape to put
+ * a skeleton in, such as a terminal grid or a canvas.
+ */
+export function LoadingPanel({
+  what,
+  size = 30,
+  className = '',
+}: {
+  what: string;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <div className={`flex h-full flex-col items-center justify-center gap-3 ${className}`}>
+      <BrandSpinner size={size} label={what} />
+      <p className="text-xs text-muted-foreground">{what}</p>
+    </div>
+  );
+}
+
 /** Past three seconds: name what is slow, and offer a way out. */
 export function SlowOperation({
   what,

@@ -103,8 +103,8 @@ export default function TerminalsView() {
   const { activeTab, setActiveTab } = tabManager;
 
   // Project paths that currently have at least one agent. Keyed as a string so
-  // the array identity survives an agents:tick that didn't change the set —
-  // otherwise the effect below would re-run twice a second. NUL is the one byte
+  // the array identity survives an agents:tick that didn't change the set.
+  // Otherwise the effect below would re-run twice a second. NUL is the one byte
   // a filesystem path cannot contain, so the join/split round-trip is lossless.
   const agentProjectPathsKey = useMemo(
     () => Array.from(new Set(agents.map(a => a.projectPath).filter(Boolean))).join('\u0000'),
@@ -121,14 +121,14 @@ export default function TerminalsView() {
   //
   // This used to depend on the whole `tabManager` object and to redirect
   // whenever the active tab was not a project tab. Because that object is a new
-  // literal every render the effect re-ran constantly, and — worse — it bounced
+  // literal every render the effect re-ran constantly, and, worse, it bounced
   // the user off any custom tab on the very next commit. Clicking the
   // already-active project tab runs the toggle-off branch below, which selects a
   // custom tab; the effect immediately forced the project tab back, unmounting
   // and remounting every TerminalPanel, which disposes and rebuilds every xterm
   // and replays each agent's full scrollback over IPC. So: depend only on the
   // stable `setActiveTab` plus the exact values read, and redirect only when the
-  // active tab is genuinely unusable — never over a deliberately chosen custom tab.
+  // active tab is genuinely unusable, never over a deliberately chosen custom tab.
   const didLandOnProjectRef = useRef(false);
   useEffect(() => {
     if (isLoading || agentProjectPaths.length === 0) return;
@@ -448,7 +448,7 @@ export default function TerminalsView() {
   // Re-fit terminals when the view goes fullscreen.
   //
   // multiTerminal is a fresh object every render, so depending on it re-ran
-  // this on every agents:tick — a full xterm refit of every pane, twice a
+  // this on every agents:tick: a full xterm refit of every pane, twice a
   // second. Only the fullscreen flag should trigger it.
   const fitAllRef = useRef(multiTerminal.fitAll);
   useEffect(() => {

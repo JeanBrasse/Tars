@@ -18,7 +18,7 @@ import { writeSecretFileSync } from '../utils/secret-file';
  *    fresh access-token cookie transparently while the refresh cookie lives,
  *    so we simply keep whatever it hands back.
  *
- * The cookie jar lives in the main process only — it must never reach the
+ * The cookie jar lives in the main process only. It must never reach the
  * renderer.
  */
 
@@ -96,7 +96,7 @@ function storeCookies(baseUrl: string, setCookies: string[]): void {
     if (idx <= 0) continue;
     const name = pair.slice(0, idx).trim();
     const value = pair.slice(idx + 1).trim();
-    // An expired/cleared cookie comes back empty — drop it from the jar.
+    // An expired/cleared cookie comes back empty: drop it from the jar.
     if (!value) jar.delete(name);
     else jar.set(name, value);
   }
@@ -277,6 +277,40 @@ export async function hermesCronAction(
   return status < 300 ? { success: true as const, job: body } : { success: false as const, error: `HTTP ${status}` };
 }
 
+/**
+ * Edit a job in place.
+ *
+ * The Schedules page shipped with run/pause/delete only, so a job's expression
+ * or prompt could not be changed from Tars at all - the gateway does support
+ * it, we simply never called the route. It is PUT (not PATCH like Kanban), and
+ * the body wraps the changed fields in `updates`; keys left out stay as they
+ * are. Verified against Hermes 0.20.0: `name`, `prompt`, `schedule` (a plain
+ * expression string - cron, `every 30m`, `2h`, an ISO timestamp) and `enabled`
+ * all take. `profile` is a locator, not a field: the gateway accepts it in the
+ * body and ignores it, so a job cannot be moved between profiles this way.
+ *
+ * A bad expression comes back 400 with the gateway's own `detail` listing the
+ * accepted forms - pass that through verbatim, it is better copy than anything
+ * we would write here.
+ */
+export async function updateHermesCron(
+  conn: HermesConnection,
+  jobId: string,
+  updates: Record<string, unknown>,
+  profile?: string,
+) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
+  const { status, body } = await hermesRequest(
+    baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`,
+    { method: 'PUT', body: { updates }, token: conn.token },
+  );
+  if (status < 300) return { success: true as const, job: body };
+  const detail = (body && typeof body === 'object' && 'detail' in body)
+    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
+  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+}
+
 export async function deleteHermesCron(conn: HermesConnection, jobId: string, profile?: string) {
   const baseUrl = resolveHermesBaseUrl(conn);
   const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
@@ -307,16 +341,28 @@ function decodeDataUrl(dataUrl: unknown): string {
   }
 }
 
-/** MEMORY.md (agent notes) and USER.md (user profile) from the gateway. */
+/**
+ * MEMORY.md (agent notes) and USER.md (user profile) from the gateway.
+ *
+ * These were read as `memories/MEMORY.md`, a relative path, and /api/files/read
+ * rejects those with `400 {"detail":"Path must be absolute"}`. Every call
+ * therefore failed, and because the Brain page only counts the files it got
+ * back, a signed-in gateway holding a real MEMORY.md reported "0 files
+ * readable" and the digest injected into every new session carried no Hermes
+ * memory at all. The gateway expands `~` to its own home, so this stays correct
+ * whatever account Hermes runs as.
+ */
+const HERMES_MEMORY_DIR = '~/.hermes/memories';
+
 export async function fetchHermesMemoryFiles(conn: HermesConnection): Promise<
   { success: true; files: HermesMemoryFile[] } | { success: false; error: string; needsSignIn?: boolean }
 > {
   const baseUrl = resolveHermesBaseUrl(conn);
   const files: HermesMemoryFile[] = [];
 
-  for (const name of ['memories/MEMORY.md', 'memories/USER.md']) {
+  for (const name of ['MEMORY.md', 'USER.md']) {
     const { status, body } = await hermesRequest(
-      baseUrl, `/api/files/read?path=${encodeURIComponent(name)}`, { token: conn.token },
+      baseUrl, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`, { token: conn.token },
     );
     if (status === 401 || status === 403) {
       return { success: false, error: 'Sign in to Hermes to read its memory', needsSignIn: true };
@@ -325,10 +371,192 @@ export async function fetchHermesMemoryFiles(conn: HermesConnection): Promise<
     if (status >= 300) return { success: false, error: `HTTP ${status}` };
 
     const content = decodeDataUrl((body as Record<string, unknown> | null)?.data_url);
-    if (content.trim()) files.push({ name: name.replace('memories/', ''), content });
+    if (content.trim()) files.push({ name, content });
   }
 
   return { success: true, files };
+}
+
+/**
+ * Append to one of the gateway's memory files.
+ *
+ * Tars could read Hermes' memory but never write to it: `memory_write` only
+ * ever touched the project's own notes, so an agent told "remember this in
+ * Hermes" had nowhere to put it. There is no append route, so this is
+ * read-modify-upload against `/api/files/upload`, which takes a data URL and
+ * overwrites. Verified against Hermes 0.20.0: upload, read back and delete all
+ * answer 200 on `~/.hermes/memories/`.
+ *
+ * Last-write-wins, deliberately. A lock would need a route the gateway does not
+ * have, and two agents appending to a memory file in the same instant is not
+ * worth a second round trip on every write. The read immediately precedes the
+ * upload, so the window is one request wide.
+ */
+export async function appendHermesMemory(
+  conn: HermesConnection,
+  content: string,
+  file = 'MEMORY.md',
+): Promise<{ success: true; path: string } | { success: false; error: string; needsSignIn?: boolean }> {
+  const trimmed = content.trim();
+  if (!trimmed) return { success: false, error: 'Nothing to write' };
+
+  // Only the gateway's own memory directory, and only a plain filename: a
+  // caller-supplied `../` would otherwise reach anywhere the gateway can write.
+  const name = file.replace(/[^A-Za-z0-9._-]/g, '');
+  if (!name || name.startsWith('.')) return { success: false, error: `Invalid memory file "${file}"` };
+
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const path = `${HERMES_MEMORY_DIR}/${name}`;
+
+  const read = await hermesRequest(
+    baseUrl, `/api/files/read?path=${encodeURIComponent(path)}`, { token: conn.token },
+  );
+  if (read.status === 401 || read.status === 403) {
+    return { success: false, error: 'Sign in to Hermes to write to its memory', needsSignIn: true };
+  }
+  // 404 is the first write to a file that does not exist yet, not a failure.
+  if (read.status >= 300 && read.status !== 404) {
+    return { success: false, error: `Could not read ${name}: HTTP ${read.status}` };
+  }
+
+  const existing = read.status === 404
+    ? ''
+    : decodeDataUrl((read.body as Record<string, unknown> | null)?.data_url);
+  const separator = existing.trim() ? (existing.endsWith('\n') ? '\n' : '\n\n') : '';
+  const next = `${existing}${separator}${trimmed}\n`;
+
+  const { status, body } = await hermesRequest(baseUrl, '/api/files/upload', {
+    method: 'POST',
+    token: conn.token,
+    body: {
+      path,
+      data_url: `data:text/markdown;base64,${Buffer.from(next, 'utf-8').toString('base64')}`,
+      overwrite: true,
+    },
+  });
+  if (status >= 300) {
+    const detail = (body && typeof body === 'object' && 'detail' in body)
+      ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
+    return { success: false, error: detail, needsSignIn: status === 401 || status === 403 };
+  }
+
+  const written = (body && typeof body === 'object' && 'path' in body)
+    ? String((body as { path: unknown }).path) : path;
+  return { success: true, path: written };
+}
+
+/**
+ * The MCP servers the gateway has registered.
+ *
+ * Why Tars asks: gbrain and Honcho are configured in Settings by pasting an MCP
+ * URL, and nobody remembers one. The gateway already knows them, so Tars can
+ * offer what it finds instead of an empty field. The catch worth reporting is
+ * that a gateway-side `localhost` URL is the gateway's own loopback: Tars
+ * cannot reach it from here, which is exactly the case that used to show up as
+ * a silently unreachable backend.
+ */
+export interface HermesMcpServer {
+  name: string;
+  url: string | null;
+  transport: string | null;
+  enabled: boolean;
+  /** True when the URL only resolves on the gateway's own machine. */
+  gatewayLocal: boolean;
+}
+
+export async function fetchHermesMcpServers(
+  conn: HermesConnection,
+): Promise<{ success: true; servers: HermesMcpServer[] } | { success: false; error: string; needsSignIn?: boolean }> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, '/api/mcp/servers', { token: conn.token });
+  if (status === 401 || status === 403) {
+    return { success: false, error: 'Sign in to Hermes to list its MCP servers', needsSignIn: true };
+  }
+  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+
+  const raw = (body as { servers?: unknown[] } | null)?.servers;
+  if (!Array.isArray(raw)) return { success: true, servers: [] };
+
+  const servers = raw.map(entry => {
+    const s = entry as Record<string, unknown>;
+    const url = typeof s.url === 'string' ? s.url : null;
+    return {
+      name: typeof s.name === 'string' ? s.name : '',
+      url,
+      transport: typeof s.transport === 'string' ? s.transport : null,
+      enabled: s.enabled !== false,
+      gatewayLocal: !!url && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(url),
+    };
+  }).filter(s => s.name);
+
+  return { success: true, servers };
+}
+
+/**
+ * Which memory provider the gateway itself is running, and which it could.
+ *
+ * Distinct from the `~/.hermes/memories/*.md` files: those are always there,
+ * this is Hermes' pluggable long-term store (holographic, mem0, hindsight and
+ * so on). `active: ""` means none is selected, which is worth saying out loud
+ * because it looks from the outside like the gateway has no memory at all.
+ */
+export interface HermesMemoryProvider {
+  name: string;
+  description: string;
+  available: boolean;
+  configured: boolean;
+  status: string;
+}
+
+export async function fetchHermesMemoryProviders(
+  conn: HermesConnection,
+): Promise<
+  | { success: true; active: string; providers: HermesMemoryProvider[]; builtinBytes: number }
+  | { success: false; error: string; needsSignIn?: boolean }
+> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, '/api/memory', { token: conn.token });
+  if (status === 401 || status === 403) {
+    return { success: false, error: 'Sign in to Hermes to read its memory settings', needsSignIn: true };
+  }
+  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+
+  const b = (body ?? {}) as Record<string, unknown>;
+  const raw = Array.isArray(b.providers) ? b.providers : [];
+  const builtin = (b.builtin_files ?? {}) as Record<string, unknown>;
+
+  return {
+    success: true,
+    active: typeof b.active === 'string' ? b.active : '',
+    builtinBytes: Object.values(builtin).reduce<number>(
+      (sum, v) => sum + (typeof v === 'number' ? v : 0), 0,
+    ),
+    providers: raw.map(entry => {
+      const p = entry as Record<string, unknown>;
+      return {
+        name: typeof p.name === 'string' ? p.name : '',
+        // The gateway writes its own descriptions with em dashes. Tars does not
+        // print those, so they are normalised on the way in rather than at
+        // every place this is rendered.
+        description: typeof p.description === 'string' ? p.description.replace(/\s*[–—]\s*/g, ': ') : '',
+        available: p.available === true,
+        configured: p.configured === true,
+        status: typeof p.status === 'string' ? p.status : 'unknown',
+      };
+    }).filter(p => p.name),
+  };
+}
+
+/** Switch the gateway's active memory provider. */
+export async function setHermesMemoryProvider(conn: HermesConnection, provider: string) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, '/api/memory/provider', {
+    method: 'PUT', token: conn.token, body: { provider },
+  });
+  if (status < 300) return { success: true as const, body };
+  const detail = (body && typeof body === 'object' && 'detail' in body)
+    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
+  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
 }
 
 export interface HermesSessionHit {

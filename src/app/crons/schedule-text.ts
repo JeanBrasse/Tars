@@ -30,6 +30,26 @@ export interface ScheduleFields {
   schedule_human?: string | null;
 }
 
+/**
+ * The expression to put in an edit field, which is not the same string as the
+ * one to put on the row. `formatSchedule` prefers the human wording because
+ * that is what reads best in a list; the editor has to round-trip through the
+ * gateway, so it wants `expr` - the machine form Hermes parses back.
+ */
+export function scheduleExpression(job: ScheduleFields): string {
+  const source = job.schedule;
+  if (source && typeof source === 'object') {
+    const obj = source as Record<string, unknown>;
+    for (const key of ['expr', 'cron', 'display']) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.trim() !== '') return value;
+    }
+  }
+  if (typeof source === 'string' && source.trim() !== '') return source;
+  if (typeof job.schedule_display === 'string' && job.schedule_display.trim() !== '') return job.schedule_display;
+  return '';
+}
+
 export function formatSchedule(job: ScheduleFields): string {
   const candidates: unknown[] = [job.schedule_human, job.schedule_display, job.schedule];
   for (const candidate of candidates) {

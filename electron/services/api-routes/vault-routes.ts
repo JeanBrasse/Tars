@@ -269,7 +269,7 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
     }
   });
 
-  // GET /api/local-file?path=... — serve local files (for vault image previews)
+  // GET /api/local-file?path=...: serve local files (for vault image previews)
   app.get('/api/local-file', (req, sendJson) => {
     const filePath = req.url.searchParams.get('path');
     if (!filePath) {

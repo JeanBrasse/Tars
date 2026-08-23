@@ -225,14 +225,14 @@ export const GoogleWorkspaceSection = ({ appSettings, onSaveAppSettings }: Googl
   const accountDescription = detecting
     ? 'looking for the gws CLI'
     : !gwsPath
-      ? 'gws not installed — npm install -g @googleworkspace/cli'
+      ? 'gws not installed: npm install -g @googleworkspace/cli'
       : authenticated
         ? `${authStatus?.user || 'unknown account'} · token ${authStatus?.tokenValid ? 'valid' : 'expired'}`
         : !gcloudPath
-          ? 'gcloud missing — auth setup needs it to create the OAuth client'
+          ? 'gcloud missing: auth setup needs it to create the OAuth client'
           : checkingAuth
             ? 'checking authentication'
-            : 'not signed in — auth setup creates the Google Cloud project first';
+            : 'not signed in: auth setup creates the Google Cloud project first';
 
   // One chain, most blocking step first: install the CLI, install gcloud, set up
   // the OAuth client, sign in. Once signed in it becomes recheck + re-consent.
@@ -289,7 +289,7 @@ export const GoogleWorkspaceSection = ({ appSettings, onSaveAppSettings }: Googl
         description={
           grantedScopes.length > 0
             ? grantedScopes.join(' · ')
-            : 'nothing granted yet — they come from the account you sign in with'
+            : 'nothing granted yet; they come from the account you sign in with'
         }
         control={
           <span className="font-mono text-[11px] text-muted-foreground">

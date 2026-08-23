@@ -107,11 +107,20 @@ server.registerTool(
   {
     title: "Remember something",
     description:
-      "Record a durable fact for every future session on this project: an architectural " +
-      "decision, a root cause, where something lives, a constraint the user stated. Not " +
-      "for progress updates or anything the code or git history already says.",
+      "Record a durable fact for every future session: an architectural decision, a root " +
+      "cause, where something lives, a constraint the user stated. Not for progress " +
+      "updates or anything the code or git history already says. `to` picks which memory " +
+      "it goes in, and you can name more than one: 'project' is this project's own notes " +
+      "and is the default; 'hermes' is the gateway's MEMORY.md, which every project and " +
+      "every session on that gateway can see; 'gbrain' and 'honcho' are the shared " +
+      "backends. Put something in the project when it is about this codebase, and in " +
+      "hermes or a shared backend when it is about the user or holds true everywhere.",
     inputSchema: {
       content: z.string().describe("The fact, written so it is useful months from now"),
+      to: z
+        .array(z.enum(["project", "hermes", "gbrain", "honcho"]))
+        .optional()
+        .describe("Which memories to write to (default: project only)"),
       file: z
         .string()
         .optional()
@@ -119,17 +128,34 @@ server.registerTool(
       project_path: z.string().optional(),
     },
   },
-  async ({ content, file, project_path }) => {
+  async ({ content, to, file, project_path }) => {
     const res = (await apiRequest("/api/memory/write", "POST", {
       project_path: projectOf(project_path),
       content,
       file,
-    })) as { success?: boolean; path?: string; error?: string };
+      to,
+    })) as {
+      success?: boolean;
+      path?: string;
+      error?: string;
+      results?: { target: string; success: boolean; path?: string; error?: string }[];
+    };
+
+    // Every target answers for itself, so say what happened to each rather than
+    // collapsing a partial write into one success or one failure.
+    const results = res?.results ?? [];
+    if (results.length > 1) {
+      return text(
+        results
+          .map(r => (r.success ? `${r.target}: recorded in ${r.path}` : `${r.target}: ${r.error}`))
+          .join("\n"),
+      );
+    }
 
     return text(
       res?.success
-        ? `Recorded in ${res.path}.`
-        : `Could not record it: ${res?.error ?? "unknown error"}`,
+        ? `Recorded in ${res.path ?? results[0]?.path ?? "memory"}.`
+        : `Could not record it: ${res?.error ?? results[0]?.error ?? "unknown error"}`,
     );
   },
 );
@@ -158,7 +184,7 @@ server.registerTool(
       sources
         .map(s => {
           const state = !s.configured ? "not configured" : s.reachable ? "ready" : "unreachable";
-          return `- ${s.label}: ${state} — ${s.detail}`;
+          return `- ${s.label}: ${state} (${s.detail})`;
         })
         .join("\n"),
     );

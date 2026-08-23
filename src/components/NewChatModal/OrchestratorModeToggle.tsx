@@ -124,7 +124,7 @@ export default function OrchestratorModeToggle({
         />
       </div>
       <p className={`mt-1 text-[11px] ${errorMessage ? 'text-danger' : 'text-muted-foreground'}`}>
-        {errorMessage || 'Delegates only — file edits refused by the protocol, on any CLI'}
+        {errorMessage || 'Delegates only: file edits refused by the protocol, on any CLI'}
       </p>
     </div>
   );

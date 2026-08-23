@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { AgentTemplate, AgentTemplateInput, AgentCharacter, AgentProvider } from '@/types/electron';
-import { Button, Chip, DialogShell, Input, Label, SegmentedControl, Select, Textarea } from '@/components/ui';
+import { Button, Chip, DialogShell, Dropdown, Input, Label, SegmentedControl, Textarea } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';
 
 const CHARACTERS: AgentCharacter[] = ['robot', 'ninja', 'wizard', 'astronaut', 'knight', 'pirate', 'alien', 'viking'];
@@ -141,15 +141,21 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Character</Label>
-            <Select value={character} onChange={e => setCharacter(e.target.value as AgentCharacter)}>
-              {CHARACTERS.map(c => <option key={c} value={c}>{c}</option>)}
-            </Select>
+            <Dropdown
+              ariaLabel="Character"
+              value={character}
+              options={CHARACTERS.map(c => ({ value: c, label: c }))}
+              onChange={v => setCharacter(v as AgentCharacter)}
+            />
           </div>
           <div>
             <Label>Provider</Label>
-            <Select value={provider} onChange={e => setProvider(e.target.value as AgentProvider)}>
-              {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-            </Select>
+            <Dropdown
+              ariaLabel="Provider"
+              value={provider}
+              options={PROVIDERS.map(p => ({ value: p, label: p }))}
+              onChange={v => setProvider(v as AgentProvider)}
+            />
           </div>
         </div>
 

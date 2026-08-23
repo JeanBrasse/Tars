@@ -7,11 +7,11 @@ import { RouteApp, RouteContext } from './types';
 import { dataPath } from '../../constants';
 
 /**
- * Incoming webhooks — lets an external scheduler (the user's Hermes instance)
+ * Incoming webhooks: lets an external scheduler (the user's Hermes instance)
  * drive Tars agents. Tars deliberately has no scheduler of its own:
  * Hermes cron jobs / automation blueprints call this endpoint instead.
  *
- * Auth: the standard API bearer token (~/.dorothy/api-token) — NOT exempt.
+ * Auth: the standard API bearer token (~/.dorothy/api-token), NOT exempt.
  * Reachability from a VPS: run `tailscale serve 31415` on this machine (or an
  * equivalent tunnel) so Hermes can reach the localhost-bound API.
  *
@@ -76,7 +76,7 @@ export function registerWebhookRoutes(app: RouteApp, ctx: RouteContext): void {
       );
       if (matches.length > 1) {
         sendJson({
-          error: `Agent name "${body.agent_name}" is ambiguous — pass project_path or agent_id.`,
+          error: `Agent name "${body.agent_name}" is ambiguous: pass project_path or agent_id.`,
           matches: matches.map(a => ({ id: a.id, name: a.name, projectPath: a.projectPath })),
         }, 409);
         return;
@@ -93,7 +93,7 @@ export function registerWebhookRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     if (body.dry_run) {
-      // Config check for the Hermes side: auth passed, agent resolved — stop
+      // Config check for the Hermes side: auth passed, agent resolved. Stop
       // before dispatching anything.
       sendJson({
         success: true,

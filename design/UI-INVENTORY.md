@@ -1,4 +1,4 @@
-# Tars 1.5.0 — surface inventory
+# Tars 1.5.0: surface inventory
 
 Every surface the app can render today. The Pencil document `design/tars.pen`
 must contain a frame for each line here; `npm run e2e:guard` checks the routed
@@ -8,7 +8,7 @@ Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,
 custom dashboard boards, the sidebar collapse) is deliberately absent.
 
-## Pages — 13
+## Pages (13)
 
 | Route | Name | Frame |
 |---|---|---|
@@ -27,7 +27,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
 
-## Settings — 6 groups, 17 sections
+## Settings (6 groups, 17 sections)
 
 | Group | Sections |
 |---|---|
@@ -38,7 +38,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
-## Overlays and dialogs — 14
+## Overlays and dialogs (14)
 
 - New agent (`NewChatModal`): steps Project, Model, Tools, Task; persona editor;
   orchestrator toggle; skill install terminal
@@ -52,7 +52,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 
 ## Menus, dropdowns and controls
 
-- `ui/Dropdown` — the themed replacement for `<select>`
+- `ui/Dropdown`: the themed replacement for `<select>`
 - Add agent dropdown (dashboard)
 - Terminal context menu (right-click)
 - Global toolbar, terminal panel header menu, layout preset selector

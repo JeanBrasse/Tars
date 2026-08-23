@@ -5,10 +5,11 @@ import { RouteApp, RouteContext } from './types';
 import {
   assembleDigest,
   searchMemory,
-  writeProjectMemory,
+  writeMemory,
   memoryStatus,
   type MemorySettings,
   type MemorySourceId,
+  type MemoryWriteTarget,
 } from '../memory-hub';
 import { usableHermesConnection } from '../hermes-config';
 
@@ -102,7 +103,7 @@ export function registerMemoryRoutes(app: RouteApp, ctx: RouteContext): void {
     }
   });
 
-  // Which sources are actually reachable — probed, not inferred from settings.
+  // Which sources are actually reachable: probed, not inferred from settings.
   app.get('/api/memory/status', async (req, sendJson) => {
     try {
       sendJson({
@@ -117,17 +118,55 @@ export function registerMemoryRoutes(app: RouteApp, ctx: RouteContext): void {
     }
   });
 
-  // An agent recording something worth keeping past this session.
-  app.post('/api/memory/write', (req, sendJson) => {
+  /**
+   * An agent recording something worth keeping past this session.
+   *
+   * `to` chooses the memory. It used to be project-only, so an agent asked to
+   * put something in Hermes or gbrain wrote it into the project file instead
+   * and reported success. Each target answers for itself, and the response
+   * carries `success: true` when at least one accepted the write, with the
+   * per-target detail alongside, because two out of three is an outcome rather
+   * than a failure.
+   */
+  const WRITE_TARGETS: MemoryWriteTarget[] = ['project', 'hermes', 'gbrain', 'honcho'];
+
+  app.post('/api/memory/write', async (req, sendJson) => {
     const projectPath = typeof req.body.project_path === 'string' ? req.body.project_path : '';
     const content = typeof req.body.content === 'string' ? req.body.content : '';
     const file = typeof req.body.file === 'string' ? req.body.file : 'MEMORY.md';
+
+    const asked = typeof req.body.to === 'string'
+      ? req.body.to.split(',').map((s: string) => s.trim())
+      : Array.isArray(req.body.to) ? req.body.to.map(String) : [];
+    const unknown = asked.filter((t: string) => !WRITE_TARGETS.includes(t as MemoryWriteTarget));
+    if (unknown.length) {
+      sendJson({ success: false, error: `Unknown memory target(s): ${unknown.join(', ')}. Use one of ${WRITE_TARGETS.join(', ')}.` }, 400);
+      return;
+    }
+    const targets = (asked.length ? asked : ['project']) as MemoryWriteTarget[];
 
     if (!projectPath || !content.trim()) {
       sendJson({ success: false, error: 'project_path and content are required' }, 400);
       return;
     }
-    sendJson(writeProjectMemory(projectPath, content.slice(0, 20_000), file));
+
+    const results = await writeMemory({
+      content: content.slice(0, 20_000),
+      targets,
+      projectPath,
+      settings: memorySettings(ctx),
+      hermes: usableHermesConnection(),
+      file,
+    });
+
+    const written = results.filter((r: { success: boolean }) => r.success);
+    sendJson({
+      success: written.length > 0,
+      results,
+      // Kept so the older single-target callers still read a path out of this.
+      path: written[0]?.path,
+      error: written.length ? undefined : results.map(r => `${r.target}: ${r.error}`).join('; '),
+    });
   });
 
   // Observation capture from post-tool-use hooks.

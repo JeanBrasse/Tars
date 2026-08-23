@@ -21,7 +21,7 @@ interface Tweet {
 
 function formatTweet(tweet: Tweet): string {
   return [
-    `@${tweet.user.screen_name} (${tweet.user.name}) — ${tweet.tweet_created_at}`,
+    `@${tweet.user.screen_name} (${tweet.user.name}), ${tweet.tweet_created_at}`,
     tweet.full_text,
     `  ❤️ ${tweet.favorite_count}  🔁 ${tweet.retweet_count}  💬 ${tweet.reply_count}  👁 ${tweet.views_count}  🔖 ${tweet.bookmark_count}`,
     `  Tweet ID: ${tweet.id_str}`,

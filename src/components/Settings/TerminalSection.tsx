@@ -25,7 +25,7 @@ export const TerminalSection = ({ appSettings, onSaveAppSettings }: TerminalSect
     <SettingsCard>
       <SettingsRow
         label="Theme"
-        description="Applies to every agent terminal — Claude, Codex, Gemini and every CLI provider."
+        description="Applies to every agent terminal: Claude, Codex, Gemini and every CLI provider."
         control={
           <Select
             width="control"

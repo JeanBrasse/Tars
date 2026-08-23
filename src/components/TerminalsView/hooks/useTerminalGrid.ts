@@ -44,7 +44,7 @@ export function useTerminalGrid({ agentIds, preset, isEditable, tabId }: UseTerm
     });
   }, [agentIds]);
 
-  // Visible panels — capped at maxPanels for the current preset
+  // Visible panels: capped at maxPanels for the current preset
   const maxPanels = gridDefinition.maxPanels;
   const visiblePanels = useMemo(() => {
     if (fullscreenPanelId) {
@@ -115,7 +115,7 @@ export function useTerminalGrid({ agentIds, preset, isEditable, tabId }: UseTerm
     }
   }, [visiblePanels, gridDefinition, fullscreenPanelId, tabId, preset, isEditable]);
 
-  // onDragStop — the ONLY callback that updates layout state from user interaction.
+  // onDragStop: the ONLY callback that updates layout state from user interaction.
   // RGL 2.x handles drag visuals internally via CSS transforms, so we don't need
   // onLayoutChange to update state during drag. This completely eliminates the
   // mount/resize cascade bug where onLayoutChange would overwrite saved positions.

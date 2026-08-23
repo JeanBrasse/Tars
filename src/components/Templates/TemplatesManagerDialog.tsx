@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { useElectronSkills } from '@/hooks/useElectron';
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import type { AgentTemplate, AgentTemplateInput } from '@/types/electron';
-import { Button, DialogShell, Input, MetaChip } from '@/components/ui';
+import { BrandSpinner, Button, DialogShell, Input, MetaChip } from '@/components/ui';
 import { InstantiateDialog } from './InstantiateDialog';
 import { TemplateFormDialog } from './TemplateFormDialog';
 import { ImportDialog } from './ImportDialog';
@@ -131,8 +130,8 @@ export function TemplatesManagerDialog({ open, onClose }: TemplatesManagerDialog
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            Loading templates…
+            <BrandSpinner size={14} className="mr-2" />
+            Loading templates
           </div>
         ) : visible.length === 0 ? (
           <p className="py-16 text-center text-xs text-muted-foreground">

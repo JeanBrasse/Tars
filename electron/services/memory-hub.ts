@@ -7,6 +7,7 @@ import {
   fetchHermesMemoryFiles,
   searchHermesSessions,
   fetchHermesMemoryState,
+  appendHermesMemory,
 } from './hermes-client';
 import type { HermesConnection } from '../types/hermes';
 
@@ -126,6 +127,40 @@ function pickSearchTool(tools: { name: string }[]): string | null {
   return names.find(n => /search|recall|query|retriev/i.test(n)) ?? null;
 }
 
+/**
+ * The first tool whose name looks like it stores something.
+ *
+ * Deliberately narrower than the search side. A wrong guess there returns an
+ * odd search result; a wrong guess here writes into something. So no loose
+ * regex fallback: an unrecognised server is reported as having no write tool
+ * rather than having one picked for it.
+ */
+function pickWriteTool(tools: { name: string }[]): string | null {
+  const names = tools.map(t => t.name);
+  const preferred = [
+    'memory_write', 'write_memory', 'memory_add', 'add_memory', 'store_memory',
+    'remember', 'save_memory', 'memory_store', 'honcho_write', 'add', 'store',
+  ];
+  for (const p of preferred) {
+    const hit = names.find(n => n === p || n.endsWith(`_${p}`));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** The property a tool wants the payload in, read from its own schema. */
+function pickArgKey(
+  tools: { name: string; inputSchema?: unknown }[],
+  tool: string,
+  candidates: string[],
+  fallback: string,
+): string {
+  const schema = tools.find(t => t.name === tool)?.inputSchema as
+    { properties?: Record<string, unknown> } | undefined;
+  const props = Object.keys(schema?.properties ?? {});
+  return props.find(p => candidates.includes(p)) ?? fallback;
+}
+
 async function searchBackend(endpoint: McpEndpoint, query: string, source: MemorySourceId): Promise<MemoryHit[]> {
   const tools = await listMcpTools(endpoint);
   const tool = pickSearchTool(tools);
@@ -161,7 +196,7 @@ export async function assembleDigest(opts: {
     const body = content.length > MAX_SECTION_CHARS
       ? `${content.slice(0, MAX_SECTION_CHARS)}\n…(truncated, read memory/${file} for the rest)`
       : content;
-    sections.push(`## Project memory — ${file}\n${body.trim()}`);
+    sections.push(`## Project memory: ${file}\n${body.trim()}`);
   }
 
   const observations = readObservations(projectPath, MAX_OBSERVATIONS);
@@ -183,7 +218,7 @@ export async function assembleDigest(opts: {
           const body = file.content.length > MAX_SECTION_CHARS
             ? `${file.content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
             : file.content;
-          sections.push(`## Hermes memory — ${file.name}\n${body.trim()}`);
+          sections.push(`## Hermes memory: ${file.name}\n${body.trim()}`);
         }
       }
     } catch {
@@ -296,6 +331,89 @@ export function writeProjectMemory(projectPath: string, content: string, file = 
   }
 }
 
+/** Where a write can go. `observations` is written by hooks, never by an agent. */
+export type MemoryWriteTarget = 'project' | 'hermes' | 'gbrain' | 'honcho';
+
+export interface MemoryWriteResult {
+  target: MemoryWriteTarget;
+  success: boolean;
+  /** Where it landed: a file path, or the tool that accepted it. */
+  path?: string;
+  error?: string;
+}
+
+/**
+ * Record something, in one or more memories.
+ *
+ * Until this existed an agent could read five sources and only ever write to
+ * one: `memory_write` went straight to the project's own notes, so "remember
+ * this in Hermes" or "put this in gbrain" had nowhere to go and quietly landed
+ * in the project file instead. Each target is attempted independently and
+ * reports its own result, because "wrote to two of the three you asked for" is
+ * an outcome, not an error.
+ *
+ * The remote backends are MCP servers Tars does not own, so the write tool is
+ * discovered from what the server advertises. Discovery is stricter than on the
+ * search side: a wrong guess when searching returns an odd result, a wrong
+ * guess when writing puts data somewhere it does not belong.
+ */
+export async function writeMemory(opts: {
+  content: string;
+  targets: MemoryWriteTarget[];
+  projectPath: string;
+  settings: MemorySettings;
+  hermes?: HermesConnection | null;
+  file?: string;
+}): Promise<MemoryWriteResult[]> {
+  const { content, projectPath, settings, hermes, file } = opts;
+  const targets: MemoryWriteTarget[] = opts.targets.length
+    ? [...new Set(opts.targets)]
+    : ['project'];
+  const body = content.trim();
+  if (!body) return targets.map(target => ({ target, success: false, error: 'Nothing to write' }));
+
+  return Promise.all(targets.map(async (target): Promise<MemoryWriteResult> => {
+    try {
+      if (target === 'project') {
+        const res = writeProjectMemory(projectPath, body, file || 'MEMORY.md');
+        return { target, success: res.success, path: res.path, error: res.error };
+      }
+
+      if (target === 'hermes') {
+        if (!hermes) return { target, success: false, error: 'No Hermes gateway is configured' };
+        const res = await appendHermesMemory(hermes, body, file || 'MEMORY.md');
+        return res.success
+          ? { target, success: true, path: res.path }
+          : { target, success: false, error: res.error };
+      }
+
+      const endpoint = target === 'gbrain' ? gbrainEndpoint(settings) : honchoEndpoint(settings);
+      if (!endpoint) {
+        return { target, success: false, error: `${target} is not set up in Settings > Memory Backends` };
+      }
+
+      const tools = await listMcpTools(endpoint);
+      const tool = pickWriteTool(tools);
+      if (!tool) {
+        const offered = tools.map(t => t.name).slice(0, 8).join(', ') || 'none';
+        return {
+          target,
+          success: false,
+          error: `${endpoint.label} advertises no tool that stores memory (it offers: ${offered})`,
+        };
+      }
+
+      const contentKey = pickArgKey(
+        tools, tool, ['content', 'text', 'memory', 'fact', 'body', 'message'], 'content',
+      );
+      await callMcpTool(endpoint, tool, { [contentKey]: body });
+      return { target, success: true, path: `${endpoint.label} · ${tool}` };
+    } catch (err) {
+      return { target, success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+}
+
 /** Real status for every source: reachable means we spoke to it. */
 export async function memoryStatus(opts: {
   settings: MemorySettings;
@@ -394,7 +512,7 @@ export async function memoryStatus(opts: {
 /**
  * Providers whose config dir is ~/.claude inherit Claude Code's SessionStart
  * hook, so the digest already reaches them. The others (codex, gemini, grok,
- * opencode, pi) have no such hook — for them the digest has to travel in the
+ * opencode, pi) have no such hook: for them the digest has to travel in the
  * prompt, otherwise those agents start with no memory at all.
  */
 export function needsPromptInjection(providerConfigDir: string): boolean {

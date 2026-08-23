@@ -2,12 +2,13 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useMemory, formatBytes, timeAgo } from '@/hooks/useMemory';
 import type { ProjectMemory, MemoryFile } from '@/types/electron';
 import AgentKnowledgeGraph from '@/components/Memory/AgentKnowledgeGraph';
 import { getProviderDef } from '@/lib/providers';
 import {
+  BrandSpinner,
   Button,
   DialogShell,
   Input,
@@ -195,8 +196,8 @@ function BackendsTab({ sources }: { sources: SourceStatus[] | null }) {
   if (!sources) {
     return (
       <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
-        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-        Probing memory sources…
+        <BrandSpinner size={14} className="mr-2" />
+        Probing memory sources
       </div>
     );
   }
@@ -316,7 +317,7 @@ export default function MemoryPage() {
 
       <PageHeader
         title="Brain"
-        subtitle="What your agents know — native project memory plus shared backends (gbrain, Honcho)."
+        subtitle="What your agents know: native project memory plus shared backends (gbrain, Honcho)."
         actions={headerAction}
       />
 
@@ -360,7 +361,7 @@ export default function MemoryPage() {
             <div className="flex-1 overflow-y-auto mt-2">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  <BrandSpinner size={30} label="Loading projects" />
                 </div>
               ) : filteredProjects.length === 0 ? (
                 <div className="px-1 py-8 text-center">

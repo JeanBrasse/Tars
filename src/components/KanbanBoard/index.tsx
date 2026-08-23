@@ -16,12 +16,11 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { AnimatePresence } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
 import { useElectronKanban, useKanbanAgentSync } from '@/hooks/useElectronKanban';
 import { isElectron as checkIsElectron } from '@/hooks/useElectron';
 import type { KanbanTask, KanbanColumn as KanbanColumnType, KanbanTaskCreate } from '@/types/kanban';
 import type { AgentStatus } from '@/types/electron';
-import { Button } from '@/components/ui';
+import { BrandSpinner, Button } from '@/components/ui';
 import { KanbanColumn } from './components/KanbanColumn';
 import { KanbanCard } from './components/KanbanCard';
 import { NewTaskModal } from './components/NewTaskModal';
@@ -249,7 +248,7 @@ export default function KanbanBoard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <BrandSpinner size={30} label="Loading kanban board" />
       </div>
     );
   }

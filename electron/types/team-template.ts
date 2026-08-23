@@ -2,7 +2,7 @@ import type { AgentCharacter, AgentProvider, AgentPermissionMode, AgentEffort } 
 
 /** One agent slot in a team. Deploying a team creates one agent per member. */
 export interface TeamTemplateMember {
-  /** Role name, e.g. "Frontend Dev". The deployed agent is named "<name> — <project>". */
+  /** Role name, e.g. "Frontend Dev". The deployed agent is named "<name> - <project>". */
   name: string;
   character: AgentCharacter;
   provider: AgentProvider;

@@ -80,7 +80,7 @@ export interface ClaudeStats {
   }>;
   dailyModelTokens: Array<{
     date: string;
-    /** input+output only — not enough to price a day, see costUSD */
+    /** input+output only: not enough to price a day, see costUSD */
     tokensByModel: Record<string, number>;
     /** The day priced from its own tokens, cache included. Absent on the
      *  legacy stats-cache.json shape, which carries no per-day cost at all. */

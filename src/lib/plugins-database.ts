@@ -46,7 +46,7 @@ interface RemotePlugin {
 // ── Data source abstraction ──
 
 interface PluginSource {
-  /** Unique key — used as localStorage cache key suffix */
+  /** Unique key: used as localStorage cache key suffix */
   id: string;
   /** Human-readable label */
   name: string;
@@ -66,7 +66,7 @@ const CACHE_PREFIX = 'dorothy-plugins-src-';
 // costs its own plugins and nothing else.
 
 interface MarketplaceRepo {
-  /** owner/repo on GitHub — also the argument to `plugin marketplace add` */
+  /** owner/repo on GitHub, also the argument to `plugin marketplace add` */
   repo: string;
   /** Branch holding the manifest */
   branch?: string;
@@ -185,7 +185,7 @@ function writeCache(sourceId: string, data: RemotePlugin[]): void {
     const entry: CacheEntry = { timestamp: Date.now(), data };
     localStorage.setItem(CACHE_PREFIX + sourceId, JSON.stringify(entry));
   } catch {
-    // Quota exceeded or other storage error — ignore
+    // Quota exceeded or other storage error: ignore
   }
 }
 
@@ -264,7 +264,7 @@ async function fetchSource(source: PluginSource): Promise<RemotePlugin[]> {
     writeCache(source.id, data);
     return data;
   } catch {
-    // Fetch failed — fall back to stale cache if available
+    // Fetch failed: fall back to stale cache if available
     if (cached) return cached.data;
     return [];
   }

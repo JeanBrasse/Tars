@@ -29,7 +29,7 @@ export const SkillsSection = ({ skills }: SkillsSectionProps) => {
     <>
       <SettingsRow
         label="Installed skills"
-        description={`${userSkills.length} user · ${pluginSkills.length} plugin · ${projectSkills.length} project — available to every CLI provider.`}
+        description={`${userSkills.length} user · ${pluginSkills.length} plugin · ${projectSkills.length} project. Available to every CLI provider.`}
         control={
           <span className="font-mono text-[12.5px] text-foreground">{skills.length}</span>
         }
@@ -55,7 +55,7 @@ export const SkillsSection = ({ skills }: SkillsSectionProps) => {
         description="Sources Tars pulls skills and plugins from."
         control={
           <span className="font-mono text-[12.5px] text-muted-foreground" title={NOT_WIRED}>
-            —
+            none
           </span>
         }
       />

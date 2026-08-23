@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
-  Loader2,
   Package,
   CheckCircle,
   XCircle,
@@ -18,7 +17,7 @@ import { SKILLS_DATABASE, fetchSkillsPaginated, type Skill } from '@/lib/skills-
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import TerminalDialog from '@/components/TerminalDialog';
 import ProviderBadge from '@/components/ProviderBadge';
-import { Button, DialogShell, Input, Label, LoadingState } from '@/components/ui';
+import { BrandSpinner, Button, DialogShell, Input, Label, LoadingPanel, LoadingState } from '@/components/ui';
 
 /** Providers with a local CLI binary that have their own skill directory */
 const CLI_PROVIDER_IDS = PROVIDER_REGISTRY.filter((p) => p.requiresCli).map((p) => p.id);
@@ -398,10 +397,7 @@ export default function SkillsTab() {
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
           {loadingSkills && !liveSkills ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mr-2" />
-              <span className="text-sm text-muted-foreground">Loading skills from skills.sh...</span>
-            </div>
+            <LoadingPanel what="Loading skills from skills.sh" />
           ) : (
             <table className="w-full">
               <tbody>
@@ -459,8 +455,8 @@ export default function SkillsTab() {
                           >
                             {isInstalling ? (
                               <>
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                Installing...
+                                <BrandSpinner size={14} />
+                                Installing
                               </>
                             ) : justCopied ? (
                               'Copied!'
@@ -488,8 +484,8 @@ export default function SkillsTab() {
               >
                 {loadingMore ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading...
+                    <BrandSpinner size={14} />
+                    Loading
                   </>
                 ) : (
                   `Load More (${Math.max(0, totalSkills - (liveSkills?.length || 0)).toLocaleString()} remaining)`
