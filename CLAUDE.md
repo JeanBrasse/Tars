@@ -129,6 +129,13 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 
 ### 1. Pencil first, always
 
+> **Suspended as of 2026-08-23.** The Pencil MCP server's access was reassigned
+> to another project, and its `filePath` argument is ignored — every mutation
+> lands in whatever document is *active*, which is now someone else's. Do not
+> call it. Design in code against `DESIGN.md` and the frames already exported to
+> `design/exports/`, and add the new frame when Pencil comes back.
+
+
 Every design or feature change goes through, in this order:
 
 1. **`design/dorothy-redesign.pen`** — the frame exists and is correct before any TSX is written
@@ -137,6 +144,15 @@ Every design or feature change goes through, in this order:
 4. **`README.md`** — last
 
 Never the other way round. Do not "build it then draw it". If a surface is new, add it to `design/UI-INVENTORY.md` and to `e2e/surfaces.mjs` in the same change, or `npm run e2e:guard` fails.
+
+**And every user-visible change carries four more edits with it**, in the same PR — Noah asks for these every time they are missed:
+
+| What | Where | When |
+|---|---|---|
+| Changelog entry | `src/data/changelog.ts` | Every change a user would notice. Extend the current version's entry while it is still unreleased; add a new one only after a release is cut |
+| Download link | `landing/src/app/api/download/route.ts` | It resolves the latest GitHub release at request time, so it needs **no edit** — but a new version is only downloadable once `gh release create` has actually run. Check `gh release list --repo JeanBrasse/Tars` before claiming a version is available |
+| The docs that are now wrong | `README.md`, `SPECS.md`, `OPERATIONS.md`, `DESIGN.md` | Whichever ones the change falsified. A version number in the Tech Stack table, a file path in the structure tree, a limitation in §13 that is no longer true |
+| Screenshots | `screenshots/` | If a surface changed. They come from `npx playwright test --update-snapshots`, which photographs the real app against a seeded sandbox — never hand-made or reused from an older UI |
 
 Pencil traps that will cost you an afternoon:
 - `filePath` is ignored — every mutation lands in the app's **active** document. Call `get_app_state` first and guard on a known variable before writing

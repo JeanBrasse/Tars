@@ -1,11 +1,11 @@
 {
   "name": "Tars",
   "short_name": "Tars",
-  "description": "Manage and monitor your AI Agents in real-time",
+  "description": "Orchestrate your AI coding agents. One desktop app, every CLI.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F0E8D5",
-  "theme_color": "#3D9B94",
+  "background_color": "#121212",
+  "theme_color": "#FF9E42",
   "orientation": "any",
   "icons": [
     {
@@ -21,7 +21,10 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["developer-tools", "productivity"],
+  "categories": [
+    "developer-tools",
+    "productivity"
+  ],
   "screenshots": [],
   "related_applications": [],
   "prefer_related_applications": false

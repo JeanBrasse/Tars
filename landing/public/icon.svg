@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Tars</title>
+  <rect width="1024" height="1024" rx="230" fill="#121212"/>
+  <g fill="#FF9E42">
+    <rect x="196" y="196" width="131" height="131"/>
+    <rect x="363" y="196" width="131" height="131"/>
+    <rect x="530" y="196" width="131" height="131"/>
+    <rect x="697" y="196" width="131" height="131"/>
+    <rect x="196" y="363" width="131" height="131"/>
+    <rect x="363" y="363" width="131" height="131"/>
+    <rect x="530" y="363" width="131" height="131"/>
+    <rect x="697" y="363" width="131" height="131"/>
+    <rect x="196" y="530" width="131" height="131"/>
+    <rect x="363" y="530" width="131" height="131"/>
+    <rect x="530" y="530" width="131" height="131"/>
+    <rect x="697" y="530" width="131" height="131"/>
+    <rect x="196" y="697" width="131" height="131"/>
+  </g>
+  <g fill="#2E2015">
+    <rect x="363" y="697" width="131" height="131"/>
+    <rect x="530" y="697" width="131" height="131"/>
+    <rect x="697" y="697" width="131" height="131"/>
+  </g>
+</svg>

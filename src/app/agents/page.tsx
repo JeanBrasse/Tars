@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Bot, Loader2 } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import { useClaude } from '@/hooks/useClaude';
@@ -18,7 +18,7 @@ import {
   AgentListHeader,
   AgentManagementCard,
 } from '@/components/AgentList';
-import { Chip } from '@/components/ui';
+import { Chip, LoadingState } from '@/components/ui';
 import { STATUS_COLORS } from './constants';
 
 export default function AgentsPage() {
@@ -190,10 +190,7 @@ export default function AgentsPage() {
   if (agentsLoading && agents.length === 0) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-text-secondary">Loading agents...</p>
-        </div>
+        <LoadingState loading rows={5} what="Still loading your agents…" detail="reading ~/.dorothy/agents.json" />
       </div>
     );
   }

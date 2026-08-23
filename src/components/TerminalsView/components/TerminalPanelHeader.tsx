@@ -123,14 +123,38 @@ export default function TerminalPanelHeader({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Model */}
+      {/* Which CLI, then which model. The provider was only ever implied by the
+          model string, so an agent left on its provider default showed nothing
+          at all and you could not tell what would launch. */}
+      {agent.provider && (
+        <span className="text-[10px] font-mono text-foreground/80 truncate max-w-[70px]">
+          {agent.provider}
+        </span>
+      )}
       {model && (
         <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[90px]">
           {model}
         </span>
       )}
 
-      {/* Overflow menu — carries start/stop, clear, fullscreen and remove */}
+      {/* Start / stop. The panel's primary action, so it is a button you can
+          see and hit - not a row inside the overflow menu. A grid of terminals
+          with no visible way to launch the CLI is a grid of empty shells. */}
+      <button
+        type="button"
+        onMouseDown={e => e.stopPropagation()}
+        onClick={isLive ? onStop : onStart}
+        className={`h-[26px] px-2 text-[11px] font-mono lowercase border transition-colors cursor-pointer ${
+          isLive
+            ? 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
+            : 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+        }`}
+        title={isLive ? 'Stop this agent' : `Start ${agent.provider ?? 'the CLI'} in this terminal`}
+      >
+        {isLive ? 'stop' : 'start'}
+      </button>
+
+      {/* Overflow menu — clear, fullscreen and remove */}
       <div
         ref={menuRef}
         className="relative [&_button]:cursor-pointer"
@@ -149,12 +173,6 @@ export default function TerminalPanelHeader({
 
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 z-[90] min-w-[140px] bg-card border border-border">
-            {isLive ? (
-              <button type="button" onClick={run(onStop)} className={menuItemClass}>stop</button>
-            ) : (
-              <button type="button" onClick={run(onStart)} className={menuItemClass}>start</button>
-            )}
-
             <button type="button" onClick={run(onClear)} className={menuItemClass}>clear</button>
 
             <button

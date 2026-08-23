@@ -18,7 +18,7 @@ import { SKILLS_DATABASE, fetchSkillsPaginated, type Skill } from '@/lib/skills-
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import TerminalDialog from '@/components/TerminalDialog';
 import ProviderBadge from '@/components/ProviderBadge';
-import { Button, DialogShell, Input, Label } from '@/components/ui';
+import { Button, DialogShell, Input, Label, LoadingState } from '@/components/ui';
 
 /** Providers with a local CLI binary that have their own skill directory */
 const CLI_PROVIDER_IDS = PROVIDER_REGISTRY.filter((p) => p.requiresCli).map((p) => p.id);
@@ -219,10 +219,7 @@ export default function SkillsTab() {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading skills...</p>
-        </div>
+        <LoadingState loading rows={5} what="Still loading skills…" detail="reading every provider skill directory" />
       </div>
     );
   }

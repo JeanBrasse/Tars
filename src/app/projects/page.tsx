@@ -9,15 +9,7 @@ import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from 
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
-import {
-  Button,
-  DialogShell,
-  MetaChip,
-  PageHeader,
-  Panel,
-  PanelCaption,
-  StatusSquare,
-} from '@/components/ui';
+import { Button, DialogShell, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone } from '@/app/agents/constants';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
@@ -428,10 +420,7 @@ export default function ProjectsPage() {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading projects...</p>
-        </div>
+        <LoadingState loading rows={5} what="Still loading your projects…" detail="scanning the project directories" />
       </div>
     );
   }

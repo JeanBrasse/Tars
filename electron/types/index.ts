@@ -139,6 +139,9 @@ export interface AppSettings {
   verboseModeEnabled: boolean;
   chromeEnabled: boolean;
   autoCheckUpdates: boolean;
+  /** Resume idle agents once, when the app launches. Not on navigation - that
+   *  was the old behaviour and it spawned sessions on every visit home. */
+  autoStartAgentsOnLaunch?: boolean;
   cliPaths: CLIPaths;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
