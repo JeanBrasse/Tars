@@ -163,6 +163,48 @@ let cache: { at: number; value: TranscriptUsage } | null = null;
 const CACHE_TTL = 60_000;
 
 /**
+ * What one transcript file contributes, remembered so it is parsed once.
+ *
+ * The whole walk used to re-read and re-parse every .jsonl under
+ * ~/.claude/projects on each cache miss: measured at 450 to 700ms against 451MB
+ * across 1698 files on the author's machine, synchronously on the main process,
+ * once a minute for as long as a Usage, Agents or Projects tab is open. Every
+ * PTY's output handler, every other IPC call and the local HTTP server stall
+ * for that whole time, and the cost only grows because Tars never prunes old
+ * transcripts.
+ *
+ * Almost all of that work is re-reading files that cannot have changed: a
+ * closed session's transcript is finished forever. Keyed on (mtimeMs, size), a
+ * file is parsed once and its contribution reused, so the recurring cost falls
+ * to a stat per file plus a real parse of only the session still being written.
+ *
+ * The first run after a launch still pays full price on the main thread. Moving
+ * the walk to a worker is the remaining half of this and is not done here.
+ */
+interface TurnEntry {
+  /** `${message.id}:${requestId}`, the identity of one API response. */
+  key: string;
+  model: string;
+  /** Local calendar day, or null when the line carried no usable timestamp. */
+  date: string | null;
+  counts: Counts;
+}
+
+/**
+ * The turns one file holds, not their totals.
+ *
+ * Totals cannot be cached per file: resuming a session replays earlier messages
+ * into a NEW transcript, so the same message id appears in two files and
+ * counting both would double it. Deduplication has to stay global, which means
+ * what a file contributes is its list of turns, and the merge decides what is
+ * new. Measured on the author's machine: 66 files, 116MB, 9359 usage lines,
+ * 4895 distinct messages, about 0.8MB held here against a 467ms parse.
+ */
+type FileContribution = TurnEntry[];
+
+const fileCache = new Map<string, { mtimeMs: number; size: number; value: FileContribution }>();
+
+/**
  * `YYYY-MM-DD` in the machine's own timezone.
  *
  * Costs are read by a person who means their own calendar day. A turn at 01:00
@@ -174,6 +216,89 @@ function localDateKey(isoTimestamp: string): string | null {
   if (Number.isNaN(d.getTime())) return null;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * The turns one transcript file holds.
+ *
+ * No aggregation here: the caller deduplicates across files, because a resumed
+ * session replays its earlier messages into a new transcript and both copies
+ * carry the same message id.
+ */
+function readTranscript(file: string): FileContribution {
+  const turns: FileContribution = [];
+
+  let content: string;
+  try {
+    content = fs.readFileSync(file, 'utf-8');
+  } catch {
+    return turns;
+  }
+
+  for (const line of content.split('\n')) {
+    if (!line.includes('"usage"')) continue;
+
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry.type !== 'assistant') continue;
+
+    const message = entry.message as Record<string, unknown> | undefined;
+    const usage = message?.usage as Record<string, unknown> | undefined;
+    if (!message || !usage) continue;
+
+    const model = typeof message.model === 'string' ? message.model : null;
+    if (!model || model === '<synthetic>') continue;
+    // A transcript's model id is attacker-influenceable and is used as an object
+    // key downstream, so the three that would reach Object.prototype are dropped.
+    if (model === '__proto__' || model === 'constructor' || model === 'prototype') continue;
+
+    const split = usage.cache_creation as Record<string, unknown> | undefined;
+    const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
+    const counts: Counts = {
+      input: Number(usage.input_tokens) || 0,
+      output: Number(usage.output_tokens) || 0,
+      cacheRead: Number(usage.cache_read_input_tokens) || 0,
+      cacheWrite,
+      write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
+      write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
+      searches: Number(
+        (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
+      ) || 0,
+    };
+
+    const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
+    turns.push({
+      key: `${message.id ?? ''}:${entry.requestId ?? ''}`,
+      model,
+      // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
+      // the first ten characters gave the UTC date while the chart labelled its
+      // bars with the local one, putting every bar a day out east of Greenwich.
+      date: timestamp ? localDateKey(timestamp) : null,
+      counts,
+    });
+  }
+
+  return turns;
+}
+
+/** The file's contribution, parsed only if it has changed since last time. */
+function contributionFor(file: string): FileContribution | null {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return null;
+  }
+  const hit = fileCache.get(file);
+  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.value;
+
+  const value = readTranscript(file);
+  fileCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+  return value;
 }
 
 export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage {
@@ -188,71 +313,37 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   const dailyCost = new Map<string, number>();
   let lastComputedDate: string | null = null;
 
-  // One API response is written as several lines - one per content block - all
+  // One API response is written as several lines, one per content block, all
   // carrying the same message id and requestId, and counting them all would
   // roughly double every cost on the page. But the earlier lines carry a
   // *partial* usage block: the final line is the one with the whole
-  // output_tokens count. Keeping the first and skipping the rest, which is what
-  // this did, threw away 279,904 output tokens ($7.00) of the author's history.
-  // So: remember what each key has already contributed and top it up.
+  // output_tokens count. Keeping the first and skipping the rest threw away
+  // 279,904 output tokens ($7.00) of the author's history. So: remember what
+  // each key has already contributed and top it up.
+  //
+  // This stays global rather than per file, because a resumed session replays
+  // its earlier messages into a new transcript under the same ids.
   const applied = new Map<string, Counts>();
 
-  for (const file of listTranscripts(root)) {
-    let content: string;
-    try {
-      content = fs.readFileSync(file, 'utf-8');
-    } catch {
-      continue;
-    }
+  const files = listTranscripts(root);
+  for (const file of files) {
+    const turns = contributionFor(file);
+    if (!turns) continue;
 
-    for (const line of content.split('\n')) {
-      if (!line.includes('"usage"')) continue;
-
-      let entry: Record<string, unknown>;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (entry.type !== 'assistant') continue;
-
-      const message = entry.message as Record<string, unknown> | undefined;
-      const usage = message?.usage as Record<string, unknown> | undefined;
-      if (!message || !usage) continue;
-
-      const model = typeof message.model === 'string' ? message.model : null;
-      if (!model || model === '<synthetic>') continue;
-      if (model === '__proto__' || model === 'constructor' || model === 'prototype') continue;
-
-      const split = usage.cache_creation as Record<string, unknown> | undefined;
-      const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
-      const raw: Counts = {
-        input: Number(usage.input_tokens) || 0,
-        output: Number(usage.output_tokens) || 0,
-        cacheRead: Number(usage.cache_read_input_tokens) || 0,
-        cacheWrite,
-        write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
-        write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
-        searches: Number(
-          (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
-        ) || 0,
-      };
-
-      // Only what this line adds beyond the same message's earlier lines.
-      let delta = raw;
-      const key = `${message.id ?? ''}:${entry.requestId ?? ''}`;
-      if (key !== ':') {
-        const prev = applied.get(key);
+    for (const turn of turns) {
+      let delta = turn.counts;
+      if (turn.key !== ':') {
+        const prev = applied.get(turn.key);
         if (prev) {
-          delta = diff(raw, prev);
+          delta = diff(turn.counts, prev);
           if (isZero(delta)) continue;
-          applied.set(key, add(prev, delta));
+          applied.set(turn.key, add(prev, delta));
         } else {
-          applied.set(key, raw);
+          applied.set(turn.key, turn.counts);
         }
       }
 
-      const bucket = (modelUsage[model] ||= emptyUsage());
+      const bucket = (modelUsage[turn.model] ||= emptyUsage());
       bucket.inputTokens += delta.input;
       bucket.outputTokens += delta.output;
       bucket.cacheReadInputTokens += delta.cacheRead;
@@ -261,34 +352,33 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
       bucket.cacheCreation5mTokens += delta.write5m;
       bucket.webSearchRequests += delta.searches;
 
-      const cost = costOf(model, delta);
+      const cost = costOf(turn.model, delta);
       bucket.costUSD += cost;
 
-      const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
-      // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
-      // the first ten characters gave the UTC date, while the chart labelled
-      // its bars with the LOCAL date. At UTC+4 that put every bar one day out:
-      // the bar marked 23 carried the 22nd's spend, which is why the chart and
-      // the "latest day" card disagreed by a whole day while each was
-      // internally consistent.
-      const date = timestamp ? localDateKey(timestamp) : null;
-      if (date) {
-        const day = dailyMap.get(date) ?? {};
-        day[model] = (day[model] || 0) + delta.input + delta.output;
-        dailyMap.set(date, day);
-        // The day priced from its own tokens - cache reads and cache writes
-        // included - rather than left to be reconstructed downstream from
+      if (turn.date) {
+        const day = dailyMap.get(turn.date) ?? Object.create(null);
+        day[turn.model] = (day[turn.model] || 0) + delta.input + delta.output;
+        dailyMap.set(turn.date, day);
+        // The day priced from its own tokens, cache reads and cache writes
+        // included, rather than left to be reconstructed downstream from
         // input+output alone.
-        dailyCost.set(date, (dailyCost.get(date) ?? 0) + cost);
-        if (!lastComputedDate || date > lastComputedDate) lastComputedDate = date;
+        dailyCost.set(turn.date, (dailyCost.get(turn.date) ?? 0) + cost);
+        if (!lastComputedDate || turn.date > lastComputedDate) lastComputedDate = turn.date;
       }
     }
+  }
+
+  // A transcript that has been deleted must stop contributing, and must not sit
+  // in the map forever.
+  if (fileCache.size > files.length) {
+    const live = new Set(files);
+    for (const key of fileCache.keys()) if (!live.has(key)) fileCache.delete(key);
   }
 
   const value: TranscriptUsage = {
     modelUsage: { ...modelUsage },
     dailyModelTokens: Array.from(dailyMap.entries())
-      .map(([date, tokensByModel]) => ({ date, tokensByModel, costUSD: dailyCost.get(date) ?? 0 }))
+      .map(([date, tokensByModel]) => ({ date, tokensByModel: { ...tokensByModel }, costUSD: dailyCost.get(date) ?? 0 }))
       .sort((a, b) => a.date.localeCompare(b.date)),
     lastComputedDate,
   };
@@ -297,7 +387,14 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   return value;
 }
 
-/** Drops the memo so a test or a refresh sees fresh numbers. */
+/**
+ * Drops both memos so a test or a refresh sees fresh numbers.
+ *
+ * The per-file map has to go too: a test that rewrites a fixture within the
+ * same millisecond and to the same length would otherwise be handed the old
+ * parse, since (mtimeMs, size) is all that identifies it.
+ */
 export function clearTranscriptUsageCache(): void {
   cache = null;
+  fileCache.clear();
 }

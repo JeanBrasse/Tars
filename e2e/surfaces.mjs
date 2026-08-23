@@ -15,6 +15,7 @@
 /** @type {Surface[]} */
 export const PAGES = [
   { name: 'dashboard', route: '/' },
+  { name: 'chat', route: '/chat' },
   { name: 'agents', route: '/agents' },
   { name: 'kanban', route: '/kanban' },
   { name: 'vault', route: '/vault' },

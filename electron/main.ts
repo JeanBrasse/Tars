@@ -96,6 +96,8 @@ import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
+import { registerOverseerHandlers } from './handlers/overseer-handlers';
+import { startOverseerWatch, stopOverseerWatch } from './services/overseer';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
@@ -391,6 +393,11 @@ app.whenReady().then(async () => {
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
+  registerOverseerHandlers();
+
+  // The overseer's watch timer: an unprompted briefing reaches the Chat page
+  // through the same broadcast channel every other live update uses.
+  startOverseerWatch((message) => broadcastToAllWindows('overseer:briefing', message));
 
   // Register kanban handlers
   registerKanbanHandlers({
@@ -661,6 +668,7 @@ app.on('before-quit', () => {
   console.log('App quitting, saving agents and killing all PTY processes...');
   destroyTray();
   stopAgentAutosave();
+  stopOverseerWatch();
   saveAgents();
   killAllPty();
   closeVaultDb();

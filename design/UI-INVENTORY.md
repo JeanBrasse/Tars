@@ -8,11 +8,12 @@ Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,
 custom dashboard boards, the sidebar collapse) is deliberately absent.
 
-## Pages (13)
+## Pages (14)
 
 | Route | Name | Frame |
 |---|---|---|
 | `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light |
+| `/chat` | Chat (Hermes overseer) | Chat · Overseer |
 | `/agents` | Agents | Agents · dark |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
