@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Bot, Loader2, Search, ArrowUpDown } from 'lucide-react';
+import { Bot, Loader2 } from 'lucide-react';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import { useClaude } from '@/hooks/useClaude';
@@ -16,12 +16,10 @@ import { DeployTeamDialog } from '@/components/Templates/DeployTeamDialog';
 import {
   DesktopRequiredMessage,
   AgentListHeader,
-  ProjectFilterTabs,
   AgentManagementCard,
 } from '@/components/AgentList';
+import { Chip } from '@/components/ui';
 import { STATUS_COLORS } from './constants';
-
-type SortBy = 'created' | 'status' | 'activity' | 'name';
 
 export default function AgentsPage() {
   const {
@@ -45,10 +43,8 @@ export default function AgentsPage() {
   const [showDeployTeamDialog, setShowDeployTeamDialog] = useState(false);
   const [viewAgentId, setViewAgentId] = useState<string | null>(null);  // terminal dialog
   const [editAgentId, setEditAgentId] = useState<string | null>(null);  // edit dialog
-  const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortBy>('created');
 
 
   // Custom hooks
@@ -59,15 +55,14 @@ export default function AgentsPage() {
     onCreateNew: () => setShowNewChatModal(true),
   });
 
-  const { filteredAgents, uniqueProjects } = useAgentFiltering({
+  // No project narrowing any more: the filter field below covers it, so the
+  // hook keeps its project pass-through inert.
+  const { filteredAgents } = useAgentFiltering({
     agents,
-    projectFilter,
+    projectFilter: null,
     statusFilter,
     searchQuery,
-    sortBy,
   });
-
-  const runningCount = agents.filter(a => a.status === 'running' || a.status === 'waiting').length;
 
   // Build edit agent data from editAgentId
   const editAgentData: EditAgentData | null = useMemo(() => {
@@ -187,19 +182,6 @@ export default function AgentsPage() {
     }
   }, [agents, createTemplate]);
 
-  const agentCountByProject = useCallback((path: string) => {
-    return agents.filter(a => a.projectPath === path).length;
-  }, [agents]);
-
-  const cycleSortBy = useCallback(() => {
-    setSortBy(prev => {
-      if (prev === 'created') return 'status';
-      if (prev === 'status') return 'activity';
-      if (prev === 'activity') return 'name';
-      return 'created';
-    });
-  }, []);
-
   // Early returns
   if (!hasElectron && typeof window !== 'undefined') {
     return <DesktopRequiredMessage />;
@@ -217,94 +199,45 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col pt-4 lg:pt-6">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-22px)] flex flex-col pt-[22px]">
       <AgentListHeader
-        totalCount={agents.length}
-        runningCount={runningCount}
         onNewAgentClick={() => setShowNewChatModal(true)}
         onDeployTeamClick={() => setShowDeployTeamDialog(true)}
       />
 
-      <ProjectFilterTabs
-        uniqueProjects={uniqueProjects}
-        projectFilter={projectFilter}
-        totalAgentCount={agents.length}
-        agentCountByProject={agentCountByProject}
-        onFilterChange={setProjectFilter}
-      />
-
-      {/* Filter bar */}
+      {/* One filter row: the status chips carry their own counts, and the
+          filter field on the right is what narrows by project or branch. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {/* Status tabs */}
-        <div className="flex items-center gap-1 [&_button]:cursor-pointer">
-          <button
-            onClick={() => setStatusFilter(null)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
-              !statusFilter ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            All
-            <span className={`px-1 py-px text-[10px] ${!statusFilter ? 'bg-background/20' : 'bg-muted'}`}>
-              {agents.length}
-            </span>
-          </button>
-          {Object.keys(STATUS_COLORS).map((key) => {
-            const count = agents.filter(a => a.status === key).length;
-            const colors = STATUS_COLORS[key as keyof typeof STATUS_COLORS];
-            return (
-              <button
-                key={key}
-                onClick={() => setStatusFilter(statusFilter === key ? null : key)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
-                  statusFilter === key
-                    ? 'bg-secondary border border-border-accent text-foreground'
-                    : `${colors.text} hover:text-foreground`
-                }`}
-              >
-                {key}
-                {count > 0 && (
-                  <span className="px-1 py-px text-[10px] text-muted-foreground">
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <Chip active={!statusFilter} onClick={() => setStatusFilter(null)}>
+          All ({agents.length})
+        </Chip>
+        {Object.keys(STATUS_COLORS).map((key) => {
+          const count = agents.filter(a => a.status === key).length;
+          return (
+            <Chip
+              key={key}
+              active={statusFilter === key}
+              onClick={() => setStatusFilter(statusFilter === key ? null : key)}
+              className="capitalize"
+            >
+              {key} ({count})
+            </Chip>
+          );
+        })}
 
-        {/* Search */}
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search agents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
-          />
-        </div>
-
-        {/* Sort toggle */}
-        <button
-          onClick={cycleSortBy}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
-          title={`Sort by: ${sortBy}`}
-        >
-          <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground capitalize">{sortBy}</span>
-        </button>
-
-        {/* Count summary */}
-        <div className="text-xs text-muted-foreground ml-auto hidden sm:flex items-center gap-3">
-          <span>{agents.length} total</span>
-          <span className="text-primary">{runningCount} active</span>
-        </div>
+        <input
+          type="text"
+          placeholder="filter by name or branch"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="ml-auto w-full max-w-xs h-7 px-2.5 text-sm border border-border bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+        />
       </div>
 
       {/* Agent Grid */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {filteredAgents.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 pb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 pb-4">
             {filteredAgents.map((agent) => (
               <AgentManagementCard
                 key={agent.id}
@@ -333,7 +266,7 @@ export default function AgentsPage() {
               </button>
             ) : (
               <button
-                onClick={() => { setProjectFilter(null); setStatusFilter(null); setSearchQuery(''); }}
+                onClick={() => { setStatusFilter(null); setSearchQuery(''); }}
                 className="text-primary text-sm hover:underline cursor-pointer"
               >
                 Clear filters

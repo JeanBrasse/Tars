@@ -1,24 +1,12 @@
 'use client';
 
-import { Play, Square, Pencil, Trash2, AlertTriangle, Crown, Clock, BookmarkPlus } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import {
-  STATUS_COLORS,
-  CHARACTER_FACES,
-  isSuperAgentCheck,
-  statusTone,
-} from '@/app/agents/constants';
+import { Button, MetaChip, StatusSquare } from '@/components/ui';
+import { STATUS_COLORS, PROVIDER_LABELS, statusTone } from '@/app/agents/constants';
 
-function formatTimeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+// Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
+// button each, sitting inside the card padding - the card has no footer band.
+const ROW_ACTION = 'font-mono lowercase';
 
 interface AgentManagementCardProps {
   agent: AgentStatus;
@@ -26,138 +14,73 @@ interface AgentManagementCardProps {
   onEdit: () => void;
   onStart: () => void;
   onStop: () => void;
-  onRemove: () => void;
+  /** @deprecated No longer reachable from the card - the design keeps three actions. */
+  onRemove?: () => void;
+  /** @deprecated No longer reachable from the card - the design keeps three actions. */
   onSaveAsTemplate?: () => void;
 }
 
-export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, onRemove, onSaveAsTemplate }: AgentManagementCardProps) {
+export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop }: AgentManagementCardProps) {
   const statusConfig = STATUS_COLORS[agent.status];
   const tone = statusTone(agent.status);
-  const isSuper = isSuperAgentCheck(agent);
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
-  const isError = agent.status === 'error';
 
   // Show the user's last prompt, not terminal output
   const lastPrompt = agent.currentTask || null;
+  const provider = agent.provider || 'claude';
+  const model = provider === 'local' ? agent.localModel : agent.model;
 
   return (
     <div
       onClick={onClick}
-      className={`
-        group relative cursor-pointer transition-all border border-border bg-card hover:bg-accent/10
-        ${isSuper ? 'border-l border-l-amber-500/50' : ''}
-        ${isRunning && !isSuper ? 'border-l border-l-primary/50' : ''}
-        ${isError ? 'border-l border-l-red-500/50' : ''}
-      `}
+      className="cursor-pointer transition-colors border border-border bg-card hover:bg-secondary"
     >
-      <div className="p-3">
-        {/* Row 1: Avatar + Name + Status (top-right) */}
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 flex items-center justify-center shrink-0 text-base ${
-            isSuper ? 'bg-primary/20' : 'bg-bg-tertiary'
-          }`}>
-            {isSuper ? '👑' : agent.character ? (CHARACTER_FACES[agent.character] || '🤖') : '🤖'}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              {isSuper && <Crown className="w-3 h-3 text-warning shrink-0" />}
-              <span className="font-medium text-sm truncate text-foreground">
-                {agent.name || 'Unnamed Agent'}
-              </span>
-            </div>
-          </div>
-
-          {/* Raw status word - top right, ink only (R6) */}
+      <div className="p-3 flex flex-col gap-2">
+        {/* Row 1: status mark + name, raw status word right-aligned (R6) */}
+        <div className="flex items-center gap-2">
+          <StatusSquare tone={tone} />
+          <span className="flex-1 min-w-0 truncate text-xs font-semibold text-foreground">
+            {agent.name || 'Unnamed Agent'}
+          </span>
           <span className={`text-[11px] font-mono shrink-0 ${statusConfig.text}`}>
             {tone}
           </span>
         </div>
 
-        {/* Row 2: Project path */}
-        <p className="text-[11px] text-muted-foreground mt-2 truncate font-mono" title={agent.projectPath}>
-          {agent.projectPath}
-        </p>
-
-        {/* Row 3: Last user prompt */}
+        {/* Row 2: one description line - the last prompt, or why there is none */}
         {agent.pathMissing ? (
-          <p className="text-xs text-warning flex items-center gap-1 mt-1.5">
-            <AlertTriangle className="w-3 h-3 shrink-0" />
-            Path not found
-          </p>
+          <p className="text-[11px] text-status-error truncate">Path not found</p>
         ) : lastPrompt ? (
-          <p className="text-xs text-muted-foreground/80 mt-1.5 line-clamp-2 leading-relaxed">
+          <p className="text-[11px] text-text-secondary truncate" title={lastPrompt}>
             {lastPrompt}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground/40 mt-1.5 italic">No task assigned</p>
+          <p className="text-[11px] text-muted-foreground">No task assigned</p>
         )}
 
-        {/* Skills */}
-        {agent.skills.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {agent.skills.map((skill) => (
-              <span
-                key={skill}
-                className="px-1.5 py-0.5 rounded bg-accent-purple/15 text-accent-purple text-[10px] truncate max-w-[100px]"
-                title={skill}
-              >
-                {skill}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+        {/* Row 3: provider, model, branch */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <MetaChip>{PROVIDER_LABELS[provider] || provider}</MetaChip>
+          {model && <MetaChip className="max-w-[140px] truncate">{model}</MetaChip>}
+          {agent.branchName && <MetaChip className="max-w-[140px] truncate">{agent.branchName}</MetaChip>}
+        </div>
 
-      {/* Footer: timestamp + actions */}
-      <div className="px-3 py-2 border-t border-border/40 flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          {formatTimeAgo(agent.lastActivity)}
-        </span>
-
-        <div className="flex items-center gap-0.5 [&_button]:cursor-pointer" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" className={ROW_ACTION} onClick={onClick}>
+            open
+          </Button>
           {isRunning ? (
-            <button
-              onClick={onStop}
-              className="p-1.5 hover:bg-danger/10 rounded transition-colors"
-              title="Stop agent"
-            >
-              <Square className="w-3.5 h-3.5 text-danger" />
-            </button>
+            <Button size="sm" className={ROW_ACTION} onClick={onStop}>
+              stop
+            </Button>
           ) : (
-            <button
-              onClick={onStart}
-              disabled={agent.pathMissing}
-              className="p-1.5 hover:bg-primary/10 rounded transition-colors disabled:opacity-30"
-              title="Start agent"
-            >
-              <Play className="w-3.5 h-3.5 text-primary" />
-            </button>
+            <Button size="sm" className={ROW_ACTION} onClick={onStart} disabled={agent.pathMissing}>
+              start
+            </Button>
           )}
-          <button
-            onClick={onEdit}
-            className="p-1.5 hover:bg-accent rounded transition-colors"
-            title="Edit agent"
-          >
-            <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-          </button>
-          {onSaveAsTemplate && (
-            <button
-              onClick={onSaveAsTemplate}
-              className="p-1.5 hover:bg-primary/10 rounded transition-colors"
-              title="Save as template"
-            >
-              <BookmarkPlus className="w-3.5 h-3.5 text-muted-foreground hover:text-primary" />
-            </button>
-          )}
-          <button
-            onClick={onRemove}
-            className="p-1.5 hover:bg-danger/10 rounded transition-colors"
-            title="Remove agent"
-          >
-            <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-danger" />
-          </button>
+          <Button size="sm" className={ROW_ACTION} onClick={onEdit}>
+            edit
+          </Button>
         </div>
       </div>
     </div>

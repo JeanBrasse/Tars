@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Search, Terminal } from 'lucide-react';
+import { PageHeader, Panel, PanelCaption } from '@/components/ui';
 import type { FleetEntry, LogLine } from '@/types/electron';
 
 /**
@@ -13,10 +14,10 @@ import type { FleetEntry, LogLine } from '@/types/electron';
  */
 
 const STATUS_TONE: Record<string, string> = {
-  running: 'text-success',
-  waiting: 'text-warning',
-  error: 'text-danger',
-  idle: 'text-muted-foreground',
+  running: 'text-status-running',
+  waiting: 'text-status-waiting',
+  error: 'text-status-error',
+  idle: 'text-status-idle',
 };
 
 export default function LogsPage() {
@@ -72,68 +73,72 @@ export default function LogsPage() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col pt-4 lg:pt-6">
-      <div className="mb-4 shrink-0">
-        <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Logs</h1>
-        <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-          Search every agent&apos;s output at once. Wrap the query in slashes for a regex.
-        </p>
-      </div>
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+      <PageHeader
+        title="Logs"
+        subtitle="Search every agent's output at once. Wrap the query in slashes for a regex."
+      />
 
-      <div className="relative mb-4 shrink-0">
+      {/* The query and what it found share one row: the count is about the
+          search, so it reads at the end of the thing it counts. */}
+      <div className="relative mb-3 shrink-0">
         <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="error, ECONNREFUSED, /TypeError.*undefined/"
-          className="w-full pl-8 pr-3 py-2 bg-secondary border border-border text-sm font-mono focus:border-foreground focus:outline-none"
+          className="w-full h-8 pl-8 pr-56 bg-secondary border border-border text-[15px] focus:border-primary/40 focus:outline-none"
         />
-        {searching && (
-          <Loader2 className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />
-        )}
+        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          {searching && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+          {results !== null && (
+            <span className="text-[11px] text-muted-foreground truncate">
+              {results.length} match{results.length === 1 ? '' : 'es'} across {scanned} agent
+              {scanned === 1 ? '' : 's'}
+              {truncated ? ' (showing the first 300)' : ''}
+            </span>
+          )}
+        </span>
       </div>
 
-      <div className="flex-1 min-h-0 flex gap-4">
+      <div className="flex-1 min-h-0 flex gap-3">
         {/* Fleet */}
-        <div className="w-60 shrink-0 overflow-y-auto space-y-0.5">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+        <Panel fill className="w-[250px] shrink-0">
+          <PanelCaption>
             {fleet.length} agent{fleet.length === 1 ? '' : 's'}
-          </p>
-          {fleet.map(a => (
-            <button
-              key={a.agentId}
-              onClick={() => openAgent(a.agentId)}
-              className={`w-full text-left px-2.5 py-1.5 border transition-colors ${
-                a.agentId === focused
-                  ? 'bg-secondary border-border-accent'
-                  : 'bg-card border-border hover:border-border-accent'
-              }`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className="text-xs text-foreground truncate">{a.agentName}</span>
-                <span className={`text-[10px] shrink-0 ${STATUS_TONE[a.status] ?? 'text-muted-foreground'}`}>
-                  {a.status}
+          </PanelCaption>
+          <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
+            {fleet.map(a => (
+              <button
+                key={a.agentId}
+                onClick={() => openAgent(a.agentId)}
+                className={`w-full text-left h-[52px] px-2.5 flex flex-col justify-center gap-1 border transition-colors ${
+                  a.agentId === focused
+                    ? 'bg-secondary border-border-accent'
+                    : 'bg-card border-border hover:border-border-accent'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-foreground truncate">{a.agentName}</span>
+                  <span className={`text-[10px] shrink-0 ${STATUS_TONE[a.status] ?? 'text-muted-foreground'}`}>
+                    {a.status}
+                  </span>
                 </span>
-              </span>
-              <span className="block text-[10px] text-muted-foreground truncate font-mono">
-                {a.branch || a.projectPath.split('/').pop()} · {a.lines} chunks
-              </span>
-            </button>
-          ))}
-          {fleet.length === 0 && (
-            <p className="text-xs text-muted-foreground">No agent has produced output yet.</p>
-          )}
-        </div>
+                <span className="block text-[10px] text-muted-foreground truncate font-mono">
+                  {a.branch || a.projectPath.split('/').pop()} · {a.lines} chunks
+                </span>
+              </button>
+            ))}
+            {fleet.length === 0 && (
+              <p className="text-xs text-muted-foreground">No agent has produced output yet.</p>
+            )}
+          </div>
+        </Panel>
 
         {/* Results or tail */}
-        <div className="flex-1 min-w-0 overflow-auto border-l border-border pl-4">
-          {results !== null ? (
-            <>
-              <p className="text-[11px] text-muted-foreground mb-2">
-                {results.length} match{results.length === 1 ? '' : 'es'} across {scanned} agent
-                {scanned === 1 ? '' : 's'}
-                {truncated ? ' (showing the first 300)' : ''}
-              </p>
+        <Panel fill padded={false} className="flex-1 min-w-0">
+          <div className="flex-1 min-h-0 overflow-auto p-4">
+            {results !== null ? (
               <div className="space-y-1">
                 {results.map((line, i) => (
                   <button
@@ -156,21 +161,21 @@ export default function LogsPage() {
                   </p>
                 )}
               </div>
-            </>
-          ) : tail ? (
-            <>
-              <p className="text-xs font-mono text-foreground mb-2">{tail.agentName} — last {tail.lines.length} lines</p>
-              <pre className="text-[11px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">
-                {tail.lines.join('\n')}
-              </pre>
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-              <Terminal className="w-6 h-6 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">Search, or pick an agent to read its tail.</p>
-            </div>
-          )}
-        </div>
+            ) : tail ? (
+              <>
+                <p className="text-xs font-mono text-foreground mb-2">{tail.agentName} — last {tail.lines.length} lines</p>
+                <pre className="text-[11px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">
+                  {tail.lines.join('\n')}
+                </pre>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
+                <Terminal className="w-6 h-6 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">Search, or pick an agent to read its tail.</p>
+              </div>
+            )}
+          </div>
+        </Panel>
       </div>
     </div>
   );

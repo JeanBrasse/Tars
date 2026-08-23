@@ -2,8 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, Loader2, Pause, Play, RefreshCw, Trash2, Zap } from 'lucide-react';
-import { LoadingState } from '@/components/ui';
+import { AlertCircle } from 'lucide-react';
+import { Button, LoadingState, PageHeader, StatusSquare } from '@/components/ui';
+
+// Row actions are words, not glyphs (R7): 26px bordered lowercase-mono
+// buttons, 8px apart, in the same order on every row.
+const ROW_ACTION = 'font-mono lowercase';
 
 /**
  * Hermes schedules. Tars does not own a scheduler: the jobs, their timers and
@@ -99,22 +103,12 @@ export default function CronsPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col pt-4 lg:pt-6">
-      <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Schedules</h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Recurring jobs running in your Hermes gateway.
-          </p>
-        </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border bg-card text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+      <PageHeader
+        title="Schedules"
+        subtitle="Recurring jobs running in your Hermes gateway."
+        actions={<Button size="md" onClick={load}>Refresh</Button>}
+      />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {loading && jobs.length === 0 && (
@@ -133,13 +127,11 @@ export default function CronsPage() {
             <div className="flex items-center gap-2">
               <Link
                 href="/settings?section=hermes"
-                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground font-medium hover:bg-primary/90"
+                className="inline-flex items-center justify-center h-8 px-3 text-sm font-medium border border-primary bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {needsSignIn ? 'Sign in to Hermes' : 'Open Hermes settings'}
               </Link>
-              <button onClick={load} className="px-3 py-1.5 text-xs border border-border bg-card hover:bg-accent/50">
-                Retry
-              </button>
+              <Button size="md" onClick={load}>Retry</Button>
             </div>
           </div>
         )}
@@ -157,7 +149,7 @@ export default function CronsPage() {
             const next = job.next_run_at || job.next_run;
             return (
               <div key={job.id} className="border border-border bg-card px-4 py-3 flex items-start gap-4">
-                <span className={`mt-1 inline-block w-1.5 h-1.5 shrink-0 ${paused ? 'bg-muted-foreground' : 'bg-success'}`} />
+                <StatusSquare tone={paused ? 'idle' : 'running'} className="mt-1" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-foreground">{job.name || job.title || job.id}</span>
@@ -175,31 +167,31 @@ export default function CronsPage() {
                     <p className="text-xs text-muted-foreground mt-1 truncate">{job.prompt || job.command}</p>
                   )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    className={ROW_ACTION}
                     onClick={() => act(job, 'trigger')}
                     disabled={busyId === job.id}
-                    title="Run now"
-                    className="p-1.5 text-muted-foreground hover:text-primary disabled:opacity-40"
                   >
-                    <Zap className="w-3.5 h-3.5" />
-                  </button>
-                  <button
+                    run now
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={ROW_ACTION}
                     onClick={() => act(job, paused ? 'resume' : 'pause')}
                     disabled={busyId === job.id}
-                    title={paused ? 'Resume' : 'Pause'}
-                    className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40"
                   >
-                    {paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                  </button>
-                  <button
+                    {paused ? 'resume' : 'pause'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={ROW_ACTION}
                     onClick={() => remove(job)}
                     disabled={busyId === job.id}
-                    title="Delete"
-                    className="p-1.5 text-muted-foreground hover:text-danger disabled:opacity-40"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                    delete
+                  </Button>
                 </div>
               </div>
             );

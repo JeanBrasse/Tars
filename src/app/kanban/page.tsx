@@ -3,10 +3,17 @@
 import { useEffect, useState } from 'react';
 import KanbanBoard from '@/components/KanbanBoard';
 import HermesBoard from '@/components/KanbanBoard/HermesBoard';
+import { PageHeader, SegmentedControl } from '@/components/ui';
+import type { SegmentedOption } from '@/components/ui';
 
 type Source = 'hermes' | 'local';
 
 const SOURCE_KEY = 'dorothy-kanban-source';
+
+const SOURCES: readonly SegmentedOption<Source>[] = [
+  { value: 'hermes', label: 'Hermes' },
+  { value: 'local', label: 'Local' },
+];
 
 export default function KanbanPage() {
   // Hermes owns the task harness, so it is the default board; the local board
@@ -24,28 +31,19 @@ export default function KanbanPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col pt-4 lg:pt-6">
-      <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Kanban</h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Task board. Hermes runs the work; the local board is for projects without a gateway.
-          </p>
-        </div>
-        <div className="flex items-center border border-border bg-card">
-          {(['hermes', 'local'] as Source[]).map(s => (
-            <button
-              key={s}
-              onClick={() => pick(s)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                source === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {s === 'hermes' ? 'Hermes' : 'Local'}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+      <PageHeader
+        title="Kanban"
+        subtitle="Task board. Hermes runs the work; the local board is for projects without a gateway."
+        actions={
+          <SegmentedControl
+            options={SOURCES}
+            value={source}
+            onChange={pick}
+            ariaLabel="Board source"
+          />
+        }
+      />
 
       <div className="flex-1 min-h-0">
         {source === 'hermes' ? <HermesBoard /> : <KanbanBoard />}

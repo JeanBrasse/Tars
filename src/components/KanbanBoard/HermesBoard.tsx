@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { Button } from '@/components/ui';
 
 /**
  * Hermes-backed board. The harness - task lifecycle, workers, runs - lives in
@@ -11,13 +12,6 @@ import Link from 'next/link';
  */
 
 const COLUMNS = ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done'] as const;
-
-const COLUMN_TONE: Record<string, string> = {
-  running: 'text-success',
-  blocked: 'text-danger',
-  review: 'text-warning',
-  done: 'text-muted-foreground',
-};
 
 interface HermesTask {
   id: string;
@@ -78,15 +72,15 @@ export default function HermesBoard() {
         <AlertCircle className="w-6 h-6 text-warning" />
         <p className="text-sm text-foreground max-w-md">{error}</p>
         <div className="flex items-center gap-2">
+          {/* An anchor, so it cannot come through <Button>; the classes are the
+              primary variant at the 26px control height, copied verbatim. */}
           <Link
             href="/settings?section=hermes"
-            className="px-3 py-1.5 text-xs bg-primary text-primary-foreground font-medium hover:bg-primary/90"
+            className="inline-flex items-center justify-center h-[26px] px-2.5 text-xs font-medium border border-primary bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {needsSignIn ? 'Sign in to Hermes' : 'Open Hermes settings'}
           </Link>
-          <button onClick={load} className="px-3 py-1.5 text-xs border border-border bg-card hover:bg-accent/50">
-            Retry
-          </button>
+          <Button size="sm" onClick={load}>Retry</Button>
         </div>
       </div>
     );
@@ -96,52 +90,33 @@ export default function HermesBoard() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-1 pb-2 shrink-0">
-        <p className="text-xs text-muted-foreground">
-          Board served by your Hermes gateway - tasks, workers and runs are executed there.
-        </p>
-        <button
-          onClick={load}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs border border-border bg-card text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
-
       <div className="flex-1 min-h-0 overflow-x-auto">
-        <div className="flex gap-3 h-full min-w-max pb-2">
+        {/* Tracks share the width and only scroll once they hit their floor -
+            eight columns still overflow, which is Hermes' shape, not a bug. */}
+        <div className="flex gap-2 h-full pb-2">
           {COLUMNS.map(col => {
             const tasks = columns[col] ?? [];
             return (
-              <div key={col} className="w-64 shrink-0 flex flex-col border border-border bg-card">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                  <span className={`text-xs font-mono uppercase tracking-wider ${COLUMN_TONE[col] ?? 'text-foreground'}`}>
-                    {col}
-                  </span>
+              <div key={col} className="flex-1 min-w-[200px] flex flex-col border border-border bg-card">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <span className="text-[11.5px] text-text-secondary">{col}</span>
                   <span className="text-[10px] font-mono text-muted-foreground">{tasks.length}</span>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
-                  {tasks.length === 0 && (
-                    <p className="text-[11px] text-muted-foreground px-1 py-2">Empty</p>
-                  )}
-                  {tasks.map(t => (
-                    <div key={t.id} className="border border-border bg-secondary/40 p-2 space-y-1">
-                      <p className="text-xs text-foreground leading-snug">{t.title || t.id}</p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {t.assignee && <span className="text-[10px] font-mono text-muted-foreground">@{t.assignee}</span>}
-                        {t.worker && <span className="text-[10px] font-mono text-success">{t.worker}</span>}
-                        {typeof t.children_total === 'number' && t.children_total > 0 && (
-                          <span className="text-[10px] font-mono text-muted-foreground">
-                            {t.children_done ?? 0}/{t.children_total}
-                          </span>
+                  {tasks.map(t => {
+                    const tag = (t.labels ?? [])[0];
+                    return (
+                      <div key={t.id} className="border border-border bg-bg-tertiary p-3 space-y-2">
+                        <p className="text-xs text-foreground leading-snug">{t.title || t.id}</p>
+                        {(tag || t.assignee) && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-mono lowercase text-muted-foreground truncate">{tag}</span>
+                            <span className="text-[10px] text-muted-foreground truncate">{t.assignee}</span>
+                          </div>
                         )}
-                        {(t.labels ?? []).slice(0, 2).map(l => (
-                          <span key={l} className="text-[10px] px-1 bg-primary/10 text-primary">{l}</span>
-                        ))}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

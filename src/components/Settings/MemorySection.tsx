@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Brain, Check, Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Input, PasswordInput } from '@/components/ui';
+import { SettingsCard } from './SettingsCard';
+import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
 
@@ -11,9 +13,9 @@ interface MemorySectionProps {
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
 }
 
-interface BackendCardProps {
+interface BackendRowsProps {
   title: string;
-  description: string;
+  description: ReactNode;
   docUrl: string;
   enabled: boolean;
   url: string;
@@ -21,100 +23,87 @@ interface BackendCardProps {
   token: string;
   tokenLabel: string;
   onToggle: (enabled: boolean) => void;
-  onSave: (url: string, token: string) => void;
+  /** `persist` is false while typing and true on blur - see the note below. */
+  onUrlChange: (url: string, persist: boolean) => void;
+  onTokenChange: (token: string, persist: boolean) => void;
 }
 
-function BackendCard({ title, description, docUrl, enabled, url, urlPlaceholder, token, tokenLabel, onToggle, onSave }: BackendCardProps) {
-  const [localUrl, setLocalUrl] = useState(url);
-  const [localToken, setLocalToken] = useState(token);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  const dirty = localUrl !== url || localToken !== token;
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      onSave(localUrl.trim(), localToken.trim());
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } finally {
-      setSaving(false);
-    }
-  }
-
+/**
+ * A backend is three rows, never a card: the switch, its endpoint and its
+ * secret. The endpoint and the secret stay on screen whether or not the backend
+ * is on - you configure it first, then turn it on.
+ *
+ * There is no per-backend Save button any more. Typing updates the settings in
+ * place and leaving a field writes them, so the header's single action is free
+ * to be `Check`.
+ */
+function BackendRows({
+  title,
+  description,
+  docUrl,
+  enabled,
+  url,
+  urlPlaceholder,
+  token,
+  tokenLabel,
+  onToggle,
+  onUrlChange,
+  onTokenChange,
+}: BackendRowsProps) {
   return (
-    <div className="bg-card border border-border p-4 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
+    <>
+      <SettingsRow
+        label={title}
+        description={
+          <>
             {description}{' '}
             <a href={docUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
               Docs
             </a>
-          </p>
-        </div>
-        <Toggle enabled={enabled} onChange={() => onToggle(!enabled)} />
-      </div>
+          </>
+        }
+        control={<Toggle enabled={enabled} onChange={() => onToggle(!enabled)} />}
+      />
 
-      {enabled && (
-        <div className="space-y-2">
-          <div>
-            <label className="block text-xs font-medium text-foreground mb-1">MCP endpoint URL</label>
-            <input
-              type="text"
-              value={localUrl}
-              onChange={e => setLocalUrl(e.target.value)}
-              placeholder={urlPlaceholder}
-              className="w-full px-2 py-1.5 bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-foreground mb-1">{tokenLabel}</label>
-            <input
-              type="password"
-              value={localToken}
-              onChange={e => setLocalToken(e.target.value)}
-              placeholder="Optional - sent as Authorization: Bearer …"
-              className="w-full px-2 py-1.5 bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 font-mono"
-            />
-          </div>
-          <div className="flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={!dirty || saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : saved ? <Check className="w-3 h-3" /> : null}
-              {saved ? 'Saved' : 'Save'}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+      <SettingsRow
+        label="MCP endpoint URL"
+        control={
+          <Input
+            mono
+            width="control"
+            value={url}
+            onChange={e => onUrlChange(e.target.value, false)}
+            onBlur={e => onUrlChange(e.target.value.trim(), true)}
+            placeholder={urlPlaceholder}
+          />
+        }
+      />
+
+      <SettingsRow
+        label={tokenLabel}
+        control={
+          <PasswordInput
+            width="control"
+            value={token}
+            onChange={e => onTokenChange(e.target.value, false)}
+            onBlur={e => onTokenChange(e.target.value.trim(), true)}
+            placeholder="Optional - sent as Authorization: Bearer …"
+          />
+        }
+      />
+    </>
   );
 }
 
-export const MemorySection = ({ appSettings, onSaveAppSettings }: MemorySectionProps) => {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-          <Brain className="w-5 h-5 text-primary" />
-          Memory Backends
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Remote memory servers registered as MCP servers in the claude CLI&apos;s user scope.
-          Every claude-binary agent shares them - the same brain your Hermes instance and
-          claude.ai connectors use. Native CLIs (codex, gemini, grok, opencode, pi) manage
-          their own MCP configs and are not covered.
-        </p>
-      </div>
+export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: MemorySectionProps) => {
+  const write = (updates: Partial<AppSettings>, persist: boolean) =>
+    (persist ? onSaveAppSettings : onUpdateLocalSettings)(updates);
 
-      <BackendCard
+  return (
+    <SettingsCard>
+      <BackendRows
         title="gbrain"
-        description="Shared semantic memory (vector + knowledge graph). Point this at your gbrain instance's MCP endpoint."
+        description="Shared semantic memory (vector + knowledge graph)."
         docUrl="https://github.com/garrytan/gbrain"
         enabled={!!appSettings.memoryGbrainEnabled}
         url={appSettings.memoryGbrainMcpUrl || ''}
@@ -122,10 +111,11 @@ export const MemorySection = ({ appSettings, onSaveAppSettings }: MemorySectionP
         token={appSettings.memoryGbrainAuthToken || ''}
         tokenLabel="Auth token"
         onToggle={enabled => onSaveAppSettings({ memoryGbrainEnabled: enabled })}
-        onSave={(url, token) => onSaveAppSettings({ memoryGbrainMcpUrl: url, memoryGbrainAuthToken: token })}
+        onUrlChange={(url, persist) => write({ memoryGbrainMcpUrl: url }, persist)}
+        onTokenChange={(token, persist) => write({ memoryGbrainAuthToken: token }, persist)}
       />
 
-      <BackendCard
+      <BackendRows
         title="Honcho"
         description="Plastic Labs' memory layer (peers, sessions, working representations)."
         docUrl="https://honcho.dev/docs/v3/guides/integrations/mcp"
@@ -135,14 +125,9 @@ export const MemorySection = ({ appSettings, onSaveAppSettings }: MemorySectionP
         token={appSettings.memoryHonchoApiKey || ''}
         tokenLabel="API key"
         onToggle={enabled => onSaveAppSettings({ memoryHonchoEnabled: enabled })}
-        onSave={(url, token) => onSaveAppSettings({ memoryHonchoMcpUrl: url, memoryHonchoApiKey: token })}
+        onUrlChange={(url, persist) => write({ memoryHonchoMcpUrl: url }, persist)}
+        onTokenChange={(token, persist) => write({ memoryHonchoApiKey: token }, persist)}
       />
-
-      <p className="text-xs text-muted-foreground">
-        Changes re-register the servers immediately (equivalent to{' '}
-        <code className="bg-secondary px-1">claude mcp add -s user -t http</code>). Running agents
-        pick them up on their next session.
-      </p>
-    </div>
+    </SettingsCard>
   );
 };

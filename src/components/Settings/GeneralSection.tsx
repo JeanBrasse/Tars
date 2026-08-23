@@ -1,35 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Settings, RefreshCw, Download, ExternalLink, CheckCircle, AlertCircle, Loader2, RotateCw } from 'lucide-react';
+import { Select } from '@/components/ui';
 import { Toggle } from './Toggle';
+import { SettingsCard } from './SettingsCard';
+import { SettingsRow } from './SettingsRow';
 import type { ClaudeInfo, AppSettings } from './types';
 import { PROVIDER_REGISTRY, computeProviderAvailability } from '@/lib/providers';
-
-/** Strip HTML tags and collapse whitespace so release notes render as plain text. */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(?:p|li|h[1-6]|div|tr)>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '- ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-interface UpdateInfo {
-  currentVersion: string;
-  latestVersion: string;
-  releaseNotes: string;
-  hasUpdate: boolean;
-  downloadUrl?: string;
-  releaseUrl?: string;
-}
-
-type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'update-available' | 'downloading' | 'downloaded' | 'error';
 
 interface GeneralSectionProps {
   info: ClaudeInfo | null;
@@ -37,16 +12,7 @@ interface GeneralSectionProps {
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
 }
 
-export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: GeneralSectionProps) => {
-  const [appVersion, setAppVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    window.electronAPI?.app?.getVersion().then(r => setAppVersion(r?.version ?? null)).catch(() => {});
-  }, []);
-  const [updateState, setUpdateState] = useState<UpdateState>('idle');
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [downloadPercent, setDownloadPercent] = useState(0);
+export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectionProps) => {
   const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true });
 
   useEffect(() => {
@@ -63,280 +29,46 @@ export const GeneralSection = ({ info, appSettings, onSaveAppSettings }: General
     });
   }, []);
 
-  // Listen for download progress, completion, and error events
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.electronAPI?.updates) return;
-    const unsubs: (() => void)[] = [];
-
-    if (window.electronAPI.updates.onDownloadProgress) {
-      unsubs.push(window.electronAPI.updates.onDownloadProgress((progress) => {
-        setDownloadPercent(progress.percent);
-      }));
-    }
-
-    if (window.electronAPI.updates.onUpdateDownloaded) {
-      unsubs.push(window.electronAPI.updates.onUpdateDownloaded(() => {
-        setUpdateState('downloaded');
-      }));
-    }
-
-    if (window.electronAPI.updates.onUpdateError) {
-      unsubs.push(window.electronAPI.updates.onUpdateError((err) => {
-        setUpdateState('error');
-        setUpdateError(err);
-      }));
-    }
-
-    return () => unsubs.forEach((fn) => fn());
-  }, []);
-
-  const handleCheckForUpdates = async () => {
-    if (!window.electronAPI?.updates) return;
-
-    setUpdateState('checking');
-    setUpdateError(null);
-
-    try {
-      const result = await window.electronAPI.updates.check();
-      if (result?.devMode) {
-        // Dev mode - electron-updater can't check unpacked apps
-        setUpdateState('error');
-        setUpdateError('Update check is only available in the production build.');
-      }
-      // Otherwise, wait for update-available / update-not-available / error events
-    } catch (err) {
-      setUpdateState('error');
-      setUpdateError(err instanceof Error ? err.message : 'Failed to check for updates');
-    }
-  };
-
-  // Listen for update-available and update-not-available events
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.electronAPI?.updates) return;
-    const unsubs: (() => void)[] = [];
-
-    if (window.electronAPI.updates.onUpdateAvailable) {
-      unsubs.push(window.electronAPI.updates.onUpdateAvailable((info) => {
-        if (info.hasUpdate) {
-          setUpdateInfo(info);
-          setUpdateState('update-available');
-        }
-      }));
-    }
-
-    if (window.electronAPI.updates.onUpdateNotAvailable) {
-      unsubs.push(window.electronAPI.updates.onUpdateNotAvailable((info) => {
-        setUpdateInfo({
-          currentVersion: info.currentVersion,
-          latestVersion: info.latestVersion,
-          releaseNotes: '',
-          hasUpdate: false,
-        });
-        setUpdateState('up-to-date');
-      }));
-    }
-
-    return () => unsubs.forEach((fn) => fn());
-  }, []);
-
-  const isFallbackUpdate = !!(updateInfo?.downloadUrl);
-
-  const handleDownloadUpdate = () => {
-    if (isFallbackUpdate && updateInfo?.downloadUrl) {
-      // Fallback mode: open browser (no in-app download for old releases)
-      window.electronAPI?.updates?.openExternal(updateInfo.downloadUrl);
-    } else {
-      if (!window.electronAPI?.updates?.download) return;
-      setUpdateState('downloading');
-      setDownloadPercent(0);
-      window.electronAPI.updates.download();
-    }
-  };
-
-  const handleQuitAndInstall = () => {
-    window.electronAPI?.updates?.quitAndInstall();
-  };
-
+  // The Tars identity card and the whole update checker (check button, release
+  // notes, download progress, restart-to-apply) now live in SystemSection - the
+  // version and its updates are one story, and it is that page's story. What
+  // stays here is the preference itself.
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">General Settings</h2>
-        <p className="text-sm text-muted-foreground">Configure general application preferences</p>
-      </div>
+    <SettingsCard>
+      <SettingsRow
+        label="Check for updates"
+        description="Looks at the fork's releases, never upstream."
+        control={
+          <Toggle
+            enabled={appSettings.autoCheckUpdates !== false}
+            onChange={() => onSaveAppSettings({ autoCheckUpdates: !appSettings.autoCheckUpdates })}
+          />
+        }
+      />
 
-      <div className="border border-border bg-card p-6">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="w-12 h-12 bg-secondary flex items-center justify-center">
-            <Settings className="w-6 h-6 text-muted-foreground" />
-          </div>
-          <div>
-            <h3 className="font-medium">Tars</h3>
-            <p className="text-sm text-muted-foreground">
-              Version {appVersion || updateInfo?.currentVersion || '...'}
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4 pt-4 border-t border-border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Auto-check for updates</p>
-              <p className="text-xs text-muted-foreground">Check for new versions when Tars starts</p>
-            </div>
-            <Toggle
-              enabled={appSettings.autoCheckUpdates !== false}
-              onChange={() => onSaveAppSettings({ autoCheckUpdates: !appSettings.autoCheckUpdates })}
-            />
-          </div>
-
-        </div>
-      </div>
-
-      {/* Update Checker */}
-      <div className="border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-medium">Software Updates</h3>
-          <button
-            onClick={handleCheckForUpdates}
-            disabled={updateState === 'checking'}
-            className="px-3 py-1.5 text-sm border border-border hover:border-foreground hover:text-foreground text-muted-foreground transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+      <SettingsRow
+        label="Default provider"
+        description="Used for Telegram-spawned agents and webhook dispatches."
+        control={
+          <Select
+            width="control"
+            value={appSettings.defaultProvider || 'claude'}
+            onChange={(e) => onSaveAppSettings({ defaultProvider: e.target.value })}
           >
-            {updateState === 'checking' ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5" />
-            )}
-            {updateState === 'checking' ? 'Checking...' : 'Check for Updates'}
-          </button>
-        </div>
-
-        {updateState === 'up-to-date' && (
-          <div className="flex items-center rounded-md gap-3 p-3 bg-success/10 border border-success/20">
-            <CheckCircle className="w-5 h-5 text-success shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-success">You&apos;re up to date!</p>
-              <p className="text-xs text-muted-foreground">Tars {updateInfo?.currentVersion} is the latest version.</p>
-            </div>
-          </div>
-        )}
-
-        {(updateState === 'update-available' || updateState === 'downloading' || updateState === 'downloaded') && updateInfo && (
-          <div className="space-y-3">
-            <div className="p-4 rounded-md bg-primary/10 border border-primary/20">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="text-sm font-medium text-primary">
-                    Tars {updateInfo.latestVersion} is available
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    You&apos;re currently on version {updateInfo.currentVersion}
-                  </p>
-                </div>
-              </div>
-
-              {updateInfo.releaseNotes && (
-                <div className="mt-3 pt-3 border-t border-primary/20">
-                  <p className="text-xs text-muted-foreground mb-1">Release notes:</p>
-                  <p className="text-xs text-foreground/80 whitespace-pre-wrap line-clamp-4">
-                    {stripHtml(updateInfo.releaseNotes).slice(0, 300)}
-                    {updateInfo.releaseNotes.length > 300 ? '...' : ''}
-                  </p>
-                </div>
-              )}
-
-              {/* Download progress bar */}
-              {updateState === 'downloading' && (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                    <span>Downloading... {downloadPercent.toFixed(0)}%</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-300"
-                      style={{ width: `${downloadPercent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2 mt-3">
-                {updateState === 'update-available' && (
-                  <button
-                    onClick={handleDownloadUpdate}
-                    className="px-3 py-1.5 text-sm bg-foreground text-background hover:bg-foreground/90 transition-colors flex items-center gap-2"
-                  >
-                    {isFallbackUpdate ? <ExternalLink className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
-                    Download
-                  </button>
-                )}
-
-                {updateState === 'downloading' && (
-                  <button
-                    disabled
-                    className="px-3 py-1.5 text-sm bg-foreground/50 text-background cursor-not-allowed flex items-center gap-2"
-                  >
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Downloading...
-                  </button>
-                )}
-
-                {updateState === 'downloaded' && (
-                  <button
-                    onClick={handleQuitAndInstall}
-                    className="px-3 py-1.5 text-sm bg-success text-white hover:bg-success transition-colors flex items-center gap-2"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    Restart to Apply
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {updateState === 'error' && (
-          <div className="flex items-center rounded-lg gap-3 p-3 bg-danger/10 border border-danger/20">
-            <AlertCircle className="w-5 h-5 text-danger shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-danger">Failed to check for updates</p>
-              <p className="text-xs text-muted-foreground">{updateError}</p>
-            </div>
-          </div>
-        )}
-
-        {updateState === 'idle' && (
-          <p className="text-xs text-muted-foreground">
-            Click &quot;Check for Updates&quot; to see if a newer version is available.
-          </p>
-        )}
-      </div>
-
-      {/* Default Provider */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="font-medium mb-4">Default Provider</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          CLI provider used for Telegram-spawned agents and webhook dispatches when no specific agent is selected.
-        </p>
-        <select
-          value={appSettings.defaultProvider || 'claude'}
-          onChange={(e) => onSaveAppSettings({ defaultProvider: e.target.value })}
-          className="w-full sm:w-64 px-3 py-2 bg-background border border-border text-sm text-foreground focus:outline-none focus:border-foreground"
-        >
-          {PROVIDER_REGISTRY.filter(p => p.id !== 'opencode' && p.id !== 'pi').map(({ id, label, requiresCli }) => {
-            const notAvailable = installedProviders[id] !== true;
-            const reason = notAvailable
-              ? requiresCli ? ' (not installed)' : ' (add API key in Settings)'
-              : '';
-            return (
-              <option key={id} value={id} disabled={notAvailable}>
-                {label}{reason}
-              </option>
-            );
-          })}
-        </select>
-      </div>
-
-      {/* Quick Info removed - duplicate of System section */}
-    </div>
+            {PROVIDER_REGISTRY.filter(p => p.id !== 'opencode' && p.id !== 'pi').map(({ id, label, requiresCli }) => {
+              const notAvailable = installedProviders[id] !== true;
+              const reason = notAvailable
+                ? requiresCli ? ' (not installed)' : ' (add API key in Settings)'
+                : '';
+              return (
+                <option key={id} value={id} disabled={notAvailable}>
+                  {label}{reason}
+                </option>
+              );
+            })}
+          </Select>
+        }
+      />
+    </SettingsCard>
   );
 };

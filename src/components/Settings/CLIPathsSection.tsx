@@ -1,42 +1,56 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Check, AlertCircle, Plus, X, FolderOpen, Cpu, Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { Toggle } from './Toggle';
+import { Button, Input } from '@/components/ui';
+import { SettingsRow } from './SettingsRow';
 import type { AppSettings, CLIPaths } from './types';
 
 interface CLIPathsSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (settings: Partial<AppSettings>) => void;
+  /** Kept for the call site; the provider toggles that used it now live on Providers. */
   onUpdateLocalSettings?: (settings: Partial<AppSettings>) => void;
 }
 
-interface DetectedPaths {
-  claude: string;
-  codex: string;
-  gemini: string;
-  grok: string;
-  qwencode: string;
-  opencode: string;
-  pi: string;
-  gws: string;
-  gcloud: string;
-  gh: string;
-  node: string;
-  minimax: string;
-}
+type BinaryKey = keyof Omit<CLIPaths, 'additionalPaths'>;
 
-export const CLIPathsSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: CLIPathsSectionProps) => {
+type DetectedPaths = Record<BinaryKey, string>;
+
+// Row actions are words, not glyphs (R7): 26px lowercase mono.
+const ROW_ACTION = 'font-mono lowercase';
+
+// One row per binary, in the order the tools get reached for.
+const BINARIES: { key: BinaryKey; label: string }[] = [
+  { key: 'claude', label: 'Claude Code' },
+  { key: 'codex', label: 'Codex' },
+  { key: 'gemini', label: 'Gemini' },
+  { key: 'grok', label: 'Grok' },
+  { key: 'qwencode', label: 'Qwen Code' },
+  { key: 'opencode', label: 'OpenCode' },
+  { key: 'pi', label: 'Pi Terminal' },
+  { key: 'gws', label: 'Google Workspace (gws)' },
+  { key: 'gcloud', label: 'Google Cloud SDK (gcloud)' },
+  { key: 'gh', label: 'GitHub CLI (gh)' },
+  { key: 'node', label: 'Node.js' },
+  { key: 'minimax', label: 'MiniMax' },
+];
+
+const EMPTY_CLI_PATHS: CLIPaths = {
+  claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '',
+  pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [],
+};
+
+export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSectionProps) => {
   const [detecting, setDetecting] = useState(false);
   const [detectedPaths, setDetectedPaths] = useState<DetectedPaths | null>(null);
-  const [newPath, setNewPath] = useState('');
-  const [testingOpencode, setTestingOpencode] = useState(false);
-  const [testingPi, setTestingPi] = useState(false);
-  const [opencodeResult, setOpencodeResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [piResult, setPiResult] = useState<{ success: boolean; message: string } | null>(null);
-  const EMPTY_CLI_PATHS: CLIPaths = { claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [] };
   const [localPaths, setLocalPaths] = useState<CLIPaths>(appSettings.cliPaths || EMPTY_CLI_PATHS);
+  // The extra directories are one PATH string in the row, so the text has to
+  // survive a trailing separator the parsed array would drop.
+  const [additionalText, setAdditionalText] = useState(
+    (appSettings.cliPaths?.additionalPaths || []).join(':')
+  );
 
   useEffect(() => {
     setLocalPaths(appSettings.cliPaths || EMPTY_CLI_PATHS);
+    setAdditionalText((appSettings.cliPaths?.additionalPaths || []).join(':'));
   }, [appSettings.cliPaths]);
 
   const handleDetectPaths = async () => {
@@ -48,18 +62,9 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
         setDetectedPaths(paths);
         // Auto-fill empty fields with detected values
         const updatedPaths = { ...localPaths };
-        if (!updatedPaths.claude && paths.claude) updatedPaths.claude = paths.claude;
-        if (!updatedPaths.codex && paths.codex) updatedPaths.codex = paths.codex;
-        if (!updatedPaths.gemini && paths.gemini) updatedPaths.gemini = paths.gemini;
-        if (!updatedPaths.grok && (paths as DetectedPaths).grok) updatedPaths.grok = (paths as DetectedPaths).grok;
-        if (!updatedPaths.qwencode && paths.qwencode) updatedPaths.qwencode = paths.qwencode;
-        if (!updatedPaths.opencode && paths.opencode) updatedPaths.opencode = paths.opencode;
-        if (!updatedPaths.pi && paths.pi) updatedPaths.pi = paths.pi;
-        if (!updatedPaths.gws && paths.gws) updatedPaths.gws = paths.gws;
-        if (!updatedPaths.gcloud && paths.gcloud) updatedPaths.gcloud = paths.gcloud;
-        if (!updatedPaths.gh && paths.gh) updatedPaths.gh = paths.gh;
-        if (!updatedPaths.node && paths.node) updatedPaths.node = paths.node;
-        if (!updatedPaths.minimax && paths.minimax) updatedPaths.minimax = paths.minimax;
+        for (const { key } of BINARIES) {
+          if (!updatedPaths[key] && paths[key]) updatedPaths[key] = paths[key];
+        }
         setLocalPaths(updatedPaths);
       }
     } catch (error) {
@@ -68,24 +73,15 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
     setDetecting(false);
   };
 
-  const handlePathChange = (key: keyof Omit<CLIPaths, 'additionalPaths'>, value: string) => {
+  const handlePathChange = (key: BinaryKey, value: string) => {
     setLocalPaths(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleAddAdditionalPath = () => {
-    if (newPath.trim() && !localPaths.additionalPaths.includes(newPath.trim())) {
-      setLocalPaths(prev => ({
-        ...prev,
-        additionalPaths: [...prev.additionalPaths, newPath.trim()],
-      }));
-      setNewPath('');
-    }
-  };
-
-  const handleRemoveAdditionalPath = (pathToRemove: string) => {
+  const handleAdditionalChange = (value: string) => {
+    setAdditionalText(value);
     setLocalPaths(prev => ({
       ...prev,
-      additionalPaths: prev.additionalPaths.filter(p => p !== pathToRemove),
+      additionalPaths: value.split(':').map(p => p.trim()).filter(Boolean),
     }));
   };
 
@@ -93,383 +89,76 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
     onSaveAppSettings({ cliPaths: localPaths });
   };
 
-  const hasChanges = JSON.stringify(localPaths) !== JSON.stringify(appSettings.cliPaths || { claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [] });
-
-  const renderPathInput = (
-    label: string,
-    description: string,
-    key: keyof Omit<CLIPaths, 'additionalPaths'>,
-    placeholder: string
-  ) => {
-    const detected = detectedPaths?.[key];
-    const current = localPaths[key];
-    const isUsingDetected = detected && current === detected;
-
-    return (
-      <div className="py-4 border-b border-border">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <label className="text-sm font-medium">{label}</label>
-            <p className="text-xs text-muted-foreground">{description}</p>
-          </div>
-          {detected && (
-            <span className="text-xs text-success flex items-center gap-1">
-              <Check className="w-3 h-3" />
-              Detected: {detected}
-            </span>
-          )}
-        </div>
-        <input
-          type="text"
-          value={current}
-          onChange={(e) => handlePathChange(key, e.target.value)}
-          placeholder={placeholder}
-          className="w-full px-3 py-2 bg-secondary border border-border text-sm font-mono focus:outline-none focus:border-foreground"
-        />
-        {isUsingDetected && (
-          <p className="text-xs text-muted-foreground mt-1">Using auto-detected path</p>
-        )}
-      </div>
-    );
-  };
+  const hasChanges = JSON.stringify(localPaths) !== JSON.stringify(appSettings.cliPaths || EMPTY_CLI_PATHS);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">CLI Paths</h2>
-        <p className="text-sm text-muted-foreground">
-          Configure paths to the CLI tools your agents run on
-        </p>
-      </div>
-
-      {/* Auto-detect button */}
-      <div className="border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-md font-medium">Auto-detect Paths</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Automatically find CLI tools installed on your system
-            </p>
-          </div>
-          <button
+    <>
+      <SettingsRow
+        label="Auto-detect"
+        description="Looks in the usual places and fills in every path you have left empty."
+        control={
+          <Button
+            size="sm"
+            variant="ghost"
+            className={ROW_ACTION}
             onClick={handleDetectPaths}
             disabled={detecting}
-            className="px-4 py-2 bg-secondary text-foreground hover:bg-secondary/80 transition-colors text-sm flex items-center gap-2"
           >
-            <RefreshCw className={`w-4 h-4 ${detecting ? 'animate-spin' : ''}`} />
-            {detecting ? 'Detecting...' : 'Detect Paths'}
-          </button>
-        </div>
+            {detecting ? 'detecting' : 'detect now'}
+          </Button>
+        }
+      />
 
-        {detectedPaths && (
-          <div className="p-3 bg-success/10 border border-success/30 text-success text-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <Check className="w-4 h-4" />
-              <span className="font-medium">Paths detected successfully</span>
-            </div>
-            <ul className="text-xs space-y-1 ml-6">
-              {detectedPaths.claude && <li>Claude: {detectedPaths.claude}</li>}
-              {detectedPaths.codex && <li>Codex: {detectedPaths.codex}</li>}
-              {detectedPaths.gemini && <li>Gemini: {detectedPaths.gemini}</li>}
-              {detectedPaths.grok && <li>Grok: {detectedPaths.grok}</li>}
-              {detectedPaths.qwencode && <li>Qwen Code: {detectedPaths.qwencode}</li>}
-              {detectedPaths.opencode && <li>OpenCode: {detectedPaths.opencode}</li>}
-              {detectedPaths.pi && <li>Pi Terminal: {detectedPaths.pi}</li>}
-              {detectedPaths.gws && <li>GWS: {detectedPaths.gws}</li>}
-              {detectedPaths.gcloud && <li>gcloud: {detectedPaths.gcloud}</li>}
-              {detectedPaths.gh && <li>GitHub CLI: {detectedPaths.gh}</li>}
-              {detectedPaths.node && <li>Node.js: {detectedPaths.node}</li>}
-              {detectedPaths.minimax && <li>MiniMax: {detectedPaths.minimax}</li>}
-              {!detectedPaths.claude && !detectedPaths.codex && !detectedPaths.gemini && !detectedPaths.grok && !detectedPaths.qwencode && !detectedPaths.opencode && !detectedPaths.pi && !detectedPaths.gws && !detectedPaths.gcloud && !detectedPaths.gh && !detectedPaths.node && !detectedPaths.minimax && (
-                <li className="text-warning">No CLI tools found in common locations</li>
-              )}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* Provider Toggles - OpenCode & Pi + status rows for others */}
-      <div className="border border-border bg-card p-6 space-y-0">
-        <h3 className="text-md font-medium mb-2">CLI Agent Providers</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Status of all CLI-based agent providers. Enable/disable toggles for OpenCode and Pi; others are always available when installed.
-        </p>
-
-        {/* Always-available CLIs: status rows only */}
-        {[
-          { key: 'claude', label: 'Claude', desc: 'Anthropic Claude Code CLI' },
-          { key: 'codex', label: 'Codex', desc: 'OpenAI Codex CLI' },
-          { key: 'gemini', label: 'Gemini', desc: 'Google Gemini CLI' },
-          { key: 'qwencode', label: 'Qwen Code', desc: 'Alibaba Qwen Code CLI' },
-          { key: 'minimax', label: 'MiniMax', desc: 'MiniMax CLI' },
-        ].map(({ key, label, desc }) => {
-          const detected = detectedPaths?.[key as keyof DetectedPaths];
-          return (
-            <div key={key} className="flex items-center justify-between py-3 border-b border-border">
-              <div className="flex items-center gap-3">
-                <Cpu className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">{label}</p>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {detecting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                ) : detected ? (
-                  <>
-                    <CheckCircle className="w-3.5 h-3.5 text-success" />
-                    <span className="text-xs font-mono text-muted-foreground">{detected}</span>
-                  </>
-                ) : detectedPaths ? (
-                  <>
-                    <XCircle className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">Not detected</span>
-                  </>
-                ) : (
-                  <span className="text-xs text-muted-foreground">Run detect above</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* OpenCode - toggle + test */}
-        <div className="flex items-center justify-between py-3 border-b border-border">
-          <div className="flex items-center gap-3">
-            <Cpu className="w-4 h-4 text-primary" />
-            <div>
-              <p className="text-sm font-medium">OpenCode</p>
-              <p className="text-xs text-muted-foreground">75+ LLM providers via opencode.ai</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                setTestingOpencode(true);
-                setOpencodeResult(null);
-                try {
-                  const result = await window.electronAPI?.shell?.version('opencode');
-                  setOpencodeResult(result?.success && result.output
-                    ? { success: true, message: result.output.trim() }
-                    : { success: false, message: 'OpenCode CLI not found' });
-                } catch { setOpencodeResult({ success: false, message: 'Test failed' }); }
-                setTestingOpencode(false);
-              }}
-              disabled={testingOpencode}
-              className="px-2 py-1 text-xs border border-border hover:border-foreground transition-colors"
-            >
-              {testingOpencode ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Test'}
-            </button>
-            <Toggle
-              enabled={appSettings.opencodeEnabled ?? false}
-              onChange={() => onSaveAppSettings({ opencodeEnabled: !appSettings.opencodeEnabled })}
-            />
-          </div>
-        </div>
-        {opencodeResult && (
-          <div className={`flex items-center gap-2 text-xs p-2 ${opencodeResult.success ? 'text-success bg-success/10' : 'text-danger bg-danger/10'} border ${opencodeResult.success ? 'border-success/30' : 'border-danger/30'}`}>
-            {opencodeResult.success ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-            {opencodeResult.message}
-          </div>
-        )}
-
-        {/* Pi - toggle + test */}
-        <div className="flex items-center justify-between py-3">
-          <div className="flex items-center gap-3">
-            <Cpu className="w-4 h-4 text-primary" />
-            <div>
-              <p className="text-sm font-medium">Pi Terminal</p>
-              <p className="text-xs text-muted-foreground">15+ AI providers via shittycodingagent.ai</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                setTestingPi(true);
-                setPiResult(null);
-                try {
-                  const result = await window.electronAPI?.shell?.version(appSettings.cliPaths?.pi || 'pi');
-                  setPiResult(result?.success && result.output && !result.output.includes('not found')
-                    ? { success: true, message: `Pi CLI: ${result.output.trim()}` }
-                    : { success: false, message: 'Pi CLI not found' });
-                } catch { setPiResult({ success: false, message: 'Test failed' }); }
-                setTestingPi(false);
-              }}
-              disabled={testingPi}
-              className="px-2 py-1 text-xs border border-border hover:border-foreground transition-colors"
-            >
-              {testingPi ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Test'}
-            </button>
-            <Toggle
-              enabled={(appSettings as unknown as Record<string, unknown>).piEnabled === true}
-              onChange={() => {
-                const newVal = !((appSettings as unknown as Record<string, unknown>).piEnabled === true);
-                onUpdateLocalSettings?.({ piEnabled: newVal } as Partial<AppSettings>);
-                onSaveAppSettings({ piEnabled: newVal } as Partial<AppSettings>);
-              }}
-            />
-          </div>
-        </div>
-        {piResult && (
-          <div className={`flex items-center gap-2 text-xs p-2 ${piResult.success ? 'text-success bg-success/10' : 'text-danger bg-danger/10'} border ${piResult.success ? 'border-success/30' : 'border-danger/30'}`}>
-            {piResult.success ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-            {piResult.message}
-          </div>
-        )}
-      </div>
-
-      {/* Path inputs */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="text-md font-medium mb-2">CLI Tool Paths</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Leave empty to use auto-detected paths. Specify full paths if tools are in non-standard locations.
-        </p>
-
-        {renderPathInput(
-          'Claude CLI',
-          'Path to the Claude CLI executable',
-          'claude',
-          '/usr/local/bin/claude or ~/.nvm/versions/node/v20/bin/claude'
-        )}
-
-        {renderPathInput(
-          'Codex CLI',
-          'Path to the OpenAI Codex CLI executable',
-          'codex',
-          '/usr/local/bin/codex or ~/.nvm/versions/node/v20/bin/codex'
-        )}
-
-        {renderPathInput(
-          'Gemini CLI',
-          'Path to the Google Gemini CLI executable',
-          'gemini',
-          '/usr/local/bin/gemini or ~/.nvm/versions/node/v20/bin/gemini'
-        )}
-
-        {renderPathInput(
-          'Grok CLI',
-          'Path to the xAI Grok CLI executable (x.ai/cli)',
-          'grok',
-          '/usr/local/bin/grok or ~/.nvm/versions/node/v20/bin/grok'
-        )}
-
-        {renderPathInput(
-          'Qwen Code CLI',
-          'Path to the Qwen Code CLI executable (Alibaba)',
-          'qwencode',
-          '/usr/local/bin/qwen-code or ~/.local/bin/qwen-code'
-        )}
-
-        {renderPathInput(
-          'OpenCode CLI',
-          'Path to the OpenCode CLI executable (opencode.ai)',
-          'opencode',
-          '/usr/local/bin/opencode or ~/.local/bin/opencode'
-        )}
-
-        {renderPathInput(
-          'Pi Terminal',
-          'Path to the Pi coding agent CLI executable',
-          'pi',
-          '/usr/local/bin/pi or ~/.nvm/versions/node/v20/bin/pi'
-        )}
-
-        {renderPathInput(
-          'Google Workspace CLI (gws)',
-          'Path to the gws CLI executable',
-          'gws',
-          '/usr/local/bin/gws or ~/.nvm/versions/node/v20/bin/gws'
-        )}
-
-        {renderPathInput(
-          'Google Cloud SDK (gcloud)',
-          'Path to the gcloud CLI executable (required for gws auth setup)',
-          'gcloud',
-          '/opt/homebrew/bin/gcloud or ~/google-cloud-sdk/bin/gcloud'
-        )}
-
-        {renderPathInput(
-          'GitHub CLI (gh)',
-          'Path to the GitHub CLI executable used by agents',
-          'gh',
-          '/opt/homebrew/bin/gh or /usr/local/bin/gh'
-        )}
-
-        {renderPathInput(
-          'Node.js',
-          'Path to the Node.js executable',
-          'node',
-          '/usr/local/bin/node or ~/.nvm/versions/node/v20/bin/node'
-        )}
-
-        {renderPathInput(
-          'MiniMax CLI',
-          'Path to the MiniMax CLI executable',
-          'minimax',
-          '/usr/local/bin/minimax or ~/.local/bin/minimax'
-        )}
-      </div>
-
-      {/* Additional PATH directories */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="text-md font-medium mb-2">Additional PATH Directories</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Add directories to include in PATH when running agents
-        </p>
-
-        <div className="space-y-2 mb-4">
-          {localPaths.additionalPaths.map((path, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <div className="flex-1 px-3 py-2 bg-secondary border border-border text-sm font-mono">
-                {path}
-              </div>
-              <button
-                onClick={() => handleRemoveAdditionalPath(path)}
-                className="p-2 text-muted-foreground hover:text-danger transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newPath}
-            onChange={(e) => setNewPath(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddAdditionalPath()}
-            placeholder="/path/to/directory"
-            className="flex-1 px-3 py-2 bg-secondary border border-border text-sm font-mono focus:outline-none focus:border-foreground"
+      {BINARIES.map(({ key, label }) => {
+        const detected = detectedPaths?.[key];
+        const current = localPaths[key];
+        // The row's second line is the path that will actually run.
+        const resolved = current || detected || '';
+        return (
+          <SettingsRow
+            key={key}
+            label={label}
+            description={
+              resolved
+                ? <span className="font-mono">{resolved}</span>
+                : 'not detected on this machine'
+            }
+            control={
+              <Input
+                mono
+                width="control"
+                value={current}
+                onChange={(e) => handlePathChange(key, e.target.value)}
+                placeholder={detected ? 'detected' : 'set path…'}
+              />
+            }
           />
-          <button
-            onClick={handleAddAdditionalPath}
-            disabled={!newPath.trim()}
-            className="px-4 py-2 bg-secondary text-foreground hover:bg-secondary/80 transition-colors text-sm flex items-center gap-2 disabled:opacity-50"
-          >
-            <Plus className="w-4 h-4" />
-            Add
-          </button>
-        </div>
+        );
+      })}
 
-        <p className="text-xs text-muted-foreground mt-3">
-          Common paths like /opt/homebrew/bin, /usr/local/bin, and ~/.nvm are included by default
-        </p>
-      </div>
+      <SettingsRow
+        label="Additional PATH"
+        description="Extra directories agents get on their PATH, separated by colons. /opt/homebrew/bin, /usr/local/bin and ~/.nvm are always included."
+        control={
+          <Input
+            mono
+            width="control"
+            value={additionalText}
+            onChange={(e) => handleAdditionalChange(e.target.value)}
+            placeholder="/path/to/directory"
+          />
+        }
+      />
 
-      {/* Save button */}
-      {hasChanges && (
-        <div className="flex justify-end">
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-foreground text-background hover:bg-foreground/90 transition-colors text-sm flex items-center gap-2"
-          >
-            <Check className="w-4 h-4" />
-            Save CLI Paths
-          </button>
-        </div>
-      )}
-    </div>
+      <SettingsRow
+        label="Save CLI paths"
+        description="Nothing here takes effect until you save."
+        control={
+          <Button variant="primary" size="md" onClick={handleSave} disabled={!hasChanges}>
+            Save
+          </Button>
+        }
+      />
+    </>
   );
 };

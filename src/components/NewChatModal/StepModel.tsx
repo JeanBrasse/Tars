@@ -1,16 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Cpu,
-  AlertCircle,
-  Loader2,
-  Sparkles,
-  RefreshCw,
-} from 'lucide-react';
+import { Cpu } from 'lucide-react';
 import type { AgentPersonaValues } from './types';
 import type { AgentProvider } from '@/types/electron';
+import type { AgentEffort } from '@/types/agent';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
-import AgentPersonaEditor from './AgentPersonaEditor';
+import { PanelCaption, Select, StatusSquare } from '@/components/ui';
 
 interface TasmaniaModel {
   name: string;
@@ -40,6 +35,9 @@ const PROVIDER_DEFAULT_MODEL: Record<string, string> = Object.fromEntries(
   PROVIDER_REGISTRY.map((p) => [p.id, p.defaultModel]),
 );
 
+/** The effort ladder, moved here from the Task step. */
+const EFFORT_LEVELS: AgentEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
 /* ── Live model catalogue ──────────────────────────────── */
 
 /**
@@ -66,6 +64,11 @@ async function fetchProviderModels(providerId: string): Promise<ProviderModel[] 
   }
 }
 
+/** The closed value of the model select says everything: name, context, price. */
+function modelLine(m: ProviderModel): string {
+  return m.description ? `${m.name} · ${m.description}` : m.name;
+}
+
 /** CLI binary entry detected from settings */
 interface DetectedCli {
   key: string;
@@ -84,8 +87,17 @@ interface StepModelProps {
   onCliPathChange: (path: string) => void;
   tasmaniaEnabled: boolean;
   installedProviders?: Record<string, boolean>;
-  agentPersonaRef: React.MutableRefObject<AgentPersonaValues>;
-  projectPath: string;
+  /**
+   * The effort ladder now lives on this step, beside the model it modifies.
+   * Optional until the modal shell hands it down - the chips read `medium`
+   * and stay inert rather than lying about a value nobody stores.
+   */
+  effort?: AgentEffort;
+  onEffortChange?: (effort: AgentEffort) => void;
+  /** @deprecated The persona editor is gone; the name is a field on the Task step. */
+  agentPersonaRef?: React.MutableRefObject<AgentPersonaValues>;
+  /** @deprecated Only the persona editor read this. */
+  projectPath?: string;
 }
 
 const StepModel = React.memo(function StepModel({
@@ -99,8 +111,8 @@ const StepModel = React.memo(function StepModel({
   onCliPathChange,
   tasmaniaEnabled,
   installedProviders,
-  agentPersonaRef,
-  projectPath,
+  effort = 'medium',
+  onEffortChange,
 }: StepModelProps) {
   // Dynamic models state
   const [dynamicModels, setDynamicModels] = useState<ProviderModel[] | null>(null);
@@ -154,6 +166,14 @@ const StepModel = React.memo(function StepModel({
   // Resolved model list: dynamic if available, else hardcoded fallback
   const resolvedModels = dynamicModels || PROVIDER_MODELS[provider] || PROVIDER_MODELS.claude;
 
+  // The catalogue used to be a button the user had to press. It refreshes on
+  // every provider switch already, so all that is left to say is what it found.
+  const catalogueNote = loadingModels
+    ? 'catalogue · loading'
+    : dynamicModels
+      ? `catalogue · ${dynamicModels.length} models from models.dev`
+      : `catalogue · offline, ${resolvedModels.length} built-in models`;
+
   // Fetch Tasmania status when switching to local provider
   useEffect(() => {
     if (provider !== 'local' || !tasmaniaEnabled) return;
@@ -181,27 +201,16 @@ const StepModel = React.memo(function StepModel({
 
   return (
     <div className="space-y-5">
-      {/* Section header */}
-      <div>
-        <h3 className="text-lg font-medium mb-1 flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-accent-blue" />
-          Choose Model
-        </h3>
-        <p className="text-text-secondary text-sm">
-          Choose the AI provider and model for your agent
-        </p>
-      </div>
-
       {/* Provider Selector */}
       <div>
-        <label className="block text-sm font-medium mb-2">Provider</label>
+        <PanelCaption className="mb-2">PROVIDER</PanelCaption>
         <div className="grid gap-2 grid-cols-4">
-          {PROVIDER_REGISTRY.filter((p) => p.id === provider || (p.id !== 'opencode' && p.id !== 'pi' && p.id !== 'local')).map(({ id, label, icon, accent, requiresCli }) => {
+          {PROVIDER_REGISTRY.filter((p) => p.id === provider || (p.id !== 'opencode' && p.id !== 'pi' && p.id !== 'local')).map(({ id, label, icon, requiresCli }) => {
             const installed = installedProviders?.[id] === true;
             const disabledReason = !installed
               ? requiresCli ? 'Not installed' : 'Add API key in Settings > AI Providers'
               : null;
-            const colorClass = provider === id ? `text-${accent}` : 'text-text-muted';
+            const selected = provider === id;
             return (
               <button
                 key={id}
@@ -213,22 +222,28 @@ const StepModel = React.memo(function StepModel({
                 }}
                 title={disabledReason || undefined}
                 className={`
-                  p-2.5 rounded-lg border transition-all text-center flex flex-col items-center justify-center gap-1
+                  h-[52px] px-2.5 border transition-colors text-left flex flex-col justify-center gap-0.5
                   ${!installed
-                    ? 'opacity-40 cursor-not-allowed border-border-primary'
-                    : provider === id
-                      ? `border-${accent} bg-${accent}/10`
-                      : 'border-border-primary hover:border-border-accent'
+                    ? 'opacity-40 cursor-not-allowed border-border'
+                    : selected
+                      ? 'border-primary bg-secondary'
+                      : 'border-border hover:bg-secondary'
                   }
                 `}
               >
                 <div className="flex items-center gap-1.5">
-                  <ProviderIconRenderer icon={icon} className={`w-4 h-4 ${colorClass}`} />
-                  <span className="font-medium text-sm">{label}</span>
+                  <ProviderIconRenderer icon={icon} className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-xs font-medium text-foreground truncate">{label}</span>
                 </div>
-                {disabledReason && (
-                  <span className="text-[10px] text-text-muted">{disabledReason}</span>
-                )}
+                {/* One mono status line - no provider ever gets its own colour. */}
+                <span className="font-mono text-[10px] text-muted-foreground truncate">
+                  {installed ? (
+                    <>
+                      <span className="text-status-running">ready</span>
+                      {` · ${requiresCli ? 'cli' : 'api'}`}
+                    </>
+                  ) : requiresCli ? 'not installed' : 'no api key'}
+                </span>
               </button>
             );
           })}
@@ -236,15 +251,22 @@ const StepModel = React.memo(function StepModel({
             <button
               onClick={() => onProviderChange('local')}
               className={`
-                p-2.5 rounded-lg border transition-all text-center flex items-center justify-center gap-2
+                h-[52px] px-2.5 border transition-colors text-left flex flex-col justify-center gap-0.5
                 ${provider === 'local'
-                  ? 'border-warning bg-warning/10'
-                  : 'border-border-primary hover:border-border-accent'
+                  ? 'border-primary bg-secondary'
+                  : 'border-border hover:bg-secondary'
                 }
               `}
             >
-              <Cpu className={`w-4 h-4 ${provider === 'local' ? 'text-warning' : 'text-text-muted'}`} />
-              <span className="font-medium text-sm">Local</span>
+              <div className="flex items-center gap-1.5">
+                <Cpu className="w-4 h-4 text-muted-foreground" />
+                <span className="text-xs font-medium text-foreground">Local</span>
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground truncate">
+                {tasmaniaStatus?.status === 'running'
+                  ? <><span className="text-status-running">ready</span>{' · tasmania'}</>
+                  : 'tasmania'}
+              </span>
             </button>
           )}
         </div>
@@ -253,87 +275,57 @@ const StepModel = React.memo(function StepModel({
       {/* Model Selection - dynamic dropdown based on provider */}
       {provider !== 'local' ? (
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium">Model</label>
-            {(
-              <button
-                onClick={loadDynamicModels}
-                disabled={loadingModels}
-                className="text-xs text-text-muted hover:text-text-primary flex items-center gap-1 transition-colors"
-                title="Refresh from the live model catalogue"
-              >
-                <RefreshCw className={`w-3 h-3 ${loadingModels ? 'animate-spin' : ''}`} />
-                {loadingModels ? 'Loading...' : dynamicModels ? 'Refresh' : 'Fetch models'}
-              </button>
-            )}
-          </div>
-          <select
+          <PanelCaption className="mb-2">MODEL</PanelCaption>
+          <Select
+            className="font-mono"
             value={model}
             onChange={(e) => onModelChange(e.target.value)}
-            className="w-full px-3 py-2 bg-secondary border border-border text-sm text-foreground focus:outline-none focus:border-foreground appearance-none"
           >
             {resolvedModels.map((m) => (
-              <option key={m.id} value={m.id} title={m.description || undefined}>
-                {m.name}
+              <option key={m.id} value={m.id}>
+                {modelLine(m)}
               </option>
             ))}
-          </select>
-          {dynamicModels && (
-            <p className="text-[10px] text-text-muted mt-1">
-              {dynamicModels.length} models from API
-            </p>
-          )}
-          {!dynamicModels && model && (
-            <p className="text-xs text-text-muted mt-1.5">
-              {resolvedModels.find(m => m.id === model)?.description}
-            </p>
-          )}
+          </Select>
         </div>
       ) : (
         <div>
-          <label className="block text-sm font-medium mb-2">Local Model</label>
+          <PanelCaption className="mb-2">LOCAL MODEL</PanelCaption>
           {loadingTasmania ? (
-            <div className="p-4 border border-border-primary rounded-lg flex items-center gap-2 text-text-muted">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Connecting to Tasmania...</span>
-            </div>
+            <p className="font-mono text-[11px] text-muted-foreground">connecting to tasmania…</p>
           ) : tasmaniaStatus?.status !== 'running' ? (
-            <div className="p-4 border border-warning/30 bg-warning/5 rounded-lg">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-warning mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-warning">Tasmania not running</p>
-                  <p className="text-xs text-text-muted mt-1">
-                    Start Tasmania and load a model first. Go to Settings &gt; Tasmania to configure.
-                  </p>
-                </div>
+            <div className="border border-border bg-bg-tertiary p-3 space-y-1">
+              <div className="flex items-center gap-2">
+                <StatusSquare tone="waiting" />
+                <span className="text-xs font-medium text-foreground">Tasmania not running</span>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Start Tasmania and load a model first. Go to Settings &gt; Tasmania to configure.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
               {tasmaniaStatus.modelName && (
-                <div className="p-3 border border-accent-green/30 bg-accent-green/5 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
-                    <span className="text-sm font-medium">{tasmaniaStatus.modelName}</span>
-                    <span className="text-xs text-text-muted ml-auto">loaded</span>
-                  </div>
+                <div className="flex items-center gap-2 h-8 px-2.5 bg-bg-tertiary">
+                  <StatusSquare tone="running" />
+                  <span className="font-mono text-[11px] text-foreground truncate">{tasmaniaStatus.modelName}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground ml-auto">loaded</span>
                 </div>
               )}
               {tasmaniaModels.length > 0 && (
                 <div>
-                  <select
+                  <Select
+                    className="font-mono"
                     value={localModel}
                     onChange={(e) => onLocalModelChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-secondary border border-border text-sm text-foreground focus:outline-none focus:border-foreground"
                   >
                     {tasmaniaModels.map((m) => (
                       <option key={m.path} value={m.name}>
-                        {m.name}{m.quantization ? ` (${m.quantization})` : ''}{m.parameters ? ` - ${m.parameters}` : ''}
+                        {m.name}{m.quantization ? ` · ${m.quantization}` : ''}{m.parameters ? ` · ${m.parameters}` : ''}
                       </option>
                     ))}
-                  </select>
-                  <p className="text-xs text-text-muted mt-1.5">
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
                     Select the model to use. The currently loaded model will be used if available.
                   </p>
                 </div>
@@ -343,35 +335,52 @@ const StepModel = React.memo(function StepModel({
         </div>
       )}
 
+      {/* Effort - the ladder belongs beside the model it modifies */}
+      <div>
+        <PanelCaption className="mb-2">EFFORT</PanelCaption>
+        <div className="flex gap-2">
+          {EFFORT_LEVELS.map((level) => (
+            <button
+              key={level}
+              onClick={() => onEffortChange?.(level)}
+              className={`h-[26px] px-2.5 font-mono text-[11px] border transition-colors cursor-pointer
+                ${effort === level
+                  ? 'border-primary bg-secondary text-foreground'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+            >
+              {level}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* What the catalogue found - a readout, not a control */}
+      <div className="h-8 px-2.5 flex items-center bg-bg-tertiary font-mono text-[11px] text-muted-foreground">
+        {catalogueNote}
+      </div>
+
       {/* CLI Path Override */}
       {detectedClis.length > 0 && (
         <div>
-          <label className="block text-sm font-medium mb-2">CLI Binary</label>
-          <select
+          <PanelCaption className="mb-2">CLI BINARY</PanelCaption>
+          <Select
+            className="font-mono"
             value={cliPath}
             onChange={(e) => onCliPathChange(e.target.value)}
-            className="w-full px-3 py-2 bg-secondary border border-border text-sm text-foreground focus:outline-none focus:border-foreground appearance-none"
           >
             <option value="">Default (provider default)</option>
             {detectedClis.map((cli) => (
               <option key={cli.key} value={cli.path}>
-                {cli.label} - {cli.path}
+                {cli.label} · {cli.path}
               </option>
             ))}
-          </select>
-          <p className="text-xs text-text-muted mt-1.5">
+          </Select>
+          <p className="text-[11px] text-muted-foreground mt-1.5">
             Override which CLI binary runs this agent. Defaults to the selected provider&apos;s CLI.
           </p>
         </div>
       )}
-
-      {/* Agent Persona */}
-      <AgentPersonaEditor
-        projectPath={projectPath}
-        onChange={(v) => { agentPersonaRef.current = v; }}
-        initialCharacter={agentPersonaRef.current.character}
-        initialName={agentPersonaRef.current.name}
-      />
     </div>
   );
 });

@@ -3,10 +3,12 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, Loader2, AlertCircle, Check, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
+import { Button, PageHeader } from '@/components/ui';
 import {
   SettingsSidebar,
+  SettingsCard,
   InstallTerminalModal,
   GeneralSection,
   TerminalSection,
@@ -29,6 +31,41 @@ import {
 } from '@/components/Settings';
 import type { SettingsSection } from '@/components/Settings';
 import 'xterm/css/xterm.css';
+
+/**
+ * One action per sub-page, in the header.
+ *
+ * The header used to carry two buttons for every screen - a bordered `Refresh`
+ * that reloaded all seventeen sections, and a `Save Changes` that only ever
+ * applied to two of them. The design gives each sub-page the single action it
+ * actually needs, named after what that screen does.
+ *
+ * `save` and `refresh` are the two the page itself owns. The rest name the
+ * action the design puts here, but their handler still lives inside the section
+ * body until that section is converted, so they render disabled with a note
+ * rather than claiming to do something they do not.
+ */
+type HeaderActionKind = 'save' | 'refresh' | 'unwired';
+
+const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActionKind }> = {
+  general: { label: 'Save', kind: 'save' },
+  terminal: { label: 'Save', kind: 'save' },
+  notifications: { label: 'Save', kind: 'save' },
+  permissions: { label: 'Save', kind: 'save' },
+  git: { label: 'Save', kind: 'save' },
+  socialdata: { label: 'Save', kind: 'save' },
+  'google-workspace': { label: 'Save', kind: 'save' },
+  tasmania: { label: 'Save', kind: 'save' },
+  'ai-providers': { label: 'Detect', kind: 'unwired' },
+  cli: { label: 'Detect', kind: 'unwired' },
+  hermes: { label: 'Test connection', kind: 'unwired' },
+  telegram: { label: 'Test', kind: 'unwired' },
+  slack: { label: 'Test', kind: 'unwired' },
+  memory: { label: 'Check', kind: 'unwired' },
+  mcp: { label: '+ Server', kind: 'unwired' },
+  system: { label: 'Refresh', kind: 'refresh' },
+  skills: { label: 'Refresh', kind: 'refresh' },
+};
 
 export default function SettingsPage() {
   return (
@@ -179,7 +216,7 @@ function SettingsPageInner() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-white mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">Loading settings...</p>
         </div>
       </div>
@@ -198,45 +235,43 @@ function SettingsPageInner() {
     );
   }
 
+  // The header names the sub-page you are on, not the app: `Preferences`,
+  // `Terminal`, `Providers`, `Connection`. Title and subtitle both come from
+  // the leaf, so the nav and the header can never disagree.
+  const activeLeaf = SECTIONS.find(s => s.id === activeSection);
+  const action = HEADER_ACTIONS[activeSection];
+
   return (
-    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-4 lg:pt-6 overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Configure Tars preferences
-          </p>
-        </div>
-        <div className="flex gap-2 sm:gap-3">
-          <button
-            onClick={fetchSettings}
-            className="px-3 lg:px-4 py-2 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center gap-2 text-sm"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !hasChanges}
-            className={`px-3 lg:px-4 py-2 flex items-center gap-2 transition-all text-sm ${
-              hasChanges
-                ? 'bg-foreground text-background hover:bg-foreground/90'
-                : 'bg-secondary text-muted-foreground cursor-not-allowed'
-            }`}
-          >
-            {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : saved ? (
-              <Check className="w-4 h-4" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            <span className="hidden sm:inline">{saving ? 'Saving...' : saved ? 'Saved!' : 'Save Changes'}</span>
-            <span className="sm:hidden">{saving ? '...' : saved ? 'Saved' : 'Save'}</span>
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] overflow-hidden">
+      <PageHeader
+        title={activeLeaf?.label ?? 'Settings'}
+        subtitle={activeLeaf?.description}
+        actions={
+          action.kind === 'save' ? (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleSave}
+              disabled={saving || !hasChanges}
+            >
+              {saving ? 'Saving' : saved ? 'Saved' : action.label}
+            </Button>
+          ) : action.kind === 'refresh' ? (
+            <Button variant="primary" size="md" onClick={fetchSettings}>
+              {action.label}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="md"
+              disabled
+              title="This action still lives inside the section below."
+            >
+              {action.label}
+            </Button>
+          )
+        }
+      />
 
       {/* Error message */}
       {error && settings && (
@@ -246,21 +281,21 @@ function SettingsPageInner() {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex gap-6 overflow-hidden min-h-0">
+      <div className="flex-1 flex gap-2.5 overflow-hidden min-h-0">
         <SettingsSidebar
           activeSection={activeSection}
           onSectionChange={setActiveSection}
         />
 
-        {/* Content Area */}
+        {/* Content Area — one bordered card per sub-page, filling the height */}
         <motion.div
           key={activeSection}
           initial={{ opacity: 0, x: 10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.15 }}
-          className="flex-1 overflow-y-auto pr-2"
+          className="flex-1 min-w-0 min-h-0 flex flex-col"
         >
-          {renderContent()}
+          <SettingsCard>{renderContent()}</SettingsCard>
         </motion.div>
       </div>
 

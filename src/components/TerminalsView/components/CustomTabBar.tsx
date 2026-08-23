@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import { Button } from '@/components/ui';
 import type { CustomTab, ActiveTab } from '../types';
 
 interface CustomTabBarProps {
@@ -133,70 +134,77 @@ export default function CustomTabBar({
   const isActive = (tabId: string) =>
     activeTab.type === 'custom' && activeTab.tabId === tabId;
 
+  // same strip as ProjectTabBar - 40px tall, one full-width hairline the active
+  // tab's fill breaks. The two bars have to be indistinguishable.
   return (
-    <div className="flex items-center gap-0.5 py-1 !rounded-none bg-secondary border-b border-border overflow-x-auto scrollbar-none">
-      {tabs.map((tab, idx) => (
-        <div
-          key={tab.id}
-          draggable={editingId !== tab.id}
-          onDragStart={e => handleDragStart(e, idx)}
-          onDragOver={e => handleDragOver(e, idx)}
-          onDrop={e => handleDrop(e, idx)}
-          onDragEnd={handleDragEnd}
-          className={`
-              flex items-center gap-1.5 px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors shrink-0 cursor-pointer group
+    <div className="relative flex items-end h-10 [&_button]:cursor-pointer">
+      {/* full-width hairline; the active tab's fill breaks it */}
+      <div className="absolute inset-x-0 bottom-0 h-px bg-border" />
+
+      <div className="relative flex items-end gap-0.5 h-full flex-1 overflow-x-auto scrollbar-none">
+        {tabs.map((tab, idx) => (
+          <div
+            key={tab.id}
+            draggable={editingId !== tab.id}
+            onDragStart={e => handleDragStart(e, idx)}
+            onDragOver={e => handleDragOver(e, idx)}
+            onDrop={e => handleDrop(e, idx)}
+            onDragEnd={handleDragEnd}
+            className={`
+              flex items-center gap-1.5 h-full px-3 text-xs whitespace-nowrap transition-colors shrink-0 cursor-pointer group
               ${isActive(tab.id)
-              ? 'bg-primary/10 text-primary border-b border-primary/60 font-medium'
-              : 'text-muted-foreground hover:text-foreground hover:bg-primary/5'
-            }
-              ${dragOverIdx === idx && dragIdx !== idx ? 'border-l border-l-primary/60' : ''}
+                ? 'bg-card border border-border border-b-transparent text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+              }
+              ${dragOverIdx === idx && dragIdx !== idx ? 'border-l border-l-border-accent' : ''}
             `}
-          onClick={() => onSelectTab(tab.id)}
-          onDoubleClick={e => { e.stopPropagation(); startEditing(tab); }}
-        >
-          {editingId === tab.id ? (
-            <input
-              ref={inputRef}
-              value={editValue}
-              onChange={e => setEditValue(e.target.value)}
-              onBlur={commitEdit}
-              onKeyDown={handleKeyDown}
-              onClick={e => e.stopPropagation()}
-              className="bg-transparent text-xs text-foreground outline-none border-b border-border w-[80px]"
-              maxLength={20}
-            />
-          ) : (
-            <span>{tab.name}</span>
-          )}
-
-          {/* Agent count badge */}
-          <span className="text-[10px] opacity-50">{tab.agentIds.length}</span>
-
-          {/* Delete button */}
-          <button
-            onClick={e => { e.stopPropagation(); onDeleteTab(tab.id); }}
-            className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all text-muted-foreground hover:text-destructive"
-            title="Delete board"
+            onClick={() => onSelectTab(tab.id)}
+            onDoubleClick={e => { e.stopPropagation(); startEditing(tab); }}
           >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      ))}
+            {editingId === tab.id ? (
+              <input
+                ref={inputRef}
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={handleKeyDown}
+                onClick={e => e.stopPropagation()}
+                className="bg-transparent text-xs text-foreground outline-none border-b border-border w-[80px]"
+                maxLength={20}
+              />
+            ) : (
+              <span>{tab.name}</span>
+            )}
 
-      {/* Create tab button + dialog */}
+            {/* Agent count badge */}
+            <span className="text-[10px] text-muted-foreground">{tab.agentIds.length}</span>
+
+            {/* Delete button */}
+            <button
+              onClick={e => { e.stopPropagation(); onDeleteTab(tab.id); }}
+              className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all text-muted-foreground hover:text-destructive"
+              title="Delete board"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Create tab button + dialog - outside the scroller so the popover is not clipped */}
       <div className="relative shrink-0">
         <button
           onClick={() => { setShowCreateDialog(true); setCreateName(''); }}
-          className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-primary/5 transition-colors"
+          className="flex items-center h-8 px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           title="Create new board"
         >
-          <Plus className="w-3.5 h-3.5" />
+          + board
         </button>
 
         {showCreateDialog && (
           <div
             ref={createDialogRef}
-            className="absolute top-full left-0 mt-1 bg-card border border-border z-50 p-3 min-w-[260px]"
+            className="absolute top-full right-0 mt-1 bg-card border border-border z-50 p-3 min-w-[260px]"
           >
             {projectGroups && projectGroups.length > 0 && onCreateFromProject && (
               <div className="mb-3">
@@ -206,7 +214,7 @@ export default function CustomTabBar({
                     <button
                       key={g.path}
                       onClick={() => { onCreateFromProject(g.name, g.agentIds); setShowCreateDialog(false); setCreateName(''); }}
-                      className="w-full flex items-center justify-between px-2 py-1.5 text-xs text-foreground hover:bg-primary/5 transition-colors"
+                      className="w-full flex items-center justify-between h-8 px-2 text-xs text-foreground hover:bg-secondary transition-colors"
                     >
                       <span className="truncate">{g.name}</span>
                       <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{g.agentIds.length} agent{g.agentIds.length > 1 ? 's' : ''}</span>
@@ -223,23 +231,16 @@ export default function CustomTabBar({
               onChange={e => setCreateName(e.target.value)}
               onKeyDown={handleCreateKeyDown}
               placeholder="e.g. Frontend, Backend..."
-              className="w-full px-2 py-1.5 bg-secondary border border-border text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-white/30 mb-2"
+              className="w-full h-8 px-2 bg-secondary border border-border text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary mb-2"
               maxLength={20}
             />
             <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => { setShowCreateDialog(false); setCreateName(''); }}
-                className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              >
+              <Button variant="ghost" size="sm" onClick={() => { setShowCreateDialog(false); setCreateName(''); }}>
                 Cancel
-              </button>
-              <button
-                onClick={handleCreateSubmit}
-                disabled={!createName.trim()}
-                className="px-2.5 py-1 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleCreateSubmit} disabled={!createName.trim()}>
                 Create
-              </button>
+              </Button>
             </div>
           </div>
         )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
   DndContext,
@@ -15,12 +15,13 @@ import {
   type DragOverEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Loader2, RefreshCw, Search, ChevronDown, FolderOpen } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 import { useElectronKanban, useKanbanAgentSync } from '@/hooks/useElectronKanban';
 import { isElectron as checkIsElectron } from '@/hooks/useElectron';
 import type { KanbanTask, KanbanColumn as KanbanColumnType, KanbanTaskCreate } from '@/types/kanban';
 import type { AgentStatus } from '@/types/electron';
+import { Button } from '@/components/ui';
 import { KanbanColumn } from './components/KanbanColumn';
 import { KanbanCard } from './components/KanbanCard';
 import { NewTaskModal } from './components/NewTaskModal';
@@ -110,10 +111,7 @@ export default function KanbanBoard() {
     }
   }, []);
 
-  // Filter states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterProject, setFilterProject] = useState<string | null>(null);
-  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  // Refresh state (the error state's Retry is the only caller left)
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
@@ -141,48 +139,15 @@ export default function KanbanBoard() {
     })
   );
 
-  // Filter tasks
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-          task.title.toLowerCase().includes(query) ||
-          task.description.toLowerCase().includes(query) ||
-          task.labels.some((l) => l.toLowerCase().includes(query));
-        if (!matchesSearch) return false;
-      }
-
-      // Project filter
-      if (filterProject && task.projectId !== filterProject) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [tasks, searchQuery, filterProject]);
-
-  // Get filtered tasks by column
-  const getFilteredTasksByColumn = useCallback(
+  // Tasks for one column, in board order
+  const getColumnTasks = useCallback(
     (column: KanbanColumnType) => {
-      return filteredTasks
+      return tasks
         .filter((t) => t.column === column)
         .sort((a, b) => a.order - b.order);
     },
-    [filteredTasks]
+    [tasks]
   );
-
-  // Get unique projects for filter
-  const projects = useMemo(() => {
-    const uniqueProjects = new Map<string, string>();
-    tasks.forEach((task) => {
-      if (!uniqueProjects.has(task.projectId)) {
-        uniqueProjects.set(task.projectId, task.projectPath.split('/').pop() || task.projectId);
-      }
-    });
-    return Array.from(uniqueProjects.entries()).map(([id, name]) => ({ id, name }));
-  }, [tasks]);
 
   // Drag handlers
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -228,7 +193,7 @@ export default function KanbanBoard() {
     if (overTask) {
       if (activeTask.column === overTask.column) {
         // Reorder within same column
-        const columnTasks = getFilteredTasksByColumn(activeTask.column);
+        const columnTasks = getColumnTasks(activeTask.column);
         const oldIndex = columnTasks.findIndex((t) => t.id === activeId);
         const newIndex = columnTasks.findIndex((t) => t.id === overId);
 
@@ -246,7 +211,7 @@ export default function KanbanBoard() {
         await moveTask(activeId, overTask.column, overTask.order);
       }
     }
-  }, [tasks, moveTask, reorderTasks, getFilteredTasksByColumn]);
+  }, [tasks, moveTask, reorderTasks, getColumnTasks]);
 
   // Task handlers
   const handleCreateTask = async (data: KanbanTaskCreate) => {
@@ -294,104 +259,19 @@ export default function KanbanBoard() {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
         <p className="text-danger">{error}</p>
-        <button
-          onClick={handleRefresh}
-          className="flex items-center gap-2 px-3 py-2 bg-secondary rounded-md hover:bg-secondary/80 transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+        <Button variant="secondary" size="md" onClick={handleRefresh}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
+    // No header here: `kanban/page.tsx` already renders the page header, and the
+    // shell supplies the 26px side gutters and the 22px bottom.
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 lg:pt-6 mb-4">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Task Board</h1>
-          <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Drag to Planned to auto-assign agents
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm w-52 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
-            />
-          </div>
-
-          {/* Project filter */}
-          {projects.length > 1 && (
-            <div className="relative">
-              <button
-                onClick={() => setProjectDropdownOpen(v => !v)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-none bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors text-sm min-w-[160px]"
-              >
-                <FolderOpen className="w-4 h-4" />
-                {filterProject ? projects.find(p => p.id === filterProject)?.name : 'All Projects'}
-                <ChevronDown className="w-4 h-4 ml-auto" />
-              </button>
-
-              <AnimatePresence>
-                {projectDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setProjectDropdownOpen(false)} />
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 5 }}
-                      className="absolute top-full mt-2 right-0 w-48 bg-card border border-border rounded-none z-20 py-2"
-                    >
-                      {[{ id: '', name: 'All Projects' }, ...projects].map((p) => {
-                        const isSelected = (p.id === '' && !filterProject) || filterProject === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            onClick={() => { setFilterProject(p.id || null); setProjectDropdownOpen(false); }}
-                            className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${isSelected ? 'text-white' : 'text-muted-foreground'}`}
-                          >
-                            {p.name}
-                          </button>
-                        );
-                      })}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* Refresh button */}
-          <button
-            onClick={handleRefresh}
-            className="p-2 rounded-lg hover:bg-secondary/50 transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 text-muted-foreground transition-transform ${isRefreshing ? 'animate-spin' : ''}`} />
-          </button>
-
-          {/* Add task button */}
-          <button
-            onClick={() => setShowNewTaskModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium text-sm"
-          >
-            New Task
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
       {/* Board */}
-      <div className="flex-1 overflow-x-auto px-6 pb-6">
+      <div className="flex-1 overflow-x-auto">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -404,7 +284,7 @@ export default function KanbanBoard() {
               <KanbanColumn
                 key={column}
                 column={column}
-                tasks={getFilteredTasksByColumn(column)}
+                tasks={getColumnTasks(column)}
                 onAddTask={column === 'backlog' ? () => setShowNewTaskModal(true) : undefined}
                 onEditTask={handleEditTask}
                 onDeleteTask={handleDeleteTask}

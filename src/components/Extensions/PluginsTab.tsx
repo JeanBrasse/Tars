@@ -12,8 +12,6 @@ import {
   ChevronDown,
   Terminal as TerminalIcon,
   X,
-  Copy,
-  Check,
   ExternalLink,
   Info,
   Code2,
@@ -29,7 +27,7 @@ import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { Button } from '@/components/ui';
+import { Button, DialogShell } from '@/components/ui';
 // Import xterm CSS
 import 'xterm/css/xterm.css';
 
@@ -141,13 +139,12 @@ const PluginCard = React.memo(function PluginCard({
           </span>
         ) : (
           <>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => onInstall(plugin)}
               disabled={isInstalling}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${isInstalling
-                ? 'bg-secondary text-muted-foreground'
-                : 'bg-foreground text-background hover:bg-foreground/90'
-                }`}
+              className="flex-1"
             >
               {isInstalling ? (
                 <>
@@ -159,21 +156,16 @@ const PluginCard = React.memo(function PluginCard({
               ) : (
                 'Copy Command'
               )}
-            </button>
-            <button
+            </Button>
+            {/* The word, not a clipboard glyph - the two states read out loud. */}
+            <Button
+              size="sm"
               onClick={() => onCopy(plugin)}
-              className={`p-1.5 transition-colors ${justCopied
-                ? 'bg-primary/10 text-primary'
-                : 'bg-secondary text-muted-foreground hover:text-foreground'
-                }`}
+              className="font-mono"
               title="Copy install command"
             >
-              {justCopied ? (
-                <Check className="w-4 h-4" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </button>
+              {justCopied ? 'copied' : 'copy'}
+            </Button>
           </>
         )}
       </div>
@@ -211,6 +203,10 @@ export default function PluginsTab() {
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
 
+  // Follows the app theme; applied to the live terminal below instead of at
+  // init, so a theme flip never tears down the PTY-attached instance.
+  const terminalTheme = useTerminalTheme();
+
   useEffect(() => {
     setHasElectron(isElectron());
   }, []);
@@ -224,31 +220,8 @@ export default function PluginsTab() {
       const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
-        theme: {
-          background: '#0D0B08',
-          foreground: '#e4e4e7',
-          cursor: '#3D9B94',
-          cursorAccent: '#0D0B08',
-          selectionBackground: '#3D9B9433',
-          black: '#18181b',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#a855f7',
-          cyan: '#3D9B94',
-          white: '#e4e4e7',
-          brightBlack: '#52525b',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#c084fc',
-          brightCyan: '#67e8f9',
-          brightWhite: '#fafafa',
-        },
+        ...createXtermOptions(),
         fontSize: 13,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 10000,
@@ -295,6 +268,13 @@ export default function PluginsTab() {
       setTerminalReady(false);
     };
   }, [showInstallTerminal]);
+
+  // Repaint on app theme change
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = terminalTheme;
+    }
+  }, [terminalTheme]);
 
   // Start PTY only after terminal is ready
   useEffect(() => {
@@ -531,7 +511,7 @@ export default function PluginsTab() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-white mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">Loading plugins...</p>
         </div>
       </div>
@@ -550,7 +530,7 @@ export default function PluginsTab() {
             href="https://code.claude.com/docs/en/discover-plugins"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-secondary text-muted-foreground hover:text-foreground border border-border hover:bg-secondary/80 transition-colors text-sm shrink-0 rounded-none"
+            className="flex h-8 items-center justify-center gap-2 px-3 bg-secondary text-muted-foreground hover:text-foreground border border-border hover:bg-secondary/80 transition-colors text-sm shrink-0"
           >
             <ExternalLink className="w-4 h-4" />
             <span className="hidden sm:inline">Documentation</span>
@@ -586,7 +566,7 @@ export default function PluginsTab() {
               ? 'bg-primary/10 border-primary/30 text-primary'
               : showToast.type === 'error'
                 ? 'bg-danger/10 border-danger/30 text-danger'
-                : 'bg-white/10 border-white/30 text-white'
+                : 'bg-secondary border-border text-foreground'
               }`}
           >
             <div className="flex items-center gap-3">
@@ -615,7 +595,7 @@ export default function PluginsTab() {
             value={search}
             onChange={handleSearchChange}
             placeholder="Search plugins by name, description, or tags..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-none text-sm bg-secondary border border-border focus:border-foreground focus:outline-none"
+            className="w-full h-8 pl-9 pr-3 text-sm bg-secondary border border-border focus:border-foreground focus:outline-none"
           />
         </div>
 
@@ -627,7 +607,7 @@ export default function PluginsTab() {
               setShowMarketplaceDropdown(false);
               setShowAuthorDropdown(false);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-none bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors w-full sm:w-auto sm:min-w-[160px] text-sm"
+            className="flex h-8 items-center gap-2 px-3 bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors w-full sm:w-auto sm:min-w-[160px] text-sm"
           >
             <Filter className="w-4 h-4" />
             {selectedCategory || 'All Categories'}
@@ -648,7 +628,7 @@ export default function PluginsTab() {
                     setSelectedCategory(null);
                     setShowCategoryDropdown(false);
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${!selectedCategory ? 'text-white' : 'text-muted-foreground'
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${!selectedCategory ? 'text-foreground' : 'text-muted-foreground'
                     }`}
                 >
                   All Categories
@@ -662,7 +642,7 @@ export default function PluginsTab() {
                         setSelectedCategory(cat);
                         setShowCategoryDropdown(false);
                       }}
-                      className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary flex items-center gap-2 ${selectedCategory === cat ? 'text-white' : 'text-muted-foreground'
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary flex items-center gap-2 ${selectedCategory === cat ? 'text-foreground' : 'text-muted-foreground'
                         }`}
                     >
                       <Icon className="w-4 h-4" />
@@ -683,7 +663,7 @@ export default function PluginsTab() {
               setShowCategoryDropdown(false);
               setShowAuthorDropdown(false);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-none bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors w-full sm:w-auto sm:min-w-[160px] text-sm"
+            className="flex h-8 items-center gap-2 px-3 bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors w-full sm:w-auto sm:min-w-[160px] text-sm"
           >
             <Puzzle className="w-4 h-4" />
             {selectedMarketplace ? MARKETPLACES.find(m => m.id === selectedMarketplace)?.name : 'All Sources'}
@@ -701,7 +681,7 @@ export default function PluginsTab() {
               >
                 <button
                   onClick={() => { setSelectedMarketplace(null); setShowMarketplaceDropdown(false); }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${!selectedMarketplace ? 'text-white' : 'text-muted-foreground'}`}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${!selectedMarketplace ? 'text-foreground' : 'text-muted-foreground'}`}
                 >
                   All Sources
                 </button>
@@ -709,7 +689,7 @@ export default function PluginsTab() {
                   <button
                     key={marketplace.id}
                     onClick={() => { setSelectedMarketplace(marketplace.id); setShowMarketplaceDropdown(false); }}
-                    className={`w-full text-left px-4 py-2.5 text-sm hover:bg-secondary ${selectedMarketplace === marketplace.id ? 'text-white' : 'text-muted-foreground'}`}
+                    className={`w-full text-left px-4 py-2.5 text-sm hover:bg-secondary ${selectedMarketplace === marketplace.id ? 'text-foreground' : 'text-muted-foreground'}`}
                   >
                     <div className="font-medium">{marketplace.name}</div>
                     <div className="text-xs text-muted-foreground">{marketplace.description}</div>
@@ -728,7 +708,7 @@ export default function PluginsTab() {
               setShowCategoryDropdown(false);
               setShowMarketplaceDropdown(false);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-none bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors w-full sm:w-auto sm:min-w-[160px] text-sm"
+            className="flex h-8 items-center gap-2 px-3 bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors w-full sm:w-auto sm:min-w-[160px] text-sm"
           >
             <User className="w-4 h-4" />
             {selectedAuthor || 'All Authors'}
@@ -746,7 +726,7 @@ export default function PluginsTab() {
               >
                 <button
                   onClick={() => { setSelectedAuthor(null); setShowAuthorDropdown(false); }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${!selectedAuthor ? 'text-white' : 'text-muted-foreground'}`}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary ${!selectedAuthor ? 'text-foreground' : 'text-muted-foreground'}`}
                 >
                   All Authors
                 </button>
@@ -754,7 +734,7 @@ export default function PluginsTab() {
                   <button
                     key={author}
                     onClick={() => { setSelectedAuthor(author); setShowAuthorDropdown(false); }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary truncate ${selectedAuthor === author ? 'text-white' : 'text-muted-foreground'}`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-secondary truncate ${selectedAuthor === author ? 'text-foreground' : 'text-muted-foreground'}`}
                   >
                     {author}
                   </button>
@@ -805,121 +785,62 @@ export default function PluginsTab() {
       </div>
 
       {/* Plugin Details Modal */}
-      <AnimatePresence>
-        {selectedPlugin && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setSelectedPlugin(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg bg-card border border-border rounded-none p-6"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">{selectedPlugin.name}</h3>
-                <button onClick={() => setSelectedPlugin(null)} className="p-1 hover:bg-secondary">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">{selectedPlugin.description}</p>
-              <div className="p-3 bg-secondary border border-border font-mono text-xs mb-4">
-                {getInstallCommand(selectedPlugin)}
-              </div>
-              <button
+      {selectedPlugin && (
+        <DialogShell
+          title={selectedPlugin.name}
+          onClose={() => setSelectedPlugin(null)}
+          footerRight={
+            <>
+              <Button onClick={() => setSelectedPlugin(null)}>Cancel</Button>
+              <Button
+                variant="primary"
                 onClick={() => {
                   handleInstall(selectedPlugin);
                   setSelectedPlugin(null);
                 }}
-                className="w-full py-2.5 bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors"
               >
                 {hasElectron ? 'Install Plugin' : 'Copy Install Command'}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-muted-foreground mb-4">{selectedPlugin.description}</p>
+          <div className="p-3 bg-secondary border border-border font-mono text-xs">
+            {getInstallCommand(selectedPlugin)}
+          </div>
+        </DialogShell>
+      )}
 
       {/* Installation Terminal Modal */}
-      <AnimatePresence>
-        {showInstallTerminal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={closeInstallTerminal}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-4xl bg-[#0D0B08] border border-border rounded-none overflow-hidden"
+      {showInstallTerminal && (
+        <DialogShell
+          title="Installing plugin"
+          subtitle={<span className="font-mono">{currentInstallCommand}</span>}
+          width={860}
+          onClose={closeInstallTerminal}
+          footerLeft={
+            // Raw status word, coloured by the status token - no pill.
+            <span
+              className={`text-xs font-mono ${!installComplete
+                ? 'text-status-running'
+                : installExitCode === 0
+                  ? 'text-status-idle'
+                  : 'text-status-error'
+                }`}
             >
-              {/* Terminal Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
-                <div className="flex items-center gap-3">
-                  <TerminalIcon className="w-5 h-5 text-primary" />
-                  <div>
-                    <h3 className="font-medium text-sm">Installing Plugin</h3>
-                    <p className="text-xs text-muted-foreground font-mono">{currentInstallCommand}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {installComplete && (
-                    <span className={`text-xs px-2 py-1 ${installExitCode === 0
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-danger/20 text-danger'
-                      }`}>
-                      {installExitCode === 0 ? 'Completed' : `Failed (${installExitCode})`}
-                    </span>
-                  )}
-                  {!installComplete && (
-                    <span className="text-xs px-2 py-1 bg-primary/20 text-primary flex items-center gap-1.5">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Running
-                    </span>
-                  )}
-                  <button
-                    onClick={closeInstallTerminal}
-                    className="p-1.5 hover:bg-secondary rounded-none transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Terminal Content */}
-              <div
-                ref={terminalRef}
-                className="h-[400px] p-2"
-                style={{ backgroundColor: '#0D0B08' }}
-              />
-
-              {/* Terminal Footer */}
-              <div className="px-4 py-3 border-t border-border bg-card flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  {installComplete
-                    ? 'Installation finished. You can close this window.'
-                    : 'Installation in progress... You can interact with the terminal if needed.'}
-                </p>
-                <button
-                  onClick={closeInstallTerminal}
-                  className="px-4 py-1.5 text-sm bg-secondary hover:bg-secondary/80 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {!installComplete
+                ? 'running'
+                : installExitCode === 0
+                  ? 'completed'
+                  : `failed (${installExitCode})`}
+            </span>
+          }
+          footerRight={<Button onClick={closeInstallTerminal}>Close</Button>}
+        >
+          {/* The wrapper behind the canvas is painted separately from it. */}
+          <div ref={terminalRef} className={`h-[400px] p-2 ${TERMINAL_SURFACE_CLASS}`} />
+        </DialogShell>
+      )}
     </div>
   );
 }

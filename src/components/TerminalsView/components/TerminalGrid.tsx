@@ -85,7 +85,7 @@ export default function TerminalGrid({
 
   // Compute row height - use the preset's defined rows, not item count
   const expectedRows = Math.max(1, rows);
-  const MARGIN: readonly [number, number] = [2, 2];
+  const MARGIN: readonly [number, number] = [8, 8];
   const CONTAINER_PADDING: readonly [number, number] = [0, 0];
   const rowHeight = Math.max(80, (containerHeight - MARGIN[1] * (expectedRows + 1)) / expectedRows);
 

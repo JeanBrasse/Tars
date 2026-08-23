@@ -133,10 +133,7 @@ export function BudgetAndLimits({
   return (
     <div className="border border-border-primary bg-bg-secondary p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="text-sm font-medium flex items-center gap-2">
-          <Gauge className="w-4 h-4 text-text-muted" />
-          Budget &amp; limits
-        </div>
+        <div className="text-[12.5px]">Budget &amp; limits</div>
         <p className="text-[10.5px] text-text-muted hidden sm:block">
           each provider shows the limit it actually has
         </p>
@@ -170,7 +167,7 @@ export function BudgetAndLimits({
               ) : (
                 <div className="h-[5px] bg-bg-tertiary">
                   <div
-                    className={`h-full ${over ? 'bg-accent-red' : 'bg-accent-orange'}`}
+                    className={`h-full ${over ? 'bg-accent-red' : 'bg-primary'}`}
                     style={{ width: `${Math.min(100, row.percent)}%` }}
                   />
                 </div>

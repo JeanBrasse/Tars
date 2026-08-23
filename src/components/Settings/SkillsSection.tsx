@@ -1,130 +1,74 @@
-import { ExternalLink, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui';
+import { SettingsRow } from './SettingsRow';
 import type { Skill } from './types';
 
 interface SkillsSectionProps {
   skills: Skill[];
 }
 
+/**
+ * A summary, not an inventory.
+ *
+ * This used to enumerate every user / plugin / project skill in three stacked
+ * cards, which turned a settings sub-page into a directory listing. The rows
+ * below state the facts and hand the browsing back to the Skills page.
+ *
+ * Only the first row has a data source today: `skills` is the one thing the
+ * page hands us. Per-provider directories, marketplaces and the catalogue
+ * refresh have no IPC behind them yet, so their controls are disabled and say
+ * why on hover - wiring them is a feature, not a restyle.
+ */
 export const SkillsSection = ({ skills }: SkillsSectionProps) => {
   const userSkills = skills.filter(s => s.source === 'user');
   const pluginSkills = skills.filter(s => s.source === 'plugin');
   const projectSkills = skills.filter(s => s.source === 'project');
 
+  const NOT_WIRED = 'Not wired yet.';
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold mb-1">Skills & Plugins</h2>
-          <p className="text-sm text-muted-foreground">Installed skills and plugins available to all CLI providers</p>
-        </div>
-        <a
-          href="https://skills.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3 py-1.5 bg-secondary text-foreground text-sm hover:bg-secondary/80 transition-colors"
-        >
-          <span>skills.sh</span>
-          <ExternalLink className="w-3.5 h-3.5" />
-        </a>
-      </div>
+    <>
+      <SettingsRow
+        label="Installed skills"
+        description={`${userSkills.length} user · ${pluginSkills.length} plugin · ${projectSkills.length} project — available to every CLI provider.`}
+        control={
+          <span className="font-mono text-[12.5px] text-foreground">{skills.length}</span>
+        }
+      />
 
-      {/* User Skills */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-white" />
-          User Skills
-          <span className="text-muted-foreground">({userSkills.length})</span>
-        </h3>
-        <div className="space-y-2">
-          {userSkills.length > 0 ? (
-            userSkills.map((skill) => (
-              <div
-                key={skill.path}
-                className="flex items-center justify-between py-3 px-4 bg-secondary border border-border"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{skill.name}</p>
-                  {skill.description && (
-                    <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
-                  )}
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-muted-foreground text-sm py-4">No user skills installed</p>
-          )}
-        </div>
-      </div>
-
-      {/* Plugin Skills */}
-      <div className="border border-border bg-card p-6">
-        <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-muted-foreground" />
-          Plugin Skills
-          <span className="text-muted-foreground">({pluginSkills.length})</span>
-        </h3>
-        <div className="space-y-2">
-          {pluginSkills.length > 0 ? (
-            pluginSkills.map((skill) => (
-              <div
-                key={skill.path}
-                className="flex items-center justify-between py-3 px-4 bg-secondary border border-border"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{skill.name}</p>
-                  {skill.description && (
-                    <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
-                  )}
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-muted-foreground text-sm py-4">No plugin skills installed</p>
-          )}
-        </div>
-      </div>
-
-      {/* Project Skills */}
-      {projectSkills.length > 0 && (
-        <div className="border border-border bg-card p-6">
-          <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-success" />
-            Project Skills
-            <span className="text-muted-foreground">({projectSkills.length})</span>
-          </h3>
-          <div className="space-y-2">
-            {projectSkills.map((skill) => (
-              <div
-                key={skill.path}
-                className="flex items-center justify-between py-3 px-4 bg-secondary border border-border"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{skill.name}</p>
-                  {skill.projectName && (
-                    <p className="text-xs text-muted-foreground truncate">{skill.projectName}</p>
-                  )}
-                </div>
-              </div>
-            ))}
+      <SettingsRow
+        label="Per-provider directories"
+        description="Each CLI reads skills from its own folder. Tars links them so one install serves all of them."
+        control={
+          <div className="flex items-center gap-2">
+            <Button size="sm" className="font-mono" disabled title={NOT_WIRED}>
+              reveal
+            </Button>
+            <Button size="sm" className="font-mono" disabled title={NOT_WIRED}>
+              re-link
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      />
 
-      {skills.length === 0 && (
-        <div className="border border-border bg-card p-8 text-center">
-          <Sparkles className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground mb-3">No skills or plugins installed</p>
-          <a
-            href="https://skills.sh"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-foreground hover:underline"
-          >
-            Browse skills on skills.sh
-            <ExternalLink className="w-4 h-4" />
-          </a>
-        </div>
-      )}
-    </div>
+      <SettingsRow
+        label="Marketplaces"
+        description="Sources Tars pulls skills and plugins from."
+        control={
+          <span className="font-mono text-[12.5px] text-muted-foreground" title={NOT_WIRED}>
+            —
+          </span>
+        }
+      />
+
+      <SettingsRow
+        label="Refresh catalogue"
+        description="Re-reads every skill directory on disk."
+        control={
+          <Button size="sm" className="font-mono" disabled title={NOT_WIRED}>
+            refresh now
+          </Button>
+        }
+      />
+    </>
   );
 };

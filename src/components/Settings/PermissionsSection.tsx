@@ -1,65 +1,51 @@
+import { Input } from '@/components/ui';
+import { SettingsRow } from './SettingsRow';
 import type { ClaudeSettings } from './types';
 
 interface PermissionsSectionProps {
   settings: ClaudeSettings | null;
 }
 
+/**
+ * The rules live in the CLI's own settings file and nothing here writes them
+ * back yet - this section receives `settings` and no setter - so both fields are
+ * read-only for now and say so on hover.
+ */
 export const PermissionsSection = ({ settings }: PermissionsSectionProps) => {
+  const allow = settings?.permissions?.allow ?? [];
+  const deny = settings?.permissions?.deny ?? [];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Permissions</h2>
-        <p className="text-sm text-muted-foreground">Manage allowed and denied actions for all CLI agents</p>
-      </div>
+    <>
+      <SettingsRow
+        label="Always allow"
+        description="Actions every CLI agent may run without asking."
+        control={
+          <Input
+            mono
+            width="control"
+            readOnly
+            value={allow.join(', ')}
+            placeholder="nothing set"
+            title="Read-only here - edit the CLI's own settings file."
+          />
+        }
+      />
 
-      <div className="border border-border bg-card p-6">
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium mb-3">Allowed Permissions</label>
-            <div className="p-4 bg-secondary border border-border min-h-[80px]">
-              {settings?.permissions?.allow && settings.permissions.allow.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {settings.permissions.allow.map((perm, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-1 bg-success/20 text-success text-xs font-mono"
-                    >
-                      {perm}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm">No custom permissions set</p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-3">Denied Permissions</label>
-            <div className="p-4 bg-secondary border border-border min-h-[80px]">
-              {settings?.permissions?.deny && settings.permissions.deny.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {settings.permissions.deny.map((perm, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-1 bg-danger/20 text-danger text-xs font-mono"
-                    >
-                      {perm}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm">No denied permissions</p>
-              )}
-            </div>
-          </div>
-
-          <p className="text-xs text-muted-foreground pt-2">
-            Permissions are configured per CLI. For Claude: use <code className="text-foreground bg-secondary px-1 py-0.5">claude config</code>.
-            For other providers, refer to their CLI documentation.
-          </p>
-        </div>
-      </div>
-    </div>
+      <SettingsRow
+        label="Always deny"
+        description="Actions refused whatever the agent asks for."
+        control={
+          <Input
+            mono
+            width="control"
+            readOnly
+            value={deny.join(', ')}
+            placeholder="nothing set"
+            title="Read-only here - edit the CLI's own settings file."
+          />
+        }
+      />
+    </>
   );
 };

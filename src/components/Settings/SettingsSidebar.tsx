@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CalendarClock, ChevronRight, ExternalLink } from 'lucide-react';
+import { Panel, Select } from '@/components/ui';
 import { SECTION_GROUPS } from './constants';
 import type { SettingsSection } from './types';
 
@@ -8,69 +8,78 @@ interface SettingsSidebarProps {
   onSectionChange: (section: SettingsSection) => void;
 }
 
+/**
+ * One 12px square per group instead of six unrelated glyphs: the mark is the
+ * brand's own language, and it says open or closed rather than naming the
+ * section a second time.
+ */
+const GroupMark = ({ open }: { open: boolean }) => (
+  <span className={`w-3 h-3 shrink-0 ${open ? 'bg-primary' : 'bg-border-accent'}`} />
+);
+
+/** Children sit flush under the parent label: 12px mark + 8px gap. */
+const CHILD_INDENT = 'pl-5';
+
 export const SettingsSidebar = ({ activeSection, onSectionChange }: SettingsSidebarProps) => {
   return (
     <>
       {/* Desktop Sidebar */}
-      <nav data-testid="settings-nav" className="w-52 shrink-0 hidden lg:block overflow-y-auto">
-        <div className="space-y-1">
-          {SECTION_GROUPS.map((group) => {
-            const Icon = group.icon;
-            const isOpen = group.children.some(c => c.id === activeSection);
-            return (
-              <div key={group.id}>
-                <button
-                  onClick={() => onSectionChange(group.children[0].id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors ${isOpen
-                    ? 'bg-secondary text-foreground border-l border-primary/60'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-                    }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{group.label}</span>
-                  {isOpen && <ChevronRight className="w-4 h-4 ml-auto" />}
-                </button>
+      <Panel fill padded={false} className="w-[214px] shrink-0 hidden lg:flex">
+        <nav data-testid="settings-nav" className="flex-1 min-h-0 overflow-y-auto p-2">
+          <div className="space-y-1">
+            {SECTION_GROUPS.map((group) => {
+              const isOpen = group.children.some(c => c.id === activeSection);
+              return (
+                <div key={group.id}>
+                  <button
+                    onClick={() => onSectionChange(group.children[0].id)}
+                    className={`w-full flex items-center gap-2 px-2 h-8 text-left text-sm transition-colors ${isOpen
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                  >
+                    <GroupMark open={isOpen} />
+                    <span>{group.label}</span>
+                  </button>
 
-                {isOpen && (
-                  <div className="pl-3 py-1 space-y-0.5">
-                    {group.children.map((child) => (
-                      <button
-                        key={child.id}
-                        onClick={() => onSectionChange(child.id)}
-                        className={`w-full flex items-center gap-2 pl-4 pr-3 py-1.5 text-left text-xs transition-colors ${child.id === activeSection
-                          ? 'text-foreground bg-secondary/60'
-                          : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                      >
-                        {child.label}
-                      </button>
-                    ))}
+                  {isOpen && (
+                    <div className="py-1 space-y-0.5">
+                      {group.children.map((child) => (
+                        <button
+                          key={child.id}
+                          onClick={() => onSectionChange(child.id)}
+                          className={`w-full flex items-center gap-2 ${CHILD_INDENT} pr-2 h-[26px] text-left text-xs transition-colors ${child.id === activeSection
+                            ? 'text-foreground bg-accent-dim'
+                            : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                          {child.label}
+                        </button>
+                      ))}
 
-                    {/* Schedules live on their own page: this is the bridge to it. */}
-                    {group.id === 'hermes' && (
-                      <Link
-                        href="/crons"
-                        className="w-full flex items-center gap-2 pl-4 pr-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <CalendarClock className="w-3 h-3" />
-                        Schedules
-                        <ExternalLink className="w-3 h-3 ml-auto opacity-50" />
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </nav>
+                      {/* Schedules live on their own page: this is the bridge to it. */}
+                      {group.id === 'hermes' && (
+                        <Link
+                          href="/crons"
+                          className={`w-full flex items-center gap-2 ${CHILD_INDENT} pr-2 h-[26px] text-xs text-muted-foreground hover:text-foreground transition-colors`}
+                        >
+                          Schedules
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </nav>
+      </Panel>
 
       {/* Mobile Section Selector */}
       <div className="lg:hidden mb-4 shrink-0">
-        <select
+        <Select
           value={activeSection}
           onChange={(e) => onSectionChange(e.target.value as SettingsSection)}
-          className="w-full px-3 py-2 bg-secondary border border-border text-sm"
         >
           {SECTION_GROUPS.map((group) => (
             <optgroup key={group.id} label={group.label}>
@@ -81,7 +90,7 @@ export const SettingsSidebar = ({ activeSection, onSectionChange }: SettingsSide
               ))}
             </optgroup>
           ))}
-        </select>
+        </Select>
       </div>
     </>
   );
