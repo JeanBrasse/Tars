@@ -684,32 +684,52 @@ export function registerAgentTools(server: McpServer): void {
               isError: true,
             };
           }
-          // Agent asked for confirmation: auto-reply "continue" and wait again
-          try {
-            await dispatchToAgent(
-              id,
-              "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
-              undefined,
-              allowCrossProject
-            );
-            waitData = await waitForAgentStatus(id, Math.max(timeoutSeconds - 30, 60));
+          // Agent asked for confirmation: auto-reply "continue" and wait
+          // again. A single retry only answers the FIRST question a task
+          // asks - a multi-step task that pauses to confirm several times
+          // used to fall back on the orchestrator to notice "still waiting"
+          // and manually nudge it again for every subsequent question. Loop
+          // instead, bounded so a truly stuck agent still surfaces rather
+          // than spinning forever.
+          const MAX_AUTO_CONTINUES = 8;
+          const deadline = Date.now() + timeoutSeconds * 1000;
+          let autoContinues = 0;
 
-            if (waitData.status === "waiting") {
-              // Still waiting after retry: give up and let orchestrator handle it
-              const outputInfo = waitData.lastCleanOutput
-                ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
-                : "";
+          while (waitData.status === "waiting" && waitData.waitingReason !== "permission") {
+            if (autoContinues >= MAX_AUTO_CONTINUES) break;
+            const remainingMs = deadline - Date.now();
+            if (remainingMs <= 0) break;
+
+            autoContinues++;
+            try {
+              await dispatchToAgent(
+                id,
+                "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
+                undefined,
+                allowCrossProject
+              );
+            } catch {
+              // Auto-continue itself failed (agent gone, network hiccup):
+              // stop looping and report the waiting state as-is below.
+              break;
+            }
+            waitData = await waitForAgentStatus(id, Math.max(Math.floor(remainingMs / 1000), 30));
+          }
+
+          if (waitData.status === "waiting") {
+            if (waitData.waitingReason === "permission") {
               return {
                 content: [
                   {
                     type: "text",
-                    text: `Agent "${agentName}" is still waiting for input after auto-continue.${outputInfo}\n\nUse send_message to respond.`,
+                    text: `Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`,
                   },
                 ],
+                isError: true,
               };
             }
-          } catch {
-            // If auto-continue fails, report the waiting state as-is below.
+            // Still waiting after every auto-continue: give up and let the
+            // orchestrator handle it.
             const outputInfo = waitData.lastCleanOutput
               ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
               : "";
@@ -717,7 +737,7 @@ export function registerAgentTools(server: McpServer): void {
               content: [
                 {
                   type: "text",
-                  text: `Agent "${agentName}" is waiting for input.${outputInfo}\n\nUse send_message to respond.`,
+                  text: `Agent "${agentName}" is still waiting for input after ${autoContinues} auto-continue attempt(s).${outputInfo}\n\nUse send_message to respond.`,
                 },
               ],
             };

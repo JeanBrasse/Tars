@@ -222,28 +222,74 @@ export const HERMES_KANBAN_COLUMNS = [
 
 const KANBAN = '/api/plugins/kanban';
 
+/**
+ * The gateway returns FastAPI-style validation errors as
+ * `{ detail: "title is required" }` or `{ detail: [{ msg, loc, ... }] }`. Every
+ * kanban call used to collapse that to a bare `HTTP 422`, so a task created
+ * with no title told the user nothing they could act on. Read `detail` the
+ * same way for every endpoint here, board included.
+ */
+function errorDetail(status: number, body: unknown): string {
+  if (body && typeof body === 'object' && 'detail' in body) {
+    const detail = (body as { detail: unknown }).detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      const msgs = detail.map(d => (d && typeof d === 'object' && 'msg' in d) ? String((d as { msg: unknown }).msg) : String(d));
+      if (msgs.length) return msgs.join('; ');
+    }
+  }
+  return `HTTP ${status}`;
+}
+
 export async function fetchHermesBoard(conn: HermesConnection, board?: string) {
   const baseUrl = resolveHermesBaseUrl(conn);
   const query = board ? `?board=${encodeURIComponent(board)}` : '';
   const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/board${query}`, { token: conn.token });
   if (status !== 200) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-    return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+    return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
   }
   return { success: true as const, board: body };
+}
+
+export async function getHermesTask(conn: HermesConnection, taskId: string) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { token: conn.token });
+  if (status !== 200) {
+    return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+  }
+  return { success: true as const, detail: body };
 }
 
 export async function createHermesTask(conn: HermesConnection, task: Record<string, unknown>) {
   const baseUrl = resolveHermesBaseUrl(conn);
   const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks`, { method: 'POST', body: task, token: conn.token });
-  return status < 300 ? { success: true as const, task: body } : { success: false as const, error: `HTTP ${status}`, body };
+  return status < 300
+    ? { success: true as const, task: body }
+    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
 }
 
 export async function updateHermesTask(conn: HermesConnection, taskId: string, patch: Record<string, unknown>) {
   const baseUrl = resolveHermesBaseUrl(conn);
   const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: patch, token: conn.token });
-  return status < 300 ? { success: true as const, task: body } : { success: false as const, error: `HTTP ${status}`, body };
+  return status < 300
+    ? { success: true as const, task: body }
+    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+}
+
+export async function deleteHermesTask(conn: HermesConnection, taskId: string) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE', token: conn.token });
+  return status < 300
+    ? { success: true as const }
+    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+}
+
+export async function addHermesTaskComment(conn: HermesConnection, taskId: string, body_: string) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}/comments`, { method: 'POST', body: { body: body_ }, token: conn.token });
+  return status < 300
+    ? { success: true as const }
+    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
 }
 
 // ── Cron / automations ────────────────────────────────────────────────────
@@ -316,6 +362,96 @@ export async function deleteHermesCron(conn: HermesConnection, jobId: string, pr
   const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
   const { status } = await hermesRequest(baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`, { method: 'DELETE', token: conn.token });
   return status < 300 ? { success: true as const } : { success: false as const, error: `HTTP ${status}` };
+}
+
+/**
+ * Create a cron job.
+ *
+ * Used by the Overseer (electron/services/overseer.ts) to provision its own
+ * permanent job, which it then drives entirely by hand: it PUTs a fresh
+ * prompt and POSTs /trigger on every turn rather than waiting on `schedule`.
+ *
+ * `enabled` is forced to true. A job created with enabled:false answers 200
+ * to both the creation call and every later /trigger, and then does nothing
+ * at all - no run, no session, no error. That silence cost an hour to track
+ * down against the live gateway, so there is no way to call this with the
+ * job disabled.
+ */
+export async function createHermesCron(
+  conn: HermesConnection,
+  job: { name: string; schedule: string; prompt: string; deliver?: string },
+) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, '/api/cron/jobs', {
+    method: 'POST',
+    token: conn.token,
+    body: { name: job.name, schedule: job.schedule, prompt: job.prompt, deliver: job.deliver ?? 'local', enabled: true },
+  });
+  if (status < 300) return { success: true as const, job: body as { id?: string; [key: string]: unknown } };
+  const detail = (body && typeof body === 'object' && 'detail' in body)
+    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
+  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+}
+
+export interface HermesCronRun {
+  id: string;
+  status?: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+/** Recent runs of one job, newest first (the gateway's own order). */
+export async function fetchHermesCronRuns(
+  conn: HermesConnection,
+  jobId: string,
+  opts: { limit?: number; profile?: string } = {},
+): Promise<{ success: true; runs: HermesCronRun[] } | { success: false; error: string; needsSignIn?: boolean }> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.profile) params.set('profile', opts.profile);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const { status, body } = await hermesRequest(baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}/runs${qs}`, { token: conn.token });
+  if (status === 401 || status === 403) return { success: false, error: 'Sign in to Hermes', needsSignIn: true };
+  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+
+  const raw = Array.isArray(body) ? body : (body as { runs?: unknown[] } | null)?.runs ?? [];
+  const runs = raw.map(entry => {
+    const r = (entry ?? {}) as Record<string, unknown>;
+    return {
+      id: typeof r.id === 'string' ? r.id : '',
+      status: typeof r.status === 'string' ? r.status : undefined,
+      startedAt: typeof r.started_at === 'string' ? r.started_at : typeof r.startedAt === 'string' ? r.startedAt : undefined,
+      finishedAt: typeof r.finished_at === 'string' ? r.finished_at : typeof r.finishedAt === 'string' ? r.finishedAt : undefined,
+    };
+  }).filter(r => r.id);
+  return { success: true, runs };
+}
+
+export interface HermesSessionMessage {
+  role: string;
+  content: string;
+}
+
+/** The transcript of one run/session: what the overseer actually answered. */
+export async function fetchHermesSessionMessages(
+  conn: HermesConnection,
+  sessionId: string,
+): Promise<{ success: true; messages: HermesSessionMessage[] } | { success: false; error: string; needsSignIn?: boolean }> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, `/api/sessions/${encodeURIComponent(sessionId)}/messages`, { token: conn.token });
+  if (status === 401 || status === 403) return { success: false, error: 'Sign in to Hermes', needsSignIn: true };
+  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+
+  const raw = Array.isArray(body) ? body : [];
+  const messages = raw.map(entry => {
+    const m = (entry ?? {}) as Record<string, unknown>;
+    return {
+      role: typeof m.role === 'string' ? m.role : '',
+      content: typeof m.content === 'string' ? m.content : '',
+    };
+  });
+  return { success: true, messages };
 }
 
 /* ── Memory ────────────────────────────────────────────────

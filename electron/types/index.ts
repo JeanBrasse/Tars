@@ -199,4 +199,6 @@ export interface AppSettings {
   favoriteProjects?: string[];
   hiddenProjects?: string[];
   defaultProjectPath?: string;
+  /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
+  providerBudgets?: Record<string, number>;
 }

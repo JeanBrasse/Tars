@@ -204,16 +204,35 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
     }
   };
 
-  // Attach pending files to a document
-  const attachPendingFiles = async (documentId: string, files: string[]) => {
-    if (!isElectron() || files.length === 0) return;
+  // Attach pending files to a document. The editor inserts markdown that
+  // points at the file's original path on disk (the only path it knows about
+  // before the file is copied into the vault); attachFile then copies that
+  // file to ~/.dorothy/vault/attachments/<id>-<name>, a path the vault-owned
+  // /api/local-file route will actually serve. Without rewriting the content
+  // to the new path, every inserted image or link 403s forever, because the
+  // source file lives outside the allowed attachments directory. Returns the
+  // original-path to vault-path mapping so the caller can fix the content up.
+  const attachPendingFiles = async (documentId: string, files: string[]): Promise<{ from: string; to: string }[]> => {
+    if (!isElectron() || files.length === 0) return [];
+    const mappings: { from: string; to: string }[] = [];
     for (const filePath of files) {
       try {
-        await window.electronAPI!.vault!.attachFile({ document_id: documentId, file_path: filePath });
+        const result = await window.electronAPI!.vault!.attachFile({ document_id: documentId, file_path: filePath });
+        if (result.success && result.attachment) {
+          mappings.push({ from: filePath, to: result.attachment.filepath });
+        }
       } catch (err) {
         console.error('Failed to attach file:', filePath, err);
       }
     }
+    return mappings;
+  };
+
+  // Replace every occurrence of an attached file's original source path with
+  // where it now actually lives in the vault, so markdown image/link
+  // references resolve instead of 403ing.
+  const rewriteAttachmentPaths = (content: string, mappings: { from: string; to: string }[]): string => {
+    return mappings.reduce((text, { from, to }) => text.split(from).join(to), content);
   };
 
   // Create document
@@ -230,7 +249,13 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
       if (result.document) {
         markAsRead(result.document.id);
         if (data.pendingFiles?.length) {
-          await attachPendingFiles(result.document.id, data.pendingFiles);
+          const mappings = await attachPendingFiles(result.document.id, data.pendingFiles);
+          if (mappings.length > 0) {
+            await window.electronAPI!.vault!.updateDocument({
+              id: result.document.id,
+              content: rewriteAttachmentPaths(data.content, mappings),
+            });
+          }
         }
       }
       setViewMode('list');
@@ -245,16 +270,18 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
   const handleUpdateDocument = async (data: { title: string; content: string; tags: string[]; folder_id: string | null; pendingFiles?: string[] }) => {
     if (!isElectron() || !selectedDoc) return;
     try {
+      let content = data.content;
+      if (data.pendingFiles?.length) {
+        const mappings = await attachPendingFiles(selectedDoc.id, data.pendingFiles);
+        content = rewriteAttachmentPaths(content, mappings);
+      }
       await window.electronAPI!.vault!.updateDocument({
         id: selectedDoc.id,
         title: data.title,
-        content: data.content,
+        content,
         tags: data.tags,
         folder_id: data.folder_id,
       });
-      if (data.pendingFiles?.length) {
-        await attachPendingFiles(selectedDoc.id, data.pendingFiles);
-      }
       setViewMode('view');
       // Reload to get updated doc
       const result = await window.electronAPI!.vault!.getDocument(selectedDoc.id);

@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
 import { getProviderDef } from '@/lib/providers';
 import { localDayKey } from '@/lib/usage-dates';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
 import { BudgetAndLimits } from '@/components/Usage/BudgetAndLimits';
-import { LoadingState, PageHeader, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
+import { ErrorState, LoadingState, PageHeader, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';
 
 // Token pricing per million tokens (MTok)
@@ -254,7 +253,7 @@ function StatCard({
 }
 
 export default function UsagePage() {
-  const { data, loading, error } = useClaude();
+  const { data, loading, error, refresh } = useClaude();
   const [costTimeRange, setCostTimeRange] = useState<TimeRange>('daily');
   const [, setPricingLoaded] = useState(0);
   const [ledger, setLedger] = useState<Array<{ provider: string; inputTokens: number; outputTokens: number; costUSD: number; turns: number }>>([]);
@@ -513,12 +512,12 @@ export default function UsagePage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center text-danger">
-          <AlertCircle className="w-8 h-8 mx-auto mb-4" />
-          <p className="mb-2">Failed to load usage data</p>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </div>
+      <div className="flex h-[60vh] items-center justify-center">
+        <ErrorState
+          title="Could not read what your agents have spent."
+          detail={error}
+          onRetry={refresh}
+        />
       </div>
     );
   }

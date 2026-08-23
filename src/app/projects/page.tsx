@@ -9,7 +9,7 @@ import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from 
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
-import { BrandSpinner, Button, DialogShell, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
+import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone } from '@/app/agents/constants';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
@@ -36,7 +36,7 @@ const stripAnsi = (str: string): string => {
 };
 
 export default function ProjectsPage() {
-  const { data, loading, error } = useClaude();
+  const { data, loading, error, refresh } = useClaude();
   const { agents, createAgent, startAgent, isElectron: hasElectron } = useElectronAgents();
   const { projects: electronProjects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
@@ -427,11 +427,12 @@ export default function ProjectsPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center text-danger">
-          <p className="mb-2">Failed to load projects</p>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </div>
+      <div className="flex h-[60vh] items-center justify-center">
+        <ErrorState
+          title="Could not read your projects."
+          detail={error}
+          onRetry={refresh}
+        />
       </div>
     );
   }

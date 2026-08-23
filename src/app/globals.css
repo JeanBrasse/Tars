@@ -78,9 +78,13 @@
   --danger-muted: rgba(207, 34, 46, 0.10);
   --info: #C77012;
   --info-muted: rgba(199, 112, 18, 0.10);
-  /* Idle is its own token, not an alias of --text-muted: the two are decided
-     independently (body copy must clear AA, an idle mark does not). */
-  --status-idle: #9B9B9B;
+  /* Idle is --text-muted, and the old argument for keeping them apart ("an idle
+     mark does not have to clear AA") did not hold: StatusBadge paints the WORD
+     "idle" with this token as well as the square, so it is body copy. At
+     #9B9B9B it measured 2.64 on bg, 2.78 on a card and 2.47 on a raised
+     surface, failing the 4.5 text floor and the 3.0 non-text floor at once.
+     DESIGN.md has claimed this binding shipped for a while; now it has. */
+  --status-idle: var(--text-muted);
 
   /* Layout */
   --sidebar-w: 216px;
@@ -160,7 +164,9 @@
   --danger-muted: rgba(229, 83, 75, 0.12);
   --info: #FF9E42;
   --info-muted: rgba(255, 158, 66, 0.12);
-  --status-idle: #727272;
+  /* Same binding as light. #727272 cleared 3.0 for the square but only 3.62 on
+     a card for the word, under the 4.5 text floor. */
+  --status-idle: var(--text-muted);
 
   /* Accent colors */
   --accent-green: #4CC38A;
@@ -189,6 +195,10 @@
   --radius-md: 2px;
   --radius-lg: 2px;
   --radius-xl: 2px;
+  /* Bare `rounded` reads --radius, not --radius-sm, so flattening the four
+     named steps left the unqualified class at Tailwind's own 4px. That is
+     twice the app's radius on the 58 places that use it. */
+  --radius: 2px;
 
   /* Core colors */
   --color-background: var(--background);

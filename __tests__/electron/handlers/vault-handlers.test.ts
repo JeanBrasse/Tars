@@ -28,9 +28,13 @@ const mockDb = {
   prepare: vi.fn(() => mockStmt),
 };
 
-vi.mock('../../../electron/services/vault-db', () => ({
-  getVaultDb: vi.fn(() => mockDb),
-}));
+vi.mock('../../../electron/services/vault-db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../electron/services/vault-db')>();
+  return {
+    ...actual,
+    getVaultDb: vi.fn(() => mockDb),
+  };
+});
 
 vi.mock('../../../electron/constants', () => ({
   VAULT_DIR: '/mock/vault',

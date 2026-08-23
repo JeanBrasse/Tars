@@ -729,6 +729,8 @@ export interface ElectronAPI {
       favoriteProjects?: string[];
       hiddenProjects?: string[];
       defaultProjectPath?: string;
+      /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
+      providerBudgets?: Record<string, number>;
       cliPaths?: {
         claude: string;
         codex: string;
@@ -795,6 +797,7 @@ export interface ElectronAPI {
       favoriteProjects?: string[];
       hiddenProjects?: string[];
       defaultProjectPath?: string;
+      providerBudgets?: Record<string, number>;
       cliPaths?: {
         claude: string;
         codex: string;

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Puzzle,
   Search,
-  Loader2,
   CheckCircle,
   XCircle,
   Filter,
@@ -27,7 +26,7 @@ import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { Button, DialogShell } from '@/components/ui';
+import { BrandSpinner, Button, DialogShell, ErrorState, LoadingPanel } from '@/components/ui';
 // Import xterm CSS
 import 'xterm/css/xterm.css';
 
@@ -155,8 +154,8 @@ const PluginCard = React.memo(function PluginCard({
             >
               {isInstalling ? (
                 <>
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Installing...
+                  <BrandSpinner size={14} />
+                  Installing
                 </>
               ) : hasElectron ? (
                 'Install'
@@ -182,7 +181,7 @@ const PluginCard = React.memo(function PluginCard({
 
 export default function PluginsTab() {
   const { data, loading } = useClaude();
-  const { plugins: PLUGINS_DATABASE, categories: PLUGIN_CATEGORIES, marketplaces: MARKETPLACES, authors: AUTHORS, loading: pluginsLoading } = usePluginsDatabase();
+  const { plugins: PLUGINS_DATABASE, categories: PLUGIN_CATEGORIES, marketplaces: MARKETPLACES, authors: AUTHORS, loading: pluginsLoading, error: pluginsError, refresh: refreshPlugins } = usePluginsDatabase();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -533,11 +532,8 @@ export default function PluginsTab() {
 
   if ((loading && !data) || pluginsLoading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading plugins...</p>
-        </div>
+      <div className="flex h-[60vh] items-center justify-center">
+        <LoadingPanel what="Reading the plugin marketplaces" />
       </div>
     );
   }
@@ -796,7 +792,19 @@ export default function PluginsTab() {
           </div>
         )}
 
-        {cardData.length === 0 && (
+        {/* An empty catalogue and an unreachable one looked identical: when every
+            marketplace failed to fetch, the page offered "Clear filters" for a
+            list that was never loaded. The hook has always returned the error;
+            nothing read it. */}
+        {cardData.length === 0 && pluginsError && (
+          <ErrorState
+            title="Could not reach the plugin marketplaces."
+            detail={pluginsError}
+            onRetry={refreshPlugins}
+          />
+        )}
+
+        {cardData.length === 0 && !pluginsError && (
           <div className="flex flex-col items-center justify-center h-64">
             <Puzzle className="w-12 h-12 text-muted-foreground/30 mb-4" />
             <p className="text-muted-foreground">No plugins found matching your search</p>

@@ -17,7 +17,7 @@ import { SKILLS_DATABASE, fetchSkillsPaginated, type Skill } from '@/lib/skills-
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import TerminalDialog from '@/components/TerminalDialog';
 import ProviderBadge from '@/components/ProviderBadge';
-import { BrandSpinner, Button, DialogShell, Input, Label, LoadingPanel, LoadingState } from '@/components/ui';
+import { BrandSpinner, Button, DialogShell, ErrorState, Input, Label, LoadingPanel, LoadingState } from '@/components/ui';
 
 /** Providers with a local CLI binary that have their own skill directory */
 const CLI_PROVIDER_IDS = PROVIDER_REGISTRY.filter((p) => p.requiresCli).map((p) => p.id);
@@ -225,11 +225,12 @@ export default function SkillsTab() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center text-danger">
-          <p className="mb-2">Failed to load skills</p>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </div>
+      <div className="flex h-[60vh] items-center justify-center">
+        <ErrorState
+          title="Could not read your installed skills."
+          detail={error}
+          onRetry={refreshClaude}
+        />
       </div>
     );
   }

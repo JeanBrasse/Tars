@@ -218,6 +218,14 @@ export async function fileDiff(repoPath: string, file: string, baseBranch?: stri
   // Same reason, for the value that is *not* behind the `--` separator.
   if (baseBranch) assertSafeRef(baseBranch);
 
+  // Same guard reviewDiff and repoSummary already have: every git call below
+  // goes through tryGit, which swallows failures and returns '' - so on a
+  // non-git directory `committed`/`working` both come back empty and this
+  // fell through to the "untracked file" fallback, silently reading the file
+  // off disk and presenting it as a diff addition instead of erroring.
+  const inside = (await tryGit(repoPath, ['rev-parse', '--is-inside-work-tree'])).trim();
+  if (inside !== 'true') throw new Error('not a git repository');
+
   const range = baseBranch ? [`${baseBranch}...HEAD`] : [];
   const committed = await tryGit(repoPath, ['diff', ...range, '--', file]);
   const working = await tryGit(repoPath, ['diff', 'HEAD', '--', file]);
@@ -255,6 +263,12 @@ export interface RepoSummary {
  */
 export async function repoSummary(repoPath: string): Promise<RepoSummary> {
   if (!repoPath || !fs.existsSync(repoPath)) throw new Error('no such directory');
+  // Every other check here goes through tryGit, which swallows failures and
+  // returns '' - so a plain (non-git) directory used to come back as a
+  // "successful" summary with branch "unknown" and nothing else, instead of
+  // the error the caller needs to tell a broken project apart from an empty one.
+  const inside = (await tryGit(repoPath, ['rev-parse', '--is-inside-work-tree'])).trim();
+  if (inside !== 'true') throw new Error('not a git repository');
 
   const branch = (await tryGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'unknown';
 

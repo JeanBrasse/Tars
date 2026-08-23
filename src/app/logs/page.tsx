@@ -31,6 +31,9 @@ export default function LogsPage() {
   const [focused, setFocused] = useState<string | null>(null);
   const [tail, setTail] = useState<{ lines: string[]; agentName: string } | null>(null);
   const debounce = useRef<NodeJS.Timeout | null>(null);
+  // Bumped on every search kicked off; a resolving search whose id no longer
+  // matches is stale and must not overwrite a newer one's results.
+  const searchSeq = useRef(0);
 
   const loadFleet = useCallback(async () => {
     const res = await window.electronAPI?.logs?.fleet();
@@ -46,6 +49,7 @@ export default function LogsPage() {
   }, [loadFleet]);
 
   const runSearch = useCallback(async (q: string) => {
+    const seq = ++searchSeq.current;
     if (!q.trim()) {
       setResults(null);
       return;
@@ -53,11 +57,12 @@ export default function LogsPage() {
     setSearching(true);
     try {
       const res = await window.electronAPI?.logs?.search(q, { limit: 300 });
+      if (seq !== searchSeq.current) return; // a newer search or an agent click superseded this one
       setResults(res?.lines ?? []);
       setScanned(res?.scannedAgents ?? 0);
       setTruncated(!!res?.truncated);
     } finally {
-      setSearching(false);
+      if (seq === searchSeq.current) setSearching(false);
     }
   }, []);
 
@@ -68,6 +73,12 @@ export default function LogsPage() {
   }, [query, runSearch]);
 
   const openAgent = useCallback(async (agentId: string) => {
+    // Invalidate any in-flight/pending search so it can't clobber the tail
+    // view we're about to show, and drop out of the results branch so the
+    // render actually switches to the tail (results !== null wins otherwise).
+    searchSeq.current++;
+    setSearching(false);
+    setResults(null);
     setFocused(agentId);
     const res = await window.electronAPI?.logs?.tail(agentId, 300);
     setTail(res ?? null);

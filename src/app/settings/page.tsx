@@ -3,9 +3,8 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
-import { Button, LoadingState, PageHeader } from '@/components/ui';
+import { Button, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import {
   SettingsSidebar,
   SettingsCard,
@@ -222,12 +221,12 @@ function SettingsPageInner() {
 
   if (error && !settings) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="text-center text-danger">
-          <AlertCircle className="w-8 h-8 mx-auto mb-4" />
-          <p className="mb-2">Failed to load settings</p>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </div>
+      <div className="flex h-[60vh] items-center justify-center">
+        <ErrorState
+          title="Could not read your settings."
+          detail={error}
+          onRetry={fetchSettings}
+        />
       </div>
     );
   }
