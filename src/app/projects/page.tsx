@@ -525,7 +525,7 @@ export default function ProjectsPage() {
         <div className="border border-border bg-card p-6 text-center">
           <p className="text-[12.5px] text-foreground">No projects yet</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            Add a folder, or start using Claude Code and its projects show up here.
+            Add a folder, or run any agent CLI in one and it shows up here.
             A folder you add is remembered on disk, so an update never loses it.
           </p>
           {hasElectron && (

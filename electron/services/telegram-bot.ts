@@ -6,6 +6,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
 import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR } from '../constants';
+import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
@@ -120,12 +121,20 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
     ? superAgentOutputBuffer.join('')
     : agent.output.slice(-100).join('');
 
-  // Remove ANSI escape codes
-  const cleanOutput = rawOutput
-    .replace(/\x1b\[[0-9;]*m/g, '')
-    .replace(/\x1b\[\?[0-9]*[hl]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '') // OSC sequences
-    .replace(/[\x00-\x09\x0B-\x1F]/g, ''); // Control chars except newline
+  // Remove ANSI escape codes, then take the secrets out.
+  //
+  // This is the last thing that touches the text before it leaves the machine,
+  // and it used to be ANSI-stripping alone. An agent's PTY environment carries
+  // ANTHROPIC_API_KEY, which for every provider except the local ones is the
+  // user's real vendor key, so one `env`, one verbose curl, or one stack trace
+  // that prints its config put it in a chat.
+  const cleanOutput = redactSecrets(
+    rawOutput
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/\x1b\[\?[0-9]*[hl]/g, '')
+      .replace(/\x1b\][^\x07]*\x07/g, '') // OSC sequences
+      .replace(/[\x00-\x09\x0B-\x1F]/g, ''), // Control chars except newline
+  );
 
   const lines = cleanOutput.split('\n');
 

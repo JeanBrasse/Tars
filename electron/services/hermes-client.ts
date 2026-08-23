@@ -443,7 +443,7 @@ export async function fetchHermesSessionMessages(
   if (status === 401 || status === 403) return { success: false, error: 'Sign in to Hermes', needsSignIn: true };
   if (status >= 300) return { success: false, error: `HTTP ${status}` };
 
-  const raw = Array.isArray(body) ? body : [];
+  const raw = Array.isArray(body) ? body : (body as { messages?: unknown[] } | null)?.messages ?? [];
   const messages = raw.map(entry => {
     const m = (entry ?? {}) as Record<string, unknown>;
     return {

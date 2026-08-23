@@ -156,10 +156,29 @@ describe('ClaudeProvider', () => {
 
       await provider.removeMcpServer('test-server');
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('claude mcp remove -s user test-server'),
+      // argv, never a shell string. The add path was fixed for this and its
+      // sibling was left behind, so `$(id)` in a server name still reached
+      // /bin/sh at every removal.
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'claude',
+        ['mcp', 'remove', '-s', 'user', 'test-server'],
         expect.any(Object),
       );
+      expect(mockExecSync).not.toHaveBeenCalled();
+    });
+
+    it('never hands a crafted name to a shell', async () => {
+      const provider = await getProvider();
+      mockExecFileSync.mockReturnValue('');
+
+      const nasty = 'evil$(id)`whoami`;rm -rf /';
+      await provider.removeMcpServer(nasty);
+
+      const [binary, args] = mockExecFileSync.mock.calls[0];
+      expect(binary).toBe('claude');
+      // The name arrives as one argument, intact and uninterpreted.
+      expect(args).toContain(nasty);
+      expect(mockExecSync).not.toHaveBeenCalled();
     });
 
     it('also cleans mcp.json', async () => {

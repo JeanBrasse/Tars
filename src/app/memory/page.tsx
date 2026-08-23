@@ -317,7 +317,7 @@ export default function MemoryPage() {
 
       <PageHeader
         title="Brain"
-        subtitle="What your agents know: native project memory plus shared backends (gbrain, Honcho)."
+        subtitle="What your agents know, and which of it they can actually reach right now."
         actions={headerAction}
       />
 
