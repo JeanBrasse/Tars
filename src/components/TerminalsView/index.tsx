@@ -391,40 +391,49 @@ export default function TerminalsView() {
     setShowNewChatModal(false);
   }, [createAgent, tabManager]);
 
-  // Navigation never starts an agent; a cold launch may.
+  // Each project starts its agents once, the first time you look at it.
   //
-  // These were one behaviour and had to be separated. The old code resumed
-  // every idle agent on every mount, so leaving the dashboard and coming back
-  // silently spawned sessions the user never asked for and burned tokens -
-  // which is why it was removed wholesale. But that also took away the thing
-  // people actually want: open the app, and the agents you left running are
-  // running again.
+  // The original code resumed every idle agent on every mount, so leaving the
+  // dashboard and coming back silently spawned sessions nobody asked for and
+  // burned tokens - which is why it was removed wholesale. That also removed
+  // what people actually want: open a project and see the CLI already running
+  // instead of a bare shell with a button to press.
   //
-  // The sessionStorage key is what distinguishes the two. It is set once per
-  // window, so this fires on the first dashboard render after launch and never
-  // again for that session - re-navigating here is still inert.
-  const autoStartRef = useRef(false);
+  // The seen-set is what separates the two. A project is auto-started the first
+  // time it is displayed in this window and never again, so switching tabs back
+  // and forth stays inert. It is per window, so quitting and relaunching gives
+  // you a running board again.
+  const startedProjectsRef = useRef<Set<string>>(new Set());
+  const visibleProjectPath = tabManager.activeTab.type === 'project' ? tabManager.activeTab.projectPath : null;
+
   useEffect(() => {
-    if (autoStartRef.current) return;
     if (isLoading) return;                           // wait for the real list
-    autoStartRef.current = true;
-
-    if (typeof window === 'undefined') return;
-    if (sessionStorage.getItem(LAUNCH_AUTOSTART_KEY)) return;
-    sessionStorage.setItem(LAUNCH_AUTOSTART_KEY, '1');
-
-    if (autoStartOnLaunch === undefined) { autoStartRef.current = false; return; }
+    if (autoStartOnLaunch === undefined) return;     // wait for settings
     if (!autoStartOnLaunch) return;
+    if (typeof window === 'undefined') return;
 
-    // Only agents that were left with no live terminal. An agent already
-    // attached to a PTY is mid-session and must not be resumed underneath it.
-    const toResume = agents.filter(a => !a.ptyId && a.status === 'idle' && !a.pathMissing);
+    // Which agents are on screen right now: the open project, or everything on
+    // a custom tab.
+    const onScreen = visibleProjectPath
+      ? agents.filter(a => a.projectPath === visibleProjectPath)
+      : filteredAgents;
+    if (onScreen.length === 0) return;
+
+    const scope = visibleProjectPath ?? '__custom__';
+    if (startedProjectsRef.current.has(scope)) return;
+    startedProjectsRef.current.add(scope);
+
+    // Only agents left with no live terminal. One already attached to a PTY is
+    // mid-session and must not be resumed underneath it. A missing folder is
+    // refused by the main process anyway, but skip it rather than collect an
+    // error banner on every project you open.
+    const toResume = onScreen.filter(a => !a.ptyId && a.status === 'idle' && !a.pathMissing);
     for (const agent of toResume) {
       startAgent(agent.id, '', { resume: true }).catch(err => {
         console.error(`[autostart] ${agent.name || agent.id}:`, err);
       });
     }
-  }, [agents, isLoading, autoStartOnLaunch, startAgent]);
+  }, [agents, filteredAgents, visibleProjectPath, isLoading, autoStartOnLaunch, startAgent]);
 
   // Exit view fullscreen on Escape
   useEffect(() => {

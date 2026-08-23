@@ -7,6 +7,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 17,
+    version: '1.5.2',
+    date: '2026-08-24',
+    updates: [
+      'Usage was wrong every single day, and right in total. Each day was rebuilt by taking that day\'s input and output tokens and multiplying by an all-time average rate — but cache reads are the bill (a billion of them against a million output tokens) and were not in the daily figures at all. Days came out between 83% under and 158% over; the errors cancelled across the whole period, which is why the total looked correct and hid it. Every day is now priced from its own tokens, cache included, and the day-by-day figures add up to the total exactly',
+      'Schedules no longer crashes. Hermes sends a schedule as an object; the page put it straight into the markup, React refused it, and because that happens while the page is still coming up there is no error screen to catch it — you got the browser\'s "This page couldn\'t load" instead. It also reads Hermes\' real field names for the pause state now, so paused jobs show as paused',
+      'You can pick any folder for an agent again. The design pass removed the browse control from the project step while leaving everything behind it wired, so you were stuck with whatever the dropdown happened to list. Choosing a folder also remembers it, so the list grows instead of making you browse again',
+      'Every link with a parameter works in the packaged app — "Sign in to Hermes" from Kanban and Schedules landed on "not found", because the URL was split by hand and the query string was treated as part of the filename',
+      'Opening a project starts its agents, once. You get the CLI running instead of a bare shell; switching tabs back and forth still starts nothing',
+      'The start button in a terminal header is an ordinary bordered action instead of a solid orange block in every pane at once',
+      'An agent asked to list agents "with all: true" no longer presents other projects\' agents as its own. They are listed separately and marked undelegatable, which is what the server already enforced',
+    ],
+  },
+  {
     id: 16,
     version: '1.5.1',
     date: '2026-08-23',

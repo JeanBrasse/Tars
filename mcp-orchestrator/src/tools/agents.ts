@@ -133,7 +133,7 @@ export function registerAgentTools(server: McpServer): void {
   // Tool: List agents (scoped to the caller's project by default)
   server.tool(
     "list_agents",
-    "List the agents of YOUR project and their current status (idle/running/waiting/completed/error). Only these agents can receive your tasks — delegating to another project's agents is rejected. Pass all: true only if you explicitly need the global cross-project view.",
+    "List the agents of YOUR project and their current status (idle/running/waiting/completed/error). Only these agents can receive your tasks — delegating to another project's agents is rejected. `all: true` adds other projects' agents for visibility ONLY; they remain undelegatable, and you must not present them as agents you have access to.",
     {
       all: z.boolean().optional().describe("If true, list agents of ALL projects instead of only your own"),
     },
@@ -143,6 +143,31 @@ export function registerAgentTools(server: McpServer): void {
           agents: unknown[];
           scopedToProject?: string;
         };
+        // When the caller asked for the global view, say plainly which of these
+        // it can actually act on. Listing every project's agents under a
+        // heading like "agents you have access to" is misleading: delegation
+        // to another project is rejected, so most of that list is unreachable.
+        // Asking an agent to list "all the agents you have access to" is
+        // exactly the phrasing that makes a model pass all:true.
+        const mine = getCallerIdentity().projectPath;
+        if (all) {
+          const rows = (data.agents as Array<Record<string, unknown>>) ?? [];
+          const reachable = mine ? rows.filter(a => a.projectPath === mine) : rows;
+          const others = mine ? rows.filter(a => a.projectPath !== mine) : [];
+          const header = mine
+            ? `You can delegate to these ${reachable.length} agent(s) - they are in your project (${mine}):`
+            : `No caller identity, so nothing here is scoped:`;
+          const tail = others.length
+            ? `\n\nThe following ${others.length} agent(s) belong to OTHER projects. They are listed ` +
+              `because all:true was requested. You CANNOT delegate to them - delegate_task will ` +
+              `reject it. Do not describe them as available to you:\n` +
+              JSON.stringify(others, null, 2)
+            : "";
+          return {
+            content: [{ type: "text", text: `${header}\n${JSON.stringify(reachable, null, 2)}${tail}` }],
+          };
+        }
+
         const scopeNote = data.scopedToProject
           ? `Agents of your project (${data.scopedToProject}):\n`
           : "";

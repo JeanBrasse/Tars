@@ -144,10 +144,14 @@ export default function TerminalPanelHeader({
         type="button"
         onMouseDown={e => e.stopPropagation()}
         onClick={isLive ? onStop : onStart}
+        // A bordered 26px row action, like every other action in the app. The
+        // first version was accent-filled, which put a solid orange block in
+        // every pane header at once - the accent is for one primary action on
+        // a screen, not for six of them in a row.
         className={`h-[26px] px-2 text-[11px] font-mono lowercase border transition-colors cursor-pointer ${
           isLive
             ? 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
-            : 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+            : 'border-border-accent text-foreground hover:border-primary hover:text-primary'
         }`}
         title={isLive ? 'Stop this agent' : `Start ${agent.provider ?? 'the CLI'} in this terminal`}
       >

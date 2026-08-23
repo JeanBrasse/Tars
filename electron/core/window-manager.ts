@@ -254,13 +254,15 @@ export function setupProtocolHandler() {
     console.log('Registering app:// protocol with basePath:', basePath);
 
     protocol.handle('app', async (request) => {
-      let urlPath = request.url.replace('app://', '');
-
-      // Remove the host part (e.g., "localhost" or "-")
-      const slashIndex = urlPath.indexOf('/');
-      if (slashIndex !== -1) {
-        urlPath = urlPath.substring(slashIndex);
-      } else {
+      // Parse rather than slice. The old form kept the query string and the
+      // hash in the path, so `app://-/settings?section=hermes` - the link
+      // Kanban and Schedules use for "Sign in to Hermes" - was looked up as a
+      // file literally named `settings?section=hermes` and 404'd. Any link
+      // carrying a parameter was unreachable in the packaged app.
+      let urlPath: string;
+      try {
+        urlPath = decodeURIComponent(new URL(request.url).pathname);
+      } catch {
         urlPath = '/';
       }
 

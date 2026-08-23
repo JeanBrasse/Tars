@@ -6,6 +6,26 @@ import type { Project } from './types';
 /** How many one-click project chips the RECENT row offers. */
 const RECENT_COUNT = 3;
 
+/**
+ * Sentinel value for the "Choose a folder…" row of the project dropdown.
+ *
+ * FAILURE THIS FIXES: the design pass that rewrote this file (d845125) deleted
+ * the custom-path Input and its Browse button along with the rest of the old
+ * layout, but left `onBrowseFolder` in the props interface. Both the create and
+ * the edit modal still thread that callback down from agents/page.tsx, and this
+ * component silently dropped it - it was never even destructured. The result:
+ * the only projects an agent could ever be pointed at were the ones
+ * `fs:list-projects` returns (custom projects plus decodable ~/.claude/projects
+ * entries that still exist on disk - 9 of 22 dirs on the author's machine), with
+ * no way to reach any other directory. The IPC was never the problem:
+ * `dialog:open-folder` exists in ipc-handlers, is bridged in preload as
+ * `dialog.openFolder`, and is typed in electron.d.ts.
+ *
+ * Same sentinel-option pattern DeployTeamDialog already uses, which is why team
+ * deployment could always browse and agent creation could not.
+ */
+const BROWSE = '__browse__';
+
 /** `/Users/noah/Dorothy-fix` reads as `~/Dorothy-fix` on this step. */
 const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
 
@@ -46,6 +66,7 @@ const StepProject = React.memo(function StepProject({
   projectPath,
   selectedProject,
   onSelectProject,
+  onBrowseFolder,
   favoriteProjects = [],
   hiddenProjects = [],
   defaultProjectPath,
@@ -75,13 +96,34 @@ const StepProject = React.memo(function StepProject({
 
   const branchDisabled = !useWorktree || !!worktreeLocked;
 
+  const handleBrowse = async () => {
+    if (!onBrowseFolder) return;
+    try {
+      const picked = await onBrowseFolder();
+      if (!picked) return; // dialog cancelled - the Select snaps back to `current`
+      const normalized = picked.replace(/\/+$/, '');
+      onSelectProject(normalized);
+      // Remember it, so a folder reached by browsing joins the quick-pick list
+      // instead of having to be re-browsed for every agent. Dedup is handled
+      // main-side by writeCustomProjects.
+      try {
+        await window.electronAPI?.fs?.addCustomProject(normalized);
+      } catch { /* the pick still applies to this agent even if persisting fails */ }
+    } catch (err) {
+      console.error('onBrowseFolder failed:', err);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div>
         <PanelCaption className="mb-1.5">Project</PanelCaption>
         <Select
           value={current}
-          onChange={(e) => onSelectProject(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value === BROWSE) handleBrowse();
+            else onSelectProject(e.target.value);
+          }}
         >
           {!current && <option value="">Select a project</option>}
           {!!current && !currentIsListed && (
@@ -92,6 +134,7 @@ const StepProject = React.memo(function StepProject({
               {tildePath(project.path)}
             </option>
           ))}
+          {onBrowseFolder && <option value={BROWSE}>Choose a folder…</option>}
         </Select>
       </div>
 
