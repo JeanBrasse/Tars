@@ -407,6 +407,14 @@ export function loadAgents() {
       // `agent.output.length`, which took down the whole Logs page for anyone
       // who had agents and restarted the app.
       agent.output = Array.isArray(agent.output) ? agent.output : [];
+      // `skills` has the same shape of problem and was left out of that fix.
+      // It IS written to agents.json, but only by versions that had the field,
+      // so a file from an older build, a hand edit, or a restored backup
+      // arrives without it. Every provider's getPtyEnvVars opens with
+      // `skills.join(',')`, so `agent:start` threw "Cannot read properties of
+      // undefined (reading 'join')" and the agent simply never started, with
+      // the reason buried in an IPC rejection.
+      agent.skills = Array.isArray(agent.skills) ? agent.skills : [];
       // Session ownership is runtime state: any persisted session died with
       // the previous app run, and keeping it would make the stale-session
       // guard reject the next real session's hooks (and /health lie).
