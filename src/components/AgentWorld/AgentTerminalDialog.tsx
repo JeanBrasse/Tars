@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Loader2, PanelRight } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
+import { DialogShell, SegmentedControl } from '@/components/ui';
+import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
 import type { AgentTerminalDialogProps, PanelType } from './AgentDialogTypes';
@@ -14,6 +15,22 @@ import { AgentDialogSidebar } from './AgentDialogSidebar';
 import { AgentDialogSuperAgentSidebar } from './AgentDialogSuperAgentSidebar';
 import { useAgentDialogTerminal } from './useAgentDialogTerminal';
 import { useQuickTerminal } from './useQuickTerminal';
+
+/** Width of the permanent right rail. The design does not let it collapse. */
+const RAIL_WIDTH = 312;
+
+/**
+ * The rail's three tabs. Each one still points at one of the sidebar's
+ * accordion panels, so the strip drives the existing content until
+ * `AgentDialogSidebar` consumes the tab directly.
+ */
+const RAIL_TABS = [
+  { value: 'git', label: 'Git', panel: 'git' },
+  { value: 'memory', label: 'Memory', panel: 'context' },
+  { value: 'skills', label: 'Skills', panel: 'settings' },
+] as const satisfies readonly { value: string; label: string; panel: PanelType }[];
+
+type RailTab = (typeof RAIL_TABS)[number]['value'];
 
 export default function AgentTerminalDialog({
   agent,
@@ -34,7 +51,9 @@ export default function AgentTerminalDialog({
   // UI state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [prompt, setPrompt] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [railTab, setRailTab] = useState<RailTab>(
+    () => RAIL_TABS.find(t => t.panel === initialPanel)?.value ?? 'git',
+  );
   const [expandedPanels, setExpandedPanels] = useState<Set<PanelType>>(new Set());
   const [gitBranch, setGitBranch] = useState('');
 
@@ -127,6 +146,12 @@ export default function AgentTerminalDialog({
     });
   }, []);
 
+  const handleRailTab = useCallback((tab: RailTab) => {
+    setRailTab(tab);
+    const { panel } = RAIL_TABS.find(t => t.value === tab)!;
+    setExpandedPanels(prev => new Set(prev).add(panel));
+  }, []);
+
   const handleSetSecondaryProject = useCallback(async (path: string | null) => {
     if (!agent) return;
     if (path && window.electronAPI?.agent?.sendInput) {
@@ -168,123 +193,118 @@ export default function AgentTerminalDialog({
 
   if (!open || !agent) return null;
 
-  const dialogClass = isFullscreen ? 'fixed inset-4' : 'w-full max-w-[80vw] h-[85vh]';
-
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          onClick={(e) => e.stopPropagation()}
-          className={`bg-bg-secondary border border-border-primary rounded-none overflow-hidden ${dialogClass} flex flex-col [&_button:not(:disabled)]:cursor-pointer`}
-        >
-          <AgentDialogHeader
-            agent={agent}
-            character={character}
-            isFullscreen={isFullscreen}
-            hasSecondaryProject={hasSecondaryProject}
-            isSuperAgentMode={isSuperAgentMode}
-            onOpenInFinder={handleOpenInFinder}
-            onToggleFullscreen={() => setIsFullscreen(v => !v)}
-            onClose={onClose}
-          />
+    <DialogShell
+      onClose={onClose}
+      width={860}
+      className="[&_button:not(:disabled)]:cursor-pointer"
+    >
+      {/* The dialog body is the terminal, so it cancels DialogShell's padding
+          and takes a content height instead of a viewport fraction (R11). */}
+      <div className="-m-4 flex flex-col h-[620px]">
+        <AgentDialogHeader
+          agent={agent}
+          character={character}
+          isFullscreen={isFullscreen}
+          hasSecondaryProject={hasSecondaryProject}
+          isSuperAgentMode={isSuperAgentMode}
+          onStop={handleStop}
+          onOpenInFinder={handleOpenInFinder}
+          onToggleFullscreen={() => setIsFullscreen(v => !v)}
+          onClose={onClose}
+        />
 
-          <div className="flex-1 min-h-[300px] flex overflow-hidden">
-            {/* Main terminal area */}
-            <div className="flex-1 relative">
-              <div
-                ref={terminalRef}
-                className="absolute inset-0 bg-[#1a1a2e] p-2"
-                style={{ cursor: 'text', minHeight: '300px' }}
-                onClick={() => xtermRef.current?.focus()}
+        {/* Second header row: where the agent is working on the left, how the
+            terminal is scrolling on the right, the rail's tabs above the rail. */}
+        <div className="h-9 shrink-0 flex items-stretch border-b border-border bg-card">
+          <div className="flex-1 min-w-0 flex items-center justify-between gap-3 px-4">
+            <span className="font-mono text-[11px] text-muted-foreground truncate">{projectPath}</span>
+            <span className="font-mono text-[11px] text-muted-foreground shrink-0">
+              {isAtBottom ? 'scroll locked' : 'scrolled up'}
+            </span>
+          </div>
+          <div
+            className="shrink-0 border-l border-border flex items-center px-3"
+            style={{ width: RAIL_WIDTH }}
+          >
+            {!isSuperAgentMode && (
+              <SegmentedControl
+                options={RAIL_TABS.map(({ value, label }) => ({ value, label }))}
+                value={railTab}
+                onChange={handleRailTab}
+                ariaLabel="Rail section"
               />
-              {!terminalReady && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a2e]">
-                  <Loader2 className="w-6 h-6 animate-spin text-accent-cyan" />
-                </div>
-              )}
-              {/* Sidebar toggle button (top-right of terminal) */}
-              {!sidebarOpen && !isSuperAgentMode && (
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="absolute top-2 right-2 p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors z-10"
-                  title="Show sidebar"
-                >
-                  <PanelRight className="w-4 h-4" />
-                </button>
-              )}
-              {/* Scroll-to-bottom button - appears when user has scrolled up */}
-              {terminalReady && !isAtBottom && (
-                <button
-                  onClick={scrollToBottom}
-                  className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors z-10"
-                  title="Scroll to bottom"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                  Scroll to bottom
-                </button>
-              )}
-            </div>
+            )}
+          </div>
+        </div>
 
-            {/* Right sidebar - collapsible */}
-            {(sidebarOpen || isSuperAgentMode) && (
-              <div className="border-l border-border-primary bg-bg-tertiary/20 flex flex-col overflow-hidden" style={{ width: '480px' }}>
-                {isSuperAgentMode ? (
-                  <AgentDialogSuperAgentSidebar agents={agents} projects={projects} />
-                ) : (
-                  <>
-                    <button
-                      onClick={() => setSidebarOpen(false)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground border-b border-border-primary transition-colors"
-                    >
-                      <PanelRight className="w-3.5 h-3.5" />
-                      Hide sidebar
-                    </button>
-                    <AgentDialogSidebar
-                      agent={agent}
-                      projectPath={projectPath}
-                      expandedPanels={expandedPanels}
-                      onTogglePanel={togglePanel}
-                      gitBranch={gitBranch}
-                      onGitBranchChange={setGitBranch}
-                      quickTerminalRef={quickTerminalRef}
-                      quickXtermRef={quickXtermRef}
-                      quickTerminalReady={quickTerminalReady}
-                      hasActiveTerminal={hasActiveTerminal}
-                      onCloseQuickTerminal={closeQuickTerminal}
-                      hasSecondaryProject={hasSecondaryProject}
-                      availableProjects={availableProjects}
-                      customSecondaryPath={customSecondaryPath}
-                      onCustomSecondaryPathChange={setCustomSecondaryPath}
-                      onSetSecondaryProject={handleSetSecondaryProject}
-                      onBrowseFolder={onBrowseFolder}
-                      editPermissionMode={editPermissionMode}
-                      isSavingSettings={isSavingSettings}
-                      onSavePermissionMode={handleSavePermissionMode}
-                    />
-                  </>
-                )}
+        <div className="flex-1 min-h-0 flex overflow-hidden">
+          {/* Main terminal area */}
+          <div className="flex-1 min-w-0 relative">
+            <div
+              ref={terminalRef}
+              className={`absolute inset-0 p-2 ${TERMINAL_SURFACE_CLASS}`}
+              style={{ cursor: 'text' }}
+              onClick={() => xtermRef.current?.focus()}
+            />
+            {!terminalReady && (
+              <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
+            )}
+            {/* Scroll-to-bottom button - appears when user has scrolled up */}
+            {terminalReady && !isAtBottom && (
+              <button
+                onClick={scrollToBottom}
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 h-[26px] px-2.5 border border-border bg-card font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors z-10"
+              >
+                scroll to bottom
+              </button>
             )}
           </div>
 
-          <AgentDialogFooter
-            agent={agent}
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            onStart={handleStart}
-            onStop={handleStop}
-          />
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+          {/* Right rail - permanent */}
+          <div
+            className="shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"
+            style={{ width: RAIL_WIDTH }}
+          >
+            {isSuperAgentMode ? (
+              <AgentDialogSuperAgentSidebar agents={agents} projects={projects} />
+            ) : (
+              <AgentDialogSidebar
+                agent={agent}
+                projectPath={projectPath}
+                expandedPanels={expandedPanels}
+                onTogglePanel={togglePanel}
+                gitBranch={gitBranch}
+                onGitBranchChange={setGitBranch}
+                quickTerminalRef={quickTerminalRef}
+                quickXtermRef={quickXtermRef}
+                quickTerminalReady={quickTerminalReady}
+                hasActiveTerminal={hasActiveTerminal}
+                onCloseQuickTerminal={closeQuickTerminal}
+                hasSecondaryProject={hasSecondaryProject}
+                availableProjects={availableProjects}
+                customSecondaryPath={customSecondaryPath}
+                onCustomSecondaryPathChange={setCustomSecondaryPath}
+                onSetSecondaryProject={handleSetSecondaryProject}
+                onBrowseFolder={onBrowseFolder}
+                editPermissionMode={editPermissionMode}
+                isSavingSettings={isSavingSettings}
+                onSavePermissionMode={handleSavePermissionMode}
+              />
+            )}
+          </div>
+        </div>
+
+        <AgentDialogFooter
+          agent={agent}
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          onStart={handleStart}
+          onStop={handleStop}
+        />
+      </div>
+    </DialogShell>
   );
 }

@@ -191,7 +191,7 @@ export default function AgentsPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-accent-blue mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
           <p className="text-text-secondary">Loading agents...</p>
         </div>
       </div>
@@ -199,7 +199,7 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-22px)] flex flex-col pt-[22px]">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <AgentListHeader
         onNewAgentClick={() => setShowNewChatModal(true)}
         onDeployTeamClick={() => setShowDeployTeamDialog(true)}

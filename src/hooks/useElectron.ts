@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { AgentStatus, AgentEvent, ElectronAPI, AgentCharacter, AgentProvider } from '@/types/electron';
 
 // Check if we're running in Electron
@@ -12,6 +12,15 @@ export const isElectron = (): boolean => {
 export function useElectronAgents() {
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Mirror of `agents.length`, readable from event callbacks without making
+  // them depend on the current state. Kept in sync after every commit so the
+  // agents:tick handler can compare counts *outside* of a setState updater
+  // (see the comment on onTick below).
+  const agentCountRef = useRef(0);
+  useEffect(() => {
+    agentCountRef.current = agents.length;
+  });
 
   // Fetch all agents
   const fetchAgents = useCallback(async () => {
@@ -165,12 +174,19 @@ export function useElectronAgents() {
     // Also subscribe to agents:tick for reliable live status updates
     // (proven to reach all windows — tray panel uses this successfully)
     const unsubTick = window.electronAPI!.agent.onTick?.((tickAgents) => {
+      // If agent count changed, refetch full data (tick only has partial fields).
+      // This comparison and the fetch used to live *inside* the setAgents
+      // updater below, which made the updater impure: React may invoke an
+      // updater more than once per dispatch (StrictMode double-invocation in
+      // dev, re-invocation on a concurrent re-render), so a single tick could
+      // fire several duplicate `agent:list` IPC round trips. The count is
+      // therefore read from a ref, outside the updater, and the updater below
+      // stays a pure function of `prev`.
+      if (agentCountRef.current !== tickAgents.length) {
+        fetchAgents();
+        return;
+      }
       setAgents(prev => {
-        // If agent count changed, refetch full data (tick only has partial fields)
-        if (prev.length !== tickAgents.length) {
-          fetchAgents();
-          return prev;
-        }
         // Check if any status or currentTask changed
         const hasChange = tickAgents.some(t => {
           const existing = prev.find(a => a.id === t.id);
@@ -327,11 +343,13 @@ export function useElectronFS() {
 
 // Hook for shell operations via Electron IPC
 export function useElectronShell() {
-  const openTerminal = useCallback(async (cwd: string, command?: string) => {
+  // Directory only. The `command` this used to forward was removed from the
+  // handler: it was pasted into an AppleScript literal and executed.
+  const openTerminal = useCallback(async (cwd: string) => {
     if (!isElectron()) {
       throw new Error('Electron API not available');
     }
-    return window.electronAPI!.shell.openTerminal({ cwd, command });
+    return window.electronAPI!.shell.openTerminal({ cwd });
   }, []);
 
   // There is deliberately no general exec: the renderer asks for a CLI's

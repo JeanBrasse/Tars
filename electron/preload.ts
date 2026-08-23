@@ -381,6 +381,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   shell: {
+    // Opens Terminal.app in a directory. The bridge lost this method when the
+    // general shell.exec primitive was removed, but `shell:open-terminal`
+    // stayed registered and two call sites kept calling it - `shell` existed so
+    // the optional chain went through, `.openTerminal` was undefined, and the
+    // Settings "open" button threw a TypeError on every click in every shipped
+    // build. Re-exposed deliberately with the directory only: the handler no
+    // longer accepts a `command`, which is what made it an arbitrary-execution
+    // channel.
+    openTerminal: (params: { cwd: string }) => ipcRenderer.invoke('shell:open-terminal', { cwd: params.cwd }),
     version: (binary: string) => ipcRenderer.invoke('shell:version', { binary }),
     branch: (cwd: string) => ipcRenderer.invoke('shell:branch', { cwd }),
     reveal: (path: string) => ipcRenderer.invoke('shell:reveal', { path }),

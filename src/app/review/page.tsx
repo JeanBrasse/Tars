@@ -115,7 +115,7 @@ export default function ReviewPage() {
   const current = workspaces.find(w => w.key === selected);
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
         title="Review"
         subtitle="What your agents changed, per working tree."

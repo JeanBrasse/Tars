@@ -14,7 +14,9 @@ import type { AgentProvider } from '../../types';
  *
  * The public registry publishes one agent.json per agent with the exact
  * distribution to run, so the launch commands are not hardcoded knowledge that
- * rots - they are refreshed like the model catalogue.
+ * rots - they are refreshed like the model catalogue. It refreshes *versions*
+ * only: the package name we execute comes from ALLOWED_PACKAGES below, never
+ * from the network. See the comment there for what that prevents.
  */
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/agentclientprotocol/registry/main';
@@ -68,16 +70,110 @@ interface CacheShape {
   agents: Record<string, AcpAgentEntry>;
 }
 
+/**
+ * The npm package each agent id is allowed to run, without its version.
+ *
+ * This table is the security boundary of this module. The registry manifest -
+ * and the on-disk cache built from it - is a *version* hint, never the name of
+ * the binary we execute: `manifestToEntry` used to splice
+ * `distribution.npx.package` straight into `npx -y <package>`, so a single
+ * commit in the third-party agentclientprotocol/registry repo (or a write to
+ * ~/.dorothy/acp-registry.json) could point that spawn at any package on npm,
+ * which then ran as the user inside the user's project with the user's
+ * environment, and stuck in the cache for the whole TTL.
+ *
+ * An agent id that is absent here can never be launched from the registry. Add
+ * the package name here - deliberately - when upstream ships one.
+ */
+const ALLOWED_PACKAGES: Record<string, readonly string[]> = {
+  'claude-acp': ['@agentclientprotocol/claude-agent-acp'],
+  'codex-acp': ['@agentclientprotocol/codex-acp'],
+  gemini: ['@google/gemini-cli'],
+  grok: ['@xai-official/grok'],
+  opencode: ['opencode-ai'],
+};
+
 let memo: CacheShape | null = null;
+
+/** npm package name, e.g. `@scope/name` or `name`. */
+const PACKAGE_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+/**
+ * Version or dist-tag only. `:` and `/` are excluded on purpose: they are what
+ * turns a version suffix into a fetch of somebody else's code
+ * (`pkg@npm:evil`, `pkg@github:u/r`, `pkg@file:...`, `pkg@https://...`).
+ */
+const PACKAGE_VERSION_RE = /^[a-z0-9][a-z0-9.+-]*$/i;
+/** Conservative shape for a CLI flag we did not compile in ourselves. */
+const ARG_RE = /^[a-z0-9][\w.:=@/-]*$/i;
+const MAX_ARGS = 8;
+
+/** Splits `@scope/name@1.2.3` into its name and version halves. */
+function splitPackageSpec(spec: string): { name: string; version: string | null } {
+  const at = spec.lastIndexOf('@');
+  if (at <= 0) return { name: spec, version: null };
+  return { name: spec.slice(0, at), version: spec.slice(at + 1) };
+}
+
+/**
+ * Accepts a launch entry only if it runs a package we compiled in for this
+ * agent id, at a plain version. Returns a rebuilt entry - never the caller's
+ * object - so nothing unvalidated survives into the spawn.
+ */
+function sanitizeEntry(agentId: string, entry: Partial<AcpAgentEntry> | null | undefined): AcpAgentEntry | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const fallback = FALLBACK[agentId];
+  const version = typeof entry.version === 'string' && entry.version ? entry.version : 'latest';
+  const name = typeof entry.name === 'string' && entry.name ? entry.name : agentId;
+  const args = Array.isArray(entry.args) ? entry.args.filter((a): a is string => typeof a === 'string') : [];
+
+  // A locally installed CLI: only the command we compiled in ourselves.
+  if (entry.command && entry.command !== 'npx') {
+    if (!fallback || entry.command !== fallback.command) return null;
+    return { id: agentId, name, version, command: fallback.command, args: [...fallback.args] };
+  }
+
+  const [flag, spec, ...rest] = args;
+  if (flag !== '-y' || typeof spec !== 'string') return null;
+  const { name: pkg, version: pkgVersion } = splitPackageSpec(spec);
+  if (!PACKAGE_NAME_RE.test(pkg)) return null;
+  if (pkgVersion !== null && !PACKAGE_VERSION_RE.test(pkgVersion)) return null;
+  if (!(ALLOWED_PACKAGES[agentId] ?? []).includes(pkg)) return null;
+
+  // Arguments after the package come from the compiled table whenever we have
+  // one; the registry only ever moves the version.
+  const tail = fallback ? fallback.args.slice(2) : rest.slice(0, MAX_ARGS).filter(a => ARG_RE.test(a));
+  return { id: agentId, name, version, command: 'npx', args: ['-y', spec, ...tail] };
+}
 
 function readCache(): CacheShape | null {
   if (memo) return memo;
   try {
-    memo = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8')) as CacheShape;
+    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8')) as unknown;
+    memo = sanitizeCache(raw);
     return memo;
   } catch {
     return null;
   }
+}
+
+/**
+ * Re-validates the cache file on every read: it is a plain 0644 JSON file in
+ * DATA_DIR, so it is not more trustworthy than the registry response it was
+ * built from. Entries that fail validation are dropped, not repaired.
+ */
+function sanitizeCache(raw: unknown): CacheShape | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { fetchedAt, agents } = raw as { fetchedAt?: unknown; agents?: unknown };
+  if (typeof fetchedAt !== 'number' || !Number.isFinite(fetchedAt)) return null;
+  if (!agents || typeof agents !== 'object') return null;
+
+  const clean: Record<string, AcpAgentEntry> = {};
+  for (const [agentId, entry] of Object.entries(agents as Record<string, unknown>)) {
+    const safe = sanitizeEntry(agentId, entry as Partial<AcpAgentEntry>);
+    if (safe) clean[agentId] = safe;
+  }
+  // A clock-ahead timestamp would pin a stale table forever.
+  return { fetchedAt: Math.min(fetchedAt, Date.now()), agents: clean };
 }
 
 function writeCache(cache: CacheShape): void {
@@ -90,16 +186,22 @@ function writeCache(cache: CacheShape): void {
   }
 }
 
-function manifestToEntry(manifest: RegistryManifest, fallbackArgs?: string[]): AcpAgentEntry | null {
+/**
+ * Builds a launch entry for `agentId` from its manifest, or null if the
+ * manifest asks for anything we are not willing to execute. The agent id is
+ * ours, not `manifest.id`: the file we asked for decides which allowlist row
+ * applies, so a manifest cannot rename itself into another agent's row.
+ */
+function manifestToEntry(agentId: string, manifest: RegistryManifest, fallbackArgs?: string[]): AcpAgentEntry | null {
   const npx = manifest.distribution?.npx;
   if (!npx?.package) return null;
-  return {
-    id: manifest.id,
-    name: manifest.name || manifest.id,
+  return sanitizeEntry(agentId, {
+    id: agentId,
+    name: manifest.name || agentId,
     version: manifest.version || 'latest',
     command: 'npx',
     args: ['-y', npx.package, ...(npx.args ?? manifest.acpArgs ?? fallbackArgs ?? [])],
-  };
+  });
 }
 
 /** Refreshes the launch table at most once a day. Never throws. */
@@ -117,7 +219,7 @@ export async function loadAcpRegistry(force = false): Promise<Record<string, Acp
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) return;
-      const entry = manifestToEntry(await res.json() as RegistryManifest, FALLBACK[agentId]?.args.slice(2));
+      const entry = manifestToEntry(agentId, await res.json() as RegistryManifest, FALLBACK[agentId]?.args.slice(2));
       if (entry) agents[agentId] = entry;
     } catch {
       // keep whatever we already had for this agent
@@ -132,8 +234,10 @@ export async function loadAcpRegistry(force = false): Promise<Record<string, Acp
 export function acpLaunchFor(provider: AgentProvider): AcpAgentEntry | null {
   const agentId = PROVIDER_TO_ACP[provider];
   if (!agentId) return null;
-  const cached = readCache();
-  return cached?.agents[agentId] ?? FALLBACK[agentId] ?? null;
+  // Last gate before client.ts spawns this: a cached entry the allowlist would
+  // not accept today falls back to the compiled command rather than running.
+  const cached = readCache()?.agents[agentId];
+  return (cached && sanitizeEntry(agentId, cached)) ?? FALLBACK[agentId] ?? null;
 }
 
 export function providerSupportsAcp(provider: AgentProvider): boolean {

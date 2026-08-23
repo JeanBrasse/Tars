@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
 import { SLACK_CHARACTER_FACES } from '../constants';
-import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructions } from '../utils';
+import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { agents, saveAgents, initAgentPty, killStalePty } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
@@ -604,11 +604,19 @@ export async function sendToSuperAgentFromSlack(
         }
       }
 
-      // Add system prompt from instructions (read via Node.js, not cat - asar compatibility)
-      const superAgentInstructions = getSuperAgentInstructions();
-      if (superAgentInstructions) {
-        const escapedInstructions = superAgentInstructions.replace(/'/g, "'\\''").replace(/"/g, '\\"').replace(/\n/g, ' ');
-        command += ` --append-system-prompt "${escapedInstructions}"`;
+      // Pass the instructions as a file, like the Telegram path does.
+      // This used to inline the file's contents into a DOUBLE-quoted shell word
+      // (`--append-system-prompt "..."`) with only ' " and \n escaped. The line
+      // goes straight to a live bash PTY, so the ~124 markdown backticks in
+      // super-agent-instructions.md were command substitutions: `whoami` really
+      // ran, every backticked MCP tool name was executed as a command and its
+      // text deleted from the prompt, and the '\'' sequences leaked in
+      // literally (single-quote escaping is wrong inside double quotes). Every
+      // Slack-initiated cold start therefore ran stray commands in the agent's
+      // cwd and handed the CLI a mangled system prompt. A file path is data.
+      const superAgentInstructionsPath = getSuperAgentInstructionsPath();
+      if (fs.existsSync(superAgentInstructionsPath)) {
+        command += ` --append-system-prompt-file '${superAgentInstructionsPath.replace(/'/g, "'\\''")}'`;
       }
 
       if (superAgent.permissionMode === 'auto' || superAgent.permissionMode === 'bypass' || (!superAgent.permissionMode && superAgent.skipPermissions)) command += ' --dangerously-skip-permissions';

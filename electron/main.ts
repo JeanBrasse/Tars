@@ -26,6 +26,7 @@ import {
   registerProtocolSchemes,
   setupProtocolHandler,
   getMainWindow,
+  isDevBuild,
 } from './core/window-manager';
 
 import {
@@ -659,9 +660,40 @@ app.on('before-quit', () => {
   closeVaultDb();
 });
 
+/**
+ * Loopback hosts whose TLS errors may be waived, and only in a dev build.
+ *
+ * This used to be `url.startsWith('https://localhost')` - a raw prefix test on
+ * the whole URL, not a host comparison. `https://localhost.attacker.example/x`
+ * and `https://localhostess.example` both match that prefix, so Chromium was
+ * told to accept an expired, self-signed or wrong-host certificate for a host
+ * the attacker owns; any subresource the renderer pulls from it (an <img> in a
+ * note whose markdown an agent wrote, say) then travels over a connection whose
+ * certificate was never validated, with no interstitial. The handler also had
+ * no build guard despite its "in development" comment, so it shipped enabled in
+ * the signed release. Now: parse the URL, compare the hostname exactly, and
+ * only ever waive in an unpackaged build - see isDevBuild().
+ */
+const TLS_WAIVER_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+function mayWaiveCertificateError(url: string): boolean {
+  if (!isDevBuild()) return false;
+  let hostname: string;
+  try {
+    ({ hostname } = new URL(url));
+  } catch {
+    return false;
+  }
+  // URL keeps IPv6 literals bracketed ("[::1]"); strip so the set matches.
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    hostname = hostname.slice(1, -1);
+  }
+  return TLS_WAIVER_HOSTS.has(hostname.toLowerCase());
+}
+
 // Handle certificate errors in development
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-  if (url.startsWith('https://localhost')) {
+  if (mayWaiveCertificateError(url)) {
     event.preventDefault();
     callback(true);
   } else {

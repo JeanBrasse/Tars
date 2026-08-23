@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { scanVault, readVaultFile } from '../services/obsidian-service';
+import { scanVault, readVaultFile, isWithinVault } from '../services/obsidian-service';
 import type { AppSettings } from '../types';
 
 interface ObsidianHandlerDeps {
@@ -105,8 +105,15 @@ export function registerObsidianHandlers(deps: ObsidianHandlerDeps): void {
       return { error: 'Vault path not registered' };
     }
 
+    // Confinement used to be a bare `fullPath.startsWith(path.resolve(vaultPath))`,
+    // a string prefix test with no separator: with a vault of `/Users/noah/Notes`,
+    // a filePath of `/Users/noah/Notes-backup/x.md` or `/Users/noah/Notes.private/secrets.md`
+    // resolved to a string that starts with the vault path and was accepted, so the
+    // handler wrote outside the vault the user actually registered. isWithinVault()
+    // appends path.sep (and allows the vault dir itself), which is what the read side
+    // already goes through via readVaultFile — read and write now share one check.
     const fullPath = path.resolve(filePath);
-    if (!fullPath.startsWith(path.resolve(vaultPath))) {
+    if (!isWithinVault(fullPath, vaultPath)) {
       return { error: 'File path is outside vault' };
     }
 

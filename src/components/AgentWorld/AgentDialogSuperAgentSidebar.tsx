@@ -10,13 +10,13 @@ interface AgentDialogSuperAgentSidebarProps {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  running: 'text-accent-cyan',
+  running: 'text-primary',
   completed: 'text-accent-green',
   error: 'text-accent-red',
 };
 
 const STATUS_BG_COLOR: Record<string, string> = {
-  running: 'bg-accent-cyan/20',
+  running: 'bg-primary/20',
   completed: 'bg-accent-green/20',
   error: 'bg-accent-red/20',
 };
@@ -38,22 +38,22 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
       {/* Agents Section */}
       <div className="border-b border-border-primary">
         <div className="px-3 py-2.5 flex items-center gap-2 bg-bg-tertiary/30">
-          <Users className="w-4 h-4 text-accent-cyan" />
+          <Users className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium">Agents</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-cyan/20 text-accent-cyan">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">
             {otherAgents.length}
           </span>
         </div>
         <div className="p-3 space-y-3">
           {runningAgents.length > 0 && (
             <div>
-              <p className="text-[10px] text-accent-cyan mb-1.5 uppercase tracking-wide flex items-center gap-1">
-                <Circle className="w-2 h-2 fill-accent-cyan animate-pulse" />
+              <p className="text-[10px] text-primary mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                <Circle className="w-2 h-2 fill-primary animate-pulse" />
                 Running ({runningAgents.length})
               </p>
               <div className="space-y-1">
                 {runningAgents.map((agent) => (
-                  <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 rounded-none bg-accent-cyan/10 border border-accent-cyan/20">
+                  <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 rounded-none bg-primary/10 border border-primary/20">
                     <span className="text-lg">{face(agent)}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{agent.name}</p>
@@ -118,9 +118,9 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
       {/* Projects Section */}
       <div className="border-b border-border-primary">
         <div className="px-3 py-2.5 flex items-center gap-2 bg-bg-tertiary/30">
-          <Folder className="w-4 h-4 text-accent-purple" />
+          <Folder className="w-4 h-4 text-text-muted" />
           <span className="text-sm font-medium">Projects</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-purple/20 text-accent-purple">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
             {projects.length}
           </span>
         </div>
@@ -134,7 +134,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                 const runningCount = projectAgents.filter(a => a.status === 'running').length;
                 return (
                   <div key={project.path} className="flex items-center gap-2 px-2 py-1.5 rounded-none hover:bg-bg-tertiary/50">
-                    <Folder className="w-4 h-4 text-accent-purple shrink-0" />
+                    <Folder className="w-4 h-4 text-text-muted shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{project.name}</p>
                       <p className="text-[10px] text-text-muted font-mono truncate">
@@ -146,7 +146,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
                           {projectAgents.length} agent{projectAgents.length !== 1 ? 's' : ''}
                         </span>
-                        {runningCount > 0 && <span className="w-2 h-2 bg-accent-cyan rounded-full animate-pulse" />}
+                        {runningCount > 0 && <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />}
                       </div>
                     )}
                   </div>

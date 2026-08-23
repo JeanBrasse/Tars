@@ -103,7 +103,7 @@ export default function CronsPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
         title="Schedules"
         subtitle="Recurring jobs running in your Hermes gateway."

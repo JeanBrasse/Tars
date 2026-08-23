@@ -33,7 +33,7 @@ export interface ProviderDef {
   id: AgentProvider;
   label: string;
   icon: ProviderIconDef;
-  /** Tailwind color fragment, e.g. 'accent-blue', 'amber-500' */
+  /** Tailwind color fragment, e.g. 'primary', 'amber-500' */
   accent: string;
   /**
    * Full Tailwind class string for a small badge (bg + text).
@@ -54,7 +54,7 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     id: 'claude',
     label: 'Claude',
     icon: { type: 'image', src: '/claude-ai-icon.webp' },
-    accent: 'accent-blue',
+    accent: 'blue-500',
     badgeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
     requiresCli: true,
     models: [
@@ -87,7 +87,7 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     id: 'gemini',
     label: 'Gemini',
     icon: { type: 'svg-gemini' },
-    accent: 'accent-purple',
+    accent: 'purple-500',
     badgeClass: 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
     requiresCli: true,
     models: [
@@ -115,8 +115,8 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     id: 'opencode',
     label: 'OpenCode',
     icon: { type: 'text', content: 'OC' },
-    accent: 'accent-cyan',
-    badgeClass: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
+    accent: 'teal-500',
+    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
     requiresCli: true,
     models: [
       { id: 'default', name: 'Default', description: 'Use configured default' },
@@ -127,8 +127,8 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     id: 'pi',
     label: 'Pi',
     icon: { type: 'cpu' },
-    accent: 'accent-cyan',
-    badgeClass: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
+    accent: 'teal-500',
+    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
     requiresCli: true,
     models: [
       { id: 'default', name: 'Default', description: 'Use configured model' },

@@ -40,6 +40,13 @@ const CATEGORY_ICONS: Record<string, typeof Code2> = {
   'Productivity': Zap,
 };
 
+// The merged catalogue is ~700 plugins across the seven marketplaces, so the
+// unpaged grid used to commit tens of thousands of DOM nodes in one synchronous
+// pass every time this tab mounted (or the filters were cleared) - hundreds of
+// milliseconds of blocked main thread for a container that shows ~9 cards.
+// Page it like SkillsTab does. Multiple of 3 so the xl grid stays flush.
+const PAGE_SIZE = 48;
+
 const CATEGORY_COLORS: Record<string, string> = {
   'Code Intelligence': 'text-primary bg-primary/20',
   'External Integrations': 'text-primary bg-primary/20',
@@ -185,6 +192,7 @@ export default function PluginsTab() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showMarketplaceDropdown, setShowMarketplaceDropdown] = useState(false);
   const [showAuthorDropdown, setShowAuthorDropdown] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [copiedPlugin, setCopiedPlugin] = useState<string | null>(null);
   const [showToast, setShowToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
@@ -451,6 +459,22 @@ export default function PluginsTab() {
       marketplaceName: marketplaceNames.get(plugin.marketplace) || plugin.marketplace,
     }));
   }, [filteredPlugins, customInstalledPlugins, MARKETPLACES, isPluginInstalled]);
+
+  // Only the first `visibleCount` cards are mounted; "Load more" grows the slice.
+  // The window is reset during render (not in an effect) whenever the filters
+  // change, so a filter reset can never commit the previous, larger slice first.
+  const filterKey = `${debouncedSearch} ${selectedCategory} ${selectedMarketplace} ${selectedAuthor}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  const visibleCards = useMemo(
+    () => cardData.slice(0, visibleCount),
+    [cardData, visibleCount]
+  );
+  const remainingCount = Math.max(0, cardData.length - visibleCards.length);
 
   const getInstallCommand = useCallback((plugin: Plugin) => {
     // The catalogue command registers the marketplace first: installing by
@@ -748,7 +772,7 @@ export default function PluginsTab() {
       {/* Plugins Grid */}
       <div className="flex-1 overflow-y-auto mt-4">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {cardData.map(({ plugin, installed, isCustom, marketplaceName }) => (
+          {visibleCards.map(({ plugin, installed, isCustom, marketplaceName }) => (
             <PluginCard
               key={`${plugin.marketplace}-${plugin.name}`}
               plugin={plugin}
@@ -763,6 +787,14 @@ export default function PluginsTab() {
             />
           ))}
         </div>
+
+        {remainingCount > 0 && (
+          <div className="flex justify-center py-6 border-t border-border/50 mt-4">
+            <Button onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
+              {`Load More (${remainingCount.toLocaleString()} remaining)`}
+            </Button>
+          </div>
+        )}
 
         {cardData.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64">

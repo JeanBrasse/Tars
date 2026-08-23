@@ -401,6 +401,12 @@ export function loadAgents() {
       agent.status = 'idle';
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
+      // `output` is typed as required but is runtime state: nothing writes it
+      // to agents.json, so every agent read back from disk arrives without it.
+      // Consumers that trusted the type crashed - fleetSummary did
+      // `agent.output.length`, which took down the whole Logs page for anyone
+      // who had agents and restarted the app.
+      agent.output = Array.isArray(agent.output) ? agent.output : [];
       // Session ownership is runtime state: any persisted session died with
       // the previous app run, and keeping it would make the stale-session
       // guard reject the next real session's hooks (and /health lie).

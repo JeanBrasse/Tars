@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store';
 import { Archive, Loader2 } from 'lucide-react';
@@ -113,12 +113,24 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
     }
   }, []);
 
+  // The initial load must run exactly once, so it reads the loaders from a ref
+  // captured at mount instead of depending on them. It used to depend on
+  // [loadDocuments, loadAllDocuments, loadFolders], and `loadDocuments` is keyed
+  // on `selectedFolderId` — so every folder click recreated it and re-ran this
+  // whole init path: four vault IPC round-trips instead of one, plus `loading`
+  // flipping back to true, which unmounted the document pane and flashed the
+  // spinner on each click. The `if (!loading)` guard below could not catch it
+  // either, since both effects flush together and that closure always saw
+  // `loading === false`.
+  const initialLoadersRef = useRef({ loadDocuments, loadAllDocuments, loadFolders });
+
   // Initial load - on first ever load, mark all existing docs as read
   useEffect(() => {
     const firstLoad = isFirstLoad();
+    const loaders = initialLoadersRef.current;
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadDocuments(), loadAllDocuments(), loadFolders()]);
+      await Promise.all([loaders.loadDocuments(), loaders.loadAllDocuments(), loaders.loadFolders()]);
       // On first load, mark all existing documents as already read
       if (firstLoad) {
         const result = await window.electronAPI?.vault?.listDocuments();
@@ -131,14 +143,17 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
       setLoading(false);
     };
     init();
-  }, [loadDocuments, loadAllDocuments, loadFolders]);
+  }, []);
 
-  // Reload documents when folder changes
+  // Reload documents when folder changes. Seeded with the initial folder id so
+  // it does not re-fetch what the init effect above already loaded (and so a
+  // StrictMode double-mount stays a single fetch).
+  const loadedFolderIdRef = useRef<string | null>(selectedFolderId);
   useEffect(() => {
-    if (!loading) {
-      loadDocuments();
-    }
-  }, [selectedFolderId]);
+    if (loadedFolderIdRef.current === selectedFolderId) return;
+    loadedFolderIdRef.current = selectedFolderId;
+    loadDocuments();
+  }, [loadDocuments, selectedFolderId]);
 
   // Real-time event listeners
   useEffect(() => {
@@ -322,7 +337,7 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
   );
 
   return (
-    <div className={embedded ? 'flex flex-col h-full overflow-hidden' : 'flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-[22px] overflow-hidden'}>
+    <div className={embedded ? 'flex flex-col h-full overflow-hidden' : 'flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] overflow-hidden'}>
       {embedded ? (
         // The route already carries the page header; this only holds the action.
         <div className="flex justify-end pb-3.5 shrink-0">{newDocumentButton}</div>

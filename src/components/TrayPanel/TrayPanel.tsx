@@ -1,32 +1,14 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import type { AgentTickItem, DisplayStatus } from '@/types/electron';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import type { AgentTickItem } from '@/types/electron';
+import { Brand } from '@/components/Brand';
+import { Button } from '@/components/ui';
 import TrayAgentItem from './TrayAgentItem';
-
-type Tab = 'all' | 'working' | 'waiting' | 'ready' | 'idle';
-
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'working', label: 'Working' },
-  { key: 'waiting', label: 'Waiting for inputs' },
-  { key: 'ready', label: 'Ready to work' },
-  { key: 'idle', label: 'Idle' },
-];
-
-const IDLE_STATUSES: DisplayStatus[] = ['stopped', 'done', 'error'];
-
-function matchesTab(tab: Tab, status: DisplayStatus): boolean {
-  if (tab === 'all') return true;
-  if (tab === 'idle') return IDLE_STATUSES.includes(status);
-  return status === tab;
-}
 
 export default function TrayPanel() {
   const [agents, setAgents] = useState<AgentTickItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('all');
-  const prevWaitingCountRef = useRef(0);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -72,41 +54,18 @@ export default function TrayPanel() {
     return () => unsub();
   }, []);
 
-  // Tab counts
-  const tabCounts = useMemo(() => {
-    const counts: Record<Tab, number> = { all: agents.length, working: 0, waiting: 0, ready: 0, idle: 0 };
-    for (const a of agents) {
-      if (a.displayStatus === 'working') counts.working++;
-      else if (a.displayStatus === 'waiting') counts.waiting++;
-      else if (a.displayStatus === 'ready') counts.ready++;
-      else counts.idle++;
-    }
-    return counts;
-  }, [agents]);
+  // The only count the header carries. Every agent is listed once below, so
+  // there is nothing to filter and nothing to narrow.
+  const runningCount = useMemo(
+    () => agents.filter(a => a.displayStatus === 'working').length,
+    [agents],
+  );
 
-  // Auto-switch to Waiting tab when new agents enter waiting,
-  // but NOT if the user has an expanded (active) terminal
-  useEffect(() => {
-    if (!expandedId && tabCounts.waiting > prevWaitingCountRef.current && tabCounts.waiting > 0) {
-      setActiveTab('waiting');
-    }
-    prevWaitingCountRef.current = tabCounts.waiting;
-  }, [tabCounts.waiting, expandedId]);
-
-  // Filter + stable alphabetical sort.
-  // Always include the expanded agent so interacting with it doesn't make it vanish.
-  const filteredAgents = useMemo(() => {
-    return agents
-      .filter(a => a.id === expandedId || matchesTab(activeTab, a.displayStatus))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [agents, activeTab, expandedId]);
-
-  // Header summary
-  const parts: string[] = [];
-  if (tabCounts.working > 0) parts.push(`${tabCounts.working} working`);
-  if (tabCounts.waiting > 0) parts.push(`${tabCounts.waiting} waiting`);
-  if (parts.length === 0)
-    parts.push(agents.length > 0 ? 'all idle' : 'no agents');
+  // Stable alphabetical sort.
+  const sortedAgents = useMemo(
+    () => [...agents].sort((a, b) => a.name.localeCompare(b.name)),
+    [agents],
+  );
 
   const handleToggle = (id: string) => {
     setExpandedId(prev => (prev === id ? null : id));
@@ -114,54 +73,28 @@ export default function TrayPanel() {
 
   return (
     <div className="flex flex-col h-screen select-none bg-background">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-border flex-shrink-0">
-        <div className="text-sm font-semibold text-foreground">Tars</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{parts.join(', ')}</div>
+      {/* Header - brand mark on the left, running count on the right */}
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
+        <Brand
+          markClassName="w-2.5 h-2.5"
+          wordmarkClassName="font-serif text-base text-foreground"
+          gapClassName="gap-2"
+        />
+        {runningCount > 0 && (
+          <span className="font-mono text-[11px] text-status-running">
+            {runningCount} running
+          </span>
+        )}
       </div>
-
-      {/* Tabs */}
-      {agents.length > 0 && (
-        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border flex-shrink-0">
-          {TABS.map(tab => {
-            const count = tabCounts[tab.key];
-            const isActive = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors ${
-                  isActive
-                    ? 'bg-primary/15 text-primary font-medium'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-                {count > 0 && (
-                  <span className={`text-[10px] min-w-[16px] text-center px-1 rounded-full ${
-                    isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* Agent list */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {agents.length === 0 ? (
+        {sortedAgents.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
             No agents configured
           </div>
-        ) : filteredAgents.length === 0 ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">
-            No {activeTab} agents
-          </div>
         ) : (
-          filteredAgents.map(agent => (
+          sortedAgents.map(agent => (
             <TrayAgentItem
               key={agent.id}
               agent={agent}
@@ -173,19 +106,19 @@ export default function TrayPanel() {
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2.5 border-t border-border flex items-center justify-between flex-shrink-0">
-        <button
+      <div className="px-4 py-2.5 border-t border-border flex items-center justify-end gap-2 flex-shrink-0">
+        <Button
+          size="sm"
           onClick={() => window.electronAPI?.tray?.showMainWindow()}
-          className="text-xs text-primary hover:text-primary/80 transition-colors"
         >
-          Show Tars
-        </button>
-        <button
+          open
+        </Button>
+        <Button
+          size="sm"
           onClick={() => window.electronAPI?.tray?.quit()}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          Quit
-        </button>
+          quit
+        </Button>
       </div>
     </div>
   );

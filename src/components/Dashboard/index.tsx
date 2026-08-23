@@ -30,7 +30,7 @@ export const DASHBOARD_HEADER_ACTIONS_SLOT_ID = 'dashboard-header-actions';
 
 export default function Dashboard() {
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-22px)] flex flex-col pt-[22px]">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
         title="Dashboard"
         subtitle="Every terminal you have open, side by side."

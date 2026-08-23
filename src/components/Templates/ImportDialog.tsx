@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { FileText, Loader2, Upload, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import type { DragEvent } from 'react';
+import { Button, DialogShell, StatusSquare } from '@/components/ui';
 
 interface ImportDialogProps {
   onClose: () => void;
@@ -13,32 +14,23 @@ interface ParsedPreview {
   names: string[];
 }
 
+interface ChosenFile {
+  name: string;
+  size: number;
+}
+
 export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
-  const [text, setText] = useState('');
   const [parsed, setParsed] = useState<unknown>(null);
   const [preview, setPreview] = useState<ParsedPreview | null>(null);
+  const [file, setFile] = useState<ChosenFile | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const dialogRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    const onClick = (e: MouseEvent) => {
-      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onClick);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onClick);
-    };
-  }, [onClose]);
-
   function tryParse(value: string) {
-    setText(value);
     setParseError(null);
     setSubmitError(null);
     if (!value.trim()) {
@@ -81,9 +73,19 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
     }
   }
 
-  async function handleFile(file: File) {
-    const content = await file.text();
+  // The file itself is what the dialog shows back to you, so its name and size
+  // are kept - reading `.text()` used to be the last anyone saw of it.
+  async function handleFile(f: File) {
+    setFile({ name: f.name, size: f.size });
+    const content = await f.text();
     tryParse(content);
+  }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFile(f);
   }
 
   async function handleSubmit() {
@@ -105,89 +107,78 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-      <div ref={dialogRef} className="bg-card border border-border w-full max-w-xl max-h-[90vh] flex flex-col">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
-          <h2 className="font-semibold text-foreground">Import templates</h2>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="Close">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Paste a Tars template JSON below or upload a <code className="text-foreground bg-secondary px-1">.json</code> file. Imported templates land under <strong>Your templates</strong>.
-          </p>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-secondary border border-border hover:bg-accent/50 transition-colors"
-            >
-              <Upload className="w-3 h-3" />
-              Upload file
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-                e.target.value = '';
-              }}
-            />
-          </div>
-
-          <textarea
-            value={text}
-            onChange={e => tryParse(e.target.value)}
-            placeholder='{ "kind": "tars.agent-template", "version": 1, "templates": [...] }'
-            rows={10}
-            className="w-full px-2 py-1.5 bg-secondary border border-border text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 font-mono resize-y"
-          />
-
-          {parseError && (
-            <p className="text-xs text-warning dark:text-warning bg-warning/10 border border-warning/30 px-2 py-1.5">{parseError}</p>
+    <DialogShell
+      onClose={onClose}
+      title="Import templates"
+      subtitle="Imported templates land under Your templates."
+      footerRight={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={!parsed || submitting}>
+            {submitting ? 'Importing…' : 'Import'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+          onDrop={handleDrop}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          className={`flex flex-col items-center justify-center gap-2.5 py-10 px-4 border cursor-pointer transition-colors ${dragging ? 'border-border-accent bg-accent-dim' : 'border-border bg-secondary'}`}
+        >
+          <span className="w-3 h-3 bg-border-accent" />
+          <p className="text-xs text-muted-foreground">Drop a template file here, or choose one</p>
+          {file && (
+            <p className="font-mono text-xs text-primary">
+              {file.name} · {(file.size / 1024).toFixed(1)} KB
+            </p>
           )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+            e.target.value = '';
+          }}
+        />
 
-          {preview && (
-            <div className="border border-border bg-secondary/30 px-3 py-2">
-              <p className="text-xs font-medium text-foreground mb-1.5 flex items-center gap-1.5">
-                <FileText className="w-3 h-3" />
-                {preview.count} template{preview.count === 1 ? '' : 's'} ready to import
-              </p>
-              <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-0.5">
-                {preview.names.slice(0, 8).map((n, i) => <li key={`${n}-${i}`}>{n}</li>)}
-                {preview.names.length > 8 && <li>…and {preview.names.length - 8} more</li>}
-              </ul>
+        {preview && (
+          <div className="border border-border bg-bg-tertiary px-3 py-2.5">
+            <p className="text-xs text-foreground">
+              {preview.count} template{preview.count === 1 ? '' : 's'} ready to import
+            </p>
+            <div className="mt-1.5 space-y-0.5 font-mono text-xs text-muted-foreground">
+              {preview.names.slice(0, 8).map((n, i) => <p key={`${n}-${i}`}>{n}</p>)}
+              {preview.names.length > 8 && <p>…and {preview.names.length - 8} more</p>}
             </div>
-          )}
+          </div>
+        )}
 
-          {submitError && (
-            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 px-2 py-1.5">{submitError}</p>
-          )}
-        </div>
+        {/* Notices sit directly above the footer, marked by a status square
+            rather than a tinted panel of their own. */}
+        {parseError && (
+          <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
+            <StatusSquare tone="waiting" className="mt-[5px]" />
+            <p className="text-xs text-foreground">{parseError}</p>
+          </div>
+        )}
 
-        <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            disabled={submitting}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!parsed || submitting}
-            className="px-3 py-1.5 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
-          >
-            {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
-            Import
-          </button>
-        </div>
+        {submitError && (
+          <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
+            <StatusSquare tone="error" className="mt-[5px]" />
+            <p className="text-xs text-foreground">{submitError}</p>
+          </div>
+        )}
       </div>
-    </div>
+    </DialogShell>
   );
 }

@@ -51,10 +51,23 @@ export default function TerminalPanel({
   // Register container for xterm mounting - only on mount or agent ID change.
   // Uses a ref for the callback to avoid re-registering when the parent
   // re-creates the callback (e.g. on agents poll or font size change).
+  //
+  // The cleanup is load-bearing: this effect used to return nothing, so an
+  // unmounted panel left its xterm alive in useMultiTerminal's map with
+  // disposed:false. Going fullscreen (TerminalGrid swaps ReactGridLayout for a
+  // plain div) or switching project tabs unmounts every other panel, and those
+  // detached emulators kept parsing every PTY chunk into a 10k-line scrollback
+  // and kept receiving broadcast-mode keystrokes meant for the visible set.
+  // Passing null unregisters + disposes (registerContainer treats a null
+  // container as "this panel is gone").
   useEffect(() => {
+    const agentId = agent.id;
     if (containerRef.current) {
-      onRegisterRef.current(agent.id, containerRef.current);
+      onRegisterRef.current(agentId, containerRef.current);
     }
+    return () => {
+      onRegisterRef.current(agentId, null);
+    };
   }, [agent.id]);
 
   const handleClick = useCallback(() => {
