@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle } from 'lucide-react';
 import { Button, LoadingState, PageHeader, StatusSquare } from '@/components/ui';
+// Hermes sends `schedule` as an object, not a string. Putting it straight into
+// JSX threw React error #31 and killed the whole document - see schedule-text.ts.
+import { formatSchedule, type CronSchedule } from './schedule-text';
 
 // Row actions are words, not glyphs (R7): 26px bordered lowercase-mono
 // buttons, 8px apart, in the same order on every row.
@@ -18,14 +21,17 @@ interface CronJob {
   id: string;
   name?: string;
   title?: string;
-  schedule?: string;
+  schedule?: string | CronSchedule;
+  schedule_display?: string;
   schedule_human?: string;
   enabled?: boolean;
   paused?: boolean;
+  state?: string;
   status?: string;
   next_run?: string;
   next_run_at?: string;
   last_run?: string;
+  last_run_at?: string;
   last_status?: string;
   command?: string;
   prompt?: string;
@@ -164,7 +170,10 @@ export default function CronsPage() {
 
         <div className="space-y-2">
           {jobs.map(job => {
-            const paused = job.paused === true || job.enabled === false || job.status === 'paused';
+            // Hermes reports the live state in `state` ('scheduled' | 'paused');
+            // `paused`/`status` never existed on its payload.
+            const paused = job.paused === true || job.enabled === false
+              || job.state === 'paused' || job.status === 'paused';
             const next = job.next_run_at || job.next_run;
             return (
               <div key={job.id} className="border border-border bg-card px-4 py-3 flex items-start gap-4">
@@ -178,9 +187,9 @@ export default function CronsPage() {
                     {paused && <span className="text-[10px] font-mono text-muted-foreground">paused</span>}
                   </div>
                   <p className="font-mono text-[11px] text-muted-foreground mt-0.5 truncate">
-                    {job.schedule_human || job.schedule || 'no schedule'}
+                    {formatSchedule(job)}
                     {formatNext(next)}
-                    {job.last_status ? ` · last ${job.last_status}` : ''}
+                    {job.last_status ? ` · last ${String(job.last_status)}` : ''}
                   </p>
                   {(job.prompt || job.command) && (
                     <p className="text-xs text-muted-foreground mt-1 truncate">{job.prompt || job.command}</p>

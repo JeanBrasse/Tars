@@ -351,6 +351,22 @@ export default function UsagePage() {
     if (!data?.stats?.dailyModelTokens) return new Map<string, number>();
     const map = new Map<string, number>();
     data.stats.dailyModelTokens.forEach(day => {
+      // The measured figure: the day priced from that day's own tokens, cache
+      // reads included, by the same code that produces the all-time total.
+      //
+      // This is what was wrong. The estimate below multiplies the day's
+      // input+output tokens by an all-time blended $/token rate, which is only
+      // right when the day's cache-read-to-output mix matches the all-time mix.
+      // On the author's history the per-day error ran from -80% to +157%, and
+      // the latest day read $175.21 against a true $236.42 - cache reads are
+      // ~83% of that day's bill and tokensByModel does not carry them at all.
+      // The individual days were wrong even though they summed to the correct
+      // grand total, which is why the previous fix (folding in the ledger)
+      // could not have helped.
+      if (typeof day.costUSD === 'number') {
+        map.set(day.date, day.costUSD);
+        return;
+      }
       let dayCost = 0;
       Object.entries(day.tokensByModel).forEach(([modelId, tokens]) => {
         const rate = costPerTokenByModel.get(modelId);

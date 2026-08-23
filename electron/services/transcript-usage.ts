@@ -26,7 +26,17 @@ export interface ModelUsage {
 
 export interface TranscriptUsage {
   modelUsage: Record<string, ModelUsage>;
-  dailyModelTokens: Array<{ date: string; tokensByModel: Record<string, number> }>;
+  /**
+   * `costUSD` is the day priced from that day's own tokens, cache included.
+   * `tokensByModel` stays input+output only, which is why the number has to
+   * travel with it: the Usage page used to rebuild the day's cost by
+   * multiplying those tokens by an all-time blended $/token rate, and a day
+   * whose cache-read-to-output ratio differed from the all-time average came
+   * out anywhere from 80% under to 157% over. Cache reads are the bill here -
+   * 1.08bn read tokens against 1.5m output tokens on this author's history -
+   * and they were not in the daily map at all.
+   */
+  dailyModelTokens: Array<{ date: string; tokensByModel: Record<string, number>; costUSD: number }>;
   /** Most recent day with real activity */
   lastComputedDate: string | null;
 }
@@ -70,6 +80,49 @@ function pricingFor(modelId: string): Pricing {
     if (id.includes(key)) return FALLBACK[key];
   }
   return FALLBACK.sonnet;
+}
+
+/** The raw counts on one usage block. */
+interface Counts {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  write1h: number;
+  write5m: number;
+  searches: number;
+}
+
+const COUNT_KEYS: Array<keyof Counts> = [
+  'input', 'output', 'cacheRead', 'cacheWrite', 'write1h', 'write5m', 'searches',
+];
+
+/** What `a` adds on top of `b`, never negative. */
+function diff(a: Counts, b: Counts): Counts {
+  const out = {} as Counts;
+  for (const k of COUNT_KEYS) out[k] = Math.max(0, a[k] - b[k]);
+  return out;
+}
+
+function add(a: Counts, b: Counts): Counts {
+  const out = {} as Counts;
+  for (const k of COUNT_KEYS) out[k] = a[k] + b[k];
+  return out;
+}
+
+function isZero(c: Counts): boolean {
+  return COUNT_KEYS.every(k => c[k] === 0);
+}
+
+function costOf(model: string, c: Counts): number {
+  const price = pricingFor(model);
+  return (
+    (c.input / 1e6) * price.input +
+    (c.output / 1e6) * price.output +
+    (c.cacheRead / 1e6) * price.cacheRead +
+    (c.write5m / 1e6) * price.cache5m +
+    (c.write1h / 1e6) * price.cache1h
+  );
 }
 
 function emptyUsage(): ModelUsage {
@@ -118,12 +171,17 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   // onto Object.prototype inside the main process.
   const modelUsage: Record<string, ModelUsage> = Object.create(null);
   const dailyMap = new Map<string, Record<string, number>>();
+  const dailyCost = new Map<string, number>();
   let lastComputedDate: string | null = null;
 
-  // Resuming a session copies earlier assistant messages into the new
-  // transcript: on a real history that is over half the lines, so counting
-  // them twice would roughly double every cost on the page.
-  const seen = new Set<string>();
+  // One API response is written as several lines - one per content block - all
+  // carrying the same message id and requestId, and counting them all would
+  // roughly double every cost on the page. But the earlier lines carry a
+  // *partial* usage block: the final line is the one with the whole
+  // output_tokens count. Keeping the first and skipping the rest, which is what
+  // this did, threw away 279,904 output tokens ($7.00) of the author's history.
+  // So: remember what each key has already contributed and top it up.
+  const applied = new Map<string, Counts>();
 
   for (const file of listTranscripts(root)) {
     let content: string;
@@ -152,44 +210,56 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
       if (!model || model === '<synthetic>') continue;
       if (model === '__proto__' || model === 'constructor' || model === 'prototype') continue;
 
+      const split = usage.cache_creation as Record<string, unknown> | undefined;
+      const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
+      const raw: Counts = {
+        input: Number(usage.input_tokens) || 0,
+        output: Number(usage.output_tokens) || 0,
+        cacheRead: Number(usage.cache_read_input_tokens) || 0,
+        cacheWrite,
+        write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
+        write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
+        searches: Number(
+          (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
+        ) || 0,
+      };
+
+      // Only what this line adds beyond the same message's earlier lines.
+      let delta = raw;
       const key = `${message.id ?? ''}:${entry.requestId ?? ''}`;
-      if (key !== ':' && seen.has(key)) continue;
-      seen.add(key);
+      if (key !== ':') {
+        const prev = applied.get(key);
+        if (prev) {
+          delta = diff(raw, prev);
+          if (isZero(delta)) continue;
+          applied.set(key, add(prev, delta));
+        } else {
+          applied.set(key, raw);
+        }
+      }
 
       const bucket = (modelUsage[model] ||= emptyUsage());
-      const input = Number(usage.input_tokens) || 0;
-      const output = Number(usage.output_tokens) || 0;
-      const cacheRead = Number(usage.cache_read_input_tokens) || 0;
-      const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
-      const split = usage.cache_creation as Record<string, unknown> | undefined;
-      const write1h = Number(split?.ephemeral_1h_input_tokens) || 0;
-      const write5m = Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite);
-      const searches = Number(
-        (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
-      ) || 0;
+      bucket.inputTokens += delta.input;
+      bucket.outputTokens += delta.output;
+      bucket.cacheReadInputTokens += delta.cacheRead;
+      bucket.cacheCreationInputTokens += delta.cacheWrite;
+      bucket.cacheCreation1hTokens += delta.write1h;
+      bucket.cacheCreation5mTokens += delta.write5m;
+      bucket.webSearchRequests += delta.searches;
 
-      bucket.inputTokens += input;
-      bucket.outputTokens += output;
-      bucket.cacheReadInputTokens += cacheRead;
-      bucket.cacheCreationInputTokens += cacheWrite;
-      bucket.cacheCreation1hTokens += write1h;
-      bucket.cacheCreation5mTokens += write5m;
-      bucket.webSearchRequests += searches;
-
-      const price = pricingFor(model);
-      bucket.costUSD +=
-        (input / 1e6) * price.input +
-        (output / 1e6) * price.output +
-        (cacheRead / 1e6) * price.cacheRead +
-        (write5m / 1e6) * price.cache5m +
-        (write1h / 1e6) * price.cache1h;
+      const cost = costOf(model, delta);
+      bucket.costUSD += cost;
 
       const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
       const date = timestamp ? timestamp.slice(0, 10) : null;
       if (date) {
         const day = dailyMap.get(date) ?? {};
-        day[model] = (day[model] || 0) + input + output;
+        day[model] = (day[model] || 0) + delta.input + delta.output;
         dailyMap.set(date, day);
+        // The day priced from its own tokens - cache reads and cache writes
+        // included - rather than left to be reconstructed downstream from
+        // input+output alone.
+        dailyCost.set(date, (dailyCost.get(date) ?? 0) + cost);
         if (!lastComputedDate || date > lastComputedDate) lastComputedDate = date;
       }
     }
@@ -198,7 +268,7 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   const value: TranscriptUsage = {
     modelUsage: { ...modelUsage },
     dailyModelTokens: Array.from(dailyMap.entries())
-      .map(([date, tokensByModel]) => ({ date, tokensByModel }))
+      .map(([date, tokensByModel]) => ({ date, tokensByModel, costUSD: dailyCost.get(date) ?? 0 }))
       .sort((a, b) => a.date.localeCompare(b.date)),
     lastComputedDate,
   };
