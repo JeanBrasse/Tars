@@ -120,6 +120,7 @@ export function registerIpcHandlers(deps: IpcHandlerDependencies): void {
   registerUpdateHandlers();
   // Orchestrator handlers are registered separately in services/mcp-orchestrator.ts
   registerTasmaniaHandlers(deps);
+  registerOllamaHandlers(deps);
   registerFileSystemHandlers(deps);
   registerShellHandlers(deps);
   registerMemoryHandlers();
@@ -2461,6 +2462,27 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
+    }
+  });
+}
+
+// ============== Ollama IPC Handlers ==============
+
+/** Ollama has no signup, no key, nothing to validate but "is it up". */
+function registerOllamaHandlers(deps: IpcHandlerDependencies): void {
+  const { getAppSettings } = deps;
+
+  ipcMain.handle('ollama:test', async () => {
+    const appSettings = getAppSettings();
+    const base = (appSettings.ollamaBaseUrl || 'http://localhost:11434').replace(/\/+$/, '');
+    try {
+      // /api/tags is Ollama's own lightweight "list local models" endpoint -
+      // cheap to call and answers only when the server is actually up, unlike
+      // pinging the Anthropic-compat surface which would need a real request.
+      const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) });
+      return { reachable: res.ok };
+    } catch {
+      return { reachable: false };
     }
   });
 }

@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { Button, LoadingPanel } from '@/components/ui';
+import { Button, Dropdown, Input, LoadingPanel, PanelCaption, Textarea } from '@/components/ui';
+import { DialogShell } from '@/components/ui';
 import { describeHermesFailure } from './hermes-error';
 
 /**
@@ -13,23 +14,55 @@ import { describeHermesFailure } from './hermes-error';
  */
 
 const COLUMNS = ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done'] as const;
+type HermesColumn = (typeof COLUMNS)[number];
 
 interface HermesTask {
   id: string;
   title?: string;
   status?: string;
-  priority?: string | number;
-  assignee?: string;
-  worker?: string;
-  labels?: string[];
-  children_done?: number;
-  children_total?: number;
-  comment_count?: number;
+  priority?: number;
+  assignee?: string | null;
+  body?: string | null;
+}
+
+interface HermesComment {
+  id: number;
+  author?: string;
+  body: string;
+  created_at?: number;
+}
+
+interface HermesTaskDetail {
+  task: HermesTask;
+  comments?: HermesComment[];
+}
+
+/**
+ * The gateway's own board shape: `columns` is an ARRAY of `{ name, tasks }`,
+ * not a map keyed by column name. Reading it as `board.columns[colName]`
+ * (a string index into an array) is always `undefined`, so the board used to
+ * render every column empty no matter what was actually on the gateway -
+ * verified against a live Hermes 0.20 instance, where a task created and
+ * left in `ready` never appeared. Normalise once, here, into the map every
+ * render actually wants.
+ */
+function columnsByName(board: BoardPayload | null): Record<string, HermesTask[]> {
+  const raw = board?.columns;
+  if (!Array.isArray(raw)) return {};
+  const out: Record<string, HermesTask[]> = {};
+  for (const col of raw) {
+    if (col && typeof col === 'object' && typeof col.name === 'string') {
+      out[col.name] = Array.isArray(col.tasks) ? col.tasks : [];
+    }
+  }
+  return out;
 }
 
 interface BoardPayload {
-  columns?: Record<string, HermesTask[]>;
+  columns?: Array<{ name: string; tasks: HermesTask[] }>;
 }
+
+const STATUS_OPTIONS = COLUMNS.map(c => ({ value: c, label: c }));
 
 export default function HermesBoard() {
   const [board, setBoard] = useState<BoardPayload | null>(null);
@@ -37,6 +70,20 @@ export default function HermesBoard() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
+
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newBody, setNewBody] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<HermesTaskDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [assigneeDraft, setAssigneeDraft] = useState('');
+  const [commentDraft, setCommentDraft] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,16 +107,117 @@ export default function HermesBoard() {
       const raw = err instanceof Error ? err.message : String(err);
       let baseUrl: string | null = null;
       try { baseUrl = (await window.electronAPI?.hermes?.getConnection())?.baseUrl || null; } catch { /* best effort */ }
-      const { message, detail } = describeHermesFailure(raw, baseUrl);
+      const { message, detail: d } = describeHermesFailure(raw, baseUrl);
       setNeedsSignIn(false);
       setError(message);
-      setErrorDetail(detail);
+      setErrorDetail(d);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const openNewTask = () => {
+    setNewTitle('');
+    setNewBody('');
+    setCreateError(null);
+    setNewTaskOpen(true);
+  };
+
+  const submitNewTask = async () => {
+    const title = newTitle.trim();
+    if (!title) { setCreateError('Title is required.'); return; }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const r = await window.electronAPI?.hermes?.kanbanCreateTask({
+        title,
+        ...(newBody.trim() ? { body: newBody.trim() } : {}),
+      });
+      if (!r?.success) { setCreateError(r?.error || 'Could not create the task.'); return; }
+      setNewTaskOpen(false);
+      await load();
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const openTask = async (id: string) => {
+    setSelectedId(id);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const r = await window.electronAPI?.hermes?.kanbanGetTask({ taskId: id });
+      if (!r?.success) { setDetailError(r?.error || 'Could not load the task.'); return; }
+      const d = r.detail as HermesTaskDetail;
+      setDetail(d);
+      setAssigneeDraft(d.task?.assignee ?? '');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const closeTask = () => {
+    setSelectedId(null);
+    setDetail(null);
+    setDetailError(null);
+    setCommentDraft('');
+  };
+
+  const moveTask = async (status: HermesColumn) => {
+    if (!selectedId) return;
+    setBusy(true);
+    try {
+      const r = await window.electronAPI?.hermes?.kanbanUpdateTask({ taskId: selectedId, patch: { status } });
+      if (!r?.success) { setDetailError(r?.error || 'Could not move the task.'); return; }
+      setDetail(prev => prev ? { ...prev, task: { ...prev.task, status } } : prev);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveAssignee = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    try {
+      const value = assigneeDraft.trim();
+      const r = await window.electronAPI?.hermes?.kanbanUpdateTask({ taskId: selectedId, patch: { assignee: value || null } });
+      if (!r?.success) { setDetailError(r?.error || 'Could not assign the task.'); return; }
+      setDetail(prev => prev ? { ...prev, task: { ...prev.task, assignee: value || null } } : prev);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitComment = async () => {
+    if (!selectedId || !commentDraft.trim()) return;
+    setBusy(true);
+    try {
+      const r = await window.electronAPI?.hermes?.kanbanAddComment({ taskId: selectedId, body: commentDraft.trim() });
+      if (!r?.success) { setDetailError(r?.error || 'Could not post the comment.'); return; }
+      setCommentDraft('');
+      await openTask(selectedId);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteTask = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    try {
+      const r = await window.electronAPI?.hermes?.kanbanDeleteTask({ taskId: selectedId });
+      if (!r?.success) { setDetailError(r?.error || 'Could not delete the task.'); return; }
+      closeTask();
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (loading && !board) {
     return <LoadingPanel what="Reading the Hermes board" />;
@@ -98,10 +246,17 @@ export default function HermesBoard() {
     );
   }
 
-  const columns = board?.columns ?? {};
+  const columns = columnsByName(board);
 
   return (
     <div className="flex flex-col h-full">
+      <div className="flex items-center justify-end pb-2 shrink-0">
+        <Button size="sm" variant="primary" onClick={openNewTask}>
+          <Plus className="w-3.5 h-3.5" />
+          New task
+        </Button>
+      </div>
+
       <div className="flex-1 min-h-0 overflow-x-auto">
         {/* Tracks share the width and only scroll once they hit their floor -
             eight columns still overflow, which is Hermes' shape, not a bug. */}
@@ -115,26 +270,127 @@ export default function HermesBoard() {
                   <span className="text-[10px] font-mono text-muted-foreground">{tasks.length}</span>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
-                  {tasks.map(t => {
-                    const tag = (t.labels ?? [])[0];
-                    return (
-                      <div key={t.id} className="border border-border bg-bg-tertiary p-3 space-y-2">
-                        <p className="text-xs text-foreground leading-snug">{t.title || t.id}</p>
-                        {(tag || t.assignee) && (
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-mono lowercase text-muted-foreground truncate">{tag}</span>
-                            <span className="text-[10px] text-muted-foreground truncate">{t.assignee}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {tasks.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => openTask(t.id)}
+                      className="w-full text-left border border-border bg-bg-tertiary p-3 space-y-2 hover:border-border-accent transition-colors cursor-pointer"
+                    >
+                      <p className="text-xs text-foreground leading-snug">{t.title || t.id}</p>
+                      {t.assignee && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-muted-foreground truncate">{t.assignee}</span>
+                        </div>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {newTaskOpen && (
+        <DialogShell
+          onClose={() => setNewTaskOpen(false)}
+          title="New task"
+          subtitle="Lands in Hermes' triage column."
+          width={480}
+          footerRight={
+            <>
+              <Button variant="secondary" onClick={() => setNewTaskOpen(false)}>Cancel</Button>
+              <Button variant="primary" onClick={submitNewTask} disabled={creating}>
+                {creating ? 'Creating…' : 'Create'}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <PanelCaption>Title</PanelCaption>
+              <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="What needs doing?" autoFocus />
+            </div>
+            <div className="space-y-1.5">
+              <PanelCaption>Description (optional)</PanelCaption>
+              <Textarea value={newBody} onChange={e => setNewBody(e.target.value)} rows={4} />
+            </div>
+            {createError && <p className="text-[11px] text-danger">{createError}</p>}
+          </div>
+        </DialogShell>
+      )}
+
+      {selectedId && (
+        <DialogShell
+          onClose={closeTask}
+          title={detail?.task?.title || selectedId}
+          subtitle={detail ? `${detail.task.status ?? 'unknown'}${detail.task.assignee ? ` · ${detail.task.assignee}` : ''}` : undefined}
+          width={560}
+          footerLeft={<Button variant="danger" onClick={deleteTask} disabled={busy || detailLoading}>Delete</Button>}
+          footerRight={<Button variant="secondary" onClick={closeTask}>Close</Button>}
+        >
+          {detailLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+          {detailError && <p className="text-[11px] text-danger">{detailError}</p>}
+          {detail && (
+            <div className="space-y-4">
+              {detail.task.body && (
+                <p className="text-xs text-foreground leading-snug whitespace-pre-wrap">{detail.task.body}</p>
+              )}
+
+              <div className="space-y-1.5">
+                <PanelCaption>Column</PanelCaption>
+                <Dropdown<HermesColumn>
+                  value={(detail.task.status as HermesColumn) ?? 'triage'}
+                  options={STATUS_OPTIONS}
+                  onChange={moveTask}
+                  className="w-48"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <PanelCaption>Assignee</PanelCaption>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={assigneeDraft}
+                    onChange={e => setAssigneeDraft(e.target.value)}
+                    placeholder="agent id, or leave blank"
+                    className="max-w-[260px]"
+                  />
+                  <Button size="sm" onClick={saveAssignee} disabled={busy}>Save</Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <PanelCaption>Comments</PanelCaption>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {(detail.comments ?? []).length === 0 && (
+                    <p className="text-[11px] text-muted-foreground">No comments yet.</p>
+                  )}
+                  {(detail.comments ?? []).map(c => (
+                    <div key={c.id} className="border border-border bg-bg-tertiary p-2">
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                        <span>{c.author || 'unknown'}</span>
+                      </div>
+                      <p className="text-xs text-foreground whitespace-pre-wrap">{c.body}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-start gap-2 pt-1">
+                  <Textarea
+                    value={commentDraft}
+                    onChange={e => setCommentDraft(e.target.value)}
+                    placeholder="Add a comment…"
+                    rows={2}
+                    className="flex-1"
+                  />
+                  <Button size="sm" onClick={submitComment} disabled={busy || !commentDraft.trim()}>Post</Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogShell>
+      )}
     </div>
   );
 }

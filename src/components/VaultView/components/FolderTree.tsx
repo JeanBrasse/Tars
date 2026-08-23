@@ -85,6 +85,7 @@ interface FolderNodeProps {
 function FolderNode({ folder, childFolders, allFolders, documents, selectedFolderId, selectedDocId, readDocIds, onSelectFolder, onSelectDocument, onCreateFolder, onDeleteFolder, depth }: FolderNodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [showNewSubfolder, setShowNewSubfolder] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [newSubfolderName, setNewSubfolderName] = useState('');
   const isSelected = selectedFolderId === folder.id;
   const folderDocs = documents.filter(d => d.folder_id === folder.id);
@@ -129,7 +130,7 @@ function FolderNode({ folder, childFolders, allFolders, documents, selectedFolde
         <Folder className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-primary' : ''}`} />
         <span className="truncate flex-1">{folder.name}</span>
         {unreadCount > 0 && (
-          <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground rounded-full px-1">
+          <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground px-1">
             {unreadCount}
           </span>
         )}
@@ -145,13 +146,35 @@ function FolderNode({ folder, childFolders, allFolders, documents, selectedFolde
           >
             <Plus className="w-3 h-3" />
           </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder.id); }}
-            className="p-0.5 hover:text-danger transition-opacity"
-            title="Delete folder"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
+          {/* Two clicks, like deleting a single document one panel over. This
+              one fired on the first click and cascades: the folder's subfolders
+              go with it and the documents inside are orphaned. The heavier of
+              the two actions had the lighter gate. */}
+          {confirmDelete ? (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); onDeleteFolder(folder.id); }}
+                className="px-1 font-mono text-[10px] text-danger hover:underline"
+                title={`Delete "${folder.name}" and everything under it`}
+              >
+                confirm
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+                className="px-1 font-mono text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+              className="p-0.5 hover:text-danger transition-opacity"
+              title="Delete folder"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
         </span>
       </div>
 
@@ -204,7 +227,7 @@ function FolderNode({ folder, childFolders, allFolders, documents, selectedFolde
                   title={doc.title}
                 >
                   {isUnread && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    <span className="w-1.5 h-1.5 bg-primary shrink-0" />
                   )}
                   <FileText className={`w-3 h-3 shrink-0 ${selectedDocId === doc.id ? 'text-primary' : ''}`} />
                   <span className="truncate flex-1 min-w-0">{doc.title}</span>
@@ -279,7 +302,7 @@ export default function FolderTree({ folders, documents, selectedFolderId, selec
         <FileText className={`w-3.5 h-3.5 ${selectedFolderId === null ? 'text-primary' : ''}`} />
         <span className="flex-1">All Documents</span>
         {totalUnread > 0 && (
-          <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground rounded-full px-1">
+          <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground px-1">
             {totalUnread}
           </span>
         )}
@@ -325,7 +348,7 @@ export default function FolderTree({ folders, documents, selectedFolderId, selec
             title={doc.title}
           >
             {isUnread && (
-              <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+              <span className="w-1.5 h-1.5 bg-primary shrink-0" />
             )}
             <FileText className={`w-3 h-3 shrink-0 ${selectedDocId === doc.id ? 'text-primary' : ''}`} />
             <span className="truncate flex-1 min-w-0">{doc.title}</span>

@@ -87,6 +87,23 @@ export function ProviderIconRenderer({ icon, className = 'w-3.5 h-3.5' }: { icon
       </svg>
     );
   }
+  if (icon.type === 'svg-ollama') {
+    // Two overlapping circles: the local-server "linked to this machine"
+    // mark, distinct from Tasmania's cpu glyph since Ollama isn't Tars-managed.
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+        <circle cx="9" cy="12" r="6" />
+        <circle cx="15" cy="12" r="6" />
+      </svg>
+    );
+  }
+  if (icon.type === 'svg-venice') {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+        <path d="M3 4h3.2l5.8 14 5.8-14H21l-8 16h-2L3 4z" />
+      </svg>
+    );
+  }
   if (icon.type === 'cpu') {
     return <Cpu className={className} />;
   }

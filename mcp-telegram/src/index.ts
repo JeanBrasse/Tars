@@ -35,8 +35,29 @@ interface AppSettings {
  */
 const BLOCKED_DIRS = [
   ".ssh", ".gnupg", ".aws", ".claude", ".dorothy", ".config",
-  ".kube", ".docker", ".env", ".netrc", ".git-credentials",
+  ".kube", ".docker",
 ];
+
+/**
+ * Names that hold credentials wherever they sit.
+ *
+ * These used to be in BLOCKED_DIRS, which only ever compared the path against
+ * `~/<name>`. That covers `~/.env` and nothing else, and Tars runs agents inside
+ * cloned project directories, which is exactly where a real `.env` lives. So
+ * `~/some-project/.env` sailed through the guard that exists to stop precisely
+ * this: one `send_telegram_document` call and the project's secrets are in a
+ * chat. Matched on the basename, at any depth.
+ */
+const BLOCKED_NAMES = new Set([
+  ".env", ".netrc", ".git-credentials", ".npmrc", ".pypirc",
+  "credentials", "credentials.json", "id_rsa", "id_ed25519", ".pgpass",
+]);
+
+/** `.env.local`, `.env.production` and friends are the same file with a suffix. */
+function isBlockedName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return BLOCKED_NAMES.has(lower) || lower.startsWith(".env.");
+}
 
 function assertSendablePath(filePath: string): string {
   const resolved = path.resolve(filePath);
@@ -49,6 +70,14 @@ function assertSendablePath(filePath: string): string {
     const blocked = path.join(home, dir);
     if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
       throw new Error(`Refused: ${dir} holds credentials and cannot be sent`);
+    }
+  }
+  // Every segment, not just the last: a directory called `.ssh` three levels
+  // into a project is still an `.ssh` directory.
+  for (const segment of resolved.slice(home.length).split(path.sep)) {
+    if (!segment) continue;
+    if (isBlockedName(segment) || BLOCKED_DIRS.includes(segment)) {
+      throw new Error(`Refused: ${segment} holds credentials and cannot be sent`);
     }
   }
   return resolved;

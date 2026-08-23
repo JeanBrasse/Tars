@@ -18,8 +18,11 @@ import {
   signInHermes,
   clearHermesSession,
   fetchHermesBoard,
+  getHermesTask,
   createHermesTask,
   updateHermesTask,
+  deleteHermesTask,
+  addHermesTaskComment,
 } from '../services/hermes-client';
 import {
   HermesConnection,
@@ -299,6 +302,18 @@ export function registerHermesHandlers(): void {
 
   ipcMain.handle('hermes:kanban:updateTask', async (_event, params: { taskId: string; patch: Record<string, unknown> }) => {
     return updateHermesTask(readConnection(), params.taskId, params.patch);
+  });
+
+  ipcMain.handle('hermes:kanban:getTask', async (_event, params: { taskId: string }) => {
+    return getHermesTask(readConnection(), params.taskId);
+  });
+
+  ipcMain.handle('hermes:kanban:deleteTask', async (_event, params: { taskId: string }) => {
+    return deleteHermesTask(readConnection(), params.taskId);
+  });
+
+  ipcMain.handle('hermes:kanban:addComment', async (_event, params: { taskId: string; body: string }) => {
+    return addHermesTaskComment(readConnection(), params.taskId, params.body);
   });
 
   // Reachability check of the remote Hermes gateway (any HTTP response counts:

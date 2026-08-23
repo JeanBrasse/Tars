@@ -70,8 +70,9 @@ export function DeployTeamDialog({ open, onClose, onDeployed }: DeployTeamDialog
     Promise.all([
       window.electronAPI?.cliPaths?.detect(),
       window.electronAPI?.appSettings?.get(),
-    ]).then(([paths, settings]) => {
-      setAvailability(computeProviderAvailability(paths as Record<string, string | undefined> | undefined, settings));
+      window.electronAPI?.ollama?.test(),
+    ]).then(([paths, settings, ollama]) => {
+      setAvailability(computeProviderAvailability(paths as Record<string, string | undefined> | undefined, settings, ollama?.reachable));
     });
   }, [open]);
 

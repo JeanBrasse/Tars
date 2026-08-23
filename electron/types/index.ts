@@ -21,7 +21,9 @@ export type AgentProvider =
   | 'zhipu'
   | 'minimax'
   | 'nvidia'
-  | 'nous-portal';
+  | 'nous-portal'
+  | 'ollama'
+  | 'venice';
 
 /** Permission mode for agent tool use:
  * - normal: Claude asks for confirmation on each tool use
@@ -165,6 +167,13 @@ export interface AppSettings {
   nvidiaApiKey?: string;
   nousPortalEnabled?: boolean;
   nousPortalApiKey?: string;
+  /** Venice AI has no Anthropic-compatible endpoint (OpenAI-compatible only), so
+   *  it is reached through Tars's own local translation shim, not directly. */
+  veniceEnabled?: boolean;
+  veniceApiKey?: string;
+  /** Ollama is a local server, not a hosted vendor: no key, just where to find it.
+   *  Empty means the default http://localhost:11434. */
+  ollamaBaseUrl?: string;
   /** Remote Hermes instance (external scheduler) */
   hermesGatewayUrl?: string;
   hermesGatewayToken?: string;
@@ -190,4 +199,6 @@ export interface AppSettings {
   favoriteProjects?: string[];
   hiddenProjects?: string[];
   defaultProjectPath?: string;
+  /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
+  providerBudgets?: Record<string, number>;
 }

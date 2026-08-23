@@ -92,12 +92,23 @@ export default function DocumentViewer({ document, attachments, onEdit, onDelete
           <PanelCaption>Attachments ({attachments.length})</PanelCaption>
           <div className="mt-2 space-y-px">
             {attachments.map(att => (
-              <div key={att.id} className="flex items-center gap-2 h-8 px-2 bg-secondary/50 text-xs">
-                <span className="truncate flex-1 text-foreground">{att.filename}</span>
+              // Copied into ~/.dorothy/vault/attachments on attach, so this is
+              // the only route allowed to serve it back out: see the allowedDir
+              // check on /api/local-file. Without this link the file was listed
+              // but nothing let you ever open it again.
+              <a
+                key={att.id}
+                href={`http://127.0.0.1:31415/api/local-file?path=${encodeURIComponent(att.filepath)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 h-8 px-2 bg-secondary/50 text-xs hover:bg-secondary transition-colors"
+                title={`Open ${att.filename}`}
+              >
+                <span className="truncate flex-1 text-foreground underline decoration-transparent hover:decoration-current">{att.filename}</span>
                 <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
                   {formatSize(att.size)}
                 </span>
-              </div>
+              </a>
             ))}
           </div>
         </div>

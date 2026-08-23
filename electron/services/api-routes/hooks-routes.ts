@@ -17,6 +17,25 @@ import { scheduleTick } from '../../utils/agents-tick';
  * - `currentSessionId` is NOT cleared on idle: the one-shot claude process is
  *   still alive at its prompt and its later hooks must keep matching.
  */
+/**
+ * Is this post coming from a session that no longer owns the agent?
+ *
+ * Two ways to be stale: the post carries the id of a session that was killed
+ * (the tombstone), or it carries an id that simply is not the registered one.
+ * A killed PTY's hooks are separate processes that outlive the kill, so both
+ * happen routinely rather than only under attack.
+ *
+ * /output, /status and /task-completed each spelled this out inline; the two
+ * routes that fire desktop notifications did not check at all, so a hook from a
+ * session the user had already moved on from could still tell them their agent
+ * needed permission. That is one of the ways the app appeared to ask twice.
+ */
+function isStaleSessionPost(agent: AgentStatus, sessionId?: string): boolean {
+  if (!sessionId) return false;
+  if (sessionId === agent.lastKilledSessionId) return true;
+  return !!agent.currentSessionId && sessionId !== agent.currentSessionId;
+}
+
 export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/hooks/output: capture clean text output from agent transcript
   app.post('/api/hooks/output', (req, sendJson) => {
@@ -220,6 +239,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    if (isStaleSessionPost(agent, session_id)) {
+      console.log(`[hooks] Ignored stop from session ${session_id} for ${agent.id} (current: ${agent.currentSessionId ?? 'none'})`);
+      sendJson({ success: false, stale: true });
+      return;
+    }
+
     if (ctx.getAppSettings().notificationsEnabled && ctx.getAppSettings().notifyOnStop) {
       const agentName = agent.name || `Agent ${agent.id.slice(0, 6)}`;
       ctx.sendNotificationCallback(
@@ -249,6 +274,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
+    if (agent && isStaleSessionPost(agent, session_id)) {
+      console.log(`[hooks] Ignored ${type} notification from session ${session_id} for ${agent.id} (current: ${agent.currentSessionId ?? 'none'})`);
+      sendJson({ success: false, stale: true });
+      return;
+    }
     const agentName = agent?.name || 'Claude';
 
     if (type === 'permission_prompt') {

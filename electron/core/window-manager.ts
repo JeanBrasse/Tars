@@ -189,6 +189,19 @@ export function hardenWindow(window: BrowserWindow): void {
   window.webContents.on('will-attach-webview', event => event.preventDefault());
 }
 
+/**
+ * Is `candidate` the root itself, or inside it?
+ *
+ * Both protocol handlers need this and only one of them had it. Resolve before
+ * comparing, and require the separator, so `/base-evil` does not pass as being
+ * under `/base`.
+ */
+function isUnder(root: string, candidate: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(candidate);
+  return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
+}
+
 /** Roots local-file:// may read from: the user's own project and app data. */
 function isUnderAllowedRoot(filePath: string): boolean {
   const roots = [
@@ -196,10 +209,7 @@ function isUnderAllowedRoot(filePath: string): boolean {
     path.join(os.homedir(), '.claude'),
     ...listKnownProjectRoots(),
   ];
-  return roots.some(root => {
-    const resolved = path.resolve(root);
-    return filePath === resolved || filePath.startsWith(resolved + path.sep);
-  });
+  return roots.some(root => isUnder(root, filePath));
 }
 
 /** Project folders the user added, read fresh so a new project works at once. */
@@ -280,6 +290,21 @@ export function setupProtocolHandler() {
       const relativePath = urlPath.startsWith('/') ? urlPath.substring(1) : urlPath;
       const filePath = path.join(basePath, relativePath);
 
+      // Containment, the same rule local-file:// has always had.
+      //
+      // `new URL()` collapses a literal `..` in the pathname but leaves `%2f`
+      // alone, and the decode above happens AFTER the parse, so `..%2f..%2f`
+      // came back out as a real traversal that path.join walked straight
+      // through. The `app` scheme is registered secure and CORS-enabled, so it
+      // is same-origin with the app's own page: a vault note holding
+      // `![](app://-/a/..%2f..%2f.dorothy%2fapp-settings.json)` fetched it the
+      // moment the note was opened, with no click, and handed every provider
+      // API key to the renderer. Markdown images are never run through
+      // isSafeUrl, and a vault document can be written by any agent.
+      if (!isUnder(basePath, filePath)) {
+        console.error(`app:// refused a path outside the bundle: ${urlPath}`);
+        return new Response('Forbidden', { status: 403 });
+      }
 
       // Check if file exists
       if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
@@ -293,7 +318,7 @@ export function setupProtocolHandler() {
 
       // If it's a page route without .html, try adding index.html
       const htmlPath = path.join(basePath, relativePath, 'index.html');
-      if (fs.existsSync(htmlPath)) {
+      if (isUnder(basePath, htmlPath) && fs.existsSync(htmlPath)) {
         return new Response(await fs.promises.readFile(htmlPath), {
           headers: { 'Content-Type': 'text/html' },
         });

@@ -76,6 +76,22 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
       onClick={() => onEdit?.(task)}
       {...attributes}
       {...listeners}
+      /* dnd-kit's activator claims both Enter and Space to start a keyboard
+         drag, so the card was openable by mouse only: there was no keyboard
+         path to a task's detail at all. Enter opens it; everything else, Space
+         included, is forwarded to dnd-kit so picking a card up still works.
+         This has to COMPOSE with the spread listener rather than replace it,
+         because a later prop wins and simply declaring onKeyDown here would
+         silently disable keyboard dragging. */
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && e.currentTarget === e.target) {
+          e.preventDefault();
+          e.stopPropagation();
+          onEdit?.(task);
+          return;
+        }
+        listeners?.onKeyDown?.(e);
+      }}
       className={`
         group relative bg-bg-tertiary p-3 transition-all duration-200
         border ${isAgentWorking ? 'border-border-accent' : 'border-border'}

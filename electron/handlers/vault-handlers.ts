@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { getVaultDb } from '../services/vault-db';
+import { getVaultDb, ftsSearch } from '../services/vault-db';
 import { VAULT_DIR } from '../constants';
 
 // Types
@@ -207,14 +207,7 @@ export function registerVaultHandlers(deps: VaultHandlerDependencies): void {
     try {
       const db = getVaultDb();
       const limit = params.limit || 20;
-      const results = db.prepare(`
-        SELECT d.*, snippet(documents_fts, 1, '<mark>', '</mark>', '...', 40) as snippet
-        FROM documents_fts fts
-        JOIN documents d ON d.rowid = fts.rowid
-        WHERE documents_fts MATCH ?
-        ORDER BY rank
-        LIMIT ?
-      `).all(params.query, limit);
+      const results = ftsSearch(db, params.query, limit);
       return { results };
     } catch (err) {
       console.error('Failed to search vault:', err);

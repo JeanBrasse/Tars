@@ -383,11 +383,47 @@ function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: Send
 }
 
 /**
+ * Serializes everything that reads-then-mutates one agent's live-session
+ * state (ptyId, status) so two callers deciding "message vs spawn" for the
+ * same agent at once can't both observe "no live session" and both spawn a
+ * fresh PTY.
+ *
+ * The race is real, not theoretical: spawnAgentSession awaits the memory
+ * digest for every non-Claude CLI (needsPromptInjection), which is a genuine
+ * suspension point. Two orchestrators (or one orchestrator retried by a
+ * caller) dispatching to the same idle agent within that window each pass
+ * the "no live PTY" check before either has set agent.ptyId, so both spawn -
+ * the second silently orphans the first's process and only the second
+ * survives in the agent record. A resolved-promise-only await (the Claude
+ * path) never yields far enough for this to happen, which is why it went
+ * unnoticed: it only bites non-Claude agents.
+ */
+const agentDispatchLocks = new Map<string, Promise<unknown>>();
+
+async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+  const prior = agentDispatchLocks.get(agentId) ?? Promise.resolve();
+  const run = prior.then(fn, fn);
+  // Chain for the next caller regardless of outcome; a failed dispatch must
+  // not wedge the queue for agents that dispatch to this id afterward.
+  agentDispatchLocks.set(agentId, run.catch(() => undefined));
+  return run;
+}
+
+/**
  * Core of the atomic dispatch: message a live session or spawn a fresh one,
  * decided server-side. Shared by POST /api/agents/:id/dispatch and the Hermes
  * webhook so both entry points get identical semantics.
  */
 export async function performDispatch(
+  agent: AgentStatus,
+  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass' },
+  ctx: RouteContext,
+  sendJson: SendJson,
+): Promise<void> {
+  return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson));
+}
+
+async function performDispatchLocked(
   agent: AgentStatus,
   opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass' },
   ctx: RouteContext,
@@ -705,9 +741,9 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    if (!(await spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson))) {
-      return;
-    }
+    const spawned = await withAgentLock(agent.id, () =>
+      spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson));
+    if (!spawned) return;
 
     sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
   });
@@ -838,44 +874,46 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    // BUG 4 guard: if the agent's worktreePath changed after the PTY was
-    // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
-    // reconnect path below spawns fresh with the correct working directory.
-    killStalePty(agent);
+    await withAgentLock(agent.id, async () => {
+      // BUG 4 guard: if the agent's worktreePath changed after the PTY was
+      // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
+      // reconnect path below spawns fresh with the correct working directory.
+      killStalePty(agent);
 
-    if (agent.ptyId && ptyProcesses.has(agent.ptyId) &&
-        agent.status === 'waiting' && agent.waitingReason === 'permission') {
-      // Same guard as /dispatch: never type into a blocking permission dialog.
-      sendJson({
-        error: `Agent "${agent.name || agent.id}" is blocked on a permission dialog; a typed message cannot answer it. Resolve it in the Tars UI, or stop the agent and re-dispatch.`,
-        waitingReason: 'permission',
-      }, 409);
-      return;
-    }
-
-    if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-      // No live PTY: the claude process exited (e.g. crashed while 'waiting').
-      // Auto-respawn: start a fresh one-shot claude session using the message
-      // as the prompt, identical to the /start path.  This ensures send_message
-      // and delegate_task reconnect transparently instead of timing out.
-      if (!(await spawnAgentSession(agent, message, {}, ctx, sendJson))) {
+      if (agent.ptyId && ptyProcesses.has(agent.ptyId) &&
+          agent.status === 'waiting' && agent.waitingReason === 'permission') {
+        // Same guard as /dispatch: never type into a blocking permission dialog.
+        sendJson({
+          error: `Agent "${agent.name || agent.id}" is blocked on a permission dialog; a typed message cannot answer it. Resolve it in the Tars UI, or stop the agent and re-dispatch.`,
+          waitingReason: 'permission',
+        }, 409);
         return;
       }
-      sendJson({ success: true });
-      return;
-    }
 
-    const ptyProcess = ptyProcesses.get(agent.ptyId);
-    if (ptyProcess) {
-      writeProgrammaticInput(ptyProcess, message, true);
-      agent.status = 'running';
-      agent.waitingReason = undefined;
-      agent.lastActivity = new Date().toISOString();
-      saveAgents();
-      sendJson({ success: true });
-      return;
-    }
-    sendJson({ error: 'Failed to send message - PTY not available' }, 500);
+      if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
+        // No live PTY: the claude process exited (e.g. crashed while 'waiting').
+        // Auto-respawn: start a fresh one-shot claude session using the message
+        // as the prompt, identical to the /start path.  This ensures send_message
+        // and delegate_task reconnect transparently instead of timing out.
+        if (!(await spawnAgentSession(agent, message, {}, ctx, sendJson))) {
+          return;
+        }
+        sendJson({ success: true });
+        return;
+      }
+
+      const ptyProcess = ptyProcesses.get(agent.ptyId);
+      if (ptyProcess) {
+        writeProgrammaticInput(ptyProcess, message, true);
+        agent.status = 'running';
+        agent.waitingReason = undefined;
+        agent.lastActivity = new Date().toISOString();
+        saveAgents();
+        sendJson({ success: true });
+        return;
+      }
+      sendJson({ error: 'Failed to send message - PTY not available' }, 500);
+    });
   });
 
   // DELETE /api/agents/:id

@@ -98,6 +98,9 @@ export interface AppSettings {
   nvidiaApiKey?: string;
   nousPortalEnabled?: boolean;
   nousPortalApiKey?: string;
+  veniceEnabled?: boolean;
+  veniceApiKey?: string;
+  ollamaBaseUrl?: string;
   notificationSounds?: {
     waiting?: string;
     complete?: string;
@@ -123,6 +126,8 @@ export interface AppSettings {
   favoriteProjects?: string[];
   hiddenProjects?: string[];
   defaultProjectPath?: string;
+  /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
+  providerBudgets?: Record<string, number>;
 }
 
 export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';

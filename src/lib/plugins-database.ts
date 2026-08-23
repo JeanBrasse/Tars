@@ -1,7 +1,7 @@
 // Plugin database for Claude Code plugins marketplace
 // Supports multiple data sources with per-source localStorage caching
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 // ── Public types ──
 
@@ -330,29 +330,44 @@ export function usePluginsDatabase() {
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
 
+  /**
+   * Fetch, or fetch again after a failure.
+   *
+   * The retry has to clear the module-level cache and the in-flight promise, or
+   * pressing it after every marketplace failed would hand back the same
+   * rejected promise for the life of the window.
+   */
+  const load = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await fetchPlugins();
+      if (!mounted.current) return;
+      setPlugins(data);
+      setCategories(cachedCategories!);
+      setMarketplaces(cachedMarketplaces!);
+      setAuthors(cachedAuthors!);
+    } catch (err) {
+      if (!mounted.current) return;
+      setError(err instanceof Error ? err.message : 'Failed to fetch plugins');
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }, []);
+
+  const refresh = useCallback(() => {
+    cachedPlugins = null;
+    fetchPromise = null;
+    return load();
+  }, [load]);
+
   useEffect(() => {
     mounted.current = true;
-    if (cachedPlugins) return;
-
-    fetchPlugins()
-      .then((data) => {
-        if (!mounted.current) return;
-        setPlugins(data);
-        setCategories(cachedCategories!);
-        setMarketplaces(cachedMarketplaces!);
-        setAuthors(cachedAuthors!);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setError(err instanceof Error ? err.message : 'Failed to fetch plugins');
-        setLoading(false);
-      });
-
+    if (!cachedPlugins) load();
     return () => {
       mounted.current = false;
     };
-  }, []);
+  }, [load]);
 
-  return { plugins, categories, marketplaces, authors, loading, error };
+  return { plugins, categories, marketplaces, authors, loading, error, refresh };
 }

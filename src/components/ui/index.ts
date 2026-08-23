@@ -6,6 +6,7 @@ export { Label, FieldError, Input, PasswordInput, Select, Textarea } from './Fie
 export { Dropdown } from './Dropdown';
 export type { DropdownOption } from './Dropdown';
 export { BrandSpinner, LoadingPanel, LoadingState, SkeletonRows, SlowOperation, useLoadingStage } from './Loading';
+export { ErrorState } from './ErrorState';
 export { PageHeader } from './PageHeader';
 export { SegmentedControl } from './SegmentedControl';
 export type { SegmentedOption } from './SegmentedControl';

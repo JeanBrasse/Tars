@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { VAULT_DIR, MIME_TYPES } from '../../constants';
-import { getVaultDb } from '../vault-db';
+import { getVaultDb, ftsSearch } from '../vault-db';
 import { RouteApp, RouteContext } from './types';
 
 export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
@@ -165,14 +165,7 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
         return;
       }
 
-      const results = db.prepare(`
-        SELECT d.*, snippet(documents_fts, 1, '<mark>', '</mark>', '...', 40) as snippet
-        FROM documents_fts fts
-        JOIN documents d ON d.rowid = fts.rowid
-        WHERE documents_fts MATCH ?
-        ORDER BY rank
-        LIMIT ?
-      `).all(query, limit);
+      const results = ftsSearch(db, query, limit);
       sendJson({ results });
     } catch (err) {
       sendJson({ error: String(err) }, 500);

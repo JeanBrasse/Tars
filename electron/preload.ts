@@ -360,6 +360,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('tasmania:remove'),
   },
 
+  // Ollama (local LLM server)
+  ollama: {
+    test: () =>
+      ipcRenderer.invoke('ollama:test'),
+  },
+
   // Dialogs
   dialog: {
     openFolder: () =>
@@ -503,14 +509,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('hermes:crons:delete', params),
     kanbanBoard: (params?: { board?: string }) =>
       ipcRenderer.invoke('hermes:kanban:board', params ?? {}),
+    kanbanGetTask: (params: { taskId: string }) =>
+      ipcRenderer.invoke('hermes:kanban:getTask', params),
     kanbanCreateTask: (task: Record<string, unknown>) =>
       ipcRenderer.invoke('hermes:kanban:createTask', task),
     kanbanUpdateTask: (params: { taskId: string; patch: Record<string, unknown> }) =>
       ipcRenderer.invoke('hermes:kanban:updateTask', params),
+    kanbanDeleteTask: (params: { taskId: string }) =>
+      ipcRenderer.invoke('hermes:kanban:deleteTask', params),
+    kanbanAddComment: (params: { taskId: string; body: string }) =>
+      ipcRenderer.invoke('hermes:kanban:addComment', params),
     testWebhook: (params: { agentName?: string; agentId?: string; projectPath?: string }) =>
       ipcRenderer.invoke('hermes:testWebhook', params),
     testGateway: (url: string) =>
       ipcRenderer.invoke('hermes:testGateway', url),
+  },
+
+  // Overseer chat (Hermes watches every project's agents)
+  overseer: {
+    send: (message: string) =>
+      ipcRenderer.invoke('overseer:send', message),
+    history: () =>
+      ipcRenderer.invoke('overseer:history'),
+    fleet: () =>
+      ipcRenderer.invoke('overseer:fleet'),
+    confirmAction: (params: { action: Record<string, unknown>; approve: boolean }) =>
+      ipcRenderer.invoke('overseer:confirmAction', params),
+    pause: () =>
+      ipcRenderer.invoke('overseer:pause'),
+    resume: () =>
+      ipcRenderer.invoke('overseer:resume'),
+    watchStatus: () =>
+      ipcRenderer.invoke('overseer:watchStatus'),
+    onBriefing: (callback: (message: Record<string, unknown>) => void) => {
+      const listener = (_: unknown, message: Record<string, unknown>) => callback(message);
+      ipcRenderer.on('overseer:briefing', listener);
+      return () => ipcRenderer.removeListener('overseer:briefing', listener);
+    },
   },
 
   // Team templates (sets of agents deployed onto a project in one click)

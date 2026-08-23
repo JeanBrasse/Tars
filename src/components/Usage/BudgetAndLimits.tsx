@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
@@ -93,6 +93,68 @@ export function buildBudgetRows(opts: {
   return rows;
 }
 
+/**
+ * The monthly ceiling for one provider, edited in place.
+ *
+ * Deliberately not a Settings page: the number caps the figure printed two
+ * lines above it, and sending someone to another screen to type it is how the
+ * old copy ended up pointing at a field that was never built. Empty clears it,
+ * which is why the value is held as a string while it is being typed.
+ */
+function BudgetField({
+  providerId,
+  value,
+  onSave,
+}: {
+  providerId: string;
+  value: number | undefined;
+  onSave: (providerId: string, monthly: number | null) => void;
+}) {
+  const [draft, setDraft] = useState(value != null ? String(value) : '');
+  const [editing, setEditing] = useState(false);
+
+  // Follow the stored value while the field is idle, so a save elsewhere or a
+  // reload does not leave a stale number sitting in the box.
+  useEffect(() => {
+    if (!editing) setDraft(value != null ? String(value) : '');
+  }, [value, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed === '') return onSave(providerId, null);
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setDraft(value != null ? String(value) : '');
+      return;
+    }
+    onSave(providerId, parsed);
+  };
+
+  return (
+    <label className="flex items-center gap-2 text-[10.5px] text-text-muted">
+      <span>monthly budget</span>
+      <span className="flex items-center gap-1">
+        <span aria-hidden>$</span>
+        <input
+          value={draft}
+          onChange={e => { setEditing(true); setDraft(e.target.value); }}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.currentTarget.blur(); }
+            if (e.key === 'Escape') { setEditing(false); setDraft(value != null ? String(value) : ''); e.currentTarget.blur(); }
+          }}
+          inputMode="decimal"
+          placeholder="none"
+          aria-label={`Monthly budget for ${providerId}, in dollars`}
+          className="h-[26px] w-20 bg-bg-tertiary px-2 font-mono text-[11px] text-text-primary outline-none focus:ring-1 focus:ring-primary"
+        />
+      </span>
+      <span>{value != null ? 'tracked against this' : 'not tracked until you set one'}</span>
+    </label>
+  );
+}
+
 export function BudgetAndLimits({
   rateLimits,
   providerSpend,
@@ -105,12 +167,28 @@ export function BudgetAndLimits({
 
   useEffect(() => {
     window.electronAPI?.appSettings?.get().then(s => {
-      const raw = (s as unknown as { providerBudgets?: Record<string, number> })?.providerBudgets;
-      if (raw) setBudgets(raw);
+      if (s?.providerBudgets) setBudgets(s.providerBudgets);
     }).catch(() => undefined);
     window.electronAPI?.cliPaths?.detect?.().then(paths => {
       setInstalled(Object.fromEntries(Object.entries(paths ?? {}).map(([k, v]) => [k, !!v])));
     }).catch(() => undefined);
+  }, []);
+
+  /**
+   * A budget is set here, on the row that shows the spend it caps. The panel
+   * used to say "set a monthly budget in Settings" and there was no such
+   * setting anywhere in the app: the value was read through an unchecked cast
+   * to a field that did not exist, so it was always empty and the sentence was
+   * an instruction nobody could follow.
+   */
+  const saveBudget = useCallback(async (providerId: string, monthly: number | null) => {
+    setBudgets(prev => {
+      const next = { ...prev };
+      if (monthly === null) delete next[providerId];
+      else next[providerId] = monthly;
+      window.electronAPI?.appSettings?.save({ providerBudgets: next }).catch(() => undefined);
+      return next;
+    });
   }, []);
 
   const rows = useMemo(
@@ -161,11 +239,15 @@ export function BudgetAndLimits({
               </div>
 
               {row.percent === null ? (
-                <p className="text-[10.5px] text-text-muted">
-                  {row.kind === 'local'
-                    ? 'no metering: runs on your machine'
-                    : 'set a monthly budget in Settings to track this'}
-                </p>
+                row.kind === 'local' ? (
+                  <p className="text-[10.5px] text-text-muted">no metering: runs on your machine</p>
+                ) : (
+                  <BudgetField
+                    providerId={row.providerId}
+                    value={budgets[row.providerId]}
+                    onSave={saveBudget}
+                  />
+                )
               ) : (
                 <div className="h-[5px] bg-bg-tertiary">
                   <div

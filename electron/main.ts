@@ -56,6 +56,7 @@ import { scheduleTick } from './utils/agents-tick';
 
 // Services
 import { startApiServer } from './services/api-server';
+import { startVeniceShimServer, stopVeniceShimServer } from './services/venice-shim';
 import {
   initTelegramBotService,
   initTelegramBot as initTelegramBotHandlers,
@@ -95,6 +96,8 @@ import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
+import { registerOverseerHandlers } from './handlers/overseer-handlers';
+import { startOverseerWatch, stopOverseerWatch } from './services/overseer';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
@@ -316,6 +319,10 @@ function initApiServer() {
     ),
     () => appSettings
   );
+  // Loopback-only, always on: it is a no-op until a venice agent's PTY is
+  // spawned with the shim's URL baked into ANTHROPIC_BASE_URL. See
+  // services/venice-shim.ts for why this cannot just be another /api/* route.
+  startVeniceShimServer();
 }
 
 // ============== App Initialization ==============
@@ -386,6 +393,11 @@ app.whenReady().then(async () => {
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
+  registerOverseerHandlers();
+
+  // The overseer's watch timer: an unprompted briefing reaches the Chat page
+  // through the same broadcast channel every other live update uses.
+  startOverseerWatch((message) => broadcastToAllWindows('overseer:briefing', message));
 
   // Register kanban handlers
   registerKanbanHandlers({
@@ -656,9 +668,11 @@ app.on('before-quit', () => {
   console.log('App quitting, saving agents and killing all PTY processes...');
   destroyTray();
   stopAgentAutosave();
+  stopOverseerWatch();
   saveAgents();
   killAllPty();
   closeVaultDb();
+  stopVeniceShimServer();
 });
 
 /**

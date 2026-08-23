@@ -248,14 +248,17 @@ export default function NewChatModal({
         setRegisteredVaults(info?.vaultPaths || []);
       });
 
-      // Detect installed CLI providers + API key availability
+      // Detect installed CLI providers + API key availability + whether the
+      // local Ollama server answers (it has neither a binary nor a key).
       Promise.all([
         window.electronAPI?.cliPaths?.detect(),
         window.electronAPI?.appSettings?.get(),
-      ]).then(([paths, settings]) => {
+        window.electronAPI?.ollama?.test(),
+      ]).then(([paths, settings, ollama]) => {
         setInstalledProviders(computeProviderAvailability(
           paths as Record<string, string | undefined> | undefined,
           settings,
+          ollama?.reachable,
         ));
       });
 

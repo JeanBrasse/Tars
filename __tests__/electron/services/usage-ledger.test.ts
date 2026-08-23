@@ -88,7 +88,32 @@ describe('dailyCost', () => {
     ledger.recordUsage({ agentId: 'a', provider: 'claude', inputTokens: 1, outputTokens: 1, costUSD: 1.5, transport: 'acp' });
     ledger.recordUsage({ agentId: 'b', provider: 'codex', inputTokens: 1, outputTokens: 1, costUSD: 2.5, transport: 'acp' });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // entry.ts is recorded as a local `new Date()`, and dailyCost() must key
+    // by that same local calendar day. Not the UTC day, which disagrees with
+    // it for roughly a third of the globe at any given moment.
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     expect(ledger.dailyCost()[today]).toBeCloseTo(4, 6);
+  });
+
+  it('keys a turn by its local calendar day, not its UTC calendar day', () => {
+    // Fixed instant chosen so UTC and a positive-offset local day disagree:
+    // 2026-08-23T22:30:00Z is still 2026-08-23 in UTC, but already
+    // 2026-08-24 for any timezone at UTC+2 or later (e.g. UTC+4).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-23T22:30:00.000Z'));
+    ledger.recordUsage({ agentId: 'a', provider: 'claude', inputTokens: 1, outputTokens: 1, costUSD: 3, transport: 'acp' });
+    vi.useRealTimers();
+
+    const recordedAt = new Date(ledger.readLedger()[0].ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localDay = `${recordedAt.getFullYear()}-${pad(recordedAt.getMonth() + 1)}-${pad(recordedAt.getDate())}`;
+    const utcDay = recordedAt.toISOString().slice(0, 10);
+
+    expect(ledger.dailyCost()[localDay]).toBeCloseTo(3, 6);
+    if (localDay !== utcDay) {
+      expect(ledger.dailyCost()[utcDay]).toBeUndefined();
+    }
   });
 });

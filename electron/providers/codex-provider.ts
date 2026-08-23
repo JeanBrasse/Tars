@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import type { AppSettings } from '../types';
 import type {
   CLIProvider,
@@ -186,7 +186,11 @@ export class CodexProvider implements CLIProvider {
   async removeMcpServer(name: string): Promise<void> {
     // Try codex mcp remove first
     try {
-      execSync(`codex mcp remove ${name} 2>&1`, {
+      // execFileSync, for the same reason the add path above uses it: a shell
+      // string here would expand $(...) and backticks inside the name. The add
+      // path was fixed and its sibling a few lines below was not, which is the
+      // whole shape of this bug class.
+      execFileSync('codex', ['mcp', 'remove', name], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });

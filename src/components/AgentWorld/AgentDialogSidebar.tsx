@@ -59,6 +59,8 @@ interface AgentDialogSidebarProps {
   // Settings
   editPermissionMode: 'normal' | 'auto' | 'bypass';
   isSavingSettings: boolean;
+  /** Set when the last change was refused, so the control stops claiming it took. */
+  permissionError?: string | null;
   onSavePermissionMode: (value: 'normal' | 'auto' | 'bypass') => void;
 }
 
@@ -82,6 +84,7 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
   onBrowseFolder,
   editPermissionMode,
   isSavingSettings,
+  permissionError,
   onSavePermissionMode,
 }: AgentDialogSidebarProps) {
   const [tab, setTab] = useState<SidebarTab>('git');
@@ -190,8 +193,10 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
                 { value: 'bypass', label: 'Bypass', disabled: isSavingSettings },
               ]}
             />
-            <p className="text-[11px] text-muted-foreground">
-              {isSavingSettings ? 'Saving…' : 'Changes take effect on the next task.'}
+            <p className={`text-[11px] ${permissionError && !isSavingSettings ? 'text-danger' : 'text-muted-foreground'}`}>
+              {isSavingSettings
+                ? 'Saving…'
+                : permissionError || 'Changes take effect on the next task.'}
             </p>
           </div>
 

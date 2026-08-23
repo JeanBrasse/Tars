@@ -116,11 +116,22 @@ export function providerTotals(sinceDays?: number): ProviderTotals[] {
   return Array.from(byProvider.values()).sort((a, b) => b.costUSD - a.costUSD);
 }
 
-/** Daily cost from the ledger, for charting alongside the transcript data. */
+/**
+ * Daily cost from the ledger, for charting alongside the transcript data.
+ *
+ * `entry.ts` is `Date.toISOString()`, i.e. UTC. Slicing its first ten
+ * characters keys a turn by its UTC calendar day, which disagrees with the
+ * local day transcript-usage.ts and the Usage page key by - the same bug
+ * class fixed there: a turn at 02:30 local in Tbilisi (22:30 UTC the day
+ * before) landed under yesterday's date.
+ */
 export function dailyCost(sinceDays = 30): Record<string, number> {
   const out: Record<string, number> = {};
+  const pad = (n: number) => String(n).padStart(2, '0');
   for (const entry of readLedger(sinceDays)) {
-    const day = entry.ts.slice(0, 10);
+    const d = new Date(entry.ts);
+    if (Number.isNaN(d.getTime())) continue;
+    const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     out[day] = (out[day] || 0) + (entry.costUSD || 0);
   }
   return out;

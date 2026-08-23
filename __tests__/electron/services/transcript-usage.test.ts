@@ -155,3 +155,74 @@ describe('computeTranscriptUsage', () => {
     expect(usage.dailyModelTokens[0].tokensByModel['claude-opus-5']).toBe(1500);
   });
 });
+
+describe('the per-file cache', () => {
+  /**
+   * Every cache miss used to re-read and re-parse every transcript under
+   * ~/.claude/projects, measured at 414ms against 116MB on the author's
+   * machine, synchronously on the main process, once a minute for as long as a
+   * Usage, Agents or Projects tab was open. A file is keyed on (mtimeMs, size)
+   * now, so the recurring cost is a stat per file: 7ms on the same data, with
+   * identical totals.
+   *
+   * These tests pin the two things that could go wrong: a changed file must be
+   * re-read, and a stale file must not keep contributing after it is deleted.
+   */
+
+  /** Force the 60s result memo to expire without clearing the per-file map. */
+  function expireResultMemo() {
+    const real = Date.now;
+    const at = real();
+    Date.now = () => at + 61_000;
+    try {
+      return computeTranscriptUsage(home);
+    } finally {
+      Date.now = real;
+    }
+  }
+
+  it('re-reads a transcript that has grown', () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    expect(computeTranscriptUsage(home).modelUsage['claude-opus-5'].inputTokens).toBe(1000);
+
+    // A live session appends. Size changes, so the cache key changes.
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
+    expect(expireResultMemo().modelUsage['claude-opus-5'].inputTokens).toBe(2000);
+  });
+
+  it('stops counting a transcript that has been deleted', () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    writeTranscript('b.jsonl', [assistant('msg_2', 'req_2')]);
+    expect(computeTranscriptUsage(home).modelUsage['claude-opus-5'].inputTokens).toBe(2000);
+
+    fs.unlinkSync(path.join(home, '.claude', 'projects', 'demo', 'b.jsonl'));
+    expect(expireResultMemo().modelUsage['claude-opus-5'].inputTokens).toBe(1000);
+  });
+
+  it('still deduplicates across files when the second read is cached', () => {
+    // A resumed session replays its earlier messages into a new transcript, so
+    // the same message id lands in two files. Caching per file must not turn
+    // that back into double counting on the second pass.
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    writeTranscript('b.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_9', 'req_9')]);
+
+    const first = computeTranscriptUsage(home).modelUsage['claude-opus-5'].inputTokens;
+    const second = expireResultMemo().modelUsage['claude-opus-5'].inputTokens;
+
+    expect(first).toBe(2000);
+    expect(second).toBe(2000);
+  });
+
+  it('gives the same answer warm as it does cold', () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
+    writeTranscript('b.jsonl', [assistant('msg_3', 'req_3')]);
+
+    const cold = computeTranscriptUsage(home);
+    const warm = expireResultMemo();
+    clearTranscriptUsageCache();
+    const coldAgain = computeTranscriptUsage(home);
+
+    expect(warm).toEqual(cold);
+    expect(coldAgain).toEqual(cold);
+  });
+});

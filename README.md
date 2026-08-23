@@ -114,9 +114,10 @@ were written. Tars tells you which one you got.
 
 ## Providers
 
-Six CLIs (Claude Code, Codex, Gemini, Grok, opencode and Pi) and nine reached
+Six CLIs (Claude Code, Codex, Gemini, Grok, opencode and Pi), ten reached
 by API key: DeepSeek, Kimi (Moonshot), MiniMax, Mimo, NVIDIA, Nous Portal,
-OpenRouter, Qwen and Zhipu. Local models run through Tasmania.
+OpenRouter, Qwen, Venice AI and Zhipu, plus Ollama for whatever you run
+locally. Local models also run through Tasmania.
 
 They are equal citizens. A feature that works only for Claude is a bug here.
 That principle is written down in [ETHOS.md](ETHOS.md) because it kept being

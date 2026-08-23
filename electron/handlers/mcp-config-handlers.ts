@@ -43,6 +43,8 @@ function getConfigPath(provider: string): string {
     case 'minimax':
     case 'nvidia':
     case 'nous-portal':
+    case 'ollama':
+    case 'venice':
       return path.join(os.homedir(), '.claude', 'mcp.json');
     default:
       throw new Error(`Unknown provider: ${provider}`);
@@ -329,7 +331,9 @@ function listServers(provider: string): McpServer[] {
     case 'qwencode': return readJsonMcp(provider);
     case 'minimax':
     case 'nvidia':
-    case 'nous-portal': return readClaudeMcp();
+    case 'nous-portal':
+    case 'ollama':
+    case 'venice': return readClaudeMcp();
     default: return [];
   }
 }
@@ -345,7 +349,9 @@ function updateServer(provider: string, server: McpServer): void {
     case 'qwencode': writeJsonMcp(provider, 'update', server); break;
     case 'minimax':
     case 'nvidia':
-    case 'nous-portal': writeClaudeMcp('update', server); break;
+    case 'nous-portal':
+    case 'ollama':
+    case 'venice': writeClaudeMcp('update', server); break;
   }
 }
 
@@ -360,7 +366,9 @@ function deleteServer(provider: string, name: string): void {
     case 'qwencode': writeJsonMcp(provider, 'delete', undefined, name); break;
     case 'minimax':
     case 'nvidia':
-    case 'nous-portal': writeClaudeMcp('delete', undefined, name); break;
+    case 'nous-portal':
+    case 'ollama':
+    case 'venice': writeClaudeMcp('delete', undefined, name); break;
   }
 }
 

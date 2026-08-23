@@ -104,6 +104,40 @@ export function initVaultDb(): void {
   console.log('Vault database initialized at', VAULT_DB_FILE);
 }
 
+// documents_fts is a bare fts5 table, so MATCH parses the raw query as fts5
+// query syntax: unescaped `/ % - ' ( )` and bare AND/OR/NOT tokens are all
+// operators there, not literal characters. Real document titles and tags
+// contain them constantly ("Q1/Q2", "100%", "-negative", someone's name with
+// an apostrophe) and every one of those searches threw a SqliteError that
+// surfaced as a 500. Try the query as-is first, so intentional fts5 syntax
+// (AND/OR, prefix*) still works for anyone who wants it; only on a parse
+// failure fall back to treating the whole input as a literal quoted phrase.
+export function ftsSearch(db: Database.Database, query: string, limit: number): unknown[] {
+  const sql = `
+    SELECT d.*, snippet(documents_fts, 1, '<mark>', '</mark>', '...', 40) as snippet
+    FROM documents_fts fts
+    JOIN documents d ON d.rowid = fts.rowid
+    WHERE documents_fts MATCH ?
+    ORDER BY rank
+    LIMIT ?
+  `;
+  try {
+    return db.prepare(sql).all(query, limit);
+  } catch (err) {
+    // Only retry for fts5's own query-syntax rejection (SqliteError,
+    // e.g. "fts5: syntax error near ..." for AND/OR/-/quotes/parens, or
+    // "no such column: x" for a bare "-x" exclusion). A non-Sqlite error
+    // (locked file, corruption, disconnected handle) must still propagate -
+    // silently retrying those would swallow the real failure and mask it as
+    // an empty result set.
+    if (!(err instanceof Database.SqliteError)) {
+      throw err;
+    }
+    const literal = '"' + query.replace(/"/g, '""') + '"';
+    return db.prepare(sql).all(literal, limit);
+  }
+}
+
 export function closeVaultDb(): void {
   if (db) {
     db.close();

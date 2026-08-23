@@ -17,6 +17,7 @@ import {
   Archive,
   Brain,
   Gift,
+  MessageSquare,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
@@ -28,6 +29,10 @@ import { usePathname, useRouter } from 'next/navigation';
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', shortcut: '1' },
+  // No digit is free (1-9 and 0 are all already spoken for below), so Chat
+  // ships without one, the same as Brain - a shortcut that stole one from an
+  // existing page would be a worse regression than Chat launching without one.
+  { href: '/chat', icon: MessageSquare, label: 'Chat' },
   { href: '/agents', icon: Bot, label: 'Agents', shortcut: '2' },
   { href: '/kanban', icon: Columns, label: 'Kanban', shortcut: '3' },
   { href: '/crons', icon: CalendarClock, label: 'Schedules', shortcut: '4' },

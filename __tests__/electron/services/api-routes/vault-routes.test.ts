@@ -15,9 +15,13 @@ const mockDb = {
   prepare: mockPrepare,
 };
 
-vi.mock('../../../../electron/services/vault-db', () => ({
-  getVaultDb: () => mockDb,
-}));
+vi.mock('../../../../electron/services/vault-db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../electron/services/vault-db')>();
+  return {
+    ...actual,
+    getVaultDb: () => mockDb,
+  };
+});
 
 import { registerVaultRoutes } from '../../../../electron/services/api-routes/vault-routes';
 import { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';

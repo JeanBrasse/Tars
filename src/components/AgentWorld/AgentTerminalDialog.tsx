@@ -171,6 +171,8 @@ export default function AgentTerminalDialog({
     }
   }, [agent, onAgentUpdated]);
 
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
   const handleSavePermissionMode = useCallback(async (value: 'normal' | 'auto' | 'bypass') => {
     if (!agent) return;
     setIsSavingSettings(true);
@@ -179,10 +181,20 @@ export default function AgentTerminalDialog({
       const result = onUpdateAgent
         ? await onUpdateAgent(params)
         : await window.electronAPI!.agent.update(params);
-      if (result.success && result.agent && onAgentUpdated) onAgentUpdated(result.agent as AgentStatus);
+      // The displayed mode used to move whatever the backend answered, so a
+      // rejected update left the control reading "bypass" while the agent was
+      // still running under the stricter mode it had before. This is the one
+      // control in the app where being wrong about the state is dangerous.
+      if (!result.success) {
+        setPermissionError(result.error || 'The agent kept its previous permission mode.');
+        return;
+      }
+      setPermissionError(null);
+      if (result.agent && onAgentUpdated) onAgentUpdated(result.agent as AgentStatus);
       setEditPermissionMode(value);
     } catch (err) {
       console.error('Failed to save settings:', err);
+      setPermissionError(err instanceof Error ? err.message : 'Could not reach the agent.');
     } finally {
       setIsSavingSettings(false);
     }
@@ -290,6 +302,7 @@ export default function AgentTerminalDialog({
                 onBrowseFolder={onBrowseFolder}
                 editPermissionMode={editPermissionMode}
                 isSavingSettings={isSavingSettings}
+                permissionError={permissionError}
                 onSavePermissionMode={handleSavePermissionMode}
               />
             )}
