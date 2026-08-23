@@ -7,6 +7,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 16,
+    version: '1.5.1',
+    date: '2026-08-23',
+    updates: [
+      'Agents start again. Start wrote `cd <folder> && claude ...` into the terminal; if the folder had been moved or deleted, bash printed "No such file or directory", the command after it never ran, and you were left at a shell prompt with nothing saying it had failed. Tars now checks the folder first, names it, and tells you what to do about it',
+      'Signing in to Hermes lasts. The session cookies lived only in memory, so every relaunch — and every crash — came back signed out, with Kanban and Schedules showing "Unauthorized" for a gateway you had authenticated against days earlier. They are now stored the same way as the API token: owner-readable only, written atomically, restored at startup',
+      'Settings → Hermes: the dead field beside the Token/OAuth picker is gone. It was the token input rendered disabled under OAuth, next to a "show" control that could never reveal anything. And the picker itself is a segmented control now, like every other two-way choice in the app',
+      'Usage no longer reports two different numbers for the same day. The chart was drawn from costs reconstructed out of the Claude transcripts while the "latest day" card fell back to Tars\' own ledger — and silently moved to whatever day that ledger last had. Both read one figure now, and it includes the turns transcripts never see: every non-Claude CLI, and everything run over ACP',
+      'Schedules survives whatever date format a gateway sends it. One unparseable field could take the page down',
+      'The updater stopped 404ing on every launch — the release was missing the metadata file it looks for',
+    ],
+  },
+  {
     id: 15,
     version: '1.5.0',
     date: '2026-08-22',

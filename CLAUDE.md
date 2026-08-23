@@ -149,7 +149,7 @@ Never the other way round. Do not "build it then draw it". If a surface is new, 
 
 | What | Where | When |
 |---|---|---|
-| Changelog entry | `src/data/changelog.ts` | Every change a user would notice. Extend the current version's entry while it is still unreleased; add a new one only after a release is cut |
+| Changelog entry + version bump | `src/data/changelog.ts`, `package.json` | Every change a user would notice. **Once a version has been released, it is frozen** - bump the patch (1.5.0 → 1.5.1 → 1.5.2) and add a new entry rather than editing the shipped one. Only extend the top entry while `gh release list` shows it has never been cut |
 | Download link | `landing/src/app/api/download/route.ts` | It resolves the latest GitHub release at request time, so it needs **no edit** — but a new version is only downloadable once `gh release create` has actually run. Check `gh release list --repo JeanBrasse/Tars` before claiming a version is available |
 | The docs that are now wrong | `README.md`, `SPECS.md`, `OPERATIONS.md`, `DESIGN.md` | Whichever ones the change falsified. A version number in the Tech Stack table, a file path in the structure tree, a limitation in §13 that is no longer true |
 | Screenshots | `screenshots/` | If a surface changed. They come from `npx playwright test --update-snapshots`, which photographs the real app against a seeded sandbox — never hand-made or reused from an older UI |
