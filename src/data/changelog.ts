@@ -7,6 +7,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 19,
+    version: '1.6.1',
+    date: '2026-08-24',
+    updates: [
+      'Saving any setting no longer wipes the ones written elsewhere. The screen sent its whole snapshot of your settings back on every change, so a value the app had updated on its own in the meantime, the Slack channel it learned from an incoming message, the Telegram token it had just regenerated, was overwritten with whatever the screen had loaded minutes earlier. It sends only what you actually changed now',
+      'Brain says what your gateway told it. gbrain is registered on your Hermes gateway at its own localhost, which this machine cannot reach, and the page now says exactly that instead of leaving an empty field labelled "not enabled". It also shows that your gateway has no memory provider selected, with the ones that are ready to turn on',
+      'The name you type when creating an agent is the name it gets. The field wrote to state nothing read, so every agent ended up with the generated name instead',
+      'Creating an agent no longer loses what you typed when it fails. The form cleared itself the instant it asked, without waiting to hear whether it had worked, so a failure left a blank dialog and no explanation',
+      'An agent can be deleted from its project tab, not only from a custom one. The control was there and hidden',
+      'An agent whose record has no skills list starts again. That list is only written by versions that had it, so a restored backup or a hand-edited file made the agent refuse to run, with the reason buried where nobody could see it',
+      'The board stops redrawing every pane when one agent changes status. With twenty agents that was twenty terminals re-rendering for one status square',
+    ],
+  },
+  {
     id: 18,
     version: '1.6.0',
     date: '2026-08-24',

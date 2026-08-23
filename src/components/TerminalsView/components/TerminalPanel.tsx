@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useCallback } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
 import TerminalPanelHeader from './TerminalPanelHeader';
@@ -22,7 +22,16 @@ interface TerminalPanelProps {
   onContextMenu: (e: React.MouseEvent, agentId: string) => void;
 }
 
-export default function TerminalPanel({
+// Boards with many panels re-render this on every agents:tick otherwise: the
+// parent (TerminalsView/TerminalGrid) re-renders on any agent's status
+// change, board-wide, and with no memo here every panel re-ran its render
+// body - including the xterm-hosting one - even for agents nothing about
+// changed. Default (shallow, per-prop Object.is) comparison is enough
+// because `agent` is only ever a new object when that specific agent's own
+// data changed (see useElectronAgents' onTick reducer and the filteredAgents
+// bail-out in TerminalsView/index.tsx), and every callback prop is a stable
+// useCallback/useMemo by the time it reaches here.
+function TerminalPanel({
   agent,
   isFullscreen,
   isBroadcasting,
@@ -42,11 +51,15 @@ export default function TerminalPanel({
   const onRegisterRef = useRef(onRegisterContainer);
   onRegisterRef.current = onRegisterContainer;
 
-  // Make this panel a drop target for skills
-  const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: `panel-${agent.id}`,
-    data: { type: 'terminal-panel', agentId: agent.id },
-  });
+  // Make this panel a drop target for skills. `data` has to be referentially
+  // stable across renders where agent.id hasn't changed: dnd-kit stores it
+  // straight into DndContext's own droppable registry, which every other
+  // useDroppable/useDraggable in the tree reads from - a fresh object literal
+  // here changed that registry, and its context value, on every render of
+  // this one panel, so a single agent's tick re-rendered every OTHER panel
+  // via dnd-kit's context regardless of the memo above.
+  const dropData = useMemo(() => ({ type: 'terminal-panel' as const, agentId: agent.id }), [agent.id]);
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `panel-${agent.id}`, data: dropData });
 
   // Register container for xterm mounting - only on mount or agent ID change.
   // Uses a ref for the callback to avoid re-registering when the parent
@@ -114,3 +127,5 @@ export default function TerminalPanel({
     </div>
   );
 }
+
+export default memo(TerminalPanel);

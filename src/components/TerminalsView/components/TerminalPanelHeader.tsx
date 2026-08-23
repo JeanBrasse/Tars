@@ -45,7 +45,11 @@ export default function TerminalPanelHeader({
   const isLive = agent.status === 'running' || agent.status === 'waiting';
 
   const showDragHandle = tabType === 'custom';
-  const showRemoveButton = tabType === 'custom';
+  // Custom tabs remove the agent from the tab (it survives elsewhere);
+  // project tabs delete it outright - onRemove (wired one level up) already
+  // branches on this, the button just used to be hidden on project tabs
+  // entirely, leaving no way to delete an agent from its own project board.
+  const removeLabel = tabType === 'custom' ? 'remove' : 'delete';
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -187,9 +191,9 @@ export default function TerminalPanelHeader({
               {isFullscreen ? 'exit fullscreen' : 'fullscreen'}
             </button>
 
-            {/* Remove - custom tabs only */}
-            {showRemoveButton && !isFullscreen && (
-              <button type="button" onClick={run(onRemove)} className={menuItemClass}>remove</button>
+            {/* Remove from tab (custom) or delete outright (project) */}
+            {!isFullscreen && (
+              <button type="button" onClick={run(onRemove)} className={menuItemClass}>{removeLabel}</button>
             )}
           </div>
         )}

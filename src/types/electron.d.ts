@@ -333,6 +333,25 @@ export interface HermesConnection {
   org?: string;
 }
 
+/** An MCP server the Hermes gateway itself has registered (gbrain, pencil, …). */
+export interface HermesMcpServer {
+  name: string;
+  url: string | null;
+  transport: string | null;
+  enabled: boolean;
+  /** True when the URL only resolves on the gateway's own machine. */
+  gatewayLocal: boolean;
+}
+
+/** One of the gateway's pluggable long-term memory backends. */
+export interface HermesMemoryProvider {
+  name: string;
+  description: string;
+  available: boolean;
+  configured: boolean;
+  status: string;
+}
+
 export interface TeamTemplateMember {
   name: string;
   character: AgentCharacter;
@@ -1163,6 +1182,17 @@ export interface ElectronAPI {
     }>;
     testWebhook: (params: { agentName?: string; agentId?: string; projectPath?: string }) => Promise<{ success: boolean; status?: number; response?: unknown; error?: string }>;
     testGateway: (url: string) => Promise<{ success: boolean; status?: number; error?: string }>;
+    mcpServers: () => Promise<
+      | { success: true; servers: HermesMcpServer[] }
+      | { success: false; error: string; needsSignIn?: boolean }
+    >;
+    memoryProviders: () => Promise<
+      | { success: true; active: string; providers: HermesMemoryProvider[]; builtinBytes: number }
+      | { success: false; error: string; needsSignIn?: boolean }
+    >;
+    setMemoryProvider: (provider: string) => Promise<
+      { success: true; body?: unknown } | { success: false; error: string; needsSignIn?: boolean }
+    >;
   };
 
   // Team templates (sets of agents deployed onto a project in one click)

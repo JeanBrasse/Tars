@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle } from 'lucide-react';
 import { useMemory, formatBytes, timeAgo } from '@/hooks/useMemory';
-import type { ProjectMemory, MemoryFile } from '@/types/electron';
+import type { ProjectMemory, MemoryFile, HermesMcpServer, HermesMemoryProvider } from '@/types/electron';
 import AgentKnowledgeGraph from '@/components/Memory/AgentKnowledgeGraph';
 import { getProviderDef } from '@/lib/providers';
 import {
@@ -191,8 +191,149 @@ interface SourceStatus {
   tools?: string[];
 }
 
+type McpServersResult =
+  | { success: true; servers: HermesMcpServer[] }
+  | { success: false; error: string; needsSignIn?: boolean };
+
+type MemoryProvidersResult =
+  | { success: true; active: string; providers: HermesMemoryProvider[]; builtinBytes: number }
+  | { success: false; error: string; needsSignIn?: boolean };
+
+/**
+ * What the gateway itself has registered - distinct from the gbrain/Honcho
+ * rows above, which are Tars' own settings. A gateway-local URL (its own
+ * loopback) is real information, not a dead end: it tells the user exactly
+ * why Tars cannot reach a server the gateway swears is there.
+ */
+function GatewayMcpServers({ result }: { result: McpServersResult | null }) {
+  if (result === null) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <BrandSpinner size={12} />
+        Asking the gateway which MCP servers it has registered
+      </div>
+    );
+  }
+  if (!result.success) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {result.needsSignIn ? 'Sign in to Hermes to see its MCP servers.' : result.error}
+      </p>
+    );
+  }
+  if (result.servers.length === 0) {
+    return <p className="text-xs text-muted-foreground">The gateway has no MCP servers registered.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {result.servers.map(s => (
+        <div key={s.name} className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <StatusSquare tone={s.enabled ? 'running' : 'idle'} />
+              <span className="text-xs font-medium text-foreground">{s.name}</span>
+              {s.transport && <span className="text-[10px] text-muted-foreground font-mono">{s.transport}</span>}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground font-mono break-all">
+              {s.url ?? 'no URL advertised'}
+            </p>
+            {s.gatewayLocal && (
+              <p className="mt-0.5 text-[11px] text-warning">
+                That is the gateway&apos;s own loopback address. Tars runs on a different machine and cannot reach it from here.
+              </p>
+            )}
+          </div>
+          <StatusBadge tone={s.enabled ? 'running' : 'idle'} className="shrink-0 font-mono">
+            {s.enabled ? 'enabled' : 'disabled'}
+          </StatusBadge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The gateway's own pluggable long-term memory store - separate from the
+ * MEMORY.md/USER.md files reported in the "Hermes memory" row above.
+ * `active: ""` reads from the outside like the gateway has no memory at all,
+ * so it is worth saying in plain words, with a way to fix it right there.
+ */
+function GatewayMemoryProvider({
+  result,
+  activating,
+  onActivate,
+}: {
+  result: MemoryProvidersResult | null;
+  activating: string | null;
+  onActivate: (name: string) => void;
+}) {
+  if (result === null) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <BrandSpinner size={12} />
+        Asking the gateway which memory provider is active
+      </div>
+    );
+  }
+  if (!result.success) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {result.needsSignIn ? 'Sign in to Hermes to read its memory settings.' : result.error}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground">
+        {result.active
+          ? <>Active provider: <span className="font-mono text-foreground">{result.active}</span></>
+          : `No provider is selected. The gateway is running on its ${formatBytes(result.builtinBytes)} of built-in files only.`}
+      </p>
+      <div className="space-y-2">
+        {result.providers.map(p => {
+          const isActive = p.name === result.active;
+          const tone = isActive ? 'running' : p.available ? 'idle' : 'error';
+          return (
+            <div key={p.name} className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <StatusSquare tone={tone} />
+                  <span className="text-xs font-medium text-foreground">{p.name}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">{p.description}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <StatusBadge tone={tone} className="font-mono">
+                  {isActive ? 'active' : p.status}
+                </StatusBadge>
+                {!isActive && p.available && (
+                  <Button size="sm" onClick={() => onActivate(p.name)} disabled={activating === p.name}>
+                    {activating === p.name ? 'activating…' : 'activate'}
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Probing state and the Re-check action both live on the page - the header owns them. */
-function BackendsTab({ sources }: { sources: SourceStatus[] | null }) {
+function BackendsTab({
+  sources,
+  mcpServers,
+  memoryProviders,
+  activatingProvider,
+  onActivateProvider,
+}: {
+  sources: SourceStatus[] | null;
+  mcpServers: McpServersResult | null;
+  memoryProviders: MemoryProvidersResult | null;
+  activatingProvider: string | null;
+  onActivateProvider: (name: string) => void;
+}) {
   if (!sources) {
     return (
       <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
@@ -230,6 +371,20 @@ function BackendsTab({ sources }: { sources: SourceStatus[] | null }) {
             </div>
           );
         })}
+
+        <div className="pt-3 mt-1 border-t border-border">
+          <p className="text-xs font-medium text-foreground mb-2">Gateway MCP servers</p>
+          <GatewayMcpServers result={mcpServers} />
+        </div>
+
+        <div className="pt-3 mt-1 border-t border-border">
+          <p className="text-xs font-medium text-foreground mb-2">Gateway memory provider</p>
+          <GatewayMemoryProvider
+            result={memoryProviders}
+            activating={activatingProvider}
+            onActivate={onActivateProvider}
+          />
+        </div>
       </div>
     </Panel>
   );
@@ -263,20 +418,50 @@ export default function MemoryPage() {
 
   // ── Backends probe: hoisted so the page header can carry the Re-check ──
   const [sources, setSources] = useState<SourceStatus[] | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServersResult | null>(null);
+  const [memoryProviders, setMemoryProviders] = useState<MemoryProvidersResult | null>(null);
+  const [activatingProvider, setActivatingProvider] = useState<string | null>(null);
+  const [activateError, setActivateError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const projectPath = selectedProject?.projectPath;
 
   const probeSources = useCallback(async () => {
     setChecking(true);
     try {
-      const res = await window.electronAPI?.memoryHub?.sources(projectPath);
-      setSources(res?.sources ?? []);
+      const [sourcesRes, mcpRes, providersRes] = await Promise.all([
+        window.electronAPI?.memoryHub?.sources(projectPath),
+        window.electronAPI?.hermes?.mcpServers(),
+        window.electronAPI?.hermes?.memoryProviders(),
+      ]);
+      setSources(sourcesRes?.sources ?? []);
+      setMcpServers(mcpRes ?? { success: false, error: 'No response from the gateway' });
+      setMemoryProviders(providersRes ?? { success: false, error: 'No response from the gateway' });
     } catch {
       setSources([]);
+      setMcpServers({ success: false, error: 'No response from the gateway' });
+      setMemoryProviders({ success: false, error: 'No response from the gateway' });
     } finally {
       setChecking(false);
     }
   }, [projectPath]);
+
+  const activateMemoryProvider = useCallback(async (name: string) => {
+    setActivatingProvider(name);
+    setActivateError(null);
+    try {
+      const res = await window.electronAPI?.hermes?.setMemoryProvider(name);
+      if (res?.success) {
+        const providersRes = await window.electronAPI?.hermes?.memoryProviders();
+        setMemoryProviders(providersRes ?? { success: false, error: 'No response from the gateway' });
+      } else {
+        setActivateError(res?.error ?? 'Could not activate the provider');
+      }
+    } catch (err) {
+      setActivateError(err instanceof Error ? err.message : 'Could not activate the provider');
+    } finally {
+      setActivatingProvider(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (activeTab !== 'backends') return;
@@ -339,7 +524,21 @@ export default function MemoryPage() {
       )}
 
       {/* ── Shared backends tab ── */}
-      {activeTab === 'backends' && <BackendsTab sources={sources} />}
+      {activeTab === 'backends' && (
+        <BackendsTab
+          sources={sources}
+          mcpServers={mcpServers}
+          memoryProviders={memoryProviders}
+          activatingProvider={activatingProvider}
+          onActivateProvider={activateMemoryProvider}
+        />
+      )}
+      {activeTab === 'backends' && activateError && (
+        <div className="mt-2 p-2 bg-danger/10 border border-danger/30 text-danger text-xs flex items-center gap-2 shrink-0">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          {activateError}
+        </div>
+      )}
 
       {/* ── Projects tab content ── */}
       {activeTab === 'projects' && <>

@@ -334,6 +334,8 @@ export default function ProjectsPage() {
       setShowAgentDialog(false);
     } catch (err) {
       console.error('Failed to create agent:', err);
+      // Tells the modal not to wipe what the user typed on a failed create.
+      return false;
     }
   };
 

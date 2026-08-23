@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 
 interface StatusBarProps {
@@ -8,7 +9,7 @@ interface StatusBarProps {
   branch?: string;
 }
 
-export default function StatusBar({ agents, branch }: StatusBarProps) {
+function StatusBar({ agents, branch }: StatusBarProps) {
   const running = agents.filter(a => a.status === 'running').length;
 
   return (
@@ -25,3 +26,5 @@ export default function StatusBar({ agents, branch }: StatusBarProps) {
     </div>
   );
 }
+
+export default memo(StatusBar);

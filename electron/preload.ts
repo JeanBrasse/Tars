@@ -523,6 +523,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('hermes:testWebhook', params),
     testGateway: (url: string) =>
       ipcRenderer.invoke('hermes:testGateway', url),
+    mcpServers: () =>
+      ipcRenderer.invoke('hermes:mcp:servers'),
+    memoryProviders: () =>
+      ipcRenderer.invoke('hermes:memory:providers'),
+    setMemoryProvider: (provider: string) =>
+      ipcRenderer.invoke('hermes:memory:setProvider', { provider }),
   },
 
   // Overseer chat (Hermes watches every project's agents)
