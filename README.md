@@ -1,7 +1,5 @@
 # Tars
 
-![Tars](screenshots/background-2.png)
-
 A desktop app for running a team of AI coding agents the way you'd run a team of
 engineers. Every agent gets a real terminal, its own git worktree and its own
 model; you watch all of them at once, delegate between them, and see what each
