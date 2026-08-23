@@ -23,7 +23,7 @@ export const agents: Map<string, AgentStatus> = new Map();
  * prompts (Edit/Write/Bash confirmations), but Claude Code has a SEPARATE
  * "workspace trust" dialog that fires on first launch in an unknown directory.
  * That dialog is gated by `~/.claude.json`'s
- * `projects[<absolute-path>].hasTrustDialogAccepted` flag — NOT by the
+ * `projects[<absolute-path>].hasTrustDialogAccepted` flag: NOT by the
  * runtime permission mode. So even a bypass-mode agent hits the trust prompt
  * on first launch in a new project.
  *
@@ -455,7 +455,7 @@ export async function initAgentPty(
   let cwd = agent.worktreePath || agent.projectPath;
 
   if (!fs.existsSync(cwd)) {
-    console.warn(`Agent ${agent.id} cwd does not exist: ${cwd} — falling back to home directory`);
+    console.warn(`Agent ${agent.id} cwd does not exist: ${cwd}. Falling back to home directory`);
     cwd = os.homedir();
   }
 
@@ -497,7 +497,7 @@ export async function initAgentPty(
       const tasmaniaStatus = await getTasmaniaStatus();
       if (tasmaniaStatus.status === 'running' && tasmaniaStatus.endpoint) {
         const localModel = agent.localModel || tasmaniaStatus.modelName || 'default';
-        // Strip /v1 suffix — Claude Code SDK appends /v1/messages itself
+        // Strip /v1 suffix: Claude Code SDK appends /v1/messages itself
         const baseUrl = tasmaniaStatus.endpoint!.replace(/\/v1\/?$/, '');
         tasmaniaEnv = {
           ANTHROPIC_BASE_URL: baseUrl,
@@ -505,7 +505,7 @@ export async function initAgentPty(
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
         };
       } else {
-        console.warn(`Agent ${agent.id} is local provider but Tasmania is not running — PTY created without Tasmania env vars`);
+        console.warn(`Agent ${agent.id} is local provider but Tasmania is not running. PTY created without Tasmania env vars`);
       }
     } catch (err) {
       console.warn(`Failed to get Tasmania status for agent ${agent.id}:`, err);

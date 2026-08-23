@@ -50,18 +50,39 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
   const [gatewayResult, setGatewayResult] = useState<{ success: boolean; message: string } | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  // Until the first probe lands we do not know whether we are signed in, and
+  // "unknown" must not render as "signed out".
+  const [authChecked, setAuthChecked] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [signingIn, setSigningIn] = useState(false);
   const connDirty = JSON.stringify(conn) !== savedConn;
 
+  /**
+   * Whether we are signed in is not local knowledge: it depends on the gateway
+   * and on the session cookie the main process keeps in
+   * ~/.dorothy/hermes-session.json. This effect used to read the connection and
+   * stop there, so `signedIn` stayed false until the user pressed Test - which
+   * is why leaving this section and coming back offered a sign-in form for a
+   * gateway Tars was already signed in to. One probe on mount settles it, and
+   * `authChecked` holds the row indeterminate until it lands instead of
+   * flashing the sign-in form first.
+   */
   useEffect(() => {
-    window.electronAPI?.hermes?.getConnection().then(r => {
-      if (!r) return;
+    let cancelled = false;
+    (async () => {
+      const r = await window.electronAPI?.hermes?.getConnection();
+      if (cancelled) return;
+      if (!r) { setAuthChecked(true); return; }
       setConn(r.connection);
       setSavedConn(JSON.stringify(r.connection));
       setDesktopAvailable(r.desktopConfigAvailable);
-    });
+      // Nothing configured to call yet (remote/cloud without a URL): there is
+      // no probe to make, so let the row show its normal form.
+      if (!r.baseUrl) { setAuthChecked(true); return; }
+      await probeGateway(r.connection);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   function patchConn(patch: Partial<HermesConnection>) {
@@ -116,13 +137,28 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   useEffect(refreshInfo, []);
 
-  async function handleTestGateway() {
+  /**
+   * The one reading of the gateway, used by the mount probe and by Test, so
+   * the two can never disagree about what "signed in" means.
+   */
+  async function probeGateway(target: HermesConnection) {
     setGatewayTesting(true);
     setGatewayResult(null);
     try {
-      const r = await window.electronAPI?.hermes?.testConnection(conn);
-      if (!r) { setGatewayResult({ success: false, message: 'Electron API unavailable' }); return; }
-      if (!r.success) {
+      const r = await window.electronAPI?.hermes?.testConnection(target);
+      if (!r) {
+        setSignedIn(false);
+        setNeedsSignIn(false);
+        setGatewayResult({ success: false, message: 'Electron API unavailable' });
+        return;
+      }
+      // A gateway that answers but demands a sign-in is reachable, not broken:
+      // it still reports its version and which sign-in it wants. Keying the
+      // early return on `success` swallowed that answer.
+      const reachable = !r.error && typeof r.status === 'number' && r.status > 0 && r.status < 500;
+      if (!reachable) {
+        setSignedIn(false);
+        setNeedsSignIn(false);
         setGatewayResult({ success: false, message: `${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}` });
         return;
       }
@@ -136,8 +172,11 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       setGatewayResult({ success: !r.needsSignIn, message: `${r.baseUrl} · ${bits.join(' · ')}` });
     } finally {
       setGatewayTesting(false);
+      setAuthChecked(true);
     }
   }
+
+  const handleTestGateway = () => probeGateway(conn);
 
   const webhookUrl = info?.tailscale.serveConfigured && info.webhookTailnetUrl
     ? info.webhookTailnetUrl
@@ -308,14 +347,23 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       <SettingsRow
         label="Sign in"
         description={
-          signedIn
-            ? 'Signed in to this gateway - only the session cookie is kept, in the main process.'
-            : needsSignIn
-              ? 'This gateway requires a sign-in. Credentials go straight to it and are never stored.'
-              : 'Credentials go straight to your gateway and are never stored.'
+          !authChecked
+            ? 'Asking the gateway whether this session is still signed in…'
+            : signedIn
+              ? 'Signed in to this gateway - only the session cookie is kept, in the main process.'
+              : needsSignIn
+                ? 'This gateway requires a sign-in. Credentials go straight to it and are never stored.'
+                : 'Credentials go straight to your gateway and are never stored.'
         }
         control={
-          signedIn ? (
+          /* Indeterminate until the mount probe answers: rendering the form
+             here would claim we are signed out before we have asked. */
+          !authChecked ? (
+            <StatusBadge tone="idle" className="font-mono">
+              <StatusSquare tone="idle" />
+              checking
+            </StatusBadge>
+          ) : signedIn ? (
             <Button
               size="sm"
               variant="ghost"

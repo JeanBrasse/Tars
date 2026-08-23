@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
 import { getProviderDef } from '@/lib/providers';
+import { localDayKey } from '@/lib/usage-dates';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
 import { BudgetAndLimits } from '@/components/Usage/BudgetAndLimits';
 import { LoadingState, PageHeader, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
@@ -330,7 +331,7 @@ export default function UsagePage() {
     Object.entries(data.stats.modelUsage).forEach(([modelId, usage]) => {
       const nonCacheTotal = (usage.inputTokens || 0) + (usage.outputTokens || 0);
       if (nonCacheTotal === 0) return;
-      // costUSD is the measured figure — it knows the 1h/5m cache write split,
+      // costUSD is the measured figure: it knows the 1h/5m cache write split,
       // which the flat table below has to guess at.
       const cost = usage.costUSD && usage.costUSD > 0
         ? usage.costUSD
@@ -449,7 +450,7 @@ export default function UsagePage() {
       return Array.from({ length: 14 }, (_, i) => {
         const d = new Date(anchor);
         d.setDate(anchor.getDate() - (13 - i));
-        const dateKey = d.toISOString().split('T')[0];
+        const dateKey = localDayKey(d);
         return {
           date: dateKey,
           label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -458,16 +459,16 @@ export default function UsagePage() {
         };
       });
     } else if (costTimeRange === 'weekly') {
-      // Last 12 weeks (Sun–Sat) ending at anchor's week
+      // Last 12 weeks (Sun-Sat) ending at anchor's week
       return Array.from({ length: 12 }, (_, i) => {
         const weekStart = new Date(anchor);
         weekStart.setDate(anchor.getDate() - anchor.getDay() - (11 - i) * 7);
-        const weekKey = weekStart.toISOString().split('T')[0];
+        const weekKey = localDayKey(weekStart);
         let cost = 0;
         for (let d = 0; d < 7; d++) {
           const day = new Date(weekStart);
           day.setDate(weekStart.getDate() + d);
-          const dk = day.toISOString().split('T')[0];
+          const dk = localDayKey(day);
           cost += dailyCostMap.get(dk) ?? 0;
         }
         return {
@@ -597,7 +598,7 @@ export default function UsagePage() {
         />
       </div>
 
-      {/* Budget & limits — each provider gets the limit it actually has */}
+      {/* Budget & limits: each provider gets the limit it actually has */}
       <BudgetAndLimits
         rateLimits={data?.rateLimits}
         providerSpend={ledger.map(l => ({ provider: l.provider, costUSD: l.costUSD }))}

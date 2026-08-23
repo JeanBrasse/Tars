@@ -61,7 +61,7 @@ export function ensureTarsClaudeMd(): void {
 
 Use auto memory (\`~/.claude/projects/.../memory/\`) actively on every project:
 - Save architectural decisions, key file locations, and debugging insights to \`MEMORY.md\`
-- Create topic files (e.g. \`patterns.md\`, \`debugging.md\`) for detailed notes — keep \`MEMORY.md\` under 200 lines
+- Create topic files (e.g. \`patterns.md\`, \`debugging.md\`) for detailed notes: keep \`MEMORY.md\` under 200 lines
 - At session start, review \`MEMORY.md\` for relevant context before diving in
 - After any correction or new discovery, update memory so the next session benefits
 
@@ -70,7 +70,7 @@ Use auto memory (\`~/.claude/projects/.../memory/\`) actively on every project:
 - Enter plan mode for non-trivial tasks (3+ steps or architectural decisions)
 - After any correction from the user: update \`tasks/lessons.md\` with the pattern
 - Never mark a task complete without proving it works
-- When given a bug report: just fix it — point at logs, errors, failing tests and resolve them
+- When given a bug report, just fix it: point at logs, errors, failing tests and resolve them
 
 ## Core Principles
 
@@ -81,8 +81,8 @@ Use auto memory (\`~/.claude/projects/.../memory/\`) actively on every project:
 ## Autonomy
 
 When you are delegated a task by Tars or an orchestrator agent, **always act autonomously**:
-- Do NOT ask for confirmation before proceeding — just do the work and report results
-- Do NOT ask "Would you like me to continue?" or "Shall I proceed?" — the answer is always yes
+- Do NOT ask for confirmation before proceeding: just do the work and report results
+- Do NOT ask "Would you like me to continue?" or "Shall I proceed?": the answer is always yes
 - If a task is ambiguous, make reasonable assumptions and state them in your report
 - Complete the full task and return your findings/output directly
 `;
@@ -202,7 +202,7 @@ function playSound(filePath: string): void {
       if (err) console.error('Failed to play notification sound:', err.message);
     });
   } else {
-    // Linux — try common players
+    // Linux: try common players
     execFile('paplay', [filePath], (err) => {
       if (err) {
         execFile('aplay', [filePath], (err2) => {
@@ -222,7 +222,7 @@ export function isSuperAgent(agent: AgentStatus): boolean {
 }
 
 /** Find an orchestrator agent. Pass projectPath to get the orchestrator OF
- *  THAT PROJECT — without it, callers with no project context (Telegram,
+ *  THAT PROJECT. Without it, callers with no project context (Telegram,
  *  Slack) get the first orchestrator found, all projects considered. */
 export function getSuperAgent(agents: Map<string, AgentStatus>, projectPath?: string): AgentStatus | undefined {
   const orchestrators = Array.from(agents.values()).filter(a => isSuperAgent(a));

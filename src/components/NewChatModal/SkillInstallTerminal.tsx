@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { X, CheckCircle, XCircle } from 'lucide-react';
+import { BrandSpinner } from '@/components/ui';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
@@ -53,7 +54,7 @@ export default function SkillInstallTerminal({
                       <XCircle className="w-4 h-4 text-accent-red" />
                     )
                   ) : (
-                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                    <BrandSpinner size={14} />
                   )}
                 </div>
                 <div>
@@ -62,7 +63,7 @@ export default function SkillInstallTerminal({
                       ? installExitCode === 0
                         ? 'Installation Complete'
                         : 'Installation Failed'
-                      : `Installing ${installingSkill.name}...`}
+                      : `Installing ${installingSkill.name}`}
                   </h3>
                   <p className="text-xs text-text-muted font-mono">
                     {installingSkill.repo}/{installingSkill.name}

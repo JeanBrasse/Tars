@@ -5,8 +5,8 @@ import type { AgentProvider } from '@/types/electron';
 import type { AgentEffort } from '@/types/agent';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
-import { PanelCaption, SegmentedControl, Select, StatusSquare } from '@/components/ui';
-import type { SegmentedOption } from '@/components/ui';
+import { Dropdown, PanelCaption, SegmentedControl, StatusSquare } from '@/components/ui';
+import type { DropdownOption, SegmentedOption } from '@/components/ui';
 
 interface TasmaniaModel {
   name: string;
@@ -69,9 +69,13 @@ async function fetchProviderModels(providerId: string): Promise<ProviderModel[] 
   }
 }
 
-/** The closed value of the model select says everything: name, context, price. */
-function modelLine(m: ProviderModel): string {
-  return m.description ? `${m.name} · ${m.description}` : m.name;
+/**
+ * A model row: the name carries the row, the catalogue detail (context window,
+ * price, release date) sits right-aligned as a hint so a long description can
+ * never push the name out of the panel.
+ */
+function modelOption(m: ProviderModel): DropdownOption {
+  return { value: m.id, label: m.name, hint: m.description || undefined };
 }
 
 /** CLI binary entry detected from settings */
@@ -281,17 +285,17 @@ const StepModel = React.memo(function StepModel({
       {provider !== 'local' ? (
         <div>
           <PanelCaption className="mb-2">MODEL</PanelCaption>
-          <Select
-            className="font-mono"
+          {/* Searchable: the models.dev catalogue runs past fifty entries for
+              some providers, which is more than anyone scans by eye. */}
+          <Dropdown
+            mono
+            ariaLabel="Model"
+            searchable={resolvedModels.length > 12}
+            searchPlaceholder={`filter ${resolvedModels.length} models`}
             value={model}
-            onChange={(e) => onModelChange(e.target.value)}
-          >
-            {resolvedModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {modelLine(m)}
-              </option>
-            ))}
-          </Select>
+            options={resolvedModels.map(modelOption)}
+            onChange={onModelChange}
+          />
         </div>
       ) : (
         <div>
@@ -319,17 +323,17 @@ const StepModel = React.memo(function StepModel({
               )}
               {tasmaniaModels.length > 0 && (
                 <div>
-                  <Select
-                    className="font-mono"
+                  <Dropdown
+                    mono
+                    ariaLabel="Local model"
                     value={localModel}
-                    onChange={(e) => onLocalModelChange(e.target.value)}
-                  >
-                    {tasmaniaModels.map((m) => (
-                      <option key={m.path} value={m.name}>
-                        {m.name}{m.quantization ? ` · ${m.quantization}` : ''}{m.parameters ? ` · ${m.parameters}` : ''}
-                      </option>
-                    ))}
-                  </Select>
+                    options={tasmaniaModels.map((m) => ({
+                      value: m.name,
+                      label: m.name,
+                      hint: [m.quantization, m.parameters].filter(Boolean).join(' · ') || undefined,
+                    }))}
+                    onChange={onLocalModelChange}
+                  />
                   <p className="text-[11px] text-muted-foreground mt-1.5">
                     Select the model to use. The currently loaded model will be used if available.
                   </p>
@@ -361,18 +365,21 @@ const StepModel = React.memo(function StepModel({
       {detectedClis.length > 0 && (
         <div>
           <PanelCaption className="mb-2">CLI BINARY</PanelCaption>
-          <Select
-            className="font-mono"
+          <Dropdown
+            mono
+            ariaLabel="CLI binary"
             value={cliPath}
-            onChange={(e) => onCliPathChange(e.target.value)}
-          >
-            <option value="">Default (provider default)</option>
-            {detectedClis.map((cli) => (
-              <option key={cli.key} value={cli.path}>
-                {cli.label} · {cli.path}
-              </option>
-            ))}
-          </Select>
+            placeholder="Default (provider default)"
+            options={[
+              { value: '', label: 'Default (provider default)' },
+              ...detectedClis.map((cli) => ({
+                value: cli.path,
+                label: cli.label,
+                hint: cli.path,
+              })),
+            ]}
+            onChange={onCliPathChange}
+          />
           <p className="text-[11px] text-muted-foreground mt-1.5">
             Override which CLI binary runs this agent. Defaults to the selected provider&apos;s CLI.
           </p>

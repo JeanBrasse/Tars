@@ -14,7 +14,7 @@ const FEATURES = [
   },
   {
     title: 'Deploy a whole team',
-    body: 'One click puts an orchestrator, frontend, backend, QA, audit and database engineer on a project \u2014 each on its own git worktree, model and brief.',
+    body: 'One click puts an orchestrator, frontend, backend, QA, audit and database engineer on a project, each on its own git worktree, model and brief.',
   },
   {
     title: 'Any CLI, any model',
@@ -22,7 +22,7 @@ const FEATURES = [
   },
   {
     title: 'One memory, five sources',
-    body: 'Project files, the session ledger, your Hermes gateway, gbrain and Honcho behind one interface \u2014 reachable by every CLI, not just the ones with hooks.',
+    body: 'Project files, the session ledger, your Hermes gateway, gbrain and Honcho behind one interface, reachable by every CLI, not just the ones with hooks.',
   },
   {
     title: 'See what they actually did',

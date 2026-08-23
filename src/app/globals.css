@@ -6,7 +6,7 @@
 }
 
 /* ============================================
-   DOROTHY — WARM RETRO LIGHT THEME
+   DOROTHY: WARM RETRO LIGHT THEME
    ============================================
 
    Philosophy:
@@ -26,9 +26,9 @@
   --card-foreground: #1E1E1E;
   --popover: #FFFFFF;
   --popover-foreground: #1E1E1E;
-  --term-bg: #F3F1EE;              /* terminal canvas — xterm needs the literal, see lib/terminal-theme.ts */
+  --term-bg: #F3F1EE;              /* terminal canvas: xterm needs the literal, see lib/terminal-theme.ts */
   --scrim: #1E1E1E66;              /* the only legal modal backdrop */
-  --knob: #FFFFFF;                 /* toggle knob fill — decoupled from --primary-foreground */
+  --knob: #FFFFFF;                 /* toggle knob fill, decoupled from --primary-foreground */
 
   /* Primary - Tangerine 500 */
   --primary: #C77012;
@@ -45,7 +45,7 @@
   /* Accent - Tangerine.
      NOTE: in this codebase --accent is the BRAND ORANGE, not shadcn's subtle
      hover surface. `hover:bg-accent` / `hover:bg-accent/50` is a bug, not a
-     hover state — use `hover:bg-secondary`. --accent-dim is the 8% wash used
+     hover state. Use `hover:bg-secondary`. --accent-dim is the 8% wash used
      for active rows and boxes (R2a). */
   --accent: #C77012;
   --accent-foreground: #1E1E1E;
@@ -102,7 +102,7 @@
 }
 
 /* ============================================
-   TARS — DARK THEME OVERRIDES
+   TARS: DARK THEME OVERRIDES
    ============================================ */
 .dark {
   /* Surfaces */
@@ -221,7 +221,7 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
 
-  /* Agent status — semantic, accent-independent */
+  /* Agent status: semantic, accent-independent */
   --color-status-running: var(--success);
   --color-status-waiting: var(--warning);
   --color-status-error: var(--danger);
@@ -248,7 +248,7 @@
   --font-serif: var(--font-serif-loaded), Georgia, serif;
   --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Type scale — the legal target for the arbitrary text-[Npx] literals still
+  /* Type scale: the legal target for the arbitrary text-[Npx] literals still
      in src/. Additive only: --spacing is deliberately NOT set, because in
      Tailwind v4 that redefines the whole numeric scale (p-1 would become 8px). */
   --text-9: 9px;
@@ -272,7 +272,7 @@
   --text-40: 40px;
   --text-44: 44px;
 
-  /* Control heights — the only two the app has (R1) */
+  /* Control heights: the only two the app has (R1) */
   --height-control-sm: 26px;
   --height-control: 32px;
 }
@@ -313,7 +313,7 @@
     letter-spacing: 0;
   }
   /* Use retro serif only where explicitly applied via .font-serif class */
-  /* Display serif (PP Eiko stand-in) — wordmark and large titles only */
+  /* Display serif (PP Eiko stand-in): wordmark and large titles only */
   .font-serif {
     font-family: var(--font-serif);
   }
@@ -490,7 +490,7 @@ input, textarea, select {
   transition: border-color 0.15s ease;
 }
 
-/* Focus is a 1px accent border and nothing else — no halo. */
+/* Focus is a 1px accent border and nothing else. No halo. */
 input:focus, textarea:focus, select:focus {
   border-color: var(--primary);
   outline: none;
@@ -559,4 +559,23 @@ button, a, input, textarea, select {
 @keyframes square-pulse {
   0%, 70%, 100% { opacity: 0.18; }
   35%           { opacity: 1; }
+}
+
+/*
+ * The brand mark, waiting. Each cell of the 4x4 grid runs this on a delay set
+ * by its diagonal, so the lit band sweeps across the square. Cells never fall
+ * below 0.16, which is what keeps the silhouette of the logo intact instead of
+ * reading as sixteen unrelated dots. See BrandSpinner in ui/Loading.tsx.
+ */
+@keyframes square-sweep {
+  0%, 55%, 100% { opacity: 0.16; }
+  20%           { opacity: 1; }
+}
+
+/*
+ * Anyone who has asked the system not to animate gets the mark held still, at
+ * the rest opacity, rather than a spinner they cannot escape.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .square-sweep-cell { animation: none !important; opacity: 0.4 !important; }
 }

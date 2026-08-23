@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, stripCursorSequences } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripCursorSequences, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 // Clean xterm query/focus escape sequences out of user input before forwarding.
@@ -79,6 +79,12 @@ export function useAgentDialogTerminal({
         scrollback: 10000,
         convertEol: agent.provider !== 'gemini',
       });
+
+      // Before the first write. Claude Code re-arms mouse tracking on almost
+      // every redraw, and honouring it disables xterm's selection service and
+      // swallows the wheel, so the pane can neither scroll nor be selected.
+      // The "Previous output" replay below carries the same sequences.
+      suppressMouseTracking(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -179,7 +185,7 @@ export function useAgentDialogTerminal({
     };
   }, [open, agent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Follow the app theme — xterm holds literal colours, so re-apply on toggle
+  // Follow the app theme: xterm holds literal colours, so re-apply on toggle
   useEffect(() => {
     if (xtermRef.current) {
       xtermRef.current.options.theme = xtermTheme;
@@ -204,7 +210,7 @@ export function useAgentDialogTerminal({
       if (fitAddonRef.current && xtermRef.current) {
         try {
           fitAddonRef.current.fit();
-          // Only scroll to bottom if user was already at the bottom — don't hijack manual scroll position
+          // Only scroll to bottom if user was already at the bottom: don't hijack manual scroll position
           if (isAtBottomRef.current) {
             xtermRef.current.scrollToBottom();
           }

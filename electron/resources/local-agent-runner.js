@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Local Agent Runner — Tars
+ * Local Agent Runner: Tars
  *
  * Standalone Node.js script (no npm dependencies) that provides an interactive
  * chat REPL against Tasmania's OpenAI-compatible /v1/chat/completions endpoint.

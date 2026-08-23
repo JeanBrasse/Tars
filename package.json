@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -19,6 +19,7 @@
     "e2e": "playwright test",
     "e2e:update": "playwright test --update-snapshots",
     "e2e:guard": "node e2e/check-coverage.mjs",
+    "check:dashes": "node scripts/check-dashes.mjs",
     "sandbox": "bash scripts/sandbox.sh",
     "build:renderer": "bash -c 'set -e; rm -rf .next out; mv src/app/api src/app/_api_backup; mv src/app/icon.tsx src/app/_icon_backup.tsx 2>/dev/null || true; trap \"mv src/app/_api_backup src/app/api 2>/dev/null; mv src/app/_icon_backup.tsx src/app/icon.tsx 2>/dev/null\" EXIT; ELECTRON_BUILD=1 next build'",
     "lint:design": "bash scripts/design-lint.sh"

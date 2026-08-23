@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import { Button } from '@/components/ui';
+import { Button, LoadingPanel } from '@/components/ui';
+import { describeHermesFailure } from './hermes-error';
 
 /**
  * Hermes-backed board. The harness - task lifecycle, workers, runs - lives in
@@ -34,11 +35,13 @@ export default function HermesBoard() {
   const [board, setBoard] = useState<BoardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setErrorDetail(null);
     try {
       const r = await window.electronAPI?.hermes?.kanbanBoard();
       if (!r) { setError('Electron API unavailable'); return; }
@@ -50,7 +53,17 @@ export default function HermesBoard() {
       setNeedsSignIn(false);
       setBoard((r.board ?? {}) as BoardPayload);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      // The failure this fixes: a transport error rejects the IPC call instead
+      // of returning a result, so the raw "Error invoking remote method ...
+      // ECONNREFUSED" used to land on screen. Kanban is the Hermes board with
+      // nothing to fall back to, so say which gateway went silent.
+      const raw = err instanceof Error ? err.message : String(err);
+      let baseUrl: string | null = null;
+      try { baseUrl = (await window.electronAPI?.hermes?.getConnection())?.baseUrl || null; } catch { /* best effort */ }
+      const { message, detail } = describeHermesFailure(raw, baseUrl);
+      setNeedsSignIn(false);
+      setError(message);
+      setErrorDetail(detail);
     } finally {
       setLoading(false);
     }
@@ -59,11 +72,7 @@ export default function HermesBoard() {
   useEffect(() => { load(); }, [load]);
 
   if (loading && !board) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Reading the Hermes board…
-      </div>
-    );
+    return <LoadingPanel what="Reading the Hermes board" />;
   }
 
   if (error) {
@@ -71,6 +80,9 @@ export default function HermesBoard() {
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
         <AlertCircle className="w-6 h-6 text-warning" />
         <p className="text-sm text-foreground max-w-md">{error}</p>
+        {errorDetail && (
+          <p className="text-[11px] font-mono text-muted-foreground max-w-md break-all">{errorDetail}</p>
+        )}
         <div className="flex items-center gap-2">
           {/* An anchor, so it cannot come through <Button>; the classes are the
               primary variant at the 26px control height, copied verbatim. */}

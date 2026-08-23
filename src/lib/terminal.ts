@@ -15,8 +15,50 @@ export function stripCursorSequences(data: string): string {
 }
 
 /**
- * Attach Shift+Enter handler to a terminal so it inserts a newline
- * (via ESC+CR) instead of submitting the current line.
+ * DEC private modes a full-screen app sets to take the mouse over: 9 (X10),
+ * 1000/1001/1002/1003 (tracking protocols) and 1005/1006/1015/1016 (report
+ * encodings).
+ */
+const MOUSE_TRACKING_MODES = new Set([9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016]);
+
+/**
+ * Refuse the mouse-tracking DEC private modes.
+ *
+ * The failure: no panel in the board could scroll and no text could be
+ * selected. Claude Code re-arms mouse tracking on nearly every redraw, so its
+ * output is riddled with `\x1b[?1002h` / `\x1b[?1006h` and (because the tail is
+ * all that survives) never with the matching `l` disables. Two ways in:
+ * live output, and the stored transcript replayed when a panel mounts, which
+ * armed mouse tracking on sessions that had exited long ago.
+ *
+ * Once xterm honours those, it calls `selectionService.disable()` and takes the
+ * wheel over to encode it as a mouse report - so the viewport never scrolls,
+ * nothing is selectable, and the reports go out to the pty as stray
+ * `\x1b[<35;48;1M` text. These panels are a monitoring board, not a full
+ * emulator: scrollback and selection are worth more here than app-side mouse
+ * support, so the modes are swallowed in the parser.
+ *
+ * Registered handlers run before the built-in one and `true` stops the
+ * sequence, so the mode is never set. Mixed sets that also carry an unrelated
+ * mode are passed through rather than dropped wholesale.
+ */
+export function suppressMouseTracking(term: Terminal): void {
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params =>
+    params.length > 0 &&
+    params.every(p => typeof p === 'number' && MOUSE_TRACKING_MODES.has(p)),
+  );
+}
+
+/**
+ * Install the terminal's custom key handler. xterm keeps exactly one, so every
+ * key this app claims has to live here:
+ *
+ * - Shift+Enter inserts a literal newline (bracketed paste) instead of
+ *   submitting the current line.
+ * - Cmd/Ctrl+C copies the selection. There was no copy path at all: xterm
+ *   paints its selection itself rather than making a DOM Selection, so the
+ *   native copy had nothing to take and Cmd+C left the clipboard untouched.
+ *   With no selection it falls through, which keeps Ctrl+C as interrupt.
  *
  * @param term     - The xterm Terminal instance
  * @param sendFn   - Callback that forwards the escape sequence to the PTY/agent
@@ -26,11 +68,20 @@ export function attachShiftEnterHandler(
   sendFn: (data: string) => void,
 ): void {
   term.attachCustomKeyEventHandler((event) => {
-    if (event.key === 'Enter' && event.shiftKey && event.type === 'keydown') {
+    if (event.type !== 'keydown') return true;
+
+    if (event.key === 'Enter' && event.shiftKey) {
       // Use bracket paste mode to insert a literal newline without submitting
       sendFn('\x1b[200~\n\x1b[201~');
       return false;
     }
+
+    const copyChord = event.metaKey || (event.ctrlKey && event.shiftKey);
+    if (copyChord && (event.key === 'c' || event.key === 'C') && term.hasSelection()) {
+      navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+      return false;
+    }
+
     return true;
   });
 }

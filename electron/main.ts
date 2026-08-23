@@ -382,7 +382,7 @@ app.whenReady().then(async () => {
     saveAppSettings: saveAppSettingsToFile,
   });
 
-  // Register agent template handlers (no deps — self-contained)
+  // Register agent template handlers (no deps, self-contained)
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
@@ -614,7 +614,7 @@ app.whenReady().then(async () => {
   loadCatalog().catch(() => { /* cached or floor prices carry the app */ });
 
   // Registration only has to finish before an agent starts, not before the
-  // window paints — it used to hold the main thread through the first render.
+  // window paints. It used to hold the main thread through the first render.
   void setupMcpOrchestrator(appSettings).catch(err =>
     console.error('MCP registration failed:', err));
   setupMemoryBackends(appSettings);

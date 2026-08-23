@@ -4,11 +4,11 @@ import { useStore } from '@/store';
 import { Brand, BrandMark } from '@/components/Brand';
 import Sidebar from './Sidebar';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Loader2 } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { Splash } from '@/components/Splash';
-import { Button } from '@/components/ui';
+import { Button, BrandSpinner } from '@/components/ui';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -79,13 +79,19 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
   const { mobileMenuOpen, setMobileMenuOpen, darkMode, setDarkMode, setVaultUnreadCount } = useStore();
   const isMobile = useIsMobile();
 
-  // Only on a genuine cold start: navigating between pages must never replay it.
-  const [showSplash, setShowSplash] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    if (sessionStorage.getItem('tars-splash-shown')) return false;
-    sessionStorage.setItem('tars-splash-shown', '1');
-    return true;
-  });
+  // The splash belongs to the first paint, so it renders on both sides of
+  // hydration. It used to be gated on a sessionStorage flag read inside this
+  // initializer, and that is why nobody ever saw it: the initializer wrote the
+  // flag during the hydration render, the splash node it returned had no match
+  // in the prerendered HTML, hydration failed (React #418), and the client
+  // re-render React falls back to re-ran the initializer, read the flag it had
+  // just written, and returned false. The splash mounted, marked itself shown,
+  // and was thrown away before a single frame of it painted. Starting at true
+  // on both sides removes the mismatch and the need for the flag; only a real
+  // document load reaches here, since client-side navigation keeps this layout
+  // mounted.
+  const [showSplash, setShowSplash] = useState(true);
+  const dismissSplash = useCallback(() => setShowSplash(false), []);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [updateFlowState, setUpdateFlowState] = useState<UpdateFlowState>('available');
@@ -203,13 +209,13 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [isMobile, mobileMenuOpen, setMobileMenuOpen]);
 
-  // One flat width — the collapsed state is gone. Must stay in step with
+  // One flat width. The collapsed state is gone. Must stay in step with
   // `sidebarWidth` in Sidebar.tsx and with `--sidebar-w` in globals.css.
   const mainMarginLeft = isMobile ? 0 : 216;
 
   return (
     <div className="min-h-screen bg-bg-primary relative">
-      {showSplash && <Splash onDone={() => setShowSplash(false)} />}
+      {showSplash && <Splash onDone={dismissSplash} />}
       {/* Window drag strip, sidebar-wide only (desktop). Full width it sat on
           z-[60] across every page header and swallowed the clicks on the
           actions that live there; the traffic lights only need this column. */}
@@ -330,8 +336,8 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
 
                 {updateFlowState === 'downloading' && (
                   <Button variant="primary" className="flex-1" disabled>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Downloading...
+                    <BrandSpinner size={14} />
+                    Downloading
                   </Button>
                 )}
 
@@ -343,8 +349,8 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
 
                 {updateFlowState === 'restarting' && (
                   <Button variant="primary" className="flex-1" disabled>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Restarting...
+                    <BrandSpinner size={14} />
+                    Restarting
                   </Button>
                 )}
 

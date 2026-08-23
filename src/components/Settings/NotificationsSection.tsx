@@ -95,7 +95,7 @@ export const NotificationsSection = ({ appSettings, onSaveAppSettings }: Notific
       <SettingsRow
         className={dimmed}
         label="Response finished"
-        description="Every time an agent finishes responding. Stop hook — noisy if you run a lot of agents."
+        description="Every time an agent finishes responding. Stop hook (noisy if you run a lot of agents)."
         control={<SoundPicker soundKey="stop" appSettings={appSettings} onSaveAppSettings={onSaveAppSettings} />}
         secondaryControl={
           <Toggle

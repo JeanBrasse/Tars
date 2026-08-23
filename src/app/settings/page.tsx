@@ -284,7 +284,7 @@ function SettingsPageInner() {
           onSectionChange={setActiveSection}
         />
 
-        {/* Content Area — one bordered card per sub-page, filling the height */}
+        {/* Content Area: one bordered card per sub-page, filling the height */}
         <motion.div
           key={activeSection}
           initial={{ opacity: 0, x: 10 }}

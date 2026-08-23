@@ -7,7 +7,7 @@ import { AgentStatus, AppSettings } from '../../types';
 
 export interface RouteContext {
   mainWindow: BrowserWindow | null;
-  appSettings: AppSettings;          // Initial snapshot — prefer getAppSettings() for live values
+  appSettings: AppSettings;          // Initial snapshot, prefer getAppSettings() for live values
   getAppSettings: () => AppSettings; // Always returns the current appSettings
   getTelegramBot: () => TelegramBot | null;
   getSlackApp: () => SlackApp | null;

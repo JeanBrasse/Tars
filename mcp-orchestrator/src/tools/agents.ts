@@ -23,7 +23,7 @@ type DispatchResult = {
 
 /**
  * Atomically hand a task to an agent. The server decides message-vs-spawn
- * under its single-threaded event loop — the old GET-status-then-POST pattern
+ * under its single-threaded event loop: the old GET-status-then-POST pattern
  * raced against status changes and could message a dead PTY.
  *
  * The agent's own configured permission mode is respected (most agents are
@@ -76,7 +76,7 @@ async function fetchCleanOutput(
 }
 
 export function registerAgentTools(server: McpServer): void {
-  // Tool: Who am I — identity handshake for orchestrator sessions
+  // Tool: Who am I (identity handshake for orchestrator sessions)
   server.tool(
     "whoami",
     "Get YOUR identity as a Tars agent: id, name, project, role, and the roster of your project's agents. Call this first if you are unsure who you are or who you can delegate to.",
@@ -133,7 +133,7 @@ export function registerAgentTools(server: McpServer): void {
   // Tool: List agents (scoped to the caller's project by default)
   server.tool(
     "list_agents",
-    "List the agents of YOUR project and their current status (idle/running/waiting/completed/error). Only these agents can receive your tasks — delegating to another project's agents is rejected. `all: true` adds other projects' agents for visibility ONLY; they remain undelegatable, and you must not present them as agents you have access to.",
+    "List the agents of YOUR project and their current status (idle/running/waiting/completed/error). Only these agents can receive your tasks: delegating to another project's agents is rejected. `all: true` adds other projects' agents for visibility ONLY; they remain undelegatable, and you must not present them as agents you have access to.",
     {
       all: z.boolean().optional().describe("If true, list agents of ALL projects instead of only your own"),
     },
@@ -418,11 +418,11 @@ export function registerAgentTools(server: McpServer): void {
   // Tool: Send message to agent
   server.tool(
     "send_message",
-    "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work — prefer waiting until it reaches 'waiting' or 'completed' status.",
+    "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status.",
     {
       id: z.string().describe("The agent ID"),
       message: z.string().optional().describe("The message to send to the agent"),
-      prompt: z.string().optional().describe("Alias for 'message' — use either one"),
+      prompt: z.string().optional().describe("Alias for 'message', use either one"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
     },
     async ({ id, message, prompt, allowCrossProject }) => {
@@ -519,7 +519,7 @@ export function registerAgentTools(server: McpServer): void {
   // Tool: Wait for agent completion (long-poll, no polling loop)
   server.tool(
     "wait_for_agent",
-    "Wait for an agent to finish its current task. Uses long-polling for efficient waiting — returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+    "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
     {
       id: z.string().describe("The agent ID"),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
@@ -574,7 +574,7 @@ export function registerAgentTools(server: McpServer): void {
 
         if (data.status === "waiting") {
           const reasonInfo = data.waitingReason === "permission"
-            ? " It is blocked on a PERMISSION dialog — send_message cannot answer it; resolve it in the Tars UI or stop_agent and re-delegate."
+            ? " It is blocked on a PERMISSION dialog: send_message cannot answer it; resolve it in the Tars UI or stop_agent and re-delegate."
             : " Use send_message to respond, or get_agent_output to see what it's asking.";
           return {
             content: [
@@ -611,7 +611,7 @@ export function registerAgentTools(server: McpServer): void {
   // Tool: Delegate task (composite: start + wait + get output)
   server.tool(
     "delegate_task",
-    "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation — it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately.",
+    "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately.",
     {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
@@ -659,7 +659,7 @@ export function registerAgentTools(server: McpServer): void {
             };
           }
         } catch {
-          // ACP unavailable for this agent — the terminal path still works.
+          // ACP unavailable for this agent. The terminal path still works.
         }
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
@@ -672,7 +672,7 @@ export function registerAgentTools(server: McpServer): void {
 
         if (waitData.status === "waiting") {
           if (waitData.waitingReason === "permission") {
-            // A blocking permission dialog — typing text into it does nothing
+            // A blocking permission dialog: typing text into it does nothing
             // useful (it expects arrow keys/enter). Surface it instead.
             return {
               content: [
@@ -684,18 +684,18 @@ export function registerAgentTools(server: McpServer): void {
               isError: true,
             };
           }
-          // Agent asked for confirmation — auto-reply "continue" and wait again
+          // Agent asked for confirmation: auto-reply "continue" and wait again
           try {
             await dispatchToAgent(
               id,
-              "Yes, continue. Do not ask for confirmation — complete the task and report your results.",
+              "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
               undefined,
               allowCrossProject
             );
             waitData = await waitForAgentStatus(id, Math.max(timeoutSeconds - 30, 60));
 
             if (waitData.status === "waiting") {
-              // Still waiting after retry — give up and let orchestrator handle it
+              // Still waiting after retry: give up and let orchestrator handle it
               const outputInfo = waitData.lastCleanOutput
                 ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
                 : "";
@@ -748,7 +748,7 @@ export function registerAgentTools(server: McpServer): void {
           };
         }
 
-        // Completed or idle — fetch the clean output, retrying briefly since
+        // Completed or idle: fetch the clean output, retrying briefly since
         // the Stop hook's output post can arrive just after the status event
         // that resolved the long-poll.
         const { output: fetchedOutput } = await fetchCleanOutput(id);

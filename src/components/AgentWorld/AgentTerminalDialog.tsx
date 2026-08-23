@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { DialogShell, SegmentedControl } from '@/components/ui';
+import { BrandSpinner, DialogShell, SegmentedControl } from '@/components/ui';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
@@ -249,7 +248,7 @@ export default function AgentTerminalDialog({
             />
             {!terminalReady && (
               <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <BrandSpinner size={30} label="Loading terminal" />
               </div>
             )}
             {/* Scroll-to-bottom button - appears when user has scrolled up */}

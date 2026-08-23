@@ -1,16 +1,15 @@
 import { memo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Loader2 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import type { PanelType } from './AgentDialogTypes';
 import { AgentDialogSecondaryProject } from './AgentDialogSecondaryProject';
-import { MetaChip, PanelCaption, SegmentedControl } from '@/components/ui';
+import { BrandSpinner, MetaChip, PanelCaption, SegmentedControl } from '@/components/ui';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 
 const GitPanel = dynamic(() => import('./GitPanel'), {
   loading: () => (
     <div className="flex items-center justify-center h-full">
-      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <BrandSpinner size={30} label="Loading git panel" />
     </div>
   ),
 });
@@ -18,7 +17,7 @@ const GitPanel = dynamic(() => import('./GitPanel'), {
 const CodePanel = dynamic(() => import('./CodePanel'), {
   loading: () => (
     <div className="flex items-center justify-center h-full">
-      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <BrandSpinner size={30} label="Loading code panel" />
     </div>
   ),
 });
@@ -90,7 +89,7 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* Tabs — one box per tab, the selected one boxed, never an accent fill (R2b) */}
+      {/* Tabs: one box per tab, the selected one boxed, never an accent fill (R2b) */}
       <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
         <SegmentedControl<SidebarTab>
           ariaLabel="Agent rail"
@@ -113,7 +112,7 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
         {tab === 'git' && gitBranch && <MetaChip>{gitBranch}</MetaChip>}
       </div>
 
-      {/* Git — working tree, with the quick shell on the same worktree beneath it.
+      {/* Git: working tree, with the quick shell on the same worktree beneath it.
           Every tab body stays mounted so the terminal keeps its DOM node. */}
       <div className={tab === 'git' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
         <div className="flex-1 min-h-0">
@@ -151,7 +150,7 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
               />
               {!quickTerminalReady && (
                 <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  <BrandSpinner size={30} label="Loading terminal" />
                 </div>
               )}
             </div>
@@ -159,7 +158,7 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
         </div>
       </div>
 
-      {/* Memory — what the agent can see: this project's files, plus any extra context */}
+      {/* Memory. What the agent can see: this project's files, plus any extra context */}
       <div className={tab === 'memory' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
         <div className="shrink-0 h-[250px] border-b border-border">
           <CodePanel projectPath={projectPath} className="h-full" />
@@ -176,7 +175,7 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
         </div>
       </div>
 
-      {/* Skills — what it is allowed to do, and what it was built with */}
+      {/* Skills: what it is allowed to do, and what it was built with */}
       <div className={tab === 'skills' ? 'flex-1 min-h-0 overflow-y-auto' : 'hidden'}>
         <div className="p-3 space-y-4">
           <div className="space-y-2">

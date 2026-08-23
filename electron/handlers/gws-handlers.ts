@@ -195,7 +195,7 @@ export function registerGwsHandlers(deps: GwsHandlerDependencies): void {
       result.authMethod = data.auth_method ?? data.authMethod ?? (result.authenticated ? 'oauth2' : 'none');
       result.services = deriveServicesFromScopes(result.scopes);
     } catch {
-      // gws auth status failed — return defaults
+      // gws auth status failed. Return defaults.
     }
 
     return result;

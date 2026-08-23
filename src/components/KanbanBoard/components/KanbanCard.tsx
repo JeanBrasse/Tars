@@ -15,7 +15,7 @@ interface KanbanCardProps {
   isBeingDragged?: boolean;
 }
 
-// Row actions are 26px bordered lowercase mono text buttons — never glyphs (R7)
+// Row actions are 26px bordered lowercase mono text buttons, never glyphs (R7)
 const ACTION_CLASS =
   'h-[26px] px-2 border border-border font-mono text-[11px] lowercase text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors';
 
@@ -121,7 +121,7 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
           >
             stop
           </button>
-          {/* Working indicator — 6px solid square (R5) */}
+          {/* Working indicator: 6px solid square (R5) */}
           <span className="w-1.5 h-1.5 bg-status-running" />
         </div>
       )}

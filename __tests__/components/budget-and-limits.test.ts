@@ -57,7 +57,7 @@ describe('buildBudgetRows', () => {
       providerSpend: [{ provider: 'local', costUSD: 0 }],
     });
 
-    expect(rows[0]).toMatchObject({ kind: 'local', percent: null, detail: '—' });
+    expect(rows[0]).toMatchObject({ kind: 'local', percent: null, detail: 'not metered' });
   });
 
   it('does not list Claude twice when it already has windows', () => {

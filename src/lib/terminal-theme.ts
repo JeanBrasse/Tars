@@ -6,7 +6,7 @@ import type { ITheme } from 'xterm';
 /**
  * Single source of truth for every xterm surface in the app.
  *
- * xterm needs literal colours — it cannot read `var(--token)` — so this module
+ * xterm needs literal colours (it cannot read `var(--token)`), so this module
  * resolves the design tokens off `document.documentElement` at call time and
  * hands back a plain `ITheme`. Nothing else in the codebase may hardcode a
  * terminal colour or font (R9).
@@ -116,7 +116,7 @@ export function createXtermTheme(mode: TerminalMode = getTerminalMode()): ITheme
   return {
     background: t.termBg,
     foreground: t.foreground,
-    // Cursor is the brand accent — never the retired teal.
+    // Cursor is the brand accent, never the retired teal.
     cursor: t.primary,
     cursorAccent: t.termBg,
     selectionBackground: withAlpha(t.primary, '33'),

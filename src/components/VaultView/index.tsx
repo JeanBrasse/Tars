@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store';
-import { Archive, Loader2 } from 'lucide-react';
+import { Archive } from 'lucide-react';
 import type { VaultDocumentElectron, VaultFolderElectron, VaultAttachmentElectron } from '@/types/electron';
 
-import { Button, PageHeader, Panel, PanelCaption } from '@/components/ui';
+import { BrandSpinner, Button, PageHeader, Panel, PanelCaption } from '@/components/ui';
 import FolderTree from './components/FolderTree';
 import DocumentList from './components/DocumentList';
 import DocumentViewer from './components/DocumentViewer';
@@ -116,7 +116,7 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
   // The initial load must run exactly once, so it reads the loaders from a ref
   // captured at mount instead of depending on them. It used to depend on
   // [loadDocuments, loadAllDocuments, loadFolders], and `loadDocuments` is keyed
-  // on `selectedFolderId` — so every folder click recreated it and re-ran this
+  // on `selectedFolderId`, so every folder click recreated it and re-ran this
   // whole init path: four vault IPC round-trips instead of one, plus `loading`
   // flipping back to true, which unmounted the document pane and flashed the
   // spinner on each click. The `if (!loading)` guard below could not catch it
@@ -383,7 +383,7 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
         >
           {loading ? (
             <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              <BrandSpinner size={30} label="Loading documents" />
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">

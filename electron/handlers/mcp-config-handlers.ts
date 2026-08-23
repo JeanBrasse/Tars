@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 
-// Tars-managed MCP servers — hidden from the Custom MCP UI
+// Tars-managed MCP servers, hidden from the Custom MCP UI
 const DOROTHY_MANAGED_MCPS = new Set([
   'claude-mgr-orchestrator',
   'claude-mgr-telegram',

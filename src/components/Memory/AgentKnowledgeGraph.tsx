@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
-import { Button, Panel, StatusSquare } from '@/components/ui';
+import { BrandSpinner, Button, Panel, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 
 // ── Node / edge types ─────────────────────────────────────────────────────────
@@ -52,6 +51,12 @@ interface GraphData {
 
 const BOX_W = 176;
 const BOX_H = 46;
+
+/** Map zoom range. 25% shows a forty-agent graph whole; 200% reads a label. */
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2;
+const ZOOM_STEP = 0.1;
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 /** Horizontal breathing room between two boxes sharing a ring. */
 const BOX_GAP = 28;
 /** Minimum distance between one ring and the next. */
@@ -353,6 +358,19 @@ export default function AgentKnowledgeGraph() {
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
 
   // ── Side panel state ──
+  /**
+   * Map zoom.
+   *
+   * The map is laid out at a fixed pixel size that grows with the number of
+   * agents, inside a plain scroll container. Past a couple of dozen nodes the
+   * stage is several times the viewport and there was no way to pull back and
+   * see the shape of it: the map could only be scrolled, never zoomed out.
+   * Scaling the stage keeps the layout maths in unscaled pixels, so hit
+   * targets, edges and text stay in register at every step.
+   */
+  const [zoom, setZoom] = useState(1);
+  const stageRef = useRef<HTMLDivElement>(null);
+
   const [panelNode, setPanelNode] = useState<GraphNode | null>(null);
   const [panelContent, setPanelContent] = useState('');
   const [panelDraft, setPanelDraft] = useState('');
@@ -557,15 +575,85 @@ export default function AgentKnowledgeGraph() {
     }
   }, [openPanel]);
 
+  /** The scale at which the whole stage fits the viewport, never magnifying. */
+  const fitZoom = useCallback(() => {
+    const box = stageRef.current?.getBoundingClientRect();
+    if (!box || size === 0) return 1;
+    // 32px of padding on both axes, matching the p-4 the stage sits in.
+    return clampZoom(Math.min((box.width - 32) / size, (box.height - 32) / size));
+  }, [size]);
+
+  // Open on a map that fits. A user with forty agents should see the shape of
+  // the graph first and zoom in on a corner second, not land inside one.
+  const fittedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (nodes.length === 0 || fittedFor.current === size) return;
+    fittedFor.current = size;
+    setZoom(fitZoom());
+  }, [size, nodes.length, fitZoom]);
+
+  // Ctrl/Cmd + wheel is the zoom gesture everywhere else, including the pinch
+  // a trackpad reports. Without the listener the browser zooms the whole app.
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    setZoom(z => clampZoom(z * (e.deltaY > 0 ? 0.92 : 1.08)));
+  }, []);
+
   return (
     <Panel fill padded={false} className="relative w-full overflow-hidden">
+      {/* Zoom controls. Words, not glyphs, at the 26px row height. */}
+      {nodes.length > 0 && (
+        <div className="absolute right-2 top-2 z-20 flex items-center gap-1 border border-border bg-card p-1">
+          <Button
+            size="sm"
+            className="font-mono w-7 justify-center"
+            aria-label="Zoom out"
+            disabled={zoom <= ZOOM_MIN}
+            onClick={() => setZoom(z => clampZoom(z - ZOOM_STEP))}
+          >
+            &minus;
+          </Button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            title="Back to 100%"
+            className="h-[26px] w-12 shrink-0 font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <Button
+            size="sm"
+            className="font-mono w-7 justify-center"
+            aria-label="Zoom in"
+            disabled={zoom >= ZOOM_MAX}
+            onClick={() => setZoom(z => clampZoom(z + ZOOM_STEP))}
+          >
+            +
+          </Button>
+          <Button size="sm" className="font-mono" onClick={() => setZoom(fitZoom())}>
+            fit
+          </Button>
+        </div>
+      )}
+
       {/* Diagram */}
-      <div className="absolute inset-0 overflow-auto">
+      <div ref={stageRef} className="absolute inset-0 overflow-auto" onWheel={onWheel}>
         <div className="min-w-full min-h-full flex items-center justify-center p-4">
           {nodes.length === 0 && !loading ? (
             <p className="text-xs text-muted-foreground">No agents to map yet.</p>
           ) : (
-            <div className="relative shrink-0" style={{ width: size, height: size }}>
+            <div
+              className="relative shrink-0"
+              style={{
+                width: size * zoom,
+                height: size * zoom,
+              }}
+            >
+              <div
+                className="absolute left-0 top-0 origin-top-left"
+                style={{ width: size, height: size, transform: `scale(${zoom})` }}
+              >
               <svg
                 width={size}
                 height={size}
@@ -616,6 +704,7 @@ export default function AgentKnowledgeGraph() {
                   )}
                 </button>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -625,9 +714,9 @@ export default function AgentKnowledgeGraph() {
       {(loading || graphBuilding) && (
         <div className="absolute inset-0 flex items-center justify-center bg-card transition-opacity">
           <div className="flex flex-col items-center gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            <BrandSpinner size={30} label={loading ? 'Loading agent graph' : undefined} />
             {graphBuilding && !loading && (
-              <span className="text-[11px] text-muted-foreground">Switching agent…</span>
+              <span className="text-[11px] text-muted-foreground">Switching agent</span>
             )}
           </div>
         </div>
@@ -675,7 +764,7 @@ export default function AgentKnowledgeGraph() {
           <div className="flex-1 min-h-0 overflow-y-auto">
             {panelLoading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                <BrandSpinner size={30} label="Loading content" />
               </div>
             ) : panelNode.meta?.editable && panelTab === 'write' ? (
               <textarea

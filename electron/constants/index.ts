@@ -49,7 +49,7 @@ export const MIME_TYPES: { [key: string]: string } = {
   '.json': 'application/json',
   // Next's client router fetches RSC payloads as .txt. Served as
   // octet-stream it rejects them and falls back to a full document reload
-  // on every first visit to a route — the white flash.
+  // on every first visit to a route (the white flash).
   '.txt': 'text/plain',
   '.map': 'application/json',
   '.png': 'image/png',

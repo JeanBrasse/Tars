@@ -497,6 +497,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     crons: () => ipcRenderer.invoke('hermes:crons:list'),
     cronAction: (params: { action: 'pause' | 'resume' | 'trigger'; jobId: string; profile?: string }) =>
       ipcRenderer.invoke('hermes:crons:action', params),
+    cronUpdate: (params: { jobId: string; updates: Record<string, unknown>; profile?: string }) =>
+      ipcRenderer.invoke('hermes:crons:update', params),
     cronDelete: (params: { jobId: string; profile?: string }) =>
       ipcRenderer.invoke('hermes:crons:delete', params),
     kanbanBoard: (params?: { board?: string }) =>

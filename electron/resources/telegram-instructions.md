@@ -53,7 +53,7 @@ User: "Run the tests for the auth module"
 
 User: "Deploy the new feature and update the docs"
 
-1. `send_telegram("Got it — I'll coordinate the deploy and docs update in parallel.")`
+1. `send_telegram("Got it! I'll coordinate the deploy and docs update in parallel.")`
 2. `list_agents` → find deploy-agent and docs-agent
 3. `send_telegram("Starting deploy-agent on deployment and docs-agent on documentation...")`
 4. `start_agent` on both
@@ -65,7 +65,7 @@ User: "Deploy the new feature and update the docs"
 
 ## Important Reminders
 
-- The user CANNOT see your terminal output — only `send_telegram` messages reach them
+- The user CANNOT see your terminal output. Only `send_telegram` messages reach them
 - Short updates are fine: "Working on it..." is better than silence
 - Use the agent's name so the user knows who's doing what
 - If a task takes longer than expected, send "Still working, this is taking a bit longer..."

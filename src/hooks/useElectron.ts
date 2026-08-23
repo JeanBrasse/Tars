@@ -152,7 +152,7 @@ export function useElectronAgents() {
     if (!isElectron()) return;
 
     // Output and error events are handled directly by xterm.js terminals.
-    // We do NOT update React state here — doing so on every output chunk
+    // We do NOT update React state here. Doing so on every output chunk
     // causes "Maximum update depth exceeded" because high-frequency PTY
     // output triggers a re-render cascade.
     const unsubOutput = window.electronAPI!.agent.onOutput(() => {});
@@ -172,7 +172,7 @@ export function useElectronAgents() {
     });
 
     // Also subscribe to agents:tick for reliable live status updates
-    // (proven to reach all windows — tray panel uses this successfully)
+    // (proven to reach all windows: tray panel uses this successfully)
     const unsubTick = window.electronAPI!.agent.onTick?.((tickAgents) => {
       // If agent count changed, refetch full data (tick only has partial fields).
       // This comparison and the fetch used to live *inside* the setAgents

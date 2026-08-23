@@ -11,7 +11,7 @@ import { recordUsage } from '../usage-ledger';
  * Running a delegated task over ACP instead of typing it into a terminal.
  *
  * The difference that matters: this returns. The caller gets the agent's
- * answer, why the turn ended, which tools it used and what the turn cost —
+ * answer, why the turn ended, which tools it used and what the turn cost,
  * for any CLI that speaks the protocol, not just for Claude.
  */
 

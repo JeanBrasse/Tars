@@ -41,7 +41,7 @@ type SpawnOpts = {
  * (BUG 6), stale-PTY kill and ptyCwd invariant (BUG 4), and session-ownership
  * reset so hooks of the killed session can't flip the new task's status.
  *
- * Returns false if validation failed — an error response has already been sent.
+ * Returns false if validation failed. An error response has already been sent.
  */
 async function spawnAgentSession(
   agent: AgentStatus,
@@ -51,12 +51,12 @@ async function spawnAgentSession(
   sendJson: SendJson
 ): Promise<boolean> {
   // Raw cwd for pty.spawn, shell-escaped form for the `cd` command. These
-  // must be separate — passing the shell-escaped form to pty.spawn would
+  // must be separate: passing the shell-escaped form to pty.spawn would
   // break when the path legitimately contains a single quote.
   const rawWorkingDir = agent.worktreePath || agent.projectPath;
   const workingDir = rawWorkingDir.replace(/'/g, "'\\''");
 
-  // Resolve provider and binary — honours the per-agent CLI override, custom
+  // Resolve provider and binary: honours the per-agent CLI override, custom
   // CLI paths in Settings, and the agent's provider (claude / codex / gemini /
   // grok / openrouter / deepseek / moonshot / etc.).
   const appSettings = ctx.getAppSettings();
@@ -75,7 +75,7 @@ async function spawnAgentSession(
 
   // Alt providers re-point the claude binary at another vendor. Without a key
   // there is no ANTHROPIC_BASE_URL and the session would silently run on the
-  // user's Anthropic account — refuse instead.
+  // user's Anthropic account. Refuse instead.
   const isAltProvider = cliProvider.binaryName === 'claude' &&
                         !!agent.provider && agent.provider !== 'claude' && agent.provider !== 'local';
   if (isAltProvider && !providerEnvVars.ANTHROPIC_BASE_URL) {
@@ -86,8 +86,8 @@ async function spawnAgentSession(
   }
 
   // Local provider (Tasmania): point the claude binary at the local server,
-  // mirroring initAgentPty. Reject cleanly when Tasmania isn't running —
-  // otherwise the session silently runs on Anthropic cloud.
+  // mirroring initAgentPty. Reject cleanly when Tasmania isn't running.
+  // Otherwise the session silently runs on Anthropic cloud.
   let tasmaniaEnv: Record<string, string> = {};
   if (agent.provider === 'local') {
     try {
@@ -95,13 +95,13 @@ async function spawnAgentSession(
       const tasmaniaStatus = await getTasmaniaStatus();
       if (tasmaniaStatus.status === 'running' && tasmaniaStatus.endpoint) {
         tasmaniaEnv = {
-          // Strip /v1 suffix — Claude Code SDK appends /v1/messages itself
+          // Strip /v1 suffix: Claude Code SDK appends /v1/messages itself
           ANTHROPIC_BASE_URL: tasmaniaStatus.endpoint.replace(/\/v1\/?$/, ''),
           ANTHROPIC_MODEL: agent.localModel || tasmaniaStatus.modelName || 'default',
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
         };
       } else {
-        sendJson({ error: 'Local provider (Tasmania) is not running — start it before dispatching to this agent.' }, 409);
+        sendJson({ error: 'Local provider (Tasmania) is not running. Start it before dispatching to this agent.' }, 409);
         return false;
       }
     } catch (err) {
@@ -119,10 +119,10 @@ async function spawnAgentSession(
     `[Tars: you are agent "${agent.name || agent.id}" (id ${agent.id}), ` +
     `${agent.role || 'worker'} of project ${agent.projectPath}` +
     (agent.worktreePath
-      ? `, working in worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''} — stay inside this directory`
+      ? `, working in worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory`
       : '') +
     `. Work autonomously without asking for confirmation and end with a clear report of your results` +
-    (isSuperAgentApi ? '' : ' — an orchestrator reads your final message') +
+    (isSuperAgentApi ? '' : ': an orchestrator reads your final message') +
     `.]`;
 
   // MCP config for flag-strategy providers (all claude-based ones).
@@ -231,8 +231,8 @@ async function spawnAgentSession(
   // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd.
   ensureProjectTrusted(rawWorkingDir);
 
-  // Assemble the environment. Identity vars are re-asserted explicitly —
-  // MCP project scoping and the hooks depend on them — and provider-specified
+  // Assemble the environment. Identity vars are re-asserted explicitly
+  // (MCP project scoping and the hooks depend on them), and provider-specified
   // vars (e.g. CLAUDECODE) are purged so nested sessions don't inherit them.
   const spawnEnv: Record<string, string | undefined> = {
     ...process.env,
@@ -297,7 +297,7 @@ async function spawnAgentSession(
     // Delay status change to let hooks (on-stop.sh, task-completed.sh) finish
     // capturing output before wait_for_agent resolves.
     setTimeout(() => {
-      // Guard: only mutate if this PTY is still the active one — a newer
+      // Guard: only mutate if this PTY is still the active one, since a newer
       // dispatch may have replaced it during the delay.
       if (agent.ptyId !== ptyId) {
         return;
@@ -305,7 +305,7 @@ async function spawnAgentSession(
       if (agent.status === 'running') {
         agent.status = exitCode === 0 ? 'completed' : 'error';
       } else if (agent.status === 'waiting') {
-        // PTY exited while agent was waiting for input — the claude process
+        // PTY exited while agent was waiting for input: the claude process
         // crashed. Mark as error so /wait is unblocked and the orchestrator
         // can retry rather than hanging until timeout.
         agent.status = 'error';
@@ -323,7 +323,7 @@ async function spawnAgentSession(
   return true;
 }
 
-/** Serializable agent projection for API responses — excludes the raw ANSI
+/** Serializable agent projection for API responses: excludes the raw ANSI
  *  `output` buffer (up to 10 000 chunks), which destroys LLM context windows
  *  when returned to MCP callers. Use /output or ?full=true when needed. */
 function projectAgent(agent: AgentStatus) {
@@ -374,7 +374,7 @@ function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: Send
 
   if (!caller || agent.projectPath === caller) return true;
   if ((req.body as { allowCrossProject?: boolean } | undefined)?.allowCrossProject === true) return true;
-  // DELETE requests have no parsed body — accept the override as a query param.
+  // DELETE requests have no parsed body. Accept the override as a query param.
   if (req.url.searchParams.get('allowCrossProject') === 'true') return true;
   sendJson({
     error: `Cross-project access denied: agent "${agent.name || agent.id}" belongs to project ${agent.projectPath}, but you are the orchestrator of ${caller}. Use list_agents to see YOUR project's agents, or pass allowCrossProject: true if this is intentional.`,
@@ -383,7 +383,7 @@ function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: Send
 }
 
 /**
- * Core of the atomic dispatch — message a live session or spawn a fresh one,
+ * Core of the atomic dispatch: message a live session or spawn a fresh one,
  * decided server-side. Shared by POST /api/agents/:id/dispatch and the Hermes
  * webhook so both entry points get identical semantics.
  */
@@ -400,7 +400,7 @@ export async function performDispatch(
   const previousStatus = agent.status;
   const livePty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   if (livePty && agent.status === 'waiting' && agent.waitingReason === 'permission') {
-    // A blocking permission dialog expects arrow keys/enter, not text — a
+    // A blocking permission dialog expects arrow keys/enter, not text: a
     // typed message is useless and the delayed \r could ACCEPT the pending
     // permission. Refuse and surface the reason instead.
     sendJson({
@@ -423,7 +423,7 @@ export async function performDispatch(
     return;
   }
 
-  // No usable session — spawn a fresh one with the message as the prompt.
+  // No usable session: spawn a fresh one with the message as the prompt.
   if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode }, ctx, sendJson))) {
     return;
   }
@@ -431,7 +431,7 @@ export async function performDispatch(
 }
 
 export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
-  // GET /api/agents/:id/wait — long-poll until agent status changes
+  // GET /api/agents/:id/wait: long-poll until agent status changes
   app_.get(/^\/api\/agents\/([^/]+)\/wait$/, (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
@@ -500,7 +500,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     });
   });
 
-  // GET /api/agents — scoped to the caller's project by default (?all=true
+  // GET /api/agents: scoped to the caller's project by default (?all=true
   // for the global view). An orchestrator that only ever SEES its own team
   // cannot pick another project's agent ID by mistake.
   app_.get('/api/agents', (req, sendJson) => {
@@ -538,7 +538,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     sendJson({ agent: full ? agent : projectAgent(agent) });
   });
 
-  // GET /api/agents/:id/bootstrap — identity + team roster context, injected
+  // GET /api/agents/:id/bootstrap: identity + team roster context, injected
   // into every fresh claude session by session-start.sh. This is what makes
   // the "who am I / who is my team" handshake automatic instead of a manual
   // ritual at the start of every working session.
@@ -555,7 +555,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     const teammates = Array.from(agents.values())
       .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id)
-      .map(a => `- "${a.name || a.id}" (id: ${a.id}) — ${a.role || 'worker'}, status: ${a.status}` +
+      .map(a => `- "${a.name || a.id}" (id: ${a.id}): ${a.role || 'worker'}, status: ${a.status}` +
                 (a.branchName ? `, branch: ${a.branchName}` : '') +
                 (a.skills?.length ? `, skills: ${a.skills.join(', ')}` : ''));
 
@@ -565,7 +565,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       `You are "${agent.name || agent.id}" (agent id: ${agent.id}), ${agent.role || 'worker'} of project ${agent.projectPath}.`,
     ];
     if (agent.worktreePath) {
-      lines.push(`You work in the worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''} — stay inside this directory.`);
+      lines.push(`You work in the worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory.`);
     }
     if (agent.savedPrompt) {
       lines.push(``, `## Your role`, agent.savedPrompt);
@@ -576,7 +576,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       lines.push(
         ``,
         `## Orchestration rules`,
-        `- Delegate ONLY to the agents listed above — they are your project's team. Other projects' agents are off-limits and the API rejects cross-project actions.`,
+        `- Delegate ONLY to the agents listed above: they are your project's team. Other projects' agents are off-limits and the API rejects cross-project actions.`,
         `- Use delegate_task with the agent id for one-shot delegation; list_agents already returns only your project's agents.`,
         `- No greeting ritual is needed: this roster is current as of session start, and each agent receives its own identity automatically when you delegate.`
       );
@@ -584,14 +584,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       lines.push(
         ``,
         `## Working rules`,
-        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report — the orchestrator reads your final message.`
+        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`
       );
     }
 
     sendJson({ context: lines.join('\n') });
   });
 
-  // GET /api/agents/:id/health — liveness of the agent's PTY and session,
+  // GET /api/agents/:id/health: liveness of the agent's PTY and session,
   // so orchestrators/tools can distinguish "working" from "ghost status".
   app_.get(/^\/api\/agents\/([^/]+)\/health$/, (req, sendJson) => {
     const agent = agents.get(req.params.id);
@@ -676,7 +676,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       effort,
       cliPath,
       // role mirrors the historical name-based isSuperAgent semantics.
-      // orchestratorMode stays an independent tool-restriction toggle — it
+      // orchestratorMode stays an independent tool-restriction toggle. It
       // must NOT promote an agent into the Telegram/Slack super-agent pool.
       role: (lowerName.includes('super agent') || lowerName.includes('orchestrator'))
         ? 'orchestrator'
@@ -712,7 +712,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
   });
 
-  // POST /api/agents/:id/dispatch — atomic "send this task to the agent".
+  // POST /api/agents/:id/dispatch: atomic "send this task to the agent".
   // Decides message-vs-spawn server-side, under the single-threaded event
   // loop, eliminating the GET-status-then-POST race that MCP tools had when
   // they made that decision client-side on stale status.
@@ -854,7 +854,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-      // No live PTY — the claude process exited (e.g. crashed while 'waiting').
+      // No live PTY: the claude process exited (e.g. crashed while 'waiting').
       // Auto-respawn: start a fresh one-shot claude session using the message
       // as the prompt, identical to the /start path.  This ensures send_message
       // and delegate_task reconnect transparently instead of timing out.

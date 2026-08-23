@@ -73,7 +73,9 @@ export function buildBudgetRows(opts: {
     if (!id) continue;
     if (id === 'claude' && rows.length > 0) continue; // already covered by its windows
     if (id === 'local' || id === 'tasmania') {
-      rows.push({ providerId: id, label: labelFor(id), kind: 'local', detail: '—', percent: null });
+      // A model running on this machine has no bill and no rate window. Say so:
+      // the cell used to hold a bare dash, which reads as missing data.
+      rows.push({ providerId: id, label: labelFor(id), kind: 'local', detail: 'not metered', percent: null });
       continue;
     }
     const budget = opts.budgets[id];
@@ -161,7 +163,7 @@ export function BudgetAndLimits({
               {row.percent === null ? (
                 <p className="text-[10.5px] text-text-muted">
                   {row.kind === 'local'
-                    ? 'no metering — runs on your machine'
+                    ? 'no metering: runs on your machine'
                     : 'set a monthly budget in Settings to track this'}
                 </p>
               ) : (

@@ -1,4 +1,4 @@
-# Tars — Operator Runbook
+# Tars: Operator Runbook
 
 Tars runs on your own machine. There is no cluster, no cloud tenancy, no deploy.
 Everything below is run locally from the repo root or against
@@ -22,7 +22,7 @@ node -v          # v22.x
 ```
 
 `package.json` declares `"engines": { "node": ">=20" }`, and CI (`.github/workflows/ci.yml`)
-runs the test job on Node 20. Both are true — but **Node 18 fails**, in two different ways:
+runs the test job on Node 20. Both are true, but **Node 18 fails**, in two different ways:
 
 ```
 # npm test on Node 18.16
@@ -39,7 +39,7 @@ You are using Node.js 18.16.0. For Next.js, Node.js version ">=20.9.0" is requir
 
 `util.styleText` landed in Node 20.12, and Vitest 4 → Vite 8 → rolldown imports it
 unconditionally. Node 20.20.1 and 22.22.2 both run the full suite clean. If you see the
-`styleText` SyntaxError, you are on the wrong Node — nothing else is wrong.
+`styleText` SyntaxError, you are on the wrong Node: nothing else is wrong.
 
 ### Install
 
@@ -64,12 +64,12 @@ npm run electron:dev
 
 That is `concurrently` over two things:
 
-1. `npm run dev` — `next dev` on port 3000.
-2. `npm run electron:start` — `wait-on http://localhost:3000`, then
+1. `npm run dev`: `next dev` on port 3000.
+2. `npm run electron:start`: `wait-on http://localhost:3000`, then
    `tsc -p electron/tsconfig.json`, then `NODE_ENV=development electron .`.
 
 `main` is `electron/dist/main.js`, so **the main process is compiled every launch** by that
-`tsc` step. If you edit anything under `electron/` you must restart — there is no watch.
+`tsc` step. If you edit anything under `electron/` you must restart: there is no watch.
 The renderer hot-reloads normally.
 
 In dev the window loads `process.env.DOROTHY_DEV_URL || 'http://localhost:3000'` and opens
@@ -84,7 +84,7 @@ npm run dev:network    # next dev -H 0.0.0.0, for a phone/tailnet client
 ```
 
 `next.config.ts` already allows `http://100.92.4.122:3000` as a dev origin. The renderer alone
-has no IPC bridge — every `window.electron.*` call is undefined, so most pages render empty.
+has no IPC bridge: every `window.electron.*` call is undefined, so most pages render empty.
 Use it only for pure-layout work.
 
 ### Compile just the main process
@@ -97,7 +97,7 @@ npx tsc -p electron/tsconfig.json
 explicit: `main.ts`, `preload.ts`, `memory.ts`, `memory-parser.ts`, and
 `types|constants|utils|core|services|handlers/**/*.ts`. `tsc` also compiles any file reached by
 a transitive import from an included one, so a new directory is built as soon as something in
-the list imports it — `providers/` is not in `include` yet `electron/dist/providers/` is
+the list imports it: `providers/` is not in `include` yet `electron/dist/providers/` is
 populated. A directory that nothing imports is the one that silently never gets compiled.
 
 `electron/dist/` is gitignored and goes stale: it currently still contains
@@ -127,7 +127,7 @@ rm -rf ~/Tars-sandbox
 Logs land in `~/Tars-sandbox/tars.log`.
 
 > **Caveat the script does not mention:** the shell hooks in `hooks/` hardcode
-> `http://127.0.0.1:31415` — all 14 occurrences. An agent spawned from the sandbox posts its
+> `http://127.0.0.1:31415`: all 14 occurrences. An agent spawned from the sandbox posts its
 > status, output and observations to your **production** instance. Treat sandbox agent status
 > as untrustworthy, and never debug the status lifecycle from the sandbox.
 
@@ -144,7 +144,7 @@ npm run lint:design     # design guardrail, see below
 
 Four separate gates. They do not overlap.
 
-### Unit tests — `npm test`
+### Unit tests: `npm test`
 
 ```bash
 npm test                # vitest run
@@ -160,7 +160,7 @@ Coverage (`v8`) is scoped to what is actually worth guarding: `electron/constant
 `electron/utils`, `electron/services`, `electron/handlers`, `electron/providers`, plus
 `mcp-orchestrator/src/{utils,tools}`, `mcp-telegram/src`, `mcp-kanban/src`.
 
-Layout mirrors the source tree — `__tests__/electron/services/api-routes/*.test.ts`,
+Layout mirrors the source tree: `__tests__/electron/services/api-routes/*.test.ts`,
 `__tests__/electron/providers/*.test.ts`, `__tests__/mcp/*.test.ts`. Two suites deliberately
 print stack traces on success (`team-template-handlers` corrupt-store case, the security
 suites); a stderr block is not a failure, read the final summary line.
@@ -168,15 +168,15 @@ suites); a stderr block is not a failure, read the final summary line.
 `npm test` does **not** cover `src/` React components beyond two files
 (`__tests__/components/`). The renderer is guarded by the E2E sweep instead.
 
-### E2E surface sweep — `npm run e2e`
+### E2E surface sweep: `npm run e2e`
 
 ```bash
-npx tsc -p electron/tsconfig.json    # REQUIRED — see below
+npx tsc -p electron/tsconfig.json    # REQUIRED, see below
 npm run e2e
 ```
 
 `playwright.config.ts` starts `npx next dev -p 3100` (reusing an existing server if one is
-already up) and runs `e2e/surfaces.spec.ts` with `workers: 1`, `fullyParallel: false` — one
+already up) and runs `e2e/surfaces.spec.ts` with `workers: 1`, `fullyParallel: false`: one
 Electron instance drives every surface serially.
 
 The spec launches the **real Electron app** (`electron.launch({ args: ['.'] })`) with:
@@ -197,21 +197,21 @@ outright. Run `tsc -p electron/tsconfig.json` first, every time.
 
 Per surface the spec does two things:
 
-- asserts zero uncaught page errors — hydration errors are downgraded to a
+- asserts zero uncaught page errors: hydration errors are downgraded to a
   `known-issue` annotation (kanban, vault, brain each still emit them), any **other** uncaught
   error fails the surface;
 - `toHaveScreenshot()` against `e2e/__screenshots__/<name>.png` with
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
 The manifest is `e2e/surfaces.mjs`: **16 pages + 16 settings sections + 3 overlays = 35
-surfaces**. Note `e2e/__screenshots__/` holds **36** PNGs — `settings-obsidian.png` is an
+surfaces**. Note `e2e/__screenshots__/` holds **36** PNGs: `settings-obsidian.png` is an
 orphaned baseline with no manifest entry. Delete it or add the surface back; it is currently
 neither compared nor cleaned up.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings
 group or child label, the corresponding surface times out at
-`target.waitFor({ state: 'visible', timeout: 8000 })` — fix `SETTINGS_TREE`, not the timeout.
+`target.waitFor({ state: 'visible', timeout: 8000 })`: fix `SETTINGS_TREE`, not the timeout.
 
 ### Update baselines
 
@@ -223,10 +223,10 @@ git diff --stat e2e/__screenshots__/
 Review the diff before committing. A redesign pass that legitimately changes one page should
 not be re-baselining thirty.
 
-The HTML report is written to `e2e/report/` (gitignored) — open `e2e/report/index.html`.
+The HTML report is written to `e2e/report/` (gitignored); open `e2e/report/index.html`.
 Traces are `retain-on-failure`.
 
-### Coverage guard — `npm run e2e:guard`
+### Coverage guard: `npm run e2e:guard`
 
 ```bash
 npm run e2e:guard       # node e2e/check-coverage.mjs
@@ -237,12 +237,12 @@ when a route in its `ROUTE_EXPECTATIONS` list (`/`, `/agents`, `/kanban`, `/vaul
 `/projects`, `/skills`, `/usage`, `/memory`, `/settings`, `/whats-new`) has no covering
 surface. Overlays are *reported*, never enforced.
 
-It currently prints `Overlays automatisés : 3 / 0 listés dans l'inventaire` — the `0` means its
+It currently prints `Overlays automatisés : 3 / 0 listés dans l'inventaire`: the `0` means its
 regex (`^- \[[ x]\] \`(src/….tsx)\``) matched nothing in `design/UI-INVENTORY.md`. The guard
 is passing on pages but is blind on overlays. If you restructure the inventory file, re-check
 that number is non-zero.
 
-### Design lint — `npm run lint:design`
+### Design lint: `npm run lint:design`
 
 ```bash
 bash scripts/design-lint.sh
@@ -265,7 +265,7 @@ Currently green on all five.
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,
-Node 20, `npm ci`, `npm test`. **That is all CI does** — no lint, no design lint, no E2E, no
+Node 20, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
@@ -283,7 +283,7 @@ npm run electron:pack
 `electron-builder --dir --mac`. Output: `release/mac-arm64/Tars.app`. This is what
 `scripts/sandbox.sh` expects.
 
-Note `electron:pack` does **not** run `next build` — it packages whatever is already in `out/`.
+Note `electron:pack` does **not** run `next build`: it packages whatever is already in `out/`.
 Run `npm run build:renderer` first if the renderer changed.
 
 ### Build the renderer for packaging
@@ -303,7 +303,7 @@ ELECTRON_BUILD=1 next build
 ```
 
 `next.config.ts` switches to `output: 'export'` when `ELECTRON_BUILD=1`, and a static export
-cannot contain route handlers or a dynamic `icon.tsx` — hence the move-and-restore dance. The
+cannot contain route handlers or a dynamic `icon.tsx`: hence the move-and-restore dance. The
 `trap … EXIT` puts them back even on failure.
 
 **If a build is killed with `SIGKILL` the trap does not run.** Symptom: `src/app/api` is gone
@@ -332,13 +332,13 @@ electron-builder config lives inline in `package.json` under `"build"`:
 - `files`: `electron/dist`, `electron/resources`, `out`, `node_modules`
   (minus `@next/swc*`, `@next/env`, `@next/eslint-plugin-next`), `skills/`, `hooks/`
 - `asarUnpack`: `out/**`, `hooks/**`, `electron/resources/**`,
-  `node_modules/better-sqlite3/**`, `node_modules/node-pty/**` — the two native modules and
+  `node_modules/better-sqlite3/**`, `node_modules/node-pty/**`: the two native modules and
   everything read from disk by path at runtime
 - `extraResources`: one entry per `mcp-*` directory, filtered to `package.json` +
   `dist/bundle.js`, landing in `process.resourcesPath/<name>/`
 
-If `hooks/` or `out/` were left in the asar, `getHooksPath()` and `getAppBasePath()` — both of
-which do `appPath.replace('app.asar', 'app.asar.unpacked')` — would resolve to nothing and the
+If `hooks/` or `out/` were left in the asar, `getHooksPath()` and `getAppBasePath()` (both of
+which do `appPath.replace('app.asar', 'app.asar.unpacked')`) would resolve to nothing and the
 app would boot with no hooks and a blank window.
 
 ### Signing and notarization
@@ -357,7 +357,7 @@ All four are load-bearing: V8 needs JIT and unsigned executable memory, `better-
 `node-pty` are unsigned native `.node` files (library validation), and `node-pty` spawns login
 shells that inherit `DYLD_*` from the environment.
 
-`scripts/notarize.js` exports an `afterSign` hook that calls `@electron/notarize` — using the
+`scripts/notarize.js` exports an `afterSign` hook that calls `@electron/notarize`: using the
 keychain profile named `Tars` when `APPLE_ID` is unset, otherwise
 `APPLE_ID`/`APPLE_APP_PASSWORD`/`APPLE_TEAM_ID`.
 
@@ -379,7 +379,7 @@ xcrun notarytool store-credentials Tars \
   --apple-id <apple-id> --team-id <team-id> --password <app-specific-password>
 ```
 
-### The update feed — and the repo mismatch
+### The update feed and the repo mismatch
 
 Two independent code paths check for updates, and **they point at different repositories**:
 
@@ -390,13 +390,13 @@ Two independent code paths check for updates, and **they point at different repo
 
 `electron/services/update-checker.ts` sets `autoDownload = false` and
 `autoInstallOnAppQuit = true`, calls `autoUpdater.checkForUpdates()`, and **only** on throw
-falls back to `GET https://api.github.com/repos/${GITHUB_REPO}/releases/latest` — comparing
+falls back to `GET https://api.github.com/repos/${GITHUB_REPO}/releases/latest`: comparing
 `tag_name` minus a leading `v` against `app.getVersion()` component by component, then picking
 the first `.dmg` or `.zip` asset.
 
 So: a release published to one repo is invisible to the other path. Before cutting a release,
 decide which repo is real and make both agree. The comment on `GITHUB_REPO` explains why it is
-not the upstream — pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
+not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
 Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates === false`.
@@ -419,13 +419,13 @@ npm run electron:build
 ls -la release/
 codesign -dv --verbose=4 release/mac-arm64/Tars.app
 
-# 5. publish — the tag must be v<version> for the fallback comparison to work
+# 5. publish: the tag must be v<version> for the fallback comparison to work
 gh release create v1.5.1 release/*.dmg release/*.zip release/latest-mac.yml \
   --repo JeanBrasse/Tars
 ```
 
 `latest-mac.yml` must be in the release assets or `electron-updater` throws and every client
-silently drops to the GitHub-API fallback — which, per the mismatch above, is looking at the
+silently drops to the GitHub-API fallback, which, per the mismatch above, is looking at the
 other repo.
 
 ---
@@ -440,7 +440,7 @@ work.
 
 | Path | Written by | Contents |
 |---|---|---|
-| `~/.dorothy/agents.json` | `electron/core/agent-manager.ts` | the fleet — schema `version: 2`, `savedAt`, `agents[]` |
+| `~/.dorothy/agents.json` | `electron/core/agent-manager.ts` | the fleet: schema `version: 2`, `savedAt`, `agents[]` |
 | `~/.dorothy/agents.backup.json` | same | last good copy, taken from content just parsed successfully |
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
@@ -461,7 +461,7 @@ work.
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
 
-Outside `~/.dorothy`, Tars writes into provider config it does not own — see *MCP servers* and
+Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
 *Hooks*. Memory files it reads live in `~/.claude/projects/<encoded-path>/memory/`, where the
 project path is encoded as a folder name (slashes → dashes).
 
@@ -469,8 +469,8 @@ project path is encoded as a folder name (slashes → dashes).
 
 `migrateFromClaudeManager()` runs on every boot. If `~/.claude-manager` exists it copies
 `agents.json`, `agents.backup.json`, `app-settings.json`, `kanban-tasks.json`,
-`scheduler-metadata.json`, `telegram-downloads/`, `scripts/` — **skipping anything that
-already exists in `~/.dorothy`** — then `rm -rf`s the old directory. It is one-way and
+`scheduler-metadata.json`, `telegram-downloads/`, `scripts/` (**skipping anything that
+already exists in `~/.dorothy`**) then `rm -rf`s the old directory. It is one-way and
 destructive of the source. Back up `~/.claude-manager` before first launch of a renamed build
 if you care about it.
 
@@ -478,11 +478,11 @@ if you care about it.
 
 `saveAgents()` writes to a temp file and renames it into place, so a crash mid-write leaves the
 previous file intact rather than truncated. The backup is only taken from content that just
-parsed successfully — a corrupt current file cannot overwrite the last good copy.
+parsed successfully: a corrupt current file cannot overwrite the last good copy.
 
 Autosave flushes every **30 s** when dirty (`FLUSH_INTERVAL_MS`), plus once on `before-quit`.
 Only the last 100 output chunks per agent are persisted (400 are retained in memory,
-`OUTPUT_RETAIN`), and `running` is written back as `idle` — a restored agent is never live.
+`OUTPUT_RETAIN`), and `running` is written back as `idle`: a restored agent is never live.
 
 If the fleet comes back empty:
 
@@ -493,7 +493,7 @@ jq '.version, (.agents | length)' ~/.dorothy/agents.json
 # 2. is the backup better?
 jq '.version, (.agents | length), .savedAt' ~/.dorothy/agents.backup.json
 
-# 3. restore — Tars must be quit, or before-quit will overwrite it
+# 3. restore: Tars must be quit, or before-quit will overwrite it
 cp ~/.dorothy/agents.backup.json ~/.dorothy/agents.json
 ```
 
@@ -509,7 +509,7 @@ mv ~/.dorothy ~/.dorothy.bak-$(date +%F)
 
 This drops agents, settings, the API token, the vault and the usage ledger. It does **not**
 undo what Tars wrote into `~/.claude/settings.json`, `~/.claude.json`, `~/.codex/config.toml`,
-`~/.gemini/settings.json` or `~/.grok/config.toml` — see the two sections below for those.
+`~/.gemini/settings.json` or `~/.grok/config.toml`: see the two sections below for those.
 
 ---
 
@@ -524,7 +524,7 @@ agents: the bundled MCP servers, the shell hooks and any external scheduler all 
 Three layers, in order:
 
 1. **Origin check.** Any request carrying an `Origin` header that is not `app://-` or
-   `http://localhost:3000` is rejected `403 Forbidden origin` — a browser tab on any site can
+   `http://localhost:3000` is rejected `403 Forbidden origin`: a browser tab on any site can
    reach `127.0.0.1`, and CORS hides the response but not the side effect. Shell hooks send no
    `Origin` at all, which is why they pass.
 2. **Bearer token.** `Authorization: Bearer <~/.dorothy/api-token>`, else `401`.
@@ -535,7 +535,7 @@ Three layers, in order:
    `constructor` are stripped from every parsed body.
 
 If the port is taken the server logs `Port 31415 is in use, API server not started` and the
-app carries on **without an API** — every agent-to-agent call then fails. There is no retry
+app carries on **without an API**: every agent-to-agent call then fails. There is no retry
 and no UI warning.
 
 ### Talk to it
@@ -544,7 +544,7 @@ and no UI warning.
 TOKEN=$(cat ~/.dorothy/api-token)
 API=http://127.0.0.1:31415
 
-curl -s $API/api/health                                    # {"ok":true} — no auth
+curl -s $API/api/health                                    # {"ok":true}, no auth
 curl -s -H "Authorization: Bearer $TOKEN" $API/api/agents | jq
 curl -s -H "Authorization: Bearer $TOKEN" "$API/api/agents/<id>?full=true" | jq
 curl -s -H "Authorization: Bearer $TOKEN" "$API/api/agents/<id>/output?lines=200"
@@ -600,7 +600,7 @@ an orchestrator cannot pick another project's agent ID out of a global listing.
 The identity comes from HTTP headers the MCP client injects out of its PTY environment
 (`CLAUDE_AGENT_ID`, `CLAUDE_PROJECT_PATH`, set by `initAgentPty`).
 
-> **Known defect — read this before debugging a delegation failure.** The server reads
+> **Known defect: read this before debugging a delegation failure.** The server reads
 > `x-dorothy-caller-project` (`agent-routes.ts:337`). Both MCP clients send
 > `X-Tars-Caller-Project` (`mcp-orchestrator/src/utils/api.ts:53`, `mcp-memory/src/utils/api.ts:53`).
 > The names do not match, so `callerProject()` is always `undefined` for MCP callers, and the
@@ -611,7 +611,7 @@ The identity comes from HTTP headers the MCP client injects out of its PTY envir
 >     Restart the agent from Tars so it is spawned with CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH.
 > ```
 >
-> Restarting the agent does not help — the env vars are already there. Confirm with:
+> Restarting the agent does not help: the env vars are already there. Confirm with:
 >
 > ```bash
 > grep -rn "caller-project" electron/services/api-routes/agent-routes.ts
@@ -640,10 +640,10 @@ Override with `allowCrossProject: true` in the body, or `?allowCrossProject=true
 `performDispatch()` is shared by `POST /api/agents/:id/dispatch` and the Hermes webhook, so
 both behave identically. It:
 
-1. calls `killStalePty(agent)` — if the PTY's recorded `ptyCwd` no longer matches
+1. calls `killStalePty(agent)`: if the PTY's recorded `ptyCwd` no longer matches
    `worktreePath || projectPath`, the PTY is killed so the spawn path restarts it in the right
    directory;
-2. **refuses with `409`** if the agent is `waiting` on a permission dialog — a typed message
+2. **refuses with `409`** if the agent is `waiting` on a permission dialog: a typed message
    cannot answer arrow-key UI, and the trailing `\r` could *accept* the pending permission:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
 3. types the message into a live `running`/`waiting` session (`mode: "message"`), or
@@ -673,7 +673,7 @@ Plus `tasmania` when `appSettings.tasmaniaEnabled` and the configured
 
 `setupMcpOrchestrator()` runs on `whenReady()`, un-awaited so it does not hold the first paint.
 For each server × each of the 15 providers it calls `provider.isMcpServerRegistered(name, path)`
-and, if absent, `provider.registerMcpServer(name, 'node', [bundlePath])` — yielding with
+and, if absent, `provider.registerMcpServer(name, 'node', [bundlePath])`, yielding with
 `setImmediate` between each because registering shells out and this is the thread that pumps
 every PTY.
 
@@ -681,7 +681,7 @@ Each provider writes to its own config, CLI-first with a file fallback:
 
 | provider(s) | config dir | mechanism |
 |---|---|---|
-| `claude` (+ `openrouter`, `deepseek`, `mimo`, `moonshot`, `qwen`, `zhipu`, `minimax`, `nvidia`, `nous-portal` — all share the `claude` binary and `~/.claude`) | `~/.claude` | `claude mcp add -s user …`, fallback `~/.claude/mcp.json`; presence checked in both `~/.claude/mcp.json` and `~/.claude.json` |
+| `claude` (+ `openrouter`, `deepseek`, `mimo`, `moonshot`, `qwen`, `zhipu`, `minimax`, `nvidia`, `nous-portal`, all share the `claude` binary and `~/.claude`) | `~/.claude` | `claude mcp add -s user …`, fallback `~/.claude/mcp.json`; presence checked in both `~/.claude/mcp.json` and `~/.claude.json` |
 | `codex` | `~/.codex` | fallback writes `[mcp_servers.<name>]` into `config.toml` |
 | `gemini` | `~/.gemini` | fallback writes `settings.json` |
 | `grok` | `~/.grok` | fallback writes `[mcp_servers.<name>]` into `config.toml` with `enabled = true` |
@@ -711,14 +711,14 @@ jq '.mcpServers | keys' ~/.gemini/settings.json
 ls -la /Applications/Tars.app/Contents/Resources/mcp-*/dist/bundle.js
 ```
 
-Registration is idempotent and re-runs at every boot — to force it, remove the entry from the
+Registration is idempotent and re-runs at every boot: to force it, remove the entry from the
 provider's config and restart Tars.
 
 ### Bundled skills
 
 `installBundledSkills()` runs at the end of `setupMcpOrchestrator()`. Its `bundledSkills` list
 is currently **empty**; what it does do is *remove* stale `world-builder` skill directories
-from every provider's skill dir — and only when the `SKILL.md` content matches
+from every provider's skill dir, and only when the `SKILL.md` content matches
 `/dorothy-world|create_zone|PokAImon/i`, so a user's own skill of that name is left alone.
 `skills/` in the repo holds `remember.md`.
 
@@ -749,49 +749,49 @@ MCP clients honour `CLAUDE_MGR_API_URL` if you need to point them at a non-defau
 `app.getAppPath()` with `app.asar` → `app.asar.unpacked`. `configureStatusHooks()` runs at boot
 and delegates to every provider whose `getHookConfig().supportsNativeHooks` is true.
 
-### Claude — `~/.claude/settings.json`
+### Claude: `~/.claude/settings.json`
 
 Eight hooks, each installed as `{ type: 'command', command: '<hooksDir>/<file>', timeout: 30 }`:
 
 | event | script | matcher |
 |---|---|---|
 | `SessionStart` | `session-start.sh` | `*` |
-| `UserPromptSubmit` | `user-prompt-submit.sh` | — |
+| `UserPromptSubmit` | `user-prompt-submit.sh` | - |
 | `PostToolUse` | `post-tool-use.sh` | `*` |
-| `Stop` | `on-stop.sh` | — |
+| `Stop` | `on-stop.sh` | - |
 | `SessionEnd` | `session-end.sh` | `*` |
 | `Notification` | `notification.sh` | `*` |
-| `PermissionRequest` | `permission-request.sh` | — |
-| `TaskCompleted` | `task-completed.sh` | — |
+| `PermissionRequest` | `permission-request.sh` | - |
+| `TaskCompleted` | `task-completed.sh` | - |
 
 Existing entries are matched by `command.includes(<file>)` and **rewritten in place** when the
-path changed — so moving or reinstalling the app repairs stale absolute paths, and a manual
+path changed: so moving or reinstalling the app repairs stale absolute paths, and a manual
 edit to the command will be overwritten on next boot.
 
-### Gemini — `~/.gemini/settings.json`
+### Gemini: `~/.gemini/settings.json`
 
 Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.sh`,
 `post-tool-use.sh`, `on-stop.sh`, `session-end.sh`, `notification.sh`.
 
 ### What the hooks do
 
-- `session-start.sh` — POSTs `{agent_id, session_id, status: idle, source}` to
+- `session-start.sh`: POSTs `{agent_id, session_id, status: idle, source}` to
   `/api/hooks/status`. Only `SessionStart` sends `source`; the server records the session id
   **without** touching status, because the status lifecycle belongs to `UserPromptSubmit`/`Stop`.
   It retries once after 1 s: a lost registration makes the stale-session guard ignore every
   later status post from that session. It then fetches `/api/agents/$CLAUDE_AGENT_ID/bootstrap`
   (identity + team roster) and `/api/memory/context`, and injects both as
   `hookSpecificOutput.additionalContext`.
-- `post-tool-use.sh` — marks the agent `running` and POSTs the observation to
+- `post-tool-use.sh`: marks the agent `running` and POSTs the observation to
   `/api/memory/remember`.
-- `on-stop.sh` — extracts the last assistant message (from `last_assistant_message`, or by
-  streaming the transcript JSONL with `jq -rRn 'inputs | fromjson? …'` — portable because macOS
+- `on-stop.sh`: extracts the last assistant message (from `last_assistant_message`, or by
+  streaming the transcript JSONL with `jq -rRn 'inputs | fromjson? …'`, portable because macOS
   has no `tac`, and tolerant of a truncated final line still being flushed), truncates to
   4 000 chars, POSTs to `/api/hooks/output`, then `/api/hooks/status` idle and
   `/api/hooks/agent-stopped`.
 
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
-`-H @<(printf "Authorization: Bearer %s" …)` — process substitution, so the token never appears
+`-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
 in `ps`.
 
 ### Debugging hooks
@@ -810,9 +810,9 @@ which jq curl
 
 | Symptom | Cause |
 |---|---|
-| agents stuck `idle` while clearly working | `jq` not on the hook's PATH — every script `exit 0`s with `{"continue":true}` and posts nothing |
+| agents stuck `idle` while clearly working | `jq` not on the hook's PATH: every script `exit 0`s with `{"continue":true}` and posts nothing |
 | status posts ignored after a restart | `SessionStart` registration was lost; the stale-session guard drops later posts. Stop and re-dispatch the agent |
-| no memory injected at session start | `/api/memory/context` returned empty, or `$HOME/.dorothy/api-token` is unreadable — `/api/memory/*` is **not** auth-exempt |
+| no memory injected at session start | `/api/memory/context` returned empty, or `$HOME/.dorothy/api-token` is unreadable; `/api/memory/*` is **not** auth-exempt |
 | sandbox/E2E agent status shows up in prod | hooks hardcode `31415`; see *Run a second Tars beside your live one* |
 
 ---
@@ -830,7 +830,7 @@ Five sources sit behind one interface (`electron/services/memory-hub.ts`):
 | `honcho` | remote streamable-HTTP MCP server |
 
 Both remote backends are spoken to directly over MCP (`electron/services/mcp-http-client.ts`,
-protocol `2025-06-18`, `Accept: application/json, text/event-stream`, 15 s timeout) — so
+protocol `2025-06-18`, `Accept: application/json, text/event-stream`, 15 s timeout), so
 "Connected" in the UI means a real `initialize` + `tools/list` round trip, not "a URL is filled
 in". The search tool is discovered by name preference:
 `memory_search`, `search_memory`, `honcho_search`, `search`, `recall`, `query`, `retrieve`,
@@ -847,7 +847,7 @@ Saving any key starting `memoryGbrain` or `memoryHoncho` triggers `setupMemoryBa
 which additionally mirrors them into `~/.claude.json` as
 `{ type: 'http', url, headers: { Authorization: 'Bearer …' } }` so the Claude binary sees them
 natively. It **never** clobbers a `~/.claude.json` it could not parse, and it only *removes* an
-entry whose URL matches the one Tars itself configured — a gbrain you registered by hand
+entry whose URL matches the one Tars itself configured: a gbrain you registered by hand
 survives.
 
 ### Check reachability
@@ -859,7 +859,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ```
 
 Returns one object per source with `{id, label, configured, reachable, detail, tools[]}`.
-`configured: true, reachable: false` means the URL is set but the MCP handshake failed — check
+`configured: true, reachable: false` means the URL is set but the MCP handshake failed: check
 the token, then the URL scheme.
 
 ```bash
@@ -876,7 +876,7 @@ jq '.mcpServers.gbrain, .mcpServers.honcho' ~/.claude.json
 ```
 
 `sources` accepts only `project,observations,hermes,gbrain,honcho`; unknown values are dropped
-silently and an empty result means "all sources". `limit` is clamped to 1–50.
+silently and an empty result means "all sources". `limit` is clamped to 1-50.
 
 ---
 
@@ -897,8 +897,8 @@ Tars instead.
 
 Two auth flavours, advertised by the gateway on `GET /api/status`:
 
-- **token** — static `X-Hermes-Session-Token` header;
-- **cookie** (`auth_flows: ['cookie']`) — `POST /auth/password-login {provider, username,
+- **token**: static `X-Hermes-Session-Token` header;
+- **cookie** (`auth_flows: ['cookie']`): `POST /auth/password-login {provider, username,
   password}`, cookies kept in an in-memory jar in the main process only, never exposed to the
   renderer. The gateway rotates the access cookie transparently while the refresh cookie lives.
 
@@ -924,7 +924,7 @@ curl -s -H "X-Hermes-Session-Token: $TOK" "https://<gateway>/api/sessions/search
 The Crons page reads `/api/cron/jobs?profile=all`; with no gateway configured it renders
 `waiting on /api/cron/jobs` and stays there. That is the expected empty state, not a hang.
 
-Hermes exposes no HTTP API for memory *content* — `/api/memory` returns state only; the
+Hermes exposes no HTTP API for memory *content*: `/api/memory` returns state only; the
 searchable body is the FTS index behind `/api/sessions/search`.
 
 ### Inbound webhook
@@ -932,7 +932,7 @@ searchable body is the FTS index behind `/api/sessions/search`.
 `POST /api/webhooks/hermes` lets the gateway drive a Tars agent.
 
 ```bash
-# the secret is auto-provisioned (32 random bytes, mode 0600) on first read — no minting needed
+# the secret is auto-provisioned (32 random bytes, mode 0600) on first read, no minting needed
 cat ~/.dorothy/hermes-webhook-secret
 
 # make the localhost-bound API reachable from the VPS
@@ -949,7 +949,7 @@ Body: `agent_id` **or** `agent_name` (case-insensitive exact match, narrowed by
 `project_path` when the same role exists on several projects), plus `message` (required),
 `model`, `permission_mode` (`normal|auto|bypass`), `dry_run`.
 
-Auth: the webhook secret if the file exists, **or** the master `~/.dorothy/api-token` — the
+Auth: the webhook secret if the file exists, **or** the master `~/.dorothy/api-token`: the
 master token is accepted so an existing setup keeps working. If the secret file is absent, only
 the master token works. This is the one route published over the tailnet, which is why it
 carries its own credential.
@@ -982,8 +982,8 @@ curl -s -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Tasmania/
   http://localhost:3999/api/status | jq
 ```
 
-If Tasmania is not `running`, the agent is spawned **anyway**, with no Tasmania env vars — the
-log line is `Agent <id> is local provider but Tasmania is not running — PTY created without
+If Tasmania is not `running`, the agent is spawned **anyway**, with no Tasmania env vars: the
+log line is `Agent <id> is local provider but Tasmania is not running. PTY created without
 Tasmania env vars`. The agent then silently talks to the public Anthropic API. Check the status
 before starting local agents.
 
@@ -1001,11 +1001,11 @@ if that path is gone). Free-standing terminals use `process.env.SHELL || '/bin/z
 
 The environment is `process.env` plus:
 
-- `PATH` — rebuilt by `buildFullPath()` from `~/.nvm/versions/node/v20.11.1/bin`,
+- `PATH`: rebuilt by `buildFullPath()` from `~/.nvm/versions/node/v20.11.1/bin`,
   `~/.nvm/versions/node/v22.0.0/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`,
   and every `~/.nvm/versions/node/*/bin` (`~/.grok/bin`, `~/Library/pnpm` and `~/.yarn/bin`
   are only in `detectCLIPaths()`'s probe list, not the PTY PATH);
-- provider env (`getPtyEnvVars` — this is where `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` are
+- provider env (`getPtyEnvVars`, this is where `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` are
   injected for the nine providers that drive the `claude` binary against another API);
 - `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, so `~/.dorothy/CLAUDE.md` is loaded via
   `--add-dir`;
@@ -1029,7 +1029,7 @@ zsh -ilc 'echo $PATH' | tr ':' '\n'
 
 If a provider shows as unavailable but the binary works in your terminal, the difference is
 almost always a PATH entry added by a shell rc file that only runs for interactive **login**
-shells — set the path explicitly in Settings rather than fighting it.
+shells: set the path explicitly in Settings rather than fighting it.
 
 ### Agent stuck in the wrong directory
 
@@ -1047,7 +1047,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/age
 ### Fleet-wide log search
 
 The Logs page reads the retained output buffers in the main process (400 chunks per agent, ANSI
-stripped, capped at 500 result lines). It supports plain substring search or `/regex/flags` —
+stripped, capped at 500 result lines). It supports plain substring search or `/regex/flags`;
 a bad regex falls back to a literal search rather than throwing.
 
 These buffers are **memory only**. Only the last 100 chunks per agent survive to
@@ -1060,12 +1060,12 @@ These buffers are **memory only**. Only the last 100 chunks per agent survive to
 
 Two independent sources feed the Usage page:
 
-1. **`~/.dorothy/usage-ledger.jsonl`** — one record per turn, written by
+1. **`~/.dorothy/usage-ledger.jsonl`**: one record per turn, written by
    `recordUsage()`. Every ACP turn reports its own tokens, which is the only source that covers
    Codex, Gemini, Grok and the rest. When the agent does not report a cost, the ledger prices
    the turn itself from the catalogue; cache reads default to 10 % of input and cache writes to
    125 % when the catalogue omits them.
-2. **Claude Code transcripts** — `~/.claude/projects/**/*.jsonl`, parsed by
+2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, parsed by
    `electron/services/transcript-usage.ts`. Claude Code only writes
    `~/.claude/stats-cache.json` for some account types; the per-message `usage` block in the
    transcripts is always there. 1 h cache writes are kept apart from 5 m ones because they
@@ -1086,7 +1086,7 @@ jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the 
 
 | Symptom | Cause |
 |---|---|
-| "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP — only ACP turns hit `recordUsage()` |
+| "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
 
@@ -1095,7 +1095,7 @@ jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the 
 ## ACP transport
 
 `electron/services/acp/` drives CLIs over the Agent Client Protocol instead of typing into a
-terminal — the same JSON-RPC conversation for Claude Code, Codex, Gemini, Grok, opencode and
+terminal: the same JSON-RPC conversation for Claude Code, Codex, Gemini, Grok, opencode and
 pi, and a turn *returns* with a stop reason and its token usage rather than leaving Tars to
 infer completion from screen output.
 
@@ -1135,11 +1135,11 @@ thread through the first paint.
 **Killing Tars with `SIGKILL` skips all of it**: up to 30 s of agent state is lost, every PTY is
 orphaned, and the SQLite WAL is left unclosed. Quit from the menu or the tray.
 
-On macOS, closing the window does **not** quit — `window-all-closed` only quits on
+On macOS, closing the window does **not** quit: `window-all-closed` only quits on
 non-darwin. The tray stays live and agents keep running. To actually stop everything:
 
 ```bash
-osascript -e 'quit app "Tars"'     # graceful — runs before-quit
+osascript -e 'quit app "Tars"'     # graceful, runs before-quit
 pgrep -fl 'Tars' ; pgrep -fl 'node-pty'   # verify nothing is orphaned
 ```
 
@@ -1157,7 +1157,7 @@ and crash the app. Any other stream error still rethrows.
 The real reason a naive `find . -name '*.test.ts' -not -path './node_modules/*'` returns 1432
 files while `vitest` collects 46 (~31×) is nested `node_modules` the top-level exclude misses:
 166 under `landing/` and 140 in each of the seven `mcp-*/` dirs; the two worktree trees add
-only 234. The top-level `-not -path './node_modules/*'` is not enough — you must exclude
+only 234. The top-level `-not -path './node_modules/*'` is not enough: you must exclude
 `node_modules` at every depth:
 
 ```bash
@@ -1168,7 +1168,7 @@ Also gitignored and safe to delete: `.next/`, `out/`, `release/`, `electron/dist
 `mcp-*/dist`, `mcp-*/node_modules`, `e2e/report/`, `test-results/`, `design/exports/`,
 `*.tsbuildinfo`.
 
-`build/` is in `.gitignore` but `build/entitlements.mac.plist` is tracked — do not "clean" it.
+`build/` is in `.gitignore` but `build/entitlements.mac.plist` is tracked: do not "clean" it.
 
 `CLAUDE.md` at the repo root carries a block re-written by `next dev`
 (`node_modules/next/dist/server/lib/generate-agent-files.js`). Removing it from a diff only

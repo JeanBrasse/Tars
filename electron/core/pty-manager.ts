@@ -42,7 +42,7 @@ export function killAllPty(): void {
  *
  * When `bracketPaste` is true (used for sending messages to an already-running
  * Claude Code session), the carriage return is ALWAYS sent as a separate,
- * delayed write — even for short single-line messages. Claude Code's TUI treats
+ * delayed write, even for short single-line messages. Claude Code's TUI treats
  * a rapid "text\r" burst as a single paste event and buffers it without
  * submitting (the text lands in the input box as "[Pasted text]" but is never
  * sent). Delaying the \r lets the paste settle so it registers as a deliberate
@@ -50,7 +50,7 @@ export function killAllPty(): void {
  * paste markers so the terminal treats it as one paste rather than line-by-line
  * input.
  *
- * When `bracketPaste` is false (default — used for the initial shell command
+ * When `bracketPaste` is false (default, used for the initial shell command
  * that starts Claude Code), the data is sent as plain text + \r, which is what
  * a raw bash/zsh shell expects and has no paste-detection race.
  *

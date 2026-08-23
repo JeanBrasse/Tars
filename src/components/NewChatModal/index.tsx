@@ -565,6 +565,13 @@ export default function NewChatModal({
               onCliPathChange={setCliPath}
               tasmaniaEnabled={tasmaniaEnabled}
               installedProviders={installedProviders}
+              /* The effort ladder moved from the Task step to this step, but
+                 these two props stayed behind on StepTask. StepModel then fell
+                 back to its own default ("medium") with no change handler, so
+                 the chips rendered enabled and every click was a no-op: effort
+                 could not be changed, in create or in edit mode. */
+              effort={effort}
+              onEffortChange={setEffort}
               agentPersonaRef={agentPersonaRef}
               projectPath={projectPath}
             />
@@ -579,6 +586,12 @@ export default function NewChatModal({
               onInstallSkill={skillInstall.handleInstallSkill}
               provider={provider}
               installedSkillsByProvider={installedSkillsByProvider}
+              /* The toggle was handed to StepTask, which stopped rendering it
+                 when the wizard was split into steps. StepTools is the step
+                 that draws it, so nothing reached the screen and no agent
+                 could be made an orchestrator from the UI. */
+              isOrchestrator={isOrchestrator}
+              onOrchestratorToggle={handleOrchestratorToggle}
             />
           )}
 
@@ -594,10 +607,9 @@ export default function NewChatModal({
               onBranchNameChange={setBranchName}
               permissionMode={permissionMode}
               onPermissionModeChange={setPermissionMode}
+              /* Read-only here: the Task step only prints effort in its summary
+                 line, the ladder itself lives on the Model step. */
               effort={effort}
-              onEffortChange={setEffort}
-              isOrchestrator={isOrchestrator}
-              onOrchestratorToggle={handleOrchestratorToggle}
               projectPath={projectPath}
               provider={provider}
               model={model}

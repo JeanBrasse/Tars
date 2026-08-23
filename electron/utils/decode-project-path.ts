@@ -25,7 +25,7 @@ export function decodeProjectPath(dirName: string): string {
       const subTokens = tokens.slice(i, i + len);
 
       if (len === 1) {
-        // Single token — no separator ambiguity
+        // Single token: no separator ambiguity
         const candidate = path.join(resolved, subTokens[0]);
         try {
           if (fs.existsSync(candidate)) {
@@ -54,7 +54,7 @@ export function decodeProjectPath(dirName: string): string {
     }
 
     if (!matched) {
-      // Nothing found on disk — append the single token as-is
+      // Nothing found on disk: append the single token as-is
       resolved = path.join(resolved, tokens[i]);
       i++;
     }
@@ -73,7 +73,7 @@ function separatorCombinations(tokens: string[]): string[] {
   const separators = ['-', '.', '_'];
   const positions = tokens.length - 1;
 
-  // Safety cap — for very long token sequences just try each separator uniformly
+  // Safety cap: for very long token sequences just try each separator uniformly
   if (positions > 5) {
     return separators.map(sep => tokens.join(sep));
   }

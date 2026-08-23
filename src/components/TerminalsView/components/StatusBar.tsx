@@ -4,7 +4,7 @@ import type { AgentStatus } from '@/types/electron';
 
 interface StatusBarProps {
   agents: AgentStatus[];
-  /** Current git branch of the active project — rendered on the right. */
+  /** Current git branch of the active project, rendered on the right. */
   branch?: string;
 }
 

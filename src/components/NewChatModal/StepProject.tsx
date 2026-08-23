@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Chip, Input, PanelCaption, Select } from '@/components/ui';
+import { Chip, Dropdown, Input, PanelCaption } from '@/components/ui';
 import { Toggle } from '@/components/Settings/Toggle';
 import type { Project } from './types';
 
@@ -118,24 +118,31 @@ const StepProject = React.memo(function StepProject({
     <div className="space-y-5">
       <div>
         <PanelCaption className="mb-1.5">Project</PanelCaption>
-        <Select
+        <Dropdown
+          mono
+          ariaLabel="Project"
+          placeholder="Select a project"
+          searchable={orderedProjects.length > 12}
+          searchPlaceholder={`filter ${orderedProjects.length} projects`}
           value={current}
-          onChange={(e) => {
-            if (e.target.value === BROWSE) handleBrowse();
-            else onSelectProject(e.target.value);
+          options={[
+            // An agent being edited can sit on a project that isn't in the
+            // list; without this row the panel would show the placeholder and
+            // read as if nothing were selected.
+            ...(current && !currentIsListed
+              ? [{ value: current, label: tildePath(current) }]
+              : []),
+            ...orderedProjects.map((project) => ({
+              value: project.path,
+              label: tildePath(project.path),
+            })),
+            ...(onBrowseFolder ? [{ value: BROWSE, label: 'Choose a folder…' }] : []),
+          ]}
+          onChange={(next) => {
+            if (next === BROWSE) handleBrowse();
+            else onSelectProject(next);
           }}
-        >
-          {!current && <option value="">Select a project</option>}
-          {!!current && !currentIsListed && (
-            <option value={current}>{tildePath(current)}</option>
-          )}
-          {orderedProjects.map((project) => (
-            <option key={project.path} value={project.path}>
-              {tildePath(project.path)}
-            </option>
-          ))}
-          {onBrowseFolder && <option value={BROWSE}>Choose a folder…</option>}
-        </Select>
+        />
       </div>
 
       {recent.length > 0 && (

@@ -81,7 +81,7 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
     };
   }, [showInstallTerminal]);
 
-  // Follow the app theme — xterm holds literal colours, so re-apply on toggle
+  // Follow the app theme: xterm holds literal colours, so re-apply on toggle
   useEffect(() => {
     if (xtermRef.current) {
       xtermRef.current.options.theme = xtermTheme;

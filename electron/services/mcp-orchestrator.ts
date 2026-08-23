@@ -117,7 +117,7 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
       for (const provider of providers) {
         try {
           if (!provider.isMcpServerRegistered(name, serverPath)) {
-            // Registering spawns a CLI, and this is the main thread — the one
+            // Registering spawns a CLI, and this is the main thread, the one
             // that paints the window and pumps every PTY. Yield between each
             // so the app stays answerable while it catches up.
             await new Promise(resolve => setImmediate(resolve));
@@ -142,14 +142,14 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
  * provider's first skill directory so they're available to all agents.
  */
 async function installBundledSkills(): Promise<void> {
-  // world-builder was removed along with the dorothy-world MCP server —
-  // its tools no longer exist, so it must not ship to agents anymore.
+  // world-builder was removed along with the dorothy-world MCP server.
+  // Its tools no longer exist, so it must not ship to agents anymore.
   const bundledSkills: string[] = [];
   const providers = getAllProviders();
 
   // Older Tars versions copied world-builder into every provider's skill
   // dir; agents still list it although its MCP tools are gone. Remove those
-  // copies — but only when the content is recognizably ours.
+  // copies, but only when the content is recognizably ours.
   for (const provider of providers) {
     for (const dir of provider.getSkillDirectories()) {
       const staleFile = path.join(dir, 'world-builder', 'SKILL.md');
@@ -214,12 +214,12 @@ async function installBundledSkills(): Promise<void> {
  * Register/unregister the user's shared memory backends (gbrain, Honcho) as
  * remote HTTP MCP servers in the claude CLI's user scope, driven by settings.
  * Every claude-binary agent then gets the same memory tools that the user's
- * Hermes instance and claude.ai connectors use — one brain everywhere.
+ * Hermes instance and claude.ai connectors use: one brain everywhere.
  *
  * Writes ~/.claude.json (the file `claude mcp add -s user` maintains)
  * directly: no dependency on the claude binary being on the packaged app's
  * PATH, and no CLI boot blocking the main process. Removal only touches
- * entries whose URL matches Tars's own settings — a gbrain/honcho the
+ * entries whose URL matches Tars's own settings. A gbrain/honcho the
  * user registered independently is never deleted.
  *
  * Claude-binary providers only: native CLIs (codex, gemini, grok, opencode,
@@ -294,7 +294,7 @@ export function setupOrchestratorStatusHandler(): void {
       const orchestratorPath = getMcpOrchestratorPath();
       const orchestratorExists = fs.existsSync(orchestratorPath);
 
-      // Check mcp.json directly — fast, no child process spawn
+      // Check mcp.json directly: fast, no child process spawn
       const mcpConfigPath = path.join(os.homedir(), '.claude', 'mcp.json');
       let mcpJsonConfigured = false;
       if (fs.existsSync(mcpConfigPath)) {

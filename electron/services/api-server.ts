@@ -14,7 +14,7 @@ import { registerAllRoutes } from './api-routes';
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
-// EventEmitter for agent status changes — used by long-poll wait endpoint
+// EventEmitter for agent status changes, used by long-poll wait endpoint
 export const agentStatusEmitter = new EventEmitter();
 agentStatusEmitter.setMaxListeners(50);
 
@@ -67,7 +67,7 @@ function matchRoute(pattern: string | RegExp, pathname: string): Record<string, 
   }
   const m = pathname.match(pattern);
   if (!m) return null;
-  // Map positional captures to 'id' (first group) — all parameterized routes use a single :id param
+  // Map positional captures to 'id' (first group): all parameterized routes use a single :id param
   return m[1] ? { id: m[1] } : {};
 }
 

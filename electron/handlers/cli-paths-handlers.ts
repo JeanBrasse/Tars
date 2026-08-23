@@ -315,7 +315,7 @@ async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ claude:
     }
   }
 
-  // Check for Qwen Code (Alibaba) — the CLI installs as `qwen`
+  // Check for Qwen Code (Alibaba): the CLI installs as `qwen`
   if (!paths.qwencode) for (const dir of commonPaths) {
     const qwenPath = path.join(dir, 'qwen');
     if (fs.existsSync(qwenPath)) {
