@@ -22,12 +22,7 @@ import * as path from 'path';
  * defaults - every key gone.
  */
 export function writeSecretFileSync(filePath: string, contents: string): void {
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-
-  const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, contents, { mode: 0o600 });
-  fs.renameSync(tmp, filePath);
+  writeAtomicSync(filePath, contents, 0o600);
 
   // renameSync preserves the temp file's mode, but be explicit: if the target
   // already existed at 0644 on some platform, this is what narrows it.
@@ -36,6 +31,22 @@ export function writeSecretFileSync(filePath: string, contents: string): void {
   } catch {
     // A filesystem without POSIX modes (a network share) - nothing to do.
   }
+}
+
+/**
+ * An ordinary state file, written atomically.
+ *
+ * Same temp-file-then-rename as above, without narrowing the mode: the caller's
+ * data is not a credential, but a crash between truncate and write would still
+ * leave a half-file that the next parse rejects. agents.json already had this
+ * treatment; projects.json did not, and losing it silently empties the user's
+ * project list.
+ */
+export function writeAtomicSync(filePath: string, contents: string, mode?: number): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, contents, mode !== undefined ? { mode } : undefined);
+  fs.renameSync(tmp, filePath);
 }
 
 /**

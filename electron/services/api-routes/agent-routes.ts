@@ -332,10 +332,23 @@ function projectAgent(agent: AgentStatus) {
 }
 
 /** Project path of the calling agent, injected as a header by the MCP client
- *  from its PTY environment. Absent for the UI and other local callers. */
+ *  from its PTY environment. Absent for the UI and other local callers.
+ *
+ *  Two names on purpose. The MCP client was renamed to send `X-Tars-Caller-*`
+ *  while this reader still expected `x-dorothy-caller-project`; the bundles on
+ *  disk predate the rename, so it worked by accident and would have broken the
+ *  moment anyone rebuilt them - project scoping would have silently switched
+ *  off, and every guarded route would 403. Accepting both is what makes the
+ *  rename safe in either order. The old name can go once no shipped bundle
+ *  sends it. */
+function callerHeader(req: RouteRequest, suffix: 'project' | 'id'): string | undefined {
+  const headers = req.raw?.headers;
+  const value = headers?.[`x-tars-caller-${suffix}`] ?? headers?.[`x-dorothy-caller-${suffix}`];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
 function callerProject(req: RouteRequest): string | undefined {
-  const h = req.raw?.headers?.['x-dorothy-caller-project'];
-  return typeof h === 'string' && h.length > 0 ? h : undefined;
+  return callerHeader(req, 'project');
 }
 
 /**
@@ -755,7 +768,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     agent.status = 'running';
     agent.currentTask = task.slice(0, 100);
     agent.lastActivity = new Date().toISOString();
-    ctx.agentStatusEmitter.emit('status', { agentId: agent.id, status: 'running' });
+    // Per-agent channel, not a bare 'status': /wait subscribes with
+    // `status:${agentId}` (see the .on below), so an emit on 'status' reached
+    // nobody and a caller waiting on this agent hung until its timeout.
+    ctx.agentStatusEmitter.emit(`status:${agent.id}`);
 
     const result = await delegateOverAcp({
       agent,
@@ -769,7 +785,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     agent.lastActivity = new Date().toISOString();
     if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
     saveAgents();
-    ctx.agentStatusEmitter.emit('status', { agentId: agent.id, status: agent.status });
+    ctx.agentStatusEmitter.emit(`status:${agent.id}`);
 
     sendJson(result, result.ok ? 200 : 502);
   });
