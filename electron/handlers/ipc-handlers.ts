@@ -19,6 +19,7 @@ import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentPro
 import { buildFullPath } from '../utils/path-builder';
 import { decodeProjectPath } from '../utils/decode-project-path';
 import { resolveWorktreePath } from '../utils/worktree-path';
+import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput } from '../core/agent-manager';
@@ -102,7 +103,10 @@ function readCustomProjects(): string[] {
 
 function writeCustomProjects(list: string[]): void {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(CUSTOM_PROJECTS_FILE, JSON.stringify(Array.from(new Set(list)), null, 2));
+  // Atomic: a crash between truncate and write left an unparseable file, and
+  // the reader above silently returns [] for that - the user's project list
+  // just disappears.
+  writeAtomicSync(CUSTOM_PROJECTS_FILE, JSON.stringify(Array.from(new Set(list)), null, 2));
 }
 
 export function registerIpcHandlers(deps: IpcHandlerDependencies): void {

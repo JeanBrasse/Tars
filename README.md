@@ -1,198 +1,4 @@
-# Tars
-
-![Tars](screenshots/background-2.png)
-
-A beautiful desktop app to orchestrate your [Claude Code](https://claude.ai/code) ,[Codex](https://chatgpt.com/codex), [Gemini](https://geminicli.com/), [Grok](https://x.ai/cli) and local agents. Deploy, monitor, and debug — all from one delightful interface. Free and open source.
-
-![Tars Dashboard](screenshots/0.png)
-
-## Table of Contents
-
-- [Why Tars](#why-tars)
-- [Core Features](#core-features)
-- [Delegation over ACP](#delegation-over-acp)
-- [External Scheduling (Hermes webhook)](#external-scheduling-hermes-webhook)
-- [Memory & Brain](#memory--brain)
-- [Kanban Task Management](#kanban-task-management)
-- [Remote Control](#remote-control)
-- [Vault](#vault)
-- [SocialData (Twitter/X)](#socialdata-twitterx)
-- [Google Workspace](#google-workspace)
-- [MCP Servers & Tools](#mcp-servers--tools)
-- [Installation](#installation)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Tech Stack](#tech-stack)
-- [Configuration & Storage](#configuration--storage)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## Why Tars
-
-An AI coding CLI runs one agent, in one terminal. Tars runs a team of them, and
-does it the same way whichever CLI each one happens to be:
-
-- **Many agents at once**, each in its own PTY, across projects and worktrees
-- **Delegation with a receipt** — tasks run over the Agent Client Protocol, so a
-  delegated task returns its answer, why the turn ended, the tools it used and
-  what it cost, on Claude Code, Codex, Gemini, Grok, opencode or pi alike
-- **One memory for all of them** — project notes, session observations, your
-  Hermes gateway, gbrain and Honcho, reachable from every CLI
-- **Prices and models that stay current** — read from a live catalogue, not from
-  a table baked into the release
-- **Review and Logs** — what each agent changed, and one search across the fleet
-- **Driven by Hermes** — its cron jobs and its kanban board, from here
-- **Control from anywhere** — Telegram and Slack for remote management
-
----
-
-## Core Features
-
-### Parallel Agent Management
-
-Run multiple agents simultaneously, each in its own isolated PTY terminal session. Agents operate independently across different projects, codebases, and tasks.
-
-![Agents View](screenshots/agetns.png)
-
-**Capabilities:**
-- Spawn unlimited concurrent agents across multiple projects
-- Each agent runs in an isolated terminal with full PTY support
-- Assign skills, model selection (sonnet, opus, haiku), and project context per agent
-- Send interactive input to any running agent in real-time
-- Real-time terminal output streaming per agent
-- Agent lifecycle management: `idle` → `running` → `completed` / `error` / `waiting`
-- Secondary project paths via `--add-dir` for multi-repo context
-- Git worktree support for branch-isolated development
-- Persistent agent state across app restarts
-- Autonomous execution mode (`--dangerously-skip-permissions`) for unattended operation
-
-### Super Agent (Orchestrator)
-
-A meta-agent that drives the others. Give it a high-level task and it delegates,
-monitors and coordinates across your agent pool.
-
-![Super Agent](screenshots/super-agent.png)
-
-- Creates, starts and stops agents through MCP tools
-- **Delegates over ACP** — `session/prompt` returns a stop reason, the agent's
-  text, its tool calls and the turn's token usage, instead of typing into a
-  terminal and hoping. Falls back to terminal dispatch for CLIs with no ACP mode
-- **Cannot edit files itself** — file-editing tools are refused through the
-  protocol's own permission request, so the rule holds on every CLI rather than
-  only where a Claude-specific flag exists
-- Scoped to its own project: a call from an agent with no identity is refused
-  rather than allowed to reach every project
-- Responds to Telegram and Slack for remote orchestration
-
-### Usage Tracking
-
-What your agents cost, per provider and per model.
-
-![Usage Stats](screenshots/stats.png)
-
-Two sources, because no single one covers every CLI. Claude Code writes
-transcripts, so its usage is reconstructed from them — deduplicated by message
-and request id, because resuming a session copies earlier messages forward and
-counting those twice would double every figure. Every other CLI is counted from
-the turns it reports back over ACP, which is the only place that usage exists.
-
-Prices come from the live catalogue, so a price change lands without an update.
-**Budget & limits** shows each provider the limit it actually has: quota windows
-for a subscription, spend against a budget for pay-as-you-go, and nothing at all
-for a local model, which is not metered.
-
-### Skills & Plugin System
-
-Extend agent capabilities with skills from [skills.sh](https://skills.sh) and the built-in plugin marketplace.
-
-![Skills Management](screenshots/skills.png)
-
-- **Code Intelligence**: LSP plugins for TypeScript, Python, Rust, Go, and more
-- **External Integrations**: GitHub, GitLab, Jira, Figma, Slack, Vercel
-- **Development Workflows**: Commit commands, PR review tools
-- Install skills per-agent for specialized task handling
-
-### Settings Management
-
-Configure Claude Code settings directly — permissions, environment variables, hooks, and model defaults.
-
----
-
-### Review
-
-What each agent actually changed: the files it touched with their line counts,
-and the patch itself. Compared against the branch the worktree was cut from
-rather than against its own remote copy, and untracked files are included —
-which is most of what a fresh agent produces.
-
-### Logs
-
-One search across every agent's retained output, attributed to the agent and
-branch that produced it. A plain substring works; wrap the query in slashes for
-a regex.
-
-### Schedules
-
-Your Hermes cron jobs: every profile in one list, with run-now, pause, resume
-and delete. Hermes owns the scheduler — nothing is scheduled here.
-
----
-
-## Delegation over ACP
-
-Tars speaks the [Agent Client Protocol](https://agentclientprotocol.com) as a
-client: JSON-RPC over stdio to an agent subprocess. That is what makes the same
-orchestration work across CLIs that share nothing else.
-
-```
-initialize                 → protocol version, agent capabilities
-session/new  { cwd, mcpServers }   → Tars injects its own MCP servers here
-session/set_mode           → who arbitrates permissions
-session/prompt             → returns { stopReason, usage }
-  ← session/update         → agent_message_chunk, tool_call, plan, usage_update
-  ← session/request_permission → Tars answers, so a deny list holds everywhere
-```
-
-Launch commands come from the public ACP registry rather than being hardcoded,
-and are cached for a day. Providers with no ACP mode fall back to terminal
-dispatch, so nothing that worked stops working.
-
----
-
-## External Scheduling (Hermes webhook)
-
-Tars deliberately has no built-in scheduler. Recurring jobs live in an
-external agent (e.g. a self-hosted [Hermes Agent](https://hermes-agent.nousresearch.com/)
-instance) whose cron jobs call Tars's webhook to drive agents:
-
-```
-POST http://<dorothy-host>:31415/api/webhooks/hermes
-Authorization: Bearer <contents of ~/.dorothy/api-token>
-{
-  "agent_name": "QA — myproject",   // or "agent_id"
-  "project_path": "/path/to/project", // narrows agent_name when ambiguous
-  "message": "Run the full test suite and report failures",
-  "model": "claude-sonnet-5",         // optional
-  "permission_mode": "auto"           // optional
-}
-```
-
-The webhook shares the atomic dispatch used internally: it messages a live
-session or spawns a fresh one, and refuses (409) when the agent is blocked
-on a permission dialog. Poll `GET /api/agents/:id` for status/output.
-
-If the scheduler runs on another machine (a VPS), expose the localhost-bound
-API with a tunnel, e.g. `tailscale serve 31415` on the Tars machine.
-
-## Memory & Brain
-
-One memory, five sources, reachable from every CLI — not just the ones that
-share Claude's config directory.
-
-| Source | What it is | How agents reach it |
+# 5 | Source | What it is | How agents reach it |
 |---|---|---|
 | Project memory | `~/.claude/projects/*/memory/*.md` | digest at session start, `memory_read` |
 | Session observations | per-project ledger in `~/.dorothy/observations/` | digest at session start |
@@ -220,7 +26,7 @@ answered, and it lists the tools each backend offers.
 
 A task board integrated with the agent system. Tasks flow through columns and can be automatically assigned to agents based on skill matching.
 
-![Kanban Board](screenshots/kanban.png)
+![The board. Hermes runs the work; the local board is for projects without a gateway](screenshots/kanban.png)
 
 ### Workflow
 
@@ -307,7 +113,7 @@ Same capabilities as Telegram, accessible via @mentions or direct messages.
 
 A persistent document storage system that agents can read, write, and search across sessions. Use it as a shared knowledge base — agents store reports, analyses, research findings, and structured notes that any other agent can access later.
 
-![Vault](screenshots/vault.png)
+![The vault: documents your agents can read and write](screenshots/vault.png)
 
 ### Features
 
@@ -609,17 +415,20 @@ tars/
 │   │   └── gws-handlers.ts       # Google Workspace integration
 ├── mcp-orchestrator/              # MCP server (orchestration)
 │   └── src/tools/
-│       ├── agents.ts              # Agent management tools (9)
-│       ├── messaging.ts           # Telegram/Slack tools (2)
+│       ├── agents.ts              # Agent management tools
 │       └── messaging.ts           # Telegram/Slack tools
+├── mcp-memory/                    # MCP server (the five memory sources)
+│   └── src/index.ts               # search, read, write, sources
 ├── mcp-telegram/                  # MCP server (Telegram media)
-│   └── src/index.ts               # Text, photo, video, document (4)
+│   └── src/index.ts               # Text, photo, video, document
 ├── mcp-kanban/                    # MCP server (task management)
-│   └── src/index.ts               # Kanban CRUD tools (8)
+│   └── src/index.ts               # Kanban CRUD tools
 ├── mcp-vault/                     # MCP server (document management)
-│   └── src/index.ts               # Vault CRUD + search tools (10)
+│   └── src/index.ts               # Vault CRUD + search tools
 ├── mcp-socialdata/                # MCP server (Twitter/X data)
-│   └── src/index.ts               # Twitter search + user tools (5)
+│   └── src/index.ts               # Twitter search + user tools
+├── mcp-x/                         # MCP server (posting to X)
+│   └── src/index.ts               # post, reply, delete
 └── landing/                       # Marketing landing page
 ```
 
@@ -631,12 +440,12 @@ tars/
 |----------|-----------|---------|
 | **Framework** | Next.js (App Router) | 16 |
 | **Frontend** | React | 19 |
-| **Desktop** | Electron | 33 |
+| **Desktop** | Electron | 43 |
 | **Styling** | Tailwind CSS | 4 |
 | **State** | Zustand | 5 |
 | **Animations** | Framer Motion | 12 |
 | **Terminal** | xterm.js + node-pty | 5 / 1.1 |
-| **Database** | better-sqlite3 | 11 |
+| **Database** | better-sqlite3 | 13 |
 | **MCP** | @modelcontextprotocol/sdk | 1.0 |
 | **Telegram** | node-telegram-bot-api | 0.67 |
 | **Slack** | @slack/bolt | 4.0 |

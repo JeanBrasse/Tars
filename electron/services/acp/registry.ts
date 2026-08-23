@@ -38,7 +38,13 @@ const PROVIDER_TO_ACP: Partial<Record<AgentProvider, string>> = {
   gemini: 'gemini',
   grok: 'grok',
   opencode: 'opencode',
-  pi: 'pi',
+  // `pi` was mapped to an agent id that exists in neither FALLBACK nor
+  // ALLOWED_PACKAGES, so providerSupportsAcp('pi') answered true and then every
+  // launch attempt failed - opaquely if the registry was unreachable, and
+  // rejected by the allowlist if it was not. Saying no here is the truth: pi
+  // delegates over the PTY path, like the other CLIs with no ACP mode. Map it
+  // back the day upstream ships one, and add its package to ALLOWED_PACKAGES
+  // in the same commit.
 };
 
 /**
