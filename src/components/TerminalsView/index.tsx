@@ -239,8 +239,19 @@ export default function TerminalsView() {
   });
 
   // Handler callbacks
+  // The main process refuses to start an agent whose folder is gone. That
+  // rejection has to reach the screen: it used to be an unhandled promise, so
+  // the click looked like it had worked and nothing happened.
+  const [startError, setStartError] = useState<string | null>(null);
   const handleStartAgent = useCallback(async (agentId: string) => {
-    await startAgent(agentId, '', { resume: true });
+    setStartError(null);
+    try {
+      await startAgent(agentId, '', { resume: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // IPC wraps the main-process message; keep only the part worth reading.
+      setStartError(message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, ''));
+    }
   }, [startAgent]);
 
   const handleStopAgent = useCallback(async (agentId: string) => {
@@ -475,6 +486,23 @@ export default function TerminalsView() {
             }
           }}
         />
+
+        {/* A start that was refused. The main process explains why - a folder
+            that no longer exists is the common one - and this is the only place
+            the user would ever see it. */}
+        {startError && (
+          <div className="mt-2 flex items-center gap-3 border border-danger/40 bg-danger-muted px-3 py-2">
+            <span className="w-1.5 h-1.5 bg-danger shrink-0" />
+            <p className="flex-1 text-xs text-foreground">{startError}</p>
+            <button
+              type="button"
+              onClick={() => setStartError(null)}
+              className="font-mono text-[11px] lowercase text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              dismiss
+            </button>
+          </div>
+        )}
 
         {/* Terminal grid - takes full space, relative for sidebar panel */}
         <div className="flex-1 min-h-0 relative mt-2">

@@ -33,6 +33,25 @@ interface CronJob {
   profile_name?: string;
 }
 
+/**
+ * Hermes is another system, and its date fields are whatever that system
+ * happens to send: an ISO string, a unix timestamp in seconds, a null. Feeding
+ * an unexpected one straight to `new Date(...).toLocaleString()` renders
+ * "Invalid Date" at best; the point here is that one odd row must not be able
+ * to take the page down with it.
+ */
+function formatNext(next: unknown): string {
+  if (next === null || next === undefined || next === '') return '';
+  try {
+    const value = typeof next === 'number' && next < 1e12 ? next * 1000 : next as string | number;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return ` · next ${date.toLocaleString()}`;
+  } catch {
+    return '';
+  }
+}
+
 function asJobs(payload: unknown): CronJob[] {
   if (Array.isArray(payload)) return payload as CronJob[];
   if (payload && typeof payload === 'object') {
@@ -160,7 +179,7 @@ export default function CronsPage() {
                   </div>
                   <p className="font-mono text-[11px] text-muted-foreground mt-0.5 truncate">
                     {job.schedule_human || job.schedule || 'no schedule'}
-                    {next ? ` · next ${new Date(next).toLocaleString()}` : ''}
+                    {formatNext(next)}
                     {job.last_status ? ` · last ${job.last_status}` : ''}
                   </p>
                   {(job.prompt || job.command) && (

@@ -363,8 +363,25 @@ export default function UsagePage() {
       });
       map.set(day.date, dayCost);
     });
+
+    // Fold in Tars' own ledger. It is the only record of the turns the Claude
+    // transcripts never see - every non-Claude CLI, and anything run over ACP -
+    // so a day can have real spend and no transcript at all.
+    //
+    // This is what made the chart and the "latest day" card disagree: the card
+    // fell back to the ledger when the transcript total was 0 (and silently
+    // moved to whatever day the ledger last had), while the chart stayed on the
+    // transcripts. Hovering a bar and reading the card gave two numbers for two
+    // different days from two different sources. One map now, one number.
+    const ledger = data?.tokenStats?.dailyCosts;
+    if (ledger) {
+      for (const [date, entry] of Object.entries(ledger)) {
+        const extra = entry?.extraCost ?? 0;
+        if (extra > 0) map.set(date, (map.get(date) ?? 0) + extra);
+      }
+    }
     return map;
-  }, [data?.stats?.dailyModelTokens, costPerTokenByModel]);
+  }, [data?.stats?.dailyModelTokens, data?.tokenStats?.dailyCosts, costPerTokenByModel]);
 
   // Calculate cost breakdown by model
   const modelCostBreakdown = useMemo(() => {
@@ -494,19 +511,19 @@ export default function UsagePage() {
 
   // Latest day: the reconstructed per-day map first, then Tars' own ledger of
   // extra usage, which is the only record for the days the transcripts miss.
+  // The same map the chart is drawn from, so the card and the bar you hover
+  // over always agree. If the anchor day has nothing, fall back to the most
+  // recent day that does - and say which day that is, rather than showing one
+  // date's number under another date's label.
   let latestDayCost = todayCost;
   let latestDayLabel = latestDataDate ?? 'no data';
-  let latestDayIsExtra = false;
-  if (latestDayCost === 0 && data?.tokenStats?.dailyCosts) {
-    const days = Object.keys(data.tokenStats.dailyCosts).sort();
-    if (days.length > 0) {
-      const latest = days[days.length - 1];
-      const dc = data.tokenStats.dailyCosts[latest];
-      if (dc.extraCost > 0) {
-        latestDayCost = dc.extraCost;
-        latestDayLabel = latest;
-        latestDayIsExtra = true;
-      }
+  const latestDayIsExtra = false;
+  if (latestDayCost === 0 && dailyCostMap.size > 0) {
+    const spentDays = [...dailyCostMap.entries()].filter(([, c]) => c > 0).sort(([a], [b]) => a.localeCompare(b));
+    const last = spentDays[spentDays.length - 1];
+    if (last) {
+      latestDayCost = last[1];
+      latestDayLabel = last[0];
     }
   }
 

@@ -33,6 +33,11 @@ interface ConnectionInfo {
   serveCommand: string;
 }
 
+const AUTH_MODES = [
+  { value: 'token' as const, label: 'Token' },
+  { value: 'oauth' as const, label: 'OAuth' },
+];
+
 export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionProps) => {
   const [info, setInfo] = useState<ConnectionInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -267,24 +272,32 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       {typedUrl && (
         <SettingsRow
           label="Auth"
-          description="A session token, or the gateway's own sign-in."
+          description={
+            (conn.authMode || 'token') === 'oauth'
+              ? "The gateway's own sign-in. Use the row below."
+              : 'A static session token, sent as X-Hermes-Session-Token.'
+          }
           control={
-            <div className="flex items-center gap-2 w-full">
-              <Select
-                className="w-[110px] shrink-0"
-                value={conn.authMode || 'token'}
-                onChange={e => patchConn({ authMode: e.target.value as 'token' | 'oauth' })}
-              >
-                <option value="token">Token</option>
-                <option value="oauth">OAuth</option>
-              </Select>
-              <PasswordInput
-                className="min-w-0 flex-1"
-                value={conn.token || ''}
-                onChange={e => patchConn({ token: e.target.value })}
-                placeholder="X-Hermes-Session-Token"
-                disabled={(conn.authMode || 'token') !== 'token'}
+            <div className="flex items-center gap-2 w-full justify-end">
+              {/* Two mutually exclusive choices, so a segmented control - not a
+                  dropdown you have to open to see what the other option is. */}
+              <SegmentedControl
+                options={AUTH_MODES}
+                value={(conn.authMode || 'token') as 'token' | 'oauth'}
+                onChange={value => patchConn({ authMode: value })}
+                ariaLabel="Hermes auth mode"
               />
+              {/* Only in token mode. Rendering it disabled under OAuth left a
+                  dead field with a `show` affordance next to it, which read as
+                  a broken button - OAuth has no static token to reveal. */}
+              {(conn.authMode || 'token') === 'token' && (
+                <PasswordInput
+                  className="min-w-0 flex-1"
+                  value={conn.token || ''}
+                  onChange={e => patchConn({ token: e.target.value })}
+                  placeholder="X-Hermes-Session-Token"
+                />
+              )}
             </div>
           }
         />

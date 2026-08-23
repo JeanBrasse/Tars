@@ -1,6 +1,10 @@
 import * as http from 'http';
 import * as https from 'https';
+import * as fs from 'fs';
+import * as path from 'path';
 import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
+import { DATA_DIR } from '../constants';
+import { writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * Minimal Hermes gateway client.
@@ -24,7 +28,53 @@ interface HermesResponse {
   setCookies: string[];
 }
 
+/**
+ * Where the session lives between runs.
+ *
+ * The jar used to be memory-only, so signing in lasted exactly as long as the
+ * process: every relaunch - and every crash - came back signed out, with the
+ * Kanban and Schedules pages showing "Unauthorized" for a gateway the user had
+ * authenticated against days ago. hermes-connection.json holds the URL and the
+ * auth mode but deliberately never held the cookies, so nothing on disk could
+ * restore the session.
+ *
+ * It is a credential, so it gets the same 0600 atomic write as api-token, and
+ * it stays in the main process - `hermesRequest` reads it, the renderer has no
+ * channel that returns it.
+ */
+const SESSION_FILE = path.join(DATA_DIR, 'hermes-session.json');
+
 const cookieJars = new Map<string, Map<string, string>>();
+
+function loadJars(): void {
+  try {
+    if (!fs.existsSync(SESSION_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')) as Record<string, Record<string, string>>;
+    for (const [baseUrl, cookies] of Object.entries(raw)) {
+      if (cookies && typeof cookies === 'object') {
+        cookieJars.set(baseUrl, new Map(Object.entries(cookies)));
+      }
+    }
+  } catch (err) {
+    // A corrupt session file must not stop the app booting - the worst case is
+    // one sign-in.
+    console.error('[hermes] could not restore the session jar:', err);
+  }
+}
+
+function persistJars(): void {
+  try {
+    const plain: Record<string, Record<string, string>> = {};
+    for (const [baseUrl, jar] of cookieJars) {
+      if (jar.size > 0) plain[baseUrl] = Object.fromEntries(jar);
+    }
+    writeSecretFileSync(SESSION_FILE, JSON.stringify(plain, null, 2));
+  } catch (err) {
+    console.error('[hermes] could not persist the session jar:', err);
+  }
+}
+
+loadJars();
 
 function jarFor(baseUrl: string): Map<string, string> {
   let jar = cookieJars.get(baseUrl);
@@ -50,10 +100,12 @@ function storeCookies(baseUrl: string, setCookies: string[]): void {
     if (!value) jar.delete(name);
     else jar.set(name, value);
   }
+  persistJars();
 }
 
 export function clearHermesSession(baseUrl: string): void {
   cookieJars.delete(baseUrl);
+  persistJars();
 }
 
 export function hasHermesSession(baseUrl: string): boolean {
