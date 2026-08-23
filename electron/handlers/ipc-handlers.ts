@@ -499,6 +499,30 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const agent = agents.get(id);
     if (!agent) throw new Error('Agent not found');
 
+    // The directory has to exist before anything else happens. Without this we
+    // spawned a PTY, built the whole CLI command and wrote
+    // `cd '<gone>' && claude ...` into it - bash printed "No such file or
+    // directory", the && short-circuited, and the user was left looking at a
+    // shell prompt with no indication that anything had failed. Projects do get
+    // moved and deleted, so this is a normal state, not a corrupt one.
+    const startDir = agent.worktreePath || agent.projectPath;
+    if (!fs.existsSync(startDir)) {
+      agent.pathMissing = true;
+      agent.status = 'error';
+      agent.currentTask = `Folder not found: ${startDir}`;
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      broadcastToAllWindows('agent:status', {
+        type: 'status', agentId: id, status: 'error', timestamp: agent.lastActivity,
+      });
+      scheduleTick();
+      throw new Error(
+        `${agent.name || id} cannot start: its folder ${startDir} no longer exists. ` +
+        `Point the agent at another folder in its settings, or delete it.`,
+      );
+    }
+    agent.pathMissing = false;
+
     // Validate model name from options to prevent shell injection
     if (options?.model && !/^[a-zA-Z0-9._\-\/:@]+$/.test(options.model)) {
       throw new Error(`Invalid model name: ${options.model}`);
