@@ -183,7 +183,7 @@ export default function GitPanel({ projectPath, className = '', hideHeader = fal
   }, [loadGitData]);
 
   return (
-    <div className={`flex flex-col bg-[#0d0d14] overflow-hidden ${className}`}>
+    <div className={`flex flex-col bg-term-bg overflow-hidden ${className}`}>
       {/* Header - hidden when embedded in accordion */}
       {!hideHeader && (
         <div className="px-3 py-2 border-b border-border-primary bg-bg-tertiary/30 flex items-center justify-between shrink-0">

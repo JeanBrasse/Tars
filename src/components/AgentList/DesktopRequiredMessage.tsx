@@ -16,7 +16,7 @@ export function DesktopRequiredMessage() {
         <div className="space-y-3">
           <div className="p-4 rounded-none bg-bg-tertiary border border-border-primary">
             <p className="text-sm font-medium mb-2">To run the desktop app:</p>
-            <code className="block p-2 rounded bg-[#0d0e12] text-primary text-xs font-mono">
+            <code className="block p-2 rounded bg-term-bg text-primary text-xs font-mono">
               npm run electron:dev
             </code>
           </div>
