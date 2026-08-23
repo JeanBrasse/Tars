@@ -4,6 +4,14 @@ import * as os from 'os';
 // Overridable so an E2E-sandboxed instance can run beside the real app
 export const API_PORT = Number(process.env.DOROTHY_API_PORT) || 31415;
 
+/**
+ * Loopback-only port for the Venice AI translation shim (see
+ * services/venice-shim.ts for why it exists and why it is a separate server
+ * rather than a route on the main API server). Derived from API_PORT so a
+ * sandboxed or E2E instance running beside the real app never collides.
+ */
+export const VENICE_SHIM_PORT = API_PORT + 1;
+
 export const OLD_DATA_DIR = path.join(os.homedir(), '.claude-manager');
 
 /**

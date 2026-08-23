@@ -19,11 +19,13 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
     Promise.all([
       window.electronAPI?.cliPaths?.detect(),
       window.electronAPI?.appSettings?.get(),
-    ]).then(([paths, settings]) => {
+      window.electronAPI?.ollama?.test(),
+    ]).then(([paths, settings, ollama]) => {
       if (paths || settings) {
         setInstalledProviders(computeProviderAvailability(
           paths as Record<string, string | undefined> | undefined,
           settings,
+          ollama?.reachable,
         ));
       }
     });

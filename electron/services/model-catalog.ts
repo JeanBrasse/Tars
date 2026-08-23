@@ -68,6 +68,12 @@ const PROVIDER_KEYS: Record<string, string> = {
   nvidia: 'nvidia',
   opencode: 'opencode',
   qwencode: 'alibaba',
+  venice: 'venice',
+  // No 'ollama' entry: models.dev catalogues hosted vendors, and Ollama's
+  // catalogue is whatever the user has pulled onto their own machine. There
+  // is an 'ollama-cloud' key for Ollama's hosted offering, which is a
+  // different product Tars does not talk to. The built-in list in
+  // ollama-provider.ts is the floor, permanently, not just until this syncs.
 };
 
 /** Prices of last resort, used only when the catalogue is unreachable and no

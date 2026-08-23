@@ -15,6 +15,8 @@ import { ZhipuProvider } from './zhipu-provider';
 import { MiniMaxProvider } from './minimax-provider';
 import { NvidiaProvider } from './nvidia-provider';
 import { NousPortalProvider } from './nous-portal-provider';
+import { OllamaProvider } from './ollama-provider';
+import { VeniceProvider } from './venice-provider';
 
 export type { CLIProvider } from './cli-provider';
 export type {
@@ -41,6 +43,8 @@ const providers: Record<string, CLIProvider> = {
   minimax: new MiniMaxProvider(),
   nvidia: new NvidiaProvider(),
   'nous-portal': new NousPortalProvider(),
+  ollama: new OllamaProvider(),
+  venice: new VeniceProvider(),
 };
 
 /**

@@ -20,6 +20,8 @@ export type ProviderIconDef =
   | { type: 'svg-minimax' }
   | { type: 'svg-nvidia' }
   | { type: 'svg-nous' }
+  | { type: 'svg-ollama' }
+  | { type: 'svg-venice' }
   | { type: 'text'; content: string }
   | { type: 'cpu' };
 
@@ -263,6 +265,39 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     ],
     defaultModel: 'nous/hermes-3-llama-3.1-405b',
   },
+  {
+    id: 'ollama',
+    label: 'Ollama',
+    icon: { type: 'svg-ollama' },
+    accent: 'foreground',
+    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
+    // Not a CLI binary, but "not installed" is exactly the right word for
+    // "the local server isn't answering" - see computeProviderAvailability.
+    requiresCli: true,
+    models: [
+      { id: 'llama3.3', name: 'Llama 3.3', description: 'Meta, locally hosted' },
+      { id: 'qwen2.5-coder', name: 'Qwen 2.5 Coder', description: 'Code-focused' },
+      { id: 'deepseek-r1', name: 'DeepSeek R1', description: 'Reasoning' },
+      { id: 'gpt-oss', name: 'GPT-OSS', description: 'OpenAI open weights' },
+    ],
+    defaultModel: 'llama3.3',
+  },
+  {
+    id: 'venice',
+    label: 'Venice AI',
+    icon: { type: 'svg-venice' },
+    accent: 'pink-500',
+    badgeClass: 'bg-pink-500/15 text-pink-600 dark:text-pink-400',
+    models: [
+      { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', description: 'Meta, balanced' },
+      { id: 'venice-uncensored-1-2', name: 'Venice Uncensored', description: 'Unfiltered' },
+      { id: 'deepseek-v3.2', name: 'DeepSeek V3.2', description: 'Flagship chat' },
+      { id: 'qwen3-235b-a22b-instruct-2507', name: 'Qwen3 235B', description: 'Large MoE' },
+      { id: 'hermes-3-llama-3.1-405b', name: 'Hermes 3 405B', description: 'Agentic' },
+      { id: 'mistral-small-3-2-24b-instruct', name: 'Mistral Small', description: 'Fast' },
+    ],
+    defaultModel: 'llama-3.3-70b',
+  },
 ];
 
 
@@ -278,6 +313,8 @@ interface ProviderAvailabilitySettings {
   zhipuApiKey?: string;
   minimaxEnabled?: boolean;
   minimaxApiKey?: string;
+  veniceEnabled?: boolean;
+  veniceApiKey?: string;
 }
 
 /**
@@ -287,11 +324,17 @@ interface ProviderAvailabilitySettings {
  * Semantics mirror the electron providers: deepseek/moonshot/zhipu/minimax
  * have documented Anthropic-compatible direct endpoints (own key or OpenRouter
  * fallback); qwen/mimo/nvidia/nous-portal have none and are reachable ONLY
- * through OpenRouter.
+ * through OpenRouter. Venice has no Anthropic-compatible endpoint AND is not
+ * on OpenRouter, so it needs its own key with no fallback (it goes through
+ * Tars's own translation shim, see electron/services/venice-shim.ts). Ollama
+ * is a local server: availability is "did the last reachability check
+ * answer", passed in by the caller rather than derived here, since that check
+ * is async and this function is not.
  */
 export function computeProviderAvailability(
   paths: Record<string, string | undefined> | null | undefined,
   settings: ProviderAvailabilitySettings | null | undefined,
+  ollamaReachable?: boolean,
 ): Record<string, boolean> {
   const viaOpenRouter = !!(settings?.openRouterEnabled && settings?.openRouterApiKey);
   return {
@@ -312,6 +355,8 @@ export function computeProviderAvailability(
     mimo: viaOpenRouter,
     nvidia: viaOpenRouter,
     'nous-portal': viaOpenRouter,
+    venice: !!(settings?.veniceEnabled && settings?.veniceApiKey),
+    ollama: ollamaReachable ?? false,
   };
 }
 

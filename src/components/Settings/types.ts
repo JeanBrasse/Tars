@@ -98,6 +98,9 @@ export interface AppSettings {
   nvidiaApiKey?: string;
   nousPortalEnabled?: boolean;
   nousPortalApiKey?: string;
+  veniceEnabled?: boolean;
+  veniceApiKey?: string;
+  ollamaBaseUrl?: string;
   notificationSounds?: {
     waiting?: string;
     complete?: string;

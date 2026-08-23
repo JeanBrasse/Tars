@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { Button, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge } from '@/components/ui';
+import { Button, Input, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge } from '@/components/ui';
 import type { AnyTone } from '@/components/ui';
 import { Toggle } from './Toggle';
 import { SettingsRow } from './SettingsRow';
@@ -70,6 +70,8 @@ const ConfigureButton = ({ open, onClick }: { open: boolean; onClick: () => void
   </Button>
 );
 
+const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
+
 export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: AIProvidersSectionProps) => {
   // One row at a time is open: the keys and model lists are reference material,
   // not a form you fill top to bottom.
@@ -77,6 +79,16 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
   const [cliProviders, setCliProviders] = useState<CLIProviderStatus[]>(
     CLI_BINARIES.map((cli) => ({ ...cli, version: null, loading: true })),
   );
+
+  // Ollama has no key to gate on: whether it's usable is whether the local
+  // server answers, so this is a live check, not a settings read.
+  const [ollamaStatus, setOllamaStatus] = useState<{ checking: boolean; reachable: boolean }>({ checking: true, reachable: false });
+  const checkOllama = useCallback(async () => {
+    setOllamaStatus({ checking: true, reachable: false });
+    const result = await window.electronAPI?.ollama?.test().catch(() => undefined);
+    setOllamaStatus({ checking: false, reachable: !!result?.reachable });
+  }, []);
+  useEffect(() => { checkOllama(); }, [checkOllama]);
 
   useEffect(() => {
     const detect = async () => {
@@ -201,6 +213,20 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       onKeyBlur: () => onSaveAppSettings({ minimaxApiKey: appSettings.minimaxApiKey }),
       models: ['minimax/minimax-m2', 'minimax/minimax-m1', 'minimax/minimax-01'],
     },
+    {
+      id: 'venice',
+      name: 'Venice AI',
+      detail: 'venice · openai-compatible only',
+      note: 'No Anthropic-compatible endpoint and not on OpenRouter: Tars translates locally, no fallback.',
+      docsUrl: 'https://venice.ai/api',
+      placeholder: 'vn_...',
+      enabled: !!appSettings.veniceEnabled,
+      onToggle: () => onSaveAppSettings({ veniceEnabled: !appSettings.veniceEnabled }),
+      apiKey: appSettings.veniceApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ veniceApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ veniceApiKey: appSettings.veniceApiKey }),
+      models: ['llama-3.3-70b', 'venice-uncensored-1-2', 'deepseek-v3.2', 'qwen3-235b-a22b-instruct-2507'],
+    },
   ];
 
   return (
@@ -310,6 +336,58 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
           </div>
         );
       })}
+
+      <div className="px-4 pt-4 pb-2">
+        <PanelCaption>LOCAL</PanelCaption>
+      </div>
+
+      <div>
+        <SettingsRow
+          label={
+            <ProviderLabel
+              name="Ollama"
+              status={ollamaStatus.checking ? 'checking' : ollamaStatus.reachable ? 'ready' : 'not running'}
+              tone={ollamaStatus.checking ? 'idle' : ollamaStatus.reachable ? 'running' : 'idle'}
+              on={ollamaStatus.reachable}
+            />
+          }
+          description={<span className="font-mono">{appSettings.ollamaBaseUrl || OLLAMA_DEFAULT_BASE_URL}</span>}
+          control={<ConfigureButton open={expanded === 'ollama'} onClick={() => toggleExpanded('ollama')} />}
+        />
+
+        {expanded === 'ollama' && (
+          <ConfigureArea>
+            <SettingsRow
+              label="Base URL"
+              description="No API key: Ollama is a local server, not a hosted vendor. Needs v0.14+ for its native Anthropic-compatible endpoint."
+              control={
+                <Input
+                  width="control"
+                  value={appSettings.ollamaBaseUrl ?? ''}
+                  onChange={(e) => onUpdateLocalSettings({ ollamaBaseUrl: e.target.value })}
+                  onBlur={() => onSaveAppSettings({ ollamaBaseUrl: appSettings.ollamaBaseUrl })}
+                  placeholder={OLLAMA_DEFAULT_BASE_URL}
+                />
+              }
+            />
+            <SettingsRow
+              label="Connection"
+              description="Checks whether the server answers, not whether any particular model is pulled."
+              control={
+                <Button size="sm" variant="ghost" onClick={checkOllama} disabled={ollamaStatus.checking}>
+                  {ollamaStatus.checking ? 'checking…' : 'test connection'}
+                </Button>
+              }
+            />
+            <div className="px-4 py-3 flex flex-wrap items-center gap-1.5">
+              {['llama3.3', 'qwen2.5-coder', 'deepseek-r1', 'gpt-oss'].map((m) => (
+                <MetaChip key={m}>{m}</MetaChip>
+              ))}
+              <span className="ml-auto font-mono text-[10.5px] text-muted-foreground">whatever you&apos;ve pulled works too</span>
+            </div>
+          </ConfigureArea>
+        )}
+      </div>
 
       <div className="px-4 pt-4 pb-2">
         <PanelCaption>API PROVIDERS</PanelCaption>

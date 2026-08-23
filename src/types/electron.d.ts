@@ -225,7 +225,9 @@ export type AgentProvider =
   | 'zhipu'
   | 'minimax'
   | 'nvidia'
-  | 'nous-portal';
+  | 'nous-portal'
+  | 'ollama'
+  | 'venice';
 
 export interface AgentStatus {
   id: string;
@@ -355,6 +357,68 @@ export interface TeamTemplate {
   createdAt: string;
   updatedAt: string;
 }
+
+// Overseer chat: mirrors electron/services/overseer.ts
+
+/** A proposed write to one agent. Never executed until confirmAction sends
+ *  it with approve:true - the main process re-resolves the target against
+ *  the live fleet immediately before writing, regardless of what this
+ *  object says. */
+export interface OverseerAction {
+  actionId: string;
+  agentId: string;
+  agentName: string;
+  projectPath: string;
+  provider: string;
+  model?: string;
+  pane: string;
+  text: string;
+  /** ISO timestamp of the resolution this action was built from. */
+  resolvedAt: string;
+}
+
+export interface OverseerMessage {
+  id: string;
+  role: 'user' | 'overseer';
+  text: string;
+  action: OverseerAction | null;
+  /** Set when this message is an unprompted watch-timer check-in rather
+   *  than a reply to something Noah asked. */
+  isBriefing?: boolean;
+  timestamp: string;
+}
+
+export interface OverseerFleetAgent {
+  id: string;
+  name: string;
+  projectPath: string;
+  worktreePath?: string;
+  branchName?: string;
+  provider: string;
+  model?: string;
+  status: string;
+  statusDurationMs: number;
+  recentOutput: string;
+  outputTruncated: boolean;
+}
+
+export interface OverseerFleetProject {
+  path: string;
+  branch: string;
+  dirty: boolean;
+  agentCount: number;
+}
+
+export interface OverseerFleetSnapshot {
+  takenAt: string;
+  agents: OverseerFleetAgent[];
+  projects: OverseerFleetProject[];
+  agentsOmitted: number;
+}
+
+export type OverseerAskResult =
+  | { ok: true; message: OverseerMessage }
+  | { ok: false; reason: 'not_configured' | 'gateway_unreachable' | 'needs_sign_in' | 'run_timeout' | 'busy' | 'error'; error: string };
 
 export interface TeamTemplateInput {
   name: string;
@@ -640,6 +704,9 @@ export interface ElectronAPI {
       nvidiaApiKey?: string;
       nousPortalEnabled?: boolean;
       nousPortalApiKey?: string;
+      veniceEnabled?: boolean;
+      veniceApiKey?: string;
+      ollamaBaseUrl?: string;
       notificationSounds?: {
         waiting?: string;
         complete?: string;
@@ -722,6 +789,9 @@ export interface ElectronAPI {
       memoryHonchoEnabled?: boolean;
       memoryHonchoMcpUrl?: string;
       memoryHonchoApiKey?: string;
+      veniceEnabled?: boolean;
+      veniceApiKey?: string;
+      ollamaBaseUrl?: string;
       favoriteProjects?: string[];
       hiddenProjects?: string[];
       defaultProjectPath?: string;
@@ -741,6 +811,12 @@ export interface ElectronAPI {
       };
     }) => Promise<{ success: boolean; error?: string }>;
     onUpdated?: (callback: (settings: unknown) => void) => () => void;
+  };
+
+  // Ollama (local LLM server): no API key, just a reachability check against
+  // its native Anthropic-compatible endpoint (Ollama v0.14+).
+  ollama?: {
+    test: () => Promise<{ reachable: boolean }>;
   };
 
   // Telegram bot
@@ -1068,8 +1144,11 @@ export interface ElectronAPI {
     cronUpdate: (params: { jobId: string; updates: Record<string, unknown>; profile?: string }) => Promise<{ success: boolean; job?: unknown; error?: string; needsSignIn?: boolean }>;
     cronDelete: (params: { jobId: string; profile?: string }) => Promise<{ success: boolean; error?: string }>;
     kanbanBoard: (params?: { board?: string }) => Promise<{ success: boolean; board?: unknown; error?: string; needsSignIn?: boolean }>;
-    kanbanCreateTask: (task: Record<string, unknown>) => Promise<{ success: boolean; task?: unknown; error?: string }>;
-    kanbanUpdateTask: (params: { taskId: string; patch: Record<string, unknown> }) => Promise<{ success: boolean; task?: unknown; error?: string }>;
+    kanbanGetTask: (params: { taskId: string }) => Promise<{ success: boolean; detail?: unknown; error?: string; needsSignIn?: boolean }>;
+    kanbanCreateTask: (task: Record<string, unknown>) => Promise<{ success: boolean; task?: unknown; error?: string; needsSignIn?: boolean }>;
+    kanbanUpdateTask: (params: { taskId: string; patch: Record<string, unknown> }) => Promise<{ success: boolean; task?: unknown; error?: string; needsSignIn?: boolean }>;
+    kanbanDeleteTask: (params: { taskId: string }) => Promise<{ success: boolean; error?: string; needsSignIn?: boolean }>;
+    kanbanAddComment: (params: { taskId: string; body: string }) => Promise<{ success: boolean; error?: string; needsSignIn?: boolean }>;
     getConnectionInfo: () => Promise<{
       apiPort: number;
       webhookPath: string;
@@ -1088,6 +1167,18 @@ export interface ElectronAPI {
     list: () => Promise<{ teams: TeamTemplate[]; error?: string }>;
     create: (input: TeamTemplateInput) => Promise<{ success: boolean; team?: TeamTemplate; error?: string }>;
     delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
+  // Overseer chat: Hermes watches every project's agents and reports back
+  overseer?: {
+    send: (message: string) => Promise<OverseerAskResult>;
+    history: () => Promise<{ messages: OverseerMessage[]; busy: boolean }>;
+    fleet: () => Promise<OverseerFleetSnapshot>;
+    confirmAction: (params: { action: OverseerAction; approve: boolean }) => Promise<{ success: boolean; error?: string; mode?: string }>;
+    pause: () => Promise<{ success: boolean; paused: boolean }>;
+    resume: () => Promise<{ success: boolean; paused: boolean }>;
+    watchStatus: () => Promise<{ paused: boolean }>;
+    onBriefing: (callback: (message: OverseerMessage) => void) => () => void;
   };
 
   // Updates
