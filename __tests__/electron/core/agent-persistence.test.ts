@@ -156,3 +156,53 @@ describe('autosave', () => {
     expect(fs.readFileSync(AGENTS_FILE, 'utf-8')).toContain('a2');
   });
 });
+
+describe('output rehydration', () => {
+  /**
+   * `output` is typed as a required string[], but nothing writes it to
+   * agents.json - it is runtime state. So every agent read back from disk
+   * arrived without it, and the eight consumers that trusted the type crashed
+   * on the first method call. fleetSummary's `agent.output.length` took the
+   * whole Logs page down for anyone who had agents and restarted the app.
+   */
+  it('gives every agent read from disk an output buffer', () => {
+    const onDisk = [
+      { id: 'p1', name: 'Persisted', status: 'idle', projectPath: tmp, provider: 'claude', skills: [] },
+      { id: 'p2', name: 'Also persisted', status: 'idle', projectPath: tmp, provider: 'codex', skills: [] },
+    ];
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify(onDisk));
+
+    manager.agents.clear();
+    manager.loadAgents();
+
+    for (const id of ['p1', 'p2']) {
+      const restored = manager.agents.get(id)!;
+      expect(Array.isArray(restored.output), id).toBe(true);
+      // The call that used to throw.
+      expect(() => restored.output.length).not.toThrow();
+      expect(restored.output.join('')).toBe('');
+    }
+  });
+
+  it('does not discard an output array that was persisted', () => {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify([
+      { id: 'p3', name: 'Has output', status: 'idle', projectPath: tmp, provider: 'claude', skills: [], output: ['kept\n'] },
+    ]));
+
+    manager.agents.clear();
+    manager.loadAgents();
+
+    expect(manager.agents.get('p3')!.output).toEqual(['kept\n']);
+  });
+
+  it('replaces a non-array output rather than trusting it', () => {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify([
+      { id: 'p4', name: 'Corrupt', status: 'idle', projectPath: tmp, provider: 'claude', skills: [], output: 'not an array' },
+    ]));
+
+    manager.agents.clear();
+    manager.loadAgents();
+
+    expect(manager.agents.get('p4')!.output).toEqual([]);
+  });
+});

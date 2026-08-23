@@ -1,26 +1,16 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import {
-  GitBranch,
-  Code2,
-  TerminalSquare,
-  Layers,
-  Settings2,
-  Loader2,
-  X,
-  Shield,
-  ShieldOff,
-  Bot,
-} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import type { PanelType } from './AgentDialogTypes';
-import { AgentDialogPanelHeader } from './AgentDialogPanelHeader';
 import { AgentDialogSecondaryProject } from './AgentDialogSecondaryProject';
+import { MetaChip, PanelCaption, SegmentedControl } from '@/components/ui';
+import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 
 const GitPanel = dynamic(() => import('./GitPanel'), {
   loading: () => (
     <div className="flex items-center justify-center h-full">
-      <Loader2 className="w-6 h-6 animate-spin text-warning" />
+      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
     </div>
   ),
 });
@@ -28,14 +18,27 @@ const GitPanel = dynamic(() => import('./GitPanel'), {
 const CodePanel = dynamic(() => import('./CodePanel'), {
   loading: () => (
     <div className="flex items-center justify-center h-full">
-      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
     </div>
   ),
 });
 
+/** The rail is three tabs, not five accordions. */
+type SidebarTab = 'git' | 'memory' | 'skills';
+
+/** Row action: 26px bordered lowercase mono, never an icon-only button (R7). */
+const RAIL_BUTTON =
+  'h-[26px] px-2 border border-border font-mono text-[11px] text-muted-foreground ' +
+  'hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-40';
+
 interface AgentDialogSidebarProps {
   agent: AgentStatus;
   projectPath: string;
+  /**
+   * Still owned by the dialog: `useQuickTerminal` spawns the PTY when
+   * `terminal` is in this set, so the shell affordance below toggles it
+   * instead of keeping a second copy of that state.
+   */
   expandedPanels: Set<PanelType>;
   onTogglePanel: (panel: PanelType) => void;
   // Git
@@ -60,27 +63,6 @@ interface AgentDialogSidebarProps {
   onSavePermissionMode: (value: 'normal' | 'auto' | 'bypass') => void;
 }
 
-function AccordionPanel({
-  expanded,
-  height,
-  children,
-}: {
-  expanded: boolean;
-  height: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="grid transition-[grid-template-rows] duration-200 ease-out"
-      style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-    >
-      <div className="overflow-hidden">
-        <div className={height}>{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export const AgentDialogSidebar = memo(function AgentDialogSidebar({
   agent,
   projectPath,
@@ -103,96 +85,86 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
   isSavingSettings,
   onSavePermissionMode,
 }: AgentDialogSidebarProps) {
+  const [tab, setTab] = useState<SidebarTab>('git');
+  const shellOpen = expandedPanels.has('terminal');
+
   return (
-    <div className="flex-1 overflow-y-auto">
-      {/* Code */}
-      <div className="border-b border-border-primary">
-        <AgentDialogPanelHeader
-          icon={Code2}
-          title="Code"
-          color="text-primary"
-          isExpanded={expandedPanels.has('code')}
-          onToggle={() => onTogglePanel('code')}
+    <div className="flex-1 min-h-0 flex flex-col">
+      {/* Tabs — one box per tab, the selected one boxed, never an accent fill (R2b) */}
+      <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
+        <SegmentedControl<SidebarTab>
+          ariaLabel="Agent rail"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'git', label: 'Git' },
+            {
+              value: 'memory',
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  Memory
+                  {hasSecondaryProject && <span className="w-1.5 h-1.5 bg-primary" />}
+                </span>
+              ),
+            },
+            { value: 'skills', label: 'Skills' },
+          ]}
         />
-        <AccordionPanel expanded={expandedPanels.has('code')} height="h-[250px]">
-          <CodePanel projectPath={projectPath} className="h-full" />
-        </AccordionPanel>
+        {tab === 'git' && gitBranch && <MetaChip>{gitBranch}</MetaChip>}
       </div>
 
-      {/* Git */}
-      <div className="border-b border-border-primary">
-        <AgentDialogPanelHeader
-          icon={GitBranch}
-          title="Git"
-          color="text-warning"
-          isExpanded={expandedPanels.has('git')}
-          badge={
-            gitBranch ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/20 text-warning font-mono">
-                {gitBranch}
-              </span>
-            ) : null
-          }
-          onToggle={() => onTogglePanel('git')}
-        />
-        <AccordionPanel expanded={expandedPanels.has('git')} height="h-[200px]">
+      {/* Git — working tree, with the quick shell on the same worktree beneath it.
+          Every tab body stays mounted so the terminal keeps its DOM node. */}
+      <div className={tab === 'git' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+        <div className="flex-1 min-h-0">
           <GitPanel projectPath={projectPath} className="h-full" hideHeader onBranchChange={onGitBranchChange} />
-        </AccordionPanel>
-      </div>
-
-      {/* Shell */}
-      <div className="border-b border-border-primary">
-        <AgentDialogPanelHeader
-          icon={TerminalSquare}
-          title="Shell"
-          color="text-primary"
-          isExpanded={expandedPanels.has('terminal')}
-          badge={
-            hasActiveTerminal && !expandedPanels.has('terminal') ? (
-              <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-            ) : null
-          }
-          onToggle={() => onTogglePanel('terminal')}
-        />
-        <AccordionPanel expanded={expandedPanels.has('terminal')} height="h-[180px] relative">
-          <div className="absolute top-1 right-1 z-10">
-            <button
-              onClick={onCloseQuickTerminal}
-              className="p-1 hover:bg-bg-tertiary rounded text-text-muted hover:text-accent-red transition-colors"
-              title="Close terminal (kills process)"
-            >
-              <X className="w-3 h-3" />
-            </button>
+        </div>
+        <div className="shrink-0 border-t border-border">
+          <div className="flex items-center justify-between gap-2 px-3 h-10">
+            <PanelCaption>SHELL</PanelCaption>
+            <div className="flex items-center gap-2">
+              {hasActiveTerminal && !shellOpen && (
+                <span className="font-mono text-[11px] text-status-running">running</span>
+              )}
+              {shellOpen ? (
+                <button
+                  onClick={onCloseQuickTerminal}
+                  className={RAIL_BUTTON}
+                  title="Close terminal (kills process)"
+                >
+                  close
+                </button>
+              ) : (
+                <button onClick={() => onTogglePanel('terminal')} className={RAIL_BUTTON}>
+                  open shell
+                </button>
+              )}
+            </div>
           </div>
-          <div
-            ref={quickTerminalRef}
-            className="absolute inset-0 bg-[#0f0f1a] p-1"
-            style={{ cursor: 'text' }}
-            onClick={() => quickXtermRef.current?.focus()}
-          />
-          {!quickTerminalReady && expandedPanels.has('terminal') && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#0f0f1a]">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          {shellOpen && (
+            <div className="relative h-[180px]">
+              <div
+                ref={quickTerminalRef}
+                className={`absolute inset-0 p-1 ${TERMINAL_SURFACE_CLASS}`}
+                style={{ cursor: 'text' }}
+                onClick={() => quickXtermRef.current?.focus()}
+              />
+              {!quickTerminalReady && (
+                <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
             </div>
           )}
-        </AccordionPanel>
+        </div>
       </div>
 
-      {/* Context */}
-      <div className="border-b border-border-primary">
-        <AgentDialogPanelHeader
-          icon={Layers}
-          title="Context"
-          color="text-warning"
-          isExpanded={expandedPanels.has('context')}
-          badge={
-            hasSecondaryProject ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/20 text-warning">+1</span>
-            ) : null
-          }
-          onToggle={() => onTogglePanel('context')}
-        />
-        <AccordionPanel expanded={expandedPanels.has('context')} height="">
+      {/* Memory — what the agent can see: this project's files, plus any extra context */}
+      <div className={tab === 'memory' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+        <div className="shrink-0 h-[250px] border-b border-border">
+          <CodePanel projectPath={projectPath} className="h-full" />
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <AgentDialogSecondaryProject
             agent={agent}
             availableProjects={availableProjects}
@@ -201,71 +173,55 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
             onSetSecondaryProject={onSetSecondaryProject}
             onBrowseFolder={onBrowseFolder}
           />
-        </AccordionPanel>
+        </div>
       </div>
 
-      {/* Settings */}
-      <div className="border-b border-border-primary">
-        <AgentDialogPanelHeader
-          icon={Settings2}
-          title="Settings"
-          color="text-muted-foreground"
-          isExpanded={expandedPanels.has('settings')}
-          badge={
-            editPermissionMode === 'bypass' ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-danger/20 text-danger">Bypass</span>
-            ) : editPermissionMode === 'auto' ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/20 text-warning">Auto</span>
-            ) : (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">Normal</span>
-            )
-          }
-          onToggle={() => onTogglePanel('settings')}
-        />
-        <AccordionPanel expanded={expandedPanels.has('settings')} height="">
-          <div className="p-3 space-y-4">
-            <div className="space-y-1.5">
-              <p className="text-xs text-text-muted font-medium mb-2">Permission Mode</p>
-              {([
-                { value: 'normal' as const, label: 'Normal', icon: <Shield className="w-3 h-3" />, color: 'text-primary', border: 'border-primary/40', bg: 'bg-primary/10' },
-                { value: 'auto'   as const, label: 'Auto',   icon: <Bot className="w-3 h-3" />,      color: 'text-warning', border: 'border-warning/40', bg: 'bg-warning/10' },
-                { value: 'bypass' as const, label: 'Bypass', icon: <ShieldOff className="w-3 h-3" />, color: 'text-danger',   border: 'border-danger/40',   bg: 'bg-danger/10' },
-              ] as const).map(({ value, label, icon, color, border, bg }) => (
-                <button
-                  key={value}
-                  onClick={() => onSavePermissionMode(value)}
-                  disabled={isSavingSettings}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs border transition-all ${
-                    editPermissionMode === value ? `${border} ${bg} ${color} font-medium` : 'border-border/40 text-text-muted hover:bg-secondary/50'
-                  } ${isSavingSettings ? 'opacity-50' : ''}`}
-                >
-                  {isSavingSettings && editPermissionMode === value
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : icon}
-                  {label}
-                </button>
-              ))}
-              <p className="text-[10px] text-text-muted mt-1">Changes take effect on the next task.</p>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-text-muted">Skills:</span>
-                <span>{agent.skills.length > 0 ? agent.skills.join(', ') : 'None'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-text-muted">Character:</span>
-                <span>{agent.character || 'robot'}</span>
-              </div>
-              {agent.branchName && (
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Branch:</span>
-                  <span className="font-mono text-accent-purple">{agent.branchName}</span>
-                </div>
-              )}
-            </div>
+      {/* Skills — what it is allowed to do, and what it was built with */}
+      <div className={tab === 'skills' ? 'flex-1 min-h-0 overflow-y-auto' : 'hidden'}>
+        <div className="p-3 space-y-4">
+          <div className="space-y-2">
+            <PanelCaption>PERMISSIONS</PanelCaption>
+            <SegmentedControl<'normal' | 'auto' | 'bypass'>
+              ariaLabel="Permission mode"
+              value={editPermissionMode}
+              onChange={onSavePermissionMode}
+              options={[
+                { value: 'normal', label: 'Manual', disabled: isSavingSettings },
+                { value: 'auto', label: 'Auto', disabled: isSavingSettings },
+                { value: 'bypass', label: 'Bypass', disabled: isSavingSettings },
+              ]}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {isSavingSettings ? 'Saving…' : 'Changes take effect on the next task.'}
+            </p>
           </div>
-        </AccordionPanel>
+
+          <div className="space-y-2">
+            <PanelCaption>SKILLS</PanelCaption>
+            {agent.skills.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {agent.skills.map(skill => (
+                  <MetaChip key={skill}>{skill}</MetaChip>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">None</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between gap-2">
+              <span className="text-muted-foreground">Character</span>
+              <span className="font-mono text-[11px]">{agent.character || 'robot'}</span>
+            </div>
+            {agent.branchName && (
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Branch</span>
+                <span className="font-mono text-[11px] truncate">{agent.branchName}</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

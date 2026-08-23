@@ -51,6 +51,26 @@ async function tryGit(cwd: string, args: string[]): Promise<string> {
   }
 }
 
+/**
+ * A ref name that git cannot mistake for an option.
+ *
+ * Every rev range here is interpolated as `${baseBranch}...HEAD`, which lands
+ * in an argv slot git still parses for options - `--` only protects the
+ * pathspec that comes after it. A "branch" of `--output=/somewhere/else` made
+ * `git diff --numstat --output=/somewhere/else...HEAD` write the patch to a
+ * file outside the repo. `fileDiff` guarded its path against a leading dash
+ * and left the base branch unguarded; both go through here now.
+ *
+ * The first character excludes `-` and `/` so no value can start an option,
+ * and the rest is the branch/remote alphabet (`origin/feat/x-1.2`).
+ */
+const SAFE_REF = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
+
+function assertSafeRef(ref: string): string {
+  if (!SAFE_REF.test(ref)) throw new Error(`invalid base branch: ${ref}`);
+  return ref;
+}
+
 function statusFromCode(code: string): ChangedFile['status'] {
   if (code.startsWith('A')) return 'added';
   if (code.startsWith('D')) return 'deleted';
@@ -73,8 +93,11 @@ async function detectBaseBranch(cwd: string, current: string): Promise<string | 
     if (exists.trim()) return candidate;
   }
 
+  // The upstream is repo-controlled: a .git/config with `[remote "-evil"]`
+  // makes this print `-evil/work`, which would reach the rev-range argv slot
+  // with no caller involved. An unusable name is the same as no base branch.
   const upstream = (await tryGit(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).trim();
-  if (upstream && !upstream.endsWith(`/${current}`)) return upstream;
+  if (upstream && SAFE_REF.test(upstream) && !upstream.endsWith(`/${current}`)) return upstream;
 
   return null;
 }
@@ -91,7 +114,10 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
   if (inside !== 'true') throw new Error('not a git repository');
 
   const branch = (await tryGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'HEAD';
-  const baseBranch = opts.baseBranch ?? await detectBaseBranch(repoPath, branch);
+  // A caller-supplied base is untrusted: it crosses IPC from the renderer.
+  const baseBranch = opts.baseBranch
+    ? assertSafeRef(opts.baseBranch)
+    : opts.baseBranch ?? await detectBaseBranch(repoPath, branch);
 
   let ahead = 0;
   let behind = 0;
@@ -189,6 +215,8 @@ function cap(patch: string): string {
 export async function fileDiff(repoPath: string, file: string, baseBranch?: string): Promise<string> {
   // A leading dash would be read as a flag rather than a path.
   if (file.startsWith('-')) throw new Error('invalid path');
+  // Same reason, for the value that is *not* behind the `--` separator.
+  if (baseBranch) assertSafeRef(baseBranch);
 
   const range = baseBranch ? [`${baseBranch}...HEAD`] : [];
   const committed = await tryGit(repoPath, ['diff', ...range, '--', file]);

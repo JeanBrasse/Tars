@@ -312,7 +312,7 @@ export default function MemoryPage() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] pt-[22px] overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] overflow-hidden">
 
       <PageHeader
         title="Brain"

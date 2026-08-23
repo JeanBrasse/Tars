@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   ClaudeSettings,
   ClaudeStats,
@@ -45,10 +45,15 @@ export function useClaude() {
   const [data, setData] = useState<ClaudeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const didInitialLoad = useRef(false);
 
   const fetchData = useCallback(async () => {
     try {
-      setLoading(true);
+      // Only the first load flips `loading`. Background poll ticks used to
+      // setLoading(true)/setLoading(false) every 10s, forcing two extra render
+      // passes of every consumer (unmemoized AgentManagementCards included)
+      // even when the data comparison below ended up returning `prev`.
+      if (!didInitialLoad.current) setLoading(true);
 
       // Use IPC in Electron, API in browser
       if (isElectron() && window.electronAPI?.claude?.getData) {
@@ -65,48 +70,55 @@ export function useClaude() {
           }
 
           const rawProjects = (result.projects || []) as ElectronProject[];
-          const transformedProjects = rawProjects.map((p) => ({
-            id: p.id,
-            name: p.name,
-            path: p.path,
-            sessions: (p.sessions || []).map(s => ({
-              id: s.id,
-              projectPath: p.path,
-              messages: [] as ClaudeMessage[],
-              startTime: new Date(s.timestamp),
-              lastActivity: new Date(s.timestamp),
-            })),
-            lastActivity: new Date(p.lastAccessed),
-          }));
+          const activeSessions = (result.activeSessions || []) as string[];
+          const rateLimits = (result.rateLimits || null) as RateLimits | null;
 
           // Only update if data actually changed to prevent unnecessary re-renders
           setData(prev => {
-            const newData = {
+            // The comparison runs against the *raw* IPC payload first. Building
+            // `transformedProjects` eagerly allocated one object plus two Date
+            // instances per session on every 10s tick, then threw them away
+            // whenever the comparison decided nothing had changed.
+            const unchanged =
+              !!prev &&
+              prev.projects.length === rawProjects.length &&
+              prev.activeSessions.length === activeSessions.length &&
+              // Check if any project changed
+              !rawProjects.some((p, i) => {
+                const prevP = prev.projects[i];
+                return prevP?.id !== p.id || prevP?.sessions.length !== (p.sessions || []).length;
+              }) &&
+              // Check if rateLimits changed
+              JSON.stringify(prev.rateLimits) === JSON.stringify(rateLimits);
+            // No significant changes
+            if (unchanged) return prev;
+
+            // Transform the raw projects only now that we know they are needed.
+            const transformedProjects = rawProjects.map((p) => ({
+              id: p.id,
+              name: p.name,
+              path: p.path,
+              sessions: (p.sessions || []).map(s => ({
+                id: s.id,
+                projectPath: p.path,
+                messages: [] as ClaudeMessage[],
+                startTime: new Date(s.timestamp),
+                lastActivity: new Date(s.timestamp),
+              })),
+              lastActivity: new Date(p.lastAccessed),
+            }));
+
+            return {
               settings: result.settings as ClaudeSettings | null,
               stats: result.stats as ClaudeStats | null,
               projects: transformedProjects,
               plugins: (result.plugins || []) as ClaudePlugin[],
               skills: (result.skills || []) as ClaudeSkill[],
               history: (result.history || []) as HistoryEntry[],
-              activeSessions: (result.activeSessions || []) as string[],
-              rateLimits: (result.rateLimits || null) as RateLimits | null,
+              activeSessions,
+              rateLimits,
               tokenStats: (result.tokenStats || null) as TokenStats | null,
             };
-            // Quick comparison - check if project count or active sessions changed
-            if (!prev) return newData;
-            if (prev.projects.length !== newData.projects.length) return newData;
-            if (prev.activeSessions.length !== newData.activeSessions.length) return newData;
-            // Check if any project changed
-            const projectsChanged = newData.projects.some((p, i) => {
-              const prevP = prev.projects[i];
-              return prevP?.id !== p.id || prevP?.sessions.length !== p.sessions.length;
-            });
-            if (projectsChanged) return newData;
-            // Check if rateLimits changed
-            const rlChanged = JSON.stringify(prev.rateLimits) !== JSON.stringify(newData.rateLimits);
-            if (rlChanged) return newData;
-            // No significant changes
-            return prev;
           });
           setError(null);
         } else {
@@ -128,15 +140,24 @@ export function useClaude() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
+      didInitialLoad.current = true;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchData();
-    // Poll every 10 seconds to reduce CPU usage
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    // Poll every 10 seconds to reduce CPU usage, and only while the window is
+    // visible: each tick drives claude:getData, which does blocking fs work on
+    // the Electron main process and stalls PTY output. Ungated, it kept running
+    // while the window sat behind another app. Same pattern as logs/crons.
+    const tick = () => { if (document.visibilityState === 'visible') fetchData(); };
+    const interval = setInterval(tick, 10000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', tick);
+    };
   }, [fetchData]);
 
   return { data, loading, error, refresh: fetchData };

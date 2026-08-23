@@ -52,7 +52,10 @@ function safeFit(agentId: string, entry: TerminalEntry) {
 export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, theme = 'dark', onTerminalReady, broadcastMode = false }: UseMultiTerminalOptions) {
   const terminalsRef = useRef<Map<string, TerminalEntry>>(new Map());
   const xtermModuleRef = useRef<{ Terminal: typeof Terminal; FitAddon: typeof FitAddon } | null>(null);
-  const initializingRef = useRef<Set<string>>(new Set());
+  // Keyed by container, not just agent id: a panel can unmount and remount into
+  // a fresh div while a previous init is still awaiting layout, and an agent-id
+  // key made the newer registration a no-op (blank panel forever).
+  const initializingRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const [fontSize, setFontSize] = useState(initialFontSize ?? DEFAULT_FONT_SIZE);
   const fitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const prevInitialFontSizeRef = useRef(initialFontSize);
@@ -89,14 +92,22 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   // Uses a ResizeObserver to wait for the container to have real dimensions
   // instead of giving up after a single retry.
   const initTerminal = useCallback(async (agentId: string, container: HTMLDivElement) => {
-    if (initializingRef.current.has(agentId)) return;
-    initializingRef.current.add(agentId);
+    if (initializingRef.current.get(agentId) === container) return;
+    initializingRef.current.set(agentId, container);
+
+    // True once a newer registration or an unregister superseded this run, or
+    // React detached the container. Publishing a terminal into terminalsRef
+    // after that is what left detached emulators consuming PTY output.
+    const superseded = () =>
+      initializingRef.current.get(agentId) !== container || !container.isConnected;
 
     try {
       const modules = await loadModules();
+      if (superseded()) return;
 
       // Wait for layout to settle so container has real dimensions
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (superseded()) return;
 
       const rect = container.getBoundingClientRect();
       if (rect.width < 10 || rect.height < 10) {
@@ -126,18 +137,12 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
           }, 3000);
         });
 
-        if (!ready || !container.isConnected) {
-          initializingRef.current.delete(agentId);
-          return;
-        }
+        if (!ready || superseded()) return;
       }
 
       // Skip if already initialized (another path may have created it)
       const existing = terminalsRef.current.get(agentId);
-      if (existing && !existing.disposed) {
-        initializingRef.current.delete(agentId);
-        return;
-      }
+      if (existing && !existing.disposed) return;
 
       const term = new modules.Terminal({
         theme: getTerminalTheme(theme),
@@ -239,31 +244,17 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       onTerminalReadyRef.current?.(agentId);
 
     } finally {
-      initializingRef.current.delete(agentId);
+      if (initializingRef.current.get(agentId) === container) {
+        initializingRef.current.delete(agentId);
+      }
     }
   }, [loadModules, fontSize, debouncedFit, theme]);
 
-  // Register a container element for an agent's terminal
-  const registerContainer = useCallback((agentId: string, container: HTMLDivElement | null) => {
-    if (!container) return;
-
-    const existing = terminalsRef.current.get(agentId);
-    if (existing?.container === container && !existing.disposed) {
-      return;
-    }
-
-    // Dispose old terminal if switching containers
-    if (existing && !existing.disposed) {
-      existing.resizeObserver?.disconnect();
-      existing.terminal.dispose();
-      existing.disposed = true;
-    }
-
-    initTerminal(agentId, container);
-  }, [initTerminal]);
-
   // Unregister and dispose a terminal
   const unregisterContainer = useCallback((agentId: string) => {
+    // Also drop any in-flight init so it bails instead of publishing a
+    // terminal attached to a container that is already detached.
+    initializingRef.current.delete(agentId);
     const entry = terminalsRef.current.get(agentId);
     if (entry) {
       entry.resizeObserver?.disconnect();
@@ -279,6 +270,33 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       fitTimersRef.current.delete(agentId);
     }
   }, []);
+
+  // Register a container element for an agent's terminal
+  const registerContainer = useCallback((agentId: string, container: HTMLDivElement | null) => {
+    // A null container means the panel unmounted (fullscreen toggle, project
+    // tab switch, agent removed). Previously this was a silent no-op, so the
+    // xterm stayed in terminalsRef with disposed:false: it kept parsing every
+    // PTY chunk into a 10k-line scrollback off-screen and kept receiving
+    // broadcast-mode keystrokes aimed at the visible set.
+    if (!container) {
+      unregisterContainer(agentId);
+      return;
+    }
+
+    const existing = terminalsRef.current.get(agentId);
+    if (existing?.container === container && !existing.disposed) {
+      return;
+    }
+
+    // Dispose old terminal if switching containers
+    if (existing && !existing.disposed) {
+      existing.resizeObserver?.disconnect();
+      existing.terminal.dispose();
+      existing.disposed = true;
+    }
+
+    initTerminal(agentId, container);
+  }, [initTerminal, unregisterContainer]);
 
   // Write to a specific terminal
   const writeToTerminal = useCallback((agentId: string, data: string) => {
@@ -422,6 +440,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         }
       });
       terminalsRef.current.clear();
+      // Any init still awaiting layout must not resurrect an entry after this.
+      initializingRef.current.clear();
       fitTimersRef.current.forEach(t => clearTimeout(t));
       fitTimersRef.current.clear();
     };

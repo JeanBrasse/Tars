@@ -303,29 +303,38 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         if (fs.existsSync(worktreePath)) {
           console.log(`Worktree already exists at ${worktreePath}, reusing it`);
         } else {
-          // Create the worktree with a new branch
-          const { execSync } = await import('child_process');
+          // git is invoked as argv, never as a shell string. These commands
+          // used to be built by concatenation into single quotes, and
+          // worktreePath derives from the caller's projectPath: an ordinary
+          // folder like "Bob's Projects" broke the quoting (git never ran, the
+          // catch below swallowed it, and the agent silently worked in the
+          // shared repository instead of the isolated worktree it asked for),
+          // and a folder named `x';touch /tmp/pwned;'` ran its own command.
+          const { execFileSync } = await import('child_process');
 
           // Check if branch already exists
           try {
-            execSync(`git rev-parse --verify '${branchName}'`, { cwd, stdio: 'pipe' });
+            execFileSync('git', ['rev-parse', '--verify', branchName], { cwd, stdio: 'pipe' });
             // Branch exists, create worktree using existing branch
-            execSync(`git worktree add '${worktreePath}' '${branchName}'`, { cwd, stdio: 'pipe' });
-
+            execFileSync('git', ['worktree', 'add', worktreePath, branchName], { cwd, stdio: 'pipe' });
           } catch {
             // Branch doesn't exist, create worktree with new branch
-            execSync(`git worktree add -b '${branchName}' '${worktreePath}'`, { cwd, stdio: 'pipe' });
-          
+            execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd, stdio: 'pipe' });
           }
         }
 
         // Use the worktree path as the working directory
         cwd = worktreePath;
       } catch (err) {
+        // Do not degrade to the shared checkout. This used to drop the
+        // worktree and carry on with cwd = projectPath, so a worktree that
+        // could not be created turned into an agent writing straight into the
+        // user's main workspace with nothing on screen to say so (only
+        // DeployTeamDialog ever inspected branchName afterwards).
         console.error(`Failed to create git worktree:`, err);
-        // Continue without worktree if creation fails
-        worktreePath = undefined;
-        branchName = undefined;
+        throw new Error(
+          `Failed to create git worktree for branch ${branchName}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
@@ -906,12 +915,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
             fs.mkdirSync(worktreesDir, { recursive: true });
           }
           if (!fs.existsSync(worktreePath)) {
-            const { execSync } = await import('child_process');
+            // argv, not a shell string: worktreePath comes from the project
+            // path, so a quote or a space in it used to break the command (or
+            // run its own) — see the same fix in agent:create.
+            const { execFileSync } = await import('child_process');
             try {
-              execSync(`git rev-parse --verify '${branchName}'`, { cwd: agent.projectPath, stdio: 'pipe' });
-              execSync(`git worktree add '${worktreePath}' '${branchName}'`, { cwd: agent.projectPath, stdio: 'pipe' });
+              execFileSync('git', ['rev-parse', '--verify', branchName], { cwd: agent.projectPath, stdio: 'pipe' });
+              execFileSync('git', ['worktree', 'add', worktreePath, branchName], { cwd: agent.projectPath, stdio: 'pipe' });
             } catch {
-              execSync(`git worktree add -b '${branchName}' '${worktreePath}'`, { cwd: agent.projectPath, stdio: 'pipe' });
+              execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
             }
           }
           agent.worktreePath = worktreePath;
@@ -980,9 +992,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Clean up worktree if it exists
     if (agent?.worktreePath && agent?.branchName) {
       try {
-        const { execSync } = await import('child_process');
+        // argv, not a shell string: an apostrophe in the project path used to
+        // make this fail silently and leak a stale worktree behind the deleted
+        // agent — see the same fix in agent:create.
+        const { execFileSync } = await import('child_process');
         console.log(`Removing worktree at ${agent.worktreePath}`);
-        execSync(`git worktree remove '${agent.worktreePath}' --force`, { cwd: agent.projectPath, stdio: 'pipe' });
+        execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe' });
         console.log(`Worktree removed successfully`);
       } catch (err) {
         console.warn(`Failed to remove worktree:`, err);
@@ -2016,7 +2031,7 @@ function registerUpdateHandlers(): void {
 // ============== File System IPC Handlers ==============
 
 function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
-  const { getMainWindow } = deps;
+  const { getMainWindow, agents, getClaudeSkills } = deps;
 
   ipcMain.handle('fs:list-projects', async () => {
     try {
@@ -2095,15 +2110,72 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     }
   });
 
+  /**
+   * Directories fs:read-project-files may read under: the CLI config dirs, the
+   * projects the app itself knows about (added by hand, seen by Claude Code,
+   * or attached to an agent) and the skill directories it enumerates.
+   *
+   * The handler used to accept any absolute base, unlike its confined siblings
+   * fs:read-text-file/fs:write-text-file, so one call —
+   * `{ paths: ['~/.ssh', '~/.dorothy'], relative: ['id_rsa', 'api-token'] }` —
+   * turned it into a general file reader (neither `path.isAbsolute` nor
+   * `!rel.includes('..')` says anything about where the base points).
+   * DATA_DIR is deliberately not a root here: it holds api-token and
+   * hermes-webhook-secret, and no caller of this channel reads from it.
+   */
+  const projectFileRoots = async (): Promise<string[]> => {
+    const roots = [
+      path.join(os.homedir(), '.claude'),
+      path.join(os.homedir(), '.codex'),
+      path.join(os.homedir(), '.gemini'),
+      path.join(os.homedir(), '.grok'),
+      path.join(os.homedir(), '.agents'),
+      ...readCustomProjects(),
+    ];
+
+    for (const agent of agents.values()) {
+      if (agent.projectPath) roots.push(agent.projectPath);
+      if (agent.worktreePath) roots.push(agent.worktreePath);
+    }
+
+    // Projects Claude Code has seen, same source as fs:list-projects.
+    try {
+      const claudeDir = path.join(os.homedir(), '.claude', 'projects');
+      for (const dir of fs.readdirSync(claudeDir)) {
+        roots.push(decodeProjectPath(dir));
+      }
+    } catch { /* no Claude projects yet */ }
+
+    // Skills can be symlinks out of ~/.claude/skills, so allow the real paths
+    // the app resolved rather than only the directory they are linked from.
+    try {
+      for (const skill of await getClaudeSkills()) {
+        if (skill?.path) roots.push(skill.path);
+      }
+    } catch { /* skills unreadable, skip */ }
+
+    return roots
+      .filter(r => typeof r === 'string' && r && path.isAbsolute(r))
+      .map(r => path.resolve(r))
+      .filter(r => r !== path.parse(r).root && r !== os.homedir());
+  };
+
   ipcMain.handle('fs:read-project-files', async (_event, params: { paths: string[]; relative: string[] }) => {
     const out: Record<string, string> = {};
     const paths = Array.isArray(params?.paths) ? params.paths : [];
     const relative = Array.isArray(params?.relative) ? params.relative : [];
+    const roots = await projectFileRoots();
     for (const base of paths) {
       if (typeof base !== 'string' || !path.isAbsolute(base)) continue;
+      const resolvedBase = path.resolve(base);
+      const allowed = roots.some(root => resolvedBase === root || resolvedBase.startsWith(root + path.sep));
+      if (!allowed) continue;
       for (const rel of relative) {
         if (typeof rel !== 'string' || rel.includes('..')) continue;
-        const target = path.join(base, rel);
+        // Resolved containment, so an absolute or otherwise creative `rel`
+        // cannot climb back out of the base the check above approved.
+        const target = path.resolve(resolvedBase, rel);
+        if (target !== resolvedBase && !target.startsWith(resolvedBase + path.sep)) continue;
         try {
           if (fs.existsSync(target) && fs.statSync(target).isFile()) {
             out[target] = fs.readFileSync(target, 'utf-8');
@@ -2370,27 +2442,40 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
 function registerShellHandlers(deps: IpcHandlerDependencies): void {
   const { quickPtyProcesses, getMainWindow } = deps;
 
-  // Open in external terminal
-  ipcMain.handle('shell:open-terminal', async (_event, { cwd, command }: { cwd: string; command?: string }) => {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const escapedCwd = cwd.replace(/'/g, "'\\''");
-    const script = command
-      ? `tell application "Terminal" to do script "cd '${escapedCwd}' && ${command}"`
-      : `tell application "Terminal" to do script "cd '${escapedCwd}'"`;
+  /**
+   * Open a directory in Terminal.app.
+   *
+   * This used to escape only single quotes in `cwd` and nothing at all in a
+   * `command` parameter, then paste both into a double-quoted AppleScript
+   * literal inside a shell string run through a login shell. A single double
+   * quote in either value closed the literal and the rest was parsed as
+   * AppleScript: a cwd of `/tmp/x" & (do shell script "id > /tmp/PWNED") & "`
+   * ran its own shell command before Terminal was ever involved, and
+   * `command` was a plain arbitrary-execution parameter — the primitive
+   * shell:exec was removed for. Project paths come from ~/.dorothy/projects.json
+   * and from folders the user picks, so a quote in one is not exotic.
+   *
+   * So: no shell (execFile with an argv array), no `command` parameter (no
+   * caller supplies one), and the directory is escaped for both layers it
+   * crosses — shell quoting for the `cd` that `do script` runs, then
+   * AppleScript quoting for the string literal that holds it.
+   */
+  ipcMain.handle('shell:open-terminal', async (_event, { cwd }: { cwd: string; command?: string }) => {
+    const dir = String(cwd || '');
+    if (!dir || !fs.existsSync(dir)) return { success: false, error: 'no such directory' };
 
-    const ptyProcess = pty.spawn(shell, ['-c', `osascript -e '${script.replace(/'/g, "'\\''")}'`], {
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
-      cwd: os.homedir(),
-      env: process.env as { [key: string]: string },
-    });
+    const shellQuoted = `'${dir.replace(/'/g, "'\\''")}'`;
+    const appleQuoted = `"${`cd ${shellQuoted}`.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    const script = `tell application "Terminal" to do script ${appleQuoted}`;
 
-    return new Promise((resolve) => {
-      ptyProcess.onExit(() => {
-        resolve({ success: true });
-      });
-    });
+    try {
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      await promisify(execFile)('osascript', ['-e', script], { timeout: 15000 });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // Execute arbitrary command (uses PTY)

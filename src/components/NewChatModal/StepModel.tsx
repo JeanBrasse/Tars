@@ -5,7 +5,8 @@ import type { AgentProvider } from '@/types/electron';
 import type { AgentEffort } from '@/types/agent';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import { ProviderIconRenderer } from '@/components/ProviderBadge';
-import { PanelCaption, Select, StatusSquare } from '@/components/ui';
+import { PanelCaption, SegmentedControl, Select, StatusSquare } from '@/components/ui';
+import type { SegmentedOption } from '@/components/ui';
 
 interface TasmaniaModel {
   name: string;
@@ -37,6 +38,10 @@ const PROVIDER_DEFAULT_MODEL: Record<string, string> = Object.fromEntries(
 
 /** The effort ladder, moved here from the Task step. */
 const EFFORT_LEVELS: AgentEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_OPTIONS: SegmentedOption<AgentEffort>[] = EFFORT_LEVELS.map((level) => ({
+  value: level,
+  label: level,
+}));
 
 /* ── Live model catalogue ──────────────────────────────── */
 
@@ -338,21 +343,13 @@ const StepModel = React.memo(function StepModel({
       {/* Effort - the ladder belongs beside the model it modifies */}
       <div>
         <PanelCaption className="mb-2">EFFORT</PanelCaption>
-        <div className="flex gap-2">
-          {EFFORT_LEVELS.map((level) => (
-            <button
-              key={level}
-              onClick={() => onEffortChange?.(level)}
-              className={`h-[26px] px-2.5 font-mono text-[11px] border transition-colors cursor-pointer
-                ${effort === level
-                  ? 'border-primary bg-secondary text-foreground'
-                  : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }`}
-            >
-              {level}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          className="font-mono"
+          ariaLabel="Effort"
+          options={EFFORT_OPTIONS}
+          value={effort}
+          onChange={(level) => onEffortChange?.(level)}
+        />
       </div>
 
       {/* What the catalogue found - a readout, not a control */}

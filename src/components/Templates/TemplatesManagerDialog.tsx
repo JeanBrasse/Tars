@@ -1,73 +1,64 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Loader2, Plus, Sparkles, Upload, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useElectronSkills } from '@/hooks/useElectron';
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import type { AgentTemplate, AgentTemplateInput } from '@/types/electron';
-import { TemplateCard } from './TemplateCard';
+import { Button, DialogShell, Input, MetaChip } from '@/components/ui';
 import { InstantiateDialog } from './InstantiateDialog';
 import { TemplateFormDialog } from './TemplateFormDialog';
 import { ImportDialog } from './ImportDialog';
-import TerminalDialog from '@/components/TerminalDialog';
-import { SKILLS_DATABASE, fetchSkillsFromMarketplace, type Skill } from '@/lib/skills-database';
 
 interface TemplatesManagerDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
+/** `built-in` until the user touches it, then `customised`; anything they made is `yours`. */
+function templateOrigin(template: AgentTemplate): string {
+  if (!template.builtin) return 'yours';
+  return template.overridden ? 'customised' : 'built-in';
+}
+
 export function TemplatesManagerDialog({ open, onClose }: TemplatesManagerDialogProps) {
-  const router = useRouter();
   const { builtinTemplates, userTemplates, isLoading, refresh: refreshTemplates, create, update, remove, duplicate, exportTemplates, importTemplates } = useElectronTemplates();
-  const { installedSkills, refresh: refreshSkills } = useElectronSkills();
+  const { installedSkills } = useElectronSkills();
 
   const [instantiateTarget, setInstantiateTarget] = useState<AgentTemplate | null>(null);
   const [editTarget, setEditTarget] = useState<AgentTemplate | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [query, setQuery] = useState('');
 
-  const [liveSkills, setLiveSkills] = useState<Skill[] | null>(null);
-  const [installSkillTarget, setInstallSkillTarget] = useState<{ repo: string; title: string } | null>(null);
-  const [installError, setInstallError] = useState<string | null>(null);
+  const hasNestedDialog = !!instantiateTarget || !!editTarget || showCreate || showImport;
 
-  const hasNestedDialog = !!instantiateTarget || !!editTarget || showCreate || showImport || !!installSkillTarget;
+  // Built-ins first, then the user's own - one list, no section headings.
+  const templates = useMemo(
+    () => [...builtinTemplates, ...userTemplates],
+    [builtinTemplates, userTemplates],
+  );
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter(t =>
+      t.displayName.toLowerCase().includes(q)
+      || t.description.toLowerCase().includes(q)
+      || t.tags.some(tag => tag.toLowerCase().includes(q)),
+    );
+  }, [templates, query]);
+
+  const customisedCount = builtinTemplates.filter(t => t.overridden).length;
 
   useEffect(() => {
     if (!open) return;
     // The dialog stays mounted on the Agents page, so refetch on every open -
     // templates saved elsewhere (e.g. "Save as template" on a card) must show.
     refreshTemplates();
-    fetchSkillsFromMarketplace().then(s => { if (s) setLiveSkills(s); }).catch(() => {});
   }, [open, refreshTemplates]);
 
-  // Escape closes the manager - but only when no nested dialog is open,
-  // otherwise both layers would close on one keypress.
-  useEffect(() => {
-    if (!open || hasNestedDialog) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, hasNestedDialog, onClose]);
-
   if (!open) return null;
-
-  function findSkillRepo(skillName: string): string | null {
-    const candidates = liveSkills ?? SKILLS_DATABASE;
-    const lower = skillName.toLowerCase();
-    const match = candidates.find(s => s.name.toLowerCase() === lower);
-    return match ? match.repo : null;
-  }
-
-  function handleInstallSkill(skillName: string) {
-    const repo = findSkillRepo(skillName);
-    if (!repo) {
-      setInstallError(`"${skillName}" isn't in the public marketplace. Install it manually from the Skills page.`);
-      return;
-    }
-    setInstallSkillTarget({ repo: `${repo}/${skillName}`, title: skillName });
-  }
 
   async function handleCreate(input: AgentTemplateInput) {
     const result = await create(input);
@@ -109,107 +100,77 @@ export function TemplatesManagerDialog({ open, onClose }: TemplatesManagerDialog
     URL.revokeObjectURL(url);
   }
 
+  // Escape and the scrim close the manager - but only when no nested dialog is
+  // open, otherwise both layers would go on one keypress.
+  const closeIfTopmost = () => { if (!hasNestedDialog) onClose(); };
+
   return (
-    <div
-      className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-card border border-border w-full max-w-5xl max-h-[90vh] flex flex-col">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-primary" />
-              Agent Templates
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Pick a role, point it at a project, get an agent. No setup required.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 px-3 py-2 border border-border bg-card text-xs font-medium text-foreground hover:bg-accent/50 transition-colors"
-            >
-              <Upload className="w-4 h-4" />
-              Import
-            </button>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-foreground text-background text-xs font-medium hover:bg-foreground/90 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              New blank template
-            </button>
-            <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground" title="Close">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+    <>
+      <DialogShell
+        width={760}
+        onClose={closeIfTopmost}
+        title="Agent templates"
+        subtitle="Pick a role, point it at a project, get an agent. No setup required."
+        footerLeft={
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {templates.length} {templates.length === 1 ? 'template' : 'templates'} · {customisedCount} customised
+          </span>
+        }
+        footerRight={<Button size="md" onClick={onClose}>Close</Button>}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="search templates"
+            className="flex-1"
+          />
+          <Button size="md" variant="secondary" onClick={() => setShowImport(true)}>Import</Button>
+          <Button size="md" variant="primary" onClick={() => setShowCreate(true)}>+ New template</Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-20 text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              Loading templates…
-            </div>
-          ) : (
-            <>
-              <section className="mb-8">
-                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">
-                  Built-in roles
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {builtinTemplates.map(t => (
-                    <TemplateCard
-                      key={t.id}
-                      template={t}
-                      installedSkills={installedSkills}
-                      onUse={() => setInstantiateTarget(t)}
-                      onEdit={() => setEditTarget(t)}
-                      onDuplicate={() => handleDuplicate(t)}
-                      onReset={t.overridden ? () => handleReset(t) : undefined}
-                      onExport={() => handleExport(t)}
-                      onInstallSkill={handleInstallSkill}
-                    />
-                  ))}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            Loading templates…
+          </div>
+        ) : visible.length === 0 ? (
+          <p className="py-16 text-center text-xs text-muted-foreground">
+            {templates.length === 0
+              ? 'No templates yet. Duplicate a built-in role to customise it, or create a blank one.'
+              : 'Nothing matches that.'}
+          </p>
+        ) : (
+          /* Rows share their edges - without the pull-up every seam is 2px. */
+          <div className="flex flex-col -space-y-px">
+            {visible.map(t => (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 border border-border bg-card px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12.5px] text-foreground truncate">{t.displayName}</span>
+                    <MetaChip>{templateOrigin(t)}</MetaChip>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground truncate">
+                    {t.description || [t.provider, t.model].filter(Boolean).join(' · ')}
+                  </p>
                 </div>
-              </section>
-
-              <section>
-                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">
-                  Your templates
-                </h3>
-                {userTemplates.length === 0 ? (
-                  <div className="border border-dashed border-border bg-secondary/20 p-8 text-center">
-                    <p className="text-sm text-muted-foreground mb-3">
-                      You haven&apos;t saved any templates yet.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Duplicate a built-in role to customize it, or create a blank template.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {userTemplates.map(t => (
-                      <TemplateCard
-                        key={t.id}
-                        template={t}
-                        installedSkills={installedSkills}
-                        onUse={() => setInstantiateTarget(t)}
-                        onEdit={() => setEditTarget(t)}
-                        onDuplicate={() => handleDuplicate(t)}
-                        onDelete={() => handleDelete(t)}
-                        onExport={() => handleExport(t)}
-                        onInstallSkill={handleInstallSkill}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            </>
-          )}
-        </div>
-      </div>
+                <div className="flex items-center gap-1 shrink-0 font-mono lowercase">
+                  <Button size="sm" variant="ghost" onClick={() => setInstantiateTarget(t)}>use</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditTarget(t)}>edit</Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleDuplicate(t)}>duplicate</Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleExport(t)}>export</Button>
+                  {t.builtin
+                    ? t.overridden && <Button size="sm" variant="ghost" onClick={() => handleReset(t)}>reset</Button>
+                    : <Button size="sm" variant="ghost" onClick={() => handleDelete(t)}>delete</Button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogShell>
 
       {instantiateTarget && (
         <InstantiateDialog
@@ -242,37 +203,6 @@ export function TemplatesManagerDialog({ open, onClose }: TemplatesManagerDialog
           onImport={importTemplates}
         />
       )}
-
-      <TerminalDialog
-        open={!!installSkillTarget}
-        repo={installSkillTarget?.repo ?? ''}
-        title={installSkillTarget?.title ?? ''}
-        availableProviders={['claude', 'codex', 'gemini']}
-        onClose={() => {
-          setInstallSkillTarget(null);
-          refreshSkills();
-        }}
-      />
-
-      {installError && (
-        <div className="fixed bottom-4 right-4 z-[80] max-w-sm bg-card border border-warning/40 px-4 py-3 flex flex-col gap-2">
-          <p className="text-xs text-foreground">{installError}</p>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => setInstallError(null)}
-              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
-            >
-              Dismiss
-            </button>
-            <button
-              onClick={() => { setInstallError(null); router.push('/skills'); }}
-              className="text-xs bg-foreground text-background font-medium px-2 py-1 hover:bg-foreground/90"
-            >
-              Open Skills page
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

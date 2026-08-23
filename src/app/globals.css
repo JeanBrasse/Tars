@@ -86,18 +86,12 @@
   --sidebar-w: 216px;
 
   /* Accent colors */
-  --accent-blue: #C77012;
-  --accent-blue-dim: #AF5D00;
   --accent-green: #1A7F37;
   --accent-green-dim: #166B2E;
   --accent-amber: #9A6700;
   --accent-amber-dim: #7A5200;
   --accent-red: #CF222E;
   --accent-red-dim: #A31C28;
-  --accent-purple: #5E5E5E;
-  --accent-purple-dim: #4B4B4B;
-  --accent-cyan: #C77012;
-  --accent-cyan-dim: #AF5D00;
 
   /* Charts */
   --chart-1: #C77012;
@@ -169,18 +163,12 @@
   --status-idle: #727272;
 
   /* Accent colors */
-  --accent-blue: #FF9E42;
-  --accent-blue-dim: #C77012;
   --accent-green: #4CC38A;
   --accent-green-dim: #3AA476;
   --accent-amber: #E8C547;
   --accent-amber-dim: #C7A62E;
   --accent-red: #E5534B;
   --accent-red-dim: #C43E37;
-  --accent-purple: #868686;
-  --accent-purple-dim: #727272;
-  --accent-cyan: #FF9E42;
-  --accent-cyan-dim: #C77012;
 
   /* Charts */
   --chart-1: #FF9E42;
@@ -248,31 +236,12 @@
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
-  --color-accent-cyan: var(--accent-cyan);
-  --color-accent-cyan-dim: var(--accent-cyan-dim);
   --color-accent-green: var(--accent-green);
   --color-accent-green-dim: var(--accent-green-dim);
   --color-accent-amber: var(--accent-amber);
   --color-accent-amber-dim: var(--accent-amber-dim);
   --color-accent-red: var(--accent-red);
   --color-accent-red-dim: var(--accent-red-dim);
-  --color-accent-purple: var(--accent-purple);
-  --color-accent-purple-dim: var(--accent-purple-dim);
-  --color-accent-blue: var(--accent-blue);
-  --color-accent-blue-dim: var(--accent-blue-dim);
-
-  /* Override Tailwind cyan scale → Cooperlabs tangerine */
-  --color-cyan-50: #FFF8F0;
-  --color-cyan-100: #FFEBD6;
-  --color-cyan-200: #FFD8B0;
-  --color-cyan-300: #FFBD7A;
-  --color-cyan-400: #FF9E42;
-  --color-cyan-500: #C77012;
-  --color-cyan-600: #AF5D00;
-  --color-cyan-700: #954A00;
-  --color-cyan-800: #7C3800;
-  --color-cyan-900: #5F2B00;
-  --color-cyan-950: #3A1A00;
 
   /* Typography */
   --font-sans: var(--font-sans-loaded), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

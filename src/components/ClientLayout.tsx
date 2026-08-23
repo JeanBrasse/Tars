@@ -253,7 +253,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
         initial={false}
         animate={{ marginLeft: mainMarginLeft }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
-        className="min-h-screen p-4 pt-16 lg:px-[26px] lg:pb-[22px] lg:pt-0"
+        className="min-h-screen p-4 pt-16 lg:px-[26px] lg:pb-[22px] lg:pt-[22px]"
       >
         {children}
       </motion.main>

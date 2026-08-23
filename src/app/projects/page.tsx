@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { useClaude, useSessionMessages } from '@/hooks/useClaude';
@@ -18,6 +19,10 @@ import {
   StatusSquare,
 } from '@/components/ui';
 import { STATUS_COLORS, statusTone } from '@/app/agents/constants';
+
+// xterm touches `window` at import time, so the terminal only ever loads in the
+// browser - same reason Dashboard loads TerminalsView this way.
+const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
 
 // Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
 // button each.
@@ -55,6 +60,9 @@ export default function ProjectsPage() {
   const [showAgentDialog, setShowAgentDialog] = useState(false);
   // Default project confirmation dialog
   const [pendingDefaultPath, setPendingDefaultPath] = useState<string | null>(null);
+  // Project terminal dialog: the id of the live PTY, plus the folder it opened in
+  const [terminalPty, setTerminalPty] = useState<{ id: string; cwd: string } | null>(null);
+  const [terminalOpening, setTerminalOpening] = useState(false);
 
   // Load git branch for selected project
   const loadGitBranch = useCallback(async (projectPath: string) => {
@@ -89,6 +97,50 @@ export default function ProjectsPage() {
       setGitBranch(null);
     }
   }, [selectedProject, loadGitBranch]);
+
+  // Open a shell in the project folder.
+  //
+  // This button used to call `window.electronAPI.shell.openTerminal(...)`. That
+  // method was deleted from the preload bridge when shell.exec and friends were
+  // removed, but the call site and its `electron.d.ts` declaration stayed - so
+  // the optional chain stopped at `shell` (which exists), `.openTerminal` was
+  // `undefined`, and every click threw a TypeError inside the handler. The
+  // button was dead in every shipped build, silently.
+  //
+  // It now runs on `pty:create`, which the bridge really does expose, and the
+  // shell appears in-app instead of in Terminal.app.
+  const openProjectTerminal = useCallback(async (projectPath: string) => {
+    if (!window.electronAPI?.pty?.create) return;
+    setTerminalOpening(true);
+    try {
+      const { id } = await window.electronAPI.pty.create({ cwd: projectPath });
+      setTerminalPty({ id, cwd: projectPath });
+    } catch (err) {
+      console.error('Failed to open terminal:', err);
+    } finally {
+      setTerminalOpening(false);
+    }
+  }, []);
+
+  const closeProjectTerminal = useCallback(() => setTerminalPty(null), []);
+
+  // One effect owns the PTY's lifetime. It subscribes so a shell that exits on
+  // its own (`exit`, Ctrl-D) takes the dialog with it, and its cleanup kills the
+  // process - which covers closing the dialog and navigating away from the page
+  // alike. Without that kill an orphaned login shell would sit in the main
+  // process with nothing attached to read it. Killing an id that already exited
+  // is a no-op in the handler.
+  useEffect(() => {
+    if (!terminalPty) return;
+    const ptyId = terminalPty.id;
+    const unsubscribe = window.electronAPI?.pty?.onExit(({ id }) => {
+      if (id === ptyId) setTerminalPty(null);
+    });
+    return () => {
+      unsubscribe?.();
+      window.electronAPI?.pty?.kill({ id: ptyId }).catch(() => {});
+    };
+  }, [terminalPty]);
 
   // Custom projects live in ~/.dorothy/projects.json (main process): they
   // survive app updates and every surface sees them (agent creation, team
@@ -396,7 +448,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="pt-[22px]">
+    <div>
       <PageHeader
         title="Projects"
         subtitle="Every folder Tars knows about, and what is running in it."
@@ -565,10 +617,11 @@ export default function ProjectsPage() {
                   <Button
                     size="md"
                     className="flex-1"
-                    onClick={() => window.electronAPI?.shell?.openTerminal({ cwd: selectedProject.path })}
+                    disabled={!hasElectron || terminalOpening}
+                    onClick={() => openProjectTerminal(selectedProject.path)}
                     title="Open a terminal in this folder"
                   >
-                    Terminal
+                    {terminalOpening ? 'Opening…' : 'Terminal'}
                   </Button>
                   {hasElectron && (
                     <Button
@@ -787,6 +840,23 @@ export default function ProjectsPage() {
             <span className="text-foreground font-mono">{defaultProjectPath.split('/').pop()}</span> is currently the default project. Replace it with{' '}
             <span className="text-foreground font-mono">{pendingDefaultPath.split('/').pop()}</span>?
           </p>
+        </DialogShell>
+      )}
+
+      {/* Project Terminal */}
+      {terminalPty && (
+        <DialogShell
+          onClose={closeProjectTerminal}
+          width={860}
+          title="Terminal"
+          subtitle={terminalPty.cwd}
+          footerRight={
+            <Button size="md" onClick={closeProjectTerminal}>
+              Close
+            </Button>
+          }
+        >
+          <Terminal ptyId={terminalPty.id} className="h-[420px]" />
         </DialogShell>
       )}
 

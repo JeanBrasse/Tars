@@ -17,7 +17,7 @@ export function EmptyAgentState({ onCreateAgent }: EmptyAgentStateProps) {
         </p>
         <button
           onClick={onCreateAgent}
-          className="text-accent-blue hover:underline"
+          className="text-primary hover:underline"
         >
           Create new agent
         </button>

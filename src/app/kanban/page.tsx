@@ -31,7 +31,7 @@ export default function KanbanPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
         title="Kanban"
         subtitle="Task board. Hermes runs the work; the local board is for projects without a gateway."

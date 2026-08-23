@@ -828,7 +828,15 @@ export interface ElectronAPI {
 
   // Shell operations
   shell: {
-    openTerminal: (params: { cwd: string; command?: string }) => Promise<{ success: boolean }>;
+    /**
+     * Open Terminal.app in a directory.
+     *
+     * No `command`: the handler used to paste one into an AppleScript literal
+     * and run it, and nothing supplied it. Declaring the parameter here is what
+     * kept the dead call sites type-checking, so the signature stays as narrow
+     * as the channel.
+     */
+    openTerminal: (params: { cwd: string }) => Promise<{ success: boolean; error?: string }>;
     /** A CLI's --version, run through execFile with an argv array. */
     version: (binary: string) => Promise<{ success: boolean; output?: string; error?: string }>;
     /** The current branch of a repository. */

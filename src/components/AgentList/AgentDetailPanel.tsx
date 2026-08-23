@@ -54,7 +54,7 @@ export function AgentDetailPanel({
               <Bot className={`w-6 h-6 ${statusConfig.text}`} />
             )}
             {agent.status === 'running' && (
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-accent-blue animate-pulse border border-bg-secondary" />
+              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-primary animate-pulse border border-bg-secondary" />
             )}
           </div>
           <div>
@@ -68,7 +68,7 @@ export function AgentDetailPanel({
                 </span>
               )}
               {agent.branchName && (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-purple/20 text-accent-purple text-xs">
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-xs">
                   <GitBranch className="w-3 h-3" />
                   {agent.branchName}
                 </span>
@@ -135,13 +135,13 @@ export function AgentDetailPanel({
 
       {/* Skills Bar */}
       {agent.skills.length > 0 && (
-        <div className="px-5 py-2 border-b border-border-primary bg-accent-purple/5 flex items-center gap-2 overflow-x-auto">
-          <Sparkles className="w-4 h-4 text-accent-purple shrink-0" />
+        <div className="px-5 py-2 border-b border-border-primary bg-bg-tertiary/50 flex items-center gap-2 overflow-x-auto">
+          <Sparkles className="w-4 h-4 text-text-muted shrink-0" />
           <span className="text-xs text-text-muted shrink-0">Skills:</span>
           {agent.skills.map((skill) => (
             <span
               key={skill}
-              className="px-2 py-0.5 rounded-full bg-accent-purple/20 text-accent-purple text-xs shrink-0"
+              className="px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-xs shrink-0"
             >
               {skill}
             </span>
@@ -170,12 +170,12 @@ export function AgentDetailPanel({
       <div className="px-4 py-2 border-t border-border-primary bg-bg-tertiary flex items-center justify-between text-xs">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <TerminalIcon className="w-4 h-4 text-accent-blue" />
+            <TerminalIcon className="w-4 h-4 text-primary" />
             <span className="text-text-muted">Interactive Terminal</span>
           </div>
           {agent.status === 'running' && (
-            <span className="flex items-center gap-1 text-accent-blue">
-              <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
+            <span className="flex items-center gap-1 text-primary">
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               Agent is running
             </span>
           )}

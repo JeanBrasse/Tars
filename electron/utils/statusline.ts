@@ -116,10 +116,22 @@ CTX_USABLE=$((CTX_MAX - AUTOCOMPACT_BUFFER))
 CTX_PCT=$(awk -v used="$CTX_USED" -v usable="$CTX_USABLE" 'BEGIN {printf "%d", (used * 100) / usable}')
 
 # --- Git branch (cached for performance) ---
-GIT_CACHE="/tmp/claude-statusline-git\${PWD//\//_}"
+# This cache used to live at /tmp/claude-statusline-git<escaped-pwd>. /tmp is
+# world-writable and the name is fully derived from the project path, so any
+# other local user could pre-create it as a symlink to, say,
+# ~/.dorothy/app-settings.json or ~/.zshrc; the redirect below follows symlinks
+# and this script runs on every agent turn, so the victim's file was truncated
+# and overwritten with a branch name within seconds (CWE-59 / CWE-377).
+# The cache now lives in the app's own private 0700 directory next to
+# rate-limits.json and token-stats.json, and we still refuse to read or write
+# through a symlink as defence in depth.
+GIT_CACHE_DIR="${DATA_DIR_SHELL}/statusline-cache"
+mkdir -p "$GIT_CACHE_DIR" 2>/dev/null || true
+chmod 700 "$GIT_CACHE_DIR" 2>/dev/null || true
+GIT_CACHE="$GIT_CACHE_DIR/git\${PWD//\//_}"
 GIT_CACHE_TTL=5  # seconds
 BRANCH="?"
-if [ -f "$GIT_CACHE" ]; then
+if [ -f "$GIT_CACHE" ] && [ ! -L "$GIT_CACHE" ]; then
   CACHE_AGE=$(( $(date +%s) - $(stat -f%m "$GIT_CACHE" 2>/dev/null || echo 0) ))
   if [ "$CACHE_AGE" -lt "$GIT_CACHE_TTL" ]; then
     BRANCH=$(cat "$GIT_CACHE")
@@ -127,7 +139,9 @@ if [ -f "$GIT_CACHE" ]; then
 fi
 if [ "$BRANCH" = "?" ]; then
   BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
-  echo "$BRANCH" > "$GIT_CACHE" 2>/dev/null || true
+  if [ ! -L "$GIT_CACHE" ]; then
+    echo "$BRANCH" > "$GIT_CACHE" 2>/dev/null || true
+  fi
 fi
 
 # --- Session duration ---

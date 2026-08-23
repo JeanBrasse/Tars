@@ -45,18 +45,3 @@ export const PRIORITY_CONFIG: Record<string, {
     bgColor: 'bg-red-50 dark:bg-red-900/30',
   },
 };
-
-export const LABEL_COLORS = [
-  { bg: 'bg-purple-600/15', text: 'text-purple-700' },
-  { bg: 'bg-blue-600/15', text: 'text-blue-700' },
-  { bg: 'bg-primary/15', text: 'text-primary' },
-  { bg: 'bg-orange-600/15', text: 'text-orange-700' },
-  { bg: 'bg-rose-600/15', text: 'text-rose-700' },
-  { bg: 'bg-cyan-600/15', text: 'text-cyan-700' },
-];
-
-export function getLabelColor(label: string) {
-  // Generate consistent color based on label string
-  const hash = label.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return LABEL_COLORS[hash % LABEL_COLORS.length];
-}

@@ -1,8 +1,6 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Play } from 'lucide-react';
+import { Button, DialogShell, Label, Textarea } from '../ui';
 
 interface StartPromptModalProps {
   open: boolean;
@@ -10,6 +8,8 @@ interface StartPromptModalProps {
   onSubmit: (prompt: string) => void;
   value: string;
   onChange: (value: string) => void;
+  /** Named in the title, so the dialog says what it is about to start. */
+  agentName?: string;
 }
 
 export function StartPromptModal({
@@ -18,85 +18,52 @@ export function StartPromptModal({
   onSubmit,
   value,
   onChange,
+  agentName = 'agent',
 }: StartPromptModalProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [open]);
-
   const handleSubmit = () => {
     if (value.trim()) {
       onSubmit(value.trim());
       onChange('');
     }
+    onClose();
   };
 
+  // The dialog only mounts once `open` is true, so `autoFocus` puts the caret
+  // in the task field without the timeout the old overlay needed. Escape is
+  // DialogShell's - it listens on the window and this sits inside it.
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="bg-bg-secondary border border-border-primary rounded-none p-6 w-full max-w-lg mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Play className="w-5 h-5 text-accent-green" />
-              Start Agent Task
-            </h3>
-            <p className="text-text-secondary text-sm mb-4">
-              Enter the task you want the agent to perform:
-            </p>
-            <input
-              ref={inputRef}
-              type="text"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && value.trim()) {
-                  handleSubmit();
-                  onClose();
-                }
-                if (e.key === 'Escape') {
-                  onClose();
-                }
-              }}
-              placeholder="e.g., Fix the bug in login.tsx..."
-              className="w-full px-4 py-3 bg-bg-primary border border-border-primary rounded-none text-sm focus:outline-none focus:border-accent-cyan mb-4"
-              autoFocus
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  handleSubmit();
-                  onClose();
-                }}
-                disabled={!value.trim()}
-                className="px-4 py-2 text-sm bg-accent-green/20 text-accent-green rounded-none hover:bg-accent-green/30 transition-colors disabled:opacity-50"
-              >
-                Start Agent
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <DialogShell
+      open={open}
+      onClose={onClose}
+      title={`Start ${agentName}`}
+      subtitle="It is idle. Give it something to do."
+      footerRight={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={!value.trim()}>
+            Start
+          </Button>
+        </>
+      }
+    >
+      <Label>TASK</Label>
+      <Textarea
+        rows={4}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          // Enter sends, as it did when this was a single line. Shift+Enter is
+          // the newline now that there is room for one.
+          if (e.key === 'Enter' && !e.shiftKey && value.trim()) {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
+        placeholder="e.g., Fix the bug in login.tsx..."
+        autoFocus
+      />
+    </DialogShell>
   );
 }

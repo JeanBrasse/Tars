@@ -44,7 +44,7 @@ export default function SkillInstallTerminal({
                     ? installExitCode === 0
                       ? 'bg-accent-green/20'
                       : 'bg-accent-red/20'
-                    : 'bg-accent-blue/20'
+                    : 'bg-primary/20'
                 }`}>
                   {installComplete ? (
                     installExitCode === 0 ? (
@@ -53,7 +53,7 @@ export default function SkillInstallTerminal({
                       <XCircle className="w-4 h-4 text-accent-red" />
                     )
                   ) : (
-                    <Loader2 className="w-4 h-4 text-accent-blue animate-spin" />
+                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
                   )}
                 </div>
                 <div>
@@ -98,7 +98,7 @@ export default function SkillInstallTerminal({
                 onClick={onClose}
                 className={`px-4 py-2 rounded-none font-medium ${
                   installComplete
-                    ? 'bg-accent-blue text-bg-primary hover:bg-accent-blue/90'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                     : 'bg-accent-red/20 text-accent-red hover:bg-accent-red/30'
                 }`}
               >

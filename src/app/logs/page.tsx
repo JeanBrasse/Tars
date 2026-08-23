@@ -73,7 +73,7 @@ export default function LogsPage() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col">
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
         title="Logs"
         subtitle="Search every agent's output at once. Wrap the query in slashes for a regex."

@@ -90,19 +90,55 @@ export default function TerminalsView() {
     }));
   }, [agents]);
   const tabManager = useTabManager({ existingAgentIds: allAgentIds, isLoading });
+  // Pull out the stable pieces: useTabManager returns a fresh object literal on
+  // every render, so anything that depends on `tabManager` itself is unstable.
+  const { activeTab, setActiveTab } = tabManager;
 
-  // The board is project-driven: land on a real project instead of an empty
-  // custom tab, and follow along when the current project loses its agents.
+  // Project paths that currently have at least one agent. Keyed as a string so
+  // the array identity survives an agents:tick that didn't change the set —
+  // otherwise the effect below would re-run twice a second. NUL is the one byte
+  // a filesystem path cannot contain, so the join/split round-trip is lossless.
+  const agentProjectPathsKey = useMemo(
+    () => Array.from(new Set(agents.map(a => a.projectPath).filter(Boolean))).join('\u0000'),
+    [agents]
+  );
+  const agentProjectPaths = useMemo(
+    () => (agentProjectPathsKey ? agentProjectPathsKey.split('\u0000') : []),
+    [agentProjectPathsKey]
+  );
+
+  // The board is project-driven: land on a real project instead of the empty
+  // default custom tab, and follow along when the current project loses its
+  // agents.
+  //
+  // This used to depend on the whole `tabManager` object and to redirect
+  // whenever the active tab was not a project tab. Because that object is a new
+  // literal every render the effect re-ran constantly, and — worse — it bounced
+  // the user off any custom tab on the very next commit. Clicking the
+  // already-active project tab runs the toggle-off branch below, which selects a
+  // custom tab; the effect immediately forced the project tab back, unmounting
+  // and remounting every TerminalPanel, which disposes and rebuilds every xterm
+  // and replays each agent's full scrollback over IPC. So: depend only on the
+  // stable `setActiveTab` plus the exact values read, and redirect only when the
+  // active tab is genuinely unusable — never over a deliberately chosen custom tab.
+  const didLandOnProjectRef = useRef(false);
   useEffect(() => {
-    if (isLoading || agents.length === 0) return;
-    const paths = Array.from(new Set(agents.map(a => a.projectPath).filter(Boolean)));
-    if (paths.length === 0) return;
-    const current = tabManager.activeTab;
-    const stillValid = current.type === 'project' && paths.includes(current.projectPath);
-    if (!stillValid) {
-      tabManager.setActiveTab({ type: 'project', projectPath: paths[0] });
+    if (isLoading || agentProjectPaths.length === 0) return;
+    if (activeTab.type === 'project') {
+      didLandOnProjectRef.current = true;
+      // Follow along only if this project no longer has any agents.
+      if (!agentProjectPaths.includes(activeTab.projectPath)) {
+        setActiveTab({ type: 'project', projectPath: agentProjectPaths[0] });
+      }
+      return;
     }
-  }, [agents, isLoading, tabManager]);
+    // Custom tab: take over exactly once, to replace the empty default board on
+    // first load. After that the user's tab choice stands.
+    if (!didLandOnProjectRef.current) {
+      didLandOnProjectRef.current = true;
+      setActiveTab({ type: 'project', projectPath: agentProjectPaths[0] });
+    }
+  }, [activeTab, agentProjectPaths, isLoading, setActiveTab]);
 
   // Derive agents for current active tab
   const filteredAgents = useMemo(() => {

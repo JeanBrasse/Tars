@@ -30,21 +30,6 @@ export const CHARACTER_FACES: Record<string, string> = {
   frog: '🐸',
 };
 
-export const getProjectColor = (name: string) => {
-  const colors = [
-    { bg: 'bg-primary/10', text: 'text-primary', border: 'border-primary/20' },
-    { bg: 'bg-amber-600/10', text: 'text-amber-700', border: 'border-amber-600/20' },
-    { bg: 'bg-blue-600/10', text: 'text-blue-700', border: 'border-blue-600/20' },
-    { bg: 'bg-purple-600/10', text: 'text-purple-700', border: 'border-purple-600/20' },
-    { bg: 'bg-rose-600/10', text: 'text-rose-700', border: 'border-rose-600/20' },
-    { bg: 'bg-cyan-600/10', text: 'text-cyan-700', border: 'border-cyan-600/20' },
-    { bg: 'bg-orange-600/10', text: 'text-orange-700', border: 'border-orange-600/20' },
-    { bg: 'bg-indigo-600/10', text: 'text-indigo-700', border: 'border-indigo-600/20' },
-  ];
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[hash % colors.length];
-};
-
 export const ORCHESTRATOR_PROMPT = `You are the Super Agent - an orchestrator that manages other agents using MCP tools.
 
 AVAILABLE MCP TOOLS (from "claude-mgr-orchestrator"):

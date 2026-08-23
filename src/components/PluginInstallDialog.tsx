@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, CheckCircle, XCircle, X } from 'lucide-react';
 import { isElectron } from '@/hooks/useElectron';
+import { Button, DialogShell } from '@/components/ui';
+import { createXtermOptions, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
 interface PluginInstallDialogProps {
@@ -38,31 +38,8 @@ export default function PluginInstallDialog({ open, command, title, onClose }: P
       const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
-        theme: {
-          background: '#0D0B08',
-          foreground: '#e4e4e7',
-          cursor: '#3D9B94',
-          cursorAccent: '#0D0B08',
-          selectionBackground: '#3D9B9433',
-          black: '#18181b',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#a855f7',
-          cyan: '#3D9B94',
-          white: '#e4e4e7',
-          brightBlack: '#52525b',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#c084fc',
-          brightCyan: '#67e8f9',
-          brightWhite: '#fafafa',
-        },
+        ...createXtermOptions(),
         fontSize: 13,
-        fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
         cursorBlink: true,
         cursorStyle: 'bar',
         scrollback: 10000,
@@ -172,91 +149,65 @@ export default function PluginInstallDialog({ open, command, title, onClose }: P
     onClose(installComplete && installExitCode === 0);
   };
 
+  const handleCopyCommand = () => {
+    navigator.clipboard?.writeText(command);
+  };
+
+  // `claude plugin install <plugin>@<marketplace>` — the marketplace is the one
+  // part of the command worth saying in prose; the command itself is shown raw
+  // above the terminal.
+  const marketplace = command.match(/@([\w.-]+)/)?.[1];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-4xl bg-card border border-border rounded-none overflow-hidden"
+    <DialogShell
+      open={open}
+      onClose={handleClose}
+      width={860}
+      title={`Install ${title}`}
+      subtitle={
+        marketplace
+          ? `From the ${marketplace} marketplace.`
+          : 'It runs in Claude Code, in a real terminal.'
+      }
+      footerLeft={
+        installComplete ? (
+          <span
+            className={`font-mono text-xs ${
+              installExitCode === 0 ? 'text-status-running' : 'text-status-error'
+            }`}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-none flex items-center justify-center ${
-                  installComplete
-                    ? installExitCode === 0
-                      ? 'bg-success/20'
-                      : 'bg-danger/20'
-                    : 'bg-secondary'
-                }`}>
-                  {installComplete ? (
-                    installExitCode === 0 ? (
-                      <CheckCircle className="w-4 h-4 text-success" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-danger" />
-                    )
-                  ) : (
-                    <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-semibold">
-                    {installComplete
-                      ? installExitCode === 0
-                        ? 'Installation Complete'
-                        : 'Installation Failed'
-                      : `Installing ${title}...`}
-                  </h3>
-                  <p className="text-xs text-muted-foreground font-mono">{command}</p>
-                </div>
-              </div>
-              <button
-                onClick={handleClose}
-                className="p-2 hover:bg-secondary rounded-none"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-4">
-              <p className="text-xs text-muted-foreground mb-3">
-                This is an interactive terminal. Type your responses and press Enter when prompted.
-              </p>
-              <div
-                ref={terminalRef}
-                className="bg-[#0D0B08] rounded-none overflow-hidden"
-                style={{ height: '400px' }}
-              />
-            </div>
-
-            <div className="px-5 py-4 border-t border-border flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                {installComplete
-                  ? `Exited with code ${installExitCode}`
-                  : 'Waiting for installation to complete...'}
-              </p>
-              <button
-                onClick={handleClose}
-                className={`px-4 py-2 rounded-none font-medium ${
-                  installComplete
-                    ? 'bg-foreground text-background hover:bg-foreground/90'
-                    : 'bg-danger/20 text-danger hover:bg-danger/30'
-                }`}
-              >
-                {installComplete ? 'Close' : 'Cancel'}
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+            exit {installExitCode}
+          </span>
+        ) : (
+          <span className="font-mono text-xs text-muted-foreground">running</span>
+        )
+      }
+      footerRight={
+        installComplete ? (
+          <>
+            <Button onClick={handleCopyCommand}>Copy command</Button>
+            <Button variant="primary" onClick={handleClose}>
+              Done
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={handleClose}>Cancel</Button>
+            <Button disabled title="The install is still running.">
+              Close when done
+            </Button>
+          </>
+        )
+      }
+    >
+      <div className="mb-3 px-3 py-2 bg-bg-tertiary font-mono text-xs leading-relaxed text-foreground break-all whitespace-pre-wrap">
+        {command}
+      </div>
+      <div
+        ref={terminalRef}
+        className={`overflow-hidden ${TERMINAL_SURFACE_CLASS}`}
+        style={{ height: '400px' }}
+      />
+    </DialogShell>
   );
 }
