@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { PageHeader, Panel, PanelCaption, BrandSpinner } from '@/components/ui';
 import { SquareGrid } from '@/components/Splash';
@@ -47,6 +47,18 @@ export default function LogsPage() {
     }, 10_000);
     return () => clearInterval(id);
   }, [loadFleet]);
+
+  /** The project an agent belongs to, as a name rather than a path. */
+  const projectOf = (a: { projectPath: string }) =>
+    a.projectPath.split('/').filter(Boolean).pop() || a.projectPath;
+
+  // Grouped by project, then by name, so the headings below are contiguous.
+  const sortedFleet = useMemo(
+    () => [...fleet].sort(
+      (a, b) => projectOf(a).localeCompare(projectOf(b)) || a.agentName.localeCompare(b.agentName),
+    ),
+    [fleet],
+  );
 
   const runSearch = useCallback(async (q: string) => {
     const seq = ++searchSeq.current;
@@ -125,7 +137,19 @@ export default function LogsPage() {
               same way it masks terminal bodies. The panel's own frame and its
               caption stay compared. */}
           <div data-volatile className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
-            {fleet.map(a => (
+            {sortedFleet.map((a, i) => (
+              <div key={`g-${a.agentId}`} className="space-y-2">
+              {/* The project name once, above its agents. A flat list of names
+                  across three projects is unreadable, which is the same
+                  problem Review had. */}
+              {(i === 0 || projectOf(sortedFleet[i - 1]) !== projectOf(a)) && (
+                <p
+                  className={`font-mono text-[10px] font-medium text-text-secondary truncate ${i === 0 ? '' : 'pt-2'}`}
+                  title={a.projectPath}
+                >
+                  {projectOf(a).toUpperCase()}
+                </p>
+              )}
               <button
                 key={a.agentId}
                 onClick={() => openAgent(a.agentId)}
@@ -142,9 +166,10 @@ export default function LogsPage() {
                   </span>
                 </span>
                 <span className="block text-[10px] text-muted-foreground truncate font-mono">
-                  {a.branch || a.projectPath.split('/').pop()} · {a.lines} chunks
+                  {a.branch || projectOf(a)} · {a.lines} chunks
                 </span>
               </button>
+              </div>
             ))}
             {fleet.length === 0 && (
               <p className="text-xs text-muted-foreground">No agent has produced output yet.</p>

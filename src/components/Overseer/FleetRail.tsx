@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import type { OverseerFleetAgent, OverseerFleetSnapshot } from '@/types/electron';
@@ -50,12 +51,7 @@ function FleetRow({ agent }: { agent: OverseerFleetAgent }) {
     <div className="flex items-start gap-2 px-2.5 py-[9px] border-b border-border">
       <StatusSquare tone={tone(agent.status)} className="mt-1.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[11.5px] text-foreground truncate">{agent.name}</span>
-          <span className="font-mono text-[9.5px] text-muted-foreground truncate">
-            {projectLabel(agent.projectPath)}
-          </span>
-        </div>
+        <span className="text-[11.5px] text-foreground truncate">{agent.name}</span>
         <p className="text-[10px] text-muted-foreground truncate">{whatItsOn(agent)}</p>
       </div>
     </div>
@@ -82,6 +78,17 @@ function ReachRow({ mode, children }: { mode: 'read' | 'write'; children: React.
 export function FleetRail({ fleet }: { fleet: OverseerFleetSnapshot | null }) {
   const agents = fleet?.agents ?? [];
 
+  // Grouped by project, then by name. A flat list across three projects is a
+  // list of names with nothing to orient by, which is what Review and Logs
+  // both had.
+  const sorted = useMemo(
+    () => [...agents].sort(
+      (a, b) => projectLabel(a.projectPath).localeCompare(projectLabel(b.projectPath))
+        || a.name.localeCompare(b.name),
+    ),
+    [agents],
+  );
+
   return (
     <div className="w-[332px] shrink-0 flex flex-col gap-2.5 min-h-0">
       <div className="border border-border bg-card flex flex-col min-h-0" style={{ flex: '1 1 60%' }}>
@@ -89,11 +96,30 @@ export function FleetRail({ fleet }: { fleet: OverseerFleetSnapshot | null }) {
           <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">the fleet</span>
           <span className="font-mono text-[10px] text-muted-foreground">{agents.length} agents</span>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Live fleet data: statuses settle from running to idle in the seconds
+            after launch and the output tail moves while agents work, so this
+            list can never be compared pixel for pixel. Marked so the visual
+            test masks it, the same way it masks terminal bodies and the Logs
+            fleet panel. The panel frame and its caption stay compared. */}
+        <div data-volatile className="flex-1 min-h-0 overflow-y-auto">
           {agents.length === 0 ? (
             <p className="px-2.5 py-3 text-[11px] text-muted-foreground">No agents running in any project.</p>
           ) : (
-            agents.map(a => <FleetRow key={a.id} agent={a} />)
+            sorted.map((a, i) => (
+              <div key={a.id}>
+                {/* The project once, above its agents, instead of repeated in
+                    small type on every row. */}
+                {(i === 0 || projectLabel(sorted[i - 1].projectPath) !== projectLabel(a.projectPath)) && (
+                  <p
+                    className="px-2.5 pt-2.5 pb-1 font-mono text-[9.5px] font-medium text-text-secondary truncate"
+                    title={a.projectPath}
+                  >
+                    {projectLabel(a.projectPath).toUpperCase()}
+                  </p>
+                )}
+                <FleetRow agent={a} />
+              </div>
+            ))
           )}
         </div>
       </div>

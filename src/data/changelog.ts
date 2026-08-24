@@ -7,6 +7,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 27,
+    version: '1.6.9',
+    date: '2026-08-24',
+    updates: [
+      'The loading mark travels one square at a time again. It rested lit instead of grey, so the whole thing started orange and went out square by square, and the lit window was longer than the gap between two squares so several glowed at once',
+      'The Chat message box grows with what you write, up to eight lines, then scrolls. It was two lines whatever you typed. The line under it is gone, and the text sits further from the edge',
+      'Opening a picker in Chat takes the caret out of the message box. It kept it, so typing went into the message instead of the picker',
+      'Agents are grouped by project in the Chat fleet list and in Logs, the way Review already did',
+      'Every dropdown in Settings is the app\'s own now. The default provider, the terminal theme and font size, the Tasmania model and the default Claude model still opened the operating system\'s menu, which ignores the app\'s colours entirely',
+      'Hovering a bar on the Usage chart shows a card in the app\'s design rather than the grey system tooltip',
+    ],
+  },
+  {
     id: 26,
     version: '1.6.8',
     date: '2026-08-24',
