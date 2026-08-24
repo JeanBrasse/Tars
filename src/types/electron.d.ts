@@ -468,9 +468,17 @@ export interface SkillInstallOutputEvent {
   data: string;
 }
 
+export interface OverseerAutoRule {
+  id: string;
+  label: string;
+  description: string;
+}
+
 export interface OverseerSettings {
   /** How often the watch looks at the fleet. 1 minute to 6 hours. */
   watchIntervalMs: number;
+  /** Rules the overseer may act on without asking. Empty by default. */
+  autoActions: string[];
   /** Empty means "whatever the Hermes gateway is set to". */
   model: string;
   provider: string;
@@ -1247,6 +1255,7 @@ export interface ElectronAPI {
     watchStatus: () => Promise<{ paused: boolean }>;
     settings: () => Promise<OverseerSettings>;
     setSettings: (patch: Partial<OverseerSettings>) => Promise<{ success: boolean; settings: OverseerSettings; error?: string }>;
+    autoActions: () => Promise<OverseerAutoRule[]>;
     modelOptions: () => Promise<
       | { success: true; provider: string; model: string; providers: OverseerModelProvider[] }
       | { success: false; error: string; needsSignIn?: boolean }

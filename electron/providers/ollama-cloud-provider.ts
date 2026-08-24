@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort } from './cli-provider';
+import { safeEffort, orchestratorToolFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 export const OLLAMA_CLOUD_BASE_URL = 'https://ollama.com'; // claude appends /v1/messages
@@ -86,6 +86,8 @@ export class OllamaCloudProvider implements CLIProvider {
     } else if (params.permissionMode === 'bypass') {
       command += ' --permission-mode bypassPermissions';
     }
+
+    command += orchestratorToolFlags(params.orchestratorMode);
 
     if (safeEffort(params.effort) && params.effort !== 'medium') {
       command += ` --effort ${safeEffort(params.effort)}`;

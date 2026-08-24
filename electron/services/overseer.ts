@@ -9,6 +9,8 @@ import { stripAnsi } from '../utils/ansi';
 import { repoSummary } from './git-review';
 import { usableHermesConnection } from './hermes-config';
 import { agentStatusEmitter } from './agent-events';
+import { recordRunEvents, summariseRuns, type RunEvent } from './overseer-runs';
+import { AUTO_ACTION_RULES, findAutoRule } from './overseer-auto';
 import {
   probeHermes,
   createHermesCron,
@@ -106,6 +108,9 @@ interface FleetAgentSnapshot {
   model?: string;
   status: string;
   statusDurationMs: number;
+  /** What it was asked to do, as the agent record holds it. The snapshot
+   *  carried its recent output but never the task behind it. */
+  currentTask?: string;
   recentOutput: string;
   outputTruncated: boolean;
 }
@@ -151,6 +156,9 @@ interface OverseerState {
  */
 export interface OverseerSettings {
   watchIntervalMs: number;
+  /** Ids of the auto-action rules turned on. Empty by default: every proposal
+   *  waits for Noah unless he has said in advance that this kind need not. */
+  autoActions: string[];
   model: string;
   provider: string;
 }
@@ -165,7 +173,7 @@ export const MIN_WATCH_INTERVAL_MS = 60 * 1000;
 export const MAX_WATCH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function defaultSettings(): OverseerSettings {
-  return { watchIntervalMs: DEFAULT_WATCH_INTERVAL_MS, model: '', provider: '' };
+  return { watchIntervalMs: DEFAULT_WATCH_INTERVAL_MS, model: '', provider: '', autoActions: [] };
 }
 
 function defaultState(): OverseerState {
@@ -256,6 +264,7 @@ export async function buildFleetSnapshot(): Promise<FleetSnapshot> {
       model: agent.model,
       status: agent.status,
       statusDurationMs,
+      currentTask: agent.currentTask ? agent.currentTask.slice(0, 160) : undefined,
       recentOutput: (outputTruncated ? rawTail.slice(-OUTPUT_TAIL_CHARS) : rawTail).trim(),
       outputTruncated,
     };
@@ -373,11 +382,17 @@ export function composeTurn(
     ? `${userMessage}\nThis is an unprompted check-in triggered by a fleet change, not a question. If something is worth flagging, say it concisely; otherwise say something minimal like "Nothing worth flagging."`
     : userMessage;
 
+  // What the fleet has been doing, when there is anything to say. A snapshot
+  // answers "where is everyone"; this answers "how has it been going", which
+  // is what makes "that is the third time it has restarted on this" possible.
+  const history24h = summariseRuns();
+
   return [
     instructions,
     '',
     '=== FLEET SNAPSHOT ===',
     serializeSnapshot(snapshot),
+    ...(history24h ? ['', `=== ${history24h}`] : []),
     '',
     '=== CONVERSATION SO FAR ===',
     history.length ? serializeHistory(history) : '(nothing yet, this is the first turn)',
@@ -821,10 +836,26 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
       }
     }
 
+    // Pre-authorised? Decided here, against the live fleet, and sent through
+    // the same gate Noah's own approval goes through: a rule is an approval
+    // given in advance, not a way around the gate.
+    let autoNote = '';
+    if (action) {
+      const rule = findAutoRule(state.settings.autoActions, { agentId: action.agentId });
+      if (rule) {
+        const sent = await confirmPendingAction(action, true);
+        autoNote = sent.success
+          ? `\n\n_Sent automatically to ${action.agentName}: ${rule.label.toLowerCase()}._`
+          : `\n\n_Tried to send this automatically and could not: ${sent.error ?? 'unknown error'}._`;
+        // Consumed either way, so the panel cannot offer to send it again.
+        action = null;
+      }
+    }
+
     const overseerMsg: OverseerMessage = {
       id: uuidv4(),
       role: 'overseer',
-      text: envelope.say,
+      text: envelope.say + autoNote,
       action,
       isBriefing: opts.isBriefing,
       timestamp: new Date().toISOString(),
@@ -859,9 +890,22 @@ function detectFleetChange(prev: FleetSnapshot | null, next: FleetSnapshot, long
 
   const prevById = new Map(prev.agents.map(a => [a.id, a]));
   const notes: string[] = [];
+  // Every transition seen here is also written to the run ledger, which is
+  // what lets a later turn say "that is the third time" rather than only
+  // "it is waiting". The diff already knows; it used to discard it.
+  const observed: RunEvent[] = [];
   for (const a of next.agents) {
     const before = prevById.get(a.id);
     if (before && before.status !== a.status) {
+      observed.push({
+        at: Date.now(),
+        agentId: a.id,
+        agentName: a.name,
+        project: a.projectPath,
+        from: before.status,
+        to: a.status,
+        task: a.currentTask ? a.currentTask.slice(0, 120) : undefined,
+      });
       if (a.status === 'completed') notes.push(`"${a.name}" (${a.id}) finished in ${a.projectPath}`);
       else if (a.status === 'error') notes.push(`"${a.name}" (${a.id}) errored in ${a.projectPath}`);
       else if (a.status === 'waiting') notes.push(`"${a.name}" (${a.id}) is now waiting for input in ${a.projectPath}`);
@@ -872,6 +916,7 @@ function detectFleetChange(prev: FleetSnapshot | null, next: FleetSnapshot, long
       longRunningReported.add(a.id);
     }
   }
+  recordRunEvents(observed);
   return notes.length ? notes.join('; ') : null;
 }
 
@@ -984,6 +1029,10 @@ export function setOverseerSettings(patch: Partial<OverseerSettings>): OverseerS
     watchIntervalMs: clampInterval(patch.watchIntervalMs ?? state.settings.watchIntervalMs),
     model: patch.model ?? state.settings.model,
     provider: patch.provider ?? state.settings.provider,
+    // Only ids of rules that exist: a stale id from an older build must not
+    // sit in the list looking like something is authorised.
+    autoActions: (patch.autoActions ?? state.settings.autoActions ?? [])
+      .filter(id => AUTO_ACTION_RULES.some(r => r.id === id)),
   };
   const intervalChanged = next.watchIntervalMs !== state.settings.watchIntervalMs;
   state.settings = next;

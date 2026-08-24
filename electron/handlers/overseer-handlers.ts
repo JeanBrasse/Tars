@@ -14,6 +14,7 @@ import {
   OverseerAction,
   OverseerSettings,
 } from '../services/overseer';
+import { AUTO_ACTION_RULES } from '../services/overseer-auto';
 import { usableHermesConnection } from '../services/hermes-config';
 import { fetchHermesModelOptions } from '../services/hermes-client';
 
@@ -54,6 +55,10 @@ export function registerOverseerHandlers(): void {
   ipcMain.handle('overseer:watchStatus', async () => ({ paused: isOverseerWatchPaused() }));
 
   ipcMain.handle('overseer:settings', async () => getOverseerSettings());
+
+  /** The rules that can be turned on, described in the words that decide it. */
+  ipcMain.handle('overseer:autoActions', async () =>
+    AUTO_ACTION_RULES.map(r => ({ id: r.id, label: r.label, description: r.description })));
 
   ipcMain.handle('overseer:setSettings', async (_event, patch: Partial<OverseerSettings>) => {
     const settings = setOverseerSettings(patch ?? {});

@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 25,
+    version: '1.6.7',
+    date: '2026-08-24',
+    updates: [
+      'An orchestrator can no longer quietly do the work itself. Thirteen of the providers run the same Claude binary and none of them applied the orchestrator restriction, so an orchestrator on DeepSeek, Venice or Ollama Cloud could edit files directly. All fourteen now share one list, and the built-in subagent tool is on it: spawning one looks like delegating and is not, because that work never reaches the specialist agent and never appears in your fleet',
+      'Agents call back into the app that started them. The bundled tools were pointed at a fixed port, so an app started on any other one had its agents delegating into whichever copy owned that port',
+      'The Chat agent remembers the last day. It saw a snapshot of where everyone was and nothing about how it had been going, so it could say an agent was waiting and never that it had restarted three times on the same task',
+      'You can let the Chat agent act on its own, for the things you say in advance it may do. It starts with one: nudging an agent that has been waiting on you for more than five minutes, never one blocked on a permission dialog. Everything else still waits for you, and anything sent automatically says so in the chat and names the rule that allowed it',
+    ],
+  },
+  {
     id: 24,
     version: '1.6.6',
     date: '2026-08-24',

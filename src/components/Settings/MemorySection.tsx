@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Button, Input, PasswordInput } from '@/components/ui';
 import { SettingsCard } from './SettingsCard';
+import { OverseerAutonomy } from './OverseerAutonomy';
 import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
@@ -108,6 +109,7 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
   };
 
   return (
+    <>
     <SettingsCard>
       <BackendRows
         title="gbrain"
@@ -167,5 +169,8 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
         onTokenChange={(token, persist) => write({ memoryHonchoApiKey: token }, persist)}
       />
     </SettingsCard>
+
+    <OverseerAutonomy />
+    </>
   );
 };

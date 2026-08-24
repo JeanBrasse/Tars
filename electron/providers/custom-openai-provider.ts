@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort, readAppSettingsFromDisk, isValidOpenAIBaseUrl } from './cli-provider';
+import { safeEffort, readAppSettingsFromDisk, isValidOpenAIBaseUrl, orchestratorToolFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
 
 // claude appends /v1/messages; "custom" is this provider's fixed path segment
@@ -72,6 +72,8 @@ export class CustomOpenAIProvider implements CLIProvider {
     } else if (params.permissionMode === 'bypass') {
       command += ' --permission-mode bypassPermissions';
     }
+
+    command += orchestratorToolFlags(params.orchestratorMode);
 
     if (safeEffort(params.effort) && params.effort !== 'medium') {
       command += ` --effort ${safeEffort(params.effort)}`;
