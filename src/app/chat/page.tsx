@@ -7,9 +7,17 @@ import { BrandSpinner, Button, PageHeader } from '@/components/ui';
 import { MessageCard } from '@/components/Overseer/MessageCard';
 import { FleetRail } from '@/components/Overseer/FleetRail';
 import { Composer } from '@/components/Overseer/Composer';
+import { AttachmentChips } from '@/components/Overseer/AttachmentChips';
 import { WatchControls } from '@/components/Overseer/WatchControls';
 import { describeHermesFailure } from '@/components/KanbanBoard/hermes-error';
-import type { OverseerAction, OverseerFleetSnapshot, OverseerMessage, OverseerSettings } from '@/types/electron';
+import type { OverseerAction, OverseerAttachment, OverseerFleetSnapshot, OverseerMessage, OverseerSettings } from '@/types/electron';
+
+/** A message on its way: typed, with whatever was staged beside it. Held
+ *  together so a queued message keeps its own files. */
+interface PendingMessage {
+  text: string;
+  attachments: OverseerAttachment[];
+}
 
 /**
  * Chat · Overseer.
@@ -101,9 +109,14 @@ export default function ChatPage() {
   const [settings, setSettings] = useState<OverseerSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   /** What you just sent, until the backend's own copy of it arrives. */
-  const [pendingSend, setPendingSend] = useState<string | null>(null);
-  /** Written while a turn was in flight, waiting their turn. */
-  const [queued, setQueued] = useState<string[]>([]);
+  const [pendingSend, setPendingSend] = useState<PendingMessage | null>(null);
+  /** Written while a turn was in flight, waiting their turn. A queued message
+   *  keeps its own files: they were staged for that message, not for whichever
+   *  one happens to go next. */
+  const [queued, setQueued] = useState<PendingMessage[]>([]);
+  /** Uploaded and waiting to be named by the next message. */
+  const [attachments, setAttachments] = useState<OverseerAttachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
 
   const [gatewayState, setGatewayState] = useState<GatewayState>('checking');
   const [gatewayDetail, setGatewayDetail] = useState<string | null>(null);
@@ -238,31 +251,61 @@ export default function ChatPage() {
     }
   };
 
+  /** Picks, uploads, and stages. All three happen in the main process, which
+   *  is the only side with the file: the renderer never sees its bytes. */
+  const handleAttach = async () => {
+    setAttaching(true);
+    setSendError(null);
+    try {
+      const r = await window.electronAPI?.overseer?.attachFiles();
+      if (!r) return;
+      if (r.attachments.length) {
+        // Keyed by path so picking the same file twice stages it once.
+        setAttachments(prev => {
+          const seen = new Set(prev.map(a => a.path));
+          return [...prev, ...r.attachments.filter(a => !seen.has(a.path))];
+        });
+      }
+      // An error alongside successful uploads is the partial case: some landed,
+      // some did not, and the ones that did not are named.
+      if (r.error) setSendError({ message: r.error, detail: null });
+    } catch (err) {
+      setSendError({ message: err instanceof Error ? err.message : String(err), detail: null });
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   const handleSend = async () => {
     const text = draft.trim();
-    if (!text) return;
+    const staged = attachments;
+    // Files on their own are a message: "look at this" with the file attached.
+    if (!text && staged.length === 0) return;
     // Typing while Hermes is answering used to be impossible: the box was
     // disabled for the whole thirty seconds. It queues instead, and the queue
     // drains as soon as the turn in flight finishes.
     if (sending) {
-      setQueued(q => [...q, text]);
+      setQueued(q => [...q, { text, attachments: staged }]);
       setDraft('');
+      setAttachments([]);
       return;
     }
     setDraft('');
+    setAttachments([]);
     setSendError(null);
     setSending(true);
     setSendStartedAt(Date.now());
     // Shown straight away. The backend only records the user's turn once the
     // whole round trip finishes, which takes about thirty seconds, so what you
     // had just typed simply was not on screen until Hermes answered.
-    setPendingSend(text);
+    setPendingSend({ text, attachments: staged });
+    const giveBack = () => { setDraft(text); setAttachments(staged); };
     try {
-      const r = await window.electronAPI?.overseer?.send(text);
-      if (!r) { setSendError({ message: 'Electron API unavailable.', detail: null }); setDraft(text); return; }
+      const r = await window.electronAPI?.overseer?.send(text, staged);
+      if (!r) { setSendError({ message: 'Electron API unavailable.', detail: null }); giveBack(); return; }
       if (!r.ok) {
         setSendError({ message: r.error, detail: null });
-        setDraft(text); // give the words back so nothing typed is lost
+        giveBack(); // give the words and the files back so nothing is lost
         return;
       }
       await loadHistory();
@@ -272,7 +315,7 @@ export default function ChatPage() {
       const raw = err instanceof Error ? err.message : String(err);
       const { message, detail } = describeHermesFailure(raw, null);
       setSendError({ message, detail });
-      setDraft(text);
+      giveBack();
     } finally {
       setSending(false);
       setSendStartedAt(null);
@@ -286,9 +329,10 @@ export default function ChatPage() {
     if (sending || queued.length === 0) return;
     const [next, ...rest] = queued;
     setQueued(rest);
-    setDraft(next);
-    // Sent on the next tick so `draft` is the queued text by the time
-    // handleSend reads it.
+    setDraft(next.text);
+    setAttachments(next.attachments);
+    // Sent on the next tick so `draft` and the staged files are the queued
+    // message's by the time handleSend reads them.
     const id = setTimeout(() => { void handleSend(); }, 0);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSend is redefined every render; the queue is the trigger
@@ -397,20 +441,26 @@ export default function ChatPage() {
                 />
               ))
             )}
-            {queued.map((text, i) => (
+            {queued.map((m, i) => (
               <div key={`q-${i}`} className="border border-border bg-card px-3.5 py-3 opacity-60">
                 <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you · queued</p>
-                <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
-                  {text}
-                </p>
+                {m.text && (
+                  <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                    {m.text}
+                  </p>
+                )}
+                <AttachmentChips attachments={m.attachments} />
               </div>
             ))}
             {pendingSend && (
               <div className="border border-border bg-card px-3.5 py-3">
                 <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you</p>
-                <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
-                  {pendingSend}
-                </p>
+                {pendingSend.text && (
+                  <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                    {pendingSend.text}
+                  </p>
+                )}
+                <AttachmentChips attachments={pendingSend.attachments} />
               </div>
             )}
             {sending && sendStartedAt && <PendingTurn startedAt={sendStartedAt} />}
@@ -439,6 +489,10 @@ export default function ChatPage() {
             // not: what you write while Hermes is answering is queued.
             disabled={gatewayState !== 'ok'}
             sendLabel={sending ? 'queue' : 'send'}
+            attachments={attachments}
+            onAttach={handleAttach}
+            onRemoveAttachment={p => setAttachments(prev => prev.filter(a => a.path !== p))}
+            attaching={attaching}
             controls={<WatchControls settings={settings} onChange={handleSettingsChange} />}
             placeholder={
               gatewayState === 'ok'

@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { AttachmentChips } from './AttachmentChips';
+import type { OverseerAttachment } from '@/types/electron';
 
 /**
  * The composer pinned under the thread. Enter sends, Shift+Enter makes a new
@@ -32,6 +35,10 @@ export function Composer({
   placeholder,
   controls,
   sendLabel = 'send',
+  attachments = [],
+  onAttach,
+  onRemoveAttachment,
+  attaching = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -45,6 +52,13 @@ export function Composer({
   /** `queue` while Hermes is mid-reply, so the button says what pressing it
    *  will actually do. */
   sendLabel?: string;
+  /** Files already on the gateway, waiting to be named by the next message.
+   *  The row is absent entirely when nothing is staged, so the composer is
+   *  unchanged at rest. */
+  attachments?: OverseerAttachment[];
+  onAttach?: () => void;
+  onRemoveAttachment?: (path: string) => void;
+  attaching?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -73,6 +87,7 @@ export function Composer({
 
   return (
     <div className="shrink-0 border border-border bg-card flex flex-col gap-2.5 p-3">
+      <AttachmentChips attachments={attachments} onRemove={onRemoveAttachment} />
       <div className="flex items-end gap-2.5">
         <div
           className="flex-1 min-w-0 flex items-center border border-border bg-secondary px-3.5 py-3"
@@ -99,7 +114,20 @@ export function Composer({
           {sendLabel}
         </Button>
       </div>
-      <div className="flex items-center gap-2.5 min-w-0">{controls}</div>
+      <div className="flex items-center gap-2.5 min-w-0">
+        {onAttach && (
+          <button
+            type="button"
+            onClick={onAttach}
+            disabled={disabled || attaching}
+            className="inline-flex items-center gap-1.5 h-[22px] px-2 border border-border bg-card text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            <Paperclip className="w-3 h-3" />
+            {attaching ? 'uploading' : 'attach'}
+          </button>
+        )}
+        {controls}
+      </div>
     </div>
   );
 }

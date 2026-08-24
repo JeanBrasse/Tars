@@ -403,6 +403,13 @@ export interface OverseerAction {
   resolvedAt: string;
 }
 
+/** A file already uploaded to the gateway, named by the message that sent it. */
+export interface OverseerAttachment {
+  name: string;
+  path: string;
+  isImage: boolean;
+}
+
 export interface OverseerMessage {
   id: string;
   role: 'user' | 'overseer';
@@ -412,6 +419,9 @@ export interface OverseerMessage {
    *  than a reply to something Noah asked. */
   isBriefing?: boolean;
   timestamp: string;
+  /** Files sent with this message, kept beside the text so the bubble can
+   *  show a chip and the text stays what was typed. */
+  attachments?: OverseerAttachment[];
 }
 
 export interface OverseerFleetAgent {
@@ -1251,7 +1261,16 @@ export interface ElectronAPI {
 
   // Overseer chat: Hermes watches every project's agents and reports back
   overseer?: {
-    send: (message: string) => Promise<OverseerAskResult>;
+    send: (message: string, attachments?: OverseerAttachment[]) => Promise<OverseerAskResult>;
+    /** Opens the file picker, uploads what was chosen to the gateway, and
+     *  returns the paths to name in the next message. `canceled` when the
+     *  picker was dismissed, which is not a failure. */
+    attachFiles: () => Promise<{
+      success: boolean;
+      attachments: OverseerAttachment[];
+      canceled?: boolean;
+      error?: string;
+    }>;
     history: () => Promise<{ messages: OverseerMessage[]; busy: boolean }>;
     fleet: () => Promise<OverseerFleetSnapshot>;
     confirmAction: (params: { action: OverseerAction; approve: boolean }) => Promise<{ success: boolean; error?: string; mode?: string }>;
