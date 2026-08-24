@@ -12,6 +12,7 @@ import {
   probeHermes,
   createHermesCron,
   updateHermesCron,
+  setHermesModel,
   hermesCronAction,
   fetchHermesCronRuns,
   fetchHermesSessionMessages,
@@ -850,6 +851,15 @@ export function getOverseerSettings(): OverseerSettings {
  * Persist a settings change and, if the interval moved, re-arm the timer so it
  * applies now rather than after the next restart.
  */
+export async function applyOverseerModel(
+  provider: string,
+  model: string,
+): Promise<{ success: boolean; error?: string }> {
+  const conn = usableHermesConnection();
+  if (!conn) return { success: false, error: 'Hermes is not configured.' };
+  return setHermesModel(conn, { provider, model });
+}
+
 export function setOverseerSettings(patch: Partial<OverseerSettings>): OverseerSettings {
   const state = loadState();
   const next: OverseerSettings = {

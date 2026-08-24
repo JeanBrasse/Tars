@@ -1246,7 +1246,7 @@ export interface ElectronAPI {
     resume: () => Promise<{ success: boolean; paused: boolean }>;
     watchStatus: () => Promise<{ paused: boolean }>;
     settings: () => Promise<OverseerSettings>;
-    setSettings: (patch: Partial<OverseerSettings>) => Promise<{ success: boolean; settings: OverseerSettings }>;
+    setSettings: (patch: Partial<OverseerSettings>) => Promise<{ success: boolean; settings: OverseerSettings; error?: string }>;
     modelOptions: () => Promise<
       | { success: true; provider: string; model: string; providers: OverseerModelProvider[] }
       | { success: false; error: string; needsSignIn?: boolean }

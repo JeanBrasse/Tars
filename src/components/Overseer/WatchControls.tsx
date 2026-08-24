@@ -114,6 +114,7 @@ export function WatchControls({
             drop="up"
             searchable={modelOptions.length > 8}
             ariaLabel="Overseer model"
+            title="Sets the model your Hermes gateway answers on, for everything that uses it, not only this chat"
             placeholder="model"
             value={effectiveModel}
             options={modelOptions}

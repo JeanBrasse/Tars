@@ -35,6 +35,7 @@ export function Dropdown<T extends string = string>({
   searchable = false,
   searchPlaceholder = 'filter',
   ariaLabel,
+  title,
   size = 'md',
   drop = 'down',
 }: {
@@ -49,6 +50,8 @@ export function Dropdown<T extends string = string>({
   searchable?: boolean;
   searchPlaceholder?: string;
   ariaLabel?: string;
+  /** Native tooltip on the trigger, for a consequence the label cannot hold. */
+  title?: string;
   /** 32px (default) or the 26px row used in dense tables, e.g. a team's member grid. */
   size?: 'sm' | 'md';
   /** Which way the panel opens. `up` for a control near the bottom of the
@@ -171,6 +174,7 @@ export function Dropdown<T extends string = string>({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => (open ? close() : setOpen(true))}
+        title={title}
         className={`w-full flex items-center justify-between gap-2 bg-secondary border text-foreground transition-colors ${
           size === 'sm' ? 'h-[26px] px-2 text-xs' : 'h-8 px-3 text-sm'
         } ${open ? 'border-primary' : 'border-border hover:border-border-accent'} ${mono ? 'font-mono' : ''}`}
