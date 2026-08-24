@@ -79,7 +79,10 @@ export function AgentDetailPanel({
                 <FolderOpen className="w-3 h-3" />
                 {agent.worktreePath || agent.projectPath}
               </span>
-              <span className="flex items-center gap-1">
+              {/* A wall clock: different on every run, so the visual test masks
+                  it. The width is fixed because a mask covers the element's
+                  box, and a box that changes size defeats the mask. */}
+              <span data-volatile className="flex items-center gap-1 w-[92px] shrink-0">
                 <Clock className="w-3 h-3" />
                 {(() => {
                   try {

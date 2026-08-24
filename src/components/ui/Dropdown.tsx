@@ -36,6 +36,7 @@ export function Dropdown<T extends string = string>({
   searchPlaceholder = 'filter',
   ariaLabel,
   size = 'md',
+  drop = 'down',
 }: {
   value: T | '';
   options: DropdownOption<T>[];
@@ -50,6 +51,10 @@ export function Dropdown<T extends string = string>({
   ariaLabel?: string;
   /** 32px (default) or the 26px row used in dense tables, e.g. a team's member grid. */
   size?: 'sm' | 'md';
+  /** Which way the panel opens. `up` for a control near the bottom of the
+   *  window, where a downward panel would open off-screen: the Chat composer
+   *  sits on the last row of the page. */
+  drop?: 'down' | 'up';
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -180,7 +185,7 @@ export function Dropdown<T extends string = string>({
 
       {open && (
         <div
-          className={`absolute z-[90] mt-1 min-w-full bg-card border border-border ${align === 'right' ? 'right-0' : 'left-0'}`}
+          className={`absolute z-[90] min-w-full bg-card border border-border ${drop === 'up' ? 'bottom-full mb-1' : 'mt-1'} ${align === 'right' ? 'right-0' : 'left-0'}`}
         >
           {searchable && (
             <div className="flex items-center gap-2 h-8 px-2.5 border-b border-border">

@@ -127,6 +127,57 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
   // handlers are unchanged: type into local settings, persist on blur.
   const apiProviders = [
     {
+      // Not a section of its own: it is a provider like the others, with two
+      // more fields. A vendor with no catalogue still belongs in the list of
+      // vendors.
+      id: 'custom-openai',
+      name: 'Custom (OpenAI-compatible)',
+      detail: appSettings.customOpenAIBaseUrl || 'no base url set',
+      note: 'Leave blank if the endpoint needs none.',
+      docsUrl: 'https://platform.openai.com/docs/api-reference/chat',
+      placeholder: 'sk-... (optional)',
+      enabled: !!appSettings.customOpenAIEnabled,
+      onToggle: () => onSaveAppSettings({ customOpenAIEnabled: !appSettings.customOpenAIEnabled }),
+      apiKey: appSettings.customOpenAIApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ customOpenAIApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ customOpenAIApiKey: appSettings.customOpenAIApiKey }),
+      models: [appSettings.customOpenAIModel || 'no model set'],
+      extraRows: (
+        <>
+          <SettingsRow
+            label="Base URL"
+            description={
+              customUrlInvalid
+                ? <span className="text-danger">Must be a full http:// or https:// URL, and not a link-local address, e.g. https://api.example.com/v1</span>
+                : 'Any OpenAI-compatible /chat/completions endpoint: vLLM, LM Studio, a hosted vendor with no Anthropic support.'
+            }
+            control={
+              <Input
+                width="control"
+                value={appSettings.customOpenAIBaseUrl ?? ''}
+                onChange={(e) => { onUpdateLocalSettings({ customOpenAIBaseUrl: e.target.value }); setCustomUrlInvalid(false); }}
+                onBlur={handleCustomUrlBlur}
+                placeholder="https://api.example.com/v1"
+              />
+            }
+          />
+          <SettingsRow
+            label="Model"
+            description="The exact model id this endpoint expects. There is no catalogue to pick from, so type it as the vendor documents it."
+            control={
+              <Input
+                width="control"
+                value={appSettings.customOpenAIModel || ''}
+                onChange={(e) => onUpdateLocalSettings({ customOpenAIModel: e.target.value })}
+                onBlur={() => onSaveAppSettings({ customOpenAIModel: appSettings.customOpenAIModel })}
+                placeholder="llama-3.1-70b-instruct"
+              />
+            }
+          />
+        </>
+      ),
+    },
+    {
       id: 'openrouter',
       name: 'OpenRouter',
       detail: 'openrouter · one key, 300+ models',
@@ -439,6 +490,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
 
             {open && (
               <ConfigureArea>
+                {'extraRows' in p && p.extraRows}
                 <SettingsRow
                   label="API key"
                   description={p.note}
@@ -470,88 +522,6 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
           </div>
         );
       })}
-
-      <div className="px-4 pt-4 pb-2">
-        <PanelCaption>CUSTOM</PanelCaption>
-      </div>
-
-      <div>
-        {(() => {
-          const hasBaseUrl = !!appSettings.customOpenAIBaseUrl?.trim();
-          const hasModel = !!appSettings.customOpenAIModel?.trim();
-          const ready = hasBaseUrl && hasModel;
-          const open = expanded === 'custom-openai';
-          return (
-            <>
-              <SettingsRow
-                label={
-                  <ProviderLabel
-                    name="Custom (OpenAI-compatible)"
-                    status={ready ? 'configured' : hasBaseUrl ? 'no model set' : 'not configured'}
-                    tone={ready ? 'running' : 'idle'}
-                    on={ready}
-                  />
-                }
-                description={<span className="font-mono">{appSettings.customOpenAIBaseUrl || 'no base url set'}</span>}
-                control={<ConfigureButton open={open} onClick={() => toggleExpanded('custom-openai')} />}
-                secondaryControl={
-                  <Toggle
-                    enabled={!!appSettings.customOpenAIEnabled}
-                    onChange={() => onSaveAppSettings({ customOpenAIEnabled: !appSettings.customOpenAIEnabled })}
-                  />
-                }
-              />
-              {open && (
-                <ConfigureArea>
-                  <SettingsRow
-                    label="Base URL"
-                    description={
-                      customUrlInvalid
-                        ? <span className="text-danger">Must be a full http:// or https:// URL, e.g. https://api.example.com/v1</span>
-                        : 'Any OpenAI-compatible /chat/completions endpoint - vLLM, LM Studio, a hosted vendor with no Anthropic support.'
-                    }
-                    control={
-                      <Input
-                        width="control"
-                        value={appSettings.customOpenAIBaseUrl ?? ''}
-                        onChange={(e) => { onUpdateLocalSettings({ customOpenAIBaseUrl: e.target.value }); setCustomUrlInvalid(false); }}
-                        onBlur={handleCustomUrlBlur}
-                        placeholder="https://api.example.com/v1"
-                      />
-                    }
-                  />
-                  <SettingsRow
-                    label="API key"
-                    description="Leave blank if the endpoint needs none."
-                    control={
-                      <PasswordInput
-                        width="control"
-                        value={appSettings.customOpenAIApiKey || ''}
-                        onChange={(e) => onUpdateLocalSettings({ customOpenAIApiKey: e.target.value })}
-                        onBlur={() => onSaveAppSettings({ customOpenAIApiKey: appSettings.customOpenAIApiKey })}
-                        placeholder="sk-... (optional)"
-                      />
-                    }
-                  />
-                  <SettingsRow
-                    label="Model"
-                    description="The exact model id this endpoint expects. No catalogue to pick from - type it as the vendor documents it."
-                    control={
-                      <Input
-                        width="control"
-                        value={appSettings.customOpenAIModel || ''}
-                        onChange={(e) => onUpdateLocalSettings({ customOpenAIModel: e.target.value })}
-                        onBlur={() => onSaveAppSettings({ customOpenAIModel: appSettings.customOpenAIModel })}
-                        placeholder="llama-3.1-70b-instruct"
-                      />
-                    }
-                  />
-                </ConfigureArea>
-              )}
-            </>
-          );
-        })()}
-      </div>
 
       {/* What used to be a four-paragraph card explaining routing. One line is
           the whole rule; the per-provider detail lines say the rest. */}

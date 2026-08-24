@@ -156,7 +156,10 @@ export function SlowOperation({
       <p className="text-xs text-foreground">{what}</p>
       {detail && (
         <p className="text-[10.5px] font-mono text-muted-foreground">
-          {detail} · {seconds}s
+          {detail} ·{' '}
+          {/* Counts up for as long as the wait lasts, so a page that is slow to
+              load could never be screenshotted: the frame never repeats. */}
+          <span data-volatile className="inline-block w-[34px] text-left">{seconds}s</span>
         </p>
       )}
       {onCancel && (
