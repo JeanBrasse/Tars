@@ -101,7 +101,10 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
       maxDiffPixelRatio: 0.001,
       animations: 'disabled',
-      mask: [page.locator('.xterm-screen')],
+      // Terminal bodies, and anything that counts up while an agent runs:
+      // both change between two frames of the same page, so comparing them
+      // means the baseline can never match twice and a green run says nothing.
+      mask: [page.locator('.xterm-screen'), page.locator('[data-volatile]')],
     });
   });
 }

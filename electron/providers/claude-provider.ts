@@ -48,6 +48,14 @@ export class ClaudeProvider implements CLIProvider {
       command += ` --append-system-prompt-file '${params.systemPromptFile.replace(/'/g, "'\\''")}'`;
     }
 
+    // Resume. Verified against `claude --help` on this machine: `-r, --resume
+    // [value]` takes a session id. The caller only passes one whose transcript
+    // it has found, because a missing one makes the binary exit rather than
+    // start.
+    if (params.resumeSessionId) {
+      command += ` --resume '${params.resumeSessionId}'`;
+    }
+
     // Model
     if (params.model) {
       if (!/^[a-zA-Z0-9._:\/\[\]-]+$/.test(params.model)) {
