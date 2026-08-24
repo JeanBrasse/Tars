@@ -351,11 +351,30 @@ export default function TerminalsView() {
       tabManager.removeAgentFromTab(tabManager.activeCustomTab.id, agentId);
     } else {
       // Project tab: this is the only place a project-tab agent can be
-      // permanently deleted from, so it kills the PTY and drops agents.json's
-      // only record of it. Confirm first - the same pattern agents/page.tsx
-      // already uses for "save as template".
-      const agentName = agentsRef.current.find(a => a.id === agentId)?.name || 'this agent';
-      if (!window.confirm(`Delete "${agentName}"? This stops it and cannot be undone.`)) return;
+      // permanently deleted from. It kills the PTY, drops agents.json's only
+      // record of it, AND runs `git worktree remove --force`, which throws away
+      // anything uncommitted in that checkout. The old wording said "cannot be
+      // undone" and left the worktree unmentioned, so the one consequence a
+      // user would actually want warned about was the one it hid. Committed
+      // work survives: the branch is left behind, only the checkout goes.
+      const agent = agentsRef.current.find(a => a.id === agentId);
+      const agentName = agent?.name || 'this agent';
+
+      let worktreeNote = '';
+      if (agent?.worktreePath && agent?.branchName) {
+        let dirtyCount: number | null = null;
+        try {
+          const res = await window.electronAPI?.review?.repo(agent.worktreePath);
+          if (res?.success && res.summary) dirtyCount = res.summary.status.length;
+        } catch {
+          // Best effort: a worktree we cannot read still gets the generic warning.
+        }
+        worktreeNote = dirtyCount
+          ? `\n\nIts worktree ${agent.worktreePath} will be deleted, along with ${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'}. Commits on ${agent.branchName} are kept.`
+          : `\n\nIts worktree ${agent.worktreePath} will be deleted. Commits on ${agent.branchName} are kept.`;
+      }
+
+      if (!window.confirm(`Delete "${agentName}"? This stops it and cannot be undone.${worktreeNote}`)) return;
       multiTerminal.unregisterContainer(agentId);
       await removeAgent(agentId);
     }

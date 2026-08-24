@@ -204,6 +204,23 @@ export interface ResolvedModel {
   releaseDate?: string;
 }
 
+/**
+ * models.dev suffixes an undated id with "(latest)": `claude-sonnet-4-5` is
+ * named "Claude Sonnet 4.5 (latest)" because it is the alias that tracks the
+ * newest build of that family. It does NOT mean the newest model there is.
+ *
+ * Tars printed it verbatim in the model picker, so the list read as if Sonnet
+ * 4.5 were current while Opus 5 sat two rows above it. The suffix comes off,
+ * and the row says what it actually is instead.
+ */
+function isAliasName(name: string): boolean {
+  return /\(latest\)\s*$/i.test(name);
+}
+
+function displayName(name: string): string {
+  return name.replace(/\s*\(latest\)\s*$/i, '').trim() || name;
+}
+
 /** Every model the catalogue knows for a Tars provider, newest first. */
 export function modelsForProvider(providerId: string): ResolvedModel[] {
   const key = PROVIDER_KEYS[providerId];
@@ -213,7 +230,8 @@ export function modelsForProvider(providerId: string): ResolvedModel[] {
   return Object.values(catalog[key].models)
     .map(m => ({
       id: m.id,
-      name: m.name || m.id,
+      name: displayName(m.name || m.id),
+      alias: isAliasName(m.name || ''),
       contextWindow: m.limit?.context,
       maxOutput: m.limit?.output,
       reasoning: m.reasoning,

@@ -80,6 +80,8 @@ export interface CatalogModel {
   effortValues?: string[];
   cost?: ModelCost;
   releaseDate?: string;
+  /** True for an undated id that tracks the newest build of its family. */
+  alias?: boolean;
 }
 
 export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
