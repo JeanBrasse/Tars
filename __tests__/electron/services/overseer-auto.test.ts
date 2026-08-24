@@ -93,6 +93,35 @@ describe('nudging an agent that is waiting', () => {
   });
 });
 
+describe('restarting an agent that has errored', () => {
+  const on = ['restart-errored'];
+
+  it('authorises one that errored a minute ago', () => {
+    put({ status: 'error', lastActivity: minutesAgo(5) });
+    expect(auto.findAutoRule(on, { agentId: 'a1' }, NOW)?.id).toBe('restart-errored');
+  });
+
+  it('refuses one that just errored, so it does not race the status write', () => {
+    put({ status: 'error', lastActivity: new Date(NOW - 5_000).toISOString() });
+    expect(auto.findAutoRule(on, { agentId: 'a1' }, NOW)).toBeNull();
+  });
+
+  it('refuses every state that is not an error', () => {
+    for (const status of ['running', 'waiting', 'idle', 'completed']) {
+      put({ status, lastActivity: minutesAgo(120) });
+      expect(auto.findAutoRule(on, { agentId: 'a1' }, NOW), status).toBeNull();
+    }
+  });
+
+  it('does not authorise a waiting agent just because the other rule is off', () => {
+    // The two rules are independent: enabling one must not widen the other.
+    put({ status: 'waiting', lastActivity: minutesAgo(60) });
+    expect(auto.findAutoRule(['restart-errored'], { agentId: 'a1' }, NOW)).toBeNull();
+    put({ status: 'error', lastActivity: minutesAgo(60) });
+    expect(auto.findAutoRule(['nudge-waiting'], { agentId: 'a1' }, NOW)).toBeNull();
+  });
+});
+
 describe('the rules on offer', () => {
   it('each has an id, a label and a description a person can decide from', () => {
     for (const rule of auto.AUTO_ACTION_RULES) {

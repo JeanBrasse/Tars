@@ -140,6 +140,25 @@ export function downloadUpdate() {
   return autoUpdater.downloadUpdate();
 }
 
-export function quitAndInstall() {
-  autoUpdater.quitAndInstall();
+/**
+ * Hand over to the downloaded update.
+ *
+ * This can fail and used to fail silently: it was called and never awaited or
+ * caught, so a refusal left the window sitting on "Restarting" forever. On
+ * macOS the common refusal is an unsigned build, where the updater cannot
+ * validate what it downloaded and declines to swap it in.
+ *
+ * It also returns when it succeeds only in the sense that the process is about
+ * to die, so the caller cannot treat "returned" as "worked". What it can do is
+ * report a throw, which is the case that leaves the user staring at a spinner.
+ */
+export function quitAndInstall(): { started: boolean; error?: string } {
+  try {
+    autoUpdater.quitAndInstall();
+    return { started: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('quitAndInstall refused:', message);
+    return { started: false, error: message };
+  }
 }

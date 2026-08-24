@@ -135,6 +135,7 @@ export function AgentPanel(props: {
 
       <OptionsRow open={props.optionsOpen} onToggle={props.onToggleOptions} summary={summary}>
         <AgentOptionsBody
+          provider={props.provider}
           skills={props.skills}
           skillDescriptions={props.skillDescriptions}
           selectedSkills={props.selectedSkills}

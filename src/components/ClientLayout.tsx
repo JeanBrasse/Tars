@@ -4,7 +4,7 @@ import { useStore } from '@/store';
 import { Brand, BrandMark } from '@/components/Brand';
 import Sidebar from './Sidebar';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, AlertCircle } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { Splash } from '@/components/Splash';
@@ -48,7 +48,7 @@ interface UpdateInfo {
   releaseUrl?: string;
 }
 
-type UpdateFlowState = 'available' | 'downloading' | 'ready' | 'restarting';
+type UpdateFlowState = 'available' | 'downloading' | 'ready' | 'restarting' | 'restart-failed';
 
 const VAULT_READ_DOCS_KEY = 'vault-read-docs';
 /** Kept in sync with the pre-hydration script in app/layout.tsx. */
@@ -122,7 +122,11 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
         const version = info.latestVersion ?? '';
         if (version !== notifiedVersionRef.current) {
           notifiedVersionRef.current = version;
-          setUpdateDismissed(false);
+          // The panel no longer opens itself. A new version is news, not an
+          // interruption: the sidebar row appears and stays until the update
+          // is installed, and opening the panel is a click. It used to take
+          // over the middle of the screen the moment a check came back.
+          setUpdateDismissed(true);
           setUpdateFlowState('available');
           downloadClickedRef.current = false;
         }
@@ -168,9 +172,17 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [isFallbackUpdate, updateInfo]);
 
-  const handleQuitAndInstall = useCallback(() => {
+  const handleQuitAndInstall = useCallback(async () => {
     setUpdateFlowState('restarting');
-    window.electronAPI?.updates?.quitAndInstall();
+    const res = await window.electronAPI?.updates?.quitAndInstall();
+    if (res && !res.started) {
+      setUpdateFlowState('restart-failed');
+      return;
+    }
+    // A successful handover kills this process, so anything that runs after
+    // this line means it did not happen. The updater can decline without
+    // throwing, which is what left the panel on "Restarting" forever.
+    setTimeout(() => setUpdateFlowState(prev => (prev === 'restarting' ? 'restart-failed' : prev)), 8000);
   }, []);
 
   // Initialize dark mode from localStorage on mount. Dark is the launch
@@ -338,6 +350,20 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
                 </div>
               )}
 
+              {/* Why nothing happened, when nothing happened. Left unsaid, the
+                  panel sat on "Restarting" and the user had no idea the
+                  handover had been refused. */}
+              {updateFlowState === 'restart-failed' && (
+                <div className="mb-4 flex items-start gap-2 border border-warning/40 bg-card px-3 py-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
+                  <p className="text-[11.5px] text-muted-foreground">
+                    Tars could not swap itself for the new version. On macOS this is usually because
+                    the build is not code-signed, so the updater will not install what it downloaded.
+                    Install it by hand and this will keep working as before.
+                  </p>
+                </div>
+              )}
+
               {/* The label carries what the icon used to say, so the download
                   and restart glyphs are gone; the spinners stay because they
                   report progress, not the action. */}
@@ -365,6 +391,18 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
                   <Button variant="primary" className="flex-1" disabled>
                     <BrandSpinner size={14} />
                     Restarting
+                  </Button>
+                )}
+
+                {updateFlowState === 'restart-failed' && (
+                  <Button
+                    variant="primary"
+                    className="flex-1"
+                    onClick={() => window.electronAPI?.updates?.openExternal(
+                      updateInfo?.downloadUrl || 'https://github.com/JeanBrasse/Tars/releases/latest',
+                    )}
+                  >
+                    Download it instead
                   </Button>
                 )}
 

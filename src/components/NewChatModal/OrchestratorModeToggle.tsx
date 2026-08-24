@@ -10,12 +10,25 @@ let cachedError: string | null = null;
 interface OrchestratorModeToggleProps {
   isOrchestrator: boolean;
   onToggle: (enabled: boolean) => void;
+  /** The provider this agent will run on, so the row can say whether the mode
+   *  is enforced on it or only asked for. */
+  provider?: string;
 }
 
 export default function OrchestratorModeToggle({
   isOrchestrator,
   onToggle,
+  provider,
 }: OrchestratorModeToggleProps) {
+  // Fourteen providers run the Claude binary and genuinely lose the editing
+  // and subagent tools. The five CLIs with their own syntax have no verified
+  // equivalent, so on those the mode is a persona and not a restriction. The
+  // switch should not imply otherwise.
+  const [enforcedBy, setEnforcedBy] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    void window.electronAPI?.provider?.orchestratorSupport().then(setEnforcedBy);
+  }, []);
+  const enforced = !provider || !enforcedBy ? true : enforcedBy[provider] !== false;
   const [status, setStatus] = useState<'idle' | 'loading' | 'configured' | 'not-configured' | 'error'>(
     cachedStatus ?? 'idle'
   );
@@ -118,8 +131,11 @@ export default function OrchestratorModeToggle({
     <div className={OPTION_ROW}>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">Orchestrator mode</p>
-        <p className={`text-[11px] ${errorMessage ? 'text-danger' : 'text-muted-foreground'}`}>
-          {errorMessage || 'It hands work to other agents and cannot write files itself.'}
+        <p className={`text-[11px] ${errorMessage ? 'text-danger' : !enforced ? 'text-warning' : 'text-muted-foreground'}`}>
+          {errorMessage
+            || (enforced
+              ? 'It hands work to other agents and cannot write files itself.'
+              : 'On this CLI the editing tools cannot be taken away, so this guides it rather than stopping it. Claude and the providers that run on it enforce it.')}
         </p>
       </div>
       <div className="shrink-0">

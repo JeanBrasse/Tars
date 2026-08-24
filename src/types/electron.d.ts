@@ -786,7 +786,7 @@ export interface ElectronAPI {
       defaultProjectPath?: string;
       /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
       providerBudgets?: Record<string, number>;
-      cliPaths?: {
+  cliPaths?: {
         claude: string;
         codex: string;
         gemini: string;
@@ -1244,6 +1244,11 @@ export interface ElectronAPI {
     delete: (id: string) => Promise<{ success: boolean; error?: string }>;
   };
 
+  // Which providers enforce orchestrator mode rather than only asking for it
+  provider?: {
+    orchestratorSupport: () => Promise<Record<string, boolean>>;
+  };
+
   // Overseer chat: Hermes watches every project's agents and reports back
   overseer?: {
     send: (message: string) => Promise<OverseerAskResult>;
@@ -1267,7 +1272,7 @@ export interface ElectronAPI {
   updates?: {
     check: () => Promise<{ devMode?: boolean; error?: boolean; fallback?: boolean; currentVersion?: string } | null>;
     download: () => Promise<unknown>;
-    quitAndInstall: () => Promise<void>;
+    quitAndInstall: () => Promise<{ started: boolean; error?: string }>;
     openExternal: (url: string) => Promise<{ success: boolean }>;
     onUpdateAvailable: (callback: (info: {
       currentVersion: string;

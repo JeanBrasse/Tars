@@ -36,6 +36,7 @@ import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSk
 import * as crypto from 'crypto';
 import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
+import { enforcesOrchestratorMode } from '../providers/cli-provider';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -1013,6 +1014,23 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   });
 
   // Remove an agent
+  /**
+   * Which providers actually enforce orchestrator mode.
+   *
+   * Fourteen run the Claude binary and take --disallowed-tools, so for them
+   * the tools are genuinely absent. The five CLIs with their own syntax have
+   * no verified equivalent, and an orchestrator on those is guided by its
+   * persona rather than restricted. The creation screen says so instead of
+   * letting the switch imply something it cannot deliver.
+   */
+  ipcMain.handle('provider:orchestratorSupport', async () => {
+    const out: Record<string, boolean> = {};
+    for (const provider of getAllProviders()) {
+      out[provider.id] = enforcesOrchestratorMode(provider.binaryName);
+    }
+    return out;
+  });
+
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
     if (agent?.ptyId) {
@@ -2062,9 +2080,7 @@ function registerUpdateHandlers(): void {
     return downloadUpdate();
   });
 
-  ipcMain.handle('app:quitAndInstall', async () => {
-    quitAndInstall();
-  });
+  ipcMain.handle('app:quitAndInstall', async () => quitAndInstall());
 
   ipcMain.handle('app:openExternal', async (_event, url: string) => {
     shell.openExternal(url);
