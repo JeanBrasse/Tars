@@ -10572,6 +10572,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "wz2Ll",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "ivu9j",
+                                          "name": "l",
+                                          "fill": "#727272",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -10815,6 +10842,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "CUPiR",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "AB64O",
+                                          "name": "l",
+                                          "fill": "#727272",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -11052,6 +11106,33 @@
                                           "name": "l",
                                           "fill": "#727272",
                                           "content": "edit",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "mUBip",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "oK6fc",
+                                          "name": "l",
+                                          "fill": "#727272",
+                                          "content": "delete",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-mono",
                                           "fontSize": 10.5,
@@ -11310,6 +11391,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "R4CBO",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "nm2Cl",
+                                          "name": "l",
+                                          "fill": "#727272",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -11553,6 +11661,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "v45IKl",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "NKiWH",
+                                          "name": "l",
+                                          "fill": "#727272",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -11790,6 +11925,33 @@
                                           "name": "l",
                                           "fill": "#727272",
                                           "content": "edit",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "Ul8Xm",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "Vv8jF",
+                                          "name": "l",
+                                          "fill": "#727272",
+                                          "content": "delete",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-mono",
                                           "fontSize": 10.5,
@@ -14200,7 +14362,7 @@
                                       "id": "JoGgT",
                                       "name": "n",
                                       "fill": "#F5F4F2",
-                                      "content": "Dorothy-fix",
+                                      "content": "tars",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 13,
@@ -14224,7 +14386,7 @@
                                   "id": "L4agF",
                                   "name": "p",
                                   "fill": "#9B9B9B",
-                                  "content": "~/Dorothy-fix",
+                                  "content": "~/tars",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 11,
@@ -15037,7 +15199,7 @@
                                   "id": "z2h3yo",
                                   "name": "p",
                                   "fill": "#9B9B9B",
-                                  "content": "~/Dorothy-fix/landing",
+                                  "content": "~/tars/landing",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 11,
@@ -17795,7 +17957,7 @@
                               "id": "bdklh",
                               "name": "d",
                               "fill": "#727272",
-                              "content": "13 files in ~/.claude/projects/-Users-noah-Dorothy-fix/memory",
+                              "content": "13 files in ~/.claude/projects/-Users-noah-tars/memory",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-mono",
                               "fontSize": 10.5,
@@ -18997,7 +19159,7 @@
                                   "id": "pGpbg",
                                   "name": "n",
                                   "fill": "#F5F4F2",
-                                  "content": "Dorothy-fix",
+                                  "content": "tars",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-ui",
                                   "fontSize": 12,
@@ -19431,7 +19593,7 @@
                               "fill": "#9B9B9B",
                               "textGrowth": "fixed-width",
                               "width": 548,
-                              "content": "# Dorothy-fix Memory Index\n\n- ACP comme transport d'orchestration — session/prompt retourne stopReason et le coût\n- Pipeline mémoire — hook SessionStart puis /api/memory/context\n- Persistance des agents — écriture atomique, versionnée\n- Sources Usage — transcripts JSONL, catalogue models.dev",
+                              "content": "# tars Memory Index\n\n- ACP comme transport d'orchestration — session/prompt retourne stopReason et le coût\n- Pipeline mémoire — hook SessionStart puis /api/memory/context\n- Persistance des agents — écriture atomique, versionnée\n- Sources Usage — transcripts JSONL, catalogue models.dev",
                               "lineHeight": 1.7,
                               "fontFamily": "$font-mono",
                               "fontSize": 11.5,
@@ -23924,7 +24086,7 @@
                                       "id": "c9zf8",
                                       "name": "v",
                                       "fill": "#F5F4F2",
-                                      "content": "Dorothy-fix, 1212-Capital",
+                                      "content": "tars, 1212-Capital",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-mono",
                                       "fontSize": 11.5,
@@ -47740,7 +47902,7 @@
                           "id": "f2SFid",
                           "name": "v",
                           "fill": "#F5F4F2",
-                          "content": "~/Dorothy-fix",
+                          "content": "~/tars",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-mono",
                           "fontSize": 11.5,
@@ -47807,7 +47969,7 @@
                               "id": "g5CknA",
                               "name": "c",
                               "fill": "#727272",
-                              "content": "~/Dorothy-fix",
+                              "content": "~/tars",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
@@ -50601,7 +50763,7 @@
                               "id": "o3nHy",
                               "name": "v",
                               "fill": "#F5F4F2",
-                              "content": "~/Dorothy-fix",
+                              "content": "~/tars",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-mono",
                               "fontSize": 11.5,
@@ -53190,7 +53352,7 @@
                           "id": "BFhwf",
                           "name": "l",
                           "fill": "#F5F4F2",
-                          "content": "Dorothy-fix",
+                          "content": "tars",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 11.5,
@@ -57366,7 +57528,7 @@
                                   "id": "UiwSN",
                                   "name": "l",
                                   "fill": "#F5F4F2",
-                                  "content": "Dorothy-fix",
+                                  "content": "tars",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-ui",
                                   "fontSize": 11.5,
@@ -59055,7 +59217,7 @@
                               "id": "pvMx4",
                               "name": "n",
                               "fill": "#F5F4F2",
-                              "content": "Dorothy-fix",
+                              "content": "tars",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-ui",
                               "fontSize": 13,
@@ -61928,7 +62090,7 @@
                           "id": "qMlWM",
                           "name": "v",
                           "fill": "#F5F4F2",
-                          "content": "~/Dorothy-fix",
+                          "content": "~/tars",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-mono",
                           "fontSize": 11.5,
@@ -65681,7 +65843,7 @@
                           "id": "m4DwO0",
                           "name": "p",
                           "fill": "#727272",
-                          "content": "~/Dorothy-fix/.worktrees/feat/frontend",
+                          "content": "~/tars/.worktrees/feat/frontend",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-mono",
                           "fontSize": 10.5,
@@ -66543,7 +66705,6 @@
       "x": 0,
       "y": 17000,
       "name": "Dashboard · light",
-      "theme": {},
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -67275,7 +67436,7 @@
                                   "id": "NaSX7",
                                   "name": "l",
                                   "fill": "#1E1E1E",
-                                  "content": "Dorothy-fix",
+                                  "content": "tars",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-ui",
                                   "fontSize": 11.5,
@@ -68133,7 +68294,6 @@
       "x": 1540,
       "y": 17000,
       "name": "Usage · light",
-      "theme": {},
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -70475,7 +70635,6 @@
       "x": 3080,
       "y": 17000,
       "name": "Agents · light",
-      "theme": {},
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -71598,6 +71757,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "ADGbb",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "SCDMK",
+                                          "name": "l",
+                                          "fill": "#6B6B6B",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -71841,6 +72027,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "hOtKq",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "ksZ87",
+                                          "name": "l",
+                                          "fill": "#6B6B6B",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -72078,6 +72291,33 @@
                                           "name": "l",
                                           "fill": "#6B6B6B",
                                           "content": "edit",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "TBFp8",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "xR1m6",
+                                          "name": "l",
+                                          "fill": "#6B6B6B",
+                                          "content": "delete",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-mono",
                                           "fontSize": 10.5,
@@ -72336,6 +72576,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "feZ9q",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "qxUdu",
+                                          "name": "l",
+                                          "fill": "#6B6B6B",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -72573,6 +72840,33 @@
                                           "name": "l",
                                           "fill": "#6B6B6B",
                                           "content": "edit",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "v4iGC",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "W7BlE",
+                                          "name": "l",
+                                          "fill": "#6B6B6B",
+                                          "content": "delete",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-mono",
                                           "fontSize": 10.5,
@@ -72822,6 +73116,33 @@
                                           "fontWeight": "normal"
                                         }
                                       ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "fm50m",
+                                      "name": "a delete",
+                                      "height": 25,
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "padding": [
+                                        4,
+                                        9
+                                      ],
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "U3KuhM",
+                                          "name": "l",
+                                          "fill": "#6B6B6B",
+                                          "content": "delete",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 10.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -72845,7 +73166,6 @@
       "x": 0,
       "y": 18000,
       "name": "Settings · Providers · light",
-      "theme": {},
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -75159,7 +75479,6 @@
       "x": 1540,
       "y": 18000,
       "name": "Review · light",
-      "theme": {},
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -81300,7 +81619,7 @@
                                               "id": "r1p5ax",
                                               "name": "v",
                                               "fill": "#F5F4F2",
-                                              "content": "/Users/noah/Dorothy-fix",
+                                              "content": "/Users/noah/tars",
                                               "lineHeight": 1.4,
                                               "fontFamily": "$font-mono",
                                               "fontSize": 11,
@@ -82657,6 +82976,57 @@
               "children": [
                 {
                   "type": "frame",
+                  "id": "r1IWoF",
+                  "name": "f NAME",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Kq41E",
+                      "name": "cap",
+                      "fill": "#727272",
+                      "content": "NAME",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "StEqu",
+                      "name": "ctl",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "#222222",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "p0fiw",
+                          "name": "v",
+                          "fill": "#F5F4F2",
+                          "content": "Frontend Engineer",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
                   "id": "awKwX",
                   "name": "row1",
                   "width": "fill_container",
@@ -82703,7 +83073,7 @@
                               "id": "aU1YV",
                               "name": "v",
                               "fill": "#F5F4F2",
-                              "content": "~/Dorothy-fix",
+                              "content": "~/tars",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-mono",
                               "fontSize": 12,
@@ -83387,7 +83757,7 @@
           "type": "frame",
           "id": "zj0fz",
           "x": 340,
-          "y": 706,
+          "y": 776,
           "name": "note",
           "width": 760,
           "layout": "vertical",
@@ -86426,7 +86796,7 @@
       "type": "frame",
       "id": "u6zvq",
       "x": 12044,
-      "y": 1000,
+      "y": 1240,
       "name": "Chat · composer redesign",
       "width": 900,
       "height": 660,
@@ -87331,6 +87701,575 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Ll4rQ",
+      "x": 3060,
+      "y": 2000,
+      "name": "Usage · daily messages",
+      "width": 556,
+      "fill": "$surface",
+      "stroke": "$border",
+      "strokeWidth": 1,
+      "layout": "vertical",
+      "gap": 10,
+      "padding": 14,
+      "children": [
+        {
+          "type": "text",
+          "id": "nkgJ0",
+          "name": "h",
+          "fill": "#727272",
+          "content": "DAILY MESSAGES · 14 DAYS",
+          "lineHeight": 1.6,
+          "fontFamily": "$font-ui",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "jnVxJ",
+          "name": "chart",
+          "width": "fill_container",
+          "height": 130,
+          "layout": "vertical",
+          "gap": 6,
+          "children": [
+            {
+              "type": "frame",
+              "id": "KrKOS",
+              "name": "plot",
+              "width": "fill_container",
+              "height": "fill_container",
+              "gap": 4,
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "k0tMR9",
+                  "name": "t0",
+                  "width": 33,
+                  "height": 20,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "h6LG0",
+                  "name": "t1",
+                  "width": 33,
+                  "height": 31,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "a9IEJ",
+                  "name": "t2",
+                  "width": 33,
+                  "height": 12,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "Y7y9yv",
+                  "name": "t3",
+                  "width": 33,
+                  "height": 40,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "Odcyb",
+                  "name": "t4",
+                  "width": 33,
+                  "height": 24,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "KYQTh",
+                  "name": "t5",
+                  "width": 33,
+                  "height": 57,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "Bt6lH",
+                  "name": "t6",
+                  "width": 33,
+                  "height": 34,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "e4SaUM",
+                  "name": "t7",
+                  "width": 33,
+                  "height": 70,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "vaG1R",
+                  "name": "t8",
+                  "width": 33,
+                  "height": 27,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "mNHQn",
+                  "name": "t9",
+                  "width": 33,
+                  "height": 47,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "m4t80p",
+                  "name": "t10",
+                  "width": 33,
+                  "height": 37,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "bdk1p",
+                  "name": "t11",
+                  "width": 33,
+                  "height": 88,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "fkYDz",
+                  "name": "t12",
+                  "width": 33,
+                  "height": 33,
+                  "fill": "$surface-raised"
+                },
+                {
+                  "type": "frame",
+                  "id": "enh0f",
+                  "name": "t13",
+                  "width": 33,
+                  "height": 55,
+                  "fill": "$accent"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "G96YZt",
+              "name": "axis",
+              "width": "fill_container",
+              "gap": 4,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "wjwCs",
+                  "name": "x0",
+                  "fill": "#727272",
+                  "content": "9",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "H56IR",
+                  "name": "x1",
+                  "fill": "#727272",
+                  "content": "10",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "C56RB",
+                  "name": "x2",
+                  "fill": "#727272",
+                  "content": "11",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "iFx0A",
+                  "name": "x3",
+                  "fill": "#727272",
+                  "content": "12",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "iAlv9",
+                  "name": "x4",
+                  "fill": "#727272",
+                  "content": "13",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "WISWq",
+                  "name": "x5",
+                  "fill": "#727272",
+                  "content": "14",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Zudr3",
+                  "name": "x6",
+                  "fill": "#727272",
+                  "content": "15",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "idod9",
+                  "name": "x7",
+                  "fill": "#727272",
+                  "content": "16",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "XtvVp",
+                  "name": "x8",
+                  "fill": "#727272",
+                  "content": "17",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "jILvk",
+                  "name": "x9",
+                  "fill": "#727272",
+                  "content": "18",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "UfLtN",
+                  "name": "x10",
+                  "fill": "#727272",
+                  "content": "19",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "DuDjM",
+                  "name": "x11",
+                  "fill": "#727272",
+                  "content": "20",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "hnXGQ",
+                  "name": "x12",
+                  "fill": "#727272",
+                  "content": "21",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Wk9XE",
+                  "name": "x13",
+                  "fill": "$accent",
+                  "content": "22",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "iPm3Y",
+              "name": "axis note",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rzEH2",
+                  "name": "from",
+                  "fill": "#727272",
+                  "content": "aug 9",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "s1PkZ",
+                  "name": "to",
+                  "fill": "#727272",
+                  "content": "today",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9.5,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "SOnsU",
+          "name": "hover card",
+          "width": 190,
+          "fill": "#1A1A1A",
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 4,
+          "padding": [
+            8,
+            10
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "ExNom",
+              "name": "d",
+              "fill": "#F5F4F2",
+              "content": "22 Aug · 148 messages",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 11,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "PERk0",
+              "name": "m1",
+              "width": "fill_container",
+              "gap": 14,
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "P8xRBc",
+                  "name": "k",
+                  "fill": "#727272",
+                  "content": "claude-opus-5",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "pc8mC",
+                  "name": "v",
+                  "fill": "#9B9B9B",
+                  "content": "96",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "AsgGl",
+              "name": "m2",
+              "width": "fill_container",
+              "gap": 14,
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "am4eB",
+                  "name": "k",
+                  "fill": "#727272",
+                  "content": "gpt-5-codex",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "c6rD5",
+                  "name": "v",
+                  "fill": "#9B9B9B",
+                  "content": "31",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "XxC9a",
+              "name": "m3",
+              "width": "fill_container",
+              "gap": 14,
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "i6MnxQ",
+                  "name": "k",
+                  "fill": "#727272",
+                  "content": "gemini-3-pro",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "e8IY1T",
+                  "name": "v",
+                  "fill": "#9B9B9B",
+                  "content": "14",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "QUr52",
+              "name": "m4",
+              "width": "fill_container",
+              "gap": 14,
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "mKjgm",
+                  "name": "k",
+                  "fill": "#727272",
+                  "content": "grok-4-fast",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "A9KbM",
+                  "name": "v",
+                  "fill": "#9B9B9B",
+                  "content": "7",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "T2CUN4",
+          "name": "rule cap",
+          "fill": "#727272",
+          "content": "HOVER CARD ANCHORING",
+          "lineHeight": 1.6,
+          "fontFamily": "$font-ui",
+          "fontSize": 10,
+          "fontWeight": "normal",
+          "letterSpacing": 0.6
+        },
+        {
+          "type": "text",
+          "id": "BRyLN",
+          "name": "rule 1",
+          "fill": "#727272",
+          "content": "bars 1 to 4 · card flush left with the bar",
+          "lineHeight": 1.5,
+          "fontFamily": "$font-mono",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "OGXIM",
+          "name": "rule 2",
+          "fill": "#727272",
+          "content": "bars 5 to 10 · card centred on the bar",
+          "lineHeight": 1.5,
+          "fontFamily": "$font-mono",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "vGxFO",
+          "name": "rule 3",
+          "fill": "#727272",
+          "content": "bars 11 to 14 · card flush right with the bar",
+          "lineHeight": 1.5,
+          "fontFamily": "$font-mono",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "JUMs3",
+          "name": "rule note",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "The card is anchored by bar index, so it always lands inside the panel. Four bars at each end and not two: the card is 190 wide and a bar is a fourteenth of the panel, so at the narrowest two column width centring the third one already hangs it off the edge. Nothing overflows to the right, and the Usage page never scrolls sideways.",
+          "lineHeight": 1.5,
+          "fontFamily": "$font-ui",
+          "fontSize": 11,
+          "fontWeight": "normal"
         }
       ]
     }

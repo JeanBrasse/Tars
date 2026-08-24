@@ -24,6 +24,70 @@ export { agentStatusEmitter };
 let apiServer: http.Server | null = null;
 let apiToken: string | null = null;
 
+/**
+ * How long the local API keeps trying to bind before it gives up.
+ *
+ * The usual cause of EADDRINUSE here is not a permanent squatter: it is the
+ * previous Tars still shutting down and holding the port for a second or two.
+ * A single attempt was enough to lose the whole local API for the life of the
+ * process, so the schedule front-loads fast retries and then backs off. Eight
+ * attempts spread over about ninety seconds, then a loud, final give-up.
+ */
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000, 30000];
+const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
+const RETRY_WINDOW_MS = RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0);
+
+/** Where the local API is in its lifecycle. */
+export type ApiServerPhase = 'stopped' | 'starting' | 'listening' | 'retrying' | 'failed';
+
+export interface ApiServerState {
+  phase: ApiServerPhase;
+  /** The port it is serving, or the one it keeps failing to bind. */
+  port: number;
+  /** Bind attempts made so far, including the one in flight. */
+  attempts: number;
+  maxAttempts: number;
+  /** Message of the last bind failure, null while healthy. */
+  lastError: string | null;
+  /** Milliseconds until the next attempt while retrying, null otherwise. */
+  nextRetryInMs: number | null;
+  /** Epoch ms of the moment it started listening, null when it is not. */
+  listeningSince: number | null;
+}
+
+let apiServerState: ApiServerState = {
+  phase: 'stopped',
+  port: API_PORT,
+  attempts: 0,
+  maxAttempts: MAX_ATTEMPTS,
+  lastError: null,
+  nextRetryInMs: null,
+  listeningSince: null,
+};
+let retryTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Emits 'state' with the new ApiServerState on every transition.
+ *
+ * The port is a contract: CLAUDE_MGR_API_URL, the shell hooks and the bundled
+ * MCP servers all assume something is listening on it. When nothing is, every
+ * one of them fails with a connection refused that nobody in the app sees. So
+ * the state is published rather than logged and forgotten, and anything in the
+ * main process that needs to know whether delegation can work at all can ask
+ * getApiServerState() or subscribe here.
+ */
+export const apiServerEmitter = new EventEmitter();
+
+/** The local API's real state. Safe to call at any time, including before start. */
+export function getApiServerState(): ApiServerState {
+  return { ...apiServerState };
+}
+
+function setApiServerState(patch: Partial<ApiServerState>): void {
+  apiServerState = { ...apiServerState, ...patch };
+  apiServerEmitter.emit('state', getApiServerState());
+}
+
 function initApiToken(): string {
   try {
     if (fs.existsSync(API_TOKEN_FILE)) {
@@ -82,11 +146,28 @@ export function startApiServer(
   slackResponseChannel: string | null,
   slackResponseThreadTs: string | null,
   handleStatusChangeNotificationCallback: (agent: AgentStatus, newStatus: string) => void,
-  sendNotificationCallback: (title: string, body: string, agentId?: string) => void,
+  sendNotificationCallback: (
+    title: string,
+    body: string,
+    agentId?: string,
+    notificationSettings?: { notificationsEnabled: boolean; notificationSounds?: Record<string, string> },
+  ) => void,
   initAgentPtyCallback: (agent: AgentStatus) => Promise<string>,
   getAppSettings?: () => AppSettings
 ) {
-  if (apiServer) return;
+  if (apiServer) {
+    // A server that gave up on the port is still a live object, and the old
+    // guard made that permanent: nothing could ever start the API again for
+    // the life of the process. A caller retrying after a give-up gets a fresh
+    // server and a fresh attempt budget.
+    if (apiServerState.phase !== 'failed') return;
+    const abandoned = apiServer;
+    apiServer = null;
+    abandoned.close();
+    // A fresh server gets a fresh attempt budget, or the retry schedule would
+    // still be exhausted and the first EADDRINUSE would give up at once.
+    setApiServerState({ attempts: 0, lastError: null, nextRetryInMs: null, listeningSince: null });
+  }
 
   initApiToken();
 
@@ -214,22 +295,129 @@ export function startApiServer(
     }
   });
 
-  apiServer.listen(API_PORT, '127.0.0.1', () => {
-    console.log(`Agent API server running on http://127.0.0.1:${API_PORT}`);
+  const server = apiServer;
+  const resolveSettings = getAppSettings || (() => appSettings);
+
+  const attemptBind = () => {
+    if (apiServer !== server) return;
+    const attempts = apiServerState.attempts + 1;
+    setApiServerState({
+      phase: attempts === 1 ? 'starting' : 'retrying',
+      attempts,
+      nextRetryInMs: null,
+    });
+    server.listen(API_PORT, '127.0.0.1');
+  };
+
+  const giveUp = (err: NodeJS.ErrnoException) => {
+    setApiServerState({
+      phase: 'failed',
+      lastError: err.message,
+      nextRetryInMs: null,
+      listeningSince: null,
+    });
+    // Loud on purpose. The window stays perfectly healthy-looking while every
+    // path back into the app is dead, which is exactly how this went unnoticed
+    // the last time: hooks, the seven MCP servers, /dispatch and /delegate all
+    // speak to this port and nothing else reports that it is gone.
+    console.error(
+      `[api] FATAL: could not bind the local API to 127.0.0.1:${API_PORT} after ` +
+      `${MAX_ATTEMPTS} attempts over ${Math.round(RETRY_WINDOW_MS / 1000)}s.`,
+    );
+    console.error(
+      '[api] Delegation is offline: the CLI hooks, the bundled MCP servers, /dispatch and /delegate all call back on this port.',
+    );
+    console.error(
+      `[api] Another process holds it. Find it with: lsof -nP -iTCP:${API_PORT} -sTCP:LISTEN`,
+    );
+    console.error('[api] Quit it (most often a second Tars), then restart Tars.');
+
+    const settings = resolveSettings();
+    if (settings?.notificationsEnabled) {
+      sendNotificationCallback(
+        'Tars API error: port in use',
+        `Port ${API_PORT} is held by another process, so delegation, hooks and MCP servers are offline. Quit the other instance and restart Tars.`,
+        undefined,
+        settings,
+      );
+    }
+  };
+
+  server.on('listening', () => {
+    if (apiServer !== server) return;
+    setApiServerState({
+      phase: 'listening',
+      lastError: null,
+      nextRetryInMs: null,
+      listeningSince: Date.now(),
+    });
+    const retried = apiServerState.attempts > 1 ? ` after ${apiServerState.attempts} attempts` : '';
+    console.log(`Agent API server running on http://127.0.0.1:${API_PORT}${retried}`);
   });
 
-  apiServer.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${API_PORT} is in use, API server not started`);
-    } else {
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    // This listener is never detached. A bind that fails after stopApiServer()
+    // has already dropped the reference is not news, but leaving it unhandled
+    // would take the main process down with it.
+    if (apiServer !== server) return;
+
+    if (err.code !== 'EADDRINUSE') {
       console.error('API server error:', err);
+      // An error raised while it is serving does not mean the bind is lost, so
+      // only a server that is not listening is reported as down.
+      if (!server.listening) {
+        setApiServerState({
+          phase: 'failed',
+          lastError: err.message,
+          nextRetryInMs: null,
+          listeningSince: null,
+        });
+      }
+      return;
     }
+
+    if (apiServerState.attempts >= MAX_ATTEMPTS) {
+      giveUp(err);
+      return;
+    }
+    const delay = RETRY_DELAYS_MS[apiServerState.attempts - 1];
+
+    console.warn(
+      `[api] Port ${API_PORT} is in use (attempt ${apiServerState.attempts}/${MAX_ATTEMPTS}). ` +
+      `Retrying in ${Math.round(delay / 1000)}s.`,
+    );
+    setApiServerState({
+      phase: 'retrying',
+      lastError: err.message,
+      nextRetryInMs: delay,
+      listeningSince: null,
+    });
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      attemptBind();
+    }, delay);
+    // A pending retry must never be the reason the app cannot quit.
+    retryTimer.unref();
   });
+
+  attemptBind();
 }
 
 export function stopApiServer() {
-  if (apiServer) {
-    apiServer.close();
-    apiServer = null;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
   }
+  if (apiServer) {
+    const stopping = apiServer;
+    apiServer = null;
+    stopping.close();
+  }
+  setApiServerState({
+    phase: 'stopped',
+    attempts: 0,
+    lastError: null,
+    nextRetryInMs: null,
+    listeningSince: null,
+  });
 }

@@ -259,6 +259,30 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
+/**
+ * Where a bar's hover card hangs, by the bar's place in the series.
+ *
+ * The card used to have no horizontal anchor at all, so it started at the
+ * hovered bar's left edge and grew rightwards: on the last bars of a chart it
+ * left the panel, widened the document and made the whole page scroll sideways
+ * to read a number that was already under the cursor. Anchored to the bar's own
+ * edge near either end and centred in between, it lands inside the panel on
+ * every bar. Frame: `Usage · daily messages`.
+ *
+ * Four and not two. The card is 190px wide and a bar is only as wide as the
+ * panel divided by fourteen: at the 1024px breakpoint, where the charts are
+ * still two to a row, that is about 20px, so centring the card on the third bar
+ * would already hang it 36px off the left edge. Four covers every width the
+ * window can take, down to a phone.
+ */
+const ANCHORED_BARS = 4;
+
+function hoverCardAnchor(index: number, count: number): string {
+  if (index < ANCHORED_BARS) return 'left-0';
+  if (index >= count - ANCHORED_BARS) return 'right-0';
+  return 'left-1/2 -translate-x-1/2';
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function UsagePage() {
@@ -653,7 +677,12 @@ export default function UsagePage() {
         : 'MONTHLY COST · 12 MONTHS';
 
   return (
-    <div className="space-y-3">
+    // `overflow-x-clip`, not `overflow-x-hidden`: clip leaves the vertical axis
+    // visible, so the hover cards still stand above their bars and out of the
+    // panel, while nothing can widen the page. The anchoring above already keeps
+    // every card inside its panel; this is what makes a sideways scrollbar
+    // impossible rather than merely unlikely.
+    <div className="space-y-3 overflow-x-clip">
       <PageHeader
         title="Usage"
         subtitle="What every provider has cost you, and where the tokens went."
@@ -824,7 +853,7 @@ export default function UsagePage() {
                               tooltip: `title` renders a grey system box in a
                               system font that ignores the palette entirely. */}
                           {hoveredBar === item.date && (
-                            <div className="absolute bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-2.5 py-1.5 whitespace-nowrap">
+                            <div className={`absolute ${hoverCardAnchor(i, costChartData.length)} bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-2.5 py-1.5 whitespace-nowrap`}>
                               <p className="font-mono text-[10px] text-muted-foreground">{item.label}</p>
                               <p className="font-mono text-xs font-medium text-foreground">
                                 ${item.cost.toFixed(2)}
@@ -885,7 +914,7 @@ export default function UsagePage() {
                         onMouseLeave={() => setHoveredTokenBar(null)}
                       >
                         {open && (
-                          <div className="absolute bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-3 py-2 min-w-[190px]">
+                          <div className={`absolute ${hoverCardAnchor(i, tokenChartData.length)} bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-3 py-2 min-w-[190px]`}>
                             <p className="font-mono text-[11px] font-medium text-foreground">
                               {day.label} · {fmtTokens(day.total)} tokens
                             </p>
@@ -966,7 +995,7 @@ export default function UsagePage() {
                         onMouseLeave={() => setHoveredMessageBar(null)}
                       >
                         {open && (
-                          <div className="absolute bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-3 py-2 min-w-[190px]">
+                          <div className={`absolute ${hoverCardAnchor(i, messageChartData.length)} bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-3 py-2 min-w-[190px]`}>
                             <p className="font-mono text-[11px] font-medium text-foreground">
                               {day.label} · {day.total.toLocaleString()} {day.total === 1 ? 'message' : 'messages'}
                             </p>

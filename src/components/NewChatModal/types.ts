@@ -2,11 +2,6 @@ import type { AgentCharacter, AgentProvider } from '@/types/electron';
 import type { AgentPermissionMode, AgentEffort } from '@/types/agent';
 import type { ClaudeSkill } from '@/lib/claude-code';
 
-export interface AgentPersonaValues {
-  character: AgentCharacter;
-  name: string;
-}
-
 export interface Project {
   path: string;
   name: string;

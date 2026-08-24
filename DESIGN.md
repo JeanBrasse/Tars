@@ -354,7 +354,10 @@ The themed replacement for `<select>`. A native select renders its popup through
 the OS and ignores the palette entirely, so every model picker looked like a
 stock macOS menu; this draws the list itself on `surface` with a `border`, a
 lucide `check` on the selected row, and an optional right-aligned hint (price
-per million, model id). Closes on outside mousedown and on Escape.
+per million, model id). Closes on outside mousedown and on Escape. The panel is
+as wide as its own content, at least as wide as the trigger and at most 24rem:
+sized to the trigger alone it left the model picker in a team's member grid too
+narrow to read a model name in, and uncapped a long label would widen the page.
 
 ### Tabs and the segmented control
 Project tabs on the Dashboard: the active tab is a `surface` box against the

@@ -39,6 +39,10 @@ export function TeamPanel(props: {
   onToggleStartOnDeploy: () => void;
 }) {
   const selectedCount = props.selected.size;
+  // A folder picked outside the known list - or one the settings still name as
+  // the default - is not in `projects`, and without an entry of its own the
+  // dropdown showed an empty "Select a project" over a path that was really set.
+  const currentIsListed = props.projects.some((p) => p.path === props.projectPath);
   const worktrees = worktreeCount(props.members.filter((_, i) => props.selected.has(i)));
   const summary = `skills per role · ${props.permissionOverride} permissions · ${props.startOnDeploy ? 'start on deploy' : 'created idle'}`;
 
@@ -53,7 +57,12 @@ export function TeamPanel(props: {
             placeholder="Select a project"
             searchable={props.projects.length > 12}
             value={props.projectPath}
-            options={props.projects.map((p) => ({ value: p.path, label: tildePath(p.path) }))}
+            options={[
+              ...(props.projectPath && !currentIsListed
+                ? [{ value: props.projectPath, label: tildePath(props.projectPath) }]
+                : []),
+              ...props.projects.map((p) => ({ value: p.path, label: tildePath(p.path) })),
+            ]}
             onChange={props.onSelectProject}
           />
         </div>

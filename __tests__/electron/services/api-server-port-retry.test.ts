@@ -1,0 +1,254 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as http from 'http';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+/**
+ * The local API when its port is already taken.
+ *
+ * Port 31415 is a contract: CLAUDE_MGR_API_URL, the shell hooks and the seven
+ * bundled MCP servers all assume something is listening on it. The server used
+ * to log one line on EADDRINUSE and abandon the port for the life of the
+ * process, so a Tars launched while the previous one was still shutting down
+ * came up looking perfectly healthy with every path back into the app dead.
+ *
+ * These assert the whole chain rather than that a retry was scheduled: the
+ * server is raced against a real socket holding the port, and recovery is
+ * proved by a real request that comes back 200.
+ */
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-api-port-'));
+/** Far from 31415 and 31499 so a running Tars or sandbox cannot fail this. */
+const PORT = 31961;
+
+vi.mock('../../../electron/constants', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../electron/constants')>();
+  return { ...actual, API_PORT: PORT, API_TOKEN_FILE: path.join(tmp, 'api-token') };
+});
+
+let api: typeof import('../../../electron/services/api-server');
+let squatter: http.Server | null = null;
+const notifications: Array<{ title: string; body: string }> = [];
+
+/** Hold the port the way a still-closing previous instance does. */
+function occupyPort(): Promise<void> {
+  return new Promise((resolve) => {
+    squatter = http.createServer((_req, res) => res.end('busy'));
+    squatter.listen(PORT, '127.0.0.1', resolve);
+  });
+}
+
+function releasePort(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!squatter) return resolve();
+    squatter.close(() => { squatter = null; resolve(); });
+  });
+}
+
+function start(): void {
+  api.startApiServer(
+    null,
+    { notificationsEnabled: true } as never,
+    () => null,
+    () => null,
+    null,
+    null,
+    () => {},
+    (title: string, body: string) => { notifications.push({ title, body }); },
+    async () => 'pty',
+    () => ({ notificationsEnabled: true } as never),
+  );
+}
+
+/** Resolve once the server reports one of these phases, or time out. */
+function waitForPhase(phases: string[], timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      const { phase } = api.getApiServerState();
+      if (phases.includes(phase)) {
+        api.apiServerEmitter.off('state', check);
+        clearTimeout(timer);
+        resolve(phase);
+      }
+    };
+    const timer = setTimeout(() => {
+      api.apiServerEmitter.off('state', check);
+      reject(new Error(`never reached ${phases.join('/')}, stuck at ${api.getApiServerState().phase}`));
+    }, timeoutMs);
+    api.apiServerEmitter.on('state', check);
+    check();
+  });
+}
+
+function get(pathname: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: PORT, path: pathname }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    }).on('error', reject);
+  });
+}
+
+beforeEach(async () => {
+  vi.resetModules();
+  notifications.length = 0;
+  api = await import('../../../electron/services/api-server');
+});
+
+afterEach(async () => {
+  api.stopApiServer();
+  await releasePort();
+});
+
+describe('the local API when the port is busy', () => {
+  it('starts clean and reports it', async () => {
+    start();
+    await waitForPhase(['listening'], 3000);
+
+    const state = api.getApiServerState();
+    expect(state.phase).toBe('listening');
+    expect(state.port).toBe(PORT);
+    expect(state.attempts).toBe(1);
+    expect(state.lastError).toBeNull();
+    expect(state.listeningSince).toBeTypeOf('number');
+  });
+
+  it('keeps retrying, then serves for real once the port frees up', async () => {
+    await occupyPort();
+    start();
+
+    await waitForPhase(['retrying'], 3000);
+    const retrying = api.getApiServerState();
+    expect(retrying.phase).toBe('retrying');
+    expect(retrying.lastError).toMatch(/EADDRINUSE/);
+    expect(retrying.nextRetryInMs).toBeGreaterThan(0);
+    expect(retrying.listeningSince).toBeNull();
+
+    await releasePort();
+    await waitForPhase(['listening'], 15000);
+
+    const recovered = api.getApiServerState();
+    expect(recovered.phase).toBe('listening');
+    expect(recovered.attempts).toBeGreaterThan(1);
+    expect(recovered.lastError).toBeNull();
+
+    // The whole point: it is not merely in a good state, it is answering.
+    const health = await get('/api/health');
+    expect(health.status).toBe(200);
+    expect(JSON.parse(health.body)).toEqual({ ok: true });
+  }, 20000);
+
+  it('bounds the retries instead of spinning forever', () => {
+    const { maxAttempts } = api.getApiServerState();
+    expect(maxAttempts).toBeGreaterThan(1);
+    expect(maxAttempts).toBeLessThanOrEqual(12);
+  });
+
+  it('backs off between attempts rather than hammering the port', async () => {
+    await occupyPort();
+    start();
+
+    const delays: number[] = [];
+    api.apiServerEmitter.on('state', (s: { phase: string; nextRetryInMs: number | null }) => {
+      if (s.phase === 'retrying' && s.nextRetryInMs) delays.push(s.nextRetryInMs);
+    });
+
+    await vi.waitUntil(() => delays.length >= 3, { timeout: 15000, interval: 100 });
+    expect(delays[1]).toBeGreaterThan(delays[0]);
+    expect(delays[2]).toBeGreaterThan(delays[1]);
+  }, 20000);
+
+  it('drops a pending retry when it is stopped', async () => {
+    await occupyPort();
+    start();
+    await waitForPhase(['retrying'], 3000);
+
+    api.stopApiServer();
+    const stopped = api.getApiServerState();
+    expect(stopped.phase).toBe('stopped');
+    expect(stopped.nextRetryInMs).toBeNull();
+    expect(stopped.attempts).toBe(0);
+
+    // A retry that fired after the stop would take the port back. Give the
+    // longest scheduled delay a chance to prove it does not.
+    await releasePort();
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(api.getApiServerState().phase).toBe('stopped');
+  }, 10000);
+});
+
+describe('the local API when it has given up', () => {
+  /**
+   * The full schedule spans about ninety seconds of wall clock, which no unit
+   * test should sit through. Fake timers skip the waiting; the bind failures
+   * themselves are still real EADDRINUSE errors from a real occupied port.
+   */
+  async function runToGiveUp(): Promise<void> {
+    await occupyPort();
+    // Only the backoff is faked. Date.now() and setImmediate stay real so the
+    // loop can still yield to the event loop and let each bind actually fail.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      start();
+      for (let i = 0; i < 40; i++) {
+        if (api.getApiServerState().phase === 'failed') return;
+        await new Promise((r) => setImmediate(r));
+        await vi.advanceTimersByTimeAsync(60_000);
+      }
+      throw new Error(`never gave up, stuck at ${api.getApiServerState().phase}`);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('gives up loudly and leaves the failure consultable', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runToGiveUp();
+
+    const failed = api.getApiServerState();
+    expect(failed.phase).toBe('failed');
+    expect(failed.attempts).toBe(failed.maxAttempts);
+    expect(failed.lastError).toMatch(/EADDRINUSE/);
+    expect(failed.nextRetryInMs).toBeNull();
+    expect(failed.listeningSince).toBeNull();
+    // The state is still there to read, which is the whole difference from a
+    // console line that scrolled away.
+    expect(api.getApiServerState().phase).toBe('failed');
+
+    const said = errors.mock.calls.flat().join(' ');
+    expect(said).toMatch(new RegExp(String(PORT)));
+    expect(said).toMatch(/hooks/i);
+    errors.mockRestore();
+  }, 20000);
+
+  it('tells the user, because nothing on screen would', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runToGiveUp();
+
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0].title).toMatch(/port/i);
+    expect(notifications[0].body).toMatch(new RegExp(String(PORT)));
+    vi.restoreAllMocks();
+  }, 20000);
+
+  it('can still be started again once the port frees up', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runToGiveUp();
+    expect(api.getApiServerState().phase).toBe('failed');
+
+    await releasePort();
+    start();
+    await waitForPhase(['listening'], 5000);
+
+    const recovered = api.getApiServerState();
+    expect(recovered.phase).toBe('listening');
+    // A fresh budget, or the next collision would give up on the first try.
+    expect(recovered.attempts).toBeLessThan(recovered.maxAttempts);
+
+    const health = await get('/api/health');
+    expect(health.status).toBe(200);
+    vi.restoreAllMocks();
+  }, 25000);
+});

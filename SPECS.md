@@ -575,7 +575,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
-| `/usage` | Usage | Cost and tokens: transcript-derived Claude figures merged with the cross-provider ledger, daily chart, per-model and per-provider tables, catalogue freshness. 1277 lines, the largest page | `Usage · dark` / `· light` |
+| `/usage` | Usage | Cost and tokens: transcript-derived Claude figures merged with the cross-provider ledger, daily cost, token and message charts, per-model and per-provider tables, catalogue freshness. 1035 lines, the largest page | `Usage · dark` / `· light` / `· daily messages` |
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
