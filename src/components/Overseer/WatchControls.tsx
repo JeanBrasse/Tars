@@ -2,18 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Dropdown } from '@/components/ui';
+import { ModelEffortPicker } from './ModelEffortPicker';
 import type { DropdownOption } from '@/components/ui';
 import type { OverseerModelProvider, OverseerSettings } from '@/types/electron';
 
 /**
- * The three things about the overseer that used to be constants: which model
- * answers, whose model it is, and how often it looks at the fleet.
+ * What the overseer runs on, and how often it looks: two controls under the
+ * message box.
  *
- * The provider list is asked of the Hermes gateway rather than compiled in,
- * because which providers have credentials is a property of that install. It is
- * also why provider and model are two controls and not one: a gateway can offer
- * a hundred models under a single provider, and a combined list would run to
- * several hundred rows.
+ * What answers (provider, model, effort) is one decision and one control, in
+ * `ModelEffortPicker`. How often it checks the fleet is a separate one, and it
+ * is the only one here that is Tars's own setting: it works with no gateway at
+ * all, which is why it survives when the pickers cannot be offered.
+ *
+ * The provider list is asked of the gateway rather than compiled in, because
+ * which providers have credentials is a property of that install.
  */
 
 const INTERVALS: DropdownOption[] = [
@@ -88,16 +91,6 @@ export function WatchControls({
   // control shows the gateway's own choice rather than an empty box.
   const effectiveProvider = settings.provider || gatewayDefault?.provider || '';
   const effectiveModel = settings.model || gatewayDefault?.model || '';
-  const models = providers.find(p => p.slug === effectiveProvider)?.models ?? [];
-
-  const providerOptions: DropdownOption[] = providers.map(p => ({
-    value: p.slug,
-    label: p.name || p.slug,
-    hint: p.models.length ? `${p.models.length} models` : 'no models',
-    disabled: p.models.length === 0,
-  }));
-
-  const modelOptions: DropdownOption[] = models.map(m => ({ value: m, label: m }));
 
   const handleProvider = (slug: string) => {
     // The model belongs to the old provider, so it is cleared rather than
@@ -108,60 +101,20 @@ export function WatchControls({
 
   return (
     <>
-      {/* When the gateway cannot be asked which models it has, the pickers are
+      {/* When the gateway cannot be asked which models it has, the picker is
           simply not offered. The page already carries a banner saying why, and
           repeating it here as a bordered box beside the send button put an
-          error message where a control belongs. The cadence stays: it is Tars's
-          own setting and works with no gateway at all. */}
+          error message where a control belongs. */}
       {optionsError ? null : (
-        <>
-          <Dropdown
-            size="sm"
-            mono
-            quiet
-            align="left"
-            drop="up"
-            searchable={providerOptions.length > 8}
-            ariaLabel="Overseer provider"
-            placeholder="provider"
-            value={effectiveProvider}
-            options={providerOptions}
-            onChange={handleProvider}
-            className="w-[118px]"
-          />
-          <Dropdown
-            size="sm"
-            mono
-            quiet
-            align="left"
-            drop="up"
-            searchable={modelOptions.length > 8}
-            ariaLabel="Overseer model"
-            title="Sets the model your Hermes gateway answers on, for everything that uses it, not only this chat"
-            placeholder="model"
-            value={effectiveModel}
-            options={modelOptions}
-            onChange={model => onChange({ model })}
-            className="w-[160px]"
-          />
-        </>
-      )}
-      {/* Beside the model because it modifies it. Like the model, it is the
-          gateway's setting rather than Tars's, and it is per gateway rather
-          than per message: the gateway has no per-turn effort to offer. */}
-      {effort && effortOptions.length > 0 && (
-        <Dropdown
-          size="sm"
-          mono
-          quiet
-          align="left"
-          drop="up"
-          ariaLabel="Reasoning effort"
-          title="Sets the reasoning effort your Hermes gateway runs at, for everything that uses it, not only this chat"
-          value={effort}
-          options={effortOptions.map(o => ({ value: o, label: `effort ${o}` }))}
-          onChange={handleEffort}
-          className="w-[124px]"
+        <ModelEffortPicker
+          providers={providers}
+          provider={effectiveProvider}
+          model={effectiveModel}
+          effort={effort}
+          effortOptions={effortOptions}
+          onProvider={handleProvider}
+          onModel={model => onChange({ model })}
+          onEffort={handleEffort}
         />
       )}
       <Dropdown

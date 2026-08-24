@@ -34,7 +34,7 @@ export function AttachmentChips({
       {attachments.map(a => (
         <span
           key={a.path}
-          className={`inline-flex items-center gap-1.5 border border-border ${fill} px-2.5 h-6 max-w-[220px]`}
+          className={`inline-flex items-center gap-1.5 rounded border border-border ${fill} px-2 h-6 max-w-[220px]`}
           title={a.path}
         >
           {a.isImage
@@ -45,10 +45,10 @@ export function AttachmentChips({
             <button
               type="button"
               onClick={() => onRemove(a.path)}
-              className="text-muted-foreground hover:text-foreground shrink-0"
+              className="text-text-muted hover:text-foreground shrink-0"
               aria-label={`Remove ${a.name}`}
             >
-              <X className="w-3 h-3" />
+              <X className="w-[11px] h-[11px]" />
             </button>
           )}
         </span>

@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 32,
+    version: '1.6.14',
+    date: '2026-08-24',
+    updates: [
+      'The Chat message box follows the drawn design. The text no longer sits in a box inside a box: it writes straight onto the composer, and the composer border picks up the accent while you are typing in it',
+      'The model, its provider and the reasoning effort are one control instead of three. It reads model and effort at a glance, and opening it offers all three, which is the submenu inside the submenu that was asked for',
+      'Attach lost its border. It acts on the message rather than setting a property of it, so it is no longer shaped like the pickers next to it',
+      'Send steps back while a turn is in flight. It says queue and stops being the primary button, because pressing it then does something different',
+    ],
+  },
+  {
     id: 31,
     version: '1.6.13',
     date: '2026-08-24',
