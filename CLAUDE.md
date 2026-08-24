@@ -1,7 +1,7 @@
 ## Project Context
 
 - **App**: Tars, an Electron desktop app that runs many AI coding-agent CLIs in parallel, each in its own PTY terminal, and orchestrates them
-- **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and nine API-key providers) work on your projects at once, are delegated to, report back, and are billed
+- **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and thirteen API-key providers) work on your projects at once, are delegated to, report back, and are billed
 - **Repo**: https://github.com/JeanBrasse/Tars, a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
 - **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `JeanBrasse/Tars`
 - **Docs**: all four exist and are current. `DESIGN.md` (tokens + components) before touching a pixel, `SPECS.md` (what it is), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). This line used to say only DESIGN.md had been written; the other three were added on 2026-08-23 and the README links to all of them
@@ -32,7 +32,7 @@
 | `electron/core/window-manager.ts` | `BrowserWindow` (1600×1000, `hiddenInset`, `#121212`), window hardening, and the `app://` and `local-file://` protocol handlers |
 | `electron/handlers/ipc-handlers.ts` | 2581 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
-| `electron/providers/index.ts` | Registry of the 15 providers. Unknown ids (and `local`) fall back to Claude |
+| `electron/providers/index.ts` | Registry of the 19 providers. Unknown ids (and `local`) fall back to Claude |
 | `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health`, `/api/hooks/*` and `/api/kanban/complete` are exempt from auth |
 | `electron/services/api-routes/agent-routes.ts` | `spawnAgentSession()`, the **single** path for API-driven sessions, plus `/start`, `/dispatch`, `/message`, `/delegate`, `/bootstrap`, `/health`, and the cross-project guard |
 | `electron/services/api-routes/hooks-routes.ts` | The session-ownership contract: SessionStart registers via the `source` field; posts from any other session, or from the `lastKilledSessionId` tombstone, are rejected as `stale` |

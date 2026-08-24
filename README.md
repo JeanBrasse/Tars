@@ -72,7 +72,7 @@ and its real price is used, not one baked into the last release.
 
 ![The agent list, with provider, model and worktree branch on every card](screenshots/agents.png)
 
-**One memory, five sources.** Project files, the session ledger, your Hermes
+**One memory, six sources.** Project files, the session ledger, your Obsidian vault, your Hermes
 gateway, gbrain and Honcho behind a single interface, reachable by every CLI,
 not only the ones with a session hook.
 
