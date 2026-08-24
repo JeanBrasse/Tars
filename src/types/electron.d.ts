@@ -256,6 +256,9 @@ export interface AgentStatus {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Orchestrator mode: agent cannot edit files directly; must delegate. */
   orchestratorMode?: boolean;
+  /** Set by team templates. Mirrors electron/types/index.ts, which has
+   *  carried it all along; the renderer copy simply never did. */
+  role?: 'orchestrator' | 'worker';
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
   localModel?: string;        // Tasmania model name when provider is 'local'
