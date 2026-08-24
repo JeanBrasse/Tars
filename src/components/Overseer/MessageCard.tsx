@@ -2,6 +2,7 @@
 
 import { ApprovalBlock } from './ApprovalBlock';
 import type { OverseerFleetSnapshot, OverseerMessage } from '@/types/electron';
+import { RichText } from './RichText';
 
 function formatTime(iso: string): string {
   try {
@@ -54,7 +55,13 @@ export function MessageCard({
         </span>
       )}
 
-      <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap">{message.text}</p>
+      {/* The reply is written by a model, so it arrives with Markdown emphasis
+          in it. RichText renders the handful of forms that actually appear and
+          builds React nodes rather than HTML, because this text quotes agent
+          output. */}
+      <div className="text-[12.5px] leading-relaxed text-foreground break-words">
+        <RichText text={message.text} />
+      </div>
 
       {message.action && (
         <ApprovalBlock

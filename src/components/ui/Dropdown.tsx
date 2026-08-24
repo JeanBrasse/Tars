@@ -38,6 +38,7 @@ export function Dropdown<T extends string = string>({
   title,
   size = 'md',
   drop = 'down',
+  quiet = false,
 }: {
   value: T | '';
   options: DropdownOption<T>[];
@@ -58,6 +59,10 @@ export function Dropdown<T extends string = string>({
    *  window, where a downward panel would open off-screen: the Chat composer
    *  sits on the last row of the page. */
   drop?: 'down' | 'up';
+  /** Drops the box: text and a chevron, gaining a surface only on hover. For a
+   *  picker that describes something rather than acting on it, where a full
+   *  bordered control would carry the same weight as the button beside it. */
+  quiet?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -175,11 +180,19 @@ export function Dropdown<T extends string = string>({
         aria-label={ariaLabel}
         onClick={() => (open ? close() : setOpen(true))}
         title={title}
-        className={`w-full flex items-center justify-between gap-2 bg-secondary border text-foreground transition-colors ${
+        className={`w-full flex items-center justify-between gap-2 transition-colors ${
+          quiet
+            ? 'bg-transparent border border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+            : 'bg-secondary border text-foreground'
+        } ${
           size === 'sm' ? 'h-[26px] px-2 text-xs' : 'h-8 px-3 text-sm'
-        } ${open ? 'border-primary' : 'border-border hover:border-border-accent'} ${mono ? 'font-mono' : ''}`}
+        } ${
+          open
+            ? 'border-primary'
+            : quiet ? '' : 'border-border hover:border-border-accent'
+        } ${mono ? 'font-mono' : ''}`}
       >
-        <span className={`truncate ${current ? '' : 'text-muted-foreground'}`}>
+        <span className={`truncate ${current || quiet ? '' : 'text-muted-foreground'}`}>
           {current?.label ?? placeholder}
         </span>
         <ChevronDown

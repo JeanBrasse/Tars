@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 23,
+    version: '1.6.5',
+    date: '2026-08-24',
+    updates: [
+      'Tars looks for a new version while it is running, every half hour, not only in the five seconds after it starts. Left open for days, it never told you there was an update. A banner you dismiss stays dismissed until there is a newer version than the one you dismissed',
+      'Hermes replies read like writing instead of like a file. Bold, italics, inline code, bullets and code blocks come out formatted rather than showing their asterisks and backticks. The formatting is built as text, never as markup, so a reply quoting a log line cannot run anything',
+      'The Chat message box is quieter. The model, provider and cadence pickers were three bordered boxes with the same weight as the send button, so the row read as four controls fighting each other. They sit on a hairline under what you type, as plain labels, and send is the only thing with colour',
+      'Kanban puts "New task" beside the title like every other page, instead of on a row of its own underneath',
+    ],
+  },
+  {
     id: 22,
     version: '1.6.4',
     date: '2026-08-24',
