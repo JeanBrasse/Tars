@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { Button, Input, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge } from '@/components/ui';
+import { Button, Input, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge, Dropdown } from '@/components/ui';
 import { isValidOpenAIBaseUrl } from '@/lib/validateUrl';
 import type { AnyTone } from '@/components/ui';
 import { Toggle } from './Toggle';
@@ -353,15 +353,17 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
                   label="Default model"
                   description="The model a new Claude agent starts on."
                   control={
-                    <Select
-                      width="control"
+                    <Dropdown
+                      className="w-[300px]"
+                      ariaLabel="Default Claude model"
                       value={appSettings.defaultClaudeModel || 'sonnet'}
-                      onChange={(e) => onSaveAppSettings({ defaultClaudeModel: e.target.value })}
-                    >
-                      <option value="sonnet">Sonnet - Daily coding</option>
-                      <option value="opus">Opus - Complex reasoning</option>
-                      <option value="haiku">Haiku - Fast &amp; efficient</option>
-                    </Select>
+                      onChange={(v) => onSaveAppSettings({ defaultClaudeModel: v })}
+                      options={[
+                        { value: 'sonnet', label: 'Sonnet', hint: 'daily coding' },
+                        { value: 'opus', label: 'Opus', hint: 'complex reasoning' },
+                        { value: 'haiku', label: 'Haiku', hint: 'fast and cheap' },
+                      ]}
+                    />
                   }
                 />
                 <SettingsRow

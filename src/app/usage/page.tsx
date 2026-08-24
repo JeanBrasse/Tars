@@ -255,6 +255,8 @@ function StatCard({
 export default function UsagePage() {
   const { data, loading, error, refresh } = useClaude();
   const [costTimeRange, setCostTimeRange] = useState<TimeRange>('daily');
+  /** Which bar the pointer is over, so the chart can show its own card. */
+  const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [, setPricingLoaded] = useState(0);
   const [ledger, setLedger] = useState<Array<{ provider: string; inputTokens: number; outputTokens: number; costUSD: number; turns: number }>>([]);
 
@@ -724,14 +726,31 @@ export default function UsagePage() {
                       // the neutral raised surface.
                       const isLatest = i === costChartData.length - 1;
                       return (
-                        <div key={item.date} className="flex-1 min-w-0 flex flex-col items-center gap-1">
+                        <div
+                          key={item.date}
+                          className="group relative flex-1 min-w-0 flex flex-col items-center gap-1"
+                          onMouseEnter={() => setHoveredBar(item.date)}
+                          onMouseLeave={() => setHoveredBar(null)}
+                        >
+                          {/* The app's own card, not the operating system's
+                              tooltip: `title` renders a grey system box in a
+                              system font that ignores the palette entirely. */}
+                          {hoveredBar === item.date && (
+                            <div className="absolute bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-2.5 py-1.5 whitespace-nowrap">
+                              <p className="font-mono text-[10px] text-muted-foreground">{item.label}</p>
+                              <p className="font-mono text-xs font-medium text-foreground">
+                                ${item.cost.toFixed(2)}
+                              </p>
+                            </div>
+                          )}
                           <div className="w-full flex flex-col justify-end flex-1 min-h-0">
                             <motion.div
                               initial={{ height: 0 }}
                               animate={{ height: `${Math.max(height, 2)}%` }}
                               transition={{ delay: 0.05 + i * 0.02, duration: 0.35 }}
-                              className={isLatest ? 'w-full bg-primary' : 'w-full bg-bg-tertiary'}
-                              title={`${item.label}: $${item.cost.toFixed(2)}`}
+                              className={`w-full transition-colors ${
+                                isLatest ? 'bg-primary' : 'bg-bg-tertiary'
+                              } ${hoveredBar === item.date ? 'bg-primary' : ''}`}
                             />
                           </div>
                           <span className="text-[9px] leading-none text-muted-foreground">{item.tick}</span>

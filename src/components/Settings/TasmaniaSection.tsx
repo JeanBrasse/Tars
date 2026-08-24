@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, Input, Select } from '@/components/ui';
+import { Button, Input, Select, Dropdown } from '@/components/ui';
 import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
@@ -279,20 +279,21 @@ export const TasmaniaSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
           models.length === 0 ? (
             <span className={READOUT}>{loadingModels ? 'looking…' : 'none detected'}</span>
           ) : (
-            <Select
-              width="control"
+            <Dropdown
+              className="w-[300px]"
+              ariaLabel="Loaded model"
+              searchable={models.length > 8}
               value={serverStatus?.modelPath ?? ''}
-              onChange={(e) => handleModelChange(e.target.value)}
-              disabled={loadingModel !== null || stoppingModel}
-            >
-              <option value="">none loaded</option>
-              {models.map((model) => (
-                <option key={model.path} value={model.path}>
-                  {model.name} · {formatBytes(model.sizeBytes)}
-                  {model.quantization ? ` · ${model.quantization}` : ''}
-                </option>
-              ))}
-            </Select>
+              onChange={handleModelChange}
+              options={[
+                { value: '', label: 'none loaded' },
+                ...models.map((model) => ({
+                  value: model.path,
+                  label: model.name,
+                  hint: `${formatBytes(model.sizeBytes)}${model.quantization ? ` · ${model.quantization}` : ''}`,
+                })),
+              ]}
+            />
           )
         }
       />

@@ -565,17 +565,27 @@ button, a, input, textarea, select {
 }
 
 /*
- * A single light running over the mark. Each cell starts its cycle lit and
- * fades, and the cells are delayed by their own index, so the light travels
- * left to right along a row and drops to the left of the next one.
+ * A single light running over the mark. Each cell rests grey, lights as its
+ * turn comes and goes back to grey; the cells are delayed by their own index,
+ * so the light travels left to right along a row and drops to the left of the
+ * next one.
  *
- * Lit for a sixteenth of the cycle plus a short fade, which is what keeps one
- * cell reading as "the" cell rather than a band of four.
+ * The keyframes start AND end at the rest opacity. They used to start lit,
+ * which looked right in isolation and was backwards on screen: an animation
+ * shows the element's own style until its delay elapses, so before its first
+ * turn every cell rendered at full opacity. The mark appeared all lit and went
+ * out one square at a time.
+ *
+ * The lit window is deliberately shorter than the gap between two cells. Cells
+ * are a sixteenth of the cycle apart, so anything lit for longer than that
+ * leaves two or three glowing at once and reads as squares staying on rather
+ * than one square travelling.
  */
 @keyframes square-sweep {
-  0%          { opacity: 1; }
-  6%          { opacity: 1; }
-  16%, 100%   { opacity: 0.16; }
+  0%          { opacity: 0.16; }
+  2%          { opacity: 1; }
+  6%          { opacity: 0.16; }
+  100%        { opacity: 0.16; }
 }
 
 /*

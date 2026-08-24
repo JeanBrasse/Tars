@@ -178,7 +178,13 @@ export function Dropdown<T extends string = string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={e => {
+          // Take the caret out of whatever was focused before opening. The
+          // Chat pickers sit inside the composer, so the message box kept
+          // focus and typing a filter went into the message instead.
+          if (!open) (e.currentTarget as HTMLButtonElement).focus();
+          setOpen(o => !o);
+        }}
         title={title}
         className={`w-full flex items-center justify-between gap-2 transition-colors ${
           quiet

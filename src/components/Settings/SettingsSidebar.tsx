@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Panel, Select } from '@/components/ui';
+import { Panel, Select, Dropdown } from '@/components/ui';
 import { SECTION_GROUPS } from './constants';
 import type { SettingsSection } from './types';
 
@@ -77,20 +77,22 @@ export const SettingsSidebar = ({ activeSection, onSectionChange }: SettingsSide
 
       {/* Mobile Section Selector */}
       <div className="lg:hidden mb-4 shrink-0">
-        <Select
+        <Dropdown
+          className="w-full"
+          ariaLabel="Settings section"
+          searchable
           value={activeSection}
-          onChange={(e) => onSectionChange(e.target.value as SettingsSection)}
-        >
-          {SECTION_GROUPS.map((group) => (
-            <optgroup key={group.id} label={group.label}>
-              {group.children.map((child) => (
-                <option key={child.id} value={child.id}>
-                  {child.label}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </Select>
+          onChange={(v) => onSectionChange(v as SettingsSection)}
+          options={SECTION_GROUPS.flatMap((group) =>
+            group.children.map((child) => ({
+              value: child.id,
+              label: child.label,
+              // Dropdown has no groups, so the group name rides along as the
+              // hint rather than being lost with the optgroup.
+              hint: group.label,
+            })),
+          )}
+        />
       </div>
     </>
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Select } from '@/components/ui';
+import { Select, Dropdown } from '@/components/ui';
 import { Toggle } from './Toggle';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
@@ -63,23 +63,26 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
         label="Default provider"
         description="Used for Telegram-spawned agents and webhook dispatches."
         control={
-          <Select
-            width="control"
+          <Dropdown
+            className="w-[300px]"
+            ariaLabel="Default provider"
+            searchable
             value={appSettings.defaultProvider || 'claude'}
-            onChange={(e) => onSaveAppSettings({ defaultProvider: e.target.value })}
-          >
-            {PROVIDER_REGISTRY.filter(p => p.id !== 'opencode' && p.id !== 'pi').map(({ id, label, requiresCli }) => {
-              const notAvailable = installedProviders[id] !== true;
-              const reason = notAvailable
-                ? requiresCli ? ' (not installed)' : ' (add API key in Settings)'
-                : '';
-              return (
-                <option key={id} value={id} disabled={notAvailable}>
-                  {label}{reason}
-                </option>
-              );
-            })}
-          </Select>
+            onChange={(v) => onSaveAppSettings({ defaultProvider: v })}
+            options={PROVIDER_REGISTRY
+              .filter(p => p.id !== 'opencode' && p.id !== 'pi')
+              .map(({ id, label, requiresCli }) => {
+                const notAvailable = installedProviders[id] !== true;
+                return {
+                  value: id,
+                  label,
+                  hint: notAvailable
+                    ? requiresCli ? 'not installed' : 'add an API key first'
+                    : undefined,
+                  disabled: notAvailable,
+                };
+              })}
+          />
         }
       />
     </SettingsCard>

@@ -1,4 +1,4 @@
-import { Select } from '@/components/ui';
+import { Select, Dropdown } from '@/components/ui';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
 import type { AppSettings } from './types';
@@ -27,14 +27,16 @@ export const TerminalSection = ({ appSettings, onSaveAppSettings }: TerminalSect
         label="Theme"
         description="Applies to every agent terminal: Claude, Codex, Gemini and every CLI provider."
         control={
-          <Select
-            width="control"
+          <Dropdown
+            className="w-[300px]"
+            ariaLabel="Terminal theme"
             value={currentTheme}
-            onChange={(e) => onSaveAppSettings({ terminalTheme: e.target.value as 'dark' | 'light' })}
-          >
-            <option value="dark">dark</option>
-            <option value="light">light</option>
-          </Select>
+            onChange={(v) => onSaveAppSettings({ terminalTheme: v as 'dark' | 'light' })}
+            options={[
+              { value: 'dark', label: 'dark' },
+              { value: 'light', label: 'light' },
+            ]}
+          />
         }
       />
 
@@ -42,17 +44,13 @@ export const TerminalSection = ({ appSettings, onSaveAppSettings }: TerminalSect
         label="Font size"
         description="Controls font size on the Terminals page. Persisted across sessions."
         control={
-          <Select
-            width="control"
-            value={currentFontSize}
-            onChange={(e) => onSaveAppSettings({ terminalFontSize: Number(e.target.value) })}
-          >
-            {FONT_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </Select>
+          <Dropdown
+            className="w-[300px]"
+            ariaLabel="Terminal font size"
+            value={String(currentFontSize)}
+            onChange={(v) => onSaveAppSettings({ terminalFontSize: Number(v) })}
+            options={FONT_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+          />
         }
       />
     </SettingsCard>

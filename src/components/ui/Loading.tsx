@@ -107,6 +107,9 @@ export function BrandSpinner({
               top: row * (cell + gap),
               width: cell,
               height: cell,
+              // The rest state, which is also what shows before this cell's
+              // delay has elapsed. Without it the whole mark starts lit.
+              opacity: 0.16,
               // One cell at a time, in reading order: across the top row, then
               // back to the left of the next one down. The delay is the cell's
               // own index, so all sixteen are distinct; it used to be
