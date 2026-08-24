@@ -13,6 +13,7 @@ import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTerminalContextMenu } from './hooks/useTerminalContextMenu';
 import { useTerminalDnd } from './hooks/useTerminalDnd';
 import { useProjectTabOrder } from './hooks/useProjectTabOrder';
+import { useHiddenAgents } from './hooks/useHiddenAgents';
 import { getAutoLayout } from './constants';
 import type { LayoutPreset } from './types';
 import TerminalGrid from './components/TerminalGrid';
@@ -224,7 +225,6 @@ export default function TerminalsView() {
   // Derive grid preset and editable state. A project tab has no stored layout,
   // so it follows the agent count instead of being frozen at 3x3 (four agents
   // must read as 2x2, not three on row one plus an orphan).
-  const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout ?? getAutoLayout(filteredAgents.length);
   // Both kinds of tab are arrangeable. Only custom tabs used to be, so inside a
   // project the panels were `static: true` and a drag did nothing at all: the
   // handle was there, the cursor changed, and the panel sprang back. The
@@ -236,8 +236,25 @@ export default function TerminalsView() {
     ? tabManager.activeCustomTab.id
     : tabManager.activeProjectPath || 'default';
 
+  // Panels taken off this board. Project tabs only: a custom tab already has
+  // its own membership list, and removing from one there is what it means.
+  const hiddenAgents = useHiddenAgents(tabId);
+  const visibleAgents = useMemo(
+    () => (tabManager.isCustomTabActive ? filteredAgents : filteredAgents.filter(a => !hiddenAgents.hiddenIds.includes(a.id))),
+    [filteredAgents, hiddenAgents.hiddenIds, tabManager.isCustomTabActive],
+  );
+  /** Hidden entries that still exist, so a deleted agent cannot linger. */
+  const hiddenOnThisBoard = useMemo(
+    () => filteredAgents.filter(a => hiddenAgents.hiddenIds.includes(a.id)),
+    [filteredAgents, hiddenAgents.hiddenIds],
+  );
+
+  // The preset follows what is on screen: hiding a panel should re-flow the
+  // board, not leave a gap where it was.
+  const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout ?? getAutoLayout(visibleAgents.length);
+
   // Agent IDs for grid
-  const agentIds = useMemo(() => filteredAgents.map(a => a.id), [filteredAgents]);
+  const agentIds = useMemo(() => visibleAgents.map(a => a.id), [visibleAgents]);
 
   // Set after multiTerminal is created; lets handleTerminalReady consume
   // pendingFocusRef without a circular dep.
@@ -264,7 +281,7 @@ export default function TerminalsView() {
 
   // Core hooks - delay terminal init until settings are loaded to avoid wrong font size
   const multiTerminal = useMultiTerminal({
-    agents: terminalSettingsLoaded ? filteredAgents : [],
+    agents: terminalSettingsLoaded ? visibleAgents : [],
     initialFontSize: terminalFontSize,
     onFontSizeChange: (size) => {
       setTerminalFontSize(size);
@@ -372,13 +389,27 @@ export default function TerminalsView() {
       await stopAgent(agentId);
       tabManager.removeAgentFromTab(tabManager.activeCustomTab.id, agentId);
     } else {
-      // Project tab: this is the only place a project-tab agent can be
-      // permanently deleted from. It kills the PTY, drops agents.json's only
-      // record of it, AND runs `git worktree remove --force`, which throws away
-      // anything uncommitted in that checkout. The old wording said "cannot be
-      // undone" and left the worktree unmentioned, so the one consequence a
-      // user would actually want warned about was the one it hid. Committed
-      // work survives: the branch is left behind, only the checkout goes.
+      // Project tab: take the panel off this board. The agent keeps running,
+      // keeps its worktree, and stays reachable everywhere else; the tab strip
+      // says how many are hidden and puts them back. Deleting for good is the
+      // separate action below, because "not on this screen" and "gone, along
+      // with everything uncommitted in its checkout" are not the same wish.
+      hiddenAgents.hide(agentId);
+      multiTerminal.unregisterContainer(agentId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
+  }, [stopAgent, multiTerminal.unregisterContainer, hiddenAgents.hide, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.removeAgentFromTab]);
+
+  /**
+   * Delete an agent for good.
+   *
+   * Kills the PTY, drops agents.json's only record of it, and runs
+   * `git worktree remove --force`, which throws away anything uncommitted in
+   * that checkout. Committed work survives: the branch is left behind, only
+   * the checkout goes.
+   */
+  const handleDeleteAgent = useCallback(async (agentId: string) => {
+    {
       const agent = agentsRef.current.find(a => a.id === agentId);
       const agentName = agent?.name || 'this agent';
 
@@ -396,12 +427,15 @@ export default function TerminalsView() {
           : `\n\nIts worktree ${agent.worktreePath} will be deleted. Commits on ${agent.branchName} are kept.`;
       }
 
-      if (!window.confirm(`Delete "${agentName}"? This stops it and cannot be undone.${worktreeNote}`)) return;
+      if (!window.confirm(`Delete "${agentName}" for good? This stops it and cannot be undone.${worktreeNote}`)) return;
       multiTerminal.unregisterContainer(agentId);
+      // Drop it from any board's hidden list too, or it stays counted as
+      // hidden on a board it can never come back to.
+      hiddenAgents.forget(agentId);
       await removeAgent(agentId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
-  }, [stopAgent, removeAgent, multiTerminal.unregisterContainer, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.removeAgentFromTab]);
+  }, [removeAgent, multiTerminal.unregisterContainer, hiddenAgents.forget]);
 
   const handleFocusPanel = useCallback((agentId: string) => {
     setFocusedPanelId(agentId);
@@ -618,6 +652,9 @@ export default function TerminalsView() {
           activeTab={tabManager.activeTab}
           onSelectProject={handleSelectProject}
           onReorder={reorderProjectTabs}
+          hidden={hiddenOnThisBoard.map(a => ({ id: a.id, name: a.name || a.id }))}
+          onShow={hiddenAgents.show}
+          onShowAll={hiddenAgents.showAll}
         />
 
         {/* A start that was refused. The main process explains why - a folder
@@ -656,6 +693,7 @@ export default function TerminalsView() {
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
             onRemoveAgent={handleRemoveAgent}
+            onDeleteAgent={handleDeleteAgent}
             onClearTerminal={multiTerminal.clearTerminal}
             onFullscreenPanel={grid.fullscreenPanel}
             onExitFullscreen={grid.exitFullscreen}

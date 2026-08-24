@@ -16,6 +16,7 @@ import { registerHooksRoutes } from '../../../../electron/services/api-routes/ho
 import { agents, saveAgents } from '../../../../electron/core/agent-manager';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
+import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 
 function makeRouteApp(): RouteApp {
   const app: RouteApp = {
@@ -137,7 +138,10 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/status');
 
       const sendJson = vi.fn();
-      const emitSpy = vi.spyOn(ctx.agentStatusEmitter, 'emit');
+      // The bus is a module singleton now, so the spy would otherwise
+      // carry calls made by the tests above it.
+      const emitSpy = vi.spyOn(agentStatusEmitter, 'emit');
+      emitSpy.mockClear();
       await handler(makeReq({ agent_id: 'a1', session_id: 'sess', status: 'running' }), sendJson, ctx);
 
       expect(agent.status).toBe('running');
@@ -179,7 +183,10 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/status');
 
       const sendJson = vi.fn();
-      const emitSpy = vi.spyOn(ctx.agentStatusEmitter, 'emit');
+      // The bus is a module singleton now, so the spy would otherwise
+      // carry calls made by the tests above it.
+      const emitSpy = vi.spyOn(agentStatusEmitter, 'emit');
+      emitSpy.mockClear();
       await handler(makeReq({ agent_id: 'a1', session_id: 'fresh-sess', status: 'idle', source: 'startup' }), sendJson, ctx);
 
       expect(agent.status).toBe('running');
@@ -198,7 +205,10 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/status');
 
       const sendJson = vi.fn();
-      const emitSpy = vi.spyOn(ctx.agentStatusEmitter, 'emit');
+      // The bus is a module singleton now, so the spy would otherwise
+      // carry calls made by the tests above it.
+      const emitSpy = vi.spyOn(agentStatusEmitter, 'emit');
+      emitSpy.mockClear();
       await handler(makeReq({ agent_id: 'a1', session_id: 'old-sess', status: 'idle' }), sendJson, ctx);
 
       expect(agent.status).toBe('running');

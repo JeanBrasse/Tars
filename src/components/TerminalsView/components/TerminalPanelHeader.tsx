@@ -17,6 +17,8 @@ interface TerminalPanelHeaderProps {
   onExitFullscreen: () => void;
   onClear: () => void;
   onRemove: () => void;
+  /** Destroys the agent and its worktree. Absent where that is not offered. */
+  onDelete?: (agentId: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
@@ -36,6 +38,7 @@ export default function TerminalPanelHeader({
   onExitFullscreen,
   onClear,
   onRemove,
+  onDelete,
   onContextMenu,
 }: TerminalPanelHeaderProps) {
   const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
@@ -45,11 +48,11 @@ export default function TerminalPanelHeader({
   const isLive = agent.status === 'running' || agent.status === 'waiting';
 
   const showDragHandle = tabType === 'custom';
-  // Custom tabs remove the agent from the tab (it survives elsewhere);
-  // project tabs delete it outright - onRemove (wired one level up) already
-  // branches on this, the button just used to be hidden on project tabs
-  // entirely, leaving no way to delete an agent from its own project board.
-  const removeLabel = tabType === 'custom' ? 'remove' : 'delete';
+  // Neither kind of tab deletes anything from here any more. A custom tab
+  // takes the agent off its own membership list; a project board hides the
+  // panel and the tab strip puts it back. Deleting for good is its own item
+  // below, with its own wording, because it also destroys the worktree.
+  const removeLabel = tabType === 'custom' ? 'remove from tab' : 'hide from this board';
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -198,9 +201,19 @@ export default function TerminalPanelHeader({
               {isFullscreen ? 'exit fullscreen' : 'fullscreen'}
             </button>
 
-            {/* Remove from tab (custom) or delete outright (project) */}
+            {/* Taking a panel off a board and destroying an agent are two
+                different intentions, so they are two different items. */}
             {!isFullscreen && (
               <button type="button" onClick={run(onRemove)} className={menuItemClass}>{removeLabel}</button>
+            )}
+            {!isFullscreen && onDelete && (
+              <button
+                type="button"
+                onClick={run(() => onDelete(agent.id))}
+                className={`${menuItemClass} text-danger`}
+              >
+                delete for good
+              </button>
             )}
           </div>
         )}

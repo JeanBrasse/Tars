@@ -4,6 +4,7 @@ import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
+import { emitAgentStatus } from '../agent-events';
 
 /**
  * Session ownership contract:
@@ -152,7 +153,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     if (oldStatus !== agent.status) {
       console.log(`[hooks] Status changed: ${agent.id} ${oldStatus} → ${agent.status}`);
       ctx.handleStatusChangeNotificationCallback(agent, agent.status);
-      ctx.agentStatusEmitter.emit(`status:${agent.id}`);
+      emitAgentStatus(agent.id);
 
       broadcastToAllWindows('agent:status', {
         agentId: agent.id,
@@ -213,7 +214,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     if (oldStatus !== 'completed') {
       console.log(`[hooks] Task completed: ${agent.id} ${oldStatus} → completed`);
       ctx.handleStatusChangeNotificationCallback(agent, 'completed');
-      ctx.agentStatusEmitter.emit(`status:${agent.id}`);
+      emitAgentStatus(agent.id);
 
       broadcastToAllWindows('agent:status', {
         agentId: agent.id,

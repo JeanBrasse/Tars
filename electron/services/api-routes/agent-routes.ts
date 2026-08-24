@@ -15,6 +15,7 @@ import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
+import { emitAgentStatus } from '../agent-events';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -318,7 +319,7 @@ async function spawnAgentSession(
       }
       agent.lastActivity = new Date().toISOString();
       saveAgents();
-      ctx.agentStatusEmitter.emit(`status:${agent.id}`);
+      emitAgentStatus(agent.id);
     }, 1500);
   });
 
@@ -809,7 +810,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // Per-agent channel, not a bare 'status': /wait subscribes with
     // `status:${agentId}` (see the .on below), so an emit on 'status' reached
     // nobody and a caller waiting on this agent hung until its timeout.
-    ctx.agentStatusEmitter.emit(`status:${agent.id}`);
+    emitAgentStatus(agent.id);
 
     const result = await delegateOverAcp({
       agent,
@@ -823,7 +824,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     agent.lastActivity = new Date().toISOString();
     if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
     saveAgents();
-    ctx.agentStatusEmitter.emit(`status:${agent.id}`);
+    emitAgentStatus(agent.id);
 
     sendJson(result, result.ok ? 200 : 502);
   });
@@ -856,7 +857,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     agent.currentSessionId = undefined;
     agent.lastActivity = new Date().toISOString();
     saveAgents();
-    ctx.agentStatusEmitter.emit(`status:${agent.id}`);
+    emitAgentStatus(agent.id);
     sendJson({ success: true });
   });
 

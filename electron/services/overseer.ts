@@ -8,6 +8,7 @@ import { writeAtomicSync } from '../utils/secret-file';
 import { stripAnsi } from '../utils/ansi';
 import { repoSummary } from './git-review';
 import { usableHermesConnection } from './hermes-config';
+import { agentStatusEmitter } from './agent-events';
 import {
   probeHermes,
   createHermesCron,
@@ -911,16 +912,53 @@ function clampInterval(ms: number): number {
   return Math.min(MAX_WATCH_INTERVAL_MS, Math.max(MIN_WATCH_INTERVAL_MS, Math.round(ms)));
 }
 
+/**
+ * The shortest gap between two event-driven looks.
+ *
+ * A single piece of work moves an agent through running, waiting and running
+ * again within seconds, and a fleet of six doing that at once is a burst. The
+ * overseer should look once when the dust settles, not once per transition:
+ * each turn is a real Hermes run and a real cost.
+ */
+const EVENT_SETTLE_MS = 8_000;
+/** And never more often than this, however busy the fleet gets. */
+const EVENT_FLOOR_MS = 45_000;
+
+let settleTimer: ReturnType<typeof setTimeout> | null = null;
+let lastEventLookAt = 0;
+let onFleetChange: (() => void) | null = null;
+
 export function startOverseerWatch(onBriefing: (message: OverseerMessage) => void, intervalMs?: number): void {
   if (watchTimer) return;
   watchCallback = onBriefing;
   const period = clampInterval(intervalMs ?? loadState().settings.watchIntervalMs);
-  watchTimer = setInterval(() => {
+
+  const look = () => {
     watchTick()
       .then(message => { if (message) onBriefing(message); })
       .catch(err => console.error('[overseer] watch tick failed:', err));
-  }, period);
+  };
+
+  // The timer is the safety net now, not the mechanism: it catches anything
+  // that changes without a status transition (a branch moving, a worktree
+  // going dirty) and covers the case where nothing emits at all.
+  watchTimer = setInterval(look, period);
   watchTimer.unref?.();
+
+  // The mechanism: react when an agent actually moves. `fleet-change` is
+  // emitted by emitAgentStatus for every status transition in the app.
+  onFleetChange = () => {
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      const since = Date.now() - lastEventLookAt;
+      if (since < EVENT_FLOOR_MS) return;
+      lastEventLookAt = Date.now();
+      look();
+    }, EVENT_SETTLE_MS);
+    settleTimer.unref?.();
+  };
+  agentStatusEmitter.on('fleet-change', onFleetChange);
 }
 
 export function getOverseerSettings(): OverseerSettings {
@@ -962,6 +1000,10 @@ export function setOverseerSettings(patch: Partial<OverseerSettings>): OverseerS
 export function stopOverseerWatch(): void {
   if (watchTimer) clearInterval(watchTimer);
   watchTimer = null;
+  if (settleTimer) clearTimeout(settleTimer);
+  settleTimer = null;
+  if (onFleetChange) agentStatusEmitter.off('fleet-change', onFleetChange);
+  onFleetChange = null;
   // watchCallback is deliberately kept: setOverseerSettings re-arms through it.
 }
 
