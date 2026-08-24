@@ -85,6 +85,10 @@ export interface ClaudeStats {
     /** Per model, split the way the bill is. Absent on the legacy
      *  stats-cache.json shape, which never carried it. */
     breakdownByModel?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
+    /** How many replies each model sent that day, counted off the same message
+     *  id the token dedup uses so a multi-line response counts once. Absent on
+     *  the legacy stats-cache.json shape, which never carried it. */
+    messagesByModel?: Record<string, number>;
     /** The day priced from its own tokens, cache included. Absent on the
      *  legacy stats-cache.json shape, which carries no per-day cost at all. */
     costUSD?: number;

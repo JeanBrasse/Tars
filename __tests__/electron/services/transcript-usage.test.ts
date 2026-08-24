@@ -225,4 +225,66 @@ describe('the per-file cache', () => {
     expect(warm).toEqual(cold);
     expect(coldAgain).toEqual(cold);
   });
+
+  /* ── Messages per day ─────────────────────────────────────────────────── */
+
+  it('counts a reply once even though it is written as several lines', () => {
+    // One API response, three content blocks, same message id: the token
+    // totals top up across them, but it is one message. Counting lines here
+    // roughly doubles every day on the chart.
+    writeTranscript('a.jsonl', [
+      assistant('msg_1', 'req_1', { output_tokens: 100 }),
+      assistant('msg_1', 'req_1', { output_tokens: 300 }),
+      assistant('msg_1', 'req_1', { output_tokens: 500 }),
+    ]);
+
+    const { dailyModelTokens } = computeTranscriptUsage(home);
+
+    expect(dailyModelTokens).toHaveLength(1);
+    expect(dailyModelTokens[0].messagesByModel['claude-opus-5']).toBe(1);
+  });
+
+  it('counts distinct replies separately', () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
+
+    const { dailyModelTokens } = computeTranscriptUsage(home);
+
+    expect(dailyModelTokens[0].messagesByModel['claude-opus-5']).toBe(2);
+  });
+
+  it('keeps the count per model, so a day of two models splits', () => {
+    const other = { ...assistant('msg_9', 'req_9') };
+    other.message = { ...other.message, model: 'claude-sonnet-5' };
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), other]);
+
+    const { dailyModelTokens } = computeTranscriptUsage(home);
+
+    expect(dailyModelTokens[0].messagesByModel).toEqual({
+      'claude-opus-5': 1,
+      'claude-sonnet-5': 1,
+    });
+  });
+
+  it('does not count a replayed message twice across transcripts', () => {
+    // A resumed session replays its earlier messages into a new file under the
+    // same ids, which is why the dedup is global rather than per file.
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    writeTranscript('b.jsonl', [assistant('msg_1', 'req_1')]);
+
+    const { dailyModelTokens } = computeTranscriptUsage(home);
+
+    expect(dailyModelTokens[0].messagesByModel['claude-opus-5']).toBe(1);
+  });
+
+  it('still reports the day cost alongside the count', () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+
+    const { dailyModelTokens } = computeTranscriptUsage(home);
+
+    // costUSD was briefly dropped from the interface while the count was
+    // added, and nothing failed: the literal is built inside a .map(), so
+    // excess-property checking never sees it.
+    expect(typeof dailyModelTokens[0].costUSD).toBe('number');
+    expect(dailyModelTokens[0].costUSD).toBeGreaterThan(0);
+  });
 });

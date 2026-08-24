@@ -11,6 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.6.14',
     date: '2026-08-24',
     updates: [
+      'A Daily messages chart on the Usage page. Tokens per day cannot tell one long turn from forty short ones, and this can: hovering a day shows how many replies each model sent. A reply counts once even though a transcript writes one response as several lines',
       'The Chat message box follows the drawn design. The text no longer sits in a box inside a box: it writes straight onto the composer, and the composer border picks up the accent while you are typing in it',
       'The model, its provider and the reasoning effort are one control instead of three. It reads model and effort at a glance, and opening it offers all three, which is the submenu inside the submenu that was asked for',
       'Attach lost its border. It acts on the message rather than setting a property of it, so it is no longer shaped like the pickers next to it',
