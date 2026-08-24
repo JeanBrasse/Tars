@@ -12,6 +12,12 @@ import { agentStatusEmitter } from './agent-events';
 import { recordRunEvents, summariseRuns, type RunEvent } from './overseer-runs';
 import { AUTO_ACTION_RULES, findAutoRule } from './overseer-auto';
 import {
+  LiveSession,
+  askLiveSession,
+  createLiveSession,
+  liveTransportAvailable,
+} from './hermes-session';
+import {
   probeHermes,
   createHermesCron,
   updateHermesCron,
@@ -761,12 +767,6 @@ export async function askOverseer(
 
     const state = loadState();
 
-    let jobResult = await ensureOverseerJob(conn, state);
-    if ('error' in jobResult) {
-      return { ok: false, reason: jobResult.needsSignIn ? 'needs_sign_in' : 'error', error: jobResult.error };
-    }
-    let jobId = jobResult.jobId;
-
     // Recorded before the round trip, not after it. It used to be pushed with
     // the reply, thirty seconds later, so anything that read the history in
     // between - another window, or this page after you navigated away and
@@ -790,6 +790,26 @@ export async function askOverseer(
       withAttachmentPaths(userMessage, opts.attachments),
       opts,
     );
+
+    // The live conversation first. It is what the gateway's own dashboard
+    // uses, it answers in about nine seconds rather than thirty, and it does
+    // not need a cron job to exist at all. Everything below it is the fallback
+    // for a gateway that will not open a socket.
+    const liveReply = await askViaLiveSession(conn, prompt);
+    if (liveReply.aborted) {
+      return { ok: false, reason: 'error', error: 'Stopped: you paused the overseer while it was answering.' };
+    }
+    if (liveReply.text !== null) {
+      return finishTurn(state, liveReply.text, opts);
+    }
+
+    // Only now is a cron job worth creating: an install that never falls back
+    // never grows one.
+    let jobResult = await ensureOverseerJob(conn, state);
+    if ('error' in jobResult) {
+      return { ok: false, reason: jobResult.needsSignIn ? 'needs_sign_in' : 'error', error: jobResult.error };
+    }
+    let jobId = jobResult.jobId;
 
     // Sent on every turn rather than only at creation: the job is long-lived
     // and a model chosen in the Chat header has to reach a job that already
@@ -868,65 +888,142 @@ export async function askOverseer(
       return { ok: false, reason: 'run_timeout', error: 'The overseer run did not answer in time.' };
     }
 
-    const envelope = parseEnvelope(assistantMsg.content);
-
-    let action: OverseerAction | null = null;
-    if (envelope.action) {
-      const resolved = resolveTarget(envelope.action.agentId);
-      // If the id doesn't resolve, the proposal is silently dropped from the
-      // structured side - envelope.say still reaches Noah as the overseer's
-      // words, but there is nothing left to approve or send.
-      if (resolved.ok) {
-        action = {
-          actionId: uuidv4(),
-          agentId: envelope.action.agentId,
-          agentName: resolved.target.agentName,
-          projectPath: resolved.target.projectPath,
-          provider: resolved.target.provider,
-          model: resolved.target.model,
-          pane: resolved.target.pane,
-          text: envelope.action.text,
-          resolvedAt: new Date().toISOString(),
-        };
-      }
-    }
-
-    // Pre-authorised? Decided here, against the live fleet, and sent through
-    // the same gate Noah's own approval goes through: a rule is an approval
-    // given in advance, not a way around the gate.
-    let autoNote = '';
-    if (action) {
-      const rule = findAutoRule(state.settings.autoActions, { agentId: action.agentId });
-      if (rule) {
-        const sent = await confirmPendingAction(action, true);
-        autoNote = sent.success
-          ? `\n\n_Sent automatically to ${action.agentName}: ${rule.label.toLowerCase()}._`
-          : `\n\n_Tried to send this automatically and could not: ${sent.error ?? 'unknown error'}._`;
-        // Consumed either way, so the panel cannot offer to send it again.
-        action = null;
-      }
-    }
-
-    const overseerMsg: OverseerMessage = {
-      id: uuidv4(),
-      role: 'overseer',
-      text: envelope.say + autoNote,
-      action,
-      isBriefing: opts.isBriefing,
-      timestamp: new Date().toISOString(),
-    };
-
-    // The user's turn is already in `state.messages`, pushed above before the
-    // round trip. A briefing has no user turn at all: it was not asked for.
-    state.messages.push(overseerMsg);
-    // Bound the persisted history so overseer.json doesn't grow forever.
-    if (state.messages.length > 400) state.messages = state.messages.slice(-400);
-    saveState(state);
-
-    return { ok: true, message: overseerMsg };
+    return finishTurn(state, assistantMsg.content, opts);
   } finally {
     turnInFlight = false;
   }
+}
+
+/**
+ * What happens to a reply once it exists, whichever transport produced it.
+ *
+ * Extracted so the live conversation and the cron fallback cannot drift: the
+ * envelope parsing, the target re-resolution, the auto-action gate and the
+ * history write are the parts that must behave identically no matter how the
+ * words arrived.
+ */
+async function finishTurn(
+  state: OverseerState,
+  replyText: string,
+  opts: { isBriefing?: boolean },
+): Promise<AskOverseerResult> {
+  const envelope = parseEnvelope(replyText);
+
+  let action: OverseerAction | null = null;
+  if (envelope.action) {
+    const resolved = resolveTarget(envelope.action.agentId);
+    // If the id doesn't resolve, the proposal is silently dropped from the
+    // structured side - envelope.say still reaches Noah as the overseer's
+    // words, but there is nothing left to approve or send.
+    if (resolved.ok) {
+      action = {
+        actionId: uuidv4(),
+        agentId: envelope.action.agentId,
+        agentName: resolved.target.agentName,
+        projectPath: resolved.target.projectPath,
+        provider: resolved.target.provider,
+        model: resolved.target.model,
+        pane: resolved.target.pane,
+        text: envelope.action.text,
+        resolvedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  // Pre-authorised? Decided here, against the live fleet, and sent through
+  // the same gate Noah's own approval goes through: a rule is an approval
+  // given in advance, not a way around the gate.
+  let autoNote = '';
+  if (action) {
+    const rule = findAutoRule(state.settings.autoActions, { agentId: action.agentId });
+    if (rule) {
+      const sent = await confirmPendingAction(action, true);
+      autoNote = sent.success
+        ? `\n\n_Sent automatically to ${action.agentName}: ${rule.label.toLowerCase()}._`
+        : `\n\n_Tried to send this automatically and could not: ${sent.error ?? 'unknown error'}._`;
+      // Consumed either way, so the panel cannot offer to send it again.
+      action = null;
+    }
+  }
+
+  const overseerMsg: OverseerMessage = {
+    id: uuidv4(),
+    role: 'overseer',
+    text: envelope.say + autoNote,
+    action,
+    isBriefing: opts.isBriefing,
+    timestamp: new Date().toISOString(),
+  };
+
+  // The user's turn is already in `state.messages`, pushed before the round
+  // trip. A briefing has no user turn at all: it was not asked for.
+  state.messages.push(overseerMsg);
+  // Bound the persisted history so overseer.json doesn't grow forever.
+  if (state.messages.length > 400) state.messages = state.messages.slice(-400);
+  saveState(state);
+
+  return { ok: true, message: overseerMsg };
+}
+
+/* ── The live conversation ───────────────────────────────────────────────── */
+
+/** Held between turns, so the conversation is one session rather than a new
+ *  one per message. Dropped whenever a turn fails against it, so the next turn
+ *  reconnects instead of retrying a socket the gateway has forgotten. */
+let liveSession: LiveSession | null = null;
+let liveControl: WebSocket | null = null;
+
+/** Set once the gateway has refused to open a socket, so an install that
+ *  genuinely has no live transport does not pay for the attempt on every
+ *  single turn. Cleared whenever the connection settings change. */
+let liveUnavailable = false;
+
+export function resetLiveSession(): void {
+  try { liveControl?.close(); } catch { /* already gone */ }
+  liveSession = null;
+  liveControl = null;
+  liveUnavailable = false;
+}
+
+/**
+ * Ask over the live conversation, or report that it could not be used.
+ *
+ * `text: null` is not a failure, it is "fall back to the cron": the caller
+ * carries on down the old path. Only an abort is distinguished, because a
+ * paused overseer must not then be asked the same question again by the
+ * fallback.
+ */
+async function askViaLiveSession(
+  conn: HermesConnection,
+  prompt: string,
+): Promise<{ text: string | null; aborted: boolean }> {
+  if (liveUnavailable || !liveTransportAvailable()) return { text: null, aborted: false };
+
+  try {
+    if (!liveSession) {
+      const opened = await createLiveSession(conn);
+      liveSession = opened.session;
+      liveControl = opened.control;
+    }
+  } catch (err) {
+    console.error('[overseer] no live session, falling back to the cron transport:', err);
+    liveUnavailable = true;
+    return { text: null, aborted: false };
+  }
+
+  const result = await askLiveSession(conn, liveSession, prompt, {
+    signal: { get aborted() { return abortTurn; } },
+  });
+
+  if (result.ok) return { text: result.envelope, aborted: false };
+  if (result.error === 'aborted') return { text: null, aborted: true };
+
+  // The session is suspect now: drop it so the next turn opens a fresh one.
+  console.error('[overseer] live turn failed, falling back to the cron transport:', result.error);
+  try { liveControl?.close(); } catch { /* already gone */ }
+  liveSession = null;
+  liveControl = null;
+  return { text: null, aborted: false };
 }
 
 // ── The watch ─────────────────────────────────────────────────────────────

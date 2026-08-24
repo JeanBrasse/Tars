@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 31,
+    version: '1.6.13',
+    date: '2026-08-24',
+    updates: [
+      'Chat talks to Hermes live instead of through a scheduled job. Every message used to be delivered by rewriting a cron job, triggering it and polling for the run, which took about thirty seconds; the gateway has a real conversation and Tars now uses it, so a reply lands in about nine. The old path is still there and takes over on its own if a gateway will not open a live connection',
+      'Chat no longer creates a scheduled job it never needed. One is only made if the live connection cannot be used',
+      'A reasoning effort control beside the model in Chat. It sets what your gateway runs at, so it applies to everything using that gateway rather than to one message',
+      'The Chat composer is rebuilt around what it now carries. The text box takes the full width and send moves to the end of the control bar, beside attach, the provider, the model, the effort and the cadence, instead of being wedged against the text',
+    ],
+  },
+  {
     id: 30,
     version: '1.6.12',
     date: '2026-08-24',

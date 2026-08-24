@@ -26,6 +26,11 @@ import {
   uploadHermesAttachment,
   MAX_ATTACHMENT_BYTES,
 } from '../services/hermes-client';
+import {
+  getReasoningEffort,
+  setReasoningEffort,
+  REASONING_EFFORTS,
+} from '../services/hermes-session';
 
 /**
  * Enough to tell the gateway an image from a file, which is the only decision
@@ -159,6 +164,31 @@ export function registerOverseerHandlers(): void {
       if (!applied.success) return { success: false, settings, error: applied.error };
     }
     return { success: true, settings };
+  });
+
+  /**
+   * The reasoning effort, read from and written to the gateway rather than
+   * stored here.
+   *
+   * It is `agent.reasoning_effort` in the gateway's own config, which is a
+   * property of that install, not of Tars: the same gateway answers the
+   * dashboard and Tars with the same effort. Keeping a copy in app-settings
+   * would only create two answers to one question.
+   */
+  ipcMain.handle('overseer:effort', async () => {
+    const conn = usableHermesConnection();
+    if (!conn) return { success: false, error: 'Hermes is not configured. Set it up in Settings.' };
+    const effort = await getReasoningEffort(conn);
+    return { success: true, effort, options: [...REASONING_EFFORTS] };
+  });
+
+  ipcMain.handle('overseer:setEffort', async (_event, effort: string) => {
+    const conn = usableHermesConnection();
+    if (!conn) return { success: false, error: 'Hermes is not configured. Set it up in Settings.' };
+    if (typeof effort !== 'string' || !effort.trim()) {
+      return { success: false, error: 'No effort given.' };
+    }
+    return setReasoningEffort(conn, effort.trim());
   });
 
   /**

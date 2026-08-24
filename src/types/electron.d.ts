@@ -1271,6 +1271,10 @@ export interface ElectronAPI {
       canceled?: boolean;
       error?: string;
     }>;
+    /** The gateway's `agent.reasoning_effort`. It belongs to the gateway, not
+     *  to Tars, so it is read live rather than mirrored in app settings. */
+    effort: () => Promise<{ success: boolean; effort?: string | null; options?: string[]; error?: string }>;
+    setEffort: (effort: string) => Promise<{ success: boolean; error?: string }>;
     history: () => Promise<{ messages: OverseerMessage[]; busy: boolean }>;
     fleet: () => Promise<OverseerFleetSnapshot>;
     confirmAction: (params: { action: OverseerAction; approve: boolean }) => Promise<{ success: boolean; error?: string; mode?: string }>;
