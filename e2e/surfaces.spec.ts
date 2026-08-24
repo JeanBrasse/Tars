@@ -88,9 +88,15 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     }
     expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
 
+    // Mask the terminal bodies. The dashboard screenshots real PTY output, which
+    // carries the sandbox's randomly named temp directory and the clock, so the
+    // baseline could never match twice: every run reported a diff, and a diff
+    // that is always there tells you nothing about the run that actually broke
+    // something. The panel headers, the grid and the chrome are still compared.
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
       maxDiffPixelRatio: 0.005,
       animations: 'disabled',
+      mask: [page.locator('.xterm-screen')],
     });
   });
 }
