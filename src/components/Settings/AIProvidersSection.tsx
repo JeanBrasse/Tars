@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Input, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge } from '@/components/ui';
+import { isValidOpenAIBaseUrl } from '@/lib/validateUrl';
 import type { AnyTone } from '@/components/ui';
 import { Toggle } from './Toggle';
 import { SettingsRow } from './SettingsRow';
@@ -79,6 +80,16 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
   const [cliProviders, setCliProviders] = useState<CLIProviderStatus[]>(
     CLI_BINARIES.map((cli) => ({ ...cli, version: null, loading: true })),
   );
+
+  // The one field here that isn't a key: reject and explain rather than
+  // silently persisting something that will 404 the moment an agent starts.
+  const [customUrlInvalid, setCustomUrlInvalid] = useState(false);
+  const handleCustomUrlBlur = () => {
+    const value = appSettings.customOpenAIBaseUrl || '';
+    const invalid = value.trim().length > 0 && !isValidOpenAIBaseUrl(value);
+    setCustomUrlInvalid(invalid);
+    if (!invalid) onSaveAppSettings({ customOpenAIBaseUrl: value });
+  };
 
   // Ollama has no key to gate on: whether it's usable is whether the local
   // server answers, so this is a live check, not a settings read.
@@ -226,6 +237,20 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       onKeyChange: (v: string) => onUpdateLocalSettings({ veniceApiKey: v }),
       onKeyBlur: () => onSaveAppSettings({ veniceApiKey: appSettings.veniceApiKey }),
       models: ['llama-3.3-70b', 'venice-uncensored-1-2', 'deepseek-v3.2', 'qwen3-235b-a22b-instruct-2507'],
+    },
+    {
+      id: 'ollama-cloud',
+      name: 'Ollama Cloud',
+      detail: 'ollama-cloud · anthropic-compatible, bearer auth',
+      note: 'Direct via ollama.com. Its endpoint wants a Bearer token rather than the usual key header - Tars sends it that way automatically.',
+      docsUrl: 'https://ollama.com/settings/keys',
+      placeholder: '...',
+      enabled: !!appSettings.ollamaCloudEnabled,
+      onToggle: () => onSaveAppSettings({ ollamaCloudEnabled: !appSettings.ollamaCloudEnabled }),
+      apiKey: appSettings.ollamaCloudApiKey || '',
+      onKeyChange: (v: string) => onUpdateLocalSettings({ ollamaCloudApiKey: v }),
+      onKeyBlur: () => onSaveAppSettings({ ollamaCloudApiKey: appSettings.ollamaCloudApiKey }),
+      models: ['gpt-oss:120b', 'glm-5.2', 'kimi-k2.7-code', 'deepseek-v4-pro'],
     },
   ];
 
@@ -445,6 +470,88 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
           </div>
         );
       })}
+
+      <div className="px-4 pt-4 pb-2">
+        <PanelCaption>CUSTOM</PanelCaption>
+      </div>
+
+      <div>
+        {(() => {
+          const hasBaseUrl = !!appSettings.customOpenAIBaseUrl?.trim();
+          const hasModel = !!appSettings.customOpenAIModel?.trim();
+          const ready = hasBaseUrl && hasModel;
+          const open = expanded === 'custom-openai';
+          return (
+            <>
+              <SettingsRow
+                label={
+                  <ProviderLabel
+                    name="Custom (OpenAI-compatible)"
+                    status={ready ? 'configured' : hasBaseUrl ? 'no model set' : 'not configured'}
+                    tone={ready ? 'running' : 'idle'}
+                    on={ready}
+                  />
+                }
+                description={<span className="font-mono">{appSettings.customOpenAIBaseUrl || 'no base url set'}</span>}
+                control={<ConfigureButton open={open} onClick={() => toggleExpanded('custom-openai')} />}
+                secondaryControl={
+                  <Toggle
+                    enabled={!!appSettings.customOpenAIEnabled}
+                    onChange={() => onSaveAppSettings({ customOpenAIEnabled: !appSettings.customOpenAIEnabled })}
+                  />
+                }
+              />
+              {open && (
+                <ConfigureArea>
+                  <SettingsRow
+                    label="Base URL"
+                    description={
+                      customUrlInvalid
+                        ? <span className="text-danger">Must be a full http:// or https:// URL, e.g. https://api.example.com/v1</span>
+                        : 'Any OpenAI-compatible /chat/completions endpoint - vLLM, LM Studio, a hosted vendor with no Anthropic support.'
+                    }
+                    control={
+                      <Input
+                        width="control"
+                        value={appSettings.customOpenAIBaseUrl ?? ''}
+                        onChange={(e) => { onUpdateLocalSettings({ customOpenAIBaseUrl: e.target.value }); setCustomUrlInvalid(false); }}
+                        onBlur={handleCustomUrlBlur}
+                        placeholder="https://api.example.com/v1"
+                      />
+                    }
+                  />
+                  <SettingsRow
+                    label="API key"
+                    description="Leave blank if the endpoint needs none."
+                    control={
+                      <PasswordInput
+                        width="control"
+                        value={appSettings.customOpenAIApiKey || ''}
+                        onChange={(e) => onUpdateLocalSettings({ customOpenAIApiKey: e.target.value })}
+                        onBlur={() => onSaveAppSettings({ customOpenAIApiKey: appSettings.customOpenAIApiKey })}
+                        placeholder="sk-... (optional)"
+                      />
+                    }
+                  />
+                  <SettingsRow
+                    label="Model"
+                    description="The exact model id this endpoint expects. No catalogue to pick from - type it as the vendor documents it."
+                    control={
+                      <Input
+                        width="control"
+                        value={appSettings.customOpenAIModel || ''}
+                        onChange={(e) => onUpdateLocalSettings({ customOpenAIModel: e.target.value })}
+                        onBlur={() => onSaveAppSettings({ customOpenAIModel: appSettings.customOpenAIModel })}
+                        placeholder="llama-3.1-70b-instruct"
+                      />
+                    }
+                  />
+                </ConfigureArea>
+              )}
+            </>
+          );
+        })()}
+      </div>
 
       {/* What used to be a four-paragraph card explaining routing. One line is
           the whole rule; the per-provider detail lines say the rest. */}

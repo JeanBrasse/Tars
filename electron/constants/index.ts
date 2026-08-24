@@ -5,12 +5,15 @@ import * as os from 'os';
 export const API_PORT = Number(process.env.DOROTHY_API_PORT) || 31415;
 
 /**
- * Loopback-only port for the Venice AI translation shim (see
- * services/venice-shim.ts for why it exists and why it is a separate server
- * rather than a route on the main API server). Derived from API_PORT so a
- * sandboxed or E2E instance running beside the real app never collides.
+ * Loopback-only port for Tars's OpenAI-compatible translation bridge (see
+ * services/openai-bridge.ts for why it exists and why it is a separate server
+ * rather than a route on the main API server). One server, one port, serving
+ * every OpenAI-only vendor (Venice, and the user's own custom endpoint) - each
+ * addressed by a path segment, not a port of its own; see that file's header
+ * for why. Derived from API_PORT so a sandboxed or E2E instance running beside
+ * the real app never collides.
  */
-export const VENICE_SHIM_PORT = API_PORT + 1;
+export const OPENAI_BRIDGE_PORT = API_PORT + 1;
 
 export const OLD_DATA_DIR = path.join(os.homedir(), '.claude-manager');
 

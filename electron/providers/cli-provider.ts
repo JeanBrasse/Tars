@@ -172,3 +172,21 @@ export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;
 }
+
+/**
+ * Whether a user-supplied string is a usable OpenAI-compatible base URL:
+ * parses at all, and is http/https (not file:, not a bare host that `new
+ * URL()` would otherwise reject, not a scheme fetch() cannot use). Used by
+ * custom-openai-provider.ts to decide whether to wire the bridge up at all,
+ * and by the Settings screen before it persists what was typed - the same
+ * check on both sides of the IPC boundary rather than trusting the renderer.
+ */
+export function isValidOpenAIBaseUrl(value: string | undefined): boolean {
+  if (!value || !value.trim()) return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}

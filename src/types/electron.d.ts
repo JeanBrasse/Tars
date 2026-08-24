@@ -229,7 +229,9 @@ export type AgentProvider =
   | 'nvidia'
   | 'nous-portal'
   | 'ollama'
-  | 'venice';
+  | 'venice'
+  | 'ollama-cloud'
+  | 'custom-openai';
 
 export interface AgentStatus {
   id: string;
@@ -461,6 +463,21 @@ export interface PtyExitEvent {
 export interface SkillInstallOutputEvent {
   repo: string;
   data: string;
+}
+
+export interface OverseerSettings {
+  /** How often the watch looks at the fleet. 1 minute to 6 hours. */
+  watchIntervalMs: number;
+  /** Empty means "whatever the Hermes gateway is set to". */
+  model: string;
+  provider: string;
+}
+
+export interface OverseerModelProvider {
+  slug: string;
+  name: string;
+  models: string[];
+  isCurrent: boolean;
 }
 
 export interface ElectronAPI {
@@ -728,6 +745,12 @@ export interface ElectronAPI {
       veniceEnabled?: boolean;
       veniceApiKey?: string;
       ollamaBaseUrl?: string;
+      ollamaCloudEnabled?: boolean;
+      ollamaCloudApiKey?: string;
+      customOpenAIEnabled?: boolean;
+      customOpenAIBaseUrl?: string;
+      customOpenAIApiKey?: string;
+      customOpenAIModel?: string;
       notificationSounds?: {
         waiting?: string;
         complete?: string;
@@ -815,6 +838,12 @@ export interface ElectronAPI {
       veniceEnabled?: boolean;
       veniceApiKey?: string;
       ollamaBaseUrl?: string;
+      ollamaCloudEnabled?: boolean;
+      ollamaCloudApiKey?: string;
+      customOpenAIEnabled?: boolean;
+      customOpenAIBaseUrl?: string;
+      customOpenAIApiKey?: string;
+      customOpenAIModel?: string;
       favoriteProjects?: string[];
       hiddenProjects?: string[];
       defaultProjectPath?: string;
@@ -1213,6 +1242,12 @@ export interface ElectronAPI {
     pause: () => Promise<{ success: boolean; paused: boolean }>;
     resume: () => Promise<{ success: boolean; paused: boolean }>;
     watchStatus: () => Promise<{ paused: boolean }>;
+    settings: () => Promise<OverseerSettings>;
+    setSettings: (patch: Partial<OverseerSettings>) => Promise<{ success: boolean; settings: OverseerSettings }>;
+    modelOptions: () => Promise<
+      | { success: true; provider: string; model: string; providers: OverseerModelProvider[] }
+      | { success: false; error: string; needsSignIn?: boolean }
+    >;
     onBriefing: (callback: (message: OverseerMessage) => void) => () => void;
   };
 

@@ -7,8 +7,9 @@ import { BrandSpinner, Button, PageHeader } from '@/components/ui';
 import { MessageCard } from '@/components/Overseer/MessageCard';
 import { FleetRail } from '@/components/Overseer/FleetRail';
 import { Composer } from '@/components/Overseer/Composer';
+import { WatchControls } from '@/components/Overseer/WatchControls';
 import { describeHermesFailure } from '@/components/KanbanBoard/hermes-error';
-import type { OverseerAction, OverseerFleetSnapshot, OverseerMessage } from '@/types/electron';
+import type { OverseerAction, OverseerFleetSnapshot, OverseerMessage, OverseerSettings } from '@/types/electron';
 
 /**
  * Chat · Overseer.
@@ -33,7 +34,6 @@ interface ActionState {
   error: string | null;
 }
 
-const WATCH_CADENCE_LABEL = 'every 5 min';
 
 function GatewayBanner({ state, detail, onRetry }: { state: GatewayState; detail: string | null; onRetry: () => void }) {
   if (state === 'ok' || state === 'checking') return null;
@@ -95,6 +95,7 @@ export default function ChatPage() {
   const [fleet, setFleet] = useState<OverseerFleetSnapshot | null>(null);
   const [paused, setPaused] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
+  const [settings, setSettings] = useState<OverseerSettings | null>(null);
 
   const [gatewayState, setGatewayState] = useState<GatewayState>('checking');
   const [gatewayDetail, setGatewayDetail] = useState<string | null>(null);
@@ -151,13 +152,32 @@ export default function ChatPage() {
     if (r) setPaused(r.paused);
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    const r = await window.electronAPI?.overseer?.settings();
+    if (r) setSettings(r);
+  }, []);
+
+  /** The main process clamps and returns the settings it actually stored, so
+   *  the control shows what was saved rather than what was asked for. */
+  const handleSettingsChange = useCallback(async (patch: Partial<OverseerSettings>) => {
+    const r = await window.electronAPI?.overseer?.setSettings(patch);
+    if (r?.success) setSettings(r.settings);
+  }, []);
+
   useEffect(() => {
     if (!hasApi) return;
     void loadHistory();
     void loadFleet();
     void loadWatchStatus();
+    void loadSettings();
     void checkGateway();
-  }, [hasApi, loadHistory, loadFleet, loadWatchStatus, checkGateway]);
+  }, [hasApi, loadHistory, loadFleet, loadWatchStatus, loadSettings, checkGateway]);
+
+  const cadenceLabel = settings
+    ? (settings.watchIntervalMs >= 3600000
+        ? `every ${Math.round(settings.watchIntervalMs / 3600000)}h`
+        : `every ${Math.round(settings.watchIntervalMs / 60000)} min`)
+    : 'periodically';
 
   // The fleet listing is what the approval block's "still reachable" check
   // and the rail both read - keep it fresh while the page is open.
@@ -266,7 +286,6 @@ export default function ChatPage() {
   }
 
   const agentCount = fleet?.agents.length ?? 0;
-  const projectCount = fleet?.projects.length ?? 0;
   const composerDisabled = gatewayState !== 'ok' || sending;
 
   return (
@@ -276,10 +295,11 @@ export default function ChatPage() {
         subtitle="Hermes watches every project and answers for the fleet."
         actions={
           <>
+            <WatchControls settings={settings} onChange={handleSettingsChange} />
             <div className="h-[26px] flex items-center gap-1.5 border border-border px-2.5">
               <span className={`w-1.5 h-1.5 shrink-0 ${paused ? 'bg-status-idle' : 'bg-status-running'}`} />
               <span className="font-mono text-[10.5px] text-muted-foreground">
-                {paused ? 'paused' : `${WATCH_CADENCE_LABEL} · ${agentCount} agents · ${projectCount} projects`}
+                {paused ? 'paused' : 'watching'}
               </span>
             </div>
             <Button size="sm" className="font-mono" onClick={togglePause} disabled={pauseBusy}>
@@ -310,7 +330,7 @@ export default function ChatPage() {
               <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
                 <p className="text-sm text-foreground">Nothing said yet.</p>
                 <p className="text-xs text-muted-foreground max-w-sm">
-                  Ask Hermes what the fleet is doing, or wait - it checks in on its own every {WATCH_CADENCE_LABEL}.
+                  Ask Hermes what the fleet is doing, or wait - it checks in on its own {cadenceLabel}.
                 </p>
               </div>
             ) : (

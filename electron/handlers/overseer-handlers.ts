@@ -8,8 +8,13 @@ import {
   resumeOverseerWatch,
   isOverseerWatchPaused,
   isOverseerBusy,
+  getOverseerSettings,
+  setOverseerSettings,
   OverseerAction,
+  OverseerSettings,
 } from '../services/overseer';
+import { usableHermesConnection } from '../services/hermes-config';
+import { fetchHermesModelOptions } from '../services/hermes-client';
 
 /**
  * IPC surface for the Chat · Overseer page. Mirrors the shape of
@@ -46,4 +51,22 @@ export function registerOverseerHandlers(): void {
   });
 
   ipcMain.handle('overseer:watchStatus', async () => ({ paused: isOverseerWatchPaused() }));
+
+  ipcMain.handle('overseer:settings', async () => getOverseerSettings());
+
+  ipcMain.handle('overseer:setSettings', async (_event, patch: Partial<OverseerSettings>) => {
+    const settings = setOverseerSettings(patch ?? {});
+    return { success: true, settings };
+  });
+
+  /**
+   * The models the gateway can actually run. Asked of the gateway rather than
+   * compiled in, because which providers it has credentials for is a property
+   * of that install, not of Tars.
+   */
+  ipcMain.handle('overseer:modelOptions', async () => {
+    const conn = usableHermesConnection();
+    if (!conn) return { success: false, error: 'Hermes is not configured. Set it up in Settings.' };
+    return fetchHermesModelOptions(conn);
+  });
 }

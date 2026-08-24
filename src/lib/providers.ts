@@ -25,6 +25,10 @@ export type ProviderIconDef =
   | { type: 'text'; content: string }
   | { type: 'cpu' };
 
+/** id === 'ollama-cloud' reuses the `svg-ollama` icon type above: same mark,
+ *  the label ("Ollama Cloud" vs "Ollama") is what tells the two apart, so a
+ *  second icon variant would be a distinction with no visual difference. */
+
 export interface ProviderModel {
   id: string;
   name: string;
@@ -298,6 +302,40 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     ],
     defaultModel: 'llama-3.3-70b',
   },
+  {
+    id: 'ollama-cloud',
+    label: 'Ollama Cloud',
+    icon: { type: 'svg-ollama' },
+    accent: 'foreground',
+    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
+    // Curated floor; models:list prefers the live models.dev 'ollama-cloud'
+    // catalogue entry, see model-catalog.ts.
+    models: [
+      { id: 'gpt-oss:120b', name: 'GPT-OSS 120B', description: 'OpenAI open weights, flagship' },
+      { id: 'gpt-oss:20b', name: 'GPT-OSS 20B', description: 'OpenAI open weights, fast' },
+      { id: 'glm-5.2', name: 'GLM-5.2', description: 'Zhipu, flagship' },
+      { id: 'kimi-k2.7-code', name: 'Kimi K2.7 Code', description: 'Moonshot, code-focused' },
+      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Flagship reasoning' },
+      { id: 'minimax-m3', name: 'MiniMax M3', description: 'Agentic' },
+    ],
+    defaultModel: 'gpt-oss:120b',
+  },
+  {
+    id: 'custom-openai',
+    label: 'Custom (OpenAI)',
+    icon: { type: 'text', content: 'API' },
+    accent: 'foreground',
+    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
+    // No catalogue, no curated floor: a private endpoint has exactly one
+    // model, whatever was typed into Settings. This placeholder id is never
+    // actually reachable - computeProviderAvailability below keeps the
+    // provider disabled until customOpenAIModel is set, at which point
+    // models:list (ipc-handlers.ts) returns that real model instead.
+    models: [
+      { id: 'not-configured', name: 'Set a model in Settings', description: 'Settings > AI Providers > Custom OpenAI-compatible' },
+    ],
+    defaultModel: 'not-configured',
+  },
 ];
 
 
@@ -315,6 +353,11 @@ interface ProviderAvailabilitySettings {
   minimaxApiKey?: string;
   veniceEnabled?: boolean;
   veniceApiKey?: string;
+  ollamaCloudEnabled?: boolean;
+  ollamaCloudApiKey?: string;
+  customOpenAIEnabled?: boolean;
+  customOpenAIBaseUrl?: string;
+  customOpenAIModel?: string;
 }
 
 /**
@@ -326,10 +369,13 @@ interface ProviderAvailabilitySettings {
  * fallback); qwen/mimo/nvidia/nous-portal have none and are reachable ONLY
  * through OpenRouter. Venice has no Anthropic-compatible endpoint AND is not
  * on OpenRouter, so it needs its own key with no fallback (it goes through
- * Tars's own translation shim, see electron/services/venice-shim.ts). Ollama
+ * Tars's own translation bridge, see electron/services/openai-bridge.ts). Ollama
  * is a local server: availability is "did the last reachability check
  * answer", passed in by the caller rather than derived here, since that check
- * is async and this function is not.
+ * is async and this function is not. Ollama Cloud is a hosted vendor like any
+ * other: enabled + key. Custom (OpenAI-compatible) additionally needs a model,
+ * since without one there is nothing to put in the request's `model` field -
+ * see custom-openai-provider.ts.
  */
 export function computeProviderAvailability(
   paths: Record<string, string | undefined> | null | undefined,
@@ -357,6 +403,8 @@ export function computeProviderAvailability(
     'nous-portal': viaOpenRouter,
     venice: !!(settings?.veniceEnabled && settings?.veniceApiKey),
     ollama: ollamaReachable ?? false,
+    'ollama-cloud': !!(settings?.ollamaCloudEnabled && settings?.ollamaCloudApiKey),
+    'custom-openai': !!(settings?.customOpenAIEnabled && settings?.customOpenAIBaseUrl && settings?.customOpenAIModel),
   };
 }
 

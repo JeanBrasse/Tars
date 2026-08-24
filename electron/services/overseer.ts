@@ -131,17 +131,53 @@ interface OverseerState {
    *  run, so watchTick doesn't re-flag the same agent every 5 minutes. */
   longRunningReported: string[];
   paused: boolean;
+  settings: OverseerSettings;
+}
+
+/**
+ * What the overseer runs on, and how often it looks.
+ *
+ * All three were constants. The watch interval was a fixed five minutes, which
+ * is too eager for a fleet left running overnight and too slow when you are
+ * watching a migration land; and the model was whatever the Hermes gateway
+ * happened to have selected globally, which on a fresh install is a small fast
+ * one. Reading a fleet and reasoning about what its agents are doing is the one
+ * job here, so it is worth being able to point it at a better model.
+ *
+ * An empty model or provider means "whatever the gateway is set to", which is
+ * the behaviour every existing install already has.
+ */
+export interface OverseerSettings {
+  watchIntervalMs: number;
+  model: string;
+  provider: string;
+}
+
+/** How often the watch looks at the fleet when nothing overrides it. */
+export const DEFAULT_WATCH_INTERVAL_MS = 5 * 60 * 1000;
+
+/** 1 minute floor, 6 hour ceiling. Below a minute the fleet cannot have changed
+ *  meaningfully and every tick costs a Hermes run; above six hours the watch is
+ *  not a watch. */
+export const MIN_WATCH_INTERVAL_MS = 60 * 1000;
+export const MAX_WATCH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+function defaultSettings(): OverseerSettings {
+  return { watchIntervalMs: DEFAULT_WATCH_INTERVAL_MS, model: '', provider: '' };
 }
 
 function defaultState(): OverseerState {
-  return { jobId: null, messages: [], previousSnapshot: null, longRunningReported: [], paused: false };
+  return { jobId: null, messages: [], previousSnapshot: null, longRunningReported: [], paused: false, settings: defaultSettings() };
 }
 
 function loadState(): OverseerState {
   try {
     if (!fs.existsSync(OVERSEER_FILE)) return defaultState();
     const raw = JSON.parse(fs.readFileSync(OVERSEER_FILE, 'utf-8'));
-    return { ...defaultState(), ...raw };
+    // Spreading `raw` over the defaults is a shallow merge, so a state file
+    // written before settings existed - or one holding only some of them -
+    // would otherwise arrive with `settings` undefined and crash the callers.
+    return { ...defaultState(), ...raw, settings: { ...defaultSettings(), ...(raw?.settings ?? {}) } };
   } catch (err) {
     console.error('[overseer] could not read overseer.json, starting fresh:', err);
     return defaultState();
@@ -537,6 +573,8 @@ async function ensureOverseerJob(
     name: OVERSEER_JOB_NAME,
     schedule: '0 3 1 1 *',
     prompt: '(idle - Tars overwrites this prompt before every trigger)',
+    model: state.settings.model || undefined,
+    provider: state.settings.provider || undefined,
   });
   if (!created.success) return { error: created.error, needsSignIn: created.needsSignIn };
   const jobId = typeof created.job?.id === 'string' ? created.job.id : '';
@@ -604,7 +642,14 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
     const snapshot = await buildFleetSnapshot();
     const prompt = composeTurn(snapshot, state.messages, userMessage, opts);
 
-    let update = await updateHermesCron(conn, jobId, { prompt });
+    // Sent on every turn rather than only at creation: the job is long-lived
+    // and a model chosen in the Chat header has to reach a job that already
+    // exists, which is every case after the first turn.
+    const runOn = {
+      ...(state.settings.model ? { model: state.settings.model } : {}),
+      ...(state.settings.provider ? { provider: state.settings.provider } : {}),
+    };
+    let update = await updateHermesCron(conn, jobId, { prompt, ...runOn });
     if (!update.success && /not found|no such job|404/i.test(update.error || '')) {
       // The job was deleted out from under us (by hand, or gateway-side):
       // forget the stale id and create a replacement, once.
@@ -614,7 +659,7 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
         return { ok: false, reason: jobResult.needsSignIn ? 'needs_sign_in' : 'error', error: jobResult.error };
       }
       jobId = jobResult.jobId;
-      update = await updateHermesCron(conn, jobId, { prompt });
+      update = await updateHermesCron(conn, jobId, { prompt, ...runOn });
     }
     if (!update.success) {
       return { ok: false, reason: update.needsSignIn ? 'needs_sign_in' : 'error', error: update.error || 'Could not send the prompt to Hermes.' };
@@ -721,7 +766,6 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
 // ── The watch ─────────────────────────────────────────────────────────────
 
 const LONG_RUNNING_MS = 20 * 60 * 1000;
-export const DEFAULT_WATCH_INTERVAL_MS = 5 * 60 * 1000;
 
 /** What changed since the last snapshot, in one sentence, or null if nothing
  *  worth a briefing did. Mutates `longRunningReported` in place. */
@@ -777,20 +821,58 @@ export async function watchTick(): Promise<OverseerMessage | null> {
 }
 
 let watchTimer: ReturnType<typeof setInterval> | null = null;
+/** Kept so a settings change can re-arm the timer at the new interval without
+ *  the caller having to hand the callback in a second time. */
+let watchCallback: ((message: OverseerMessage) => void) | null = null;
 
-export function startOverseerWatch(onBriefing: (message: OverseerMessage) => void, intervalMs = DEFAULT_WATCH_INTERVAL_MS): void {
+function clampInterval(ms: number): number {
+  if (!Number.isFinite(ms)) return DEFAULT_WATCH_INTERVAL_MS;
+  return Math.min(MAX_WATCH_INTERVAL_MS, Math.max(MIN_WATCH_INTERVAL_MS, Math.round(ms)));
+}
+
+export function startOverseerWatch(onBriefing: (message: OverseerMessage) => void, intervalMs?: number): void {
   if (watchTimer) return;
+  watchCallback = onBriefing;
+  const period = clampInterval(intervalMs ?? loadState().settings.watchIntervalMs);
   watchTimer = setInterval(() => {
     watchTick()
       .then(message => { if (message) onBriefing(message); })
       .catch(err => console.error('[overseer] watch tick failed:', err));
-  }, intervalMs);
+  }, period);
   watchTimer.unref?.();
+}
+
+export function getOverseerSettings(): OverseerSettings {
+  return loadState().settings;
+}
+
+/**
+ * Persist a settings change and, if the interval moved, re-arm the timer so it
+ * applies now rather than after the next restart.
+ */
+export function setOverseerSettings(patch: Partial<OverseerSettings>): OverseerSettings {
+  const state = loadState();
+  const next: OverseerSettings = {
+    watchIntervalMs: clampInterval(patch.watchIntervalMs ?? state.settings.watchIntervalMs),
+    model: patch.model ?? state.settings.model,
+    provider: patch.provider ?? state.settings.provider,
+  };
+  const intervalChanged = next.watchIntervalMs !== state.settings.watchIntervalMs;
+  state.settings = next;
+  saveState(state);
+
+  if (intervalChanged && watchTimer && watchCallback) {
+    const cb = watchCallback;
+    stopOverseerWatch();
+    startOverseerWatch(cb, next.watchIntervalMs);
+  }
+  return next;
 }
 
 export function stopOverseerWatch(): void {
   if (watchTimer) clearInterval(watchTimer);
   watchTimer = null;
+  // watchCallback is deliberately kept: setOverseerSettings re-arms through it.
 }
 
 export function pauseOverseerWatch(): void {

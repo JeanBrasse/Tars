@@ -1,18 +1,40 @@
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { Readable } from 'stream';
-import { VENICE_SHIM_PORT } from '../constants';
+import { OPENAI_BRIDGE_PORT } from '../constants';
 import { getApiToken } from './api-server';
 import { readAppSettingsFromDisk } from '../providers/cli-provider';
+import type { AppSettings } from '../types';
 
 /**
  * WHY THIS FILE EXISTS
  *
- * Venice AI's API is OpenAI-compatible only - /chat/completions, no
- * /v1/messages, confirmed against docs.venice.ai. The claude binary only ever
- * speaks the Anthropic Messages wire format, so reaching Venice needs a
- * translator sitting between them. This is that translator, both directions,
- * streaming and not.
+ * Some vendors are OpenAI-compatible only - /chat/completions, no
+ * /v1/messages (Venice, confirmed against docs.venice.ai; any endpoint a user
+ * points "Custom OpenAI-compatible" at, by definition). The claude binary
+ * only ever speaks the Anthropic Messages wire format, so reaching them needs
+ * a translator sitting between. This is that translator, both directions,
+ * streaming and not - one process serving every such vendor, not one file per
+ * vendor the way this started (see git history: it began as venice-shim.ts,
+ * hardcoded to a single upstream, before the "custom" provider gave a second
+ * caller the identical problem).
+ *
+ * WHY ONE SERVER FOR EVERY VENDOR, ADDRESSED BY PATH
+ *
+ * Three ways to tell the bridge which upstream a request is for: a port per
+ * vendor, a header per vendor, or a path segment per vendor. A port per
+ * vendor means allocating and reserving one for every future OpenAI-only
+ * provider, and a sandboxed/E2E instance running beside the real app would
+ * need its own block of them too - VENICE_SHIM_PORT was already one such
+ * reservation for a single vendor. A header would work, but the claude binary
+ * does not expose a way to add an arbitrary custom header to the request it
+ * makes to ANTHROPIC_BASE_URL, only the two it already sends (`x-api-key` and
+ * whatever ANTHROPIC_AUTH_TOKEN produces) - there is nowhere to put a vendor
+ * id. A path segment costs nothing: ANTHROPIC_BASE_URL becomes
+ * `http://127.0.0.1:<port>/<vendor>` (the claude binary appends `/v1/messages`
+ * itself, same as every direct provider already relies on), and the vendor
+ * falls out of the first path segment with no extra plumbing. So: one server,
+ * one port, upstreams looked up by path segment in the UPSTREAMS map below.
  *
  * WHY IT IS ITS OWN SERVER, NOT A ROUTE UNDER /api/*
  *
@@ -20,16 +42,18 @@ import { readAppSettingsFromDisk } from '../providers/cli-provider';
  * <token>`, except exactly four paths (see its own comment and CLAUDE.md's
  * Backend Agent rules - that count is a hard invariant, not a suggestion).
  * The claude binary does not send an Authorization header to whatever
- * ANTHROPIC_BASE_URL points at; it sends `x-api-key`. Putting this behind
- * /api/* would mean either breaking that invariant with a fifth exemption, or
- * the shim would 401 every request before its own handler ever ran. So this
- * runs as a second, separate, loopback-only http.Server, and authenticates
- * the same way in spirit: it requires `x-api-key` to equal Tars's own local
- * API token (the same secret api-server.ts already generates and guards at
- * 0600), which venice-provider.ts hands to the PTY as ANTHROPIC_API_KEY. The
- * real Venice key never leaves this process: it is read from
- * app-settings.json per request and attached only to the outbound call to
- * Venice, never handed to the claude binary.
+ * ANTHROPIC_BASE_URL points at by default; it sends `x-api-key`. Putting this
+ * behind /api/* would mean either breaking that invariant with a fifth
+ * exemption, or the bridge would 401 every request before its own handler
+ * ever ran. So this runs as a second, separate, loopback-only http.Server,
+ * and authenticates the same way in spirit, for every upstream alike: it
+ * requires `x-api-key` to equal Tars's own local API token (the same secret
+ * api-server.ts already generates and guards at 0600), which each provider
+ * that routes through here (venice-provider.ts, custom-openai-provider.ts)
+ * hands to the PTY as ANTHROPIC_API_KEY. The real vendor key never leaves
+ * this process: it is read from app-settings.json per request and attached
+ * only to the outbound call to that vendor, never handed to the claude
+ * binary.
  *
  * WHAT IS TRANSLATED
  *
@@ -46,17 +70,43 @@ import { readAppSettingsFromDisk } from '../providers/cli-provider';
  * tool_choice beyond auto/any/none/tool.
  *
  * /v1/messages/count_tokens: the claude binary preflights every turn with
- * this and Venice, being OpenAI-compatible, has no equivalent endpoint. Ollama
- * hits the identical gap by returning 404, which multiple users report makes
- * Ollama's own server degrade into escalating 500s (ollama/ollama#13949).
- * Since this shim is Tars's own code, the fix here is simpler than working
- * around a third party: just answer the preflight, with a coarse
- * characters/4 estimate, rather than 404ing and hoping the CLI tolerates it.
+ * this and an OpenAI-compatible vendor, by definition, has no equivalent
+ * endpoint. Ollama hits the identical gap by returning 404, which multiple
+ * users report makes Ollama's own server degrade into escalating 500s
+ * (ollama/ollama#13949). Since this bridge is Tars's own code, the fix here
+ * is simpler than working around a third party: just answer the preflight,
+ * with a coarse characters/4 estimate, rather than 404ing and hoping the CLI
+ * tolerates it.
  */
 
-const VENICE_API_BASE = 'https://api.venice.ai/api/v1';
+/** One entry per OpenAI-only vendor this bridge serves, keyed by the path
+ *  segment ANTHROPIC_BASE_URL is pointed at (see providers/venice-provider.ts,
+ *  providers/custom-openai-provider.ts). `resolveApiKey` returning null means
+ *  "send no Authorization header" (some self-hosted OpenAI-compatible servers
+ *  take none) rather than a hard failure - only a missing base URL is fatal. */
+interface BridgeUpstream {
+  resolveBaseUrl(settings: Partial<AppSettings>): string | null;
+  resolveApiKey(settings: Partial<AppSettings>): string | null;
+}
 
-let shimServer: http.Server | null = null;
+const UPSTREAMS: Record<string, BridgeUpstream> = {
+  venice: {
+    resolveBaseUrl: () => 'https://api.venice.ai/api/v1',
+    resolveApiKey: (s) => s.veniceApiKey || null,
+  },
+  custom: {
+    // User-supplied, so it is trimmed of trailing slashes the same way every
+    // other base-url field in this codebase is, and validated (protocol +
+    // parses at all) before it is ever handed to fetch(); see
+    // isValidOpenAIBaseUrl in providers/cli-provider.ts, which
+    // custom-openai-provider.ts also uses to decide whether to wire this
+    // upstream up at all.
+    resolveBaseUrl: (s) => (s.customOpenAIBaseUrl ? s.customOpenAIBaseUrl.replace(/\/+$/, '') : null),
+    resolveApiKey: (s) => s.customOpenAIApiKey || null,
+  },
+};
+
+let bridgeServer: http.Server | null = null;
 
 // ── Anthropic -> OpenAI (request) ───────────────────────────────────
 
@@ -365,7 +415,13 @@ function sendError(res: http.ServerResponse, status: number, type: string, messa
   res.end(JSON.stringify({ type: 'error', error: { type, message } }));
 }
 
-async function handleMessages(anthropicBody: Record<string, any>, res: http.ServerResponse, veniceApiKey: string, signal: AbortSignal): Promise<void> {
+async function handleMessages(
+  anthropicBody: Record<string, any>,
+  res: http.ServerResponse,
+  baseUrl: string,
+  apiKey: string | null,
+  signal: AbortSignal,
+): Promise<void> {
   let openAIBody: Record<string, unknown>;
   try {
     openAIBody = anthropicRequestToOpenAI(anthropicBody);
@@ -374,19 +430,22 @@ async function handleMessages(anthropicBody: Record<string, any>, res: http.Serv
     return;
   }
 
-  const upstream = await fetch(`${VENICE_API_BASE}/chat/completions`, {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // Omitted, not sent empty: some self-hosted OpenAI-compatible servers
+  // (vLLM, llama.cpp, LM Studio with auth off) reject an Authorization header
+  // that carries nothing rather than treating it as absent.
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  const upstream = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${veniceApiKey}`,
-    },
+    headers,
     body: JSON.stringify(openAIBody),
     signal,
   });
 
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => '');
-    sendError(res, upstream.status, 'api_error', text || `Venice returned HTTP ${upstream.status}`);
+    sendError(res, upstream.status, 'api_error', text || `Upstream returned HTTP ${upstream.status}`);
     return;
   }
 
@@ -408,10 +467,10 @@ function handleCountTokens(anthropicBody: Record<string, any>, res: http.ServerR
 
 // ── Server lifecycle ─────────────────────────────────────────────────
 
-export function startVeniceShimServer(): void {
-  if (shimServer) return;
+export function startOpenAIBridgeServer(): void {
+  if (bridgeServer) return;
 
-  shimServer = http.createServer(async (req, res) => {
+  bridgeServer = http.createServer(async (req, res) => {
     const expected = getApiToken();
     const provided = req.headers['x-api-key'];
     if (provided !== expected) {
@@ -419,10 +478,18 @@ export function startVeniceShimServer(): void {
       return;
     }
 
-    const url = new URL(req.url || '/', `http://127.0.0.1:${VENICE_SHIM_PORT}`);
-    const isMessages = url.pathname === '/v1/messages';
-    const isCountTokens = url.pathname === '/v1/messages/count_tokens';
-    if (req.method !== 'POST' || (!isMessages && !isCountTokens)) {
+    const url = new URL(req.url || '/', `http://127.0.0.1:${OPENAI_BRIDGE_PORT}`);
+    // First path segment is the upstream id (see UPSTREAMS above); everything
+    // after it must match the Anthropic Messages routes the claude binary
+    // itself appends to ANTHROPIC_BASE_URL.
+    const segments = url.pathname.split('/').filter(Boolean);
+    const upstreamId = segments[0];
+    const rest = `/${segments.slice(1).join('/')}`;
+    const upstream = upstreamId ? UPSTREAMS[upstreamId] : undefined;
+
+    const isMessages = rest === '/v1/messages';
+    const isCountTokens = rest === '/v1/messages/count_tokens';
+    if (req.method !== 'POST' || !upstream || (!isMessages && !isCountTokens)) {
       sendError(res, 404, 'not_found_error', 'Not found');
       return;
     }
@@ -442,9 +509,10 @@ export function startVeniceShimServer(): void {
       return;
     }
 
-    const veniceApiKey = readAppSettingsFromDisk().veniceApiKey;
-    if (!veniceApiKey) {
-      sendError(res, 401, 'authentication_error', 'No Venice API key configured in Tars settings');
+    const settings = readAppSettingsFromDisk();
+    const baseUrl = upstream.resolveBaseUrl(settings);
+    if (!baseUrl) {
+      sendError(res, 401, 'authentication_error', `No base URL configured for "${upstreamId}" in Tars settings`);
       return;
     }
 
@@ -452,9 +520,9 @@ export function startVeniceShimServer(): void {
     res.on('close', () => controller.abort());
 
     try {
-      await handleMessages(body, res, veniceApiKey, controller.signal);
+      await handleMessages(body, res, baseUrl, upstream.resolveApiKey(settings), controller.signal);
     } catch (err) {
-      console.error('Venice shim error:', err);
+      console.error(`OpenAI bridge error (${upstreamId}):`, err);
       if (!res.headersSent) {
         sendError(res, 500, 'api_error', String(err));
       } else {
@@ -463,22 +531,22 @@ export function startVeniceShimServer(): void {
     }
   });
 
-  shimServer.listen(VENICE_SHIM_PORT, '127.0.0.1', () => {
-    console.log(`Venice shim server running on http://127.0.0.1:${VENICE_SHIM_PORT}`);
+  bridgeServer.listen(OPENAI_BRIDGE_PORT, '127.0.0.1', () => {
+    console.log(`OpenAI-compatible bridge running on http://127.0.0.1:${OPENAI_BRIDGE_PORT}`);
   });
 
-  shimServer.on('error', (err: NodeJS.ErrnoException) => {
+  bridgeServer.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${VENICE_SHIM_PORT} is in use, Venice shim not started`);
+      console.log(`Port ${OPENAI_BRIDGE_PORT} is in use, OpenAI-compatible bridge not started`);
     } else {
-      console.error('Venice shim server error:', err);
+      console.error('OpenAI-compatible bridge error:', err);
     }
   });
 }
 
-export function stopVeniceShimServer(): void {
-  if (shimServer) {
-    shimServer.close();
-    shimServer = null;
+export function stopOpenAIBridgeServer(): void {
+  if (bridgeServer) {
+    bridgeServer.close();
+    bridgeServer = null;
   }
 }

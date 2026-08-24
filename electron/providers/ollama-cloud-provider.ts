@@ -11,37 +11,49 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { safeEffort } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
+import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
-// claude appends /v1/messages; "venice" is this vendor's path segment on
-// Tars's shared OpenAI-compatible bridge (see services/openai-bridge.ts for
-// why a path segment, not a port or a header, is how the bridge is addressed).
-const VENICE_BRIDGE_BASE_URL = `http://127.0.0.1:${OPENAI_BRIDGE_PORT}/venice`;
+export const OLLAMA_CLOUD_BASE_URL = 'https://ollama.com'; // claude appends /v1/messages
 
 /**
- * Venice AI has no Anthropic-compatible endpoint (confirmed against
- * docs.venice.ai: /chat/completions, /embeddings, /images/*, /audio/*,
- * /video/*, /models - OpenAI-compatible only, no /v1/messages). Unlike every
- * other alt provider here, the claude binary cannot reach it directly. It is
- * routed through Tars's own local translation bridge instead - see
- * services/openai-bridge.ts for the wire-format translation and, importantly,
- * for why ANTHROPIC_API_KEY below is Tars's own local API token and NOT the
- * user's Venice key.
+ * Ollama Cloud is a different product from local Ollama (ollama-provider.ts):
+ * a hosted vendor at ollama.com, billed separately, with its own API key and
+ * its own model set (the ":cloud"-tagged models on ollama.com/search?c=cloud -
+ * plain tags, not ":cloud"-suffixed, when talking to the hosted API directly
+ * rather than proxying through a local server). Do not point this provider's
+ * requests at the local-Ollama code path: they are not interchangeable.
+ *
+ * It DOES speak the Anthropic Messages wire format natively at
+ * https://ollama.com/v1/messages, same as local Ollama v0.14+ - so, like
+ * local Ollama, this needs no translation bridge. What differs is auth: its
+ * endpoint requires `Authorization: Bearer <key>` and rejects `x-api-key`
+ * outright (confirmed against ollama/ollama#16922, open as of this writing,
+ * and docs.ollama.com/cloud's own example: `Authorization: Bearer
+ * $OLLAMA_API_KEY`). The claude binary's `ANTHROPIC_API_KEY` env var is
+ * always sent as `x-api-key`; the header it sends as `Authorization: Bearer`
+ * is `ANTHROPIC_AUTH_TOKEN` (documented for exactly this kind of
+ * gateway/proxy auth - see code.claude.com/docs/en/authentication). So this
+ * is a direct provider with a header difference, not a shim: set
+ * ANTHROPIC_AUTH_TOKEN instead of ANTHROPIC_API_KEY.
  */
-export class VeniceProvider implements CLIProvider {
-  readonly id = 'venice' as const;
-  readonly displayName = 'Venice AI';
+export class OllamaCloudProvider implements CLIProvider {
+  readonly id = 'ollama-cloud' as const;
+  readonly displayName = 'Ollama Cloud';
   readonly binaryName = 'claude';
   readonly configDir = path.join(os.homedir(), '.claude');
 
   getModels(): ProviderModel[] {
+    // Curated, not exhaustive - models:list (ipc-handlers.ts) prefers the
+    // live models.dev catalogue, which does carry an 'ollama-cloud' entry
+    // (see model-catalog.ts PROVIDER_KEYS); this is only the floor shown
+    // before that loads or if it is unreachable.
     return [
-      { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', description: 'Meta, balanced' },
-      { id: 'venice-uncensored-1-2', name: 'Venice Uncensored', description: 'Unfiltered, Venice-tuned' },
-      { id: 'deepseek-v3.2', name: 'DeepSeek V3.2', description: 'Flagship chat' },
-      { id: 'qwen3-235b-a22b-instruct-2507', name: 'Qwen3 235B', description: 'Large MoE' },
-      { id: 'hermes-3-llama-3.1-405b', name: 'Hermes 3 405B', description: 'Agentic' },
-      { id: 'mistral-small-3-2-24b-instruct', name: 'Mistral Small', description: 'Fast' },
+      { id: 'gpt-oss:120b', name: 'GPT-OSS 120B', description: 'OpenAI open weights, flagship' },
+      { id: 'gpt-oss:20b', name: 'GPT-OSS 20B', description: 'OpenAI open weights, fast' },
+      { id: 'glm-5.2', name: 'GLM-5.2', description: 'Zhipu, flagship' },
+      { id: 'kimi-k2.7-code', name: 'Kimi K2.7 Code', description: 'Moonshot, code-focused' },
+      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Flagship reasoning' },
+      { id: 'minimax-m3', name: 'MiniMax M3', description: 'Agentic' },
     ];
   }
 
@@ -120,24 +132,15 @@ export class VeniceProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
     };
 
-    // Only wire the bridge once a Venice key exists to forward - same gate
-    // DeepSeek/Moonshot/etc. use for their own key, just with no OpenRouter
-    // fallback (Venice is not on OpenRouter, see the design note).
-    if (appSettings?.veniceApiKey) {
-      vars.ANTHROPIC_BASE_URL = VENICE_BRIDGE_BASE_URL;
-      // NOT the Venice key. The claude binary sends this as `x-api-key` to
-      // whatever ANTHROPIC_BASE_URL points at; here that's Tars's own bridge on
-      // 127.0.0.1, which authenticates the request with Tars's local API
-      // token (the same one api-server.ts already guards /api/* with) and
-      // only then reads the real Venice key from app-settings.json itself to
-      // attach to the outbound call. See services/openai-bridge.ts.
-      //
-      // Lazy require, not a top-level import: providers/index.ts pulls this
-      // file in, and api-server.ts's route registration pulls in agent-routes.ts,
-      // which imports providers/index.ts back - the same cycle-avoidance
-      // agent-manager.ts already uses for tasmania-client.
-      const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
-      vars.ANTHROPIC_API_KEY = getApiToken();
+    if (appSettings?.ollamaCloudApiKey) {
+      vars.ANTHROPIC_BASE_URL = OLLAMA_CLOUD_BASE_URL;
+      // See the file header: ollama.com's Anthropic-compatible endpoint wants
+      // this as a Bearer token, not as x-api-key.
+      vars.ANTHROPIC_AUTH_TOKEN = appSettings.ollamaCloudApiKey;
+      // Blank out any real Anthropic key inherited from the user's shell so
+      // the CLI cannot also send x-api-key alongside the bearer token to an
+      // endpoint that has nothing to do with that key.
+      vars.ANTHROPIC_API_KEY = '';
     }
 
     return vars;
@@ -217,6 +220,9 @@ export class VeniceProvider implements CLIProvider {
     const promptWithSkills = (params.skills && params.skills.length > 0)
       ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
       : params.prompt;
+    // Scheduled tasks run as their own process later, so the key is read from
+    // disk at run time rather than baked in at generation time (same pattern
+    // as ollama-provider.ts's base-url read).
     return `#!/bin/bash
 export HOME="${params.homeDir}"
 if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true; fi
@@ -225,9 +231,10 @@ export PATH="${params.binaryDir}:$PATH"
 cd "${params.projectPath}"
 echo "=== Task started at $(date) ===" >> "${params.logPath}"
 unset CLAUDECODE
-export CLAUDE_PROVIDER="venice"
-export ANTHROPIC_BASE_URL="${VENICE_BRIDGE_BASE_URL}"
-export ANTHROPIC_API_KEY="$(cat "${DATA_DIR_SHELL}/api-token" 2>/dev/null)"
+export CLAUDE_PROVIDER="ollama-cloud"
+export ANTHROPIC_BASE_URL="${OLLAMA_CLOUD_BASE_URL}"
+export ANTHROPIC_AUTH_TOKEN="$(jq -r '.ollamaCloudApiKey // empty' "${DATA_DIR_SHELL}/app-settings.json")"
+export ANTHROPIC_API_KEY=""
 "${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
 echo "=== Task completed at $(date) ===" >> "${params.logPath}"
 `;
