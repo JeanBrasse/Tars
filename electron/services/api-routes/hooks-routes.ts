@@ -108,6 +108,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // status: the agent was just dispatched a task and is about to work.
     if (source) {
       agent.currentSessionId = session_id;
+      // Remembered separately so a restart can resume it: currentSessionId is
+      // ownership and gets cleared on load, this is where the work got to.
+      agent.resumableSessionId = session_id;
       agent.lastActivity = new Date().toISOString();
       saveAgents();
       sendJson({ success: true, registered: true, agent: { id: agent.id, status: agent.status } });
@@ -124,6 +127,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // down at boot), adopt the first non-tombstoned session that reports in.
     if (!agent.currentSessionId && session_id) {
       agent.currentSessionId = session_id;
+      agent.resumableSessionId = session_id;
     }
 
     const oldStatus = agent.status;

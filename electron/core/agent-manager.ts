@@ -420,6 +420,9 @@ export function loadAgents() {
       // guard reject the next real session's hooks (and /health lie).
       agent.currentSessionId = undefined;
       agent.lastKilledSessionId = undefined;
+      // resumableSessionId is deliberately kept: it is not ownership, it is
+      // the only record of where this agent's conversation got to, and losing
+      // it on load is what made every restart throw the work away.
       agent.waitingReason = undefined;
 
       // Migrate legacy skipPermissions boolean → permissionMode

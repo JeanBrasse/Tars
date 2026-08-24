@@ -11,6 +11,7 @@ import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAge
 import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty } from '../core/agent-manager';
+import { consumeResumeSessionId } from '../utils/resume-session';
 
 // ============== Telegram Bot State ==============
 let telegramBot: TelegramBot | null = null;
@@ -727,6 +728,7 @@ export function initTelegramBot() {
         }
 
         const command = cliProvider.buildInteractiveCommand({
+          resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
           binaryPath,
           prompt: task,
           model: agent.model,
@@ -1263,6 +1265,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       const userPrompt = `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!] ${sanitizedMessage}`;
 
       const command = cliProvider.buildInteractiveCommand({
+        resumeSessionId: consumeResumeSessionId(superAgent) ?? undefined,
         binaryPath,
         prompt: userPrompt,
         model: superAgent.model,

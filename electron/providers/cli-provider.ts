@@ -38,6 +38,13 @@ export interface InteractiveCommandParams {
   /** Orchestrator mode: disable Edit/Write/MultiEdit/NotebookEdit so the agent
    *  cannot do implementation work itself and must delegate. See BUG 5. */
   orchestratorMode?: boolean;
+  /**
+   * A session to pick up where it left off, already checked against the
+   * transcript on disk (see utils/resume-session.ts). Only the providers that
+   * run a binary with a verified resume flag act on it; the rest ignore it and
+   * start fresh, which is what they did before.
+   */
+  resumeSessionId?: string;
 }
 
 /**

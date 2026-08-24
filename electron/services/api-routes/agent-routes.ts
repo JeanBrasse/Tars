@@ -13,6 +13,7 @@ import { getSuperAgentInstructionsPath } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
+import { consumeResumeSessionId } from '../../utils/resume-session';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -159,6 +160,7 @@ async function spawnAgentSession(
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
+      resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
       binaryPath,
       prompt: `${identityHeader}${memoryBlock}\n\n${prompt}`,
       model: resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined,

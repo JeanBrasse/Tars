@@ -73,6 +73,16 @@ export interface AgentStatus {
    *  matching in loadAgents. */
   role?: 'orchestrator' | 'worker';
   currentSessionId?: string;
+  /**
+   * The last session this agent ran, kept so it can be resumed.
+   *
+   * Distinct from `currentSessionId` on purpose. That one is ownership: which
+   * live session may drive status, and it has to be cleared on load or the
+   * stale-session guard rejects the next real session's hooks. This one is
+   * only a memory of where the work got to, so it survives a restart. Without
+   * it, updating the app threw away every agent's conversation.
+   */
+  resumableSessionId?: string;
   /** Session id of the most recently killed PTY's claude session. Its hooks
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */

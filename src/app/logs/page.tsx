@@ -138,7 +138,10 @@ export default function LogsPage() {
                   </span>
                 </span>
                 <span className="block text-[10px] text-muted-foreground truncate font-mono">
-                  {a.branch || a.projectPath.split('/').pop()} · {a.lines} chunks
+                  {a.branch || a.projectPath.split('/').pop()} ·{' '}
+                  {/* Grows while an agent runs, so the visual test masks it by
+                      this name rather than tolerating the drift everywhere. */}
+                  <span data-volatile>{a.lines} chunks</span>
                 </span>
               </button>
             ))}

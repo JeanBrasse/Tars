@@ -31,6 +31,7 @@ import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { providerTotals as ledgerProviderTotals, dailyCost as ledgerDailyCost } from '../services/usage-ledger';
+import { consumeResumeSessionId } from '../utils/resume-session';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -726,6 +727,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const command = cliProvider.buildInteractiveCommand({
+      resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
       binaryPath,
       prompt: promptWithMemory,
       model: resolvedModel,

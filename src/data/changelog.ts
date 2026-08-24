@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 22,
+    version: '1.6.4',
+    date: '2026-08-24',
+    updates: [
+      'Updating Tars no longer throws away what your agents were doing. Restarting the app kills every terminal, and each agent used to come back with an empty conversation: it knew which session it had been in, but that was deliberately forgotten on load. It now remembers separately, and picks the conversation back up on the first start after a restart. Pressing Start yourself still means a fresh conversation, as it always has',
+      'An agent whose transcript has been cleaned up starts fresh instead of refusing to start. Resuming a session that is no longer on disk makes the CLI exit, so Tars looks for the file before asking for it',
+    ],
+  },
+  {
     id: 21,
     version: '1.6.3',
     date: '2026-08-24',
