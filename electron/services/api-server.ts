@@ -14,9 +14,12 @@ import { registerAllRoutes } from './api-routes';
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
-// EventEmitter for agent status changes, used by long-poll wait endpoint
-export const agentStatusEmitter = new EventEmitter();
-agentStatusEmitter.setMaxListeners(50);
+// The event bus lives in its own module: the overseer listens to it and must
+// not have to import the HTTP server, the Telegram bot and the Slack app to do
+// so. Re-exported here because callers reach it through this file.
+export { emitAgentStatus } from './agent-events';
+import { agentStatusEmitter } from './agent-events';
+export { agentStatusEmitter };
 
 let apiServer: http.Server | null = null;
 let apiToken: string | null = null;

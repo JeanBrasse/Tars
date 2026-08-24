@@ -1,6 +1,7 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -19,6 +20,10 @@ interface ProjectTabBarProps {
   onSelectProject: (projectPath: string) => void;
   /** Called when a tab is dropped on another. Both are project paths. */
   onReorder?: (from: string, to: string) => void;
+  /** Panels taken off this board, and the way back. Empty means no control. */
+  hidden?: { id: string; name: string }[];
+  onShow?: (agentId: string) => void;
+  onShowAll?: () => void;
   /** @deprecated the panel toggle no longer lives on the tab strip; kept optional until the call site drops it */
   panelOpen?: boolean;
   /** @deprecated the panel toggle no longer lives on the tab strip; kept optional until the call site drops it */
@@ -68,7 +73,11 @@ function ProjectTabBar({
   activeTab,
   onSelectProject,
   onReorder,
+  hidden = [],
+  onShow,
+  onShowAll,
 }: ProjectTabBarProps) {
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   // tabs are label-only now: the strip only needs the distinct project paths, in order
   const projects = useMemo(() => (
     projectPaths.map(path => ({
@@ -114,6 +123,44 @@ function ProjectTabBar({
           <span className="flex items-center h-full px-3 text-xs text-muted-foreground">No projects</span>
         )}
       </div>
+
+      {/* Hiding a panel has to have a way back, and this is where the space
+          already is. Absent entirely when nothing is hidden: a control that
+          always reads zero is noise. */}
+      {hidden.length > 0 && (
+        <div className="relative shrink-0 pb-1">
+          <button
+            type="button"
+            onClick={() => setHiddenOpen(o => !o)}
+            className="h-[26px] px-2 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {hidden.length} hidden
+            <ChevronDown className={`w-3 h-3 transition-transform ${hiddenOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {hiddenOpen && (
+            <div className="absolute right-0 z-[90] mt-1 min-w-[200px] bg-card border border-border">
+              {hidden.map(agent => (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => { onShow?.(agent.id); setHiddenOpen(false); }}
+                  className="w-full text-left px-2.5 py-1.5 text-xs text-text-secondary hover:bg-secondary hover:text-foreground truncate"
+                >
+                  {agent.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => { onShowAll?.(); setHiddenOpen(false); }}
+                className="w-full text-left px-2.5 py-1.5 border-t border-border font-mono text-[10.5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                show all
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

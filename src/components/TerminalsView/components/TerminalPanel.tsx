@@ -15,6 +15,7 @@ interface TerminalPanelProps {
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
   onRemove: (agentId: string) => void;
+  onDelete?: (agentId: string) => void;
   onClear: (agentId: string) => void;
   onFullscreen: (agentId: string) => void;
   onExitFullscreen: () => void;
@@ -41,6 +42,7 @@ function TerminalPanel({
   onStart,
   onStop,
   onRemove,
+  onDelete,
   onClear,
   onFullscreen,
   onExitFullscreen,
@@ -121,6 +123,7 @@ function TerminalPanel({
         onExitFullscreen={onExitFullscreen}
         onClear={handleClear}
         onRemove={handleRemove}
+        onDelete={onDelete}
         onContextMenu={handleContextMenu}
       />
 

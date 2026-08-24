@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 24,
+    version: '1.6.6',
+    date: '2026-08-24',
+    updates: [
+      'Removing a panel from a project board takes it off the board instead of destroying the agent. It keeps running, keeps its worktree and stays reachable everywhere else, and the tab strip says how many are hidden and puts them back. Deleting for good is still there, in the same menu, with its own wording and its own warning',
+      'The Chat agent reacts to what happens instead of waking on a timer. An agent starting, pausing for you or finishing now wakes it directly; it waits for the fleet to settle first and never looks more than once a minute, because every look is a real run. The timer stays as a safety net for the things no status change announces',
+    ],
+  },
+  {
     id: 23,
     version: '1.6.5',
     date: '2026-08-24',
