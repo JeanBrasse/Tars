@@ -85,25 +85,6 @@ export function SquareGrid({
   );
 }
 
-/** The same mark, waiting rather than progressing: a row of squares in turn. */
-export function SquarePulse({ count = 5, size = 6 }: { count?: number; size?: number }) {
-  return (
-    <div className="flex" style={{ gap: size }} aria-hidden>
-      {Array.from({ length: count }).map((_, i) => (
-        <span
-          key={i}
-          className="bg-primary"
-          style={{
-            width: size,
-            height: size,
-            animation: `square-pulse 1.2s ease-in-out ${i * 0.12}s infinite`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function Splash({ onDone }: { onDone?: () => void }) {
   // Which steps have answered. Rendered identically on the server, so the
   // splash is part of the first paint instead of a node added after hydration.

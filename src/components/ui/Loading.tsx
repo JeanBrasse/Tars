@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SquarePulse } from '@/components/Splash';
 
 /**
  * Loading, in three stages.
@@ -163,7 +162,7 @@ export function SlowOperation({
 
   return (
     <div className="flex flex-col items-center justify-center gap-2.5 border border-border bg-card px-4 py-6 text-center">
-      <SquarePulse />
+      <BrandSpinner size={24} label={what} />
       <p className="text-xs text-foreground">{what}</p>
       {detail && (
         <p className="text-[10.5px] font-mono text-muted-foreground">

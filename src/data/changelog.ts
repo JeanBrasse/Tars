@@ -13,7 +13,7 @@ export const CHANGELOG: Release[] = [
     updates: [
       'Removing a panel from a project board takes it off the board instead of destroying the agent. It keeps running, keeps its worktree and stays reachable everywhere else, and the tab strip says how many are hidden and puts them back. Deleting for good is still there, in the same menu, with its own wording and its own warning',
       'The Chat agent reacts to what happens instead of waking on a timer. An agent starting, pausing for you or finishing now wakes it directly; it waits for the fleet to settle first and never looks more than once a minute, because every look is a real run. The timer stays as a safety net for the things no status change announces',
-      'The loading mark runs one square at a time, left to right along each row and down to the next, instead of lighting a whole diagonal at once',
+      'The loading mark runs one square at a time, left to right along each row and down to the next, instead of lighting a whole diagonal at once. It is the only waiting animation left in the app: the row of pulsing squares that used to appear on a slow load and beside the Logs search is now the same mark',
     ],
   },
   {

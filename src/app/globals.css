@@ -564,19 +564,6 @@ button, a, input, textarea, select {
   background: var(--border-accent);
 }
 
-
-/* Waiting, in the app's own mark: squares that light in turn. */
-@keyframes square-pulse {
-  0%, 70%, 100% { opacity: 0.18; }
-  35%           { opacity: 1; }
-}
-
-/*
- * The brand mark, waiting. Each cell of the 4x4 grid runs this on a delay set
- * by its diagonal, so the lit band sweeps across the square. Cells never fall
- * below 0.16, which is what keeps the silhouette of the logo intact instead of
- * reading as sixteen unrelated dots. See BrandSpinner in ui/Loading.tsx.
- */
 /*
  * A single light running over the mark. Each cell starts its cycle lit and
  * fades, and the cells are delayed by their own index, so the light travels
