@@ -11,6 +11,19 @@ export const CHANGELOG: Release[] = [
     version: '1.6.2',
     date: '2026-08-24',
     updates: [
+      'Creating an agent is one screen instead of four steps. The folder, the CLI and the task are visible at once, the task is the field you land on because it is what you came to type, and everything else sits behind a single row that reads out what it currently holds. Teams are the same screen with a switch, and their members are a table you read across, so two of them on the same model or one without its own branch is obvious at a glance',
+      'Every provider is selectable again. The redesigned screen showed four, and the thirteen others, including Ollama and Venice, could not be picked at all',
+      'Templates have a button of their own on the Agents page. They used to open from a row inside the old first step, which the redesign removed',
+      'Agents stop needing to be asked twice. Handing a task to an agent that pauses for confirmation gave up after one nudge, and two requests arriving at the same moment for the same agent each started their own terminal, with one of them silently orphaned. That could happen from a double-clicked Start, or from an orchestrator delegating while you resumed the same agent yourself',
+      'Four panels stayed dark on a light page, the terminal panel menu announced itself as three dots to a screen reader, and the read-only permission fields now name the file you would edit',
+      'Two settings controls that said only "Not wired yet" do their job, and the two that genuinely cannot point at the page that can',
+    ],
+  },
+  {
+    id: 20,
+    version: '1.6.2',
+    date: '2026-08-24',
+    updates: [
       'New agent and new team are one screen each now, not a four-step wizard and three separate dialogs. Creating an agent used to cost a click through Project, Model, Tools and Task even for the common case of a folder, a CLI and a sentence; it is now a single dialog with a "One agent | A team" switch, a hero task field, and everything else, skills, effort, permissions, its own worktree, orchestrator mode, CLI binary, folded into one Options row that reads out its own contents ("2 skills · medium effort · own worktree · auto") so nothing is hidden, only collapsed. Deploying a team was `DeployTeamDialog` plus its own inline save/edit/delete-team affairs; it is now the same screen with the switch flipped, a member table you read straight across (role, provider, model, effort, branch, so two members on the same model or one with no worktree is obvious at a glance) started from a saved team preset, and a brief every member gets on top of its own role prompt',
       'The agent template manager (browse, edit, duplicate, export, import a saved single-agent preset) is unchanged but currently has no way in: the row it opened from is gone from the new one-screen dialog because the design has no room for it there. Nothing was deleted, it is just unreachable until it gets a home of its own',
     ],

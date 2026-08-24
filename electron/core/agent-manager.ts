@@ -453,12 +453,56 @@ export function loadAgents() {
   }
 }
 
+/**
+ * One spawn at a time, per agent.
+ *
+ * Seven places do the same thing: check `!agent.ptyId || !ptyProcesses.has(...)`,
+ * await initAgentPty, then set agent.ptyId. The await is a genuine suspension
+ * point (spawnAgentSession waits on the memory digest for every non-Claude CLI),
+ * so two callers can both pass the check before either has set the id and both
+ * spawn, orphaning the first process. A double-clicked Start button does it; so
+ * does a renderer resume racing an MCP delegate_task.
+ *
+ * That was fixed once, on the three HTTP routes, with a lock local to
+ * agent-routes.ts. The IPC handler, the Super Agent path, the Telegram bot and
+ * the Slack bot were left with the same shape, which a verifying agent then
+ * reproduced: two concurrent `agent:start` calls, two spawns.
+ *
+ * So the lock lives here instead, around the one function that actually spawns.
+ * Every caller gets it whether or not it knows to ask, and a caller that arrives
+ * while a live PTY already exists is handed that one rather than a second.
+ */
+const ptyInitLocks = new Map<string, Promise<string>>();
+
 export async function initAgentPty(
   agent: AgentStatus,
   mainWindow: BrowserWindow | null,
   handleStatusChangeNotificationCallback: (agent: AgentStatus, newStatus: string) => void,
   saveAgentsCallback: () => void
 ): Promise<string> {
+  const inFlight = ptyInitLocks.get(agent.id);
+  if (inFlight) return inFlight;
+
+  const run = initAgentPtyLocked(agent, mainWindow, handleStatusChangeNotificationCallback, saveAgentsCallback);
+  // Cleared however it ends, so a failed spawn does not wedge the agent.
+  ptyInitLocks.set(agent.id, run);
+  try {
+    return await run;
+  } finally {
+    if (ptyInitLocks.get(agent.id) === run) ptyInitLocks.delete(agent.id);
+  }
+}
+
+async function initAgentPtyLocked(
+  agent: AgentStatus,
+  mainWindow: BrowserWindow | null,
+  handleStatusChangeNotificationCallback: (agent: AgentStatus, newStatus: string) => void,
+  saveAgentsCallback: () => void
+): Promise<string> {
+  // Re-check under the lock: the caller's check happened before it queued here,
+  // and the call it was queued behind may have just created the PTY it wanted.
+  if (agent.ptyId && ptyProcesses.has(agent.ptyId)) return agent.ptyId;
+
   const shell = '/bin/bash';
   let cwd = agent.worktreePath || agent.projectPath;
 
