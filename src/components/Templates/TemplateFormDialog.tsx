@@ -35,6 +35,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
   const initialModel = initialTemplate?.model;
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(initialTemplate?.permissionMode ?? 'normal');
   const [skills, setSkills] = useState<string[]>(initialTemplate?.skills ?? []);
+  const [skillFilter, setSkillFilter] = useState('');
   const [savedPrompt, setSavedPrompt] = useState(initialTemplate?.savedPrompt ?? '');
 
   const [submitting, setSubmitting] = useState(false);
@@ -76,6 +77,13 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
   }
 
   const allSkills = Array.from(new Set([...installedSkills, ...skills])).sort();
+  const needle = skillFilter.trim().toLowerCase();
+  // A selected skill stays visible whatever the filter says, so it can always
+  // be unselected without clearing the box first.
+  const shownSkills = needle
+    ? allSkills.filter(s => s.toLowerCase().includes(needle) || skills.includes(s))
+    : allSkills;
+  const hiddenCount = allSkills.length - shownSkills.length;
 
   return (
     <DialogShell
@@ -171,13 +179,35 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
 
         <div>
           <Label>
-            Skills <span className="text-muted-foreground font-normal">({skills.length} selected)</span>
+            Skills{' '}
+            <span className="text-muted-foreground font-normal">
+              {skills.length} of {allSkills.length} selected
+            </span>
           </Label>
           {allSkills.length === 0 ? (
             <p className="text-xs text-muted-foreground italic">No skills installed yet - visit the Skills page to install some.</p>
           ) : (
-            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-border bg-secondary/30">
-              {allSkills.map(skill => {
+            <>
+            {/* A filter, and room for more than three rows. The list was a
+                160px box with no way through it, so a user with thirty skills
+                installed saw the first few and reasonably concluded the rest
+                were not on offer. */}
+            {allSkills.length > 8 && (
+              <Input
+                mono
+                value={skillFilter}
+                onChange={e => setSkillFilter(e.target.value)}
+                placeholder="filter skills"
+                className="mb-2"
+              />
+            )}
+            <div className="flex flex-wrap gap-1.5 max-h-64 overflow-y-auto p-2 border border-border bg-secondary/30">
+              {shownSkills.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">
+                  No skill matches &ldquo;{skillFilter}&rdquo;.
+                </p>
+              )}
+              {shownSkills.map(skill => {
                 const installed = installedSkills.includes(skill);
                 return (
                   <Chip
@@ -194,6 +224,12 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
                 );
               })}
             </div>
+            {hiddenCount > 0 && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {hiddenCount} more hidden by the filter.
+              </p>
+            )}
+            </>
           )}
         </div>
 
