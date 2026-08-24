@@ -1276,6 +1276,10 @@ export interface ElectronAPI {
     effort: () => Promise<{ success: boolean; effort?: string | null; options?: string[]; error?: string }>;
     setEffort: (effort: string) => Promise<{ success: boolean; error?: string }>;
     history: () => Promise<{ messages: OverseerMessage[]; busy: boolean }>;
+    /** Empties the conversation, keeping settings and the standing job. The
+     *  overseer's context is the conversation, so this is the way out of any
+     *  loop it talks itself into. Refused while a turn is in flight. */
+    clearHistory: () => Promise<{ success: boolean; cleared: number; error?: string }>;
     fleet: () => Promise<OverseerFleetSnapshot>;
     confirmAction: (params: { action: OverseerAction; approve: boolean }) => Promise<{ success: boolean; error?: string; mode?: string }>;
     pause: () => Promise<{ success: boolean; paused: boolean }>;

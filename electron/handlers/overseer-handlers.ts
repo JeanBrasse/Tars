@@ -6,6 +6,7 @@ import { MIME_TYPES } from '../constants';
 import {
   askOverseer,
   getOverseerHistory,
+  clearOverseerHistory,
   buildFleetSnapshot,
   confirmPendingAction,
   pauseOverseerWatch,
@@ -130,6 +131,13 @@ export function registerOverseerHandlers(): void {
     messages: getOverseerHistory(),
     busy: isOverseerBusy(),
   }));
+
+  ipcMain.handle('overseer:clearHistory', async () => {
+    if (isOverseerBusy()) {
+      return { success: false, cleared: 0, error: 'The overseer is answering right now. Try again in a moment.' };
+    }
+    return { success: true, ...clearOverseerHistory() };
+  });
 
   ipcMain.handle('overseer:fleet', async () => buildFleetSnapshot());
 

@@ -543,6 +543,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('overseer:setEffort', effort),
     history: () =>
       ipcRenderer.invoke('overseer:history'),
+    clearHistory: () =>
+      ipcRenderer.invoke('overseer:clearHistory'),
     fleet: () =>
       ipcRenderer.invoke('overseer:fleet'),
     confirmAction: (params: { action: Record<string, unknown>; approve: boolean }) =>

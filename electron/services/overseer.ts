@@ -203,7 +203,24 @@ function loadState(): OverseerState {
     // Spreading `raw` over the defaults is a shallow merge, so a state file
     // written before settings existed - or one holding only some of them -
     // would otherwise arrive with `settings` undefined and crash the callers.
-    return { ...defaultState(), ...raw, settings: { ...defaultSettings(), ...(raw?.settings ?? {}) } };
+    const state: OverseerState = {
+      ...defaultState(),
+      ...raw,
+      settings: { ...defaultSettings(), ...(raw?.settings ?? {}) },
+    };
+
+    // Fixing the code does not unstick an install that already went wrong:
+    // the echoes are on disk, and every one of them is another example for
+    // the next turn to copy. They are dropped once, here, so the running
+    // conversation recovers without anyone having to edit the file by hand.
+    const messages = state.messages.filter(m => m.role !== 'overseer' || !isTemplateEcho(m.text));
+    if (messages.length !== state.messages.length) {
+      const dropped = state.messages.length - messages.length;
+      console.warn(`[overseer] dropped ${dropped} reply/replies that were the format template rather than an answer`);
+      state.messages = messages;
+      saveState(state);
+    }
+    return state;
   } catch (err) {
     console.error('[overseer] could not read overseer.json, starting fresh:', err);
     return defaultState();
@@ -220,6 +237,25 @@ function saveState(state: OverseerState): void {
 
 export function getOverseerHistory(): OverseerMessage[] {
   return loadState().messages;
+}
+
+/**
+ * Throw the conversation away and start a fresh one.
+ *
+ * The load-time purge handles the one failure that has actually happened, but
+ * it only knows that shape. The conversation is the model's own context, so
+ * anything that gets stuck in it stays stuck until something can empty it,
+ * and without this the only way out of the next such loop would be another
+ * release. Settings, the standing job and the fleet baseline are kept: this
+ * clears what was said, not how the overseer is set up.
+ */
+export function clearOverseerHistory(): { cleared: number } {
+  const state = loadState();
+  const cleared = state.messages.length;
+  if (cleared === 0) return { cleared: 0 };
+  state.messages = [];
+  saveState(state);
+  return { cleared };
 }
 
 // ── Fleet snapshot ──────────────────────────────────────────────────────
@@ -346,8 +382,14 @@ const HISTORY_TURN_LIMIT = 24;
 const HISTORY_CHAR_BUDGET = 6000;
 
 function serializeHistory(history: OverseerMessage[]): string {
-  const recent = history.slice(-HISTORY_TURN_LIMIT);
-  let omitted = history.length - recent.length;
+  // This is where the loop lived. Hermes was shown its own placeholder as
+  // something it had already said, so it said it again, and the prompt for
+  // the next turn then held two of them. Whatever the guard in finishTurn
+  // let through, or an older build wrote before that guard existed, stops
+  // here: an echo is never quoted back as an example to follow.
+  const usable = history.filter(m => m.role !== 'overseer' || !isTemplateEcho(m.text));
+  const recent = usable.slice(-HISTORY_TURN_LIMIT);
+  let omitted = usable.length - recent.length;
   const kept: string[] = [];
   let used = 0;
   // Walk newest-first so the char budget favors the most recent context.
@@ -384,10 +426,11 @@ export function composeTurn(
     '- You never claim to have done anything yourself. You only report, challenge, and propose.',
     '- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.',
     '- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.',
-    '- Reply with EXACTLY one JSON object and nothing else, before or after it, in this shape:',
-    '  {"say": "<what you tell Noah, plain text or light markdown>", "action": null}',
+    '- Reply with EXACTLY one JSON object and nothing else, before or after it. "say" is what you tell Noah, plain text or light markdown. Example:',
+    '  {"say": "Frontend has been waiting on your answer about the sidebar width for eleven minutes. Nothing else is blocked.", "action": null}',
     '  or, only when proposing to message one specific agent:',
-    '  {"say": "<...>", "action": {"kind": "message_agent", "agent_id": "<id from the snapshot>", "text": "<the exact message to send>"}}',
+    '  {"say": "Backend has retried the same failing test three times without changing anything. Worth asking it what it thinks is wrong.", "action": {"kind": "message_agent", "agent_id": "an id copied from the snapshot", "text": "What do you believe is making that test fail?"}}',
+    '- Those two are illustrations of the shape only. Never repeat their wording, and never treat them as facts about the fleet: write your own sentence about the snapshot below.',
     '- If no agent in the snapshot is the right target, action must be null.',
   ].join('\n');
 
@@ -486,6 +529,45 @@ function readEnvelope(candidate: string): ParsedEnvelope | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A reply that is the format example rather than an answer.
+ *
+ * The prompt shows Hermes the envelope to fill in. When it copies the example
+ * instead of filling it, the result is still valid JSON, so parseEnvelope
+ * accepts it and `say` becomes the placeholder itself. That happened once on
+ * Noah's install and then never stopped: every following turn was shown the
+ * placeholder as something the overseer had already said, and copied it in
+ * turn. Nineteen consecutive turns, none of which could recover on its own.
+ *
+ * The test is structural rather than a list of known strings, because a model
+ * paraphrases its own template. Take out the placeholder spans, `<like this>`
+ * and bare `[SENTINEL]` tokens, and see whether any actual message is left.
+ * Prose that merely happens to contain angle brackets keeps its words and is
+ * not touched; a reply built only of placeholders has nothing left.
+ */
+const PLACEHOLDER_SPAN = /<[^<>]{0,120}>/g;
+/** `[SILENT]`, which the gateway emits for "produce no output" and which is
+ *  not a message either. Uppercase only, so a markdown link survives. */
+const BARE_SENTINEL = /\[[A-Z][A-Z_ ]{2,30}\]/g;
+/**
+ * How much real writing has to survive the strip. A genuine reply that used a
+ * placeholder as a figure of speech still carries a sentence around it; the
+ * echoes carry nothing but stray punctuation and the odd stub like "say:".
+ */
+const MIN_REAL_CHARS = 12;
+
+export function isTemplateEcho(say: string): boolean {
+  const text = say.trim();
+  if (!text) return true;
+
+  const stripped = text.replace(PLACEHOLDER_SPAN, ' ').replace(BARE_SENTINEL, ' ');
+  // Nothing was a placeholder, so there is nothing to accuse it of.
+  if (stripped === text) return false;
+
+  const real = stripped.replace(/[^\p{L}\p{N}]+/gu, '');
+  return real.length < MIN_REAL_CHARS;
 }
 
 /**
@@ -908,6 +990,19 @@ async function finishTurn(
   opts: { isBriefing?: boolean },
 ): Promise<AskOverseerResult> {
   const envelope = parseEnvelope(replyText);
+
+  // Refused before anything else happens, and above all before it is written:
+  // a placeholder in the history is what turns one bad turn into every turn.
+  // Nothing is persisted, so the next turn is already the retry, composed
+  // from a prompt this reply never entered.
+  if (isTemplateEcho(envelope.say)) {
+    console.warn('[overseer] discarded a reply that echoed the format template:', envelope.say.slice(0, 120));
+    return {
+      ok: false,
+      reason: 'error',
+      error: 'Hermes sent back the reply template instead of an answer, so Tars discarded it rather than recording it. Ask again.',
+    };
+  }
 
   let action: OverseerAction | null = null;
   if (envelope.action) {
