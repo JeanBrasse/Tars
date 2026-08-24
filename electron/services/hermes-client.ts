@@ -377,15 +377,75 @@ export async function deleteHermesCron(conn: HermesConnection, jobId: string, pr
  * down against the live gateway, so there is no way to call this with the
  * job disabled.
  */
+/**
+ * The models the gateway can actually run, and which it is running now.
+ *
+ * The overseer was pinned to whatever the gateway happened to have selected,
+ * which on the author's install is deepseek-v4-flash. That is a real choice a
+ * user should get to make: it decides how good the fleet briefings are and what
+ * they cost. `GET /api/model/options` answers with every provider the gateway
+ * has credentials for and their model lists, so the picker offers what will
+ * actually work rather than a table compiled into Tars.
+ */
+export interface HermesModelProvider {
+  slug: string;
+  name: string;
+  models: string[];
+  isCurrent: boolean;
+}
+
+export async function fetchHermesModelOptions(
+  conn: HermesConnection,
+): Promise<
+  | { success: true; provider: string; model: string; providers: HermesModelProvider[] }
+  | { success: false; error: string; needsSignIn?: boolean }
+> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, '/api/model/options', { token: conn.token });
+  if (status === 401 || status === 403) {
+    return { success: false, error: 'Sign in to Hermes to list its models', needsSignIn: true };
+  }
+  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+
+  const b = (body ?? {}) as Record<string, unknown>;
+  const raw = Array.isArray(b.providers) ? b.providers : [];
+  return {
+    success: true,
+    provider: typeof b.provider === 'string' ? b.provider : '',
+    model: typeof b.model === 'string' ? b.model : '',
+    providers: raw.map(entry => {
+      const p = entry as Record<string, unknown>;
+      return {
+        slug: typeof p.slug === 'string' ? p.slug : '',
+        name: typeof p.name === 'string' ? p.name : String(p.slug ?? ''),
+        models: Array.isArray(p.models) ? p.models.filter((m): m is string => typeof m === 'string') : [],
+        isCurrent: p.is_current === true,
+      };
+    }).filter(p => p.slug),
+  };
+}
+
 export async function createHermesCron(
   conn: HermesConnection,
-  job: { name: string; schedule: string; prompt: string; deliver?: string },
+  job: { name: string; schedule: string; prompt: string; deliver?: string; model?: string; provider?: string },
 ) {
   const baseUrl = resolveHermesBaseUrl(conn);
   const { status, body } = await hermesRequest(baseUrl, '/api/cron/jobs', {
     method: 'POST',
     token: conn.token,
-    body: { name: job.name, schedule: job.schedule, prompt: job.prompt, deliver: job.deliver ?? 'local', enabled: true },
+    // `model` and `provider` are optional on the gateway and were never sent, so
+    // every job ran on whatever the gateway had selected globally. That is fine
+    // for a scheduled scrape and wrong for the overseer, whose whole job is to
+    // read a fleet and reason about it.
+    body: {
+      name: job.name,
+      schedule: job.schedule,
+      prompt: job.prompt,
+      deliver: job.deliver ?? 'local',
+      enabled: true,
+      ...(job.model ? { model: job.model } : {}),
+      ...(job.provider ? { provider: job.provider } : {}),
+    },
   });
   if (status < 300) return { success: true as const, job: body as { id?: string; [key: string]: unknown } };
   const detail = (body && typeof body === 'object' && 'detail' in body)

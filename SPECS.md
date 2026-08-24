@@ -60,9 +60,9 @@ orchestrator agent's CLI
 - **The server decides message-vs-spawn.** `POST /api/agents/:id/dispatch` makes that call under the main process's single-threaded event loop. The earlier GET-status-then-POST pattern raced and could type into a dead PTY.
 - **Session ownership is explicit.** A dispatch tombstones the old session id; only the session registered by `SessionStart` may drive status. Hooks of a killed PTY survive the kill by seconds and would otherwise flip the new task's status.
 - **Providers are a strategy interface, not conditionals.** 19 methods on `CLIProvider`; 15 implementations. Adding a vendor is a file in `electron/providers/` plus one line in the registry.
-- **Ten of the fifteen providers are the `claude` binary re-pointed.** `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` in the PTY environment, either at the vendor's Anthropic-compatible endpoint or through OpenRouter. They inherit Claude Code's hooks, skills and MCP config for free.
+- **Thirteen of the nineteen providers are the `claude` binary re-pointed.** `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` in the PTY environment, either at the vendor's Anthropic-compatible endpoint or through OpenRouter. They inherit Claude Code's hooks, skills and MCP config for free.
 - **Model list and prices come from models.dev, not from the source.** A model released today is selectable after the next 6-hour refresh, with no release.
-- **Memory is federated and provider-agnostic.** Five sources behind one hub, delivered two ways: a bundled MCP server every provider registers, and prompt injection for the CLIs with no session hook.
+- **Memory is federated and provider-agnostic.** Six sources behind one hub, delivered two ways: a bundled MCP server every provider registers, and prompt injection for the CLIs with no session hook.
 - **Tars has no scheduler.** Cron jobs, the task board and long-running automation live in the user's Hermes gateway; Tars is a client and exposes an inbound webhook.
 - **Nothing is ever pushed upstream.** The fork lives at `JeanBrasse/Dorothy`; `GITHUB_REPO` in `electron/constants/index.ts` points there so an upstream build can never be offered as an update to a fork install.
 
@@ -131,7 +131,7 @@ Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `sr
 
 `safeEffort()` is exported from the same module and validates reasoning effort against `{low, medium, high, xhigh, max}` before it lands unquoted in a shell string. The value arrives over IPC, so it is validated at the point of use, not trusted from the caller.
 
-### The registry (15 providers)
+### The registry (19 providers)
 
 | id | Display name | Binary | Config dir | Reaches the model via |
 |---|---|---|---|---|
@@ -576,7 +576,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
 | `/usage` | Usage | Cost and tokens: transcript-derived Claude figures merged with the cross-provider ledger, daily chart, per-model and per-provider tables, catalogue freshness. 1277 lines, the largest page | `Usage · dark` / `· light` |
-| `/memory` | Brain | The five sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
+| `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
 | `/settings` | Settings | 6 groups, 17 sections (see below) | 17 frames |

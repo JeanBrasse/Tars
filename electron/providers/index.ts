@@ -17,6 +17,8 @@ import { NvidiaProvider } from './nvidia-provider';
 import { NousPortalProvider } from './nous-portal-provider';
 import { OllamaProvider } from './ollama-provider';
 import { VeniceProvider } from './venice-provider';
+import { OllamaCloudProvider } from './ollama-cloud-provider';
+import { CustomOpenAIProvider } from './custom-openai-provider';
 
 export type { CLIProvider } from './cli-provider';
 export type {
@@ -45,6 +47,8 @@ const providers: Record<string, CLIProvider> = {
   'nous-portal': new NousPortalProvider(),
   ollama: new OllamaProvider(),
   venice: new VeniceProvider(),
+  'ollama-cloud': new OllamaCloudProvider(),
+  'custom-openai': new CustomOpenAIProvider(),
 };
 
 /**

@@ -23,7 +23,9 @@ export type AgentProvider =
   | 'nvidia'
   | 'nous-portal'
   | 'ollama'
-  | 'venice';
+  | 'venice'
+  | 'ollama-cloud'
+  | 'custom-openai';
 
 /** Permission mode for agent tool use:
  * - normal: Claude asks for confirmation on each tool use
@@ -168,12 +170,29 @@ export interface AppSettings {
   nousPortalEnabled?: boolean;
   nousPortalApiKey?: string;
   /** Venice AI has no Anthropic-compatible endpoint (OpenAI-compatible only), so
-   *  it is reached through Tars's own local translation shim, not directly. */
+   *  it is reached through Tars's own local translation bridge, not directly. */
   veniceEnabled?: boolean;
   veniceApiKey?: string;
   /** Ollama is a local server, not a hosted vendor: no key, just where to find it.
    *  Empty means the default http://localhost:11434. */
   ollamaBaseUrl?: string;
+  /** Ollama Cloud is a different product from local Ollama: a hosted vendor at
+   *  https://ollama.com with its own key. It speaks the Anthropic wire format
+   *  natively (like local Ollama), but wants `Authorization: Bearer`, not
+   *  `x-api-key` (ollama/ollama#16922) - a header difference, not a translation
+   *  problem, so it is a direct provider like local Ollama, never through the
+   *  OpenAI-compatible bridge. See providers/ollama-cloud-provider.ts. */
+  ollamaCloudEnabled?: boolean;
+  ollamaCloudApiKey?: string;
+  /** Any OpenAI-compatible endpoint the user points Tars at directly - the
+   *  point of not shipping a named provider for every such vendor. Has no
+   *  models.dev catalogue entry (private/self-hosted), so the model is typed
+   *  by hand rather than picked from a live list. Reached through the same
+   *  translation bridge as Venice; see services/openai-bridge.ts. */
+  customOpenAIEnabled?: boolean;
+  customOpenAIBaseUrl?: string;
+  customOpenAIApiKey?: string;
+  customOpenAIModel?: string;
   /** Remote Hermes instance (external scheduler) */
   hermesGatewayUrl?: string;
   hermesGatewayToken?: string;

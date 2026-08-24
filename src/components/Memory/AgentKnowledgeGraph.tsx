@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
 import { BrandSpinner, Button, Panel, StatusSquare } from '@/components/ui';
@@ -370,6 +370,8 @@ export default function AgentKnowledgeGraph() {
    */
   const [zoom, setZoom] = useState(1);
   const stageRef = useRef<HTMLDivElement>(null);
+  /** The element that carries the zoom scale, used to anchor it at the pointer. */
+  const scaledRef = useRef<HTMLDivElement>(null);
 
   const [panelNode, setPanelNode] = useState<GraphNode | null>(null);
   const [panelContent, setPanelContent] = useState('');
@@ -592,13 +594,51 @@ export default function AgentKnowledgeGraph() {
     setZoom(fitZoom());
   }, [size, nodes.length, fitZoom]);
 
+  /**
+   * Where the pointer was when the zoom gesture started, and which point of
+   * the graph was under it. Scaling the stage alone leaves the scroll offset
+   * where it was, so the viewport's top-left corner stays put and the graph
+   * appears to zoom at the same spot wherever the pointer is. Keeping the
+   * point under the pointer means correcting the scroll by however far it
+   * moved, which can only be measured after the browser has laid the new
+   * scale out.
+   */
+  const pendingAnchor = useRef<{ px: number; py: number; cx: number; cy: number } | null>(null);
+
   // Ctrl/Cmd + wheel is the zoom gesture everywhere else, including the pinch
   // a trackpad reports. Without the listener the browser zooms the whole app.
   const onWheel = useCallback((e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
+    const el = stageRef.current;
+    const inner = scaledRef.current;
+    if (el && inner) {
+      const stage = inner.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      pendingAnchor.current = {
+        px: (e.clientX - stage.left) / zoom,
+        py: (e.clientY - stage.top) / zoom,
+        cx: e.clientX - box.left,
+        cy: e.clientY - box.top,
+      };
+    }
     setZoom(z => clampZoom(z * (e.deltaY > 0 ? 0.92 : 1.08)));
-  }, []);
+  }, [zoom]);
+
+  // Measured rather than derived: the stage is centred while it is smaller
+  // than the viewport and scrolled once it is bigger, so where a point lands
+  // depends on padding and centring this does not need to model.
+  useLayoutEffect(() => {
+    const anchor = pendingAnchor.current;
+    pendingAnchor.current = null;
+    const el = stageRef.current;
+    const inner = scaledRef.current;
+    if (!anchor || !el || !inner) return;
+    const stage = inner.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    el.scrollLeft += (stage.left - box.left) + anchor.px * zoom - anchor.cx;
+    el.scrollTop += (stage.top - box.top) + anchor.py * zoom - anchor.cy;
+  }, [zoom]);
 
   return (
     <Panel fill padded={false} className="relative w-full overflow-hidden">
@@ -644,6 +684,7 @@ export default function AgentKnowledgeGraph() {
             <p className="text-xs text-muted-foreground">No agents to map yet.</p>
           ) : (
             <div
+              ref={scaledRef}
               className="relative shrink-0"
               style={{
                 width: size * zoom,

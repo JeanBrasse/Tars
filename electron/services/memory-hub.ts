@@ -27,7 +27,7 @@ const OBSERVATIONS_DIR = path.join(DATA_DIR, 'observations');
 const MAX_SECTION_CHARS = 4000;
 const MAX_OBSERVATIONS = 15;
 
-export type MemorySourceId = 'project' | 'observations' | 'hermes' | 'gbrain' | 'honcho';
+export type MemorySourceId = 'project' | 'observations' | 'hermes' | 'gbrain' | 'honcho' | 'obsidian';
 
 export interface MemorySettings {
   memoryGbrainEnabled?: boolean;
@@ -36,6 +36,10 @@ export interface MemorySettings {
   memoryHonchoEnabled?: boolean;
   memoryHonchoMcpUrl?: string;
   memoryHonchoApiKey?: string;
+  /** Absolute paths to Obsidian vaults. Already collected by Settings for the
+   *  Vault page; a vault is a folder of markdown, which is what every other
+   *  local source here is too. */
+  obsidianVaultPaths?: string[];
 }
 
 export interface MemoryHit {
@@ -83,6 +87,75 @@ function readProjectMemory(projectPath: string): { file: string; content: string
       .filter(entry => entry.content.trim());
   } catch {
     return [];
+  }
+}
+
+/**
+ * An Obsidian vault is a folder of markdown notes, so it is a memory source in
+ * exactly the way the project's own memory directory is: read it, search it,
+ * append to it. What makes it worth wiring separately is that it is the one
+ * store the user also writes in by hand, which is why writes go to a dated
+ * file of their own rather than into a note the user maintains.
+ *
+ * Vaults can be large, so the walk is bounded on both depth and count rather
+ * than reading whatever is there.
+ */
+const OBSIDIAN_MAX_FILES = 400;
+const OBSIDIAN_MAX_DEPTH = 6;
+
+function obsidianVaults(settings: MemorySettings): string[] {
+  return (settings.obsidianVaultPaths ?? [])
+    .map(p => p.trim())
+    .filter(p => p && path.isAbsolute(p) && fs.existsSync(p));
+}
+
+function readObsidianNotes(settings: MemorySettings): { file: string; vault: string; content: string }[] {
+  const out: { file: string; vault: string; content: string }[] = [];
+  for (const vault of obsidianVaults(settings)) {
+    const walk = (dir: string, depth: number) => {
+      if (depth > OBSIDIAN_MAX_DEPTH || out.length >= OBSIDIAN_MAX_FILES) return;
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (out.length >= OBSIDIAN_MAX_FILES) return;
+        // .obsidian holds the app's own config, .trash its deleted notes.
+        if (entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full, depth + 1);
+        } else if (entry.name.endsWith('.md')) {
+          try {
+            const content = fs.readFileSync(full, 'utf-8');
+            if (content.trim()) out.push({ file: path.relative(vault, full), vault, content });
+          } catch { /* unreadable note, skip it */ }
+        }
+      }
+    };
+    walk(vault, 0);
+  }
+  return out;
+}
+
+function writeObsidianNote(settings: MemorySettings, content: string, file?: string): { success: boolean; error?: string; path?: string } {
+  const vault = obsidianVaults(settings)[0];
+  if (!vault) return { success: false, error: 'No Obsidian vault is set up in Settings > Memory' };
+  // Notes an agent writes are kept apart from the user's own, and never
+  // outside the vault: the name is a single segment, validated, not a path.
+  const name = file && /^[A-Za-z0-9 ._-]+\.md$/.test(file) ? file : 'Tars memory.md';
+  try {
+    const dir = path.join(vault, 'Tars');
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, name);
+    const previous = fs.existsSync(target) ? fs.readFileSync(target, 'utf-8').trimEnd() : '';
+    const next = previous ? `${previous}\n\n${content.trim()}\n` : `${content.trim()}\n`;
+    fs.writeFileSync(target, next);
+    return { success: true, path: target };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -247,7 +320,7 @@ export async function searchMemory(opts: {
   limit?: number;
 }): Promise<{ hits: MemoryHit[]; errors: { source: MemorySourceId; error: string }[] }> {
   const { query, projectPath, settings, hermes } = opts;
-  const wanted = new Set<MemorySourceId>(opts.sources ?? ['project', 'observations', 'hermes', 'gbrain', 'honcho']);
+  const wanted = new Set<MemorySourceId>(opts.sources ?? ['project', 'observations', 'obsidian', 'hermes', 'gbrain', 'honcho']);
   const limit = opts.limit ?? 10;
   const hits: MemoryHit[] = [];
   const errors: { source: MemorySourceId; error: string }[] = [];
@@ -266,6 +339,15 @@ export async function searchMemory(opts: {
     const matches = readObservations(projectPath, 500).filter(o => o.content.toLowerCase().includes(needle));
     for (const o of matches.slice(-limit).reverse()) {
       hits.push({ source: 'observations', title: `${o.type} · ${o.ts.slice(0, 16)}`, content: o.content });
+    }
+  }
+
+  if (wanted.has('obsidian')) {
+    for (const { file, content } of readObsidianNotes(settings)) {
+      const paragraphs = content.split(/\n{2,}/).filter(p => p.toLowerCase().includes(needle));
+      for (const p of paragraphs.slice(0, limit)) {
+        hits.push({ source: 'obsidian', title: file, content: p.trim().slice(0, 1200), ref: file });
+      }
     }
   }
 
@@ -332,7 +414,7 @@ export function writeProjectMemory(projectPath: string, content: string, file = 
 }
 
 /** Where a write can go. `observations` is written by hooks, never by an agent. */
-export type MemoryWriteTarget = 'project' | 'hermes' | 'gbrain' | 'honcho';
+export type MemoryWriteTarget = 'project' | 'hermes' | 'gbrain' | 'honcho' | 'obsidian';
 
 export interface MemoryWriteResult {
   target: MemoryWriteTarget;
@@ -385,6 +467,11 @@ export async function writeMemory(opts: {
         return res.success
           ? { target, success: true, path: res.path }
           : { target, success: false, error: res.error };
+      }
+
+      if (target === 'obsidian') {
+        const res = writeObsidianNote(settings, body, file);
+        return { target, success: res.success, path: res.path, error: res.error };
       }
 
       const endpoint = target === 'gbrain' ? gbrainEndpoint(settings) : honchoEndpoint(settings);
@@ -442,6 +529,18 @@ export async function memoryStatus(opts: {
     detail: observations.length > 0
       ? `${observations.length} recorded, latest ${observations[observations.length - 1].ts.slice(0, 16)}`
       : 'nothing recorded yet',
+  });
+
+  const vaults = obsidianVaults(settings);
+  const notes = vaults.length ? readObsidianNotes(settings) : [];
+  out.push({
+    id: 'obsidian',
+    label: 'Obsidian',
+    configured: vaults.length > 0,
+    reachable: notes.length > 0,
+    detail: vaults.length === 0
+      ? 'no vault set up'
+      : `${notes.length} note${notes.length === 1 ? '' : 's'} in ${vaults.length} vault${vaults.length === 1 ? '' : 's'}`,
   });
 
   const probes: Promise<void>[] = [];
@@ -505,7 +604,7 @@ export async function memoryStatus(opts: {
 
   await Promise.all(probes);
 
-  const order: MemorySourceId[] = ['project', 'observations', 'hermes', 'gbrain', 'honcho'];
+  const order: MemorySourceId[] = ['project', 'observations', 'obsidian', 'hermes', 'gbrain', 'honcho'];
   return out.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 }
 

@@ -93,8 +93,13 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // baseline could never match twice: every run reported a diff, and a diff
     // that is always there tells you nothing about the run that actually broke
     // something. The panel headers, the grid and the chrome are still compared.
+    // 0.005 was 6,480 pixels of slack on a 1440x900 page, which is more than a
+    // whole row of content costs: an added memory source and a rewritten
+    // subtitle both drifted in under it, so several baselines went stale while
+    // every run reported green. Tight enough to catch a row, loose enough for
+    // the antialiasing jitter that masking cannot remove.
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      maxDiffPixelRatio: 0.005,
+      maxDiffPixelRatio: 0.001,
       animations: 'disabled',
       mask: [page.locator('.xterm-screen')],
     });

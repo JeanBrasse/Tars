@@ -56,7 +56,7 @@ import { scheduleTick } from './utils/agents-tick';
 
 // Services
 import { startApiServer } from './services/api-server';
-import { startVeniceShimServer, stopVeniceShimServer } from './services/venice-shim';
+import { startOpenAIBridgeServer, stopOpenAIBridgeServer } from './services/openai-bridge';
 import {
   initTelegramBotService,
   initTelegramBot as initTelegramBotHandlers,
@@ -319,10 +319,11 @@ function initApiServer() {
     ),
     () => appSettings
   );
-  // Loopback-only, always on: it is a no-op until a venice agent's PTY is
-  // spawned with the shim's URL baked into ANTHROPIC_BASE_URL. See
-  // services/venice-shim.ts for why this cannot just be another /api/* route.
-  startVeniceShimServer();
+  // Loopback-only, always on: it is a no-op until a Venice or custom-vendor
+  // agent's PTY is spawned with the bridge's URL baked into ANTHROPIC_BASE_URL.
+  // See services/openai-bridge.ts for why this cannot just be another /api/*
+  // route, and for the addressing scheme that lets one server serve both.
+  startOpenAIBridgeServer();
 }
 
 // ============== App Initialization ==============
@@ -672,7 +673,7 @@ app.on('before-quit', () => {
   saveAgents();
   killAllPty();
   closeVaultDb();
-  stopVeniceShimServer();
+  stopOpenAIBridgeServer();
 });
 
 /**

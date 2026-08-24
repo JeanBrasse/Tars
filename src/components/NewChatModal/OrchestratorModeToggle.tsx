@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Toggle } from '@/components/Settings/Toggle';
 import { isElectron } from '@/hooks/useElectron';
+import { OPTION_ROW } from './OptionsRow';
 
 // Module-level cache: avoids re-running the slow IPC call every time the step mounts
 let cachedStatus: 'configured' | 'not-configured' | 'error' | null = null;
@@ -111,15 +112,17 @@ export default function OrchestratorModeToggle({
 
   const busy = status === 'loading' || isSettingUp;
 
+  // The same row rule as every other option, not a copy of it: this one is not
+  // an OptionRow only because its hint doubles as the error message.
   return (
-    <div className="flex items-center gap-4">
+    <div className={OPTION_ROW}>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">Orchestrator mode</p>
         <p className={`text-[11px] ${errorMessage ? 'text-danger' : 'text-muted-foreground'}`}>
           {errorMessage || 'It hands work to other agents and cannot write files itself.'}
         </p>
       </div>
-      <div className="shrink-0 w-[220px] flex justify-end">
+      <div className="shrink-0">
         <Toggle
           enabled={isOrchestrator && status === 'configured'}
           onChange={handleToggle}

@@ -547,6 +547,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('overseer:resume'),
     watchStatus: () =>
       ipcRenderer.invoke('overseer:watchStatus'),
+    settings: () =>
+      ipcRenderer.invoke('overseer:settings'),
+    setSettings: (patch: { watchIntervalMs?: number; model?: string; provider?: string }) =>
+      ipcRenderer.invoke('overseer:setSettings', patch),
+    modelOptions: () =>
+      ipcRenderer.invoke('overseer:modelOptions'),
     onBriefing: (callback: (message: Record<string, unknown>) => void) => {
       const listener = (_: unknown, message: Record<string, unknown>) => callback(message);
       ipcRenderer.on('overseer:briefing', listener);

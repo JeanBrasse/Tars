@@ -139,7 +139,7 @@ path: `PROVIDER_REGISTRY` / `getProviderDef()` instead of an inline array; a bun
 Claude's transcripts.
 
 **Where parity genuinely does not exist, say so in the code.** `configureHooks` is a
-real no-op in thirteen of fifteen providers (only Claude and Gemini configure hooks)
+real no-op in seventeen of nineteen providers (only Claude and Gemini configure hooks)
 and five of them say why. The other eight are a bare empty body with nothing above it,
 and OpenRouter's comment says the opposite of the rule ("uses the same Claude CLI, so
 hooks work normally") while doing nothing: that is the debt, not the standard.

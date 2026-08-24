@@ -41,7 +41,7 @@ function saveReadDocs(ids: Set<string>) {
   localStorage.setItem(READ_DOCS_KEY, JSON.stringify([...ids]));
 }
 
-export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
+export default function VaultView({ embedded, subtitle }: { embedded?: boolean; subtitle?: string } = {}) {
   // Data state
   const [documents, setDocuments] = useState<VaultDocumentElectron[]>([]);
   const [allDocuments, setAllDocuments] = useState<VaultDocumentElectron[]>([]);
@@ -365,16 +365,14 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
 
   return (
     <div className={embedded ? 'flex flex-col h-full overflow-hidden' : 'flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] overflow-hidden'}>
-      {embedded ? (
-        // The route already carries the page header; this only holds the action.
-        <div className="flex justify-end pb-3.5 shrink-0">{newDocumentButton}</div>
-      ) : (
-        <PageHeader
-          title="Vault"
-          subtitle="Agent reports and working documents."
-          actions={newDocumentButton}
-        />
-      )}
+      {/* One header, whoever renders the route. The embedded case used to put
+          the action on its own row below a header the route drew, which left
+          "+ Document" floating under the title instead of beside it. */}
+      <PageHeader
+        title="Vault"
+        subtitle={subtitle ?? 'Agent reports and working documents.'}
+        actions={newDocumentButton}
+      />
 
       {/* Three panels sharing one top and one bottom edge: folders, the list of
           documents, and the document itself. The list stays on screen while a

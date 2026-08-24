@@ -65,13 +65,14 @@ mode, Tars falls back to the terminal path rather than pretending.
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
 
-**Any CLI, any model.** Fifteen providers, plus local models. Model lists and prices come from a
+**Any CLI, any model.** Nineteen providers, plus local models and any OpenAI-compatible
+endpoint of your own. Model lists and prices come from a
 live catalogue, so a model released this morning is selectable this morning,
 and its real price is used, not one baked into the last release.
 
 ![The agent list, with provider, model and worktree branch on every card](screenshots/agents.png)
 
-**One memory, five sources.** Project files, the session ledger, your Hermes
+**One memory, six sources.** Project files, the session ledger, your Obsidian vault, your Hermes
 gateway, gbrain and Honcho behind a single interface, reachable by every CLI,
 not only the ones with a session hook.
 
@@ -124,9 +125,10 @@ were written. Tars tells you which one you got.
 
 ## Providers
 
-Six CLIs (Claude Code, Codex, Gemini, Grok, opencode and Pi), ten reached
+Six CLIs (Claude Code, Codex, Gemini, Grok, opencode and Pi), twelve reached
 by API key: DeepSeek, Kimi (Moonshot), MiniMax, Mimo, NVIDIA, Nous Portal,
-OpenRouter, Qwen, Venice AI and Zhipu, plus Ollama for whatever you run
+Ollama Cloud, OpenRouter, Qwen, Venice AI, Zhipu and any OpenAI-compatible
+endpoint you point Tars at yourself, plus Ollama for whatever you run
 locally. Local models also run through Tasmania.
 
 They are equal citizens. A feature that works only for Claude is a bug here.

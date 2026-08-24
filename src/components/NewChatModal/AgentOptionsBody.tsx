@@ -5,7 +5,7 @@ import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
 import { Dropdown, Input, SegmentedControl } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';
 import { Toggle } from '@/components/Settings/Toggle';
-import { OptionRow } from './OptionsRow';
+import { OptionRow, OPTION_CONTROL_WIDTH } from './OptionsRow';
 import { SkillsField } from './SkillsField';
 import OrchestratorModeToggle from './OrchestratorModeToggle';
 import { EFFORT_LEVELS } from './logic';
@@ -100,14 +100,13 @@ export function AgentOptionsBody(props: {
       </OptionRow>
 
       <OptionRow label="Its own worktree" hint="A separate checkout on its own branch, so two agents cannot overwrite each other.">
-        <div className="flex justify-end">
-          <Toggle enabled={props.useWorktree} onChange={props.onToggleWorktree} disabled={props.worktreeLocked} />
-        </div>
+        <Toggle enabled={props.useWorktree} onChange={props.onToggleWorktree} disabled={props.worktreeLocked} />
       </OptionRow>
 
       <OptionRow label="Branch" hint="Created from the current HEAD.">
         <Input
           mono
+          className={OPTION_CONTROL_WIDTH}
           value={props.branchName}
           onChange={(e) => props.onBranchNameChange(e.target.value.replace(/\s+/g, '-'))}
           placeholder="feat/frontend"
@@ -115,14 +114,13 @@ export function AgentOptionsBody(props: {
         />
       </OptionRow>
 
-      <div className="px-2.5 py-2.5">
-        <OrchestratorModeToggle isOrchestrator={props.isOrchestrator} onToggle={props.onOrchestratorToggle} />
-      </div>
+      <OrchestratorModeToggle isOrchestrator={props.isOrchestrator} onToggle={props.onOrchestratorToggle} />
 
       {detectedClis.length > 0 && (
         <OptionRow label="CLI binary" hint="Which binary runs it. The provider's own by default.">
           <Dropdown
             mono
+            className={OPTION_CONTROL_WIDTH}
             ariaLabel="CLI binary"
             value={props.cliPath}
             placeholder="default"

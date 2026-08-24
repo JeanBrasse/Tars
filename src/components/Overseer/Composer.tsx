@@ -40,10 +40,7 @@ export function Composer({
         placeholder={placeholder}
         className="flex-1 min-h-0 w-full bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none disabled:opacity-60"
       />
-      <div className="h-[26px] shrink-0 flex items-center justify-between gap-3">
-        <span className="font-mono text-[10px] text-muted-foreground truncate">
-          it reports to you before it writes to any agent
-        </span>
+      <div className="h-[26px] shrink-0 flex items-center justify-end">
         <Button
           size="sm"
           variant="primary"

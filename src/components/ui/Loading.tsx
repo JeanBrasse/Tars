@@ -171,13 +171,22 @@ export function SlowOperation({
   );
 }
 
-/** The whole ladder in one component, for the common case. */
+/**
+ * The whole ladder in one component, for the common case.
+ *
+ * `variant` picks what the middle stage looks like. Skeleton rows are right
+ * when a list is coming and wrong everywhere else: on a settings form they are
+ * grey bars in the shape of nothing, and the page was the only one in the app
+ * that did not show the mark while it waited. `mark` is the same ladder with
+ * the animated mark in the middle instead.
+ */
 export function LoadingState({
   loading,
   rows,
   what,
   detail,
   onCancel,
+  variant = 'skeleton',
   children,
 }: {
   loading: boolean;
@@ -185,6 +194,7 @@ export function LoadingState({
   what: string;
   detail?: string;
   onCancel?: () => void;
+  variant?: 'skeleton' | 'mark';
   children?: React.ReactNode;
 }) {
   const stage = useLoadingStage(loading);
@@ -192,5 +202,13 @@ export function LoadingState({
   if (!loading) return <>{children}</>;
   if (stage === 'quiet') return null;
   if (stage === 'explain') return <SlowOperation what={what} detail={detail} onCancel={onCancel} />;
+  if (variant === 'mark') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-10">
+        <BrandSpinner size={30} label={what} />
+        <p className="text-xs text-muted-foreground">{what}</p>
+      </div>
+    );
+  }
   return <SkeletonRows rows={rows} />;
 }

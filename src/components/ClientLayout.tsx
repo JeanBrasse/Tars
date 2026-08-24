@@ -76,7 +76,12 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 }
 
 function ClientLayoutInner({ children }: { children: React.ReactNode }) {
-  const { mobileMenuOpen, setMobileMenuOpen, darkMode, setDarkMode, setVaultUnreadCount } = useStore();
+  const {
+    mobileMenuOpen, setMobileMenuOpen, darkMode, setDarkMode, setVaultUnreadCount,
+    updateBannerDismissed: updateDismissed,
+    setUpdateBannerDismissed: setUpdateDismissed,
+    setPendingUpdateVersion,
+  } = useStore();
   const isMobile = useIsMobile();
 
   // The splash belongs to the first paint, so it renders on both sides of
@@ -93,7 +98,6 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
   const [showSplash, setShowSplash] = useState(true);
   const dismissSplash = useCallback(() => setShowSplash(false), []);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateDismissed, setUpdateDismissed] = useState(false);
   const [updateFlowState, setUpdateFlowState] = useState<UpdateFlowState>('available');
   const [downloadPercent, setDownloadPercent] = useState(0);
   const [downloadSpeed, setDownloadSpeed] = useState(0);
@@ -108,6 +112,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
       unsubs.push(window.electronAPI.updates.onUpdateAvailable((info) => {
         if (info.hasUpdate) {
           setUpdateInfo(info);
+          setPendingUpdateVersion(info.latestVersion ?? null);
           setUpdateDismissed(false);
           setUpdateFlowState('available');
           downloadClickedRef.current = false;

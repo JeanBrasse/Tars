@@ -172,3 +172,43 @@ export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;
 }
+
+/**
+ * Whether a user-supplied string is a usable OpenAI-compatible base URL:
+ * parses at all, and is http/https (not file:, not a bare host that `new
+ * URL()` would otherwise reject, not a scheme fetch() cannot use). Used by
+ * custom-openai-provider.ts to decide whether to wire the bridge up at all,
+ * and by the Settings screen before it persists what was typed - the same
+ * check on both sides of the IPC boundary rather than trusting the renderer.
+ */
+export function isValidOpenAIBaseUrl(value: string | undefined): boolean {
+  if (!value || !value.trim()) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+  // Credentials in the URL would be sent to whatever host it names, and end up
+  // in logs and error messages. There is no OpenAI-compatible vendor that
+  // authenticates this way - they all use the API key field beside this one.
+  if (parsed.username || parsed.password) return false;
+
+  // The link-local range is where every cloud provider parks its instance
+  // metadata service (169.254.169.254 on AWS, GCP and Azure alike), and the
+  // stored vendor key would be attached to the call. Nothing that serves
+  // completions lives there.
+  //
+  // Loopback and the private LAN ranges are deliberately allowed: pointing
+  // this at LM Studio on 127.0.0.1, or at a vLLM box on the LAN, is the main
+  // reason the custom provider exists. Blocking them to say "SSRF" would
+  // remove the feature and protect nothing the user did not choose.
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (/^169\.254\./.test(host)) return false;
+  if (/^fe[89ab][0-9a-f]:/.test(host)) return false;
+  if (host === 'metadata.google.internal') return false;
+
+  return true;
+}

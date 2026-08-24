@@ -101,6 +101,12 @@ export interface AppSettings {
   veniceEnabled?: boolean;
   veniceApiKey?: string;
   ollamaBaseUrl?: string;
+  ollamaCloudEnabled?: boolean;
+  ollamaCloudApiKey?: string;
+  customOpenAIEnabled?: boolean;
+  customOpenAIBaseUrl?: string;
+  customOpenAIApiKey?: string;
+  customOpenAIModel?: string;
   notificationSounds?: {
     waiting?: string;
     complete?: string;

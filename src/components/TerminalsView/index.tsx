@@ -12,6 +12,7 @@ import { useTerminalKeyboard } from './hooks/useTerminalKeyboard';
 import { useTerminalSearch } from './hooks/useTerminalSearch';
 import { useTerminalContextMenu } from './hooks/useTerminalContextMenu';
 import { useTerminalDnd } from './hooks/useTerminalDnd';
+import { useProjectTabOrder } from './hooks/useProjectTabOrder';
 import { getAutoLayout } from './constants';
 import type { LayoutPreset } from './types';
 import TerminalGrid from './components/TerminalGrid';
@@ -128,6 +129,11 @@ export default function TerminalsView() {
     [agentProjectPathsKey]
   );
 
+  // The strip's order is the user's, kept on this machine. `agentProjectPaths`
+  // stays the source of truth for which projects exist.
+  const { orderedPaths: orderedProjectPaths, reorder: reorderProjectTabs } =
+    useProjectTabOrder(agentProjectPaths);
+
   // The board is project-driven: land on a real project instead of the empty
   // default custom tab, and follow along when the current project loses its
   // agents.
@@ -189,8 +195,14 @@ export default function TerminalsView() {
         .filter((a): a is NonNullable<typeof a> => !!a);
     }
     if (tabManager.isProjectTabActive && tabManager.activeProjectPath) {
-      // Project tab: all agents for that project
-      return agents.filter(a => a.projectPath === tabManager.activeProjectPath);
+      // Project tab: every agent on that project, the orchestrator first so it
+      // lands top-left. This is only the starting order: it feeds
+      // generateLayout, which the saved layout overrides once the user has
+      // dragged anything.
+      const forProject = agents.filter(a => a.projectPath === tabManager.activeProjectPath);
+      const rank = (a: typeof forProject[number]) =>
+        (a.role === 'orchestrator' || a.orchestratorMode) ? 0 : 1;
+      return forProject.slice().sort((a, b) => rank(a) - rank(b));
     }
     return [];
   }, [agents, tabManager.isCustomTabActive, tabManager.isProjectTabActive, tabManager.activeCustomTab, tabManager.activeProjectPath]);
@@ -213,7 +225,12 @@ export default function TerminalsView() {
   // so it follows the agent count instead of being frozen at 3x3 (four agents
   // must read as 2x2, not three on row one plus an orphan).
   const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout ?? getAutoLayout(filteredAgents.length);
-  const isEditable = tabManager.isCustomTabActive;
+  // Both kinds of tab are arrangeable. Only custom tabs used to be, so inside a
+  // project the panels were `static: true` and a drag did nothing at all: the
+  // handle was there, the cursor changed, and the panel sprang back. The
+  // layout store is keyed by tab id, and a project tab's id is its path, so
+  // each project keeps its own arrangement.
+  const isEditable = true;
   const tabType: 'custom' | 'project' = tabManager.isCustomTabActive ? 'custom' : 'project';
   const tabId = tabManager.isCustomTabActive && tabManager.activeCustomTab
     ? tabManager.activeCustomTab.id
@@ -592,9 +609,10 @@ export default function TerminalsView() {
             of the frame: the layout and + Terminal controls live in the page
             header now, not in a toolbar above the strip. */}
         <ProjectTabBar
-          projectPaths={agentProjectPaths}
+          projectPaths={orderedProjectPaths}
           activeTab={tabManager.activeTab}
           onSelectProject={handleSelectProject}
+          onReorder={reorderProjectTabs}
         />
 
         {/* A start that was refused. The main process explains why - a folder

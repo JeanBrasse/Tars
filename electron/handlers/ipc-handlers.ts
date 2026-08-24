@@ -1618,7 +1618,16 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   // Live model + price catalogue. A new model or a price change lands here
   // without a release; the renderer never has to know where it came from.
+  //
+  // custom-openai is the one provider with no catalogue entry to serve
+  // (see model-catalog.ts's PROVIDER_KEYS comment): a private or self-hosted
+  // endpoint cannot be in a public catalogue, so its "model list" is whatever
+  // the user typed into Settings, read straight from app settings instead.
   ipcMain.handle('models:list', async (_event, { provider }: { provider: string }) => {
+    if (provider === 'custom-openai') {
+      const model = getAppSettings().customOpenAIModel?.trim();
+      return { models: model ? [{ id: model, name: model, description: 'Configured in Settings' }] : [] };
+    }
     await loadCatalog();
     return { models: modelsForProvider(provider) };
   });

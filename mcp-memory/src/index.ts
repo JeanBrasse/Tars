@@ -42,13 +42,13 @@ server.registerTool(
     description:
       "Search everything this team remembers: the project's memory notes, what other " +
       "sessions observed, the Hermes gateway's memory and past sessions, and the " +
-      "connected gbrain / Honcho backends. Use it before assuming something is new, " +
+      "connected gbrain / Honcho backends, and the user's Obsidian vault. Use it before assuming something is new, " +
       "before re-investigating a bug, and before asking the user something that was " +
       "already decided.",
     inputSchema: {
       query: z.string().describe("What to look for, in plain words"),
       sources: z
-        .array(z.enum(["project", "observations", "hermes", "gbrain", "honcho"]))
+        .array(z.enum(["project", "observations", "obsidian", "hermes", "gbrain", "honcho"]))
         .optional()
         .describe("Restrict to specific sources (default: all configured)"),
       limit: z.number().min(1).max(50).optional(),
@@ -113,12 +113,14 @@ server.registerTool(
       "it goes in, and you can name more than one: 'project' is this project's own notes " +
       "and is the default; 'hermes' is the gateway's MEMORY.md, which every project and " +
       "every session on that gateway can see; 'gbrain' and 'honcho' are the shared " +
-      "backends. Put something in the project when it is about this codebase, and in " +
-      "hermes or a shared backend when it is about the user or holds true everywhere.",
+      "backends; 'obsidian' appends to a Tars folder in the user's vault, where they " +
+      "will read it alongside their own notes. Put something in the project when it " +
+      "is about this codebase, and in hermes or a shared backend when it is about the " +
+      "user or holds true everywhere.",
     inputSchema: {
       content: z.string().describe("The fact, written so it is useful months from now"),
       to: z
-        .array(z.enum(["project", "hermes", "gbrain", "honcho"]))
+        .array(z.enum(["project", "hermes", "obsidian", "gbrain", "honcho"]))
         .optional()
         .describe("Which memories to write to (default: project only)"),
       file: z

@@ -10,39 +10,37 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort } from './cli-provider';
+import { safeEffort, readAppSettingsFromDisk, isValidOpenAIBaseUrl } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
 
-// claude appends /v1/messages; "venice" is this vendor's path segment on
-// Tars's shared OpenAI-compatible bridge (see services/openai-bridge.ts for
-// why a path segment, not a port or a header, is how the bridge is addressed).
-const VENICE_BRIDGE_BASE_URL = `http://127.0.0.1:${OPENAI_BRIDGE_PORT}/venice`;
+// claude appends /v1/messages; "custom" is this provider's fixed path segment
+// on Tars's shared OpenAI-compatible bridge (services/openai-bridge.ts), which
+// looks the user's actual base URL up from app-settings.json per request.
+const CUSTOM_BRIDGE_BASE_URL = `http://127.0.0.1:${OPENAI_BRIDGE_PORT}/custom`;
 
 /**
- * Venice AI has no Anthropic-compatible endpoint (confirmed against
- * docs.venice.ai: /chat/completions, /embeddings, /images/*, /audio/*,
- * /video/*, /models - OpenAI-compatible only, no /v1/messages). Unlike every
- * other alt provider here, the claude binary cannot reach it directly. It is
- * routed through Tars's own local translation bridge instead - see
- * services/openai-bridge.ts for the wire-format translation and, importantly,
- * for why ANTHROPIC_API_KEY below is Tars's own local API token and NOT the
- * user's Venice key.
+ * The provider that exists so Tars does not need to ship a named provider for
+ * every OpenAI-compatible vendor. The user supplies a base URL, an optional
+ * key and a model; Tars translates through the same bridge Venice uses (see
+ * services/openai-bridge.ts) rather than adding a bespoke shim per vendor.
+ *
+ * Unlike every named vendor here, there is no models.dev catalogue entry to
+ * fall back on - a private or self-hosted endpoint is by definition not in a
+ * public catalogue. getModels() below returns whatever the user typed into
+ * Settings, or nothing, rather than a curated list; the model field is text,
+ * not a picker, for the same reason.
  */
-export class VeniceProvider implements CLIProvider {
-  readonly id = 'venice' as const;
-  readonly displayName = 'Venice AI';
+export class CustomOpenAIProvider implements CLIProvider {
+  readonly id = 'custom-openai' as const;
+  readonly displayName = 'Custom (OpenAI-compatible)';
   readonly binaryName = 'claude';
   readonly configDir = path.join(os.homedir(), '.claude');
 
   getModels(): ProviderModel[] {
-    return [
-      { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', description: 'Meta, balanced' },
-      { id: 'venice-uncensored-1-2', name: 'Venice Uncensored', description: 'Unfiltered, Venice-tuned' },
-      { id: 'deepseek-v3.2', name: 'DeepSeek V3.2', description: 'Flagship chat' },
-      { id: 'qwen3-235b-a22b-instruct-2507', name: 'Qwen3 235B', description: 'Large MoE' },
-      { id: 'hermes-3-llama-3.1-405b', name: 'Hermes 3 405B', description: 'Agentic' },
-      { id: 'mistral-small-3-2-24b-instruct', name: 'Mistral Small', description: 'Fast' },
-    ];
+    const model = readAppSettingsFromDisk().customOpenAIModel?.trim();
+    return model
+      ? [{ id: model, name: model, description: 'Configured in Settings > AI Providers' }]
+      : [];
   }
 
   resolveBinaryPath(appSettings: AppSettings): string {
@@ -120,22 +118,15 @@ export class VeniceProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
     };
 
-    // Only wire the bridge once a Venice key exists to forward - same gate
-    // DeepSeek/Moonshot/etc. use for their own key, just with no OpenRouter
-    // fallback (Venice is not on OpenRouter, see the design note).
-    if (appSettings?.veniceApiKey) {
-      vars.ANTHROPIC_BASE_URL = VENICE_BRIDGE_BASE_URL;
-      // NOT the Venice key. The claude binary sends this as `x-api-key` to
-      // whatever ANTHROPIC_BASE_URL points at; here that's Tars's own bridge on
-      // 127.0.0.1, which authenticates the request with Tars's local API
-      // token (the same one api-server.ts already guards /api/* with) and
-      // only then reads the real Venice key from app-settings.json itself to
-      // attach to the outbound call. See services/openai-bridge.ts.
-      //
-      // Lazy require, not a top-level import: providers/index.ts pulls this
-      // file in, and api-server.ts's route registration pulls in agent-routes.ts,
-      // which imports providers/index.ts back - the same cycle-avoidance
-      // agent-manager.ts already uses for tasmania-client.
+    // Wire the bridge up only once there is somewhere valid to send it: a key
+    // is optional (some self-hosted OpenAI-compatible servers take none), a
+    // parseable http(s) base URL is not.
+    if (appSettings?.customOpenAIEnabled && isValidOpenAIBaseUrl(appSettings?.customOpenAIBaseUrl)) {
+      vars.ANTHROPIC_BASE_URL = CUSTOM_BRIDGE_BASE_URL;
+      // NOT the vendor key, same reasoning as venice-provider.ts: this is
+      // Tars's own local API token, which authenticates the request to the
+      // bridge; the bridge itself reads the real key from app-settings.json
+      // and attaches it to the outbound call, so it never reaches the PTY.
       const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
       vars.ANTHROPIC_API_KEY = getApiToken();
     }
@@ -225,8 +216,8 @@ export PATH="${params.binaryDir}:$PATH"
 cd "${params.projectPath}"
 echo "=== Task started at $(date) ===" >> "${params.logPath}"
 unset CLAUDECODE
-export CLAUDE_PROVIDER="venice"
-export ANTHROPIC_BASE_URL="${VENICE_BRIDGE_BASE_URL}"
+export CLAUDE_PROVIDER="custom-openai"
+export ANTHROPIC_BASE_URL="${CUSTOM_BRIDGE_BASE_URL}"
 export ANTHROPIC_API_KEY="$(cat "${DATA_DIR_SHELL}/api-token" 2>/dev/null)"
 "${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
 echo "=== Task completed at $(date) ===" >> "${params.logPath}"
