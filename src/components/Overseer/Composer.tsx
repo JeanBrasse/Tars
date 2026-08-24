@@ -16,9 +16,11 @@ import { Button } from '@/components/ui';
  * edge. This card is what you are about to send, so it gets the room a message
  * needs: 14 above, 16 either side, the text, 10, then the control row.
  *
- * The pickers stay quieter than the send button. They describe what the next
- * message runs on, so they read as plain labels; send is the one accented
- * thing on the card. Frame: `Chat · Overseer` > `composer`.
+ * The card is the raised surface, not the card surface the messages above it
+ * use: it is the one thing on this page you type into, and it read as flat
+ * when it matched them. The pickers stay quieter than the send button, which
+ * is the one accented thing here and sits at the dense 26px row rather than
+ * towering over a line of labels. Frame: `Chat · Overseer` > `composer`.
  */
 
 /** Beyond this the box stops growing and scrolls instead. */
@@ -69,7 +71,7 @@ export function Composer({
   };
 
   return (
-    <div className="shrink-0 border border-border bg-card flex flex-col gap-2.5 px-4 pt-3.5 pb-3">
+    <div className="shrink-0 border border-border bg-secondary flex flex-col gap-2.5 px-4 pt-3.5 pb-3">
       <textarea
         ref={ref}
         rows={1}
@@ -87,6 +89,7 @@ export function Composer({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">{controls}</div>
         <Button
+          size="sm"
           variant="primary"
           className="font-mono shrink-0"
           onClick={onSend}
