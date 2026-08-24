@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 import { Readable } from 'stream';
 import { OPENAI_BRIDGE_PORT } from '../constants';
 import { getApiToken } from './api-server';
-import { readAppSettingsFromDisk } from '../providers/cli-provider';
+import { readAppSettingsFromDisk, isValidOpenAIBaseUrl } from '../providers/cli-provider';
 import type { AppSettings } from '../types';
 
 /**
@@ -101,7 +101,14 @@ const UPSTREAMS: Record<string, BridgeUpstream> = {
     // isValidOpenAIBaseUrl in providers/cli-provider.ts, which
     // custom-openai-provider.ts also uses to decide whether to wire this
     // upstream up at all.
-    resolveBaseUrl: (s) => (s.customOpenAIBaseUrl ? s.customOpenAIBaseUrl.replace(/\/+$/, '') : null),
+    // Re-validated here, not only in Settings: app-settings.json is a plain
+    // file on disk and can be edited around the screen that wrote it, and
+    // whatever this returns is called with the stored vendor key attached.
+    // This is the last point before fetch(), so it is the one that has to hold.
+    resolveBaseUrl: (s) => {
+      const raw = s.customOpenAIBaseUrl ? s.customOpenAIBaseUrl.replace(/\/+$/, '') : '';
+      return raw && isValidOpenAIBaseUrl(raw) ? raw : null;
+    },
     resolveApiKey: (s) => s.customOpenAIApiKey || null,
   },
 };

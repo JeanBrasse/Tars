@@ -38,7 +38,16 @@ vi.mock('../../../electron/providers/cli-provider', () => ({
     customOpenAIApiKey: VENDOR_KEY,
     veniceApiKey: 'venice-key',
   }),
-  isValidOpenAIBaseUrl: (u: string) => /^https?:\/\//.test(u),
+  // The real rule, not a stand-in: the bridge now gates on it before fetch(),
+  // so a permissive fake here would test a guard that does not ship.
+  isValidOpenAIBaseUrl: (u: string) => {
+    try {
+      const p = new URL(u);
+      return (p.protocol === 'http:' || p.protocol === 'https:')
+        && !p.username && !p.password
+        && !/^169\.254\./.test(p.hostname);
+    } catch { return false; }
+  },
   safeEffort: (e: string) => e,
 }));
 
@@ -207,6 +216,20 @@ describe('translating a turn', () => {
     expect(JSON.parse(r.text).input_tokens).toBeGreaterThan(0);
     // An estimate, so it must not cost a vendor call.
     expect(received.length).toBe(0);
+  });
+
+  it('refuses a base URL pointing at cloud metadata, without calling it', async () => {
+    const saved = upstreamUrl;
+    upstreamUrl = 'http://169.254.169.254/latest/meta-data';
+    received.length = 0;
+    try {
+      const r = await callBridge('/custom/v1/messages', { model: 'm', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
+      expect(r.status).toBe(401);
+      // The whole point: the stored vendor key never leaves for that host.
+      expect(received.length).toBe(0);
+    } finally {
+      upstreamUrl = saved;
+    }
   });
 
   it('reports a missing base URL rather than calling nowhere', async () => {
