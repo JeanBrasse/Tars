@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Terminal } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { SquarePulse } from '@/components/Splash';
 import { PageHeader, Panel, PanelCaption } from '@/components/ui';
+import { SquareGrid } from '@/components/Splash';
 import type { FleetEntry, LogLine } from '@/types/electron';
 
 /**
@@ -181,8 +182,10 @@ export default function LogsPage() {
                 </pre>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-                <Terminal className="w-6 h-6 text-muted-foreground/40" />
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                {/* The mark is the square grid, never a terminal prompt glyph:
+                    a >_ here read as an old logo left behind. */}
+                <SquareGrid filled={0} size={34} />
                 <p className="text-sm text-muted-foreground">Search, or pick an agent to read its tail.</p>
               </div>
             )}

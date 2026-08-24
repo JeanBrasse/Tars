@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Input, PasswordInput } from '@/components/ui';
+import { Button, Input, PasswordInput } from '@/components/ui';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
 import { Toggle } from './Toggle';
@@ -99,6 +99,14 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
   const write = (updates: Partial<AppSettings>, persist: boolean) =>
     (persist ? onSaveAppSettings : onUpdateLocalSettings)(updates);
 
+  const vaultPath = appSettings.obsidianVaultPaths?.[0] ?? '';
+
+  const chooseVault = async () => {
+    const picked = await window.electronAPI?.dialog?.openFolder();
+    // Cancelling the picker must not clear a path that is already set.
+    if (picked) onSaveAppSettings({ obsidianVaultPaths: [picked] });
+  };
+
   return (
     <SettingsCard>
       <BackendRows
@@ -113,6 +121,36 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
         onToggle={enabled => onSaveAppSettings({ memoryGbrainEnabled: enabled })}
         onUrlChange={(url, persist) => write({ memoryGbrainMcpUrl: url }, persist)}
         onTokenChange={(token, persist) => write({ memoryGbrainAuthToken: token }, persist)}
+      />
+
+      {/* Obsidian is a folder of markdown, not an MCP endpoint, so it gets a
+          path and a picker rather than a URL and a token. */}
+      <SettingsRow
+        label="Obsidian"
+        description={
+          <>
+            Read and write your vault as a memory. Agents write into a Tars folder inside it, never into your own notes.{' '}
+            <a href="https://obsidian.md" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+              Docs
+            </a>
+          </>
+        }
+        control={
+          <div className="flex items-center gap-2">
+            <Input
+              mono
+              width="control"
+              value={vaultPath}
+              onChange={e => write({ obsidianVaultPaths: e.target.value ? [e.target.value] : [] }, false)}
+              onBlur={e => {
+                const v = e.target.value.trim();
+                onSaveAppSettings({ obsidianVaultPaths: v ? [v] : [] });
+              }}
+              placeholder="/Users/you/Documents/MyVault"
+            />
+            <Button size="md" onClick={chooseVault}>Browse</Button>
+          </div>
+        }
       />
 
       <BackendRows

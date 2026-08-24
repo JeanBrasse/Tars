@@ -17,6 +17,10 @@ interface Workspace {
   key: string;
   label: string;
   repoPath: string;
+  /** The project the tree belongs to. Several branches of one project sit
+   *  together in the list, which is unreadable without this. */
+  projectPath: string;
+  projectName: string;
   agents: string[];
 }
 
@@ -67,14 +71,19 @@ export default function ReviewPage() {
           existing.agents.push(agent.name || agent.id);
           continue;
         }
+        const projectPath = agent.projectPath || repoPath;
         byPath.set(repoPath, {
           key: repoPath,
           label: agent.branchName || repoPath.split('/').pop() || repoPath,
           repoPath,
+          projectPath,
+          projectName: projectPath.split('/').filter(Boolean).pop() || projectPath,
           agents: [agent.name || agent.id],
         });
       }
-      const list = Array.from(byPath.values()).sort((a, b) => a.label.localeCompare(b.label));
+      const list = Array.from(byPath.values()).sort(
+        (a, b) => a.projectName.localeCompare(b.projectName) || a.label.localeCompare(b.label),
+      );
       setWorkspaces(list);
       setSelected(current => current ?? list[0]?.key ?? null);
     }).catch(() => setWorkspaces([]));
@@ -112,8 +121,6 @@ export default function ReviewPage() {
     setFilePatch(res?.patch || '');
   }, [diff]);
 
-  const current = workspaces.find(w => w.key === selected);
-
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <PageHeader
@@ -143,7 +150,18 @@ export default function ReviewPage() {
           <Panel fill className="w-[236px] shrink-0">
             <PanelCaption>Working trees</PanelCaption>
             <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
-              {workspaces.map(w => (
+              {workspaces.map((w, i) => (
+                <div key={`g-${w.key}`} className="space-y-2">
+                {/* The project name once, above its branches, rather than
+                    repeated on every row or left off entirely. */}
+                {(i === 0 || workspaces[i - 1].projectName !== w.projectName) && (
+                  <p
+                    className={`font-mono text-[10px] font-medium text-text-secondary truncate ${i === 0 ? '' : 'pt-2'}`}
+                    title={w.projectPath}
+                  >
+                    {w.projectName.toUpperCase()}
+                  </p>
+                )}
                 <button
                   key={w.key}
                   onClick={() => setSelected(w.key)}
@@ -164,6 +182,7 @@ export default function ReviewPage() {
                     {w.agents.join(', ')}
                   </span>
                 </button>
+                </div>
               ))}
             </div>
           </Panel>
