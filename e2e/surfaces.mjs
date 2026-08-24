@@ -69,11 +69,12 @@ export const SETTINGS_SECTIONS = SETTINGS_TREE.map(([name, group, child]) => ({
 // `overlay-new-agent` and `overlay-new-team` are the same `NewChatModal`,
 // opened on either half of its "One agent | A team" switch - `+ Team` used to
 // open the separate `DeployTeamDialog`, now folded into this component.
-// `overlay-templates-manager` is gone: the one-screen redesign dropped the
-// template-chip row it opened from (design/dorothy-redesign.pen has no room
-// for it in the new frame), and nothing else in the app calls
-// `TemplatesManagerDialog` any more - it is unreachable, not deleted.
+// `overlay-templates-manager` is back: the one-screen redesign dropped the
+// template-chip row it used to open from, which left the manager unreachable
+// rather than deleted. It has its own button on the Agents page now, so the
+// surface is automated again.
 export const OVERLAYS = [
+  { name: 'overlay-templates-manager', route: '/agents', clickText: 'Templates' },
   { name: 'overlay-new-agent', route: '/agents', clickText: '+ Agent' },
   { name: 'overlay-new-team', route: '/agents', clickText: '+ Team' },
 ];

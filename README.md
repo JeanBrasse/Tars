@@ -54,6 +54,8 @@ project, its CLI and the exact words, and nothing is sent until you say so. The
 target is resolved from the live fleet when you confirm, not from what the model
 remembered, so it cannot write to the wrong terminal.
 
+![Chat: the fleet on the right, and Hermes asking before it writes to any of them](screenshots/chat.png)
+
 **Delegation that reports back.** An orchestrator hands work to another agent
 over the [Agent Client Protocol](https://agentclientprotocol.com), not by
 typing into its terminal and hoping. The call returns the agent's answer, why
