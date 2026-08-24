@@ -86,12 +86,12 @@ export function Composer({
   };
 
   return (
-    <div className="shrink-0 border border-border bg-card flex flex-col gap-2.5 p-3">
+    <div className="shrink-0 border border-border bg-card flex flex-col gap-1.5 px-3 py-2.5 focus-within:border-primary">
       <AttachmentChips attachments={attachments} onRemove={onRemoveAttachment} />
-      <div
-        className="flex items-center border border-border bg-secondary px-3.5 py-3"
-        style={{ minHeight: MIN_BOX_PX }}
-      >
+      {/* No box of its own: the text sits directly on the composer, which is
+          already a bordered surface. Two nested borders read as a field inside
+          a field, and the outer one is the thing that takes focus. */}
+      <div className="flex items-center px-0.5" style={{ minHeight: MIN_BOX_PX }}>
         <textarea
           ref={ref}
           rows={1}
@@ -100,26 +100,30 @@ export function Composer({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           style={{ lineHeight: `${LINE_HEIGHT_PX}px`, maxHeight: MAX_LINES * LINE_HEIGHT_PX }}
-          className="w-full bg-transparent text-[13.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none overflow-y-auto"
+          className="w-full bg-transparent text-[13px] text-foreground placeholder:text-text-muted outline-none resize-none overflow-y-auto"
         />
       </div>
-      <div className="flex items-center gap-2.5 min-w-0">
-        <div className="flex-1 min-w-0 flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2.5 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           {onAttach && (
             <button
               type="button"
               onClick={onAttach}
               disabled={disabled || attaching}
-              className="inline-flex items-center gap-1.5 h-[26px] px-2 border border-border bg-card text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              // Borderless: it acts on the message rather than setting a
+              // property of it, so it is not shaped like the pickers beside it.
+              className="inline-flex items-center gap-1.5 h-[26px] px-2 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50"
             >
-              <Paperclip className="w-3 h-3" />
+              <Paperclip className="w-3 h-3 shrink-0" />
               {attaching ? 'uploading' : 'attach'}
             </button>
           )}
           {controls}
         </div>
         <Button
-          variant="primary"
+          // While a turn is in flight this queues rather than sends, so it
+          // stops being the primary action and says so.
+          variant={sendLabel === 'send' ? 'primary' : 'secondary'}
           className="font-mono shrink-0"
           onClick={onSend}
           disabled={disabled || (!value.trim() && attachments.length === 0)}

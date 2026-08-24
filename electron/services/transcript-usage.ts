@@ -43,6 +43,10 @@ export interface TranscriptUsage {
      *  what was read from or written to cache. `tokensByModel` above stays
      *  input+output so nothing that already read it changes meaning. */
     breakdownByModel: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
+    /** How many replies that model sent that day. One API response is written
+     *  as several transcript lines sharing a message id, so this counts
+     *  distinct ids rather than lines: counting lines roughly doubles it. */
+    messagesByModel: Record<string, number>;
     costUSD: number;
   }>;
   /** Most recent day with real activity */
@@ -321,6 +325,10 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   type Split = { input: number; output: number; cacheRead: number; cacheWrite: number };
   const dailyBreakdown = new Map<string, Record<string, Split>>();
   const dailyCost = new Map<string, number>();
+  /** How many replies came back each day, per model. Counted off the same
+   *  dedup key as the tokens: one API response is written as several lines
+   *  sharing a message id, so counting turns would roughly double every day. */
+  const dailyMessages = new Map<string, Record<string, number>>();
   let lastComputedDate: string | null = null;
 
   // One API response is written as several lines, one per content block, all
@@ -342,9 +350,14 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
 
     for (const turn of turns) {
       let delta = turn.counts;
+      // A key seen for the first time is a reply that has not been counted
+      // yet; the later lines of the same response top up its tokens without
+      // being another message.
+      let isNewMessage = true;
       if (turn.key !== ':') {
         const prev = applied.get(turn.key);
         if (prev) {
+          isNewMessage = false;
           delta = diff(turn.counts, prev);
           if (isZero(delta)) continue;
           applied.set(turn.key, add(prev, delta));
@@ -381,6 +394,13 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
         // included, rather than left to be reconstructed downstream from
         // input+output alone.
         dailyCost.set(turn.date, (dailyCost.get(turn.date) ?? 0) + cost);
+
+        if (isNewMessage) {
+          const count = dailyMessages.get(turn.date) ?? Object.create(null);
+          count[turn.model] = (count[turn.model] || 0) + 1;
+          dailyMessages.set(turn.date, count);
+        }
+
         if (!lastComputedDate || turn.date > lastComputedDate) lastComputedDate = turn.date;
       }
     }
@@ -400,6 +420,7 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
         date,
         tokensByModel: { ...tokensByModel },
         breakdownByModel: { ...(dailyBreakdown.get(date) ?? {}) },
+        messagesByModel: { ...(dailyMessages.get(date) ?? {}) },
         costUSD: dailyCost.get(date) ?? 0,
       }))
       .sort((a, b) => a.date.localeCompare(b.date)),

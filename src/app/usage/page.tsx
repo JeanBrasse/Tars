@@ -267,6 +267,7 @@ export default function UsagePage() {
   /** Which bar the pointer is over, so the chart can show its own card. */
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [hoveredTokenBar, setHoveredTokenBar] = useState<string | null>(null);
+  const [hoveredMessageBar, setHoveredMessageBar] = useState<string | null>(null);
   const [, setPricingLoaded] = useState(0);
   const [ledger, setLedger] = useState<Array<{ provider: string; inputTokens: number; outputTokens: number; costUSD: number; turns: number }>>([]);
 
@@ -452,6 +453,43 @@ export default function UsagePage() {
   const maxTokens = useMemo(
     () => tokenChartData.reduce((max, d) => Math.max(max, d.total), 0),
     [tokenChartData],
+  );
+
+  /**
+   * Replies per day, which is a different question from tokens per day: a day
+   * of many short exchanges and a day of one enormous one both cost tokens,
+   * and only this says which it was.
+   *
+   * A reply is counted once even though the transcript writes one API response
+   * as several lines; the counting happens in transcript-usage.ts, off the same
+   * message id the token dedup uses.
+   */
+  const messageChartData = useMemo(() => {
+    const days = data?.stats?.dailyModelTokens ?? [];
+    if (days.length === 0) return [];
+    return days.slice(-14).map(day => {
+      const models = Object.entries(day.messagesByModel ?? {})
+        .map(([modelId, count]) => ({
+          modelId,
+          displayName: getModelDisplayName(modelId),
+          count,
+        }))
+        .filter(m => m.count > 0)
+        .sort((a, b) => b.count - a.count);
+      const [, month, dayOfMonth] = day.date.split('-');
+      return {
+        date: day.date,
+        tick: String(Number(dayOfMonth)),
+        label: `${dayOfMonth} ${MONTHS[Number(month) - 1] ?? ''}`.trim(),
+        total: models.reduce((sum, m) => sum + m.count, 0),
+        models,
+      };
+    });
+  }, [data?.stats?.dailyModelTokens]);
+
+  const maxMessages = useMemo(
+    () => messageChartData.reduce((max, d) => Math.max(max, d.total), 0),
+    [messageChartData],
   );
 
   // Calculate cost breakdown by model
@@ -892,6 +930,77 @@ export default function UsagePage() {
                 </div>
                 <div className="flex items-center justify-between mt-1.5 text-[10px] text-muted-foreground">
                   <span>{tokenChartData[0]?.label.toLowerCase()}</span>
+                  <span>today</span>
+                </div>
+              </>
+            )}
+          </div>
+        </Panel>
+
+        {/* How many replies came back, which tokens per day cannot answer: one
+            long turn and forty short ones look alike by volume.
+            Frame: `Usage · daily messages`. */}
+        <Panel className="h-[260px] flex flex-col">
+          <div className="flex items-center justify-between shrink-0">
+            <PanelCaption>Daily messages</PanelCaption>
+            <span className="font-mono text-[10px] text-muted-foreground">last 14 days</span>
+          </div>
+
+          <div className="flex flex-col flex-1 min-h-0 mt-3">
+            {messageChartData.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                No message data available
+              </div>
+            ) : (
+              <>
+                <div className="flex items-stretch gap-1 flex-1 min-h-0">
+                  {messageChartData.map((day, i) => {
+                    const height = maxMessages > 0 ? (day.total / maxMessages) * 100 : 0;
+                    const isLatest = i === messageChartData.length - 1;
+                    const open = hoveredMessageBar === day.date;
+                    return (
+                      <div
+                        key={day.date}
+                        className="relative flex-1 min-w-0 flex flex-col items-center gap-1"
+                        onMouseEnter={() => setHoveredMessageBar(day.date)}
+                        onMouseLeave={() => setHoveredMessageBar(null)}
+                      >
+                        {open && (
+                          <div className="absolute bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-3 py-2 min-w-[190px]">
+                            <p className="font-mono text-[11px] font-medium text-foreground">
+                              {day.label} · {day.total.toLocaleString()} {day.total === 1 ? 'message' : 'messages'}
+                            </p>
+                            {day.models.length === 0 ? (
+                              <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                                no per model breakdown for this day
+                              </p>
+                            ) : day.models.slice(0, 4).map(model => (
+                              <div key={model.modelId} className="mt-1.5 flex items-baseline justify-between gap-4">
+                                <span className="font-mono text-[10px] text-muted-foreground truncate">
+                                  {model.displayName}
+                                </span>
+                                <span className="font-mono text-[10px] tabular-nums text-text-secondary">
+                                  {model.count.toLocaleString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="w-full flex flex-col justify-end flex-1 min-h-0">
+                          <div
+                            className={`w-full transition-colors ${
+                              isLatest || open ? 'bg-primary' : 'bg-bg-tertiary'
+                            }`}
+                            style={{ height: `${Math.max(height, 2)}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] leading-none text-muted-foreground">{day.tick}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-between mt-1.5 text-[10px] text-muted-foreground">
+                  <span>{messageChartData[0]?.label.toLowerCase()}</span>
                   <span>today</span>
                 </div>
               </>
