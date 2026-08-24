@@ -736,6 +736,21 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
     }
     let jobId = jobResult.jobId;
 
+    // Recorded before the round trip, not after it. It used to be pushed with
+    // the reply, thirty seconds later, so anything that read the history in
+    // between - another window, or this page after you navigated away and
+    // back - saw a conversation that did not contain what you had just sent.
+    if (!opts.isBriefing) {
+      state.messages.push({
+        id: uuidv4(),
+        role: 'user',
+        text: userMessage,
+        action: null,
+        timestamp: new Date().toISOString(),
+      });
+      saveState(state);
+    }
+
     const snapshot = await buildFleetSnapshot();
     const prompt = composeTurn(snapshot, state.messages, userMessage, opts);
 
@@ -861,10 +876,8 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
       timestamp: new Date().toISOString(),
     };
 
-    // A briefing has no corresponding user turn: it wasn't asked for.
-    if (!opts.isBriefing) {
-      state.messages.push({ id: uuidv4(), role: 'user', text: userMessage, action: null, timestamp: new Date(triggeredAt).toISOString() });
-    }
+    // The user's turn is already in `state.messages`, pushed above before the
+    // round trip. A briefing has no user turn at all: it was not asked for.
     state.messages.push(overseerMsg);
     // Bound the persisted history so overseer.json doesn't grow forever.
     if (state.messages.length > 400) state.messages = state.messages.slice(-400);

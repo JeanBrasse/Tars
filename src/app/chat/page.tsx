@@ -79,8 +79,11 @@ function PendingTurn({ startedAt }: { startedAt: number }) {
     return () => clearInterval(id);
   }, [startedAt]);
   return (
-    <div className="border border-border bg-card px-3.5 py-3 flex items-center gap-3">
-      <BrandSpinner size={16} label="Hermes is checking the fleet and composing a reply" />
+    <div className="border border-border bg-card px-3.5 py-3 flex items-center gap-3.5">
+      {/* 16px put the 4x4 mark's cells under four pixels each with sub-pixel
+          gaps, so the travelling square read as a smudge rather than the mark.
+          26 is the smallest size the grid stays legible at. */}
+      <BrandSpinner size={26} label="Hermes is checking the fleet and composing a reply" />
       <p className="text-[11.5px] text-muted-foreground">
         Hermes is checking the fleet and composing a reply. This usually takes about 30 seconds
         {seconds > 0 && ` · ${seconds}s`}.

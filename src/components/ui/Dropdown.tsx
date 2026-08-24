@@ -95,7 +95,11 @@ export function Dropdown<T extends string = string>({
   useEffect(() => {
     if (!open) return;
     setActiveIndex(initialIndex(visible, value));
-    if (searchable) searchRef.current?.focus();
+    // The filter is not focused on open. It used to be, which meant clicking a
+    // picker put the caret in a search box the user had not asked for: in the
+    // Chat composer that reads as being dropped into a field mid-sentence. The
+    // trigger keeps focus, arrow keys and Enter still work from it, and typing
+    // a filter is a click away for the lists long enough to need one.
     // Only when the panel opens: re-running on `visible` would fight the filter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

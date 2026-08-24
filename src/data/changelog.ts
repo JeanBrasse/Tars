@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 29,
+    version: '1.6.11',
+    date: '2026-08-24',
+    updates: [
+      'A message you send in Chat stays there when you leave the page and come back. It is written down the moment you send it now, not thirty seconds later with the reply, so anything reading the conversation in between sees it',
+      'Opening a picker no longer drops the caret into a search box you did not click. It focused the filter on open, which in the message card reads as being pulled out of your own sentence mid-word',
+      'The mark that shows while Hermes is answering is legible. At sixteen pixels its cells were under four pixels each with sub-pixel gaps, so the travelling square read as a smudge',
+      'The Chat message card sits on the raised surface, so it reads as the thing you type into rather than another message. It had been given the same surface as the messages above it',
+    ],
+  },
+  {
     id: 28,
     version: '1.6.10',
     date: '2026-08-24',
