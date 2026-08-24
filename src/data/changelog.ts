@@ -25,6 +25,8 @@ export const CHANGELOG: Release[] = [
       'The working trees in Review are grouped under the project they belong to, instead of one flat list of branch names',
       'The zoom on the Brain map follows your pointer. Pinching zoomed at the same spot wherever the mouse was, so getting to a corner meant zooming and then scrolling back',
       'Vault puts its "+ Document" button beside the title like every other page, Logs no longer shows a terminal prompt glyph as a leftover logo on an untouched page, and the options rows when you create an agent share one right edge instead of three',
+      'An available update has a permanent home in the menu, just above What\'s New, for as long as one is waiting. The update panel is dismissible, and dismissing it used to hide the update until the next launch',
+      'Settings shows the animated mark while it loads, like every other page. It showed grey placeholder bars in the shape of a list, which is not what a settings page is',
     ],
   },
   {

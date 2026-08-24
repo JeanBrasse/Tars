@@ -25,22 +25,35 @@ interface UiState {
   /** Badge on the Vault nav row, kept live by a main-process event so it is
    *  correct even when VaultView is not mounted. */
   vaultUnreadCount: number;
+  /** The version waiting to be installed, or null when the app is current.
+   *  Set by ClientLayout from the main process, read by the sidebar row. */
+  pendingUpdateVersion: string | null;
+  /** The update panel is dismissible, and dismissing it used to hide the
+   *  update until the next launch. The sidebar row clears this, so there is
+   *  always a way back to it. */
+  updateBannerDismissed: boolean;
 
   setMobileMenuOpen: (open: boolean) => void;
   toggleMobileMenu: () => void;
   setDarkMode: (dark: boolean) => void;
   toggleDarkMode: () => void;
   setVaultUnreadCount: (count: number) => void;
+  setPendingUpdateVersion: (version: string | null) => void;
+  setUpdateBannerDismissed: (dismissed: boolean) => void;
 }
 
 export const useStore = create<UiState>((set) => ({
   mobileMenuOpen: false,
   darkMode: true,
   vaultUnreadCount: 0,
+  pendingUpdateVersion: null,
+  updateBannerDismissed: false,
 
   setMobileMenuOpen: (open) => set({ mobileMenuOpen: open }),
   toggleMobileMenu: () => set((state) => ({ mobileMenuOpen: !state.mobileMenuOpen })),
   setDarkMode: (dark) => set({ darkMode: dark }),
   toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
   setVaultUnreadCount: (count) => set({ vaultUnreadCount: count }),
+  setPendingUpdateVersion: (version) => set({ pendingUpdateVersion: version }),
+  setUpdateBannerDismissed: (dismissed) => set({ updateBannerDismissed: dismissed }),
 }));

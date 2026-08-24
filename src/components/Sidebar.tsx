@@ -18,6 +18,7 @@ import {
   Brain,
   Gift,
   MessageSquare,
+  ArrowDownToLine,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
@@ -109,7 +110,10 @@ function useNavShortcuts() {
 export default function Sidebar({ isMobile = false }: SidebarProps) {
   const pathname = usePathname();
   useNavShortcuts();
-  const { mobileMenuOpen, setMobileMenuOpen, darkMode, toggleDarkMode, vaultUnreadCount } = useStore();
+  const {
+    mobileMenuOpen, setMobileMenuOpen, darkMode, toggleDarkMode, vaultUnreadCount,
+    pendingUpdateVersion, setUpdateBannerDismissed,
+  } = useStore();
   const whatsNewHasNew = useWhatsNewBadge();
 
   // Matches --sidebar-w; ClientLayout offsets the content by the same number.
@@ -178,6 +182,23 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
         {/* What's New, Settings and the theme toggle ride the same rhythm as the
             nav rows; the nav's flex-1 pins them to the bottom. */}
         <div className="px-2 space-y-px shrink-0">
+          {/* Only while there is one to install. The update panel is
+              dismissible, and dismissing it used to be the end of it until the
+              next launch; this is the way back, and the only permanent sign
+              that the app is behind. */}
+          {pendingUpdateVersion && (
+            <button
+              onClick={() => setUpdateBannerDismissed(false)}
+              title={`Update to ${pendingUpdateVersion}`}
+              className={`w-full ${rowClass(false)} bg-primary/10 border border-primary/30`}
+            >
+              <ArrowDownToLine className="w-[13px] h-[13px] shrink-0 text-primary" />
+              <span className="text-[13px] text-primary truncate">
+                Update to {pendingUpdateVersion}
+              </span>
+            </button>
+          )}
+
           <Link href="/whats-new" className={rowClass(isWhatsNewActive)}>
             <div className="relative shrink-0">
               <Gift className={iconClass(isWhatsNewActive)} />
