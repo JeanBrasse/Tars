@@ -24,8 +24,17 @@ const PROVIDER_DEFAULT_MODEL: Record<string, string> = Object.fromEntries(
 );
 
 /** The model row's right-aligned hint: context window, price, release date. */
-function describe(m: { contextWindow?: number; cost?: { input?: number }; releaseDate?: string }): string {
+function describe(m: {
+  contextWindow?: number;
+  cost?: { input?: number };
+  releaseDate?: string;
+  alias?: boolean;
+}): string {
   return [
+    // An undated id follows the newest build of its family. Saying so is the
+    // point: models.dev calls those "(latest)", which read in the picker as a
+    // claim that 4.5 was the newest model when Opus 5 was two rows above it.
+    m.alias ? 'tracks the newest of its family' : '',
     m.contextWindow ? `${Math.round(m.contextWindow / 1000)}K context` : '',
     m.cost?.input != null ? `$${m.cost.input}/M in` : '',
     m.releaseDate || '',
