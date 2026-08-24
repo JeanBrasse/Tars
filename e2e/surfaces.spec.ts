@@ -75,6 +75,15 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
       await page.waitForTimeout(400);
     }
 
+    // Anything that publishes an async probe state waits for it to land rather
+    // than being photographed mid-probe. Chat's gateway banner is the case
+    // that forced this: it appears a beat late and moves the whole thread, a
+    // 16,000 pixel difference between two runs of the same build.
+    const probing = page.locator('[data-gateway-state="checking"]');
+    if (await probing.count() > 0) {
+      await probing.first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
+    }
+
     await page.waitForTimeout(surface.settle ?? 900);
 
     const newErrors = pageErrors.slice(errorsBefore);
@@ -93,13 +102,19 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // baseline could never match twice: every run reported a diff, and a diff
     // that is always there tells you nothing about the run that actually broke
     // something. The panel headers, the grid and the chrome are still compared.
-    // 0.005 was 6,480 pixels of slack on a 1440x900 page, which is more than a
+    // Chosen from measurements, not taste.
+    //
+    // It was 0.005, which is 6,480 pixels on a 1440x900 page and more than a
     // whole row of content costs: an added memory source and a rewritten
     // subtitle both drifted in under it, so several baselines went stale while
-    // every run reported green. Tight enough to catch a row, loose enough for
-    // the antialiasing jitter that masking cannot remove.
+    // every run reported green. 0.001 caught those but was under the residual
+    // per-run jitter, measured at 1,404 pixels on Chat and 1,788 on Agents:
+    // wall clocks, live statuses and counters that keep moving in a sandbox
+    // running a real app. An added row measures 3,000 to 5,000.
+    //
+    // 0.002 is 2,592 pixels: above the jitter, below a row.
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      maxDiffPixelRatio: 0.001,
+      maxDiffPixelRatio: 0.002,
       animations: 'disabled',
       // Terminal bodies, and anything that counts up while an agent runs:
       // both change between two frames of the same page, so comparing them

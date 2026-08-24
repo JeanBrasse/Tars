@@ -13,12 +13,17 @@ export function Composer({
   onSend,
   disabled,
   placeholder,
+  controls,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   disabled: boolean;
   placeholder: string;
+  /** What the next message runs on, beside the message. They were in the page
+   *  header, which crowded the title row and put a property of the message
+   *  three inches from where you type it. */
+  controls?: React.ReactNode;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -30,7 +35,7 @@ export function Composer({
   };
 
   return (
-    <div className="h-20 shrink-0 border border-border bg-secondary flex flex-col px-3 py-2.5">
+    <div className="h-[92px] shrink-0 border border-border bg-secondary flex flex-col px-3 py-2.5">
       <textarea
         ref={ref}
         value={value}
@@ -40,7 +45,8 @@ export function Composer({
         placeholder={placeholder}
         className="flex-1 min-h-0 w-full bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none disabled:opacity-60"
       />
-      <div className="h-[26px] shrink-0 flex items-center justify-end">
+      <div className="h-[26px] shrink-0 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">{controls}</div>
         <Button
           size="sm"
           variant="primary"

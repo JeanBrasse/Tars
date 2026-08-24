@@ -289,13 +289,16 @@ export default function ChatPage() {
   const composerDisabled = gatewayState !== 'ok' || sending;
 
   return (
-    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
+    // The gateway state is probed over IPC, so the banner appears a beat after
+    // the page does and moves everything under it. Published here so a test can
+    // wait for the probe to land instead of photographing whichever frame it
+    // happened to catch.
+    <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col" data-gateway-state={gatewayState}>
       <PageHeader
         title="Chat"
         subtitle="Hermes watches every project and answers for the fleet."
         actions={
           <>
-            <WatchControls settings={settings} onChange={handleSettingsChange} />
             <div className="h-[26px] flex items-center gap-1.5 border border-border px-2.5">
               <span className={`w-1.5 h-1.5 shrink-0 ${paused ? 'bg-status-idle' : 'bg-status-running'}`} />
               <span className="font-mono text-[10.5px] text-muted-foreground">
@@ -361,6 +364,7 @@ export default function ChatPage() {
             onChange={setDraft}
             onSend={handleSend}
             disabled={composerDisabled}
+            controls={<WatchControls settings={settings} onChange={handleSettingsChange} />}
             placeholder={
               gatewayState === 'ok'
                 ? 'Ask about any project, or tell Hermes what to do.'

@@ -97,33 +97,36 @@ export function WatchControls({
           <Dropdown
             size="sm"
             mono
-            align="right"
+            align="left"
+            drop="up"
             searchable={providerOptions.length > 8}
             ariaLabel="Overseer provider"
             placeholder="provider"
             value={effectiveProvider}
             options={providerOptions}
             onChange={handleProvider}
-            className="w-[150px]"
+            className="w-[124px]"
           />
           <Dropdown
             size="sm"
             mono
-            align="right"
+            align="left"
+            drop="up"
             searchable={modelOptions.length > 8}
             ariaLabel="Overseer model"
             placeholder="model"
             value={effectiveModel}
             options={modelOptions}
             onChange={model => onChange({ model })}
-            className="w-[190px]"
+            className="w-[168px]"
           />
         </>
       )}
       <Dropdown
         size="sm"
         mono
-        align="right"
+        align="left"
+            drop="up"
         ariaLabel="How often the overseer checks the fleet"
         value={String(settings.watchIntervalMs)}
         options={
@@ -132,7 +135,7 @@ export function WatchControls({
             : [...INTERVALS, { value: String(settings.watchIntervalMs), label: intervalLabel(settings.watchIntervalMs) }]
         }
         onChange={v => onChange({ watchIntervalMs: Number(v) })}
-        className="w-[130px]"
+        className="w-[140px]"
       />
     </>
   );

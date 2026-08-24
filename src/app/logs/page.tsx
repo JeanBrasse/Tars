@@ -120,7 +120,12 @@ export default function LogsPage() {
           <PanelCaption>
             {fleet.length} agent{fleet.length === 1 ? '' : 's'}
           </PanelCaption>
-          <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
+          {/* Live fleet data: statuses flip from running to idle and the chunk
+              counts climb while agents work, so this panel can never be
+              compared pixel for pixel. Marked so the visual test masks it, the
+              same way it masks terminal bodies. The panel's own frame and its
+              caption stay compared. */}
+          <div data-volatile className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
             {fleet.map(a => (
               <button
                 key={a.agentId}
@@ -138,10 +143,7 @@ export default function LogsPage() {
                   </span>
                 </span>
                 <span className="block text-[10px] text-muted-foreground truncate font-mono">
-                  {a.branch || a.projectPath.split('/').pop()} ·{' '}
-                  {/* Grows while an agent runs, so the visual test masks it by
-                      this name rather than tolerating the drift everywhere. */}
-                  <span data-volatile>{a.lines} chunks</span>
+                  {a.branch || a.projectPath.split('/').pop()} · {a.lines} chunks
                 </span>
               </button>
             ))}

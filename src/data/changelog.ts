@@ -13,6 +13,8 @@ export const CHANGELOG: Release[] = [
     updates: [
       'Updating Tars no longer throws away what your agents were doing. Restarting the app kills every terminal, and each agent used to come back with an empty conversation: it knew which session it had been in, but that was deliberately forgotten on load. It now remembers separately, and picks the conversation back up on the first start after a restart. Pressing Start yourself still means a fresh conversation, as it always has',
       'An agent whose transcript has been cleaned up starts fresh instead of refusing to start. Resuming a session that is no longer on disk makes the CLI exit, so Tars looks for the file before asking for it',
+      'The custom OpenAI-compatible endpoint sits with the other providers in Settings instead of in a section of its own. It is a provider like the rest, with two more fields',
+      'In Chat, the model, provider and cadence pickers moved down beside the box you type in, where what you are about to send is. They were on the title row, which crowded it',
     ],
   },
   {
