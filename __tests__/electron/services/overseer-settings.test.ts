@@ -58,6 +58,10 @@ vi.mock('../../../electron/services/hermes-client', () => ({
     messages: [{ role: 'assistant', content: 'the fleet is quiet' }],
   }),
   fetchHermesModelOptions: async () => ({ success: true, provider: '', model: '', providers: [] }),
+  setHermesModel: async (...args: unknown[]) => {
+    calls.push({ fn: 'setModel', args });
+    return { success: true };
+  },
 }));
 
 const OVERSEER_FILE = path.join(tmp, 'overseer.json');
@@ -133,6 +137,21 @@ describe('overseer settings', () => {
 });
 
 describe('the chosen model reaches the gateway', () => {
+  /**
+   * Measured against the live gateway, not assumed: `provider` and `model` on
+   * a cron job are accepted and echoed back but ignored at run time, and a job
+   * under a non-default profile never answers at all. `POST /api/model/set`
+   * with scope "main" is the only one that changes what actually replies, so
+   * it is the one this asserts.
+   */
+  it('sets the gateway model, which is what selects what answers', async () => {
+    await overseer.applyOverseerModel('anthropic', 'claude-opus-5');
+
+    const set = calls.find(c => c.fn === 'setModel');
+    expect(set).toBeDefined();
+    expect(set!.args[1]).toEqual({ provider: 'anthropic', model: 'claude-opus-5' });
+  });
+
   it('creates the standing job with the pinned provider and model', async () => {
     overseer.setOverseerSettings({ provider: 'anthropic', model: 'claude-opus-5' });
     await overseer.askOverseer('what is the fleet doing');

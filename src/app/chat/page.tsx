@@ -96,6 +96,7 @@ export default function ChatPage() {
   const [paused, setPaused] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [settings, setSettings] = useState<OverseerSettings | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const [gatewayState, setGatewayState] = useState<GatewayState>('checking');
   const [gatewayDetail, setGatewayDetail] = useState<string | null>(null);
@@ -161,7 +162,11 @@ export default function ChatPage() {
    *  the control shows what was saved rather than what was asked for. */
   const handleSettingsChange = useCallback(async (patch: Partial<OverseerSettings>) => {
     const r = await window.electronAPI?.overseer?.setSettings(patch);
-    if (r?.success) setSettings(r.settings);
+    // The settings come back either way: the cadence is Tars's own and always
+    // takes, while the model has to be accepted by the gateway. Showing the
+    // stored value with the error is more honest than reverting the control.
+    if (r) setSettings(r.settings);
+    setSettingsError(r && !r.success ? (r.error ?? 'The gateway refused that model.') : null);
   }, []);
 
   useEffect(() => {
@@ -350,6 +355,13 @@ export default function ChatPage() {
             )}
             {sending && sendStartedAt && <PendingTurn startedAt={sendStartedAt} />}
           </div>
+
+          {settingsError && (
+            <div className="flex items-start gap-2 border border-warning/40 bg-card px-3 py-2 shrink-0">
+              <AlertCircle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
+              <p className="text-[11.5px] text-muted-foreground flex-1">{settingsError}</p>
+            </div>
+          )}
 
           {sendError && (
             <div className="flex items-start gap-2 border border-danger/40 bg-card px-3 py-2 shrink-0">

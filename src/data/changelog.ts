@@ -15,6 +15,7 @@ export const CHANGELOG: Release[] = [
       'An agent whose transcript has been cleaned up starts fresh instead of refusing to start. Resuming a session that is no longer on disk makes the CLI exit, so Tars looks for the file before asking for it',
       'The custom OpenAI-compatible endpoint sits with the other providers in Settings instead of in a section of its own. It is a provider like the rest, with two more fields',
       'In Chat, the model, provider and cadence pickers moved down beside the box you type in, where what you are about to send is. They were on the title row, which crowded it',
+      'Choosing a model in Chat now actually changes what answers. Tars was pinning the model on its scheduled job, which the gateway accepts, stores and then ignores, so the choice looked like it had taken and nothing changed. It sets the gateway model instead, which is a gateway-wide setting: the control says so, and it reports back when the gateway refuses',
     ],
   },
   {

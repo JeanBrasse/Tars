@@ -10,6 +10,7 @@ import {
   isOverseerBusy,
   getOverseerSettings,
   setOverseerSettings,
+  applyOverseerModel,
   OverseerAction,
   OverseerSettings,
 } from '../services/overseer';
@@ -56,6 +57,12 @@ export function registerOverseerHandlers(): void {
 
   ipcMain.handle('overseer:setSettings', async (_event, patch: Partial<OverseerSettings>) => {
     const settings = setOverseerSettings(patch ?? {});
+    // Choosing a model has to reach the gateway, not just this file: the
+    // overseer runs on whatever the gateway's main slot is set to.
+    if ((patch?.provider || patch?.model) && settings.provider && settings.model) {
+      const applied = await applyOverseerModel(settings.provider, settings.model);
+      if (!applied.success) return { success: false, settings, error: applied.error };
+    }
     return { success: true, settings };
   });
 

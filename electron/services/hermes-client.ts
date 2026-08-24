@@ -425,6 +425,35 @@ export async function fetchHermesModelOptions(
   };
 }
 
+/**
+ * Point the gateway at a model.
+ *
+ * Measured against the live gateway rather than assumed, because two other
+ * mechanisms look like they should work and do not: `provider` and `model` on
+ * a cron job are accepted and echoed back but ignored at run time, and a job
+ * run under a non-default profile never produces an answer at all. Only this
+ * changes what actually replies.
+ *
+ * `scope: "main"` is the gateway's own wording for the primary slot. It is a
+ * gateway-wide setting, not a Tars one, which is why the screen that calls
+ * this says so.
+ */
+export async function setHermesModel(
+  conn: HermesConnection,
+  choice: { provider: string; model: string },
+) {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const { status, body } = await hermesRequest(baseUrl, '/api/model/set', {
+    method: 'POST',
+    token: conn.token,
+    body: { scope: 'main', provider: choice.provider, model: choice.model },
+  });
+  if (status < 300) return { success: true as const };
+  const detail = (body && typeof body === 'object' && 'detail' in body)
+    ? JSON.stringify((body as { detail: unknown }).detail).slice(0, 200) : `HTTP ${status}`;
+  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+}
+
 export async function createHermesCron(
   conn: HermesConnection,
   job: { name: string; schedule: string; prompt: string; deliver?: string; model?: string; provider?: string },
@@ -433,10 +462,12 @@ export async function createHermesCron(
   const { status, body } = await hermesRequest(baseUrl, '/api/cron/jobs', {
     method: 'POST',
     token: conn.token,
-    // `model` and `provider` are optional on the gateway and were never sent, so
-    // every job ran on whatever the gateway had selected globally. That is fine
-    // for a scheduled scrape and wrong for the overseer, whose whole job is to
-    // read a fleet and reason about it.
+    // `model` and `provider` are accepted here and echoed back on the created
+    // job, but measurement against the live gateway showed they are ignored at
+    // run time: a job pinned to anthropic never answered, while the same job
+    // on the gateway's own current model did. They are still sent because a
+    // later gateway may honour them; what actually selects the model is
+    // setHermesModel above.
     body: {
       name: job.name,
       schedule: job.schedule,
