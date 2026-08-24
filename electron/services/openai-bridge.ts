@@ -136,15 +136,29 @@ function flattenSystemText(system: unknown): string {
   return '';
 }
 
-function blockToOpenAIContentPart(block: Record<string, any>): Record<string, unknown> {
-  if (block.type === 'text') return { type: 'text', text: block.text };
+/**
+ * The wire payloads are parsed JSON, so their properties are `unknown` until
+ * something checks them. These readers are that check, in one place: they keep
+ * the translation below readable without `any` standing in for "I have not
+ * looked". A field that is missing or the wrong type reads as absent, which is
+ * how a translator should treat it.
+ */
+type Json = Record<string, unknown>;
+
+const asObj = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? v as Json : {});
+const asStr = (v: unknown): string => (typeof v === 'string' ? v : '');
+const asArr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const asNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+function blockToOpenAIContentPart(block: Json): Record<string, unknown> {
+  if (block.type === 'text') return { type: 'text', text: asStr(block.text) };
   if (block.type === 'image') {
-    const src = block.source || {};
+    const src = asObj(block.source);
     if (src.type === 'base64') {
-      return { type: 'image_url', image_url: { url: `data:${src.media_type};base64,${src.data}` } };
+      return { type: 'image_url', image_url: { url: `data:${asStr(src.media_type)};base64,${asStr(src.data)}` } };
     }
     if (src.type === 'url') {
-      return { type: 'image_url', image_url: { url: src.url } };
+      return { type: 'image_url', image_url: { url: asStr(src.url) } };
     }
   }
   // Fail loudly rather than silently drop: a block Tars doesn't understand
@@ -152,12 +166,13 @@ function blockToOpenAIContentPart(block: Record<string, any>): Record<string, un
   throw new Error(`Unsupported Anthropic content block type for Venice: ${block.type}`);
 }
 
-function anthropicMessagesToOpenAI(messages: Array<Record<string, any>>): OAMessage[] {
+function anthropicMessagesToOpenAI(messages: Json[]): OAMessage[] {
   const out: OAMessage[] = [];
 
   for (const msg of messages) {
+    const role = asStr(msg.role);
     if (typeof msg.content === 'string') {
-      out.push({ role: msg.role, content: msg.content });
+      out.push({ role, content: msg.content });
       continue;
     }
     if (!Array.isArray(msg.content)) continue;
@@ -166,7 +181,8 @@ function anthropicMessagesToOpenAI(messages: Array<Record<string, any>>): OAMess
     const toolCalls: Record<string, unknown>[] = [];
     const toolResultMessages: OAMessage[] = [];
 
-    for (const block of msg.content) {
+    for (const raw of msg.content) {
+      const block = asObj(raw);
       switch (block.type) {
         case 'text':
         case 'image':
@@ -174,18 +190,18 @@ function anthropicMessagesToOpenAI(messages: Array<Record<string, any>>): OAMess
           break;
         case 'tool_use':
           toolCalls.push({
-            id: block.id,
+            id: asStr(block.id),
             type: 'function',
-            function: { name: block.name, arguments: JSON.stringify(block.input ?? {}) },
+            function: { name: asStr(block.name), arguments: JSON.stringify(block.input ?? {}) },
           });
           break;
         case 'tool_result': {
           const content = typeof block.content === 'string'
             ? block.content
             : Array.isArray(block.content)
-              ? block.content.filter((c: any) => c?.type === 'text').map((c: any) => c.text).join('\n')
+              ? block.content.map(asObj).filter(c => c.type === 'text').map(c => asStr(c.text)).join('\n')
               : JSON.stringify(block.content ?? '');
-          toolResultMessages.push({ role: 'tool', tool_call_id: block.tool_use_id, content });
+          toolResultMessages.push({ role: 'tool', tool_call_id: asStr(block.tool_use_id), content });
           break;
         }
         case 'thinking':
@@ -204,7 +220,7 @@ function anthropicMessagesToOpenAI(messages: Array<Record<string, any>>): OAMess
       // A lone text part collapses to a plain string: most Venice models were
       // tuned against plain-string content, only vision needs the array form.
       const content = parts.length === 1 && parts[0].type === 'text' ? (parts[0] as { text: string }).text : parts;
-      out.push({ role: msg.role, content });
+      out.push({ role, content });
     }
 
     out.push(...toolResultMessages);
@@ -213,7 +229,7 @@ function anthropicMessagesToOpenAI(messages: Array<Record<string, any>>): OAMess
   return out;
 }
 
-function anthropicToolsToOpenAI(tools: Array<Record<string, any>> | undefined): Record<string, unknown>[] | undefined {
+function anthropicToolsToOpenAI(tools: Json[] | undefined): Record<string, unknown>[] | undefined {
   if (!tools || tools.length === 0) return undefined;
   return tools.map((t) => ({
     type: 'function',
@@ -221,7 +237,7 @@ function anthropicToolsToOpenAI(tools: Array<Record<string, any>> | undefined): 
   }));
 }
 
-function anthropicToolChoiceToOpenAI(choice: Record<string, any> | undefined): unknown {
+function anthropicToolChoiceToOpenAI(choice: Json | undefined): unknown {
   if (!choice) return undefined;
   switch (choice.type) {
     case 'auto': return 'auto';
@@ -232,18 +248,18 @@ function anthropicToolChoiceToOpenAI(choice: Record<string, any> | undefined): u
   }
 }
 
-export function anthropicRequestToOpenAI(body: Record<string, any>): Record<string, unknown> {
+export function anthropicRequestToOpenAI(body: Json): Record<string, unknown> {
   const messages: OAMessage[] = [];
   const systemText = flattenSystemText(body.system);
   if (systemText) messages.push({ role: 'system', content: systemText });
-  messages.push(...anthropicMessagesToOpenAI(body.messages || []));
+  messages.push(...anthropicMessagesToOpenAI(asArr(body.messages).map(asObj)));
 
   const stream = !!body.stream;
   return {
     model: body.model,
     messages,
-    ...(body.tools ? { tools: anthropicToolsToOpenAI(body.tools) } : {}),
-    ...(body.tool_choice ? { tool_choice: anthropicToolChoiceToOpenAI(body.tool_choice) } : {}),
+    ...(body.tools ? { tools: anthropicToolsToOpenAI(asArr(body.tools).map(asObj)) } : {}),
+    ...(body.tool_choice ? { tool_choice: anthropicToolChoiceToOpenAI(asObj(body.tool_choice)) } : {}),
     max_tokens: body.max_tokens,
     ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}),
     stream,
@@ -262,31 +278,33 @@ const STOP_REASON_MAP: Record<string, string> = {
   content_filter: 'end_turn',
 };
 
-export function openAIResponseToAnthropic(json: Record<string, any>, requestedModel: string): Record<string, unknown> {
-  const choice = json.choices?.[0] ?? {};
-  const message = choice.message ?? {};
+export function openAIResponseToAnthropic(json: Json, requestedModel: string): Record<string, unknown> {
+  const choice = asObj(asArr(json.choices)[0]);
+  const message = asObj(choice.message);
   const content: Record<string, unknown>[] = [];
 
   if (message.content) {
     content.push({ type: 'text', text: typeof message.content === 'string' ? message.content : String(message.content) });
   }
-  for (const tc of message.tool_calls || []) {
+  for (const raw of asArr(message.tool_calls)) {
+    const tc = asObj(raw);
+    const fn = asObj(tc.function);
     let input: unknown = {};
-    try { input = JSON.parse(tc.function?.arguments || '{}'); } catch { input = {}; }
-    content.push({ type: 'tool_use', id: tc.id, name: tc.function?.name, input });
+    try { input = JSON.parse(asStr(fn.arguments) || '{}'); } catch { input = {}; }
+    content.push({ type: 'tool_use', id: asStr(tc.id), name: asStr(fn.name), input });
   }
 
   return {
-    id: json.id || `msg_${crypto.randomBytes(12).toString('hex')}`,
+    id: asStr(json.id) || `msg_${crypto.randomBytes(12).toString('hex')}`,
     type: 'message',
     role: 'assistant',
-    model: json.model || requestedModel,
+    model: asStr(json.model) || requestedModel,
     content,
-    stop_reason: STOP_REASON_MAP[choice.finish_reason] || 'end_turn',
+    stop_reason: STOP_REASON_MAP[asStr(choice.finish_reason)] || 'end_turn',
     stop_sequence: null,
     usage: {
-      input_tokens: json.usage?.prompt_tokens ?? 0,
-      output_tokens: json.usage?.completion_tokens ?? 0,
+      input_tokens: asNum(asObj(json.usage).prompt_tokens),
+      output_tokens: asNum(asObj(json.usage).completion_tokens),
     },
   };
 }
@@ -323,7 +341,7 @@ async function streamOpenAIAsAnthropic(upstream: Response, res: http.ServerRespo
 
   // Response.body is a web ReadableStream; Readable.fromWeb gives it a typed,
   // guaranteed async iterator rather than relying on lib.dom for one.
-  const nodeStream = Readable.fromWeb(upstream.body as any);
+  const nodeStream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]);
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -338,16 +356,16 @@ async function streamOpenAIAsAnthropic(upstream: Response, res: http.ServerRespo
       const data = line.slice(5).trim();
       if (data === '[DONE]') continue;
 
-      let parsed: Record<string, any>;
+      let parsed: Json;
       try { parsed = JSON.parse(data); } catch { continue; }
 
       if (parsed.usage) {
-        outputTokens = parsed.usage.completion_tokens ?? outputTokens;
+        outputTokens = asNum(asObj(parsed.usage).completion_tokens) || outputTokens;
       }
 
-      const choice = parsed.choices?.[0];
-      if (!choice) continue;
-      const delta = choice.delta || {};
+      const choice = asObj(asArr(parsed.choices)[0]);
+      if (!choice.delta && !choice.finish_reason) continue;
+      const delta = asObj(choice.delta);
 
       if (typeof delta.content === 'string' && delta.content.length > 0) {
         if (!textOpen) {
@@ -358,24 +376,27 @@ async function streamOpenAIAsAnthropic(upstream: Response, res: http.ServerRespo
         sseWrite(res, 'content_block_delta', { type: 'content_block_delta', index: textIndex, delta: { type: 'text_delta', text: delta.content } });
       }
 
-      for (const tc of delta.tool_calls || []) {
-        let block = toolBlocks.get(tc.index);
+      for (const rawCall of asArr(delta.tool_calls)) {
+        const tc = asObj(rawCall);
+        const fn = asObj(tc.function);
+        const slot = asNum(tc.index);
+        let block = toolBlocks.get(slot);
         if (!block) {
           const index = nextIndex++;
-          block = { index, id: tc.id || `call_${tc.index}`, name: tc.function?.name || '' };
-          toolBlocks.set(tc.index, block);
+          block = { index, id: asStr(tc.id) || `call_${slot}`, name: asStr(fn.name) };
+          toolBlocks.set(slot, block);
           sseWrite(res, 'content_block_start', {
             type: 'content_block_start', index, content_block: { type: 'tool_use', id: block.id, name: block.name, input: {} },
           });
         }
-        if (tc.function?.arguments) {
+        if (fn.arguments) {
           sseWrite(res, 'content_block_delta', {
-            type: 'content_block_delta', index: block.index, delta: { type: 'input_json_delta', partial_json: tc.function.arguments },
+            type: 'content_block_delta', index: block.index, delta: { type: 'input_json_delta', partial_json: asStr(fn.arguments) },
           });
         }
       }
 
-      if (choice.finish_reason) finishReason = choice.finish_reason;
+      if (choice.finish_reason) finishReason = asStr(choice.finish_reason);
     }
   }
 
@@ -397,11 +418,12 @@ async function streamOpenAIAsAnthropic(upstream: Response, res: http.ServerRespo
 
 /** Anthropic's own rule of thumb for English text; good enough to keep the
  *  CLI's preflight satisfied when there is no real endpoint to ask. */
-function estimateTokens(body: Record<string, any>): number {
+function estimateTokens(body: Json): number {
   const parts: string[] = [];
   if (typeof body.system === 'string') parts.push(body.system);
-  else if (Array.isArray(body.system)) parts.push(...body.system.map((b: any) => b?.text || ''));
-  for (const msg of body.messages || []) {
+  else if (Array.isArray(body.system)) parts.push(...body.system.map(b => asStr(asObj(b).text)));
+  for (const rawMsg of asArr(body.messages)) {
+    const msg = asObj(rawMsg);
     if (typeof msg.content === 'string') {
       parts.push(msg.content);
     } else if (Array.isArray(msg.content)) {
@@ -423,7 +445,7 @@ function sendError(res: http.ServerResponse, status: number, type: string, messa
 }
 
 async function handleMessages(
-  anthropicBody: Record<string, any>,
+  anthropicBody: Json,
   res: http.ServerResponse,
   baseUrl: string,
   apiKey: string | null,
@@ -457,17 +479,17 @@ async function handleMessages(
   }
 
   if (openAIBody.stream) {
-    await streamOpenAIAsAnthropic(upstream, res, anthropicBody.model);
+    await streamOpenAIAsAnthropic(upstream, res, asStr(anthropicBody.model));
     return;
   }
 
-  const json = await upstream.json();
-  const anthropicResponse = openAIResponseToAnthropic(json, anthropicBody.model);
+  const json = asObj(await upstream.json());
+  const anthropicResponse = openAIResponseToAnthropic(json, asStr(anthropicBody.model));
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(anthropicResponse));
 }
 
-function handleCountTokens(anthropicBody: Record<string, any>, res: http.ServerResponse): void {
+function handleCountTokens(anthropicBody: Json, res: http.ServerResponse): void {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ input_tokens: estimateTokens(anthropicBody) }));
 }
@@ -503,7 +525,7 @@ export function startOpenAIBridgeServer(): void {
 
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
-    let body: Record<string, any> = {};
+    let body: Json = {};
     try {
       body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
     } catch {

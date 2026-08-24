@@ -34,7 +34,7 @@ vi.mock('util', async (importOriginal) => {
     promisify: vi.fn((fn: unknown) => {
       return async (...args: unknown[]) => {
         return new Promise((resolve, reject) => {
-          (fn as Function)(...args, (err: Error | null, result: unknown) => {
+          (fn as (...a: unknown[]) => void)(...args, (err: Error | null, result: unknown) => {
             if (err) reject(err);
             else resolve(result);
           });

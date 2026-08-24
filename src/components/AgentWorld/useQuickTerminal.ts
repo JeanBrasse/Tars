@@ -146,7 +146,7 @@ export function useQuickTerminal({
       }
       setQuickTerminalReady(false);
     };
-  }, [expandedPanels, agentId, projectPath]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expandedPanels, agentId, projectPath]);  
 
   // Follow the app theme without tearing down the PTY session
   useEffect(() => {

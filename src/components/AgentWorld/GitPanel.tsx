@@ -21,7 +21,7 @@ import { INITIAL_GIT_DATA } from './constants';
 
 // Strip ANSI escape codes from string
 const stripAnsi = (str: string): string => {
-  // eslint-disable-next-line no-control-regex
+   
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
 };
 

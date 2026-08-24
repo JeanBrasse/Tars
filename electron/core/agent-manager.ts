@@ -13,6 +13,7 @@ import { buildFullPath } from '../utils/path-builder';
 import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
+import { getTasmaniaStatus } from '../services/tasmania-client';
 
 export const agents: Map<string, AgentStatus> = new Map();
 
@@ -548,7 +549,6 @@ async function initAgentPtyLocked(
   let tasmaniaEnv: Record<string, string> = {};
   if (agent.provider === 'local') {
     try {
-      const { getTasmaniaStatus } = require('../services/tasmania-client') as typeof import('../services/tasmania-client');
       const tasmaniaStatus = await getTasmaniaStatus();
       if (tasmaniaStatus.status === 'running' && tasmaniaStatus.endpoint) {
         const localModel = agent.localModel || tasmaniaStatus.modelName || 'default';

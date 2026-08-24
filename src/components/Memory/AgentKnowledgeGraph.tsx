@@ -427,7 +427,7 @@ export default function AgentKnowledgeGraph() {
       const rawOutput = (claudeMdResult as { output?: string; error?: string } | null)?.output
         ?? (claudeMdResult as { output?: string; error?: string } | null)?.error
         ?? '';
-      // eslint-disable-next-line no-control-regex
+       
       const cleanOutput = rawOutput.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '');
       const foundPaths = cleanOutput.split('\n').map(l => l.trim()).filter(l => l.startsWith('/'));
       for (const fp of foundPaths) {

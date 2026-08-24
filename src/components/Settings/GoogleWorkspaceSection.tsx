@@ -58,7 +58,12 @@ export const GoogleWorkspaceSection = ({ appSettings, onSaveAppSettings }: Googl
 
   // Stable ref so fetchSkills doesn't depend on onSaveAppSettings identity
   const onSaveRef = useRef(onSaveAppSettings);
-  onSaveRef.current = onSaveAppSettings;
+  // Written in an effect, not during render: a ref assignment during render
+  // is unsafe under concurrent rendering, and every reader of this one runs
+  // after commit (a callback, a subscription), so the timing is the same.
+  useEffect(() => {
+    onSaveRef.current = onSaveAppSettings;
+  }, [onSaveAppSettings]);
 
   const fetchSkills = useCallback(async () => {
     if (!window.electronAPI?.gws?.listSkills) return;

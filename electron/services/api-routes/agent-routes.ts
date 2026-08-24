@@ -14,6 +14,7 @@ import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../me
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
+import { getTasmaniaStatus } from '../tasmania-client';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -92,7 +93,6 @@ async function spawnAgentSession(
   let tasmaniaEnv: Record<string, string> = {};
   if (agent.provider === 'local') {
     try {
-      const { getTasmaniaStatus } = require('../tasmania-client') as typeof import('../tasmania-client');
       const tasmaniaStatus = await getTasmaniaStatus();
       if (tasmaniaStatus.status === 'running' && tasmaniaStatus.endpoint) {
         tasmaniaEnv = {

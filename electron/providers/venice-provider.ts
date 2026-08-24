@@ -136,6 +136,11 @@ export class VeniceProvider implements CLIProvider {
       // file in, and api-server.ts's route registration pulls in agent-routes.ts,
       // which imports providers/index.ts back - the same cycle-avoidance
       // agent-manager.ts already uses for tasmania-client.
+      // Required here rather than imported: api-server pulls in api-routes,
+      // which pulls in this provider registry, so a top-level import is a
+      // cycle. getPtyEnvVars is synchronous, so await import() is not an
+      // option either.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
       vars.ANTHROPIC_API_KEY = getApiToken();
     }

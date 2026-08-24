@@ -60,9 +60,14 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   const fitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const prevInitialFontSizeRef = useRef(initialFontSize);
   const onTerminalReadyRef = useRef(onTerminalReady);
-  onTerminalReadyRef.current = onTerminalReady;
   const broadcastModeRef = useRef(broadcastMode);
-  broadcastModeRef.current = broadcastMode;
+  // Written in an effect, not during render: a ref assignment during render
+  // is unsafe under concurrent rendering, and every reader of this one runs
+  // after commit (a callback, a subscription), so the timing is the same.
+  useEffect(() => {
+    onTerminalReadyRef.current = onTerminalReady;
+    broadcastModeRef.current = broadcastMode;
+  }, [onTerminalReady, broadcastMode]);
 
   // Load xterm modules once
   const loadModules = useCallback(async () => {

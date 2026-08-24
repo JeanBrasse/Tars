@@ -38,6 +38,7 @@ import {
   getSuperAgentOutputBuffer,
   clearSuperAgentOutputBuffer,
   killStalePty,
+  superAgentTelegramTask,
 } from './core/agent-manager';
 
 import {
@@ -278,8 +279,9 @@ function createIpcDependencies(): IpcHandlerDependencies {
     getTelegramBot,
     getSlackApp,
     getSuperAgentTelegramTask: () => {
-      // Import from agent-manager state
-      const { superAgentTelegramTask } = require('./core/agent-manager');
+      // Read at call time, not at wire-up time: this is a mutable module
+      // binding, and TypeScript's CommonJS output dereferences it on each
+      // access, so the import gives the current value the require gave.
       return superAgentTelegramTask;
     },
     getSuperAgentOutputBuffer,
@@ -330,6 +332,9 @@ function initApiServer() {
 
 // Register protocol schemes before app is ready
 registerProtocolSchemes();
+
+/** How often the app looks for a new version while it is running. */
+const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 app.whenReady().then(async () => {
   console.log('App ready, initializing...');
@@ -637,13 +642,22 @@ app.whenReady().then(async () => {
   initAutoUpdater(getMainWindow);
   setMainWindowGetter(getMainWindow);
 
-  // Auto-check for updates on startup (electron-updater sends 'app:update-available' automatically)
+  // Updates: once shortly after launch, then on a timer.
+  //
+  // It used to be the launch check alone, which is the one moment it helps
+  // least: Tars is left open for days at a time, so someone who never quits
+  // never learned there was a new version. Half an hour is well inside
+  // GitHub's unauthenticated rate limit and the check itself is one request.
   if (appSettings.autoCheckUpdates !== false) {
-    setTimeout(() => {
+    const check = () => {
       checkForUpdates().catch((err) => {
         console.error('Auto-update check failed:', err);
       });
-    }, 5000);
+    };
+    setTimeout(check, 5000);
+    const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+    // Never hold the process open for a version check.
+    timer.unref?.();
   }
 
   console.log('App initialization complete');

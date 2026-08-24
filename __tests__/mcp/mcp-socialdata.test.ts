@@ -414,7 +414,7 @@ describe('mcp-socialdata', () => {
     it('formats search results with count', () => {
       const tweets = [makeTweet(), makeTweet({ id_str: '222' })];
       const formatted = tweets.map(formatTweet).join('\n\n---\n\n');
-      let text = `Found ${tweets.length} tweets:\n\n${formatted}`;
+      const text = `Found ${tweets.length} tweets:\n\n${formatted}`;
       expect(text).toContain('Found 2 tweets');
       expect(text).toContain('---');
     });
