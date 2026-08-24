@@ -9,10 +9,9 @@ import { useAgentFiltering } from '@/hooks/useAgentFiltering';
 import { useSuperAgent } from '@/hooks/useSuperAgent';
 import type { AgentCharacter, AgentProvider } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
-import type { EditAgentData } from '@/components/NewChatModal/types';
+import type { EditAgentData, CreationMode } from '@/components/NewChatModal/types';
 import AgentTerminalDialog from '@/components/AgentWorld/AgentTerminalDialog';
 import { TemplatesManagerDialog } from '@/components/Templates/TemplatesManagerDialog';
-import { DeployTeamDialog } from '@/components/Templates/DeployTeamDialog';
 import {
   DesktopRequiredMessage,
   AgentListHeader,
@@ -39,8 +38,8 @@ export default function AgentsPage() {
 
   // Local state
   const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newChatMode, setNewChatMode] = useState<CreationMode>('agent');
   const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
-  const [showDeployTeamDialog, setShowDeployTeamDialog] = useState(false);
   const [viewAgentId, setViewAgentId] = useState<string | null>(null);  // terminal dialog
   const [editAgentId, setEditAgentId] = useState<string | null>(null);  // edit dialog
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -202,8 +201,9 @@ export default function AgentsPage() {
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
       <AgentListHeader
-        onNewAgentClick={() => setShowNewChatModal(true)}
-        onDeployTeamClick={() => setShowDeployTeamDialog(true)}
+        onNewAgentClick={() => { setNewChatMode('agent'); setShowNewChatModal(true); }}
+        onDeployTeamClick={() => { setNewChatMode('team'); setShowNewChatModal(true); }}
+        onManageTemplatesClick={() => setShowTemplatesDialog(true)}
       />
 
       {/* One filter row: the status chips carry their own counts, and the
@@ -277,7 +277,9 @@ export default function AgentsPage() {
         )}
       </div>
 
-      {/* Create Modal */}
+      {/* Create Modal - opens on the agent or team half of the switch
+          depending on which header button was clicked; also the whole of
+          what used to be DeployTeamDialog, folded into the team half. */}
       <NewChatModal
         open={showNewChatModal}
         onClose={() => setShowNewChatModal(false)}
@@ -289,6 +291,7 @@ export default function AgentsPage() {
         onRefreshSkills={refreshSkills}
         onManageTemplates={() => setShowTemplatesDialog(true)}
         existingSuperAgent={superAgent}
+        initialMode={newChatMode}
       />
 
       {/* Edit Modal - reuses NewChatModal pre-filled with agent data */}
@@ -310,12 +313,6 @@ export default function AgentsPage() {
       <TemplatesManagerDialog
         open={showTemplatesDialog}
         onClose={() => setShowTemplatesDialog(false)}
-      />
-
-      {/* Team deployment - create a whole agent team on a project in one click */}
-      <DeployTeamDialog
-        open={showDeployTeamDialog}
-        onClose={() => setShowDeployTeamDialog(false)}
       />
 
       {/* Terminal Dialog - click card body to view */}

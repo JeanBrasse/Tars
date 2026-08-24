@@ -1,0 +1,159 @@
+'use client';
+
+import { useMemo } from 'react';
+import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
+import type { AgentProvider } from '@/types/electron';
+import { Button, Dropdown, PanelCaption, Textarea } from '@/components/ui';
+import { ProviderAndModel } from './ProviderAndModel';
+import { OptionsRow } from './OptionsRow';
+import { AgentOptionsBody } from './AgentOptionsBody';
+import { agentOptionsSummary } from './logic';
+import type { Project } from './types';
+
+const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
+
+export function AgentPanel(props: {
+  projects: Project[];
+  projectPath: string;
+  onSelectProject: (path: string) => void;
+  onBrowseFolder?: () => Promise<string | null>;
+  favoriteProjects: string[];
+  hiddenProjects: string[];
+  defaultProjectPath: string;
+
+  provider: AgentProvider;
+  onProviderChange: (p: AgentProvider) => void;
+  model: string;
+  onModelChange: (m: string) => void;
+  installedProviders: Record<string, boolean>;
+
+  prompt: string;
+  onPromptChange: (p: string) => void;
+
+  optionsOpen: boolean;
+  onToggleOptions: () => void;
+  skills: string[];
+  skillDescriptions: Map<string, string>;
+  selectedSkills: string[];
+  onToggleSkill: (name: string) => void;
+  effort: AgentEffort;
+  onEffortChange: (e: AgentEffort) => void;
+  permissionMode: AgentPermissionMode;
+  onPermissionModeChange: (m: AgentPermissionMode) => void;
+  useWorktree: boolean;
+  onToggleWorktree: () => void;
+  worktreeLocked?: boolean;
+  branchName: string;
+  onBranchNameChange: (b: string) => void;
+  isOrchestrator: boolean;
+  onOrchestratorToggle: (v: boolean) => void;
+  cliPath: string;
+  onCliPathChange: (p: string) => void;
+}) {
+  const orderedProjects = useMemo(() => {
+    const rank = (p: Project) =>
+      props.defaultProjectPath === p.path ? 0 : props.favoriteProjects.includes(p.path) ? 1 : 2;
+    const list = props.hiddenProjects.length > 0
+      ? props.projects.filter((p) => !props.hiddenProjects.includes(p.path))
+      : props.projects;
+    return [...list].sort((a, b) => rank(a) - rank(b));
+  }, [props.projects, props.favoriteProjects, props.hiddenProjects, props.defaultProjectPath]);
+
+  const currentIsListed = orderedProjects.some((p) => p.path === props.projectPath);
+
+  const summary = agentOptionsSummary({
+    skillsCount: props.selectedSkills.length,
+    effort: props.effort,
+    useWorktree: props.useWorktree,
+    permissionMode: props.permissionMode,
+  });
+
+  return (
+    <div className="space-y-5">
+      {/* PROJECT beside OR / Choose a folder - the two ways to point an agent
+          somewhere, side by side rather than a field with a button glued on. */}
+      <div className="flex items-end gap-3">
+        <div className="flex-1 min-w-0">
+          <PanelCaption className="mb-1.5">Project</PanelCaption>
+          <Dropdown
+            mono
+            ariaLabel="Project"
+            placeholder="Select a project"
+            searchable={orderedProjects.length > 12}
+            searchPlaceholder={`filter ${orderedProjects.length} projects`}
+            value={props.projectPath}
+            options={[
+              ...(props.projectPath && !currentIsListed
+                ? [{ value: props.projectPath, label: tildePath(props.projectPath) }]
+                : []),
+              ...orderedProjects.map((p) => ({ value: p.path, label: tildePath(p.path) })),
+            ]}
+            onChange={props.onSelectProject}
+          />
+        </div>
+        {props.onBrowseFolder && (
+          <div className="shrink-0">
+            <PanelCaption className="mb-1.5">Or</PanelCaption>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                const picked = await props.onBrowseFolder!();
+                if (!picked) return;
+                const normalized = picked.replace(/\/+$/, '');
+                props.onSelectProject(normalized);
+                try { await window.electronAPI?.fs?.addCustomProject(normalized); } catch { /* still applies this run */ }
+              }}
+            >
+              Choose a folder…
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <ProviderAndModel
+        provider={props.provider}
+        onProviderChange={props.onProviderChange}
+        model={props.model}
+        onModelChange={props.onModelChange}
+        installedProviders={props.installedProviders}
+      />
+
+      {/* THE TASK - the hero. Everything above it exists to be set once and
+          forgotten; this is the field you land on. */}
+      <div>
+        <PanelCaption className="mb-1.5">The task</PanelCaption>
+        <Textarea
+          value={props.prompt}
+          onChange={(e) => props.onPromptChange(e.target.value)}
+          placeholder="Describe what you want done."
+          className="h-[116px]"
+        />
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Leave it empty to start the CLI and type into it yourself.
+        </p>
+      </div>
+
+      <OptionsRow open={props.optionsOpen} onToggle={props.onToggleOptions} summary={summary}>
+        <AgentOptionsBody
+          skills={props.skills}
+          skillDescriptions={props.skillDescriptions}
+          selectedSkills={props.selectedSkills}
+          onToggleSkill={props.onToggleSkill}
+          effort={props.effort}
+          onEffortChange={props.onEffortChange}
+          permissionMode={props.permissionMode}
+          onPermissionModeChange={props.onPermissionModeChange}
+          useWorktree={props.useWorktree}
+          onToggleWorktree={props.onToggleWorktree}
+          worktreeLocked={props.worktreeLocked}
+          branchName={props.branchName}
+          onBranchNameChange={props.onBranchNameChange}
+          isOrchestrator={props.isOrchestrator}
+          onOrchestratorToggle={props.onOrchestratorToggle}
+          cliPath={props.cliPath}
+          onCliPathChange={props.onCliPathChange}
+        />
+      </OptionsRow>
+    </div>
+  );
+}

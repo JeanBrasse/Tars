@@ -7,6 +7,8 @@ import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes,
 const BASE = 'px-2 bg-secondary border text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 /** Same 32px as a md Button, so a field and the button beside it share edges. */
 const CONTROL_HEIGHT = 'h-8';
+/** The 26px row used in dense tables, e.g. a team's member grid. */
+const CONTROL_HEIGHT_SM = 'h-[26px]';
 
 /** Fills its column, or the fixed 300px settings control column. One source for both. */
 type Width = 'full' | 'control';
@@ -18,6 +20,13 @@ const WIDTHS: Record<Width, string> = {
 interface FieldProps {
   width?: Width;
   error?: boolean;
+  /**
+   * The 26px row used in dense tables, e.g. a team's member grid. Not called
+   * `size` - `<input>` already has a native `size` attribute (a number of
+   * characters), and intersecting it with a `'sm' | 'md'` union collapses to
+   * `never`.
+   */
+  compact?: boolean;
 }
 
 // Four states, not two: default, focus, error, disabled. Disabled lives in BASE
@@ -34,8 +43,8 @@ export function FieldError({ children }: { children: ReactNode }) {
   return <p className="mt-1 text-[11px] text-danger">{children}</p>;
 }
 
-export function Input({ className = '', mono, width = 'full', error, ...rest }: InputHTMLAttributes<HTMLInputElement> & FieldProps & { mono?: boolean }) {
-  return <input className={`${BASE} ${CONTROL_HEIGHT} ${WIDTHS[width]} ${border(error)} ${mono ? 'font-mono' : ''} ${className}`} {...rest} />;
+export function Input({ className = '', mono, width = 'full', error, compact, ...rest }: InputHTMLAttributes<HTMLInputElement> & FieldProps & { mono?: boolean }) {
+  return <input className={`${BASE} ${compact ? CONTROL_HEIGHT_SM : CONTROL_HEIGHT} ${WIDTHS[width]} ${border(error)} ${mono ? 'font-mono' : ''} ${className}`} {...rest} />;
 }
 
 /**

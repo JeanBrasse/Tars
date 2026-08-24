@@ -39,12 +39,19 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
-## Overlays and dialogs (14)
+## Overlays and dialogs (13)
 
-- New agent (`NewChatModal`): steps Project, Model, Tools, Task; persona editor;
-  orchestrator toggle; skill install terminal
-- Deploy team (`DeployTeamDialog`): member list, per-member provider/model/effort/branch
-- Templates manager, Template form, Instantiate, Import
+- New agent / New team (`NewChatModal`): one screen, a "One agent | A team"
+  switch in the header. One agent: project, provider tiles + model, task
+  textarea, one collapsed Options row (skills, effort, permissions, worktree,
+  orchestrator, CLI binary). A team: project + start-from-preset, a member
+  table (role/provider/model/effort/branch), a shared brief, the same
+  Options pattern. Replaces the old four-step wizard and `DeployTeamDialog`.
+  Frames: Overlay · New agent (one screen), Overlay · New team (one screen),
+  Overlay · New agent · Options open
+- Templates manager, Template form, Instantiate, Import - unchanged, but as of
+  the one-screen redesign they have no entry point left in the app (the
+  template-chip row they opened from is gone, and nothing else calls them)
 - Agent terminal dialog: header, panel header, footer, sidebar, secondary project,
   super-agent sidebar
 - Start prompt (`StartPromptModal`)

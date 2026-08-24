@@ -49,10 +49,21 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = 'secondary', size = 'md', active = false, className = '', children, ...rest }, ref,
 ) {
+  // `active` painted the box and told a screen reader nothing, so a selected
+  // tab and an unselected one read identically. `aria-pressed` is the right
+  // default because a button that carries a selected state is usually a toggle,
+  // but it is only a default: a tab wants aria-selected with role="tab", and a
+  // disclosure wants aria-expanded, so a caller that has already said which one
+  // it is wins.
+  const saysItsOwnState =
+    'aria-pressed' in rest || 'aria-selected' in rest ||
+    'aria-expanded' in rest || 'aria-current' in rest;
+
   return (
     <button
       ref={ref}
       data-active={active || undefined}
+      {...(saysItsOwnState ? {} : { 'aria-pressed': active })}
       className={`inline-flex items-center justify-center font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${active ? ACTIVE : VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}
     >

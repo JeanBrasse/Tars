@@ -351,7 +351,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
   }, [selectedFile]);
 
   return (
-    <div className={`flex flex-col bg-[#0d0d14] ${className}`}>
+    <div className={`flex flex-col bg-term-bg ${className}`}>
       {/* Search Bar */}
       <div className="px-2 py-2 border-b border-border-primary bg-bg-tertiary/30 shrink-0">
         <div className="flex items-center gap-1">
@@ -495,7 +495,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
                   </button>
                 </div>
               </div>
-              <div className="flex-1 overflow-auto bg-[#0d0d14]">
+              <div className="flex-1 overflow-auto bg-term-bg">
                 {fileContent === 'Loading...' ? (
                   <div className="flex items-center justify-center h-full">
                     <BrandSpinner size={30} label="Loading file" />

@@ -174,9 +174,16 @@ export default function TerminalPanelHeader({
           className={`h-[26px] px-1.5 leading-none text-sm transition-colors ${
             menuOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
           }`}
+          // `title` loses to the visible glyph when a screen reader computes the
+          // accessible name, so this button announced itself as "middle dot
+          // middle dot middle dot". aria-label wins, and the two menu states are
+          // now distinguishable.
+          aria-label="Panel actions"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           title="Panel actions"
         >
-          ···
+          <span aria-hidden>···</span>
         </button>
 
         {menuOpen && (

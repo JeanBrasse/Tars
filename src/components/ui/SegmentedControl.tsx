@@ -25,12 +25,15 @@ export function SegmentedControl<T extends string>({
   onChange,
   ariaLabel,
   className = '',
+  size = 'sm',
 }: {
   options: readonly SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
   ariaLabel?: string;
   className?: string;
+  /** 26px (default) or the 32px used for a header-level switch, e.g. One agent | A team. */
+  size?: 'sm' | 'md';
 }) {
   return (
     <div role="radiogroup" aria-label={ariaLabel} className={`inline-flex items-center gap-2 ${className}`}>
@@ -45,7 +48,7 @@ export function SegmentedControl<T extends string>({
             title={option.title}
             disabled={option.disabled}
             onClick={() => onChange(option.value)}
-            className={`inline-flex items-center justify-center h-[26px] px-2.5 text-xs border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+            className={`inline-flex items-center justify-center ${size === 'md' ? 'h-8 px-3 text-sm' : 'h-[26px] px-2.5 text-xs'} border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
               active
                 ? 'bg-secondary border-border-accent text-foreground'
                 : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'

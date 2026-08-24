@@ -38,6 +38,9 @@ export interface EditAgentData {
   cliPath?: string;
 }
 
+/** Which half of the "One agent | A team" switch the overlay opens on. */
+export type CreationMode = 'agent' | 'team';
+
 export interface NewChatModalProps {
   open: boolean;
   onClose: () => void;
@@ -75,6 +78,8 @@ export interface NewChatModalProps {
     orchestratorMode?: boolean;
     cliPath?: string | null;
   }) => void | Promise<boolean | void>;
+  /** Called after a team is deployed, with the ids of the agents created. */
+  onTeamDeployed?: (agentIds: string[]) => void;
   editAgent?: EditAgentData | null;
   projects: Project[];
   onBrowseFolder?: () => Promise<string | null>;
@@ -82,10 +87,23 @@ export interface NewChatModalProps {
   allInstalledSkills?: ClaudeSkill[];
   onRefreshSkills?: () => void;
   initialProjectPath?: string;
+  /**
+   * @deprecated The wizard's four steps collapsed into one screen, so there is
+   * nothing left to jump to. Accepted so the three existing call sites
+   * (agents/projects pages, TerminalsView) keep compiling unchanged; read by
+   * nothing. Same pattern as `existingSuperAgent` below.
+   */
   initialStep?: number;
   initialOrchestrator?: boolean;
-  /** Opens the templates manager from inside the creation flow. */
+  /** Opens on the team half of the switch instead of the agent half. Ignored in edit mode - editing an existing single agent has no team equivalent. */
+  initialMode?: CreationMode;
+  /**
+   * @deprecated The template-chip row this opened from the create screen is
+   * gone in the one-screen redesign (the frame has no room for it, and no
+   * other surface calls it). `TemplatesManagerDialog` itself is untouched -
+   * this prop is kept, and ignored, only so agents/page.tsx keeps compiling.
+   */
   onManageTemplates?: () => void;
-  /** The project's existing orchestrator, if any: warns against a second one. */
+  /** @deprecated Still accepted so the call site compiles; not read. See NewChatModal/index.tsx. */
   existingSuperAgent?: { id: string; name?: string } | null;
 }
