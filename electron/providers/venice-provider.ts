@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort } from './cli-provider';
+import { safeEffort, orchestratorToolFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
 
 // claude appends /v1/messages; "venice" is this vendor's path segment on
@@ -74,6 +74,8 @@ export class VeniceProvider implements CLIProvider {
     } else if (params.permissionMode === 'bypass') {
       command += ' --permission-mode bypassPermissions';
     }
+
+    command += orchestratorToolFlags(params.orchestratorMode);
 
     if (safeEffort(params.effort) && params.effort !== 'medium') {
       command += ` --effort ${safeEffort(params.effort)}`;

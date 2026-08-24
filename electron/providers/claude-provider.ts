@@ -11,7 +11,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort } from './cli-provider';
+import { safeEffort, orchestratorToolFlags } from './cli-provider';
 import { DATA_DIR } from '../constants';
 
 export class ClaudeProvider implements CLIProvider {
@@ -78,13 +78,10 @@ export class ClaudeProvider implements CLIProvider {
       command += ' --dangerously-skip-permissions';
     }
 
-    // Orchestrator mode: block all file-mutating tools so the agent cannot do
-    // implementation work itself and is forced to delegate. Bash is left
-    // available so it can still run git/gh and inspection commands. The
-    // orchestrator persona guides it to delegate coding instead of running it.
-    if (params.orchestratorMode) {
-      command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
-    }
+    // Orchestrator mode. The list lives in cli-provider.ts so this and the
+    // thirteen providers that re-point the same binary cannot drift apart:
+    // they had, and none of them restricted anything at all.
+    command += orchestratorToolFlags(params.orchestratorMode);
 
     // Effort level
     if (safeEffort(params.effort) && params.effort !== 'medium') {

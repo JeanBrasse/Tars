@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk , safeEffort } from './cli-provider';
+import { readAppSettingsFromDisk , safeEffort, orchestratorToolFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 const MOONSHOT_BASE_URL = 'https://api.moonshot.ai/anthropic'; // Anthropic-compatible endpoint
@@ -59,6 +59,7 @@ export class MoonshotProvider implements CLIProvider {
     if (params.verbose) command += ' --verbose';
     if (params.permissionMode === 'auto') command += ' --permission-mode auto';
     else if (params.permissionMode === 'bypass') command += ' --permission-mode bypassPermissions';
+    command += orchestratorToolFlags(params.orchestratorMode);
     if (safeEffort(params.effort) && params.effort !== 'medium') command += ` --effort ${safeEffort(params.effort)}`;
     command += ` --add-dir '${DATA_DIR}'`;
     let finalPrompt = params.prompt;

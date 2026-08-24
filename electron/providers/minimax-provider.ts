@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk , safeEffort } from './cli-provider';
+import { readAppSettingsFromDisk , safeEffort, orchestratorToolFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 const MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic'; // Anthropic-compatible endpoint
@@ -75,6 +75,8 @@ export class MiniMaxProvider implements CLIProvider {
     } else if (params.permissionMode === 'bypass') {
       command += ' --permission-mode bypassPermissions';
     }
+
+    command += orchestratorToolFlags(params.orchestratorMode);
 
     if (safeEffort(params.effort) && params.effort !== 'medium') {
       command += ` --effort ${safeEffort(params.effort)}`;

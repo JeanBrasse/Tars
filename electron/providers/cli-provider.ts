@@ -175,6 +175,30 @@ export interface CLIProvider {
  */
 const EFFORT_VALUES = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
+/**
+ * The tools an orchestrator may not use, as a command fragment.
+ *
+ * Here rather than in each provider because thirteen of them run the same
+ * `claude` binary and none of them applied this: an orchestrator on DeepSeek,
+ * Venice or Ollama Cloud could edit files directly, which is the one thing
+ * orchestrator mode exists to prevent. The restriction lived only in
+ * claude-provider.ts, next to the twelve copies that had gone without it.
+ *
+ * `Task` is in the list because it spawns an ephemeral subagent: that looks
+ * like delegating and is not. The work happens inside the orchestrator's own
+ * session, so it never appears in list_agents, never reaches the specialist
+ * whose project and permissions were set up for it, and cannot be watched or
+ * stopped from Tars. An orchestrator asked for a security audit used it
+ * instead of the Audit agent that already existed.
+ *
+ * Bash stays available: an orchestrator still has to run git, gh and read-only
+ * inspection commands to know what it is delegating.
+ */
+export function orchestratorToolFlags(orchestratorMode: boolean | undefined): string {
+  if (!orchestratorMode) return '';
+  return ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+}
+
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;

@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow, Notification } from 'electron';
 import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
-import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
+import { AGENTS_FILE, DATA_DIR, dataPath, API_PORT } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { ptyProcesses } from './pty-manager';
 import { buildFullPath } from '../utils/path-builder';
@@ -587,6 +587,12 @@ async function initAgentPtyLocked(
       ...process.env as { [key: string]: string },
       PATH: fullPath,
       ...providerEnvVars,
+      // Which Tars the bundled MCP servers call back into. They default to
+      // 127.0.0.1:31415, and nothing set this, so an app started on another
+      // port (DOROTHY_API_PORT, the sandbox, or a second install running
+      // beside the first) had its agents delegating into whichever app owned
+      // 31415 instead of their own.
+      CLAUDE_MGR_API_URL: `http://127.0.0.1:${API_PORT}`,
       // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
       CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
       ...tasmaniaEnv,
