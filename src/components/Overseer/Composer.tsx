@@ -49,7 +49,10 @@ export function Composer({
         onKeyDown={handleKeyDown}
         disabled={disabled}
         placeholder={placeholder}
-        className="flex-1 min-h-0 w-full bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none disabled:opacity-60"
+        // content-center puts the text in the middle of the box rather than at
+        // the top of it: with room for two lines, a one-line placeholder sat
+        // against the ceiling with a gap underneath.
+        className="flex-1 min-h-0 w-full content-center bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none disabled:opacity-60"
       />
       <div className="h-[26px] shrink-0 flex items-center justify-between gap-2 border-t border-border pt-2 box-content">
         <div className="flex items-center gap-1 min-w-0">{controls}</div>

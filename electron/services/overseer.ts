@@ -386,29 +386,109 @@ export function composeTurn(
   ].join('\n');
 }
 
-interface ParsedEnvelope {
+export interface ParsedEnvelope {
   say: string;
   action: { agentId: string; text: string } | null;
 }
 
-function parseEnvelope(raw: string): ParsedEnvelope {
-  const text = raw.trim();
-  // Reply is asked to be exactly one JSON object; tolerate the one deviation
-  // seen in testing, a markdown code fence wrapped around it.
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced ? fenced[1] : text).trim();
+/** The first balanced {...} in a string, ignoring braces inside JSON strings.
+ *  Lets a reply that wraps its envelope in prose still be read. */
+function firstJsonObject(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return text.slice(start, i + 1);
+  }
+  return null;
+}
+
+/**
+ * Read the `say` string out of an envelope that will not parse.
+ *
+ * A reply cut off mid-object still has everything the reader wants at the
+ * front of it. Without this, a truncated envelope fell through whole and the
+ * chat showed `"action": {"kind": "message_agent", "agent_id": "57f0..."` as
+ * if it were the message.
+ */
+function salvageSay(text: string): string | null {
+  const key = text.search(/"say"\s*:\s*"/);
+  if (key === -1) return null;
+  let i = text.indexOf('"', text.indexOf(':', key) + 1) + 1;
+  let out = '';
+  let escaped = false;
+  for (; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      out += ch === 'n' ? '\n' : ch === 't' ? '\t' : ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') { escaped = true; continue; }
+    if (ch === '"') break;
+    out += ch;
+  }
+  return out.trim() || null;
+}
+
+function readEnvelope(candidate: string): ParsedEnvelope | null {
   try {
     const parsed = JSON.parse(candidate) as { say?: unknown; action?: unknown };
-    if (parsed && typeof parsed.say === 'string') {
-      const a = parsed.action as { kind?: unknown; agent_id?: unknown; text?: unknown } | null | undefined;
-      if (a && a.kind === 'message_agent' && typeof a.agent_id === 'string' && typeof a.text === 'string') {
-        return { say: parsed.say, action: { agentId: a.agent_id, text: a.text } };
-      }
-      return { say: parsed.say, action: null };
+    if (!parsed || typeof parsed.say !== 'string') return null;
+    const a = parsed.action as { kind?: unknown; agent_id?: unknown; text?: unknown } | null | undefined;
+    if (a && a.kind === 'message_agent' && typeof a.agent_id === 'string' && typeof a.text === 'string') {
+      return { say: parsed.say, action: { agentId: a.agent_id, text: a.text } };
     }
+    return { say: parsed.say, action: null };
   } catch {
-    // Not valid JSON - fall through to the prose fallback below.
+    return null;
   }
+}
+
+/**
+ * What the model actually said, whatever shape it sent it in.
+ *
+ * The reply is asked for as one JSON object. When it is one, this reads it.
+ * When it is not, the old behaviour was to hand the whole raw string through
+ * as the message, so a reply with prose around its envelope, or one the model
+ * cut off, arrived in the chat as visible JSON. Every path below now ends in
+ * something a person can read.
+ */
+export function parseEnvelope(raw: string): ParsedEnvelope {
+  const text = raw.trim();
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+
+  for (const candidate of [fenced?.[1], text, firstJsonObject(text)]) {
+    if (!candidate) continue;
+    const read = readEnvelope(candidate.trim());
+    if (read) return read;
+  }
+
+  // Nothing parsed. If there is a `say` in there, it is the message.
+  const salvaged = salvageSay(text);
+  if (salvaged) return { say: salvaged, action: null };
+
+  // Still nothing, and it looks like a machine wrote it: say that, rather
+  // than showing the reader an object.
+  if (/"(say|action|kind|agent_id)"\s*:/.test(text)) {
+    return {
+      say: 'Hermes replied in a shape Tars could not read, so there is nothing to show. Ask again.',
+      action: null,
+    };
+  }
+
+  // Ordinary prose, which is a perfectly good answer.
   return { say: text, action: null };
 }
 

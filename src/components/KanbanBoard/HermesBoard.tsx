@@ -228,7 +228,7 @@ export default function HermesBoard({ subtitle }: { subtitle?: string } = {}) {
       title="Kanban"
       subtitle={subtitle ?? 'The Hermes board. Hermes owns the tasks, the workers and the runs.'}
       actions={
-        <Button size="sm" variant="primary" onClick={openNewTask}>
+        <Button variant="primary" onClick={openNewTask}>
           <Plus className="w-3.5 h-3.5" />
           New task
         </Button>

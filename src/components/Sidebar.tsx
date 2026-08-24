@@ -27,6 +27,7 @@ import { useStore } from '@/store';
 import Link from 'next/link';
 import { Brand } from '@/components/Brand';
 import { usePathname, useRouter } from 'next/navigation';
+import { useAppPathname, normalisePathname } from '@/hooks/useAppPathname';
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', shortcut: '1' },
@@ -52,6 +53,21 @@ const navItems = [
  * the label at x=42 - the same two columns the brand row uses.
  * Active is a filled box, never a rule and never an inverted fill.
  */
+/**
+ * Whether a nav entry is the page on screen.
+ *
+ * Dashboard is `/`, which is a prefix of everything, so it only ever matches
+ * exactly. The rest match themselves and anything under them, and both sides
+ * are normalised because the static export renders hrefs with a trailing slash
+ * that the entries here do not have.
+ */
+function isNavActive(pathname: string, href: string): boolean {
+  const here = normalisePathname(pathname);
+  const target = normalisePathname(href);
+  if (target === '/') return here === '/';
+  return here === target || here.startsWith(`${target}/`);
+}
+
 const rowClass = (isActive: boolean) =>
   `flex items-center gap-[10px] h-8 px-2.5 transition-colors cursor-pointer ${
     isActive ? 'bg-accent-dim' : 'hover:bg-secondary'
@@ -108,7 +124,7 @@ function useNavShortcuts() {
 }
 
 export default function Sidebar({ isMobile = false }: SidebarProps) {
-  const pathname = usePathname();
+  const pathname = useAppPathname();
   useNavShortcuts();
   const {
     mobileMenuOpen, setMobileMenuOpen, darkMode, toggleDarkMode, vaultUnreadCount,
@@ -126,8 +142,8 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
     }
   };
 
-  const isSettingsActive = pathname === '/settings' || pathname.startsWith('/settings/');
-  const isWhatsNewActive = pathname === '/whats-new';
+  const isSettingsActive = isNavActive(pathname, '/settings');
+  const isWhatsNewActive = isNavActive(pathname, '/whats-new');
 
   // The column is one uniform surface - the only border is its right edge.
   const connectedLine = (
@@ -162,9 +178,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 px-2 pb-2 space-y-px overflow-y-auto">
           {navItems.map((item) => {
-            const isActive = item.href === '/'
-              ? pathname === '/'
-              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const isActive = isNavActive(pathname, item.href);
             return (
               <Link key={item.href} href={item.href} className={rowClass(isActive)}>
                 <item.icon className={iconClass(isActive)} />
@@ -255,9 +269,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
           {/* Navigation */}
           <nav className="flex-1 px-2 pb-2 space-y-px overflow-y-auto">
             {navItems.map((item) => {
-              const isActive = item.href === '/'
-                ? pathname === '/'
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const isActive = isNavActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}

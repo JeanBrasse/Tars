@@ -17,7 +17,7 @@ import type { OverseerModelProvider, OverseerSettings } from '@/types/electron';
  */
 
 const INTERVALS: DropdownOption[] = [
-  { value: '60000', label: 'every 1 min', hint: 'costs a Hermes run each time' },
+  { value: '60000', label: 'every 1 min' },
   { value: '300000', label: 'every 5 min' },
   { value: '900000', label: 'every 15 min' },
   { value: '1800000', label: 'every 30 min' },
