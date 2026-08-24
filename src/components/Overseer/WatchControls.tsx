@@ -45,6 +45,28 @@ export function WatchControls({
   const [providers, setProviders] = useState<OverseerModelProvider[]>([]);
   const [gatewayDefault, setGatewayDefault] = useState<{ provider: string; model: string } | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
+  /** The gateway's `agent.reasoning_effort`, read live. Null means the gateway
+   *  did not answer, and the control is then not offered rather than showing a
+   *  value nothing is behind. */
+  const [effort, setEffort] = useState<string | null>(null);
+  const [effortOptions, setEffortOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI?.overseer?.effort().then(r => {
+      if (cancelled || !r?.success) return;
+      setEffort(r.effort ?? null);
+      setEffortOptions(r.options ?? []);
+    }).catch(() => { /* the banner above already says the gateway is unreachable */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleEffort = useCallback(async (next: string) => {
+    const previous = effort;
+    setEffort(next); // optimistic: the write is a single small config PUT
+    const r = await window.electronAPI?.overseer?.setEffort(next);
+    if (!r?.success) setEffort(previous);
+  }, [effort]);
 
   const loadOptions = useCallback(async () => {
     const r = await window.electronAPI?.overseer?.modelOptions();
@@ -123,6 +145,24 @@ export function WatchControls({
             className="w-[160px]"
           />
         </>
+      )}
+      {/* Beside the model because it modifies it. Like the model, it is the
+          gateway's setting rather than Tars's, and it is per gateway rather
+          than per message: the gateway has no per-turn effort to offer. */}
+      {effort && effortOptions.length > 0 && (
+        <Dropdown
+          size="sm"
+          mono
+          quiet
+          align="left"
+          drop="up"
+          ariaLabel="Reasoning effort"
+          title="Sets the reasoning effort your Hermes gateway runs at, for everything that uses it, not only this chat"
+          value={effort}
+          options={effortOptions.map(o => ({ value: o, label: `effort ${o}` }))}
+          onChange={handleEffort}
+          className="w-[124px]"
+        />
       )}
       <Dropdown
         size="sm"

@@ -10,12 +10,12 @@ import type { OverseerAttachment } from '@/types/electron';
  * The composer pinned under the thread. Enter sends, Shift+Enter makes a new
  * line, the same convention as every other message box in the app.
  *
- * The text sits in its own bordered box with room in it, and send is a button
- * beside it rather than under it. What was here before put 13px text on a 19px
- * line inside a bare card, so the placeholder was tight against its own edges
- * and the whole thing read as small. The shape follows Hermes Desktop's chat
- * input, which is what Noah pointed at, in Tars's own tokens: square corners,
- * the app's borders, no rounding.
+ * The text box takes the full width and send sits at the far right of the
+ * control bar under it, rather than beside the text. That is the redesign: the
+ * composer now carries attachments, a provider, a model, an effort and a watch
+ * cadence, and a send button wedged against the text left the controls to
+ * overflow a single cramped row. Attach is first in the bar because it acts on
+ * the message; send is last because it ends it.
  *
  * The box is 44 tall at rest and grows to eight lines before it scrolls.
  * Frame: `Chat · Overseer` > `composer`.
@@ -88,45 +88,44 @@ export function Composer({
   return (
     <div className="shrink-0 border border-border bg-card flex flex-col gap-2.5 p-3">
       <AttachmentChips attachments={attachments} onRemove={onRemoveAttachment} />
-      <div className="flex items-end gap-2.5">
-        <div
-          className="flex-1 min-w-0 flex items-center border border-border bg-secondary px-3.5 py-3"
-          style={{ minHeight: MIN_BOX_PX }}
-        >
-          <textarea
-            ref={ref}
-            rows={1}
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            style={{ lineHeight: `${LINE_HEIGHT_PX}px`, maxHeight: MAX_LINES * LINE_HEIGHT_PX }}
-            className="w-full bg-transparent text-[13.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none overflow-y-auto"
-          />
+      <div
+        className="flex items-center border border-border bg-secondary px-3.5 py-3"
+        style={{ minHeight: MIN_BOX_PX }}
+      >
+        <textarea
+          ref={ref}
+          rows={1}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          style={{ lineHeight: `${LINE_HEIGHT_PX}px`, maxHeight: MAX_LINES * LINE_HEIGHT_PX }}
+          className="w-full bg-transparent text-[13.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none overflow-y-auto"
+        />
+      </div>
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2.5">
+          {onAttach && (
+            <button
+              type="button"
+              onClick={onAttach}
+              disabled={disabled || attaching}
+              className="inline-flex items-center gap-1.5 h-[26px] px-2 border border-border bg-card text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              <Paperclip className="w-3 h-3" />
+              {attaching ? 'uploading' : 'attach'}
+            </button>
+          )}
+          {controls}
         </div>
         <Button
           variant="primary"
           className="font-mono shrink-0"
-          style={{ height: MIN_BOX_PX }}
           onClick={onSend}
-          disabled={disabled || !value.trim()}
+          disabled={disabled || (!value.trim() && attachments.length === 0)}
         >
           {sendLabel}
         </Button>
-      </div>
-      <div className="flex items-center gap-2.5 min-w-0">
-        {onAttach && (
-          <button
-            type="button"
-            onClick={onAttach}
-            disabled={disabled || attaching}
-            className="inline-flex items-center gap-1.5 h-[22px] px-2 border border-border bg-card text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-          >
-            <Paperclip className="w-3 h-3" />
-            {attaching ? 'uploading' : 'attach'}
-          </button>
-        )}
-        {controls}
       </div>
     </div>
   );

@@ -537,6 +537,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('overseer:send', message, attachments),
     attachFiles: () =>
       ipcRenderer.invoke('overseer:attachFiles'),
+    effort: () =>
+      ipcRenderer.invoke('overseer:effort'),
+    setEffort: (effort: string) =>
+      ipcRenderer.invoke('overseer:setEffort', effort),
     history: () =>
       ipcRenderer.invoke('overseer:history'),
     fleet: () =>
