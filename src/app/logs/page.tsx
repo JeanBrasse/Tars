@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
-import { SquarePulse } from '@/components/Splash';
-import { PageHeader, Panel, PanelCaption } from '@/components/ui';
+import { PageHeader, Panel, PanelCaption, BrandSpinner } from '@/components/ui';
 import { SquareGrid } from '@/components/Splash';
 import type { FleetEntry, LogLine } from '@/types/electron';
 
@@ -103,7 +102,7 @@ export default function LogsPage() {
           className="w-full h-8 pl-8 pr-56 bg-secondary border border-border text-[15px] focus:border-primary/40 focus:outline-none"
         />
         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
-          {searching && <SquarePulse count={3} size={4} />}
+          {searching && <BrandSpinner size={14} label="Searching" />}
           {results !== null && (
             <span className="text-[11px] text-muted-foreground truncate">
               {results.length} match{results.length === 1 ? '' : 'es'} across {scanned} agent
