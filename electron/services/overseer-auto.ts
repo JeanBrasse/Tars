@@ -35,6 +35,9 @@ export interface AutoActionRule {
 
 /** How long an agent must have been waiting before a nudge is not premature. */
 const STUCK_AFTER_MS = 5 * 60 * 1000;
+/** A moment's grace before answering an error, so this does not race the write
+ *  that recorded it. */
+const ERRORED_AFTER_MS = 60 * 1000;
 
 export const AUTO_ACTION_RULES: AutoActionRule[] = [
   {
@@ -52,6 +55,22 @@ export const AUTO_ACTION_RULES: AutoActionRule[] = [
       const since = Date.parse(agent.lastActivity || '');
       if (!Number.isFinite(since)) return false;
       return now - since >= STUCK_AFTER_MS;
+    },
+  },
+  {
+    id: 'restart-errored',
+    label: 'Restart an agent that has errored',
+    description:
+      'Sends the overseer\'s message on its own when the agent is in an error state and has been for a minute. It has already stopped, so there is nothing to interrupt, and a fleet does not recover from an error on its own.',
+    matches: ({ agentId }, now) => {
+      const agent = agents.get(agentId);
+      if (!agent) return false;
+      if (agent.status !== 'error') return false;
+      // A moment's grace so this does not race the status write that put it
+      // there, and so a burst of errors is not answered mid-burst.
+      const since = Date.parse(agent.lastActivity || '');
+      if (!Number.isFinite(since)) return false;
+      return now - since >= ERRORED_AFTER_MS;
     },
   },
 ];

@@ -45,6 +45,8 @@ export function AgentOptionsBody(props: {
   onOrchestratorToggle: (enabled: boolean) => void;
   cliPath: string;
   onCliPathChange: (path: string) => void;
+  /** So the orchestrator row can say whether this CLI enforces the mode. */
+  provider?: string;
 }) {
   const [detectedClis, setDetectedClis] = useState<DetectedCli[]>([]);
 
@@ -114,7 +116,7 @@ export function AgentOptionsBody(props: {
         />
       </OptionRow>
 
-      <OrchestratorModeToggle isOrchestrator={props.isOrchestrator} onToggle={props.onOrchestratorToggle} />
+      <OrchestratorModeToggle isOrchestrator={props.isOrchestrator} onToggle={props.onOrchestratorToggle} provider={props.provider} />
 
       {detectedClis.length > 0 && (
         <OptionRow label="CLI binary" hint="Which binary runs it. The provider's own by default.">

@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 26,
+    version: '1.6.8',
+    date: '2026-08-24',
+    updates: [
+      'An update that will not install says so instead of sitting on "Restarting" forever. The handover was called and never checked, so a refusal left the panel spinning with nothing to do about it. It now explains what happened and offers the download.',
+      'A new version no longer takes over the middle of the screen. The row in the menu appears and stays until you install it, and the panel opens when you click it.',
+      'A second thing the Chat agent can be allowed to do on its own: restart an agent that has errored. Like the first, it is off until you turn it on, and it waits a minute so it does not race the error it is answering.',
+      'The creation screen says whether orchestrator mode is actually enforced on the CLI you picked. It is on Claude and the thirteen providers that run it, and on the five with their own syntax there is no verified way to take the editing tools away, so the switch guides rather than stops. It used to imply the same thing everywhere.',
+    ],
+  },
+  {
     id: 25,
     version: '1.6.7',
     date: '2026-08-24',

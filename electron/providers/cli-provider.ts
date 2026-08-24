@@ -199,6 +199,23 @@ export function orchestratorToolFlags(orchestratorMode: boolean | undefined): st
   return ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
 }
 
+/**
+ * Whether orchestrator mode is enforced for a binary, or only asked for.
+ *
+ * `--disallowed-tools` is Claude Code's flag. Fourteen providers run that
+ * binary, so for them the restriction is real: the tools are not there.
+ *
+ * The five CLIs with their own syntax (codex, gemini, grok, opencode, pi) have
+ * no verified equivalent. None of them is installed on the machine this was
+ * written on, so a flag could not be checked against `--help`, and a guessed
+ * flag is worse than none: it would look enforced and silently do nothing.
+ * Until one is verified against the real binary, an orchestrator on those runs
+ * on its persona alone, and the app says so rather than implying otherwise.
+ */
+export function enforcesOrchestratorMode(binaryName: string): boolean {
+  return binaryName === 'claude';
+}
+
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;

@@ -636,6 +636,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // CLI Paths management
+  provider: {
+    orchestratorSupport: () =>
+      ipcRenderer.invoke('provider:orchestratorSupport') as Promise<Record<string, boolean>>,
+  },
+
   cliPaths: {
     detect: () =>
       ipcRenderer.invoke('cliPaths:detect'),
