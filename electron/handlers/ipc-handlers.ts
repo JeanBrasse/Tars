@@ -32,6 +32,10 @@ import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { providerTotals as ledgerProviderTotals, dailyCost as ledgerDailyCost } from '../services/usage-ledger';
 import { consumeResumeSessionId } from '../utils/resume-session';
+import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
+import * as crypto from 'crypto';
+import * as https from 'https';
+import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -74,13 +78,15 @@ export interface IpcHandlerDependencies {
   getSuperAgentOutputBuffer: () => string[];
   setSuperAgentOutputBuffer: (buffer: string[]) => void;
 
-  // Claude data functions
-  getClaudeSettings: () => Promise<any>;
-  getClaudeStats: () => Promise<any>;
-  getClaudeProjects: () => Promise<any[]>;
-  getClaudePlugins: () => Promise<any[]>;
-  getClaudeSkills: () => Promise<any[]>;
-  getClaudeHistory: (limit?: number) => Promise<any[]>;
+  // Claude data functions. The real shapes live in claude-service.ts, which is
+  // what actually provides these: this used to restate them as `any`, so a
+  // change over there could not reach the handlers that consume it.
+  getClaudeSettings: () => Promise<ClaudeSettings | null>;
+  getClaudeStats: () => Promise<ClaudeStats | null>;
+  getClaudeProjects: () => Promise<ClaudeProject[]>;
+  getClaudePlugins: () => Promise<ClaudePlugin[]>;
+  getClaudeSkills: () => Promise<ClaudeSkill[]>;
+  getClaudeHistory: (limit?: number) => Promise<ClaudeHistoryEntry[]>;
 }
 
 /**
@@ -550,7 +556,6 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // ── For local provider, recreate PTY with Tasmania env vars baked in ──
     if (provider === 'local') {
-      const { getTasmaniaStatus } = require('../services/tasmania-client') as typeof import('../services/tasmania-client');
 
       const tasmaniaStatus = await getTasmaniaStatus();
       if (tasmaniaStatus.status !== 'running' || !tasmaniaStatus.endpoint) {
@@ -1273,7 +1278,10 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
         return { success: false, error: `Skill "${skillName}" not found in Claude skill directories` };
       }
 
-      const targetProvider = getProvider(providerId as any);
+      // getProvider falls back to Claude for an id it does not know (see
+      // providers/index.ts), so an unrecognised string is safe rather than
+      // needing to be proven a provider id first.
+      const targetProvider = getProvider(providerId as AgentProvider);
       const targetDirs = targetProvider.getSkillDirectories();
       if (!targetDirs.length) {
         return { success: false, error: `Provider "${providerId}" has no skill directories` };
@@ -1810,7 +1818,6 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   // Generate or regenerate Telegram auth token
   ipcMain.handle('telegram:generateAuthToken', async () => {
     const appSettings = getAppSettings();
-    const crypto = require('crypto');
     const newToken = crypto.randomBytes(16).toString('hex');
 
     appSettings.telegramAuthToken = newToken;
@@ -1855,9 +1862,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }
 
     try {
-      const crypto = require('crypto');
-      const https = require('https');
-
+  
       // OAuth 1.0a signing for GET /2/users/me
       const method = 'GET';
       const url = 'https://api.x.com/2/users/me';
@@ -1926,7 +1931,6 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }
 
     try {
-      const https = require('https');
       const result = await new Promise<{ success: boolean; error?: string }>((resolve, reject) => {
         const req = https.request({
           hostname: 'api.socialdata.tools',
@@ -2290,7 +2294,6 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
   const { getAppSettings } = deps;
 
   // Import shared Tasmania client
-  const { tasmaniaFetch } = require('../services/tasmania-client') as typeof import('../services/tasmania-client');
 
   // Test: check MCP server exists + Control API reachable
   ipcMain.handle('tasmania:test', async () => {

@@ -49,7 +49,12 @@ function TerminalPanel({
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onRegisterRef = useRef(onRegisterContainer);
-  onRegisterRef.current = onRegisterContainer;
+  // Written in an effect, not during render: a ref assignment during render
+  // is unsafe under concurrent rendering, and every reader of this one runs
+  // after commit (a callback, a subscription), so the timing is the same.
+  useEffect(() => {
+    onRegisterRef.current = onRegisterContainer;
+  }, [onRegisterContainer]);
 
   // Make this panel a drop target for skills. `data` has to be referentially
   // stable across renders where agent.id hasn't changed: dnd-kit stores it

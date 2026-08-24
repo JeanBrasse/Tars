@@ -181,12 +181,40 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
     const unsub2 = window.electronAPI?.skill?.onPtyData(handler);
 
     return () => { unsub1?.(); unsub2?.(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   // Track command mode in a ref so the exit handler always has the current value
   const isCommandModeRef = useRef(isCommandMode);
-  isCommandModeRef.current = isCommandMode;
+  // Written in an effect, not during render: a ref assignment during render
+  // is unsafe under concurrent rendering, and every reader of this one runs
+  // after commit (a callback, a subscription), so the timing is the same.
+  useEffect(() => {
+    isCommandModeRef.current = isCommandMode;
+  }, [isCommandMode]);
+
+  // Declared above the effect that calls it. It used to sit below, which
+  // worked only because the handler fires long after the component body
+  // has run: the reference was in its temporal dead zone at the point the
+  // effect closed over it.
+  const linkToAdditionalProviders = async () => {
+    // Extract skill name from repo (last segment after last /)
+    const parts = repo.split('/');
+    const skillName = parts.length >= 3 ? parts.slice(2).join('/') : parts[parts.length - 1];
+
+    const additionalProviders = Array.from(selectedProviders).filter(p => p !== 'claude');
+    if (additionalProviders.length === 0) return;
+
+    for (const providerId of additionalProviders) {
+      setLinkingStatus(prev => ({ ...prev, [providerId]: 'pending' }));
+      try {
+        const result = await window.electronAPI!.skill.linkToProvider({ skillName, providerId });
+        setLinkingStatus(prev => ({ ...prev, [providerId]: result.success ? 'done' : 'error' }));
+      } catch {
+        setLinkingStatus(prev => ({ ...prev, [providerId]: 'error' }));
+      }
+    }
+  };
 
   // Listen for PTY exit on both channels
   useEffect(() => {
@@ -210,25 +238,6 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
     return () => { unsub1?.(); unsub2?.(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const linkToAdditionalProviders = async () => {
-    // Extract skill name from repo (last segment after last /)
-    const parts = repo.split('/');
-    const skillName = parts.length >= 3 ? parts.slice(2).join('/') : parts[parts.length - 1];
-
-    const additionalProviders = Array.from(selectedProviders).filter(p => p !== 'claude');
-    if (additionalProviders.length === 0) return;
-
-    for (const providerId of additionalProviders) {
-      setLinkingStatus(prev => ({ ...prev, [providerId]: 'pending' }));
-      try {
-        const result = await window.electronAPI!.skill.linkToProvider({ skillName, providerId });
-        setLinkingStatus(prev => ({ ...prev, [providerId]: result.success ? 'done' : 'error' }));
-      } catch {
-        setLinkingStatus(prev => ({ ...prev, [providerId]: 'error' }));
-      }
-    }
-  };
 
   const toggleProvider = (id: string) => {
     if (id === 'claude') return; // Claude is always selected (primary installer)

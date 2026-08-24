@@ -9,6 +9,7 @@ import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { app } from 'electron';
+import * as os from 'os';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -468,7 +469,7 @@ export async function handleSlackCommand(
       if (agent.secondaryProjectPath) {
         command += ` --add-dir '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
       }
-      command += ` --add-dir '${require('os').homedir()}/.dorothy'`;
+      command += ` --add-dir '${os.homedir()}/.dorothy'`;
       // BUG 5: orchestrator-mode agents cannot edit files: must delegate.
       if (isSuperAgent(agent) || agent.orchestratorMode) {
         command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';

@@ -102,6 +102,9 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
   const [downloadPercent, setDownloadPercent] = useState(0);
   const [downloadSpeed, setDownloadSpeed] = useState(0);
   const downloadClickedRef = useRef(false);
+  /** The version the panel was last opened for, so a repeat check does not
+   *  reopen a banner the user closed. */
+  const notifiedVersionRef = useRef<string | null>(null);
 
   // Listen for auto-check update available event from main process
   useEffect(() => {
@@ -110,9 +113,15 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
 
     if (window.electronAPI.updates.onUpdateAvailable) {
       unsubs.push(window.electronAPI.updates.onUpdateAvailable((info) => {
-        if (info.hasUpdate) {
-          setUpdateInfo(info);
-          setPendingUpdateVersion(info.latestVersion ?? null);
+        if (!info.hasUpdate) return;
+        setUpdateInfo(info);
+        setPendingUpdateVersion(info.latestVersion ?? null);
+        // The check runs every half hour now, so re-opening the panel on every
+        // result would put a dismissed banner back twice an hour. A dismissal
+        // holds for the version it was made about; a newer one is new news.
+        const version = info.latestVersion ?? '';
+        if (version !== notifiedVersionRef.current) {
+          notifiedVersionRef.current = version;
           setUpdateDismissed(false);
           setUpdateFlowState('available');
           downloadClickedRef.current = false;

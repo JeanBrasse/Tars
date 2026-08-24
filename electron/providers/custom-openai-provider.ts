@@ -127,6 +127,11 @@ export class CustomOpenAIProvider implements CLIProvider {
       // Tars's own local API token, which authenticates the request to the
       // bridge; the bridge itself reads the real key from app-settings.json
       // and attaches it to the outbound call, so it never reaches the PTY.
+      // Required here rather than imported: api-server pulls in api-routes,
+      // which pulls in this provider registry, so a top-level import is a
+      // cycle. getPtyEnvVars is synchronous, so await import() is not an
+      // option either.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
       vars.ANTHROPIC_API_KEY = getApiToken();
     }

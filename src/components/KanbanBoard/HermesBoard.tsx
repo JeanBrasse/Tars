@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { Button, Dropdown, Input, LoadingPanel, PanelCaption, Textarea } from '@/components/ui';
+import { Button, Dropdown, Input, LoadingPanel, PanelCaption, Textarea, PageHeader } from '@/components/ui';
 import { DialogShell } from '@/components/ui';
 import { describeHermesFailure } from './hermes-error';
 
@@ -64,7 +64,7 @@ interface BoardPayload {
 
 const STATUS_OPTIONS = COLUMNS.map(c => ({ value: c, label: c }));
 
-export default function HermesBoard() {
+export default function HermesBoard({ subtitle }: { subtitle?: string } = {}) {
   const [board, setBoard] = useState<BoardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -219,13 +219,32 @@ export default function HermesBoard() {
     }
   };
 
+  // The frame puts "+ New task" in Header > Actions. It used to sit on a row of
+  // its own under a header the route drew, which left it floating below the
+  // title. Rendered here because only this component holds the dialog state,
+  // and in every branch so the header does not vanish while the board loads.
+  const header = (
+    <PageHeader
+      title="Kanban"
+      subtitle={subtitle ?? 'The Hermes board. Hermes owns the tasks, the workers and the runs.'}
+      actions={
+        <Button size="sm" variant="primary" onClick={openNewTask}>
+          <Plus className="w-3.5 h-3.5" />
+          New task
+        </Button>
+      }
+    />
+  );
+
   if (loading && !board) {
-    return <LoadingPanel what="Reading the Hermes board" />;
+    return <div className="flex flex-col h-full">{header}<LoadingPanel what="Reading the Hermes board" /></div>;
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+      <div className="flex flex-col h-full">
+      {header}
+      <div className="flex flex-col items-center justify-center flex-1 gap-3 text-center px-6">
         <AlertCircle className="w-6 h-6 text-warning" />
         <p className="text-sm text-foreground max-w-md">{error}</p>
         {errorDetail && (
@@ -243,6 +262,7 @@ export default function HermesBoard() {
           <Button size="sm" onClick={load}>Retry</Button>
         </div>
       </div>
+      </div>
     );
   }
 
@@ -250,12 +270,7 @@ export default function HermesBoard() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-end pb-2 shrink-0">
-        <Button size="sm" variant="primary" onClick={openNewTask}>
-          <Plus className="w-3.5 h-3.5" />
-          New task
-        </Button>
-      </div>
+      {header}
 
       <div className="flex-1 min-h-0 overflow-x-auto">
         {/* Tracks share the width and only scroll once they hit their floor -

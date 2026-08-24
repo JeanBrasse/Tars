@@ -12,6 +12,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentStatus, AgentCharacter } from '../types';
 import type { KanbanTask } from '../handlers/kanban-handlers';
+import * as os from 'os';
 
 // Dependencies interface
 export interface KanbanAutomationDependencies {
@@ -199,7 +200,6 @@ function normalizePath(p: string): string {
 
   // Expand ~ to home directory
   if (normalized.startsWith('~')) {
-    const os = require('os');
     normalized = normalized.replace(/^~/, os.homedir());
   }
 

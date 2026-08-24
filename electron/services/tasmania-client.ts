@@ -30,7 +30,9 @@ export async function tasmaniaFetch(endpoint: string, options: RequestInit = {})
   return fetch(`${TASMANIA_API_BASE}${endpoint}`, {
     ...options,
     headers,
-    signal: (AbortSignal as any).timeout(5000),
+    // AbortSignal.timeout is in the runtime but not in the lib target this
+    // project compiles against, so the shape is stated rather than erased.
+    signal: (AbortSignal as unknown as { timeout(ms: number): AbortSignal }).timeout(5000),
   });
 }
 

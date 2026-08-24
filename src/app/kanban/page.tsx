@@ -1,7 +1,6 @@
 'use client';
 
 import HermesBoard from '@/components/KanbanBoard/HermesBoard';
-import { PageHeader } from '@/components/ui';
 
 /**
  * Kanban is the Hermes board, full stop.
@@ -21,13 +20,10 @@ import { PageHeader } from '@/components/ui';
 export default function KanbanPage() {
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
-      <PageHeader
-        title="Kanban"
-        subtitle="The Hermes board. Hermes owns the tasks, the workers and the runs."
-      />
-
+      {/* HermesBoard draws the header, so "New task" sits beside the title
+          rather than on a row of its own underneath it. */}
       <div className="flex-1 min-h-0">
-        <HermesBoard />
+        <HermesBoard subtitle="The Hermes board. Hermes owns the tasks, the workers and the runs." />
       </div>
     </div>
   );

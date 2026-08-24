@@ -17,7 +17,12 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
   const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const fitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const agentIdRef = useRef(agentId);
-  agentIdRef.current = agentId;
+  // Written in an effect, not during render: a ref assignment during render
+  // is unsafe under concurrent rendering, and every reader of this one runs
+  // after commit (a callback, a subscription), so the timing is the same.
+  useEffect(() => {
+    agentIdRef.current = agentId;
+  }, [agentId]);
 
   useEffect(() => {
     // container is null until the div mounts (callback-ref sets it).

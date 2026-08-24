@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
@@ -24,12 +24,31 @@ let currentResponseChatId: string | null = null; // Track which chat to respond 
 let agents: Map<string, AgentStatus>;
 let ptyProcesses: Map<string, pty.IPty>;
 let appSettings: AppSettings;
-let mainWindow: any; // Electron BrowserWindow
+/**
+ * What `/stats` reads out of Claude Code's own usage data. Only the fields this
+ * bot renders are modelled; the rest of the object belongs to the reader that
+ * produces it.
+ */
+interface ClaudeModelUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+}
+
+interface ClaudeStats {
+  modelUsage?: Record<string, ClaudeModelUsage>;
+  totalSessions?: number;
+  totalMessages?: number;
+  firstSessionDate?: string;
+}
+
+let mainWindow: BrowserWindow | null;
 
 // References to external functions (will be injected)
 let getSuperAgent: () => AgentStatus | undefined;
 let saveAgents: () => void;
-let getClaudeStats: () => Promise<any>;
+let getClaudeStats: () => Promise<ClaudeStats | null>;
 let initAgentPty: (agent: AgentStatus) => Promise<string>;
 let saveAppSettings: (settings: AppSettings) => void;
 
@@ -40,10 +59,10 @@ export function initTelegramBotService(
   agentsMap: Map<string, AgentStatus>,
   ptyMap: Map<string, pty.IPty>,
   settings: AppSettings,
-  window: any,
+  window: BrowserWindow | null,
   getSuperAgentFn: () => AgentStatus | undefined,
   saveAgentsFn: () => void,
-  getClaudeStatsFn: () => Promise<any>,
+  getClaudeStatsFn: () => Promise<ClaudeStats | null>,
   initAgentPtyFn: (agent: AgentStatus) => Promise<string>,
   saveAppSettingsFn: (settings: AppSettings) => void
 ) {
@@ -269,7 +288,7 @@ function shouldRespondToMessage(msg: TelegramBot.Message): boolean {
       }
     }
     // Also check text_mention (for users without public username mentioned by ID)
-    if (entity.type === 'text_mention' && (entity as any).user?.is_bot) {
+    if (entity.type === 'text_mention' && (entity as { user?: { is_bot?: boolean } }).user?.is_bot) {
       console.log(`Telegram: Found text_mention for bot`);
       return true;
     }
@@ -670,16 +689,15 @@ export function initTelegramBot() {
       const input = match[1].trim();
       const firstSpaceIndex = input.indexOf(' ');
 
-      let agentName: string;
-      let task: string;
+
 
       if (firstSpaceIndex === -1) {
         telegramBot?.sendMessage(msg.chat.id, '⚠️ Usage: /start\\_agent <agent name> <task>', { parse_mode: 'Markdown' });
         return;
       }
 
-      agentName = input.substring(0, firstSpaceIndex).toLowerCase();
-      task = input.substring(firstSpaceIndex + 1).trim();
+      const agentName = input.substring(0, firstSpaceIndex).toLowerCase();
+      const task = input.substring(firstSpaceIndex + 1).trim();
 
       const agent = Array.from(agents.values()).find(a =>
         a.name?.toLowerCase().includes(agentName) || a.id === agentName
@@ -876,7 +894,7 @@ export function initTelegramBot() {
         const modelBreakdown: Array<{ name: string; cost: number; tokens: number }> = [];
 
         if (stats.modelUsage) {
-          Object.entries(stats.modelUsage).forEach(([modelId, usage]: [string, any]) => {
+          Object.entries(stats.modelUsage).forEach(([modelId, usage]) => {
             const input = usage.inputTokens || 0;
             const output = usage.outputTokens || 0;
             const cacheRead = usage.cacheReadInputTokens || 0;
@@ -1037,7 +1055,7 @@ export function initTelegramBot() {
 
         telegramBot?.sendMessage(chatId, '📥 Downloading video...');
 
-        const fileName = (video as any).file_name || `video_${msg.message_id}.mp4`;
+        const fileName = (video as { file_name?: string }).file_name || `video_${msg.message_id}.mp4`;
         const localPath = await downloadTelegramFile(video.file_id, fileName);
 
         const caption = removeBotMention(msg.caption || '');
@@ -1071,7 +1089,7 @@ export function initTelegramBot() {
 
         telegramBot?.sendMessage(chatId, '📥 Downloading audio...');
 
-        const fileName = (audio as any).file_name || `audio_${msg.message_id}.mp3`;
+        const fileName = (audio as { file_name?: string }).file_name || `audio_${msg.message_id}.mp3`;
         const localPath = await downloadTelegramFile(audio.file_id, fileName);
 
         const caption = removeBotMention(msg.caption || '');

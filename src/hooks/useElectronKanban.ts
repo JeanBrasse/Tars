@@ -161,13 +161,18 @@ export function useKanbanAgentSync(
 ) {
   // Use ref to always have latest tasks without re-subscribing
   const tasksRef = useRef(tasks);
-  tasksRef.current = tasks;
 
   const updateTaskRef = useRef(updateTask);
-  updateTaskRef.current = updateTask;
 
   const moveTaskRef = useRef(moveTask);
-  moveTaskRef.current = moveTask;
+  // Written in an effect, not during render: a ref assignment during render
+  // is unsafe under concurrent rendering, and every reader of this one runs
+  // after commit (a callback, a subscription), so the timing is the same.
+  useEffect(() => {
+    tasksRef.current = tasks;
+    updateTaskRef.current = updateTask;
+    moveTaskRef.current = moveTask;
+  }, [tasks, updateTask, moveTask]);
 
   useEffect(() => {
     if (!isElectron()) return;

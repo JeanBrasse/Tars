@@ -113,6 +113,11 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // running a real app. An added row measures 3,000 to 5,000.
     //
     // 0.002 is 2,592 pixels: above the jitter, below a row.
+    //
+    // Known limit: a single small control is right at that line. Moving
+    // Kanban's "New task" button into the header changed about 2,600 pixels and
+    // passed against the old baseline, so a change that small can slip. Widen
+    // the mask or narrow this further only with a measurement, not a guess.
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
       maxDiffPixelRatio: 0.002,
       animations: 'disabled',

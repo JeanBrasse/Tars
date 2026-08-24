@@ -10,7 +10,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['__tests__/**/*.test.ts'],
+    // .tsx too: the overseer's text renderer is asserted through the markup
+    // it produces, which needs the component itself.
+    include: ['__tests__/**/*.test.ts', '__tests__/**/*.test.tsx'],
     coverage: {
       provider: 'v8',
       include: [

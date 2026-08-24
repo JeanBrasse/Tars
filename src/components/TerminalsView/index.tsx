@@ -277,7 +277,12 @@ export default function TerminalsView() {
     broadcastMode: broadcast.broadcastMode,
   });
   // Expose focusTerminal to handleTerminalReady via a ref to break the cycle.
-  focusTerminalRef.current = multiTerminal.focusTerminal;
+  // Written in an effect, not during render: a ref assignment during render is
+  // unsafe under concurrent rendering, and the only reader is a terminal-ready
+  // callback that fires after commit.
+  useEffect(() => {
+    focusTerminalRef.current = multiTerminal.focusTerminal;
+  }, [multiTerminal.focusTerminal]);
 
   // Prune lastFocusedByTabRef entries for tabs that no longer exist (mirrors
   // the cleanup useTabManager does for stale agent IDs and tab layouts).

@@ -86,17 +86,17 @@ export function WatchControls({
 
   return (
     <>
-      {optionsError ? (
-        <div className="h-[26px] flex items-center border border-border px-2.5">
-          <span className="font-mono text-[10.5px] text-muted-foreground truncate max-w-[220px]">
-            {optionsError}
-          </span>
-        </div>
-      ) : (
+      {/* When the gateway cannot be asked which models it has, the pickers are
+          simply not offered. The page already carries a banner saying why, and
+          repeating it here as a bordered box beside the send button put an
+          error message where a control belongs. The cadence stays: it is Tars's
+          own setting and works with no gateway at all. */}
+      {optionsError ? null : (
         <>
           <Dropdown
             size="sm"
             mono
+            quiet
             align="left"
             drop="up"
             searchable={providerOptions.length > 8}
@@ -110,6 +110,7 @@ export function WatchControls({
           <Dropdown
             size="sm"
             mono
+            quiet
             align="left"
             drop="up"
             searchable={modelOptions.length > 8}
@@ -126,6 +127,7 @@ export function WatchControls({
       <Dropdown
         size="sm"
         mono
+        quiet
         align="left"
             drop="up"
         ariaLabel="How often the overseer checks the fleet"

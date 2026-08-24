@@ -63,21 +63,34 @@ function readClaudeMcp(): McpServer[] {
     const servers = data.mcpServers || {};
     return Object.entries(servers)
       .filter(([name]) => !DOROTHY_MANAGED_MCPS.has(name))
-      .map(([name, cfg]: [string, any]) => ({
-        name,
-        command: cfg.command || '',
-        args: Array.isArray(cfg.args) ? cfg.args : [],
-        env: (cfg.env && typeof cfg.env === 'object') ? cfg.env : {},
-      }));
+      .map(([name, raw]) => {
+        const cfg = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        return {
+          name,
+          command: typeof cfg.command === 'string' ? cfg.command : '',
+          args: Array.isArray(cfg.args) ? cfg.args : [],
+          env: (cfg.env && typeof cfg.env === 'object') ? cfg.env as Record<string, string> : {},
+        };
+      });
   } catch (err) {
     console.error('Failed to read Claude MCP config:', err);
     return [];
   }
 }
 
+/**
+ * A CLI's MCP config file. Tars owns `mcpServers` and nothing else: every other
+ * key belongs to that CLI and is read back and written out untouched, which is
+ * why the rest of the shape stays `unknown` rather than being modelled.
+ */
+interface McpConfigFile {
+  mcpServers?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 function writeClaudeMcp(action: 'update' | 'delete', server?: McpServer, deleteName?: string): void {
   const configPath = getConfigPath('claude');
-  let data: any = {};
+  let data: McpConfigFile = {};
   if (fs.existsSync(configPath)) {
     try {
       data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -85,16 +98,16 @@ function writeClaudeMcp(action: 'update' | 'delete', server?: McpServer, deleteN
       data = {};
     }
   }
-  if (!data.mcpServers) data.mcpServers = {};
+  const servers = (data.mcpServers ??= {});
 
   if (action === 'update' && server) {
-    data.mcpServers[server.name] = {
+    servers[server.name] = {
       command: server.command,
       args: server.args,
       ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
     };
   } else if (action === 'delete' && deleteName) {
-    delete data.mcpServers[deleteName];
+    delete servers[deleteName];
   }
 
   const dir = path.dirname(configPath);
@@ -112,12 +125,15 @@ function readGeminiMcp(): McpServer[] {
     const servers = data.mcpServers || {};
     return Object.entries(servers)
       .filter(([name]) => !DOROTHY_MANAGED_MCPS.has(name))
-      .map(([name, cfg]: [string, any]) => ({
-        name,
-        command: cfg.command || '',
-        args: Array.isArray(cfg.args) ? cfg.args : [],
-        env: (cfg.env && typeof cfg.env === 'object') ? cfg.env : {},
-      }));
+      .map(([name, raw]) => {
+        const cfg = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        return {
+          name,
+          command: typeof cfg.command === 'string' ? cfg.command : '',
+          args: Array.isArray(cfg.args) ? cfg.args : [],
+          env: (cfg.env && typeof cfg.env === 'object') ? cfg.env as Record<string, string> : {},
+        };
+      });
   } catch (err) {
     console.error('Failed to read Gemini MCP config:', err);
     return [];
@@ -126,7 +142,7 @@ function readGeminiMcp(): McpServer[] {
 
 function writeGeminiMcp(action: 'update' | 'delete', server?: McpServer, deleteName?: string): void {
   const configPath = getConfigPath('gemini');
-  let data: any = {};
+  let data: McpConfigFile = {};
   if (fs.existsSync(configPath)) {
     try {
       data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -134,16 +150,16 @@ function writeGeminiMcp(action: 'update' | 'delete', server?: McpServer, deleteN
       data = {};
     }
   }
-  if (!data.mcpServers) data.mcpServers = {};
+  const servers = (data.mcpServers ??= {});
 
   if (action === 'update' && server) {
-    data.mcpServers[server.name] = {
+    servers[server.name] = {
       command: server.command,
       args: server.args,
       ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
     };
   } else if (action === 'delete' && deleteName) {
-    delete data.mcpServers[deleteName];
+    delete servers[deleteName];
   }
 
   const dir = path.dirname(configPath);
@@ -162,12 +178,15 @@ function readJsonMcp(provider: string): McpServer[] {
     const servers = data.mcpServers || {};
     return Object.entries(servers)
       .filter(([name]) => !DOROTHY_MANAGED_MCPS.has(name))
-      .map(([name, cfg]: [string, any]) => ({
-        name,
-        command: cfg.command || '',
-        args: Array.isArray(cfg.args) ? cfg.args : [],
-        env: (cfg.env && typeof cfg.env === 'object') ? cfg.env : {},
-      }));
+      .map(([name, raw]) => {
+        const cfg = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        return {
+          name,
+          command: typeof cfg.command === 'string' ? cfg.command : '',
+          args: Array.isArray(cfg.args) ? cfg.args : [],
+          env: (cfg.env && typeof cfg.env === 'object') ? cfg.env as Record<string, string> : {},
+        };
+      });
   } catch (err) {
     console.error(`Failed to read ${provider} MCP config:`, err);
     return [];
@@ -176,7 +195,7 @@ function readJsonMcp(provider: string): McpServer[] {
 
 function writeJsonMcp(provider: string, action: 'update' | 'delete', server?: McpServer, deleteName?: string): void {
   const configPath = getConfigPath(provider);
-  let data: any = {};
+  let data: McpConfigFile = {};
   if (fs.existsSync(configPath)) {
     try {
       data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -184,16 +203,16 @@ function writeJsonMcp(provider: string, action: 'update' | 'delete', server?: Mc
       data = {};
     }
   }
-  if (!data.mcpServers) data.mcpServers = {};
+  const servers = (data.mcpServers ??= {});
 
   if (action === 'update' && server) {
-    data.mcpServers[server.name] = {
+    servers[server.name] = {
       command: server.command,
       args: server.args,
       ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
     };
   } else if (action === 'delete' && deleteName) {
-    delete data.mcpServers[deleteName];
+    delete servers[deleteName];
   }
 
   const dir = path.dirname(configPath);
