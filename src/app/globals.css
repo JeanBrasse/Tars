@@ -577,9 +577,18 @@ button, a, input, textarea, select {
  * below 0.16, which is what keeps the silhouette of the logo intact instead of
  * reading as sixteen unrelated dots. See BrandSpinner in ui/Loading.tsx.
  */
+/*
+ * A single light running over the mark. Each cell starts its cycle lit and
+ * fades, and the cells are delayed by their own index, so the light travels
+ * left to right along a row and drops to the left of the next one.
+ *
+ * Lit for a sixteenth of the cycle plus a short fade, which is what keeps one
+ * cell reading as "the" cell rather than a band of four.
+ */
 @keyframes square-sweep {
-  0%, 55%, 100% { opacity: 0.16; }
-  20%           { opacity: 1; }
+  0%          { opacity: 1; }
+  6%          { opacity: 1; }
+  16%, 100%   { opacity: 0.16; }
 }
 
 /*

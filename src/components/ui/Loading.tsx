@@ -61,11 +61,17 @@ export function SkeletonRows({ rows = 4, className = '' }: { rows?: number; clas
  * mark and the launch screen already, so a wait that shows it is recognisably
  * Tars working rather than a generic pause.
  *
- * The lit band sweeps diagonally: cell (col, row) runs the `square-sweep`
- * keyframes on a delay of `((col + row) mod 4) * 300ms`. Unlit cells rest at
- * 0.16 rather than disappearing, which is what keeps the silhouette readable.
+ * One light travels the grid in reading order: the top-left cell, then along
+ * that row, then back to the left of the row below, and so on. Each cell runs
+ * the `square-sweep` keyframes delayed by its own index, so all sixteen are
+ * distinct. It used to be `(col + row) mod 4`, which gives only four delays
+ * and lights a whole diagonal at a time. Unlit cells rest at 0.16 rather than
+ * disappearing, which is what keeps the silhouette readable.
  * Frame: `Loading · brand mark`.
  */
+/** One pass of the light over all sixteen cells. */
+const CYCLE_S = 2;
+
 export function BrandSpinner({
   size = 30,
   className = '',
@@ -102,7 +108,12 @@ export function BrandSpinner({
               top: row * (cell + gap),
               width: cell,
               height: cell,
-              animation: `square-sweep 1.2s ease-in-out ${((col + row) % 4) * 0.3}s infinite`,
+              // One cell at a time, in reading order: across the top row, then
+              // back to the left of the next one down. The delay is the cell's
+              // own index, so all sixteen are distinct; it used to be
+              // `(col + row) % 4`, which gives only four delays and lights a
+              // whole diagonal at once.
+              animation: `square-sweep ${CYCLE_S}s linear ${(i * CYCLE_S) / 16}s infinite`,
             }}
           />
         );
