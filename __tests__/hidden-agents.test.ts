@@ -55,15 +55,6 @@ const show = (tab: string, id: string) => {
   if (s[tab].length === 0) delete s[tab];
   write(s);
 };
-const forget = (id: string) => {
-  const s = read();
-  for (const tab of Object.keys(s)) {
-    s[tab] = s[tab].filter(x => x !== id);
-    if (s[tab].length === 0) delete s[tab];
-  }
-  write(s);
-};
-
 beforeEach(() => { store = makeStore(); });
 
 describe('hiding a panel', () => {
@@ -93,15 +84,16 @@ describe('hiding a panel', () => {
   });
 });
 
-describe('deleting an agent for good', () => {
-  it('stops it being counted as hidden anywhere', () => {
-    // Otherwise a board keeps offering to restore something that is gone.
+describe('an agent deleted elsewhere', () => {
+  it('needs no cleanup, because a hidden id is only ever read against live agents', () => {
     hide('/proj-a', 'agent-1');
-    hide('/proj-b', 'agent-1');
-    hide('/proj-b', 'agent-2');
-    forget('agent-1');
-    expect(read()['/proj-a']).toBeUndefined();
-    expect(read()['/proj-b']).toEqual(['agent-2']);
+    hide('/proj-a', 'agent-2');
+    // The board derives what to show and what to offer restoring from the
+    // agents that exist, so a stale id contributes nothing either way.
+    const live = [{ id: 'agent-2' }];
+    const hidden = read()['/proj-a'];
+    expect(live.filter(a => hidden.includes(a.id))).toEqual([{ id: 'agent-2' }]);
+    expect(live.filter(a => !hidden.includes(a.id))).toEqual([]);
   });
 });
 

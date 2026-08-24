@@ -105,7 +105,7 @@ export function WatchControls({
             value={effectiveProvider}
             options={providerOptions}
             onChange={handleProvider}
-            className="w-[124px]"
+            className="w-[118px]"
           />
           <Dropdown
             size="sm"
@@ -120,7 +120,7 @@ export function WatchControls({
             value={effectiveModel}
             options={modelOptions}
             onChange={model => onChange({ model })}
-            className="w-[168px]"
+            className="w-[160px]"
           />
         </>
       )}
@@ -138,7 +138,7 @@ export function WatchControls({
             : [...INTERVALS, { value: String(settings.watchIntervalMs), label: intervalLabel(settings.watchIntervalMs) }]
         }
         onChange={v => onChange({ watchIntervalMs: Number(v) })}
-        className="w-[140px]"
+        className="w-[132px]"
       />
     </>
   );

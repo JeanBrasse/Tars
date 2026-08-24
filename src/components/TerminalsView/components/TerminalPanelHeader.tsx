@@ -17,8 +17,6 @@ interface TerminalPanelHeaderProps {
   onExitFullscreen: () => void;
   onClear: () => void;
   onRemove: () => void;
-  /** Destroys the agent and its worktree. Absent where that is not offered. */
-  onDelete?: (agentId: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
@@ -38,7 +36,6 @@ export default function TerminalPanelHeader({
   onExitFullscreen,
   onClear,
   onRemove,
-  onDelete,
   onContextMenu,
 }: TerminalPanelHeaderProps) {
   const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
@@ -71,9 +68,12 @@ export default function TerminalPanelHeader({
     };
   }, [menuOpen]);
 
-  // Every overflow row is a 26px bordered lowercase-mono text button (R7).
+  // The same row as every other menu panel in the app: the hidden-agents list
+  // on the tab strip and the Dropdown panel both use this. It used to be a
+  // 26px mono lowercase row in a 140px box, which was its own idiom and too
+  // narrow for a label like "hide from this board".
   const menuItemClass =
-    'w-full h-[26px] px-3 flex items-center text-left text-[11px] font-mono lowercase text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors';
+    'w-full px-2.5 py-1.5 flex items-center text-left text-xs whitespace-nowrap text-text-secondary hover:bg-secondary hover:text-foreground transition-colors';
 
   const run = (action: () => void) => () => { setMenuOpen(false); action(); };
 
@@ -190,7 +190,7 @@ export default function TerminalPanelHeader({
         </button>
 
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 z-[90] min-w-[140px] bg-card border border-border">
+          <div className="absolute right-0 top-full mt-1 z-[90] min-w-[190px] bg-card border border-border">
             <button type="button" onClick={run(onClear)} className={menuItemClass}>clear</button>
 
             <button
@@ -206,15 +206,9 @@ export default function TerminalPanelHeader({
             {!isFullscreen && (
               <button type="button" onClick={run(onRemove)} className={menuItemClass}>{removeLabel}</button>
             )}
-            {!isFullscreen && onDelete && (
-              <button
-                type="button"
-                onClick={run(() => onDelete(agent.id))}
-                className={`${menuItemClass} text-danger`}
-              >
-                delete for good
-              </button>
-            )}
+            {/* No "delete for good" here. Destroying an agent and its worktree
+                is not a thing to offer beside "clear" on a board; it lives on
+                the Agents page, where the agent itself is managed. */}
           </div>
         )}
       </div>

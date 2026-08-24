@@ -37,6 +37,7 @@ import * as crypto from 'crypto';
 import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
+import { withSessionTruth, sessionModel } from '../services/agent-truth';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -712,7 +713,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     const allAgentSkills = [...new Set(agent.skills || [])];
 
-    const resolvedModel = (provider !== 'local') ? (options?.model || agent.model) : undefined;
+    // Same order as the API path: an explicit model wins, then the session's
+    // own, then the record. See services/agent-truth.ts.
+    const resolvedModel = (provider !== 'local')
+      ? (options?.model || sessionModel(agent) || agent.model)
+      : undefined;
 
     // CLIs without Claude's SessionStart hook get the project's memory in the
     // prompt instead - otherwise those agents start knowing nothing.
@@ -813,7 +818,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // stop, remove and update, on every agent:complete and on every tick where
     // the count changed - serialising each agent's whole terminal history over
     // IPC each time. Whoever needs the output asks for that agent.
-    return Array.from(agents.values()).map(agent => ({ ...agent, output: [] }));
+    // The branch and the model come from the working tree and the transcript
+    // when they disagree with the record: the session is what happened, the
+    // record is a note Tars made earlier. See services/agent-truth.ts.
+    return Array.from(agents.values()).map(agent => withSessionTruth({ ...agent, output: [] }));
   });
 
   // Update an agent (supports all editable fields)
