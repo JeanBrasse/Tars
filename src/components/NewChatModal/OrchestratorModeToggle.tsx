@@ -112,20 +112,20 @@ export default function OrchestratorModeToggle({
   const busy = status === 'loading' || isSettingUp;
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-          Orchestrator mode
-        </span>
+    <div className="flex items-center gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] text-foreground">Orchestrator mode</p>
+        <p className={`text-[11px] ${errorMessage ? 'text-danger' : 'text-muted-foreground'}`}>
+          {errorMessage || 'It hands work to other agents and cannot write files itself.'}
+        </p>
+      </div>
+      <div className="shrink-0 w-[220px] flex justify-end">
         <Toggle
           enabled={isOrchestrator && status === 'configured'}
           onChange={handleToggle}
           disabled={busy}
         />
       </div>
-      <p className={`mt-1 text-[11px] ${errorMessage ? 'text-danger' : 'text-muted-foreground'}`}>
-        {errorMessage || 'It hands work to other agents and cannot write files itself, on any CLI.'}
-      </p>
     </div>
   );
 }

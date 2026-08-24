@@ -1,0 +1,124 @@
+'use client';
+
+import type { AgentPermissionMode } from '@/types/agent';
+import type { TeamTemplate, TeamTemplateMember } from '@/types/electron';
+import { Button, Dropdown, PanelCaption, Textarea } from '@/components/ui';
+import { MembersTable } from './MembersTable';
+import { OptionsRow } from './OptionsRow';
+import { TeamOptionsBody } from './TeamOptionsBody';
+import { teamSelectionSummary, worktreeCount } from './logic';
+import type { Project } from './types';
+
+const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
+
+export function TeamPanel(props: {
+  projects: Project[];
+  projectPath: string;
+  onSelectProject: (path: string) => void;
+
+  teams: TeamTemplate[];
+  selectedTeamId: string | null;
+  onSelectTeam: (id: string) => void;
+
+  members: TeamTemplateMember[];
+  selected: Set<number>;
+  onToggleSelect: (i: number) => void;
+  onPatchMember: (i: number, patch: Partial<TeamTemplateMember>) => void;
+  onRemoveMember: (i: number) => void;
+  onAddMember: () => void;
+  availability: Record<string, boolean>;
+
+  brief: string;
+  onBriefChange: (b: string) => void;
+
+  optionsOpen: boolean;
+  onToggleOptions: () => void;
+  permissionOverride: AgentPermissionMode;
+  onPermissionOverride: (m: AgentPermissionMode) => void;
+  startOnDeploy: boolean;
+  onToggleStartOnDeploy: () => void;
+}) {
+  const selectedCount = props.selected.size;
+  const worktrees = worktreeCount(props.members.filter((_, i) => props.selected.has(i)));
+  const summary = `skills per role · ${props.permissionOverride} permissions · ${props.startOnDeploy ? 'start on deploy' : 'created idle'}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-end gap-3">
+        <div className="flex-1 min-w-0">
+          <PanelCaption className="mb-1.5">Project</PanelCaption>
+          <Dropdown
+            mono
+            ariaLabel="Project"
+            placeholder="Select a project"
+            searchable={props.projects.length > 12}
+            value={props.projectPath}
+            options={props.projects.map((p) => ({ value: p.path, label: tildePath(p.path) }))}
+            onChange={props.onSelectProject}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <PanelCaption className="mb-1.5">Start from</PanelCaption>
+          <Dropdown
+            ariaLabel="Start from"
+            placeholder="Pick a team"
+            value={props.selectedTeamId ?? ''}
+            options={props.teams.map(t => ({ value: t.id, label: `${t.name} (${t.members.length})` }))}
+            onChange={props.onSelectTeam}
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <PanelCaption>Members</PanelCaption>
+          {props.members.length > 0 && (
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {teamSelectionSummary({ totalMembers: props.members.length, selectedCount, worktrees })}
+            </span>
+          )}
+        </div>
+        {props.members.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Pick a team above, or add a member to build one from scratch.</p>
+        ) : (
+          <MembersTable
+            members={props.members}
+            selected={props.selected}
+            onToggleSelect={props.onToggleSelect}
+            onPatch={props.onPatchMember}
+            onRemove={props.onRemoveMember}
+            onAdd={props.onAddMember}
+            availability={props.availability}
+          />
+        )}
+        {props.members.length === 0 && (
+          <Button size="sm" variant="secondary" className="mt-2" onClick={props.onAddMember}>
+            + Add a member
+          </Button>
+        )}
+      </div>
+
+      <div>
+        <PanelCaption className="mb-1.5">The brief they all get</PanelCaption>
+        <Textarea
+          value={props.brief}
+          onChange={(e) => props.onBriefChange(e.target.value)}
+          placeholder="What is this team shipping? Shared context every member starts with."
+          className="h-[72px]"
+        />
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Each member also gets the brief its role carries. This is added on top of it, not instead of it.
+        </p>
+      </div>
+
+      <OptionsRow open={props.optionsOpen} onToggle={props.onToggleOptions} summary={summary}>
+        <TeamOptionsBody
+          permissionOverride={props.permissionOverride}
+          onPermissionOverride={props.onPermissionOverride}
+          startOnDeploy={props.startOnDeploy}
+          onToggleStartOnDeploy={props.onToggleStartOnDeploy}
+        />
+      </OptionsRow>
+    </div>
+  );
+}

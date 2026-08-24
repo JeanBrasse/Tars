@@ -21,6 +21,7 @@ export function DialogShell({
   onClose,
   title,
   subtitle,
+  headerRight,
   width = 620,
   footerLeft,
   footerRight,
@@ -33,6 +34,8 @@ export function DialogShell({
   onClose: () => void;
   title?: ReactNode;
   subtitle?: ReactNode;
+  /** Sits opposite the title, top-right of the header band - a mode switch, not an action. */
+  headerRight?: ReactNode;
   /** 620-860. Wider than that and the dialog stops reading as a dialog. */
   width?: number;
   /** Secondary action, far left of the footer (Delete, Reset, ...). */
@@ -66,11 +69,14 @@ export function DialogShell({
         className={`absolute top-[90px] left-1/2 -translate-x-1/2 max-w-[calc(100vw-48px)] max-h-[calc(100vh-140px)] flex flex-col border border-border bg-card ${className}`}
       >
         {(title || subtitle) && (
-          <div className="px-4 py-3.5 border-b border-border shrink-0">
-            {title && <h2 className="font-serif text-2xl leading-[1.15] text-foreground">{title}</h2>}
-            {subtitle && (
-              <p className="mt-0.5 text-[12.5px] leading-[1.4] text-muted-foreground">{subtitle}</p>
-            )}
+          <div className="px-4 py-3.5 border-b border-border shrink-0 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              {title && <h2 className="font-serif text-2xl leading-[1.15] text-foreground">{title}</h2>}
+              {subtitle && (
+                <p className="mt-0.5 text-[12.5px] leading-[1.4] text-muted-foreground">{subtitle}</p>
+              )}
+            </div>
+            {headerRight && <div className="shrink-0 pt-0.5">{headerRight}</div>}
           </div>
         )}
         <div className="min-h-0 overflow-y-auto p-4">{children}</div>

@@ -35,6 +35,7 @@ export function Dropdown<T extends string = string>({
   searchable = false,
   searchPlaceholder = 'filter',
   ariaLabel,
+  size = 'md',
 }: {
   value: T | '';
   options: DropdownOption<T>[];
@@ -47,6 +48,8 @@ export function Dropdown<T extends string = string>({
   searchable?: boolean;
   searchPlaceholder?: string;
   ariaLabel?: string;
+  /** 32px (default) or the 26px row used in dense tables, e.g. a team's member grid. */
+  size?: 'sm' | 'md';
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -163,9 +166,9 @@ export function Dropdown<T extends string = string>({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => (open ? close() : setOpen(true))}
-        className={`w-full h-8 px-3 flex items-center justify-between gap-2 bg-secondary border text-sm text-foreground transition-colors ${
-          open ? 'border-primary' : 'border-border hover:border-border-accent'
-        } ${mono ? 'font-mono' : ''}`}
+        className={`w-full flex items-center justify-between gap-2 bg-secondary border text-foreground transition-colors ${
+          size === 'sm' ? 'h-[26px] px-2 text-xs' : 'h-8 px-3 text-sm'
+        } ${open ? 'border-primary' : 'border-border hover:border-border-accent'} ${mono ? 'font-mono' : ''}`}
       >
         <span className={`truncate ${current ? '' : 'text-muted-foreground'}`}>
           {current?.label ?? placeholder}

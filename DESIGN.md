@@ -325,7 +325,7 @@ styling and excludes exactly two paths, `src/components/ui/` and `app/icon.tsx`.
 
 The migration behind the rule is barely started. Two files in the whole tree
 import a primitive: `src/app/crons/page.tsx` (`LoadingState`) and
-`src/components/Templates/DeployTeamDialog.tsx` (`Dropdown`). `Button`,
+`src/components/NewChatModal/MembersTable.tsx` (`Dropdown`). `Button`,
 `Label`/`Input`/`Select`/`Textarea`, `PageHeader`, `StatusBadge` and `StatusDot`
 have no consumers at all, and the `Toggle` primitive still lives at
 `src/components/Settings/Toggle.tsx`, outside `ui/`. Read this section as the

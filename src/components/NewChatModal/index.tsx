@@ -3,360 +3,268 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
 import type { NewChatModalProps, AgentPersonaValues } from './types';
-import type { AgentProvider, AgentTemplate } from '@/types/electron';
+import type { AgentProvider, TeamTemplateMember } from '@/types/electron';
+import type { AgentPermissionMode } from '@/types/agent';
 import { CHARACTER_OPTIONS } from './constants';
 import { computeProviderAvailability } from '@/lib/providers';
-import { useElectronTemplates } from '@/hooks/useElectronTemplates';
+import { useElectronAgents } from '@/hooks/useElectron';
+import { useElectronTeamTemplates } from '@/hooks/useElectronTeamTemplates';
 import { useSkillInstall } from './hooks/useSkillInstall';
-import { Button, Chip, DialogShell } from '@/components/ui';
-import StepProject from './StepProject';
-import StepModel from './StepModel';
-import StepTools from './StepTools';
-import StepTask from './StepTask';
+import { Button, DialogShell, SegmentedControl } from '@/components/ui';
+import type { SegmentedOption } from '@/components/ui';
+import { AgentPanel } from './AgentPanel';
+import { TeamPanel } from './TeamPanel';
 import SkillInstallTerminal from './SkillInstallTerminal';
+import { blankMember } from './team-defaults';
+import { canSubmitAgent, canSubmitTeam, deployButtonLabel } from './logic';
+import type { CreationMode } from './types';
 
-const STEPS = [
-  { label: 'Project', number: 1 },
-  { label: 'Model', number: 2 },
-  { label: 'Tools', number: 3 },
-  { label: 'Task', number: 4 },
-] as const;
-
-// The dialog subtitle is per-step: the title never changes, so the one line
-// under it is what tells you where you are.
-const STEP_SUBTITLE: Record<number, string> = {
-  1: 'Where this agent works.',
-  2: 'Which CLI runs it, and on which model.',
-  3: 'What it can reach for while it works.',
-  4: 'What it should do first.',
-};
+const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
+  { value: 'agent', label: 'One agent' },
+  { value: 'team', label: 'A team' },
+];
 
 /**
- * The step row: four 32px chips at the top of the body, on the same gutter as
- * the fields under them. The old version was a centred track of circles joined
- * by 2px connector bars with a ring halo on the current one - three shapes the
- * design does not have. Active is the ordinary selected box; the only accent
- * on the row is the number square inside it.
+ * New agent / new team, one modal.
+ *
+ * The old wizard spent four steps - Project, Model, Tools, Task - getting a
+ * folder, a CLI, and a sentence out of the user, which made the common case
+ * cost as much as the rare one. This is that same information on one screen,
+ * with everything else (skills, effort, permissions, worktree, orchestrator,
+ * CLI override) folded into a single Options row that reads out its own
+ * contents. A team is the same screen with the header switch flipped: the
+ * member table replaces the single set of tiles, and deploying one agent per
+ * row replaces the three dialogs (`DeployTeamDialog` plus its inline
+ * save/edit/delete team affairs) that used to be the only way to do it.
  */
-function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onStepClick: (step: number) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      {STEPS.map((s) => {
-        const isCompleted = currentStep > s.number;
-        const isActive = currentStep === s.number;
-
-        return (
-          <Button
-            key={s.number}
-            size="md"
-            variant="ghost"
-            active={isActive}
-            onClick={() => {
-              if (isCompleted) onStepClick(s.number);
-            }}
-            // Only steps you have not reached are dead - disabling the current
-            // one dimmed the chip you are standing on.
-            disabled={currentStep < s.number}
-          >
-            <span
-              className={`w-4 h-4 flex items-center justify-center font-mono text-[9.5px] leading-none ${
-                isActive ? 'bg-primary text-primary-foreground' : 'bg-bg-tertiary text-muted-foreground'
-              }`}
-            >
-              {s.number}
-            </span>
-            {s.label}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function NewChatModal({
   open,
   onClose,
   onSubmit,
   onUpdate,
+  onTeamDeployed,
   editAgent,
   projects,
   onBrowseFolder,
-  installedSkills = [],
+  // `installedSkills` is still accepted (all three call sites pass it) but
+  // unused: the picker now reads `allInstalledSkills` plus the per-provider
+  // map fetched below, same as before this rewrite.
   allInstalledSkills = [],
   onRefreshSkills,
   initialProjectPath,
-  initialStep,
   initialOrchestrator,
-  onManageTemplates,
-  // `existingSuperAgent` is still accepted by the props type but no longer
-  // read: the "an orchestrator already exists" note lived inside the step-1
-  // Agent/Orchestrator picker, and the orchestrator is now chosen once, in the
-  // Tools step.
+  initialMode,
+  // `initialStep`, `onManageTemplates` and `existingSuperAgent` are still
+  // accepted by the props type but no longer read - see types.ts for why each
+  // one lost its home in the one-screen redesign.
 }: NewChatModalProps) {
   const isEditMode = !!editAgent;
-  // Step navigation
-  const [step, setStep] = useState(initialStep || 1);
+  const [mode, setMode] = useState<CreationMode>(initialMode || 'agent');
 
-  // Step 1: Project selection
-  const [selectedProject, setSelectedProject] = useState<string>(initialProjectPath || '');
-  const [customPath, setCustomPath] = useState('');
-  const [showSecondaryProject, setShowSecondaryProject] = useState(false);
-  const [selectedSecondaryProject, setSelectedSecondaryProject] = useState<string>('');
-  const [customSecondaryPath, setCustomSecondaryPath] = useState('');
+  /* ── shared: project, availability ───────────────────────────────── */
+  const [projectPath, setProjectPath] = useState<string>(initialProjectPath || '');
   const [favoriteProjects, setFavoriteProjects] = useState<string[]>([]);
   const [hiddenProjects, setHiddenProjects] = useState<string[]>([]);
   const [defaultProjectPath, setDefaultProjectPath] = useState<string>('');
+  const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true, grok: true });
 
-  // Step 2: Model
+  /* ── agent mode ───────────────────────────────────────────────────── */
   const [provider, setProvider] = useState<AgentProvider>('claude');
   const [model, setModel] = useState<string>('default');
-  const [localModel, setLocalModel] = useState('');
-  const [tasmaniaEnabled, setTasmaniaEnabled] = useState(false);
-  const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true, grok: true, opencode: true, pi: true });
   const [cliPath, setCliPath] = useState('');
   const agentPersonaRef = useRef<AgentPersonaValues>({ character: 'robot', name: '' });
-  // The Name field lives on the Task step (StepTask) and needs to re-render on
-  // every keystroke, so it is real state rather than the character ref above
-  // (a ref write is invisible to React and the input would never reflect it).
-  // agentPersonaRef.current.name is kept in sync alongside it for the one
-  // consumer (StepModel's deprecated prop) that still reads the combined shape.
+  // Not shown anywhere in the new screen (no Name field, no persona picker -
+  // the frame has neither), but still round-tripped: an agent being edited
+  // keeps the name it already has unless something here changes it, which
+  // nothing does. Dropping this would silently rename every agent to its
+  // auto-generated default the next time it is edited and saved.
   const [agentName, setAgentName] = useState('');
-  // Armed when the open-effect programmatically changes the provider (edit
-  // prepopulation) so the provider-change effect doesn't wipe the agent's
-  // pre-filled skills.
   const skipNextSkillsClear = useRef(false);
 
-  // Step 3: Tools
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [installedSkillsByProvider, setInstalledSkillsByProvider] = useState<Record<string, string[]>>({});
-  const [selectedObsidianVaults, setSelectedObsidianVaults] = useState<string[]>([]);
-  const [registeredVaults, setRegisteredVaults] = useState<string[]>([]);
-  const [detectedVault, setDetectedVault] = useState<string | null>(null);
 
-  // Template picker (create mode): applying a template prefills the form
-  const { templates: agentTemplates, refresh: refreshTemplates } = useElectronTemplates();
-  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
-
-  // Step 4: Task
   const [prompt, setPrompt] = useState('');
   const [useWorktree, setUseWorktree] = useState(false);
   const [branchName, setBranchName] = useState('');
-  const [permissionMode, setPermissionMode] = useState<'normal' | 'auto' | 'bypass'>('normal');
+  const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>('normal');
   const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'xhigh' | 'max'>('medium');
   const [isOrchestrator, setIsOrchestrator] = useState(false);
+  const [agentOptionsOpen, setAgentOptionsOpen] = useState(false);
 
-  const projectPath = selectedProject || customPath;
-
-  // Refresh both parent skills and local provider-skill map
   const handleRefreshSkills = useCallback(() => {
     onRefreshSkills?.();
     window.electronAPI?.skill?.listInstalledAll().then((byProvider) => {
       if (byProvider) setInstalledSkillsByProvider(byProvider);
     });
   }, [onRefreshSkills]);
-
-  // Skill installation hook
   const skillInstall = useSkillInstall(handleRefreshSkills);
 
-  // Pre-compute installed skill names for the selected provider
-  const installedSkillSet = useMemo(() => {
-    const set = new Set<string>();
-    const providerSkills = installedSkillsByProvider[provider] || [];
-    for (const s of providerSkills) set.add(s.toLowerCase());
-    return set;
-  }, [installedSkillsByProvider, provider]);
+  // The skills this agent can actually reach: what the provider has on disk,
+  // plus anything already selected (edit mode can carry a skill the provider
+  // no longer reports).
+  const availableSkills = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const name of installedSkillsByProvider[provider] ?? []) byName.set(name.toLowerCase(), name);
+    for (const s of allInstalledSkills) if (!byName.has(s.name.toLowerCase())) byName.set(s.name.toLowerCase(), s.name);
+    for (const name of selectedSkills) if (!byName.has(name.toLowerCase())) byName.set(name.toLowerCase(), name);
+    return [...byName.values()].sort((a, b) => a.localeCompare(b));
+  }, [installedSkillsByProvider, provider, allInstalledSkills, selectedSkills]);
 
-  // Reset form when modal opens (or pre-populate in edit mode)
+  // The one-line description under each skill's name in the picker - lost if
+  // this isn't carried alongside the bare name list above, since
+  // `installedSkillsByProvider` only ever reports names.
+  const skillDescriptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of allInstalledSkills) if (s.description) map.set(s.name.toLowerCase(), s.description);
+    return map;
+  }, [allInstalledSkills]);
+
+  /* ── team mode ────────────────────────────────────────────────────── */
+  const { agents: existingAgents, createAgent, updateAgent, startAgent } = useElectronAgents();
+  const { teams } = useElectronTeamTemplates();
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [editedMembers, setEditedMembers] = useState<TeamTemplateMember[]>([]);
+  const [selectedMemberIdx, setSelectedMemberIdx] = useState<Set<number>>(new Set());
+  const [teamBrief, setTeamBrief] = useState('');
+  const [teamOptionsOpen, setTeamOptionsOpen] = useState(false);
+  const [teamPermissionOverride, setTeamPermissionOverride] = useState<AgentPermissionMode>('auto');
+  const [startOnDeploy, setStartOnDeploy] = useState(true);
+  const [deploying, setDeploying] = useState(false);
+  const [deployErrors, setDeployErrors] = useState<string[]>([]);
+
+  // Loading a preset replaces the working roster with a fresh copy of its
+  // members - editing them here never writes back to the saved team.
+  const loadTeam = useCallback((id: string) => {
+    setSelectedTeamId(id);
+    const team = teams.find(t => t.id === id);
+    const members = team ? team.members.map(m => ({ ...m })) : [];
+    setEditedMembers(members);
+    setSelectedMemberIdx(new Set(members.map((_, i) => i)));
+    setTeamPermissionOverride(members[0]?.permissionMode ?? 'auto');
+  }, [teams]);
+
+  // The team half opens with a roster already in view rather than an empty
+  // table waiting for a pick - one team exists on every install (the built-in
+  // full project team), so there is always something to default to.
   useEffect(() => {
-    if (open) {
-      if (editAgent) {
-        // Edit mode: pre-populate from existing agent
-        setStep(initialStep || 1);
-        setSelectedProject(editAgent.projectPath);
-        setCustomPath('');
-        setSelectedSkills(editAgent.skills || []);
-        setPrompt(editAgent.savedPrompt || '');
-        setModel(editAgent.model || 'default');
-        setUseWorktree(!!editAgent.branchName);
-        setBranchName(editAgent.branchName || '');
-        agentPersonaRef.current = {
-          character: editAgent.character || 'robot',
-          name: editAgent.name || '',
-        };
-        setAgentName(editAgent.name || '');
-        setShowSecondaryProject(!!editAgent.secondaryProjectPath);
-        setSelectedSecondaryProject(editAgent.secondaryProjectPath || '');
-        setCustomSecondaryPath('');
-        setPermissionMode(editAgent.permissionMode ?? (editAgent.skipPermissions ? 'auto' : 'normal'));
-        setEffort(editAgent.effort || 'medium');
-        if ((editAgent.provider || 'claude') !== provider) {
-          skipNextSkillsClear.current = true;
-        }
-        setProvider(editAgent.provider || 'claude');
-        setLocalModel(editAgent.localModel || '');
-        setSelectedObsidianVaults(editAgent.obsidianVaultPaths || []);
-        setIsOrchestrator(editAgent.orchestratorMode || false);
-        setCliPath(editAgent.cliPath || '');
-        setDetectedVault(null);
+    if (mode === 'team' && !selectedTeamId && teams.length > 0) loadTeam(teams[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, teams]);
+
+  const patchMember = useCallback((i: number, patch: Partial<TeamTemplateMember>) => {
+    setEditedMembers(prev => prev.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+  }, []);
+  const toggleMemberSelected = useCallback((i: number) => {
+    setSelectedMemberIdx(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }, []);
+  const removeMember = useCallback((i: number) => {
+    setEditedMembers(prev => prev.filter((_, idx) => idx !== i));
+    setSelectedMemberIdx(prev => new Set(Array.from(prev).filter(x => x !== i).map(x => (x > i ? x - 1 : x))));
+  }, []);
+  const addMember = useCallback(() => {
+    setEditedMembers(prev => {
+      const next = [...prev, blankMember(prev.length)];
+      setSelectedMemberIdx(sel => new Set([...sel, next.length - 1]));
+      return next;
+    });
+  }, []);
+  const applyPermissionOverride = useCallback((mode: AgentPermissionMode) => {
+    setTeamPermissionOverride(mode);
+    setEditedMembers(prev => prev.map(m => ({ ...m, permissionMode: mode })));
+  }, []);
+
+  /* ── reset / prepopulate on open ─────────────────────────────────── */
+  useEffect(() => {
+    if (!open) return;
+    setMode(isEditMode ? 'agent' : (initialMode || 'agent'));
+
+    if (editAgent) {
+      setProjectPath(editAgent.projectPath);
+      setSelectedSkills(editAgent.skills || []);
+      setPrompt(editAgent.savedPrompt || '');
+      setModel(editAgent.model || 'default');
+      setUseWorktree(!!editAgent.branchName);
+      setBranchName(editAgent.branchName || '');
+      agentPersonaRef.current = { character: editAgent.character || 'robot', name: editAgent.name || '' };
+      setAgentName(editAgent.name || '');
+      setPermissionMode(editAgent.permissionMode ?? (editAgent.skipPermissions ? 'auto' : 'normal'));
+      setEffort(editAgent.effort || 'medium');
+      if ((editAgent.provider || 'claude') !== provider) skipNextSkillsClear.current = true;
+      setProvider(editAgent.provider || 'claude');
+      setIsOrchestrator(editAgent.orchestratorMode || false);
+      setCliPath(editAgent.cliPath || '');
+    } else {
+      setProjectPath(initialProjectPath || '');
+      setSelectedSkills([]);
+      setPrompt('');
+      setUseWorktree(false);
+      setBranchName('');
+      setPermissionMode('normal');
+      setEffort('medium');
+      setProvider('claude');
+      setModel('default');
+      setCliPath('');
+
+      if (initialOrchestrator) {
+        agentPersonaRef.current = { character: 'wizard', name: 'Super Agent (Orchestrator)' };
+        setAgentName('Super Agent (Orchestrator)');
+        setPermissionMode('bypass');
+        setIsOrchestrator(true);
       } else {
-        // Create mode: reset everything
-        setStep(initialStep || 1);
-        setSelectedProject(initialProjectPath || '');
-        setCustomPath('');
-        setSelectedSkills([]);
-        setPrompt('');
-        setUseWorktree(false);
-        setBranchName('');
-        setShowSecondaryProject(false);
-        setSelectedSecondaryProject('');
-        setCustomSecondaryPath('');
-        setPermissionMode('normal');
-        setEffort('medium');
-        setProvider('claude');
-        setModel('default');
-        setLocalModel('');
-        setCliPath('');
-        setSelectedObsidianVaults([]);
-        setDetectedVault(null);
-        setAppliedTemplateId(null);
-
-        if (initialOrchestrator) {
-          agentPersonaRef.current = { character: 'wizard', name: 'Super Agent (Orchestrator)' };
-          setAgentName('Super Agent (Orchestrator)');
-          setPermissionMode('bypass');
-          setIsOrchestrator(true);
-        } else {
-          agentPersonaRef.current = { character: 'robot', name: '' };
-          setAgentName('');
-          setPermissionMode('normal');
-          setIsOrchestrator(false);
-        }
+        agentPersonaRef.current = { character: 'robot', name: '' };
+        setAgentName('');
+        setIsOrchestrator(false);
       }
-
-      // Load app settings (Tasmania, favorites, default project)
-      window.electronAPI?.appSettings?.get().then((settings) => {
-        setTasmaniaEnabled(settings?.tasmaniaEnabled || false);
-        if (Array.isArray(settings?.favoriteProjects)) {
-          setFavoriteProjects(settings.favoriteProjects);
-        }
-        if (Array.isArray(settings?.hiddenProjects)) {
-          setHiddenProjects(settings.hiddenProjects);
-        }
-        // Store default project path for sorting
-        if (settings?.defaultProjectPath) {
-          setDefaultProjectPath(settings.defaultProjectPath);
-        }
-        // Auto-select default project if no project pre-selected
-        if (!initialProjectPath && !editAgent && settings?.defaultProjectPath) {
-          setSelectedProject(settings.defaultProjectPath);
-        }
-      });
-
-      // Load registered obsidian vaults
-      window.electronAPI?.obsidian?.getVaultInfo().then((info) => {
-        setRegisteredVaults(info?.vaultPaths || []);
-      });
-
-      // Detect installed CLI providers + API key availability + whether the
-      // local Ollama server answers (it has neither a binary nor a key).
-      Promise.all([
-        window.electronAPI?.cliPaths?.detect(),
-        window.electronAPI?.appSettings?.get(),
-        window.electronAPI?.ollama?.test(),
-      ]).then(([paths, settings, ollama]) => {
-        setInstalledProviders(computeProviderAvailability(
-          paths as Record<string, string | undefined> | undefined,
-          settings,
-          ollama?.reachable,
-        ));
-      });
-
-      // Fetch per-provider installed skills
-      window.electronAPI?.skill?.listInstalledAll().then((byProvider) => {
-        if (byProvider) setInstalledSkillsByProvider(byProvider);
-      });
-
-      // Templates may have been created/deleted elsewhere since page load
-      refreshTemplates();
     }
-  }, [open, initialProjectPath, initialStep, editAgent, initialOrchestrator, refreshTemplates]);
+    setAgentOptionsOpen(false);
+    setTeamOptionsOpen(false);
+    setDeployErrors([]);
+
+    window.electronAPI?.appSettings?.get().then((settings) => {
+      if (Array.isArray(settings?.favoriteProjects)) setFavoriteProjects(settings.favoriteProjects);
+      if (Array.isArray(settings?.hiddenProjects)) setHiddenProjects(settings.hiddenProjects);
+      if (settings?.defaultProjectPath) {
+        setDefaultProjectPath(settings.defaultProjectPath);
+        if (!initialProjectPath && !editAgent) setProjectPath(settings.defaultProjectPath);
+      }
+    });
+
+    Promise.all([
+      window.electronAPI?.cliPaths?.detect(),
+      window.electronAPI?.appSettings?.get(),
+      window.electronAPI?.ollama?.test(),
+    ]).then(([paths, settings, ollama]) => {
+      setInstalledProviders(computeProviderAvailability(
+        paths as Record<string, string | undefined> | undefined,
+        settings,
+        ollama?.reachable,
+      ));
+    });
+
+    window.electronAPI?.skill?.listInstalledAll().then((byProvider) => {
+      if (byProvider) setInstalledSkillsByProvider(byProvider);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialProjectPath, editAgent, initialOrchestrator, initialMode]);
 
   // Clear selected skills when the USER changes provider - not when edit-mode
   // prepopulation does (that would wipe the agent's saved skills on open).
-  //
-  // The skipNextSkillsClear flag alone was not enough: it is only armed when the
-  // edited agent's provider DIFFERS from the one in state, so editing a Claude
-  // agent while the form already said "claude" armed nothing, and this effect's
-  // own mount run cleared the skills that the reset effect had just restored.
-  // Tracking the previous value makes the first run a no-op, which is the only
-  // run that was ever wrong.
   const previousProvider = useRef<string | null>(null);
   useEffect(() => {
     const previous = previousProvider.current;
     previousProvider.current = provider;
     if (previous === null) return;
-    if (skipNextSkillsClear.current) {
-      skipNextSkillsClear.current = false;
-      return;
-    }
+    if (skipNextSkillsClear.current) { skipNextSkillsClear.current = false; return; }
     setSelectedSkills([]);
   }, [provider]);
 
-  // Detect Obsidian vault when project path changes
-  useEffect(() => {
-    if (!projectPath || !open) return;
-    window.electronAPI?.obsidian?.detectVault(projectPath).then(async (result) => {
-      if (result?.detected && result.vaultPath) {
-        setDetectedVault(result.vaultPath);
-        // Auto-register if not already registered
-        if (!registeredVaults.includes(result.vaultPath)) {
-          await window.electronAPI?.obsidian?.addVault(result.vaultPath);
-          setRegisteredVaults(prev => [...prev, result.vaultPath!]);
-        }
-        // Auto-select the detected vault
-        setSelectedObsidianVaults(prev =>
-          prev.includes(result.vaultPath!) ? prev : [...prev, result.vaultPath!]
-        );
-      } else {
-        setDetectedVault(null);
-      }
-    });
-  }, [projectPath, open, registeredVaults]);
-
-  // Stable callbacks for child components
-  const handleSelectProject = useCallback((path: string) => {
-    setSelectedProject(path);
-    setCustomPath('');
-  }, []);
-
-  const handleCustomPathChange = useCallback((path: string) => {
-    setCustomPath(path);
-    setSelectedProject('');
-  }, []);
-
-  const handleToggleSecondary = useCallback(() => {
-    setShowSecondaryProject(prev => !prev);
-  }, []);
-
-  const handleSelectSecondaryProject = useCallback((path: string) => {
-    setSelectedSecondaryProject(path);
-    setCustomSecondaryPath('');
-  }, []);
-
-  const handleCustomSecondaryPathChange = useCallback((path: string) => {
-    setCustomSecondaryPath(path);
-    setSelectedSecondaryProject('');
-  }, []);
-
-  const handleClearSecondary = useCallback(() => {
-    setSelectedSecondaryProject('');
-    setCustomSecondaryPath('');
-  }, []);
-
   const toggleSkill = useCallback((skillName: string) => {
-    setSelectedSkills((prev) =>
-      prev.includes(skillName) ? prev.filter((s) => s !== skillName) : [...prev, skillName]
-    );
+    setSelectedSkills((prev) => prev.includes(skillName) ? prev.filter((s) => s !== skillName) : [...prev, skillName]);
   }, []);
 
   const handleOrchestratorToggle = useCallback((enabled: boolean) => {
@@ -365,7 +273,6 @@ export default function NewChatModal({
       setPermissionMode('auto');
       agentPersonaRef.current = { ...agentPersonaRef.current, character: 'wizard' };
     } else {
-      // Switching back must undo what the orchestrator preset forced.
       setPermissionMode('normal');
       if (agentPersonaRef.current.character === 'wizard') {
         agentPersonaRef.current = { ...agentPersonaRef.current, character: 'robot' };
@@ -373,68 +280,31 @@ export default function NewChatModal({
     }
   }, []);
 
-  // Prefill the whole form from a template. Arms skipNextSkillsClear when the
-  // provider changes so the provider-change effect doesn't wipe the template's
-  // skills (same contract as edit-mode prepopulation).
-  const applyTemplate = useCallback((t: AgentTemplate) => {
-    if (t.provider !== provider) skipNextSkillsClear.current = true;
-    setProvider(t.provider);
-    setModel(t.model || 'default');
-    setLocalModel(t.localModel || '');
-    setCliPath('');
-    setPermissionMode(t.permissionMode);
-    setEffort(t.effort || 'medium');
-    setSelectedSkills(t.skills || []);
-    setSelectedObsidianVaults(t.obsidianVaultPaths ?? []);
-    setPrompt(t.savedPrompt || '');
-    agentPersonaRef.current = { character: t.character, name: t.displayName };
-    setAgentName(t.displayName);
-    setIsOrchestrator(false);
-    setAppliedTemplateId(t.id);
-  }, [provider]);
-
-  const handleToggleVault = useCallback((vp: string) => {
-    setSelectedObsidianVaults(prev =>
-      prev.includes(vp) ? prev.filter(p => p !== vp) : [...prev, vp]
-    );
-  }, []);
-
-  // Handlers are async (they create the agent, then optionally start it) and
-  // already swallow their own errors internally so the dialog can decide what
-  // to do next; a `false` return is the one signal they use to say "it did
-  // not work". Previously this function fired onSubmit and wiped every field
-  // in the same tick without waiting for either - on failure the dialog was
-  // left open but blank, with everything the user typed already gone.
+  /* ── submit: one agent ───────────────────────────────────────────── */
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const handleSubmit = useCallback(async () => {
-    if (!projectPath) return;
-    if (useWorktree && !branchName.trim()) return;
+  const handleSubmitAgent = useCallback(async () => {
+    if (!canSubmitAgent({ projectPath, useWorktree, branchName })) return;
 
     const agentCharacter = agentPersonaRef.current.character;
     const projectName = projectPath.split('/').pop() || 'project';
     const finalName = agentName.trim() || `${CHARACTER_OPTIONS.find(c => c.id === agentCharacter)?.name || 'Agent'} on ${projectName}`;
-    const secondaryPath = showSecondaryProject ? (selectedSecondaryProject || customSecondaryPath) : undefined;
 
     setIsSubmitting(true);
     try {
       if (isEditMode && editAgent && onUpdate) {
-        // Edit mode: update existing agent with all fields
         const worktreeConfig = useWorktree && !editAgent.branchName
           ? { enabled: true, branchName: branchName.trim() }
           : undefined;
         const result = await onUpdate(editAgent.id, {
           projectPath,
           skills: selectedSkills,
-          secondaryProjectPath: secondaryPath || null,
           permissionMode,
           effort: effort || undefined,
           name: finalName,
           character: agentCharacter,
           model: (model && model !== 'default') ? model : null,
           provider,
-          localModel: localModel || null,
           savedPrompt: prompt.trim() || null,
-          obsidianVaultPaths: selectedObsidianVaults.length > 0 ? selectedObsidianVaults : [],
           worktree: worktreeConfig,
           orchestratorMode: isOrchestrator,
           cliPath: cliPath || null,
@@ -444,214 +314,204 @@ export default function NewChatModal({
         return;
       }
 
-      // Create mode
       const finalPrompt = prompt.trim()
         || (selectedSkills.length > 0 ? `Use the following skills: ${selectedSkills.join(', ')}` : '');
       const worktreeConfig = useWorktree ? { enabled: true, branchName: branchName.trim() } : undefined;
 
-      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, secondaryPath, permissionMode, provider, localModel, selectedObsidianVaults.length > 0 ? selectedObsidianVaults : undefined, effort, isOrchestrator, cliPath || undefined);
+      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, undefined, permissionMode, provider, undefined, undefined, effort, isOrchestrator, cliPath || undefined);
       if (result === false) return;
 
-      // Reset form
-      setStep(1);
-      setSelectedProject('');
-      setCustomPath('');
+      setProjectPath('');
       setSelectedSkills([]);
       setPrompt('');
       setUseWorktree(false);
       setBranchName('');
       agentPersonaRef.current = { character: 'robot', name: '' };
       setAgentName('');
-      setShowSecondaryProject(false);
-      setSelectedSecondaryProject('');
       setPermissionMode('normal');
       setEffort('medium');
-      setCustomSecondaryPath('');
       setProvider('claude');
       setModel('default');
-      setLocalModel('');
       setCliPath('');
-      setSelectedObsidianVaults([]);
+      setAgentOptionsOpen(false);
     } finally {
       setIsSubmitting(false);
     }
-  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, showSecondaryProject, selectedSecondaryProject, customSecondaryPath, model, permissionMode, effort, provider, localModel, cliPath, selectedObsidianVaults, agentName, onSubmit, isEditMode, editAgent, onUpdate, onClose]);
+  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, model, permissionMode, effort, provider, cliPath, agentName, onSubmit, isEditMode, editAgent, onUpdate, onClose, isOrchestrator]);
 
-  // Can proceed from current step?
-  const canContinue = step === 1 ? !!projectPath : true;
-  const canStart = !useWorktree || !!branchName.trim();
+  /* ── submit: a team ──────────────────────────────────────────────── */
+  const selectedMembers = useMemo(
+    () => editedMembers.filter((_, i) => selectedMemberIdx.has(i)),
+    [editedMembers, selectedMemberIdx],
+  );
+
+  const handleDeployTeam = useCallback(async () => {
+    if (!canSubmitTeam({ projectPath, selectedCount: selectedMembers.length })) return;
+    setDeploying(true);
+    setDeployErrors([]);
+    const projectName = projectPath.split('/').pop() || 'project';
+    const existingNames = new Set(existingAgents.filter(a => a.projectPath === projectPath).map(a => a.name));
+    const createdIds: string[] = [];
+    const issues: string[] = [];
+
+    for (const member of selectedMembers) {
+      const agentDisplayName = `${member.name} - ${projectName}`;
+      if (existingNames.has(agentDisplayName)) {
+        issues.push(`${member.name}: already deployed on this project - skipped.`);
+        continue;
+      }
+      try {
+        const resolvedModel = member.provider !== 'local' && member.model && member.model !== 'default' ? member.model : undefined;
+        const agent = await createAgent({
+          projectPath,
+          skills: member.skills,
+          character: member.character,
+          name: agentDisplayName,
+          permissionMode: member.permissionMode,
+          effort: member.effort,
+          provider: member.provider,
+          model: resolvedModel,
+          localModel: member.localModel,
+          worktree: member.worktreeBranch ? { enabled: true, branchName: member.worktreeBranch } : undefined,
+          orchestratorMode: member.orchestratorMode,
+        });
+        createdIds.push(agent.id);
+        if (member.worktreeBranch && !agent.branchName) {
+          issues.push(`${member.name}: worktree "${member.worktreeBranch}" could not be created - agent works in the project root.`);
+        }
+        const combinedBrief = [teamBrief.trim(), member.savedPrompt?.trim()].filter(Boolean).join('\n\n');
+        if (startOnDeploy && combinedBrief) {
+          await startAgent(agent.id, combinedBrief, { model: resolvedModel, provider: member.provider, localModel: member.localModel });
+        } else if (combinedBrief) {
+          await updateAgent({ id: agent.id, savedPrompt: combinedBrief });
+        }
+      } catch (err) {
+        console.error(`Failed to create team member "${member.name}":`, err);
+        issues.push(`${member.name}: ${err instanceof Error ? err.message : 'creation failed'}`);
+      }
+    }
+
+    setDeploying(false);
+    if (issues.length > 0) setDeployErrors(issues);
+    if (createdIds.length > 0) onTeamDeployed?.(createdIds);
+    if (issues.length === 0) onClose();
+  }, [projectPath, selectedMembers, existingAgents, createAgent, updateAgent, startAgent, teamBrief, startOnDeploy, onTeamDeployed, onClose]);
+
+  const canStartAgent = canSubmitAgent({ projectPath, useWorktree, branchName });
+  const canDeployTeam = canSubmitTeam({ projectPath, selectedCount: selectedMembers.length }) && !deploying;
 
   if (!open) return null;
+
+  const width = mode === 'team' ? 920 : 760;
 
   return (
     <>
       <DialogShell
         onClose={onClose}
-        width={720}
-        title={isEditMode ? 'Edit agent' : 'New agent'}
-        subtitle={STEP_SUBTITLE[step]}
+        width={width}
+        title={isEditMode ? 'Edit agent' : mode === 'team' ? 'New team' : 'New agent'}
+        subtitle={isEditMode
+          ? 'Everything about this agent, on one screen.'
+          : mode === 'team'
+            ? 'Several agents on one project, each on its own branch.'
+            : 'A folder, a CLI, and what you want done.'}
+        headerRight={!isEditMode && (
+          <SegmentedControl size="md" ariaLabel="Creation mode" options={MODE_OPTIONS} value={mode} onChange={setMode} />
+        )}
         className="[&_button:not(:disabled)]:cursor-pointer"
         footerLeft={
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
+          mode === 'team' && !isEditMode
+            ? <span className="text-xs text-muted-foreground">Five worktrees are created under the project. Nothing is pushed.</span>
+            : <span className="text-xs text-muted-foreground">It starts as soon as you create it.</span>
         }
         footerRight={
           <>
-            <Button
-              variant="secondary"
-              onClick={() => step > 1 && setStep(step - 1)}
-              disabled={step === 1}
-            >
-              Back
-            </Button>
-
-            {step < 4 ? (
-              <Button variant="primary" onClick={() => setStep(step + 1)} disabled={!canContinue}>
-                Next
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            {mode === 'team' && !isEditMode ? (
+              <Button variant="primary" onClick={handleDeployTeam} disabled={!canDeployTeam}>
+                {deploying ? 'Deploying…' : deployButtonLabel(selectedMembers.length)}
               </Button>
             ) : (
-              <Button variant="primary" onClick={handleSubmit} disabled={!canStart || isSubmitting}>
-                {isSubmitting ? 'Working...' : isEditMode ? 'Save changes' : 'Start agent'}
+              <Button variant="primary" onClick={handleSubmitAgent} disabled={!canStartAgent || isSubmitting}>
+                {isSubmitting ? 'Working...' : isEditMode ? 'Save changes' : 'Create and start'}
               </Button>
             )}
           </>
         }
       >
         <div className="space-y-5">
-          <StepIndicator currentStep={step} onStepClick={setStep} />
-
-          {step === 1 && !isEditMode && agentTemplates.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                  Start from a template <span className="normal-case font-normal">(optional)</span>
-                </p>
-                {onManageTemplates && (
-                  <button
-                    onClick={onManageTemplates}
-                    className="text-[11px] text-primary hover:underline"
-                  >
-                    Manage templates
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {agentTemplates.map(t => {
-                  const providerUnavailable = installedProviders[t.provider] === false;
-                  return (
-                    <Chip
-                      key={t.id}
-                      active={appliedTemplateId === t.id}
-                      onClick={() => applyTemplate(t)}
-                      disabled={providerUnavailable}
-                      title={providerUnavailable
-                        ? `${t.displayName}: provider "${t.provider}" is not installed/configured`
-                        : t.description}
-                      className="shrink-0 whitespace-nowrap"
-                    >
-                      <span>{t.icon}</span>
-                      {t.displayName}
-                    </Chip>
-                  );
-                })}
-              </div>
+          {deployErrors.length > 0 && (
+            <div className="border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs text-danger space-y-0.5">
+              {deployErrors.map((e, i) => <p key={i}>{e}</p>)}
             </div>
           )}
 
-          {step === 1 && (
-            <StepProject
+          {mode === 'agent' || isEditMode ? (
+            <AgentPanel
               projects={projects}
               projectPath={projectPath}
-              selectedProject={selectedProject}
-              customPath={customPath}
-              onSelectProject={handleSelectProject}
-              onCustomPathChange={handleCustomPathChange}
+              onSelectProject={setProjectPath}
               onBrowseFolder={onBrowseFolder}
-              showSecondaryProject={showSecondaryProject}
-              onToggleSecondary={handleToggleSecondary}
-              selectedSecondaryProject={selectedSecondaryProject}
-              onSelectSecondaryProject={handleSelectSecondaryProject}
-              customSecondaryPath={customSecondaryPath}
-              onCustomSecondaryPathChange={handleCustomSecondaryPathChange}
-              onClearSecondary={handleClearSecondary}
               favoriteProjects={favoriteProjects}
               hiddenProjects={hiddenProjects}
               defaultProjectPath={defaultProjectPath}
-            />
-          )}
-
-          {step === 2 && (
-            <StepModel
               provider={provider}
               onProviderChange={setProvider}
               model={model}
               onModelChange={setModel}
-              localModel={localModel}
-              onLocalModelChange={setLocalModel}
-              cliPath={cliPath}
-              onCliPathChange={setCliPath}
-              tasmaniaEnabled={tasmaniaEnabled}
               installedProviders={installedProviders}
-              /* The effort ladder moved from the Task step to this step, but
-                 these two props stayed behind on StepTask. StepModel then fell
-                 back to its own default ("medium") with no change handler, so
-                 the chips rendered enabled and every click was a no-op: effort
-                 could not be changed, in create or in edit mode. */
-              effort={effort}
-              onEffortChange={setEffort}
-              agentPersonaRef={agentPersonaRef}
-              projectPath={projectPath}
-            />
-          )}
-
-          {step === 3 && (
-            <StepTools
-              selectedSkills={selectedSkills}
-              onToggleSkill={toggleSkill}
-              allInstalledSkills={allInstalledSkills}
-              installedSkillSet={installedSkillSet}
-              onInstallSkill={skillInstall.handleInstallSkill}
-              provider={provider}
-              installedSkillsByProvider={installedSkillsByProvider}
-              /* The toggle was handed to StepTask, which stopped rendering it
-                 when the wizard was split into steps. StepTools is the step
-                 that draws it, so nothing reached the screen and no agent
-                 could be made an orchestrator from the UI. */
-              isOrchestrator={isOrchestrator}
-              onOrchestratorToggle={handleOrchestratorToggle}
-            />
-          )}
-
-          {step === 4 && (
-            <StepTask
-              name={agentName}
-              onNameChange={setAgentName}
               prompt={prompt}
               onPromptChange={setPrompt}
+              optionsOpen={agentOptionsOpen}
+              onToggleOptions={() => setAgentOptionsOpen(v => !v)}
+              skills={availableSkills}
+              skillDescriptions={skillDescriptions}
               selectedSkills={selectedSkills}
+              onToggleSkill={toggleSkill}
+              effort={effort}
+              onEffortChange={setEffort}
+              permissionMode={permissionMode}
+              onPermissionModeChange={setPermissionMode}
               useWorktree={useWorktree}
-              onToggleWorktree={() => setUseWorktree(prev => !prev)}
+              onToggleWorktree={() => setUseWorktree(v => !v)}
               worktreeLocked={isEditMode && !!editAgent?.branchName}
               branchName={branchName}
               onBranchNameChange={setBranchName}
-              permissionMode={permissionMode}
-              onPermissionModeChange={setPermissionMode}
-              /* Read-only here: the Task step only prints effort in its summary
-                 line, the ladder itself lives on the Model step. */
-              effort={effort}
+              isOrchestrator={isOrchestrator}
+              onOrchestratorToggle={handleOrchestratorToggle}
+              cliPath={cliPath}
+              onCliPathChange={setCliPath}
+            />
+          ) : (
+            <TeamPanel
+              projects={projects}
               projectPath={projectPath}
-              provider={provider}
-              model={model}
+              onSelectProject={setProjectPath}
+              teams={teams}
+              selectedTeamId={selectedTeamId}
+              onSelectTeam={loadTeam}
+              members={editedMembers}
+              selected={selectedMemberIdx}
+              onToggleSelect={toggleMemberSelected}
+              onPatchMember={patchMember}
+              onRemoveMember={removeMember}
+              onAddMember={addMember}
+              availability={installedProviders}
+              brief={teamBrief}
+              onBriefChange={setTeamBrief}
+              optionsOpen={teamOptionsOpen}
+              onToggleOptions={() => setTeamOptionsOpen(v => !v)}
+              permissionOverride={teamPermissionOverride}
+              onPermissionOverride={applyPermissionOverride}
+              startOnDeploy={startOnDeploy}
+              onToggleStartOnDeploy={() => setStartOnDeploy(v => !v)}
             />
           )}
         </div>
       </DialogShell>
 
-      {/* Skill installation terminal - its own overlay. It used to be nested
-          inside the wizard's scrim; now that the wizard is a DialogShell at
-          z-70 the terminal's own z-60 would land underneath it, so the wrapper
-          lifts the whole group above the dialog. */}
+      {/* Skill installation terminal - its own overlay, lifted above the
+          dialog's z-70 the same way the old wizard did. */}
       <div className="relative z-[80]">
         <SkillInstallTerminal
           show={skillInstall.showInstallTerminal}
