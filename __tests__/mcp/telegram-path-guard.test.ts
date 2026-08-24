@@ -72,7 +72,7 @@ describe('what the Telegram server will send', () => {
   });
 
   it('refuses a project .env, which is the case the first fix missed', () => {
-    refuses(path.join(HOME, 'Dorothy-fix', '.env'));
+    refuses(path.join(HOME, 'tars', '.env'));
     refuses(path.join(HOME, 'work', 'client', 'api', '.env'));
   });
 

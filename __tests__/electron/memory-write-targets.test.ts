@@ -63,7 +63,7 @@ beforeEach(() => {
 
 const base = {
   content: 'The gateway rejects a relative path with 400 "Path must be absolute".',
-  projectPath: '/Users/noah/Dorothy-fix',
+  projectPath: '/Users/noah/tars',
   settings: {},
   hermes: HERMES,
 };
