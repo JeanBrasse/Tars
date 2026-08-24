@@ -14,13 +14,17 @@ interface AgentManagementCardProps {
   onEdit: () => void;
   onStart: () => void;
   onStop: () => void;
-  /** @deprecated No longer reachable from the card - the design keeps three actions. */
-  onRemove?: () => void;
-  /** @deprecated No longer reachable from the card - the design keeps three actions. */
+  /**
+   * The fourth word-button the frame draws (`a delete`). This is the only place
+   * an agent can be destroyed for good, which is what the Dashboard's panel menu
+   * has been telling people since removal there became a reversible hide.
+   */
+  onDelete: () => void;
+  /** @deprecated No longer reachable from the card - the design keeps four actions. */
   onSaveAsTemplate?: () => void;
 }
 
-export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop }: AgentManagementCardProps) {
+export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, onDelete }: AgentManagementCardProps) {
   const statusConfig = STATUS_COLORS[agent.status];
   const tone = statusTone(agent.status);
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
@@ -80,6 +84,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop }:
           )}
           <Button size="sm" className={ROW_ACTION} onClick={onEdit}>
             edit
+          </Button>
+          <Button size="sm" className={ROW_ACTION} onClick={onDelete}>
+            delete
           </Button>
         </div>
       </div>

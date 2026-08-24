@@ -212,7 +212,13 @@ export function Dropdown<T extends string = string>({
 
       {open && (
         <div
-          className={`absolute z-[90] min-w-full bg-card border border-border ${drop === 'up' ? 'bottom-full mb-1' : 'mt-1'} ${align === 'right' ? 'right-0' : 'left-0'}`}
+          /* Sized by its content, not by its trigger. `min-w-full` alone made
+             the panel exactly as wide as the control it hangs off, so the model
+             picker in a team's member grid - a 1fr column of a 920px dialog,
+             about 130px - truncated every row to a few characters. The cap
+             keeps a long label from running off the window; rows still
+             truncate, so one degrades gracefully instead of widening the page. */
+          className={`absolute z-[90] w-max min-w-full max-w-[min(24rem,calc(100vw-2rem))] bg-card border border-border ${drop === 'up' ? 'bottom-full mb-1' : 'mt-1'} ${align === 'right' ? 'right-0' : 'left-0'}`}
         >
           {searchable && (
             <div className="flex items-center gap-2 h-8 px-2.5 border-b border-border">

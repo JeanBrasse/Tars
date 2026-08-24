@@ -7,6 +7,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 33,
+    version: '1.6.15',
+    date: '2026-08-25',
+    updates: [
+      'You can rename an agent. Editing one had no name field at all, so it kept whatever it was called the day it was created; the field sits at the top of the panel and, left empty, still falls back to the generated name it shows you',
+      'Changing the folder a team works in sticks. The pre-selected default arrived from disk a moment after the window opened and overwrote the folder you had just picked, so the whole team was deployed into the wrong project',
+      'The model list in a team is wide enough to read. It was only as wide as the column it hangs off, about a hundred and thirty pixels, which left every model name cut to a few characters',
+      'An agent can be deleted from the Agents page. The card offered open, start, stop and edit and nothing else, while the Dashboard had been saying for two versions that deleting for good lives here. The confirmation names the worktree that goes with it and counts the uncommitted changes in it, and says that commits on the branch are kept',
+      'The card on the Usage charts stays inside the panel. On the last days of the month it ran off the right, which pushed the page sideways and hid the number you were pointing at; the page can no longer scroll sideways at all',
+      'The local server no longer goes silent when its port is already taken. It retries instead of giving up for the life of the process, which used to leave the hooks, the seven MCP servers and delegation dead while the window looked perfectly healthy',
+    ],
+  },
+  {
     id: 32,
     version: '1.6.14',
     date: '2026-08-24',

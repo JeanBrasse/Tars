@@ -1,6 +1,6 @@
 # Tars 1.5.0: surface inventory
 
-Every surface the app can render today. The Pencil document `design/tars.pen`
+Every surface the app can render today. The Pencil document `design/tars-redesign.pen`
 must contain a frame for each line here; `npm run e2e:guard` checks the routed
 ones are covered by the visual suite too.
 
@@ -22,7 +22,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/vault` | Vault | Vault · dark |
 | `/projects` | Projects | Projects · dark |
 | `/skills` | Extensions (Skills + Plugins) | Extensions · Skills, Extensions · Plugins |
-| `/usage` | Usage | Usage · dark, Usage · light |
+| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages |
 | `/memory` | Brain (Projects / Agents / Backends) | Brain · Projects, Brain · Agents, Brain · Backends |
 | `/whats-new` | What's new | What's new · dark |
 | `/settings` | Settings | see below |

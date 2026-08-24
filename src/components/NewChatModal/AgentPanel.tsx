@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
 import type { AgentProvider } from '@/types/electron';
-import { Button, Dropdown, PanelCaption, Textarea } from '@/components/ui';
+import { Button, Dropdown, Input, PanelCaption, Textarea } from '@/components/ui';
 import { ProviderAndModel } from './ProviderAndModel';
 import { OptionsRow } from './OptionsRow';
 import { AgentOptionsBody } from './AgentOptionsBody';
@@ -13,6 +13,11 @@ import type { Project } from './types';
 const tildePath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+\//, '~/');
 
 export function AgentPanel(props: {
+  name: string;
+  onNameChange: (name: string) => void;
+  /** The auto-generated name an untouched field falls back to, shown as its placeholder. */
+  namePlaceholder: string;
+
   projects: Project[];
   projectPath: string;
   onSelectProject: (path: string) => void;
@@ -70,6 +75,21 @@ export function AgentPanel(props: {
 
   return (
     <div className="space-y-5">
+      {/* NAME, the frame's first field, above the project row. Editing an agent
+          used to have nowhere to change its name: the state was prefilled and
+          round-tripped straight back out, so an agent kept whatever it was
+          called at creation for ever. Left empty it still falls back to the
+          generated name, which is what the placeholder shows. */}
+      <div>
+        <PanelCaption className="mb-1.5">Name</PanelCaption>
+        <Input
+          aria-label="Agent name"
+          value={props.name}
+          onChange={(e) => props.onNameChange(e.target.value)}
+          placeholder={props.namePlaceholder}
+        />
+      </div>
+
       {/* PROJECT beside OR / Choose a folder - the two ways to point an agent
           somewhere, side by side rather than a field with a button glued on. */}
       <div className="flex items-end gap-3">

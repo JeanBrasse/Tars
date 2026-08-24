@@ -155,9 +155,33 @@ export default function AgentsPage() {
     await startAgent(agentId, prompt || '');
   }, [startAgent]);
 
-  const handleRemoveAgent = useCallback((agentId: string) => {
-    removeAgent(agentId);
-  }, [removeAgent]);
+  // The only place an agent can be permanently deleted from. It kills the PTY,
+  // drops agents.json's only record of it, AND runs `git worktree remove
+  // --force`, which throws away anything uncommitted in that checkout. So the
+  // confirmation names the worktree and counts what is in it rather than saying
+  // "cannot be undone" and leaving the one real consequence unmentioned.
+  // Committed work survives: the branch is left behind, only the checkout goes.
+  const handleRemoveAgent = useCallback(async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    const agentName = agent?.name || 'this agent';
+
+    let worktreeNote = '';
+    if (agent?.worktreePath && agent?.branchName) {
+      let dirtyCount: number | null = null;
+      try {
+        const res = await window.electronAPI?.review?.repo(agent.worktreePath);
+        if (res?.success && res.summary) dirtyCount = res.summary.status.length;
+      } catch {
+        // Best effort: a worktree we cannot read still gets the generic warning.
+      }
+      worktreeNote = dirtyCount
+        ? `\n\nIts worktree ${agent.worktreePath} will be deleted, along with ${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'}. Commits on ${agent.branchName} are kept.`
+        : `\n\nIts worktree ${agent.worktreePath} will be deleted. Commits on ${agent.branchName} are kept.`;
+    }
+
+    if (!window.confirm(`Delete "${agentName}"? This stops it and cannot be undone.${worktreeNote}`)) return;
+    await removeAgent(agentId);
+  }, [agents, removeAgent]);
 
   const handleSaveAsTemplate = useCallback(async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
@@ -247,7 +271,7 @@ export default function AgentsPage() {
                 onEdit={() => setEditAgentId(agent.id)}
                 onStart={() => handleStartAgent(agent.id)}
                 onStop={() => stopAgent(agent.id)}
-                onRemove={() => handleRemoveAgent(agent.id)}
+                onDelete={() => handleRemoveAgent(agent.id)}
                 onSaveAsTemplate={() => handleSaveAsTemplate(agent.id)}
               />
             ))}

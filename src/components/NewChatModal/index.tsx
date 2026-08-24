@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
-import type { NewChatModalProps, AgentPersonaValues } from './types';
-import type { AgentProvider, TeamTemplateMember } from '@/types/electron';
+import type { NewChatModalProps } from './types';
+import type { AgentCharacter, AgentProvider, TeamTemplateMember } from '@/types/electron';
 import type { AgentPermissionMode } from '@/types/agent';
 import { CHARACTER_OPTIONS } from './constants';
 import { computeProviderAvailability } from '@/lib/providers';
@@ -23,6 +23,16 @@ const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
   { value: 'agent', label: 'One agent' },
   { value: 'team', label: 'A team' },
 ];
+
+/**
+ * What an agent is called when the NAME field is left empty. One source for
+ * both the field's placeholder and the name actually saved, so the two can
+ * never drift apart.
+ */
+function generatedAgentName(character: AgentCharacter, projectPath: string): string {
+  const projectName = projectPath.split('/').pop() || 'project';
+  return `${CHARACTER_OPTIONS.find(c => c.id === character)?.name || 'Agent'} on ${projectName}`;
+}
 
 /**
  * New agent / new team, one modal.
@@ -72,12 +82,13 @@ export default function NewChatModal({
   const [provider, setProvider] = useState<AgentProvider>('claude');
   const [model, setModel] = useState<string>('default');
   const [cliPath, setCliPath] = useState('');
-  const agentPersonaRef = useRef<AgentPersonaValues>({ character: 'robot', name: '' });
-  // Not shown anywhere in the new screen (no Name field, no persona picker -
-  // the frame has neither), but still round-tripped: an agent being edited
-  // keeps the name it already has unless something here changes it, which
-  // nothing does. Dropping this would silently rename every agent to its
-  // auto-generated default the next time it is edited and saved.
+  // State, not a ref: the character decides the generated name the NAME field
+  // shows as its placeholder, so turning an agent into an orchestrator has to
+  // redraw that field.
+  const [character, setCharacter] = useState<AgentCharacter>('robot');
+  // Edited through the NAME field the frame draws at the top of the panel.
+  // Left empty it falls back to the generated `<character> on <project>` below,
+  // which is also what the field shows as its placeholder.
   const [agentName, setAgentName] = useState('');
   const skipNextSkillsClear = useRef(false);
 
@@ -181,6 +192,10 @@ export default function NewChatModal({
   /* ── reset / prepopulate on open ─────────────────────────────────── */
   useEffect(() => {
     if (!open) return;
+    // Same guard as the model catalogue's in ProviderAndModel: the answers
+    // below are asynchronous, and one belonging to a previous opening must not
+    // land in this one.
+    let cancelled = false;
     setMode(isEditMode ? 'agent' : (initialMode || 'agent'));
 
     if (editAgent) {
@@ -190,7 +205,7 @@ export default function NewChatModal({
       setModel(editAgent.model || 'default');
       setUseWorktree(!!editAgent.branchName);
       setBranchName(editAgent.branchName || '');
-      agentPersonaRef.current = { character: editAgent.character || 'robot', name: editAgent.name || '' };
+      setCharacter(editAgent.character || 'robot');
       setAgentName(editAgent.name || '');
       setPermissionMode(editAgent.permissionMode ?? (editAgent.skipPermissions ? 'auto' : 'normal'));
       setEffort(editAgent.effort || 'medium');
@@ -211,12 +226,12 @@ export default function NewChatModal({
       setCliPath('');
 
       if (initialOrchestrator) {
-        agentPersonaRef.current = { character: 'wizard', name: 'Super Agent (Orchestrator)' };
+        setCharacter('wizard');
         setAgentName('Super Agent (Orchestrator)');
         setPermissionMode('bypass');
         setIsOrchestrator(true);
       } else {
-        agentPersonaRef.current = { character: 'robot', name: '' };
+        setCharacter('robot');
         setAgentName('');
         setIsOrchestrator(false);
       }
@@ -226,11 +241,17 @@ export default function NewChatModal({
     setDeployErrors([]);
 
     window.electronAPI?.appSettings?.get().then((settings) => {
+      if (cancelled) return;
       if (Array.isArray(settings?.favoriteProjects)) setFavoriteProjects(settings.favoriteProjects);
       if (Array.isArray(settings?.hiddenProjects)) setHiddenProjects(settings.hiddenProjects);
       if (settings?.defaultProjectPath) {
-        setDefaultProjectPath(settings.defaultProjectPath);
-        if (!initialProjectPath && !editAgent) setProjectPath(settings.defaultProjectPath);
+        const fallback = settings.defaultProjectPath;
+        setDefaultProjectPath(fallback);
+        // Only fills a field still empty. The main process is usually busy, so
+        // this answer often arrives after the user has already picked a folder,
+        // and writing it unconditionally put the whole team back to work in the
+        // pre-selected project instead of the chosen one.
+        if (!initialProjectPath && !editAgent) setProjectPath(prev => prev || fallback);
       }
     });
 
@@ -239,6 +260,7 @@ export default function NewChatModal({
       window.electronAPI?.appSettings?.get(),
       window.electronAPI?.ollama?.test(),
     ]).then(([paths, settings, ollama]) => {
+      if (cancelled) return;
       setInstalledProviders(computeProviderAvailability(
         paths as Record<string, string | undefined> | undefined,
         settings,
@@ -247,8 +269,11 @@ export default function NewChatModal({
     });
 
     window.electronAPI?.skill?.listInstalledAll().then((byProvider) => {
+      if (cancelled) return;
       if (byProvider) setInstalledSkillsByProvider(byProvider);
     });
+
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialProjectPath, editAgent, initialOrchestrator, initialMode]);
 
@@ -271,12 +296,10 @@ export default function NewChatModal({
     setIsOrchestrator(enabled);
     if (enabled) {
       setPermissionMode('auto');
-      agentPersonaRef.current = { ...agentPersonaRef.current, character: 'wizard' };
+      setCharacter('wizard');
     } else {
       setPermissionMode('normal');
-      if (agentPersonaRef.current.character === 'wizard') {
-        agentPersonaRef.current = { ...agentPersonaRef.current, character: 'robot' };
-      }
+      setCharacter(prev => (prev === 'wizard' ? 'robot' : prev));
     }
   }, []);
 
@@ -285,9 +308,8 @@ export default function NewChatModal({
   const handleSubmitAgent = useCallback(async () => {
     if (!canSubmitAgent({ projectPath, useWorktree, branchName })) return;
 
-    const agentCharacter = agentPersonaRef.current.character;
-    const projectName = projectPath.split('/').pop() || 'project';
-    const finalName = agentName.trim() || `${CHARACTER_OPTIONS.find(c => c.id === agentCharacter)?.name || 'Agent'} on ${projectName}`;
+    const agentCharacter = character;
+    const finalName = agentName.trim() || generatedAgentName(agentCharacter, projectPath);
 
     setIsSubmitting(true);
     try {
@@ -326,7 +348,7 @@ export default function NewChatModal({
       setPrompt('');
       setUseWorktree(false);
       setBranchName('');
-      agentPersonaRef.current = { character: 'robot', name: '' };
+      setCharacter('robot');
       setAgentName('');
       setPermissionMode('normal');
       setEffort('medium');
@@ -337,7 +359,7 @@ export default function NewChatModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, model, permissionMode, effort, provider, cliPath, agentName, onSubmit, isEditMode, editAgent, onUpdate, onClose, isOrchestrator]);
+  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, model, permissionMode, effort, provider, cliPath, agentName, character, onSubmit, isEditMode, editAgent, onUpdate, onClose, isOrchestrator]);
 
   /* ── submit: a team ──────────────────────────────────────────────── */
   const selectedMembers = useMemo(
@@ -448,6 +470,9 @@ export default function NewChatModal({
 
           {mode === 'agent' || isEditMode ? (
             <AgentPanel
+              name={agentName}
+              onNameChange={setAgentName}
+              namePlaceholder={generatedAgentName(character, projectPath)}
               projects={projects}
               projectPath={projectPath}
               onSelectProject={setProjectPath}
