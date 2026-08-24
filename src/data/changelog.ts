@@ -15,6 +15,12 @@ export const CHANGELOG: Release[] = [
       'Hermes replies read like writing instead of like a file. Bold, italics, inline code, bullets and code blocks come out formatted rather than showing their asterisks and backticks. The formatting is built as text, never as markup, so a reply quoting a log line cannot run anything',
       'The Chat message box is quieter. The model, provider and cadence pickers were three bordered boxes with the same weight as the send button, so the row read as four controls fighting each other. They sit on a hairline under what you type, as plain labels, and send is the only thing with colour',
       'Kanban puts "New task" beside the title like every other page, instead of on a row of its own underneath',
+      'The sidebar stops leaving Dashboard lit while you are somewhere else. In the packaged app the page you are on could not be read from the address, so every entry was compared against a value that always said Dashboard, and two entries lit at once',
+      'A reply Hermes sent in a shape Tars could not read no longer arrives as raw JSON in the chat. A truncated answer now shows what it managed to say, and one that says nothing readable says that instead of printing an object at you',
+      'Header buttons are the same size on every page. Kanban and Chat were using the small 26px control where Agents, Vault and the rest use the standard 32px one',
+      'The Chat conversation reaches the fleet rail on a wide window. It was capped at 830 pixels, which is exactly the room beside the rail at the default size and a hole at any larger one',
+      'The message box centres what it is asking you for, and the cadence menu drops a line about Hermes runs that was not yours to worry about',
+      'The Git setting says what it actually does: it is Claude Code\'s own co-authored-by trailer, kept in its settings file, so it does not reach Codex, Gemini, Grok, OpenCode or Pi',
     ],
   },
   {

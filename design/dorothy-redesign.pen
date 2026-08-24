@@ -2934,6 +2934,42 @@
                   "children": [
                     {
                       "type": "frame",
+                      "id": "F7FQp",
+                      "name": "nav Update",
+                      "width": "fill_container",
+                      "fill": "#000000",
+                      "stroke": "$accent",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        7,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "y8hoy",
+                          "name": "icon",
+                          "fill": "$accent",
+                          "width": 13,
+                          "height": 13
+                        },
+                        {
+                          "type": "text",
+                          "id": "VNNkQ",
+                          "name": "label",
+                          "fill": "$accent",
+                          "content": "Update to 1.6.4",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
                       "id": "wsZOX",
                       "name": "nav What's new",
                       "width": "fill_container",
@@ -82375,123 +82411,6 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "z0Hs4",
-                          "name": "sel provider",
-                          "height": 26,
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "gap": 7,
-                          "padding": [
-                            0,
-                            10
-                          ],
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "cHxGp",
-                              "name": "l",
-                              "fill": "$text-secondary",
-                              "content": "anthropic",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-mono",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "unI2n",
-                              "name": "chev",
-                              "fill": "$text-muted",
-                              "content": "▾",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-mono",
-                              "fontSize": 9,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "jsTID",
-                          "name": "sel model",
-                          "height": 26,
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "gap": 7,
-                          "padding": [
-                            0,
-                            10
-                          ],
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "TVBsT",
-                              "name": "l",
-                              "fill": "$text-secondary",
-                              "content": "claude-opus-5",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-mono",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "XpbYC",
-                              "name": "chev",
-                              "fill": "$text-muted",
-                              "content": "▾",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-mono",
-                              "fontSize": 9,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "MYJ90",
-                          "name": "sel every",
-                          "height": 26,
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "gap": 7,
-                          "padding": [
-                            0,
-                            10
-                          ],
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "O3SDhP",
-                              "name": "l",
-                              "fill": "$text-secondary",
-                              "content": "every 5 min",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-mono",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "R91bcb",
-                              "name": "chev",
-                              "fill": "$text-muted",
-                              "content": "▾",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-mono",
-                              "fontSize": 9,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
                           "id": "v9Tfa",
                           "name": "watch",
                           "height": 26,
@@ -83407,11 +83326,12 @@
                           "id": "JuLx3",
                           "name": "composer",
                           "width": "fill_container",
-                          "height": 80,
+                          "height": 98,
                           "fill": "$surface-raised",
                           "stroke": "$border",
                           "strokeWidth": 1,
                           "layout": "vertical",
+                          "gap": 8,
                           "padding": [
                             10,
                             12
@@ -83434,9 +83354,143 @@
                               "id": "sgXHy",
                               "name": "r",
                               "width": "fill_container",
-                              "justifyContent": "end",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "top": 1
+                              },
+                              "gap": 6,
+                              "padding": [
+                                8,
+                                0,
+                                0,
+                                0
+                              ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "wQpsd",
+                                  "name": "pickers",
+                                  "gap": 6,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "i3yjY",
+                                      "name": "sel provider",
+                                      "height": 26,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "gap": 5,
+                                      "padding": [
+                                        0,
+                                        6
+                                      ],
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "DKs4A",
+                                          "name": "l",
+                                          "fill": "$text-muted",
+                                          "content": "anthropic",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "FDItj",
+                                          "name": "chev",
+                                          "fill": "$text-muted",
+                                          "content": "▾",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "Z7mIFO",
+                                      "name": "sel model",
+                                      "height": 26,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "gap": 5,
+                                      "padding": [
+                                        0,
+                                        6
+                                      ],
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "nQrp8",
+                                          "name": "l",
+                                          "fill": "$text-muted",
+                                          "content": "claude-opus-5",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "LxIkz",
+                                          "name": "chev",
+                                          "fill": "$text-muted",
+                                          "content": "▾",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "D6Sqx",
+                                      "name": "sel every",
+                                      "height": 26,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "gap": 5,
+                                      "padding": [
+                                        0,
+                                        6
+                                      ],
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "jKGIm",
+                                          "name": "l",
+                                          "fill": "$text-muted",
+                                          "content": "every 5 min",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "WEJoT",
+                                          "name": "chev",
+                                          "fill": "$text-muted",
+                                          "content": "▾",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
                                 {
                                   "type": "frame",
                                   "id": "yC7Ft",

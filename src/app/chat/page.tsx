@@ -304,13 +304,13 @@ export default function ChatPage() {
         subtitle="Hermes watches every project and answers for the fleet."
         actions={
           <>
-            <div className="h-[26px] flex items-center gap-1.5 border border-border px-2.5">
+            <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
               <span className={`w-1.5 h-1.5 shrink-0 ${paused ? 'bg-status-idle' : 'bg-status-running'}`} />
               <span className="font-mono text-[10.5px] text-muted-foreground">
                 {paused ? 'paused' : 'watching'}
               </span>
             </div>
-            <Button size="sm" className="font-mono" onClick={togglePause} disabled={pauseBusy}>
+            <Button className="font-mono" onClick={togglePause} disabled={pauseBusy}>
               {paused ? 'resume' : 'pause'}
             </Button>
           </>
@@ -318,7 +318,11 @@ export default function ChatPage() {
       />
 
       <div className="flex-1 min-h-0 flex gap-2.5">
-        <div className="flex-1 min-w-0 max-w-[830px] flex flex-col gap-2.5 min-h-0">
+        {/* No max width: the rail is a fixed 332 and the frame's 830 is simply
+            what is left beside it at 1440. Capping the conversation as well
+            left a hole between the two on any wider window, so the rail
+            stopped meeting the right edge the header still reached. */}
+        <div className="flex-1 min-w-0 flex flex-col gap-2.5 min-h-0">
           <GatewayBanner state={gatewayState} detail={gatewayDetail} onRetry={checkGateway} />
 
           <div ref={threadRef} onScroll={handleThreadScroll} className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5">
