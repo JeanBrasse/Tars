@@ -102,6 +102,8 @@ export default function ChatPage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   /** What you just sent, until the backend's own copy of it arrives. */
   const [pendingSend, setPendingSend] = useState<string | null>(null);
+  /** Written while a turn was in flight, waiting their turn. */
+  const [queued, setQueued] = useState<string[]>([]);
 
   const [gatewayState, setGatewayState] = useState<GatewayState>('checking');
   const [gatewayDetail, setGatewayDetail] = useState<string | null>(null);
@@ -238,7 +240,15 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text) return;
+    // Typing while Hermes is answering used to be impossible: the box was
+    // disabled for the whole thirty seconds. It queues instead, and the queue
+    // drains as soon as the turn in flight finishes.
+    if (sending) {
+      setQueued(q => [...q, text]);
+      setDraft('');
+      return;
+    }
     setDraft('');
     setSendError(null);
     setSending(true);
@@ -269,6 +279,20 @@ export default function ChatPage() {
       setPendingSend(null);
     }
   };
+
+  // One at a time, in the order they were written. The effect fires when
+  // `sending` falls back to false, which is the moment the next one can go.
+  useEffect(() => {
+    if (sending || queued.length === 0) return;
+    const [next, ...rest] = queued;
+    setQueued(rest);
+    setDraft(next);
+    // Sent on the next tick so `draft` is the queued text by the time
+    // handleSend reads it.
+    const id = setTimeout(() => { void handleSend(); }, 0);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSend is redefined every render; the queue is the trigger
+  }, [sending, queued]);
 
   const handleCancelAction = async (actionId: string) => {
     const message = messages.find(m => m.action?.actionId === actionId);
@@ -308,7 +332,6 @@ export default function ChatPage() {
   }
 
   const agentCount = fleet?.agents.length ?? 0;
-  const composerDisabled = gatewayState !== 'ok' || sending;
 
   return (
     // The gateway state is probed over IPC, so the banner appears a beat after
@@ -374,6 +397,14 @@ export default function ChatPage() {
                 />
               ))
             )}
+            {queued.map((text, i) => (
+              <div key={`q-${i}`} className="border border-border bg-card px-3.5 py-3 opacity-60">
+                <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you · queued</p>
+                <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                  {text}
+                </p>
+              </div>
+            ))}
             {pendingSend && (
               <div className="border border-border bg-card px-3.5 py-3">
                 <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you</p>
@@ -404,7 +435,10 @@ export default function ChatPage() {
             value={draft}
             onChange={setDraft}
             onSend={handleSend}
-            disabled={composerDisabled}
+            // Only a broken gateway disables it now. A turn in flight does
+            // not: what you write while Hermes is answering is queued.
+            disabled={gatewayState !== 'ok'}
+            sendLabel={sending ? 'queue' : 'send'}
             controls={<WatchControls settings={settings} onChange={handleSettingsChange} />}
             placeholder={
               gatewayState === 'ok'

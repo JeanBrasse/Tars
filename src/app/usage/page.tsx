@@ -252,11 +252,21 @@ function StatCard({
   );
 }
 
+/** 4200000 reads as 4.2M. Shared by both charts and the provider table. */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export default function UsagePage() {
   const { data, loading, error, refresh } = useClaude();
   const [costTimeRange, setCostTimeRange] = useState<TimeRange>('daily');
   /** Which bar the pointer is over, so the chart can show its own card. */
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
+  const [hoveredTokenBar, setHoveredTokenBar] = useState<string | null>(null);
   const [, setPricingLoaded] = useState(0);
   const [ledger, setLedger] = useState<Array<{ provider: string; inputTokens: number; outputTokens: number; costUSD: number; turns: number }>>([]);
 
@@ -400,6 +410,49 @@ export default function UsagePage() {
     }
     return map;
   }, [data?.stats?.dailyModelTokens, data?.tokenStats?.dailyCosts, costPerTokenByModel]);
+
+  /**
+   * Tokens per day, and what made them up.
+   *
+   * The cost chart answers "what did I spend"; this answers "on what". The
+   * hover card breaks a day down per model into input, output and cache,
+   * because that is the shape of the bill: on this author's history cache
+   * reads run to a billion tokens against a million and a half of output, and
+   * a single daily total hides which model is doing that.
+   */
+  const tokenChartData = useMemo(() => {
+    const days = data?.stats?.dailyModelTokens ?? [];
+    if (days.length === 0) return [];
+    return days.slice(-14).map(day => {
+      const split = day.breakdownByModel ?? {};
+      const models = Object.entries(split)
+        .map(([modelId, t]) => ({
+          modelId,
+          displayName: getModelDisplayName(modelId),
+          ...t,
+          total: t.input + t.output + t.cacheRead + t.cacheWrite,
+        }))
+        .filter(m => m.total > 0)
+        .sort((a, b) => b.total - a.total);
+      const total = models.reduce((sum, m) => sum + m.total, 0)
+        // A day recorded before the split existed still has its input+output
+        // total, so it draws a bar rather than a gap.
+        || Object.values(day.tokensByModel ?? {}).reduce((sum, n) => sum + n, 0);
+      const [, month, dayOfMonth] = day.date.split('-');
+      return {
+        date: day.date,
+        tick: String(Number(dayOfMonth)),
+        label: `${dayOfMonth} ${MONTHS[Number(month) - 1] ?? ''}`.trim(),
+        total,
+        models,
+      };
+    });
+  }, [data?.stats?.dailyModelTokens]);
+
+  const maxTokens = useMemo(
+    () => tokenChartData.reduce((max, d) => Math.max(max, d.total), 0),
+    [tokenChartData],
+  );
 
   // Calculate cost breakdown by model
   const modelCostBreakdown = useMemo(() => {
@@ -654,9 +707,6 @@ export default function UsagePage() {
               );
             }
 
-            const fmtTokens = (n: number) =>
-              n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
-
             return (
               <div className="mt-2 -mx-1">
                 {sorted.map(([providerId, totals]) => {
@@ -767,6 +817,88 @@ export default function UsagePage() {
             </motion.div>
           </AnimatePresence>
         </Panel>
+        {/* Tokens over time. The cost chart says what a day cost; this says
+            what it was made of, and its card breaks the day down per model
+            into input, output and cache. A single daily total hides which
+            model is doing the spending, and cache reads dwarf everything. */}
+        <Panel className="h-[260px] flex flex-col">
+          <div className="flex items-center justify-between shrink-0">
+            <PanelCaption>Daily tokens</PanelCaption>
+            <span className="font-mono text-[10px] text-muted-foreground">last 14 days</span>
+          </div>
+
+          <div className="flex flex-col flex-1 min-h-0 mt-3">
+            {tokenChartData.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                No token data available
+              </div>
+            ) : (
+              <>
+                <div className="flex items-stretch gap-1 flex-1 min-h-0">
+                  {tokenChartData.map((day, i) => {
+                    const height = maxTokens > 0 ? (day.total / maxTokens) * 100 : 0;
+                    const isLatest = i === tokenChartData.length - 1;
+                    const open = hoveredTokenBar === day.date;
+                    return (
+                      <div
+                        key={day.date}
+                        className="relative flex-1 min-w-0 flex flex-col items-center gap-1"
+                        onMouseEnter={() => setHoveredTokenBar(day.date)}
+                        onMouseLeave={() => setHoveredTokenBar(null)}
+                      >
+                        {open && (
+                          <div className="absolute bottom-full mb-1.5 z-20 pointer-events-none border border-border bg-secondary px-3 py-2 min-w-[190px]">
+                            <p className="font-mono text-[11px] font-medium text-foreground">
+                              {day.label} · {fmtTokens(day.total)} tokens
+                            </p>
+                            {day.models.length === 0 ? (
+                              <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                                no per model breakdown for this day
+                              </p>
+                            ) : day.models.slice(0, 3).map(model => (
+                              <div key={model.modelId} className="mt-2">
+                                <p className="font-mono text-[10px] font-medium text-text-secondary truncate">
+                                  {model.displayName}
+                                </p>
+                                {([
+                                  ['in', model.input],
+                                  ['out', model.output],
+                                  ['cache read', model.cacheRead],
+                                  ['cache write', model.cacheWrite],
+                                ] as const).map(([label, n]) => (
+                                  <div key={label} className="flex items-baseline justify-between gap-4">
+                                    <span className="font-mono text-[10px] text-muted-foreground">{label}</span>
+                                    <span className="font-mono text-[10px] tabular-nums text-text-secondary">
+                                      {fmtTokens(n)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="w-full flex flex-col justify-end flex-1 min-h-0">
+                          <div
+                            className={`w-full transition-colors ${
+                              isLatest || open ? 'bg-primary' : 'bg-bg-tertiary'
+                            }`}
+                            style={{ height: `${Math.max(height, 2)}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] leading-none text-muted-foreground">{day.tick}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-between mt-1.5 text-[10px] text-muted-foreground">
+                  <span>{tokenChartData[0]?.label.toLowerCase()}</span>
+                  <span>today</span>
+                </div>
+              </>
+            )}
+          </div>
+        </Panel>
+
       </div>
     </div>
   );

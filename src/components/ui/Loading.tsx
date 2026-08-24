@@ -68,20 +68,37 @@ export function SkeletonRows({ rows = 4, className = '' }: { rows?: number; clas
  * disappearing, which is what keeps the silhouette readable.
  * Frame: `Loading · brand mark`.
  */
-/** One pass of the light over all sixteen cells. */
-const CYCLE_S = 2;
+/** How long one square waits before the next lights. Sixteen of them makes a
+ *  fill just under two seconds, then it clears and starts again. */
+const STEP_MS = 110;
+const CELLS = 16;
 
 export function BrandSpinner({
   size = 30,
   className = '',
   label,
 }: {
-  /** Outer edge in px. 56 on the splash, 30 on a page, 14 inside a control. */
+  /** Outer edge in px. 56 on the splash, 30 on a page, 26 in a waiting row. */
   size?: number;
   className?: string;
   /** Announced to screen readers. The animation itself is decorative. */
   label?: string;
 }) {
+  // The grid fills rather than a single light travelling over it: the top-left
+  // square lights and stays lit, then the one to its right joins it, and so on
+  // to the end of the row and down to the next, until the mark is whole and it
+  // starts again. Driven here rather than in CSS because every square holds its
+  // state until the reset, and sixteen cells sharing one keyframe cannot each
+  // hold a different amount of it.
+  const [filled, setFilled] = useState(0);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => setFilled(n => (n + 1) % (CELLS + 1)), STEP_MS);
+    return () => clearInterval(id);
+  }, []);
+
   // 4 cells and 3 gaps, gap a quarter of a cell, so the mark keeps its
   // proportions at every size instead of the gaps swallowing a small one.
   const cell = size / 4.75;
@@ -95,31 +112,21 @@ export function BrandSpinner({
       className={`relative inline-block shrink-0 ${className}`}
       style={{ width: size, height: size }}
     >
-      {Array.from({ length: 16 }).map((_, i) => {
-        const col = i % 4;
-        const row = Math.floor(i / 4);
-        return (
-          <span
-            key={i}
-            className="square-sweep-cell absolute bg-primary"
-            style={{
-              left: col * (cell + gap),
-              top: row * (cell + gap),
-              width: cell,
-              height: cell,
-              // The rest state, which is also what shows before this cell's
-              // delay has elapsed. Without it the whole mark starts lit.
-              opacity: 0.16,
-              // One cell at a time, in reading order: across the top row, then
-              // back to the left of the next one down. The delay is the cell's
-              // own index, so all sixteen are distinct; it used to be
-              // `(col + row) % 4`, which gives only four delays and lights a
-              // whole diagonal at once.
-              animation: `square-sweep ${CYCLE_S}s linear ${(i * CYCLE_S) / 16}s infinite`,
-            }}
-          />
-        );
-      })}
+      {Array.from({ length: CELLS }).map((_, i) => (
+        <span
+          key={i}
+          className="absolute bg-primary transition-opacity duration-150"
+          style={{
+            left: (i % 4) * (cell + gap),
+            top: Math.floor(i / 4) * (cell + gap),
+            width: cell,
+            height: cell,
+            // Unlit cells rest at 0.16 rather than disappearing, which is what
+            // keeps the silhouette of the mark readable while it fills.
+            opacity: i < filled ? 1 : 0.16,
+          }}
+        />
+      ))}
     </span>
   );
 }

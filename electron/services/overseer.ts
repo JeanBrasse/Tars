@@ -697,6 +697,9 @@ export type AskOverseerResult =
   | { ok: false; reason: 'not_configured' | 'gateway_unreachable' | 'needs_sign_in' | 'run_timeout' | 'busy' | 'error'; error: string };
 
 let turnInFlight = false;
+/** Set by pause, read by the poll loop, cleared by resume and by every new
+ *  turn. A turn already running gives up at its next poll. */
+let abortTurn = false;
 
 export function isOverseerBusy(): boolean {
   return turnInFlight;
@@ -714,6 +717,7 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
     return { ok: false, reason: 'busy', error: 'The overseer is already handling another turn; try again in a moment.' };
   }
   turnInFlight = true;
+  abortTurn = false;
   try {
     const conn = usableHermesConnection();
     if (!conn) {
@@ -795,6 +799,9 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
     const deadline = triggeredAt + RUN_POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, RUN_POLL_INTERVAL_MS));
+      if (abortTurn) {
+        return { ok: false, reason: 'error', error: 'Stopped: you paused the overseer while it was answering.' };
+      }
 
       if (!runId) {
         const runs = await fetchHermesCronRuns(conn, jobId, { limit: 3 });
@@ -1069,16 +1076,32 @@ export function stopOverseerWatch(): void {
   // watchCallback is deliberately kept: setOverseerSettings re-arms through it.
 }
 
+/**
+ * Pause the watch, and give up on any turn already running.
+ *
+ * Pausing used to set a flag the next tick would read, which did nothing at
+ * all to a reply already in flight: Hermes kept working and the answer landed
+ * in the chat minutes after you had asked it to stop. Worse when the turn was
+ * wedged, since pause was the obvious thing to press and the only thing that
+ * did not help.
+ *
+ * The poll loop checks this on every pass, so the turn ends at the next poll
+ * rather than at its timeout. The Hermes run itself is already triggered and
+ * will finish on the gateway; what stops is Tars waiting for it and posting
+ * the result.
+ */
 export function pauseOverseerWatch(): void {
   const state = loadState();
   state.paused = true;
   saveState(state);
+  abortTurn = true;
 }
 
 export function resumeOverseerWatch(): void {
   const state = loadState();
   state.paused = false;
   saveState(state);
+  abortTurn = false;
 }
 
 export function isOverseerWatchPaused(): boolean {
