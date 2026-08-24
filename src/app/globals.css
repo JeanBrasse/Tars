@@ -564,33 +564,11 @@ button, a, input, textarea, select {
   background: var(--border-accent);
 }
 
-/*
- * A single light running over the mark. Each cell rests grey, lights as its
- * turn comes and goes back to grey; the cells are delayed by their own index,
- * so the light travels left to right along a row and drops to the left of the
- * next one.
- *
- * The keyframes start AND end at the rest opacity. They used to start lit,
- * which looked right in isolation and was backwards on screen: an animation
- * shows the element's own style until its delay elapses, so before its first
- * turn every cell rendered at full opacity. The mark appeared all lit and went
- * out one square at a time.
- *
- * The lit window is deliberately shorter than the gap between two cells. Cells
- * are a sixteenth of the cycle apart, so anything lit for longer than that
- * leaves two or three glowing at once and reads as squares staying on rather
- * than one square travelling.
- */
-@keyframes square-sweep {
-  0%          { opacity: 0.16; }
-  2%          { opacity: 1; }
-  6%          { opacity: 0.16; }
-  100%        { opacity: 0.16; }
-}
 
 /*
- * Anyone who has asked the system not to animate gets the mark held still, at
- * the rest opacity, rather than a spinner they cannot escape.
+ * Anyone who has asked the system not to animate gets the mark held still.
+ * BrandSpinner checks the same query and never starts its timer, so this is
+ * belt and braces for anything else that ends up using the class.
  */
 @media (prefers-reduced-motion: reduce) {
   .square-sweep-cell { animation: none !important; opacity: 0.4 !important; }

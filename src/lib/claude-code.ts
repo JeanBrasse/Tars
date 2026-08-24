@@ -82,6 +82,9 @@ export interface ClaudeStats {
     date: string;
     /** input+output only: not enough to price a day, see costUSD */
     tokensByModel: Record<string, number>;
+    /** Per model, split the way the bill is. Absent on the legacy
+     *  stats-cache.json shape, which never carried it. */
+    breakdownByModel?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
     /** The day priced from its own tokens, cache included. Absent on the
      *  legacy stats-cache.json shape, which carries no per-day cost at all. */
     costUSD?: number;

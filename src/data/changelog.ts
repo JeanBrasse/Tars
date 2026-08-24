@@ -7,6 +7,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 30,
+    version: '1.6.12',
+    date: '2026-08-24',
+    updates: [
+      'The loading mark fills instead of blinking. The top-left square lights and stays lit, the one to its right joins it, and so on to the end of the row and down to the next, until the mark is whole and it starts again',
+      'You can write while Hermes is answering. The box was disabled for the whole thirty seconds; what you write now queues, shows in the thread as queued, and goes as soon as the reply lands',
+      'Pausing stops a reply that is already being written. It only set a flag the next check would read, so the answer you had asked it to stop still arrived minutes later, which was worst when the turn was stuck and pause was the obvious thing to press',
+      'The Chat message box is a proper box: the text sits in its own bordered field with room in it and send is beside it, rather than 13px text on a 19px line in a bare card',
+      'A Daily tokens chart on the Usage page. Hovering a day breaks it down per model into what went in, what came out and what was cache, which is the shape of the bill: cache reads outweigh output by three orders of magnitude and a single daily total hides which model is spending',
+      'Builds clean up after themselves, keeping the last three. Nothing ever deleted the packaged versions, so the release folder had reached 6.3GB',
+    ],
+  },
+  {
     id: 29,
     version: '1.6.11',
     date: '2026-08-24',

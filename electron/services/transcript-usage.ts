@@ -36,7 +36,15 @@ export interface TranscriptUsage {
    * 1.08bn read tokens against 1.5m output tokens on this author's history -
    * and they were not in the daily map at all.
    */
-  dailyModelTokens: Array<{ date: string; tokensByModel: Record<string, number>; costUSD: number }>;
+  dailyModelTokens: Array<{
+    date: string;
+    tokensByModel: Record<string, number>;
+    /** Per model, split the way the bill is: what went in, what came out, and
+     *  what was read from or written to cache. `tokensByModel` above stays
+     *  input+output so nothing that already read it changes meaning. */
+    breakdownByModel: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
+    costUSD: number;
+  }>;
   /** Most recent day with real activity */
   lastComputedDate: string | null;
 }
@@ -310,6 +318,8 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   // onto Object.prototype inside the main process.
   const modelUsage: Record<string, ModelUsage> = Object.create(null);
   const dailyMap = new Map<string, Record<string, number>>();
+  type Split = { input: number; output: number; cacheRead: number; cacheWrite: number };
+  const dailyBreakdown = new Map<string, Record<string, Split>>();
   const dailyCost = new Map<string, number>();
   let lastComputedDate: string | null = null;
 
@@ -359,6 +369,14 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
         const day = dailyMap.get(turn.date) ?? Object.create(null);
         day[turn.model] = (day[turn.model] || 0) + delta.input + delta.output;
         dailyMap.set(turn.date, day);
+
+        const split = dailyBreakdown.get(turn.date) ?? Object.create(null);
+        const cell = split[turn.model] ?? (split[turn.model] = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+        cell.input += delta.input;
+        cell.output += delta.output;
+        cell.cacheRead += delta.cacheRead;
+        cell.cacheWrite += delta.cacheWrite;
+        dailyBreakdown.set(turn.date, split);
         // The day priced from its own tokens, cache reads and cache writes
         // included, rather than left to be reconstructed downstream from
         // input+output alone.
@@ -378,7 +396,12 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   const value: TranscriptUsage = {
     modelUsage: { ...modelUsage },
     dailyModelTokens: Array.from(dailyMap.entries())
-      .map(([date, tokensByModel]) => ({ date, tokensByModel: { ...tokensByModel }, costUSD: dailyCost.get(date) ?? 0 }))
+      .map(([date, tokensByModel]) => ({
+        date,
+        tokensByModel: { ...tokensByModel },
+        breakdownByModel: { ...(dailyBreakdown.get(date) ?? {}) },
+        costUSD: dailyCost.get(date) ?? 0,
+      }))
       .sort((a, b) => a.date.localeCompare(b.date)),
     lastComputedDate,
   };
