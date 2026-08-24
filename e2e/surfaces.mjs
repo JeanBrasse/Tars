@@ -15,7 +15,11 @@
 /** @type {Surface[]} */
 export const PAGES = [
   { name: 'dashboard', route: '/' },
-  { name: 'chat', route: '/chat' },
+  // The fleet rail shows statuses that settle from running to idle in the first
+  // seconds after launch, and chat is the second surface visited. Waiting is
+  // better than masking the rail: a masked panel is a pink rectangle in the
+  // baseline and no coverage at all.
+  { name: 'chat', route: '/chat', settle: 3000 },
   { name: 'agents', route: '/agents' },
   { name: 'kanban', route: '/kanban' },
   { name: 'vault', route: '/vault' },
@@ -24,7 +28,7 @@ export const PAGES = [
   { name: 'extensions-plugins', route: '/skills', clickText: 'Plugins', settle: 1500 },
   { name: 'crons', route: '/crons' },
   { name: 'review', route: '/review' },
-  { name: 'logs', route: '/logs' },
+  { name: 'logs', route: '/logs', settle: 3000 },
   { name: 'usage', route: '/usage' },
   { name: 'brain-agents', route: '/memory' },
   { name: 'brain-projects', route: '/memory', clickText: 'Projects' },

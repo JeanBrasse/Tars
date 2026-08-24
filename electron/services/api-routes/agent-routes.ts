@@ -16,6 +16,7 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
+import { withSessionTruth, sessionModel } from '../agent-truth';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -134,7 +135,12 @@ async function spawnAgentSession(
     if (fs.existsSync(candidate)) mcpConfigPath = candidate;
   }
 
-  const resolvedModel = opts.model || agent.model;
+  // An explicit model on this call wins; otherwise the session's own model
+  // wins over the record. Typing `/model opus` into the terminal used to be
+  // undone the next time the PTY was respawned, because the command was
+  // rebuilt from a record nothing had updated. The identity header above
+  // already carries the branch for the same reason.
+  const resolvedModel = opts.model || sessionModel(agent) || agent.model;
   const effectiveMode = opts.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal');
 
 
@@ -549,7 +555,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (caller && !showAll) {
       agentValues = agentValues.filter(a => a.projectPath === caller);
     }
-    const agentList = agentValues.map(a => ({
+    const agentList = agentValues.map(withSessionTruth).map(a => ({
       id: a.id,
       name: a.name,
       status: a.status,

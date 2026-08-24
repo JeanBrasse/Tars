@@ -97,6 +97,8 @@ export default function ChatPage() {
   const [pauseBusy, setPauseBusy] = useState(false);
   const [settings, setSettings] = useState<OverseerSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  /** What you just sent, until the backend's own copy of it arrives. */
+  const [pendingSend, setPendingSend] = useState<string | null>(null);
 
   const [gatewayState, setGatewayState] = useState<GatewayState>('checking');
   const [gatewayDetail, setGatewayDetail] = useState<string | null>(null);
@@ -117,6 +119,12 @@ export default function ChatPage() {
     const r = await window.electronAPI?.overseer?.history();
     setMessages(r?.messages ?? []);
     setHistoryLoading(false);
+    // The turn runs in the main process, so leaving this page does not stop
+    // it and coming back should not pretend nothing is happening.
+    if (r?.busy) {
+      setSending(true);
+      setSendStartedAt(prev => prev ?? Date.now());
+    }
   }, []);
 
   const loadFleet = useCallback(async () => {
@@ -232,6 +240,10 @@ export default function ChatPage() {
     setSendError(null);
     setSending(true);
     setSendStartedAt(Date.now());
+    // Shown straight away. The backend only records the user's turn once the
+    // whole round trip finishes, which takes about thirty seconds, so what you
+    // had just typed simply was not on screen until Hermes answered.
+    setPendingSend(text);
     try {
       const r = await window.electronAPI?.overseer?.send(text);
       if (!r) { setSendError({ message: 'Electron API unavailable.', detail: null }); setDraft(text); return; }
@@ -241,6 +253,7 @@ export default function ChatPage() {
         return;
       }
       await loadHistory();
+      setPendingSend(null);
       void loadFleet();
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
@@ -250,6 +263,7 @@ export default function ChatPage() {
     } finally {
       setSending(false);
       setSendStartedAt(null);
+      setPendingSend(null);
     }
   };
 
@@ -356,6 +370,14 @@ export default function ChatPage() {
                   onSendAction={handleSendAction}
                 />
               ))
+            )}
+            {pendingSend && (
+              <div className="border border-border bg-card px-3.5 py-3">
+                <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you</p>
+                <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                  {pendingSend}
+                </p>
+              </div>
             )}
             {sending && sendStartedAt && <PendingTurn startedAt={sendStartedAt} />}
           </div>

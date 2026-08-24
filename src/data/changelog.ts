@@ -7,6 +7,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 28,
+    version: '1.6.10',
+    date: '2026-08-24',
+    updates: [
+      'A message you send in Chat appears the moment you send it. It only showed up when Hermes answered, about thirty seconds later, because the backend records your turn at the end of the round trip',
+      'Leaving the Chat page no longer hides a reply in progress. The turn always ran in the background and the history was always kept; what was missing is that coming back looked like nothing was happening',
+      'The Chat message box was rebuilt. It had grown by accretion: no room around the text, three pickers and a button crammed onto one line, and a placeholder against the edge',
+      'Tars notices when you change a model in a terminal, or when an agent changes branch. Neither was ever read back, so the card kept saying the old one and, worse, the next restart rebuilt the command from that stale record and put the old model back. The session wins now',
+    ],
+  },
+  {
     id: 27,
     version: '1.6.9',
     date: '2026-08-24',

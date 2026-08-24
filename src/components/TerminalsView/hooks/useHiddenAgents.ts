@@ -15,8 +15,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
  * this is a property of one board on one machine, which is why it lives beside
  * the grid layouts in localStorage rather than in agents.json.
  *
- * Deleting for good is still available, from the same menu, behind its own
- * wording and its own confirmation.
+ * Deleting for good is not offered here at all: it lives on the Agents page,
+ * where the agent itself is managed. A stored id whose agent has since been
+ * deleted needs no cleanup either, because every read of this list is filtered
+ * against the agents that actually exist.
  */
 
 const STORAGE_KEY = 'terminals-hidden-agents';
@@ -88,19 +90,5 @@ export function useHiddenAgents(tabId: string) {
     });
   }, [tabId]);
 
-  /** Forget an agent that no longer exists, so deleting one for good does not
-   *  leave it listed as hidden on a board forever. */
-  const forget = useCallback((agentId: string) => {
-    setStore(() => {
-      const next = readStore();
-      for (const tab of Object.keys(next)) {
-        next[tab] = next[tab].filter(id => id !== agentId);
-        if (next[tab].length === 0) delete next[tab];
-      }
-      writeStore(next);
-      return next;
-    });
-  }, []);
-
-  return { hiddenIds, hide, show, showAll, forget };
+  return { hiddenIds, hide, show, showAll };
 }

@@ -131,12 +131,7 @@ export default function LogsPage() {
           <PanelCaption>
             {fleet.length} agent{fleet.length === 1 ? '' : 's'}
           </PanelCaption>
-          {/* Live fleet data: statuses flip from running to idle and the chunk
-              counts climb while agents work, so this panel can never be
-              compared pixel for pixel. Marked so the visual test masks it, the
-              same way it masks terminal bodies. The panel's own frame and its
-              caption stay compared. */}
-          <div data-volatile className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
+          <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
             {sortedFleet.map((a, i) => (
               <div key={`g-${a.agentId}`} className="space-y-2">
               {/* The project name once, above its agents. A flat list of names

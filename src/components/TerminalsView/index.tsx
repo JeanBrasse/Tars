@@ -400,43 +400,6 @@ export default function TerminalsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
   }, [stopAgent, multiTerminal.unregisterContainer, hiddenAgents.hide, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.removeAgentFromTab]);
 
-  /**
-   * Delete an agent for good.
-   *
-   * Kills the PTY, drops agents.json's only record of it, and runs
-   * `git worktree remove --force`, which throws away anything uncommitted in
-   * that checkout. Committed work survives: the branch is left behind, only
-   * the checkout goes.
-   */
-  const handleDeleteAgent = useCallback(async (agentId: string) => {
-    {
-      const agent = agentsRef.current.find(a => a.id === agentId);
-      const agentName = agent?.name || 'this agent';
-
-      let worktreeNote = '';
-      if (agent?.worktreePath && agent?.branchName) {
-        let dirtyCount: number | null = null;
-        try {
-          const res = await window.electronAPI?.review?.repo(agent.worktreePath);
-          if (res?.success && res.summary) dirtyCount = res.summary.status.length;
-        } catch {
-          // Best effort: a worktree we cannot read still gets the generic warning.
-        }
-        worktreeNote = dirtyCount
-          ? `\n\nIts worktree ${agent.worktreePath} will be deleted, along with ${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'}. Commits on ${agent.branchName} are kept.`
-          : `\n\nIts worktree ${agent.worktreePath} will be deleted. Commits on ${agent.branchName} are kept.`;
-      }
-
-      if (!window.confirm(`Delete "${agentName}" for good? This stops it and cannot be undone.${worktreeNote}`)) return;
-      multiTerminal.unregisterContainer(agentId);
-      // Drop it from any board's hidden list too, or it stays counted as
-      // hidden on a board it can never come back to.
-      hiddenAgents.forget(agentId);
-      await removeAgent(agentId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
-  }, [removeAgent, multiTerminal.unregisterContainer, hiddenAgents.forget]);
-
   const handleFocusPanel = useCallback((agentId: string) => {
     setFocusedPanelId(agentId);
     multiTerminal.focusTerminal(agentId);
@@ -693,7 +656,6 @@ export default function TerminalsView() {
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
             onRemoveAgent={handleRemoveAgent}
-            onDeleteAgent={handleDeleteAgent}
             onClearTerminal={multiTerminal.clearTerminal}
             onFullscreenPanel={grid.fullscreenPanel}
             onExitFullscreen={grid.exitFullscreen}

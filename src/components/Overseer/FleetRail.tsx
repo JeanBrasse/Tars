@@ -96,12 +96,7 @@ export function FleetRail({ fleet }: { fleet: OverseerFleetSnapshot | null }) {
           <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">the fleet</span>
           <span className="font-mono text-[10px] text-muted-foreground">{agents.length} agents</span>
         </div>
-        {/* Live fleet data: statuses settle from running to idle in the seconds
-            after launch and the output tail moves while agents work, so this
-            list can never be compared pixel for pixel. Marked so the visual
-            test masks it, the same way it masks terminal bodies and the Logs
-            fleet panel. The panel frame and its caption stay compared. */}
-        <div data-volatile className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {agents.length === 0 ? (
             <p className="px-2.5 py-3 text-[11px] text-muted-foreground">No agents running in any project.</p>
           ) : (

@@ -11,14 +11,19 @@ import { Button } from '@/components/ui';
  * which it scrolls. It used to be a fixed two lines whatever you typed, which
  * made anything longer than a sentence a two-line window onto your own message.
  *
- * The controls under the text are deliberately quieter than the send button.
- * They describe what the next message runs on, so they read as plain labels,
- * and send stays the only accented thing here.
+ * It had grown by accretion: a text area with no room around it, three pickers
+ * and a button crammed onto one 26px line, and a placeholder against the left
+ * edge. This card is what you are about to send, so it gets the room a message
+ * needs: 14 above, 16 either side, the text, 10, then the control row.
+ *
+ * The pickers stay quieter than the send button. They describe what the next
+ * message runs on, so they read as plain labels; send is the one accented
+ * thing on the card. Frame: `Chat · Overseer` > `composer`.
  */
 
 /** Beyond this the box stops growing and scrolls instead. */
 const MAX_LINES = 8;
-const LINE_HEIGHT_PX = 18;
+const LINE_HEIGHT_PX = 19;
 
 export function Composer({
   value,
@@ -64,7 +69,7 @@ export function Composer({
   };
 
   return (
-    <div className="shrink-0 border border-border bg-secondary flex flex-col gap-2 px-4 py-3.5">
+    <div className="shrink-0 border border-border bg-card flex flex-col gap-2.5 px-4 pt-3.5 pb-3">
       <textarea
         ref={ref}
         rows={1}
@@ -74,15 +79,14 @@ export function Composer({
         disabled={disabled}
         placeholder={placeholder}
         style={{ lineHeight: `${LINE_HEIGHT_PX}px`, maxHeight: MAX_LINES * LINE_HEIGHT_PX }}
-        className="w-full bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground outline-none resize-none overflow-y-auto disabled:opacity-60"
+        className="w-full bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground outline-none resize-none overflow-y-auto disabled:opacity-60"
       />
       {/* No rule between the two. The controls are already quieter than
           everything around them, and a line across the card only cut it in
           half without separating anything that needed separating. */}
-      <div className="h-[26px] shrink-0 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 min-w-0">{controls}</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">{controls}</div>
         <Button
-          size="sm"
           variant="primary"
           className="font-mono shrink-0"
           onClick={onSend}
