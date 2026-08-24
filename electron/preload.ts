@@ -533,8 +533,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Overseer chat (Hermes watches every project's agents)
   overseer: {
-    send: (message: string) =>
-      ipcRenderer.invoke('overseer:send', message),
+    send: (message: string, attachments?: { name: string; path: string; isImage: boolean }[]) =>
+      ipcRenderer.invoke('overseer:send', message, attachments),
+    attachFiles: () =>
+      ipcRenderer.invoke('overseer:attachFiles'),
     history: () =>
       ipcRenderer.invoke('overseer:history'),
     fleet: () =>

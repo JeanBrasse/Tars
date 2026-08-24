@@ -89,6 +89,13 @@ export interface OverseerAction {
   resolvedAt: string;
 }
 
+/** A file already on the gateway, named by the message that sent it. */
+export interface OverseerAttachment {
+  name: string;
+  path: string;
+  isImage: boolean;
+}
+
 export interface OverseerMessage {
   id: string;
   role: 'user' | 'overseer';
@@ -96,6 +103,9 @@ export interface OverseerMessage {
   action: OverseerAction | null;
   isBriefing?: boolean;
   timestamp: string;
+  /** Files sent with this message. Kept beside the text rather than inside it
+   *  so the bubble can show a chip and the text stays what was typed. */
+  attachments?: OverseerAttachment[];
 }
 
 interface FleetAgentSnapshot {
@@ -712,7 +722,24 @@ export function isOverseerBusy(): boolean {
  * missing (recreated once), a run that never appears (times out, says so),
  * and a reply that isn't valid JSON (falls back to prose, no action).
  */
-export async function askOverseer(userMessage: string, opts: { isBriefing?: boolean } = {}): Promise<AskOverseerResult> {
+/**
+ * The message as the model should read it: what was typed, with any attached
+ * files named above it by their path on the gateway.
+ *
+ * Paths rather than contents. The gateway's agent has file tools, so it can
+ * open what it needs, more than once, without a megabyte of base64 having to
+ * survive the prompt.
+ */
+function withAttachmentPaths(text: string, attachments: OverseerAttachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) return text;
+  const lines = attachments.map(a => `- ${a.path}${a.isImage ? ' (image)' : ''}`);
+  return `Files attached to this message, on your filesystem:\n${lines.join('\n')}\n\n${text}`;
+}
+
+export async function askOverseer(
+  userMessage: string,
+  opts: { isBriefing?: boolean; attachments?: OverseerAttachment[] } = {},
+): Promise<AskOverseerResult> {
   if (turnInFlight) {
     return { ok: false, reason: 'busy', error: 'The overseer is already handling another turn; try again in a moment.' };
   }
@@ -751,12 +778,18 @@ export async function askOverseer(userMessage: string, opts: { isBriefing?: bool
         text: userMessage,
         action: null,
         timestamp: new Date().toISOString(),
+        ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
       });
       saveState(state);
     }
 
     const snapshot = await buildFleetSnapshot();
-    const prompt = composeTurn(snapshot, state.messages, userMessage, opts);
+    const prompt = composeTurn(
+      snapshot,
+      state.messages,
+      withAttachmentPaths(userMessage, opts.attachments),
+      opts,
+    );
 
     // Sent on every turn rather than only at creation: the job is long-lived
     // and a model chosen in the Chat header has to reach a job that already

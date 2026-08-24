@@ -3,6 +3,7 @@
 import { ApprovalBlock } from './ApprovalBlock';
 import type { OverseerFleetSnapshot, OverseerMessage } from '@/types/electron';
 import { RichText } from './RichText';
+import { AttachmentChips } from './AttachmentChips';
 
 function formatTime(iso: string): string {
   try {
@@ -62,6 +63,8 @@ export function MessageCard({
       <div className="text-[12.5px] leading-relaxed text-foreground break-words">
         <RichText text={message.text} />
       </div>
+
+      <AttachmentChips attachments={message.attachments} on={isOverseer ? 'card' : 'secondary'} />
 
       {message.action && (
         <ApprovalBlock

@@ -484,6 +484,97 @@ export async function createHermesCron(
   return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
 }
 
+/** A file that now lives on the gateway, ready to be named in a prompt. */
+export interface HermesAttachment {
+  /** What the chip shows: the name the user picked it under. */
+  name: string;
+  /** Where it landed on the gateway. This is what the prompt references, and
+   *  it is the only part the model needs. */
+  path: string;
+  bytes: number;
+  isImage: boolean;
+}
+
+/**
+ * Big enough for a screenshot or a PDF, small enough that the whole thing can
+ * sit in memory as base64 on both sides without trouble. The gateway takes a
+ * JSON data URL rather than multipart, so the encoded form is roughly a third
+ * larger again.
+ */
+export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+
+/** The name is used to build a path on the gateway, so it must not be able to
+ *  climb out of the upload directory or contain a separator. */
+function safeUploadName(name: string): string {
+  const base = name.split(/[\\/]/).pop() || 'file';
+  const cleaned = base.replace(/[\x00-\x1f]/g, '').replace(/^\.+/, '').trim();
+  return cleaned.slice(0, 120) || 'file';
+}
+
+/**
+ * Put a file on the gateway and get back the path to name in a prompt.
+ *
+ * Two endpoints, because the gateway has two: images go through
+ * /api/chat/image-upload, which names the file itself and refuses anything
+ * that is not an image ("Upload payload must be an image"), and everything
+ * else goes through /api/files/upload, which takes the destination path and
+ * insists it be absolute or `~`-rooted.
+ *
+ * Nothing is inlined into the message. The gateway's agent has file tools, so
+ * a path is both smaller and more useful than a base64 blob: it can read the
+ * file more than once, and a 4MB screenshot does not have to survive a round
+ * trip through the prompt.
+ */
+export async function uploadHermesAttachment(
+  conn: HermesConnection,
+  file: { name: string; mimeType: string; base64: string; bytes: number },
+): Promise<
+  | { success: true; attachment: HermesAttachment }
+  | { success: false; error: string; needsSignIn?: boolean }
+> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  const name = safeUploadName(file.name);
+  const isImage = file.mimeType.startsWith('image/');
+  const dataUrl = `data:${file.mimeType || 'application/octet-stream'};base64,${file.base64}`;
+
+  const { status, body } = isImage
+    ? await hermesRequest(baseUrl, '/api/chat/image-upload', {
+      method: 'POST',
+      token: conn.token,
+      // An upload is not a status poll: a few megabytes over a home
+      // connection outlasts the 10s default several times over.
+      timeoutMs: 120_000,
+      body: { data_url: dataUrl, filename: name },
+    })
+    : await hermesRequest(baseUrl, '/api/files/upload', {
+      method: 'POST',
+      token: conn.token,
+      timeoutMs: 120_000,
+      body: { path: `~/.hermes/uploads/${name}`, data_url: dataUrl, overwrite: true },
+    });
+
+  if (status >= 300) {
+    const detail = (body && typeof body === 'object' && 'detail' in body)
+      ? String((body as { detail: unknown }).detail).slice(0, 200)
+      : `HTTP ${status}`;
+    return { success: false, error: detail, needsSignIn: status === 401 || status === 403 };
+  }
+
+  const payload = (body ?? {}) as { path?: unknown; name?: unknown; bytes?: unknown };
+  const remotePath = typeof payload.path === 'string' ? payload.path : '';
+  if (!remotePath) return { success: false, error: 'The gateway accepted the file but returned no path.' };
+
+  return {
+    success: true,
+    attachment: {
+      name,
+      path: remotePath,
+      bytes: typeof payload.bytes === 'number' ? payload.bytes : file.bytes,
+      isImage,
+    },
+  };
+}
+
 export interface HermesCronRun {
   id: string;
   status?: string;

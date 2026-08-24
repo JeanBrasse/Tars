@@ -1,4 +1,8 @@
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { getMainWindow } from '../core/window-manager';
+import { MIME_TYPES } from '../constants';
 import {
   askOverseer,
   getOverseerHistory,
@@ -12,11 +16,36 @@ import {
   setOverseerSettings,
   applyOverseerModel,
   OverseerAction,
+  OverseerAttachment,
   OverseerSettings,
 } from '../services/overseer';
 import { AUTO_ACTION_RULES } from '../services/overseer-auto';
 import { usableHermesConnection } from '../services/hermes-config';
-import { fetchHermesModelOptions } from '../services/hermes-client';
+import {
+  fetchHermesModelOptions,
+  uploadHermesAttachment,
+  MAX_ATTACHMENT_BYTES,
+} from '../services/hermes-client';
+
+/**
+ * Enough to tell the gateway an image from a file, which is the only decision
+ * that rides on it: images take the image endpoint, everything else takes the
+ * file endpoint. The app's own map covers the common cases; the extras here are
+ * the ones a person actually drags into a chat.
+ */
+const EXTRA_MIME_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.md': 'text/markdown',
+  '.csv': 'text/csv',
+  '.heic': 'image/heic',
+  '.bmp': 'image/bmp',
+  '.tiff': 'image/tiff',
+};
+
+function mimeTypeFor(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return MIME_TYPES[ext] || EXTRA_MIME_TYPES[ext] || 'application/octet-stream';
+}
 
 /**
  * IPC surface for the Chat · Overseer page. Mirrors the shape of
@@ -24,11 +53,72 @@ import { fetchHermesModelOptions } from '../services/hermes-client';
  * (electron/services/overseer.ts).
  */
 export function registerOverseerHandlers(): void {
-  ipcMain.handle('overseer:send', async (_event, message: string) => {
-    if (typeof message !== 'string' || !message.trim()) {
+  ipcMain.handle('overseer:send', async (
+    _event,
+    message: string,
+    attachments?: OverseerAttachment[],
+  ) => {
+    const staged = Array.isArray(attachments) ? attachments : [];
+    // A message that is only files still says something, so it is not empty.
+    if (typeof message !== 'string' || (!message.trim() && staged.length === 0)) {
       return { ok: false, reason: 'error', error: 'Message is empty.' };
     }
-    return askOverseer(message.trim());
+    return askOverseer(message.trim(), staged.length ? { attachments: staged } : {});
+  });
+
+  /**
+   * Pick files and put them on the gateway.
+   *
+   * The picking and the reading both happen here rather than in the renderer:
+   * Electron stopped exposing a real path on the renderer's File objects, and
+   * the gateway wants a data URL, so the main process is the only side that can
+   * go from "the user chose this" to "the gateway has it" without the file
+   * making a pointless detour through the window.
+   */
+  ipcMain.handle('overseer:attachFiles', async () => {
+    const conn = usableHermesConnection();
+    if (!conn) return { success: false, error: 'Hermes is not configured. Set it up in Settings.' };
+
+    const win = getMainWindow();
+    const picked = await dialog.showOpenDialog(win!, {
+      title: 'Attach to the message',
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return { success: true, attachments: [], canceled: true };
+    }
+
+    const attachments: OverseerAttachment[] = [];
+    const errors: string[] = [];
+    for (const filePath of picked.filePaths) {
+      const name = path.basename(filePath);
+      try {
+        const stat = await fs.promises.stat(filePath);
+        if (stat.size > MAX_ATTACHMENT_BYTES) {
+          errors.push(`${name} is larger than ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MB.`);
+          continue;
+        }
+        const buffer = await fs.promises.readFile(filePath);
+        const uploaded = await uploadHermesAttachment(conn, {
+          name,
+          mimeType: mimeTypeFor(filePath),
+          base64: buffer.toString('base64'),
+          bytes: stat.size,
+        });
+        if (uploaded.success) attachments.push(uploaded.attachment);
+        else errors.push(`${name}: ${uploaded.error}`);
+      } catch (err) {
+        errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // Partial success is the honest answer when three files were picked and one
+    // was too big: the two that landed are usable, and the third is named.
+    return {
+      success: attachments.length > 0 || errors.length === 0,
+      attachments,
+      ...(errors.length ? { error: errors.join(' ') } : {}),
+    };
   });
 
   ipcMain.handle('overseer:history', async () => ({
