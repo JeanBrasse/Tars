@@ -46,11 +46,17 @@ vi.mock('../../../electron/services/hermes-client', () => ({
     calls.push({ fn: 'action', args });
     return { success: true };
   },
-  // No run ever completes, so askOverseer gives up on the poll rather than
-  // hanging. The turn's Hermes calls have all been made by then, which is what
-  // these tests read.
-  fetchHermesCronRuns: async () => ({ success: true, runs: [] }),
-  fetchHermesSessionMessages: async () => ({ success: true, messages: [] }),
+  // A run id carries its creation instant (cron_{job}_{YYYYMMDD}_{HHMMSS}) and
+  // askOverseer only accepts one at or after the trigger, so it is stamped now
+  // rather than hardcoded - a fixed id would read as stale and poll to timeout.
+  fetchHermesCronRuns: async () => {
+    const t = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_');
+    return { success: true, runs: [{ id: `cron_job-1_${t.slice(0, 8)}_${t.slice(9, 15)}` }] };
+  },
+  fetchHermesSessionMessages: async () => ({
+    success: true,
+    messages: [{ role: 'assistant', content: 'the fleet is quiet' }],
+  }),
   fetchHermesModelOptions: async () => ({ success: true, provider: '', model: '', providers: [] }),
 }));
 
@@ -150,7 +156,8 @@ describe('the chosen model reaches the gateway', () => {
     expect(update).toBeDefined();
     expect(update!.args[2]).toMatchObject({ provider: 'anthropic', model: 'claude-opus-5' });
     expect((update!.args[2] as { prompt?: string }).prompt).toContain('second turn');
-  });
+  // Two full round trips, each waiting out a real poll interval.
+  }, 30_000);
 
   it('sends no model at all when none is pinned, leaving the gateway its own choice', async () => {
     await overseer.askOverseer('what is the fleet doing');

@@ -7,6 +7,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 21,
+    version: '1.6.3',
+    date: '2026-08-24',
+    updates: [
+      'Any OpenAI-compatible vendor is reachable now, not just the ones Tars ships a provider for. A new "Custom (OpenAI-compatible)" provider takes a base URL, an optional key and a model, and Tars translates for it the same way it already does for Venice',
+      'Ollama Cloud joins local Ollama as its own provider. It is a different product from the server on your machine, billed separately, reached at ollama.com with your own key',
+      'The Venice translator is no longer Venice-specific under the hood. One local bridge now serves every OpenAI-only vendor, addressed by a path segment rather than a port each, so adding the next one does not mean adding another server',
+    ],
+  },
+  {
     id: 20,
     version: '1.6.2',
     date: '2026-08-24',
