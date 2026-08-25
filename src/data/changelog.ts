@@ -7,6 +7,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 34,
+    version: '1.6.16',
+    date: '2026-08-25',
+    updates: [
+      'An orchestrator answers a question instead of turning it into a half hour job. Its instructions only ever described handing work to one agent or to several, so the smallest thing it could do with a passing remark was open a task, and it often opened three. It now sizes the response before it reaches for anything: reply itself, one agent, or several only when the pieces are genuinely independent, and when it is torn between two it takes the smaller. Real work spread across several areas still goes out in parallel',
+      'An orchestrator is allowed to talk. It was told it was an agent manager only, which stopped it explaining anything, checking a fact in the code, or responding to feedback without delegating first. It still does not write the project code, that belongs to its agents, but answering and reporting are now its own work. The same applies from Telegram and Slack, where a question used to start with "Looking at available agents..." before anyone had established that an agent was needed',
+      'Your agents stop being handed another project\'s rules. Tars gives every agent it starts a short set of working habits, and when Tars was run from a checkout it sent them its own development rules instead: draw the screen in a design file first, do not touch these folders, open the pull request against this repository, run these build checks. Agents on unrelated projects were following all of it, which is why some of them kept reaching for tools their project had nothing to do with. They now receive the working habits only, and your project\'s own instructions always come first. An install that has the wrong file already repairs itself the next time Tars opens',
+    ],
+  },
+  {
     id: 33,
     version: '1.6.15',
     date: '2026-08-25',
