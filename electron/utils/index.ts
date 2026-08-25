@@ -46,20 +46,51 @@ export function ensureDataDir() {
  * These are two different documents and only one of them belongs here.
  */
 export function ensureAgentInstructions(): void {
+  const dest = path.join(DATA_DIR, 'CLAUDE.md');
+
+  /**
+   * Take away a file this function cannot vouch for.
+   *
+   * Every path out of here either writes the shipped resource or leaves
+   * nothing. Returning early instead, which an earlier version did, meant a
+   * machine that already had the wrong document kept it: exactly the machines
+   * this is meant to repair. No instructions is the better failure. An agent
+   * without this file still has its own project's instructions and its own
+   * judgement; an agent with a stale copy of it is being told to follow
+   * another project's rules.
+   *
+   * Nothing is written in its place, because the only correct content is the
+   * resource that could not be read, and inventing a second copy of it here
+   * is how the wrong document escaped in the first place.
+   */
+  const discard = (): void => {
+    try {
+      if (!fs.existsSync(dest)) return;
+      console.warn(`[instructions] removing ${dest}, which is no longer anybody's document`);
+      fs.rmSync(dest, { force: true });
+    } catch (err) {
+      // A removal that fails is still not a reason to stop the app starting.
+      console.warn('[instructions] could not remove the stale file:', err);
+    }
+  };
+
   try {
     const source = getAgentInstructionsPath();
     if (!fs.existsSync(source)) {
-      // A broken install rather than a normal state. Leaving the destination
-      // untouched is the safe half of the choice: writing something invented
-      // here is how the wrong document got out in the first place.
-      console.warn('Agent instructions missing from the bundle, not written:', source);
+      // Said every time, not only when there is something to delete: an
+      // install that cannot find its own resources is broken, and every agent
+      // it starts from now on runs with no instructions at all.
+      console.warn('[instructions] missing from the bundle:', source);
+      discard();
       return;
     }
     ensureDataDir();
-    fs.writeFileSync(path.join(DATA_DIR, 'CLAUDE.md'), fs.readFileSync(source, 'utf-8'), 'utf-8');
+    fs.writeFileSync(dest, fs.readFileSync(source, 'utf-8'), 'utf-8');
   } catch (err) {
     // Called during startup: a failure here must never stop the app opening.
-    console.warn('Failed to write the agent instructions:', err);
+    console.warn('[instructions] failed to publish:', err);
+    // The write may have got halfway, so what is on disk is nobody's document.
+    discard();
   }
 }
 

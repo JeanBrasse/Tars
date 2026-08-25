@@ -160,3 +160,71 @@ describe('the instructions Tars publishes for its agents', () => {
     fs.rmSync(empty, { recursive: true, force: true });
   });
 });
+
+describe('a machine that already has the wrong document', () => {
+  /** Nico's install: the repository's rules are on disk from an earlier run. */
+  function pollute(): string[] {
+    fs.mkdirSync(dataDir, { recursive: true });
+    const repoRules = fs.readFileSync(REPO_CLAUDE_MD, 'utf-8');
+    fs.writeFileSync(dest(), repoRules);
+    const markers = [
+      'tars-redesign.pen',
+      'electron/core/pty-manager.ts',
+      'JeanBrasse/Tars',
+      'lint:design',
+      'e2e:guard',
+      'DOROTHY_API_PORT',
+      'Frontend Agent',
+      'Backend Agent',
+    ];
+    // The precondition, asserted: this really is the polluted file.
+    for (const m of markers) expect(repoRules, `not actually polluted: ${m}`).toContain(m);
+    return markers;
+  }
+
+  it('is cleaned up by a launch that can read the resource', () => {
+    const markers = pollute();
+
+    utils.ensureAgentInstructions();
+
+    const written = fs.readFileSync(dest(), 'utf-8');
+    for (const m of markers) expect(written, `survived: ${m}`).not.toContain(m);
+  });
+
+  it('is cleaned up by a launch that cannot, because no rules beat another project\'s', async () => {
+    const markers = pollute();
+
+    // Same machine, broken bundle. Returning early here left the pollution in
+    // place on exactly the installs this exists to repair.
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-empty-'));
+    appPath = empty;
+    vi.resetModules();
+    const broken = await import('../../../electron/utils');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(() => broken.ensureAgentInstructions()).not.toThrow();
+
+    expect(fs.existsSync(dest()), 'the stale file survived').toBe(false);
+    // Belt and braces: nothing of it anywhere, not even partially rewritten.
+    if (fs.existsSync(dest())) {
+      const left = fs.readFileSync(dest(), 'utf-8');
+      for (const m of markers) expect(left, `survived: ${m}`).not.toContain(m);
+    }
+    warn.mockRestore();
+    fs.rmSync(empty, { recursive: true, force: true });
+  });
+
+  it('is left alone only when there was never anything to clean', async () => {
+    // Nothing on disk and no resource: it must not invent a file, and must
+    // not blow up trying to remove one that is not there.
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-empty-'));
+    appPath = empty;
+    vi.resetModules();
+    const broken = await import('../../../electron/utils');
+
+    expect(() => broken.ensureAgentInstructions()).not.toThrow();
+
+    expect(fs.existsSync(dest())).toBe(false);
+    fs.rmSync(empty, { recursive: true, force: true });
+  });
+});
