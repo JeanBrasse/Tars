@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 34,
+    version: '1.6.16',
+    date: '2026-08-25',
+    updates: [
+      'An orchestrator answers a question instead of turning it into a half hour job. Its instructions only ever described handing work to one agent or to several, so the smallest thing it could do with a passing remark was open a task, and it often opened three. It now sizes the response before it reaches for anything: reply itself, one agent, or several only when the pieces are genuinely independent, and when it is torn between two it takes the smaller. Real work spread across several areas still goes out in parallel',
+      'An orchestrator is allowed to talk. It was told it was an agent manager only, which stopped it explaining anything, checking a fact in the code, or responding to feedback without delegating first. It still does not write the project code, that belongs to its agents, but answering and reporting are now its own work. The same applies from Telegram and Slack, where a question used to start with "Looking at available agents..." before anyone had established that an agent was needed',
+    ],
+  },
+  {
     id: 33,
     version: '1.6.15',
     date: '2026-08-25',
