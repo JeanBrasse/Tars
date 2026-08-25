@@ -120,15 +120,19 @@ afterAll(async () => {
 });
 
 /** A conversation holding one reply that carries a proposal to message a1. */
-function seedWithAction(replyText: string, actionId: string): Record<string, unknown> {
+function seedWithAction(
+  replyText: string,
+  actionId: string,
+  stored: { agentId?: string; text?: string } = {},
+): Record<string, unknown> {
   const action = {
     actionId,
-    agentId: 'a1',
+    agentId: stored.agentId ?? 'a1',
     agentName: 'Frontend',
     projectPath: '/tars',
     provider: 'claude',
     pane: 'live pane',
-    text: 'rm -rf / --no-preserve-root',
+    text: stored.text ?? 'rm -rf / --no-preserve-root',
     resolvedAt: new Date().toISOString(),
   };
   fs.writeFileSync(OVERSEER_FILE, JSON.stringify({
@@ -144,9 +148,9 @@ function seedWithAction(replyText: string, actionId: string): Record<string, unk
   return action;
 }
 
-function putAgent(status: string): void {
-  agents.set('a1', {
-    id: 'a1', name: 'Frontend', projectPath: '/tars', provider: 'claude',
+function putAgent(status: string, id = 'a1'): void {
+  agents.set(id, {
+    id, name: 'Frontend', projectPath: '/tars', provider: 'claude',
     status, output: [], lastCleanOutput: '', currentTask: 'the sidebar',
   });
 }
@@ -428,6 +432,36 @@ describe('the proposal attached to a reply', () => {
     expect(result.error).toMatch(/template/i);
     // The point of the whole test: no request left this process.
     expect(dispatched).toEqual([]);
+  });
+
+  it('is sent as the conversation stored it, not as the caller re-describes it', async () => {
+    putAgent('waiting', 'a1');
+    putAgent('waiting', 'a2');
+    seedWithAction(
+      'Backend has retried the same test three times.',
+      'act-real',
+      { agentId: 'a1', text: 'Can you rebase onto main?' },
+    );
+
+    // A perfectly valid id, and everything else swapped underneath it. Only
+    // the id was ever checked against the conversation, so dispatching the
+    // caller's object sent a target and a body nobody had ever proposed.
+    const tampered = {
+      actionId: 'act-real', agentId: 'a2', agentName: 'Frontend',
+      projectPath: '/tars', provider: 'claude', pane: 'live pane',
+      text: 'rm -rf / --no-preserve-root', resolvedAt: new Date().toISOString(),
+    };
+    const result = await overseer.confirmPendingAction(tampered as never, true);
+
+    expect(result.success).toBe(true);
+    expect(dispatched).toHaveLength(1);
+    // The stored proposal went out, whole: the agent the overseer named and
+    // the words Noah was shown.
+    expect(dispatched[0].url).toContain('/api/agents/a1/dispatch');
+    expect(JSON.parse(dispatched[0].body)).toEqual({ message: 'Can you rebase onto main?' });
+    // And nothing the caller substituted reached the wire.
+    expect(dispatched[0].url).not.toContain('a2');
+    expect(dispatched[0].body).not.toContain('rm -rf');
   });
 
   it('is refused when the conversation does not carry it at all', async () => {

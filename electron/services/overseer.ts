@@ -790,7 +790,8 @@ export async function confirmPendingAction(
   }
 
   const carrier = loadState().messages.find(m => m.action?.actionId === action.actionId);
-  if (!carrier) {
+  const authentic = carrier?.action ?? null;
+  if (!carrier || !authentic) {
     return { success: false, error: 'That proposal is not in the conversation, so it cannot be sent.' };
   }
   if (isTemplateEcho(carrier.text)) {
@@ -800,14 +801,21 @@ export async function confirmPendingAction(
     };
   }
 
-  if (consumedActionIds.has(action.actionId)) {
+  if (consumedActionIds.has(authentic.actionId)) {
     return { success: false, error: 'This action was already resolved.' };
   }
   if (!approve) {
-    markConsumed(action.actionId);
+    markConsumed(authentic.actionId);
     return { success: true };
   }
-  return dispatchApprovedAction(action);
+
+  // `authentic`, never the caller's `action`. Only the id was ever checked
+  // against the conversation, so dispatching the object that carried it meant
+  // an id that passed could still deliver a target and a body that had never
+  // been proposed or seen. What is sent is what the overseer actually wrote
+  // and what Noah was actually shown; the argument is a claim about which
+  // proposal is meant, not the proposal itself.
+  return dispatchApprovedAction(authentic);
 }
 
 // ── Talking to Hermes ────────────────────────────────────────────────────

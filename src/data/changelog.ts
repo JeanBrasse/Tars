@@ -19,6 +19,7 @@ export const CHANGELOG: Release[] = [
       'The local server no longer goes silent when its port is already taken. It retries instead of giving up for the life of the process, which used to leave the hooks, the seven MCP servers and delegation dead while the window looked perfectly healthy',
       'Chat answers instead of repeating the same placeholder line every five minutes. One reply came back as the blank example Hermes is shown rather than an answer, and because it was written into the conversation every turn after it copied what it had just read; a reply like that is now refused before it is recorded, and one already in the conversation is never quoted back to Hermes again, so an install that was stuck answers properly on the next message without anything being deleted from it',
       'The replies that already came back empty stop reading as messages. A run of them folds into one line that says how many there were, in the place they happened, and opens if you want to read what actually arrived. Nothing is removed from the conversation, and a line you typed yourself is never folded',
+      'Sending a suggestion Chat proposed always sends exactly what you were shown. Tars now looks the proposal up in the conversation before it writes anything to an agent, and sends the wording and the target that are stored there rather than whatever the screen hands back, so a suggestion that came from one of those empty replies is refused with a line saying why instead of going out',
     ],
   },
   {
