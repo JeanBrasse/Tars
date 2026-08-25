@@ -52,7 +52,17 @@ const CANNOT_REACH_THE_RENDERER = [
   { match: /^electron\/resources\/.*\.md$/, why: 'agent prompt text, never rendered' },
   // Documentation.
   { match: /^[^/]+\.md$/, why: 'documentation' },
-  { match: /^\.[^/]+$/, why: 'a repository dotfile' },
+  // Named one by one rather than "any root dotfile". That rule was the only
+  // one here resting on a category instead of a fact, and the category is not
+  // true: a .postcssrc or a .browserslistrc is a build input that would change
+  // every screenshot while looking like configuration. These do not build
+  // anything, so anything else with a dot runs.
+  { exact: '.gitignore', why: 'git configuration' },
+  { exact: '.gitattributes', why: 'git configuration' },
+  { exact: '.editorconfig', why: 'editor configuration' },
+  { exact: '.nvmrc', why: 'a Node version pin read by the shell' },
+  { exact: '.eslintignore', why: 'lint configuration' },
+  { exact: '.prettierignore', why: 'formatter configuration' },
 ];
 
 /** Where the suite lives, so a change to it always runs it. */
@@ -81,8 +91,11 @@ export function decide(files) {
       forcing.push({ file, why: 'the suite itself' });
       continue;
     }
-    const safe = CANNOT_REACH_THE_RENDERER.find(rule =>
-      rule.prefix ? file.startsWith(rule.prefix) : rule.match.test(file));
+    const safe = CANNOT_REACH_THE_RENDERER.find(rule => {
+      if (rule.exact) return file === rule.exact;
+      if (rule.prefix) return file.startsWith(rule.prefix);
+      return rule.match.test(file);
+    });
     if (safe) skipped.push({ file, why: safe.why });
     else forcing.push({ file, why: 'can reach the renderer, or is unclassified' });
   }
@@ -110,15 +123,24 @@ async function changedFiles(base) {
   };
 
   // Committed on this branch, against the trunk it will merge into.
-  const merged = await git(['diff', '--name-only', `${base}...HEAD`]);
+  //
+  // --no-renames is load bearing. Git reports a rename as the new path alone,
+  // so moving a component out of src/ into scripts/ or hooks/ looked like a
+  // change to tooling and skipped the suite, while src/ had just lost a file
+  // and the pages that imported it. Told not to detect renames, git reports
+  // the deletion and the addition separately, and the deletion is the half
+  // that matters.
+  const merged = await git(['diff', '--name-only', '--no-renames', `${base}...HEAD`]);
   out.push(...merged.split('\n'));
   // Plus anything still in the working tree, staged or not.
   const dirty = await git(['status', '--porcelain']);
   for (const line of dirty.split('\n')) {
     if (!line.trim()) continue;
-    // "XY path" and "XY old -> new": take what the file is now.
     const pathPart = line.slice(3);
-    out.push(pathPart.includes(' -> ') ? pathPart.split(' -> ')[1] : pathPart);
+    // "XY old -> new" for a staged rename: both halves count, for the same
+    // reason as above. Where it went from is as much a change as where it is.
+    if (pathPart.includes(' -> ')) out.push(...pathPart.split(' -> '));
+    else out.push(pathPart);
   }
   return out.map(f => f.trim()).filter(Boolean);
 }

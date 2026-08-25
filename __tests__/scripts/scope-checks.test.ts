@@ -112,6 +112,58 @@ describe('a mixed change', () => {
   });
 });
 
+describe('a file moved out of the renderer', () => {
+  /**
+   * Git reports a rename as the new path alone, so a component moved from
+   * src/ into scripts/ arrived here looking like a change to tooling and the
+   * suite was skipped, while src/ had just lost a file and every page that
+   * imported it. The collector asks git not to detect renames, so both halves
+   * arrive, and the half that matters is the one that left.
+   */
+  it.each([
+    ['into build tooling', ['src/components/Card.tsx', 'scripts/Card.tsx']],
+    ['into the tests', ['src/hooks/useAgents.ts', '__tests__/useAgents.ts']],
+    ['into the landing site', ['src/components/Hero.tsx', 'landing/src/Hero.tsx']],
+    ['into an MCP bundle', ['src/lib/format.ts', 'mcp-vault/src/format.ts']],
+    ['into the shell hooks', ['src/lib/notify.ts', 'hooks/notify.ts']],
+  ])('runs the suite when a renderer file is moved %s', (_name, files) => {
+    expect(runs(files as string[])).toBe(true);
+  });
+
+  it('names the departure as the reason, not the arrival', () => {
+    const decision = decide(['src/components/Card.tsx', 'scripts/Card.tsx']);
+
+    expect(decision.forcing.map(f => f.file)).toEqual(['src/components/Card.tsx']);
+    expect(decision.skipped.map(f => f.file)).toEqual(['scripts/Card.tsx']);
+  });
+
+  it('still skips a move that never involved the renderer', () => {
+    // hooks/ to scripts/ is two exempt places: nothing was lost by src/.
+    expect(runs(['hooks/notify.sh', 'scripts/notify.sh'])).toBe(false);
+  });
+});
+
+describe('root dotfiles', () => {
+  it.each([
+    ['.gitignore'], ['.gitattributes'], ['.editorconfig'],
+    ['.nvmrc'], ['.eslintignore'], ['.prettierignore'],
+  ])('skips the suite for %s, which builds nothing', (file) => {
+    expect(runs([file])).toBe(false);
+  });
+
+  /**
+   * The rule used to exempt any root dotfile, which is a guess about a
+   * category rather than a fact about a file. These are build inputs: each
+   * would change every screenshot while looking like configuration.
+   */
+  it.each([
+    ['.postcssrc'], ['.postcssrc.json'], ['.browserslistrc'],
+    ['.babelrc'], ['.swcrc'], ['.env.production'],
+  ])('runs the suite for %s, which is a build input', (file) => {
+    expect(runs([file])).toBe(true);
+  });
+});
+
 describe('the classification itself', () => {
   it('treats a path prefix as a prefix, not a substring', () => {
     // A directory that merely starts with the same letters is not the same
