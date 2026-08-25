@@ -76,12 +76,19 @@ export interface AgentStatus {
    * The agent that asked for this one's current work, from the
    * X-Tars-Caller-Id header the MCP client sends on every call.
    *
-   * Set on every route that starts work and cleared when the request carries
-   * no caller, so a start from the interface does not leave an orchestrator
-   * attached to work it never asked for. Read by services/agent-watch.ts,
-   * which is what tells the orchestrator its agent is done.
+   * Bound to the PTY it was recorded against, and not merely to the agent,
+   * because clearing it correctly cannot be left to a list of callers. There
+   * are three separate places that spawn a session (initAgentPty,
+   * spawnAgentSession, and the local-provider path in ipc-handlers), the
+   * interface reaches none of them through the API, and a fourth can be added
+   * tomorrow. Every one of them assigns a fresh `ptyId`, so a link whose
+   * `ptyId` is not the live one is simply not this session's link and is
+   * ignored. Nothing has to remember to clear it.
+   *
+   * It is also consumed once delivered, so it can never speak for a later
+   * piece of work. Read by services/agent-watch.ts.
    */
-  requestedBy?: string;
+  requestedBy?: { agentId: string; ptyId: string };
   currentSessionId?: string;
   /**
    * The last session this agent ran, kept so it can be resumed.

@@ -105,8 +105,10 @@ describe('a wait that outlasts the undici ceiling', () => {
   it('rides out a dropped connection rather than failing the whole wait', async () => {
     const waitForAgent = await loadTool('wait_for_agent');
     let waits = 0;
+    const attemptedAt: number[] = [];
     mockApiRequest.mockImplementation(async (endpoint: string) => {
       if (endpoint.includes('/wait')) {
+        attemptedAt.push(Date.now());
         waits++;
         // This is exactly how the undici cut arrived, and how an ordinary
         // network blip arrives too.
@@ -119,8 +121,11 @@ describe('a wait that outlasts the undici ceiling', () => {
     const result = await waitForAgent({ id: 'w', timeoutSeconds: 900 });
 
     expect(waits).toBe(2);
+    // Seconds, not milliseconds. Retrying immediately is how three attempts
+    // burned through in two seconds and abandoned a half hour wait.
+    expect(attemptedAt[1] - attemptedAt[0]).toBeGreaterThanOrEqual(1900);
     expect(JSON.stringify(result)).toContain('completed');
-  });
+  }, 20000);
 
   it('still reports a timeout when the agent really never moves', async () => {
     const waitForAgent = await loadTool('wait_for_agent');
@@ -141,7 +146,38 @@ describe('a wait that outlasts the undici ceiling', () => {
     expect(JSON.stringify(result)).toContain('Timeout after 2s');
   }, 15000);
 
-  it('gives up when the connection keeps dying, rather than looping forever', async () => {
+  it('is still waiting after an outage as long as a Tars restart', async () => {
+    const waitForAgent = await loadTool('wait_for_agent');
+    let waits = 0;
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/wait')) {
+        waits++;
+        // The API is unreachable for four attempts: the app is restarting.
+        if (waits <= 4) throw new TypeError('fetch failed');
+        return { status: 'completed', lastCleanOutput: 'the migration is done' };
+      }
+      return { agent: { id: 'w', name: 'Worker', status: 'completed', lastCleanOutput: 'the migration is done' } };
+    });
+
+    // Only the backoff is faked, so nothing here depends on real seconds.
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    let result: unknown;
+    let settled = false;
+    const pending = waitForAgent({ id: 'w', timeoutSeconds: 1800 })
+      .then((r) => { result = r; settled = true; });
+    for (let i = 0; i < 60 && !settled; i++) {
+      await new Promise((r) => setImmediate(r));
+      await vi.advanceTimersByTimeAsync(31_000);
+    }
+    await pending;
+    vi.useRealTimers();
+
+    // It kept trying through the outage instead of abandoning the agent.
+    expect(waits).toBe(5);
+    expect(JSON.stringify(result)).toContain('completed');
+  }, 20000);
+
+  it('gives up rather than looping forever, bounded by what was asked for', async () => {
     const waitForAgent = await loadTool('wait_for_agent');
     let waits = 0;
     mockApiRequest.mockImplementation(async (endpoint: string) => {
@@ -149,11 +185,13 @@ describe('a wait that outlasts the undici ceiling', () => {
       return { agent: { id: 'w', name: 'Worker', status: 'running' } };
     });
 
-    const result = await waitForAgent({ id: 'w', timeoutSeconds: 900 });
+    // Three seconds of budget: the give-up is the caller's own deadline, not
+    // a bare count of attempts.
+    const result = await waitForAgent({ id: 'w', timeoutSeconds: 3 });
 
-    expect(waits).toBeLessThanOrEqual(4);
+    expect(waits).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(result)).toMatch(/fetch failed|Error/i);
-  });
+  }, 20000);
 });
 
 describe('delegate_task, which waits the same way', () => {

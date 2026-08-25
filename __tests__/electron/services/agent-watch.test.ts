@@ -42,14 +42,24 @@ function attachTerminal(ptyId: string): FakeTerminal {
 }
 
 function putAgent(over: Partial<import('../../../electron/types').AgentStatus> & { id: string }): void {
-  agentManager.agents.set(over.id, {
+  const agent = {
     status: 'idle',
     projectPath: '/tars',
     skills: [],
     output: [],
     lastActivity: new Date().toISOString(),
+    // Every agent that is doing anything has a session. The link is bound to
+    // one, so a fixture without a session is not a case that can occur.
+    ptyId: `pty-${over.id}`,
     ...over,
-  } as never);
+  } as import('../../../electron/types').AgentStatus;
+  // A link names the session it was recorded in. A fixture that says
+  // `requestedBy` without one means "for the session this agent has now",
+  // which is what a dispatch records.
+  if (agent.requestedBy && !agent.requestedBy.ptyId) {
+    agent.requestedBy = { ...agent.requestedBy, ptyId: agent.ptyId ?? '' };
+  }
+  agentManager.agents.set(over.id, agent);
 }
 
 /** Move an agent and announce it exactly as the hooks and routes do. */
@@ -87,7 +97,7 @@ describe('an agent that was dispatched by another', () => {
   it('tells the orchestrator when it finishes, with nobody having asked', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
-    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('qa', 'completed');
 
@@ -102,7 +112,7 @@ describe('an agent that was dispatched by another', () => {
   it('says so when it fails, not only when it succeeds', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('w', 'error');
 
@@ -112,7 +122,7 @@ describe('an agent that was dispatched by another', () => {
   it('says so when it is blocked on a question', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('w', 'waiting');
 
@@ -131,7 +141,7 @@ describe('an agent that was dispatched by another', () => {
 
   it('never writes to itself', () => {
     const terminal = attachTerminal('pty-self');
-    putAgent({ id: 'self', name: 'Self', status: 'running', ptyId: 'pty-self', requestedBy: 'self' });
+    putAgent({ id: 'self', name: 'Self', status: 'running', ptyId: 'pty-self', requestedBy: { agentId: 'self', ptyId: 'pty-self' } });
 
     move('self', 'completed');
 
@@ -141,7 +151,7 @@ describe('an agent that was dispatched by another', () => {
   it('says nothing twice for one transition', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('w', 'completed');
     const after = terminal.written.length;
@@ -157,7 +167,7 @@ describe('an orchestrator that is in the middle of something', () => {
   it('is not interrupted, and is told the moment it is free', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
-    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('qa', 'completed');
 
@@ -173,9 +183,9 @@ describe('an orchestrator that is in the middle of something', () => {
   it('gets one message for several agents rather than one interruption each', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
-    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: 'orch' });
-    putAgent({ id: 'fe', name: 'Frontend', status: 'running', requestedBy: 'orch' });
-    putAgent({ id: 'be', name: 'Backend', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+    putAgent({ id: 'fe', name: 'Frontend', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+    putAgent({ id: 'be', name: 'Backend', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('qa', 'completed');
     move('fe', 'error');
@@ -196,7 +206,7 @@ describe('an orchestrator that is in the middle of something', () => {
   it('collapses an agent that flaps instead of queueing every flap', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     for (let i = 0; i < 5; i++) {
       move('w', 'waiting');
@@ -216,7 +226,7 @@ describe('an orchestrator that is in the middle of something', () => {
   it('does not keep delivering after the queue is drained', () => {
     const terminal = attachTerminal('pty-orch');
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     move('w', 'completed');
     move('orch', 'idle');
@@ -232,10 +242,132 @@ describe('an orchestrator that is in the middle of something', () => {
   });
 });
 
+describe('an orchestrator that was killed and relaunched', () => {
+  it('does not hand the previous session its results', () => {
+    // Queued while the first session is busy, so it is still held when the
+    // session is killed.
+    attachTerminal('pty-old');
+    putAgent({
+      id: 'orch', name: 'Orchestrator', status: 'running',
+      ptyId: 'pty-old', currentSessionId: 'sess-old',
+    });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', ptyId: 'pty-qa', requestedBy: { agentId: 'orch', ptyId: 'pty-qa' } });
+    move('qa', 'completed');
+
+    // Killed and relaunched: new terminal, new session, the old id entombed.
+    const replacement = attachTerminal('pty-new');
+    const orch = agentManager.agents.get('orch')!;
+    orch.ptyId = 'pty-new';
+    orch.lastKilledSessionId = 'sess-old';
+    orch.currentSessionId = 'sess-new';
+
+    move('orch', 'idle');
+
+    // This session never dispatched QA. Only currentSessionId is
+    // authoritative, and sess-old is a tombstone.
+    expect(replacement.written).toEqual([]);
+  });
+
+  it('does not hand them over either when the terminal id happens to be reused', () => {
+    const terminal = attachTerminal('pty-orch');
+    putAgent({
+      id: 'orch', name: 'Orchestrator', status: 'running',
+      ptyId: 'pty-orch', currentSessionId: 'sess-old',
+    });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', ptyId: 'pty-qa', requestedBy: { agentId: 'orch', ptyId: 'pty-qa' } });
+    move('qa', 'completed');
+
+    const orch = agentManager.agents.get('orch')!;
+    orch.lastKilledSessionId = 'sess-old';
+    orch.currentSessionId = 'sess-new';
+
+    move('orch', 'idle');
+
+    expect(terminal.written).toEqual([]);
+  });
+
+  it('still delivers to the session that actually dispatched', () => {
+    const terminal = attachTerminal('pty-orch');
+    putAgent({
+      id: 'orch', name: 'Orchestrator', status: 'running',
+      ptyId: 'pty-orch', currentSessionId: 'sess-1',
+    });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', ptyId: 'pty-qa', requestedBy: { agentId: 'orch', ptyId: 'pty-qa' } });
+
+    move('qa', 'completed');
+    move('orch', 'idle');
+
+    expect(received(terminal)).toContain('QA-Tars');
+  });
+});
+
+describe('an agent restarted outside the API', () => {
+  it('does not carry the previous delegation into work nobody asked for', async () => {
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', ptyId: 'pty-qa', requestedBy: { agentId: 'orch', ptyId: 'pty-qa' } });
+
+    move('qa', 'completed');
+    expect(received(terminal)).toContain('QA-Tars');
+    // Past the submit window, so what follows cannot merely be held back by it.
+    await new Promise(r => setTimeout(r, 500));
+    const afterDelegation = terminal.written.length;
+
+    // Noah presses start on the Agents page. That path never touches the API,
+    // so nothing there clears anything: the link has to have spent itself.
+    move('qa', 'running');
+    move('qa', 'completed');
+    await new Promise(r => setTimeout(r, 900));
+
+    expect(terminal.written.length).toBe(afterDelegation);
+  }, 10000);
+
+  it('does not inherit it when the relaunch spawns a new session either', () => {
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    // A link left over from a delegation whose session has since been replaced.
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', ptyId: 'pty-qa-2', requestedBy: { agentId: 'orch', ptyId: 'pty-qa-1' } });
+
+    move('qa', 'completed');
+
+    expect(terminal.written).toEqual([]);
+  });
+});
+
+describe('two agents finishing at the same moment', () => {
+  it('does not run their notes together inside one submit', async () => {
+    const terminal = attachTerminal('pty-orch');
+    // Free, which is the case the grouping did not cover: both notes go out
+    // straight away and the second used to land inside the first.
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'a', name: 'Alpha', status: 'running', ptyId: 'pty-a', requestedBy: { agentId: 'orch', ptyId: 'pty-a' } });
+    putAgent({ id: 'b', name: 'Beta', status: 'running', ptyId: 'pty-b', requestedBy: { agentId: 'orch', ptyId: 'pty-b' } });
+
+    move('a', 'completed');
+    move('b', 'completed');
+
+    // Before any carriage return has had time to land, only the first note is
+    // on the wire: the second is held rather than appended to it.
+    expect(terminal.written.filter(w => w.includes('[Tars]'))).toHaveLength(1);
+    expect(received(terminal)).toContain('Alpha');
+    expect(received(terminal)).not.toContain('Beta');
+
+    // Once the first submit has gone, the second note gets a line of its own,
+    // and its own submit after that.
+    await new Promise(r => setTimeout(r, 900));
+
+    const text = received(terminal);
+    expect(text).toContain('Beta');
+    expect(text.split('[Tars]')).toHaveLength(3);
+    // One carriage return per message, not two for one.
+    expect(terminal.written.filter(w => w === '\r')).toHaveLength(2);
+  }, 10000);
+});
+
 describe('an orchestrator that is gone', () => {
   it('does not throw, and does not hand its results to whatever replaced it', () => {
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-dead' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
 
     // Session killed: the agent record survives, the terminal does not.
     expect(() => move('w', 'completed')).not.toThrow();
@@ -252,7 +384,7 @@ describe('an orchestrator that is gone', () => {
 
   it('does not throw when the agent record itself is gone', () => {
     putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
-    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: 'orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
     agentManager.agents.delete('orch');
 
     expect(() => move('w', 'completed')).not.toThrow();

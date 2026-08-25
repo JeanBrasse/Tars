@@ -56,6 +56,17 @@ export function killAllPty(): void {
  *
  * DO NOT use this for raw keystroke passthrough from xterm.js UI terminals.
  */
+/**
+ * How long the submit keystroke trails the text it submits.
+ *
+ * Exported because that gap is a window in which a second write would land
+ * inside the first message and be sent by its carriage return. A caller that
+ * can produce two messages in quick succession has to know how long to leave
+ * between them, and guessing it a second time somewhere else would be a copy
+ * of this number that could drift from it.
+ */
+export const PROGRAMMATIC_SUBMIT_DELAY_MS = 300;
+
 export function writeProgrammaticInput(
   ptyProcess: pty.IPty,
   data: string,
@@ -74,7 +85,7 @@ export function writeProgrammaticInput(
     // Delay the carriage return so the TUI finishes processing the input before
     // receiving the submit keystroke. Without this, short Telegram/Slack
     // messages get typed into the box but never sent.
-    setTimeout(() => ptyProcess.write('\r'), 300);
+    setTimeout(() => ptyProcess.write('\r'), PROGRAMMATIC_SUBMIT_DELAY_MS);
   } else {
     // Plain shell command for a raw bash/zsh prompt: send directly.
     ptyProcess.write(data + '\r');

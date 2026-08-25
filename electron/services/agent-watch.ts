@@ -1,6 +1,6 @@
 import { AgentStatus } from '../types';
 import { agents } from '../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
+import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
 import { agentStatusEmitter } from './agent-events';
 
 /**
@@ -24,6 +24,11 @@ import { agentStatusEmitter } from './agent-events';
  *  resting state and every agent passes through it for ordinary reasons. */
 const NOTIFY_ON: AgentStatus['status'][] = ['completed', 'error', 'waiting'];
 
+/** Of those, the ones that end the delegation rather than pause it. A blocked
+ *  agent is still working on what it was asked for and may go on to finish it;
+ *  one that has completed or failed is done, and the link is spent. */
+const ENDS_DELEGATION: AgentStatus['status'][] = ['completed', 'error'];
+
 /** How many distinct children can be held for one orchestrator. Reached only
  *  by an orchestrator that dispatched a crowd and then stayed busy. */
 const MAX_PENDING_CHILDREN = 20;
@@ -33,13 +38,37 @@ const MAX_PENDING_CHILDREN = 20;
 const lastSeen = new Map<string, AgentStatus['status']>();
 
 /**
- * requester id -> (child id -> the status it reached).
+ * What is waiting for one orchestrator, and which of its sessions it is for.
  *
- * A map rather than a list, so a child that flaps between running and waiting
- * while its orchestrator is busy collapses to its latest state instead of
- * queueing one interruption per flap.
+ * `children` is a map rather than a list, so a child that flaps between
+ * running and waiting while its orchestrator is busy collapses to its latest
+ * state instead of queueing one interruption per flap.
+ *
+ * `ptyId` and `sessionId` are the orchestrator as it was when the results were
+ * queued. Only `currentSessionId` is authoritative for an agent, and a killed
+ * session leaves its id behind in `lastKilledSessionId` as a tombstone: an
+ * orchestrator that is killed and relaunched is a different session that never
+ * dispatched anything, and handing it the previous one's results would be
+ * exactly the stale post the session rule exists to reject.
  */
-const pending = new Map<string, Map<string, AgentStatus['status']>>();
+type Pending = {
+  children: Map<string, AgentStatus['status']>;
+  ptyId: string;
+  sessionId?: string;
+};
+
+const pending = new Map<string, Pending>();
+
+/**
+ * Orchestrators whose terminal is mid-write, until the trailing carriage
+ * return of writeProgrammaticInput has landed.
+ *
+ * Two children finishing within a moment of each other while the orchestrator
+ * is free produced two writes before either submit keystroke, so the two notes
+ * ran together on one line and a stray Enter followed. Grouping only helped
+ * when the orchestrator was busy, which is not this case.
+ */
+const delivering = new Map<string, ReturnType<typeof setTimeout>>();
 
 let listening = false;
 
@@ -52,8 +81,7 @@ export function startAgentWatch(): void {
 export function stopAgentWatch(): void {
   agentStatusEmitter.off('fleet-change', onFleetChange);
   listening = false;
-  lastSeen.clear();
-  pending.clear();
+  resetAgentWatch();
 }
 
 function onFleetChange(agentId: string): void {
@@ -78,20 +106,39 @@ function onFleetChange(agentId: string): void {
 }
 
 function queueForRequester(child: AgentStatus): void {
-  const requesterId = child.requestedBy;
+  const link = child.requestedBy;
   // Self-dispatch would be a message an agent sends itself on every task.
-  if (!requesterId || requesterId === child.id) return;
-  if (!agents.has(requesterId)) return;
+  if (!link || link.agentId === child.id) return;
+  // The link belongs to the session it was recorded in. A child restarted by
+  // any other route got a new ptyId, so this one is not about the work it is
+  // finishing now, and nobody is owed a word about it.
+  if (link.ptyId !== child.ptyId) return;
 
-  const forRequester = pending.get(requesterId) ?? new Map<string, AgentStatus['status']>();
-  if (!forRequester.has(child.id) && forRequester.size >= MAX_PENDING_CHILDREN) {
-    console.warn(`[agent-watch] ${requesterId} already holds ${MAX_PENDING_CHILDREN} pending results, dropping ${child.id}`);
+  const requester = agents.get(link.agentId);
+  if (!requester || !requester.ptyId) return;
+
+  const existing = pending.get(link.agentId);
+  // Results are per session. If the orchestrator has been replaced since the
+  // last ones were queued, those belonged to the session that is gone.
+  const held = existing && existing.ptyId === requester.ptyId
+    ? existing
+    : { children: new Map<string, AgentStatus['status']>(), ptyId: requester.ptyId, sessionId: requester.currentSessionId };
+
+  if (!held.children.has(child.id) && held.children.size >= MAX_PENDING_CHILDREN) {
+    console.warn(`[agent-watch] ${link.agentId} already holds ${MAX_PENDING_CHILDREN} pending results, dropping ${child.id}`);
     return;
   }
-  forRequester.set(child.id, child.status);
-  pending.set(requesterId, forRequester);
+  held.children.set(child.id, child.status);
+  pending.set(link.agentId, held);
 
-  flush(requesterId);
+  // Spent, once the work it was recorded for is actually over. This is what
+  // stops a hand start from inheriting it: an agent relaunched from the
+  // interface keeps its live session and therefore its ptyId, so the binding
+  // above cannot tell that start apart on its own, but by then the link that
+  // a dispatch left behind has already been used up and is gone.
+  if (ENDS_DELEGATION.includes(child.status)) child.requestedBy = undefined;
+
+  flush(link.agentId);
 }
 
 /**
@@ -105,8 +152,8 @@ function queueForRequester(child: AgentStatus): void {
  * and that transition is precisely the moment it stopped being busy.
  */
 function flush(requesterId: string): void {
-  const forRequester = pending.get(requesterId);
-  if (!forRequester || forRequester.size === 0) return;
+  const held = pending.get(requesterId);
+  if (!held || held.children.size === 0) return;
 
   const requester = agents.get(requesterId);
   if (!requester) {
@@ -115,18 +162,38 @@ function flush(requesterId: string): void {
   }
   if (requester.status === 'running') return;
 
+  // A write already in flight has not sent its carriage return yet. Adding a
+  // second one now would land inside the first message and be submitted by
+  // it. The results stay queued and go out as one note when the window closes.
+  if (delivering.has(requesterId)) return;
+
+  // The session rule, which is the whole of it: only currentSessionId is
+  // authoritative, and an id sitting in lastKilledSessionId is a tombstone.
+  // A killed and relaunched orchestrator has a new pty and a new session, and
+  // it never dispatched any of this.
+  const sameSession = held.ptyId === requester.ptyId
+    && held.sessionId === requester.currentSessionId
+    && (held.sessionId === undefined || held.sessionId !== requester.lastKilledSessionId);
+
   const ptyProcess = requester.ptyId ? ptyProcesses.get(requester.ptyId) : undefined;
-  if (!ptyProcess) {
+  if (!ptyProcess || !sameSession) {
     // The session that asked is gone. Its results belong to it and not to
     // whatever session takes its place, so they are dropped rather than
     // delivered to an agent that never dispatched anything.
-    console.warn(`[agent-watch] ${requesterId} has no live session, dropping ${forRequester.size} pending result(s)`);
+    console.warn(`[agent-watch] ${requesterId} is no longer the session that dispatched, dropping ${held.children.size} pending result(s)`);
     pending.delete(requesterId);
     return;
   }
 
   pending.delete(requesterId);
-  writeProgrammaticInput(ptyProcess, composeNote(forRequester), true);
+  writeProgrammaticInput(ptyProcess, composeNote(held.children), true);
+
+  // Held slightly past the submit keystroke, so anything that finishes in the
+  // meantime waits for a line of its own instead of joining this one.
+  delivering.set(requesterId, setTimeout(() => {
+    delivering.delete(requesterId);
+    flush(requesterId);
+  }, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
 }
 
 function composeNote(finished: Map<string, AgentStatus['status']>): string {
@@ -151,4 +218,6 @@ function composeNote(finished: Map<string, AgentStatus['status']>): string {
 export function resetAgentWatch(): void {
   lastSeen.clear();
   pending.clear();
+  for (const timer of delivering.values()) clearTimeout(timer);
+  delivering.clear();
 }

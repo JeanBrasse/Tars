@@ -271,6 +271,11 @@ async function spawnAgentSession(
   ptyProcesses.set(ptyId, ptyProcess);
 
   agent.ptyId = ptyId;
+  // The link recorded at the top of the route named the session that was live
+  // then, which this call has just replaced. Carry it onto the new one: the
+  // caller did ask for this work, and without this the notification would be
+  // dropped as belonging to a session that no longer exists.
+  if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
   agent.status = 'running';
   agent.currentTask = prompt;
@@ -377,8 +382,14 @@ function callerProject(req: RouteRequest): string | undefined {
  */
 function recordRequester(agent: AgentStatus, req: RouteRequest): void {
   const callerId = callerHeader(req, 'id');
-  const requestedBy = callerId && callerId !== agent.id ? callerId : undefined;
-  if (agent.requestedBy === requestedBy) return;
+  const agentId = callerId && callerId !== agent.id ? callerId : undefined;
+  // Bound to the session this work is about to run in. When the route ends up
+  // spawning a fresh one, spawnAgentSession re-stamps it with the new ptyId
+  // below; when the spawn fails, the link keeps a ptyId that is not live and
+  // is therefore ignored, which is the right way round.
+  const requestedBy = agentId ? { agentId, ptyId: agent.ptyId ?? '' } : undefined;
+  if (agent.requestedBy?.agentId === requestedBy?.agentId
+      && agent.requestedBy?.ptyId === requestedBy?.ptyId) return;
   agent.requestedBy = requestedBy;
   saveAgents();
 }
