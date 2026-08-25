@@ -26,71 +26,40 @@ export function ensureDataDir() {
 }
 
 /**
- * Write Tars's CLAUDE.md to ~/.dorothy/CLAUDE.md so all agents spawned from
- * Tars can load it via --add-dir ~/.dorothy with
- * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1.
+ * Publish the instructions Tars gives every agent it runs.
  *
- * First tries to read the live CLAUDE.md from the app source directory.
- * Falls back to a bundled minimal version if the source file is unavailable
- * (e.g. in a packaged .asar build without unpacked assets).
+ * Written to ~/.dorothy/CLAUDE.md, which every agent mounts through
+ * `--add-dir ~/.dorothy` with CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1,
+ * whatever project it is working in.
+ *
+ * The content is a shipped resource and nothing else. It used to look for the
+ * app directory's own CLAUDE.md first and copy it verbatim, falling back to a
+ * neutral text only when it found none. Packaged, no CLAUDE.md is in the
+ * bundle so the neutral text was written; run from a clone, app.getAppPath()
+ * is the repository, so Tars's own two hundred and fifty lines of development
+ * rules were handed to every agent in every unrelated project: draw the frame
+ * in design/tars-redesign.pen first, never touch electron/, open the pull
+ * request against JeanBrasse/Tars, run npm run e2e:guard before calling it
+ * done. Reading it was not even useful for Tars itself, where an agent already
+ * loads that file natively as its project instructions.
+ *
+ * These are two different documents and only one of them belongs here.
  */
-export function ensureTarsClaudeMd(): void {
+export function ensureAgentInstructions(): void {
   try {
+    const source = getAgentInstructionsPath();
+    if (!fs.existsSync(source)) {
+      // A broken install rather than a normal state. Leaving the destination
+      // untouched is the safe half of the choice: writing something invented
+      // here is how the wrong document got out in the first place.
+      console.warn('Agent instructions missing from the bundle, not written:', source);
+      return;
+    }
     ensureDataDir();
-    const dest = path.join(DATA_DIR, 'CLAUDE.md');
-
-    // Try to read from app source (works in dev and when app.asar is unpacked)
-    let content: string | null = null;
-    const appPath = app.getAppPath().replace(/app\.asar$/, '').replace(/app\.asar\.unpacked$/, '');
-    const candidates = [
-      path.join(appPath, 'CLAUDE.md'),
-      path.join(appPath, '..', 'CLAUDE.md'),
-    ];
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        content = fs.readFileSync(candidate, 'utf-8');
-        break;
-      }
-    }
-
-    // Fallback: write essential agent instructions
-    if (!content) {
-      content = `# Tars Agent Instructions
-
-## Memory
-
-Use auto memory (\`~/.claude/projects/.../memory/\`) actively on every project:
-- Save architectural decisions, key file locations, and debugging insights to \`MEMORY.md\`
-- Create topic files (e.g. \`patterns.md\`, \`debugging.md\`) for detailed notes: keep \`MEMORY.md\` under 200 lines
-- At session start, review \`MEMORY.md\` for relevant context before diving in
-- After any correction or new discovery, update memory so the next session benefits
-
-## Workflow
-
-- Enter plan mode for non-trivial tasks (3+ steps or architectural decisions)
-- After any correction from the user: update \`tasks/lessons.md\` with the pattern
-- Never mark a task complete without proving it works
-- When given a bug report, just fix it: point at logs, errors, failing tests and resolve them
-
-## Core Principles
-
-- **Simplicity First**: Make every change as simple as possible. Impact minimal code.
-- **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
-- **Minimal Impact**: Changes should only touch what is necessary.
-
-## Autonomy
-
-When you are delegated a task by Tars or an orchestrator agent, **always act autonomously**:
-- Do NOT ask for confirmation before proceeding: just do the work and report results
-- Do NOT ask "Would you like me to continue?" or "Shall I proceed?": the answer is always yes
-- If a task is ambiguous, make reasonable assumptions and state them in your report
-- Complete the full task and return your findings/output directly
-`;
-    }
-
-    fs.writeFileSync(dest, content, 'utf-8');
+    fs.writeFileSync(path.join(DATA_DIR, 'CLAUDE.md'), fs.readFileSync(source, 'utf-8'), 'utf-8');
   } catch (err) {
-    console.warn('Failed to write Tars CLAUDE.md:', err);
+    // Called during startup: a failure here must never stop the app opening.
+    console.warn('Failed to write the agent instructions:', err);
   }
 }
 
@@ -288,6 +257,13 @@ function getResourcePath(filename: string): string {
  */
 export function getSuperAgentInstructionsPath(): string {
   return getResourcePath('super-agent-instructions.md');
+}
+
+/**
+ * Get the path to the instructions every Tars agent is given
+ */
+export function getAgentInstructionsPath(): string {
+  return getResourcePath('agent-instructions.md');
 }
 
 /**

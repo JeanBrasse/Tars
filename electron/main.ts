@@ -113,7 +113,7 @@ import {
   isSuperAgent,
   getSuperAgent,
   ensureDataDir,
-  ensureTarsClaudeMd,
+  ensureAgentInstructions,
   migrateFromClaudeManager,
 } from './utils';
 
@@ -351,7 +351,7 @@ app.whenReady().then(async () => {
   }
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
-  ensureTarsClaudeMd();
+  ensureAgentInstructions();
 
   // Install/update statusline script if enabled (ensures script is always up-to-date after app updates)
   // statusLineEnabled defaults to true for new users
