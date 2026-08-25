@@ -43,15 +43,91 @@ async function dispatchToAgent(
   })) as DispatchResult;
 }
 
-/** Long-poll the wait endpoint, with a client-side abort comfortably beyond
- *  the server-side timeout so the client never gives up first. */
+/**
+ * The longest a single long-poll request may run.
+ *
+ * Node's fetch is undici, whose `headersTimeout` defaults to 300000ms, and
+ * /wait sends no headers at all until the agent's status changes. So a wait
+ * that stayed quiet for five minutes did not time out cleanly, it died as
+ * "fetch failed", and the AbortController above it was never the thing that
+ * fired. Waiting more than five minutes on a real piece of work is the normal
+ * case, so every long wait was broken.
+ *
+ * Segmenting under that ceiling fixes it without depending on an undici
+ * default: each request returns well before any of them can bite. Passing a
+ * dispatcher with the timeout disabled would also work, and only for undici,
+ * and only until a request is cut for some other reason. This survives that
+ * too, because a failed segment is simply the next one's problem.
+ */
+const WAIT_SEGMENT_SECONDS = 120;
+/**
+ * How long the API may be unreachable before a wait gives up on it.
+ *
+ * Counted in time, not in attempts. Three bare retries with nothing between
+ * them abandoned a thirty minute wait after two seconds, which replaces a
+ * failure at five minutes with a worse one at two seconds. The case this has
+ * to survive is Tars being restarted while an agent is working: that takes
+ * several seconds, and the wait should still be there afterwards.
+ */
+const FAILURE_GRACE_MS = 90_000;
+const FAILURE_BACKOFF_START_MS = 2_000;
+const FAILURE_BACKOFF_MAX_MS = 30_000;
+
+/**
+ * Wait for an agent's status to change, for as long as asked.
+ *
+ * Made of short long-polls back to back rather than one long one. The server
+ * already answers `{timeout: true}` when a segment expires with nothing to
+ * report, which is the signal to go round again.
+ */
 async function waitForAgentStatus(id: string, timeoutSeconds: number): Promise<WaitResult> {
-  return (await apiRequest(
-    `/api/agents/${id}/wait?timeout=${timeoutSeconds}`,
-    "GET",
-    undefined,
-    (timeoutSeconds + 30) * 1000
-  )) as WaitResult;
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  let failingSince = 0;
+  let backoffMs = FAILURE_BACKOFF_START_MS;
+  let last: WaitResult | undefined;
+
+  for (;;) {
+    const remainingSec = Math.ceil((deadline - Date.now()) / 1000);
+    if (remainingSec <= 0) {
+      return last ?? { status: "running", timeout: true };
+    }
+    const segment = Math.min(WAIT_SEGMENT_SECONDS, remainingSec);
+
+    const startedAt = Date.now();
+    try {
+      last = (await apiRequest(
+        `/api/agents/${id}/wait?timeout=${segment}`,
+        "GET",
+        undefined,
+        (segment + 30) * 1000
+      )) as WaitResult;
+      failingSince = 0;
+      backoffMs = FAILURE_BACKOFF_START_MS;
+    } catch (err) {
+      // A segment that dies takes the rest of the wait with it only if they
+      // keep dying, for long enough that the API is not coming back. One
+      // dropped connection, or a Tars restart, is not a reason to abandon an
+      // agent that is still working.
+      const now = Date.now();
+      if (!failingSince) failingSince = now;
+      if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) throw err;
+
+      await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
+      backoffMs = Math.min(backoffMs * 2, FAILURE_BACKOFF_MAX_MS);
+      continue;
+    }
+
+    // Anything that is not a segment expiring is the answer being waited for.
+    if (!last.timeout) return last;
+
+    // A poll that reports its expiry the instant it is asked was not held
+    // open, and going straight round again would turn a patient wait into a
+    // hot loop against the API. Pause before asking again. Only the degenerate
+    // case pays this: a poll that really waited has already spent its segment.
+    if (Date.now() - startedAt < segment * 500) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
 }
 
 /**

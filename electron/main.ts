@@ -99,6 +99,7 @@ import { registerTeamTemplateHandlers } from './handlers/team-template-handlers'
 import { registerHermesHandlers } from './handlers/hermes-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch } from './services/overseer';
+import { startAgentWatch } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
@@ -625,6 +626,9 @@ app.whenReady().then(async () => {
     saveAppSettingsToFile(settings);
   }, getMainWindow());
   initApiServer();
+  // Delegation reports back on its own from here: an agent that finishes tells
+  // whoever dispatched it, without the orchestrator having to ask.
+  startAgentWatch();
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk
