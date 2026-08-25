@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, stripCursorSequences, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripCursorSequences, attachMouseHandling } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 // Clean xterm query/focus escape sequences out of user input before forwarding.
@@ -32,8 +32,8 @@ export function useAgentDialogTerminal({
   const [isAtBottom, setIsAtBottom] = useState(true);
   const xtermTheme = useTerminalTheme();
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<import('xterm').Terminal | null>(null);
-  const fitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
+  const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
+  const fitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null);
   const agentIdRef = useRef<string | null>(null);
   const isAtBottomRef = useRef(true);
 
@@ -68,8 +68,8 @@ export function useAgentDialogTerminal({
         return;
       }
 
-      const { Terminal } = await import('xterm');
-      const { FitAddon } = await import('xterm-addon-fit');
+      const { Terminal } = await import('@xterm/xterm');
+      const { FitAddon } = await import('@xterm/addon-fit');
 
       const term = new Terminal({
         ...createXtermOptions(),
@@ -84,7 +84,7 @@ export function useAgentDialogTerminal({
       // every redraw, and honouring it disables xterm's selection service and
       // swallows the wheel, so the pane can neither scroll nor be selected.
       // The "Previous output" replay below carries the same sequences.
-      suppressMouseTracking(term);
+      attachMouseHandling(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);

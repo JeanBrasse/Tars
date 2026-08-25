@@ -45,7 +45,7 @@ interface AgentDialogSidebarProps {
   onGitBranchChange: (branch: string) => void;
   // Shell
   quickTerminalRef: React.RefObject<HTMLDivElement | null>;
-  quickXtermRef: React.RefObject<import('xterm').Terminal | null>;
+  quickXtermRef: React.RefObject<import('@xterm/xterm').Terminal | null>;
   quickTerminalReady: boolean;
   hasActiveTerminal: boolean;
   onCloseQuickTerminal: () => void;

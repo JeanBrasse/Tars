@@ -26,9 +26,10 @@ import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { attachMouseHandling } from '@/lib/terminal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingPanel } from '@/components/ui';
 // Import xterm CSS
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 const CATEGORY_ICONS: Record<string, typeof Code2> = {
   'Code Intelligence': Code2,
@@ -207,7 +208,7 @@ export default function PluginsTab() {
   const [terminalReady, setTerminalReady] = useState(false);
   const [pendingInstallCommand, setPendingInstallCommand] = useState<string | null>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<import('xterm').Terminal | null>(null);
+  const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
 
   // Follows the app theme; applied to the live terminal below instead of at
@@ -223,8 +224,8 @@ export default function PluginsTab() {
     if (!showInstallTerminal || !terminalRef.current || xtermRef.current) return;
 
     const initTerminal = async () => {
-      const { Terminal } = await import('xterm');
-      const { FitAddon } = await import('xterm-addon-fit');
+      const { Terminal } = await import('@xterm/xterm');
+      const { FitAddon } = await import('@xterm/addon-fit');
 
       const term = new Terminal({
         ...createXtermOptions(),
@@ -233,6 +234,8 @@ export default function PluginsTab() {
         cursorStyle: 'bar',
         scrollback: 10000,
       });
+
+      attachMouseHandling(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);

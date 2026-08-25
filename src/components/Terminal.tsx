@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { Terminal as XTerm } from 'xterm';
-import { FitAddon } from 'xterm-addon-fit';
-import 'xterm/css/xterm.css';
+import { Terminal as XTerm } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { attachMouseHandling } from '@/lib/terminal';
 
 interface TerminalProps {
   ptyId?: string;
@@ -32,6 +33,8 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
       scrollback: 10000,
       allowProposedApi: true,
     });
+
+    attachMouseHandling(term);
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);

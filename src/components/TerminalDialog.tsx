@@ -6,7 +6,8 @@ import { isElectron } from '@/hooks/useElectron';
 import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
 import { BrandSpinner, Button } from '@/components/ui';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import 'xterm/css/xterm.css';
+import { attachMouseHandling } from '@/lib/terminal';
+import '@xterm/xterm/css/xterm.css';
 
 interface TerminalDialogProps {
   open: boolean;
@@ -27,7 +28,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set(['claude']));
   const [linkingStatus, setLinkingStatus] = useState<Record<string, 'pending' | 'done' | 'error'>>({});
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<import('xterm').Terminal | null>(null);
+  const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
 
   // Follows the app theme; applied to the live terminal below instead of at
@@ -50,8 +51,8 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
     if (!open || !terminalRef.current || xtermRef.current) return;
 
     const initTerminal = async () => {
-      const { Terminal } = await import('xterm');
-      const { FitAddon } = await import('xterm-addon-fit');
+      const { Terminal } = await import('@xterm/xterm');
+      const { FitAddon } = await import('@xterm/addon-fit');
 
       const term = new Terminal({
         ...createXtermOptions(),
@@ -60,6 +61,8 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
         cursorStyle: 'bar',
         scrollback: 10000,
       });
+
+      attachMouseHandling(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
