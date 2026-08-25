@@ -6,11 +6,13 @@ import { MIME_TYPES } from '../constants';
 import {
   askOverseer,
   getOverseerHistory,
+  clearOverseerHistory,
   buildFleetSnapshot,
   confirmPendingAction,
   pauseOverseerWatch,
   resumeOverseerWatch,
   isOverseerWatchPaused,
+  getLastWatchFailure,
   isOverseerBusy,
   getOverseerSettings,
   setOverseerSettings,
@@ -131,6 +133,13 @@ export function registerOverseerHandlers(): void {
     busy: isOverseerBusy(),
   }));
 
+  ipcMain.handle('overseer:clearHistory', async () => {
+    if (isOverseerBusy()) {
+      return { success: false, cleared: 0, error: 'The overseer is answering right now. Try again in a moment.' };
+    }
+    return { success: true, ...clearOverseerHistory() };
+  });
+
   ipcMain.handle('overseer:fleet', async () => buildFleetSnapshot());
 
   ipcMain.handle('overseer:confirmAction', async (_event, params: { action: OverseerAction; approve: boolean }) => {
@@ -147,7 +156,10 @@ export function registerOverseerHandlers(): void {
     return { success: true, paused: false };
   });
 
-  ipcMain.handle('overseer:watchStatus', async () => ({ paused: isOverseerWatchPaused() }));
+  ipcMain.handle('overseer:watchStatus', async () => ({
+    paused: isOverseerWatchPaused(),
+    lastFailure: getLastWatchFailure(),
+  }));
 
   ipcMain.handle('overseer:settings', async () => getOverseerSettings());
 

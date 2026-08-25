@@ -422,6 +422,10 @@ export interface OverseerMessage {
   /** Files sent with this message, kept beside the text so the bubble can
    *  show a chip and the text stays what was typed. */
   attachments?: OverseerAttachment[];
+  /** Set when this reply looks like the format template rather than an answer.
+   *  Computed on read, never stored, so nothing is lost if the rule is wrong:
+   *  the bubble can be hidden or greyed, and the message is still there. */
+  templateEcho?: boolean;
 }
 
 export interface OverseerFleetAgent {
@@ -1276,11 +1280,21 @@ export interface ElectronAPI {
     effort: () => Promise<{ success: boolean; effort?: string | null; options?: string[]; error?: string }>;
     setEffort: (effort: string) => Promise<{ success: boolean; error?: string }>;
     history: () => Promise<{ messages: OverseerMessage[]; busy: boolean }>;
+    /** Empties the conversation, keeping settings and the standing job. The
+     *  overseer's context is the conversation, so this is the way out of any
+     *  loop it talks itself into. Refused while a turn is in flight. */
+    clearHistory: () => Promise<{ success: boolean; cleared: number; error?: string }>;
     fleet: () => Promise<OverseerFleetSnapshot>;
     confirmAction: (params: { action: OverseerAction; approve: boolean }) => Promise<{ success: boolean; error?: string; mode?: string }>;
     pause: () => Promise<{ success: boolean; paused: boolean }>;
     resume: () => Promise<{ success: boolean; paused: boolean }>;
-    watchStatus: () => Promise<{ paused: boolean }>;
+    /** `lastFailure` is why the last automatic check-in produced no briefing,
+     *  null when the last one worked. An unattended cycle that keeps failing
+     *  is otherwise invisible: nobody is waiting on a briefing to notice. */
+    watchStatus: () => Promise<{
+      paused: boolean;
+      lastFailure: { reason: string; error: string; at: string } | null;
+    }>;
     settings: () => Promise<OverseerSettings>;
     setSettings: (patch: Partial<OverseerSettings>) => Promise<{ success: boolean; settings: OverseerSettings; error?: string }>;
     autoActions: () => Promise<OverseerAutoRule[]>;

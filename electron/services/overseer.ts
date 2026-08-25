@@ -112,6 +112,13 @@ export interface OverseerMessage {
   /** Files sent with this message. Kept beside the text rather than inside it
    *  so the bubble can show a chip and the text stays what was typed. */
   attachments?: OverseerAttachment[];
+  /**
+   * Set on read when this reply looks like the format template rather than an
+   * answer. Never stored: it is recomputed from the text every time, so a
+   * later, better rule re-judges old messages instead of inheriting the
+   * verdict of the rule that happened to be shipped when they arrived.
+   */
+  templateEcho?: boolean;
 }
 
 interface FleetAgentSnapshot {
@@ -203,7 +210,11 @@ function loadState(): OverseerState {
     // Spreading `raw` over the defaults is a shallow merge, so a state file
     // written before settings existed - or one holding only some of them -
     // would otherwise arrive with `settings` undefined and crash the callers.
-    return { ...defaultState(), ...raw, settings: { ...defaultSettings(), ...(raw?.settings ?? {}) } };
+    return {
+      ...defaultState(),
+      ...raw,
+      settings: { ...defaultSettings(), ...(raw?.settings ?? {}) },
+    };
   } catch (err) {
     console.error('[overseer] could not read overseer.json, starting fresh:', err);
     return defaultState();
@@ -218,8 +229,39 @@ function saveState(state: OverseerState): void {
   }
 }
 
+/**
+ * The conversation, with the replies that look like the format template
+ * flagged rather than removed.
+ *
+ * This used to drop them from disk on load, which was wrong twice over: the
+ * loop is already broken by serializeHistory refusing to quote an echo back
+ * to the model, so deleting bought nothing, and a heuristic that writes to
+ * disk turns each of its own mistakes into permanent data loss. It flags
+ * instead. The interface can hide a flagged message; nothing can lose one.
+ */
 export function getOverseerHistory(): OverseerMessage[] {
-  return loadState().messages;
+  return loadState().messages.map(m => (
+    m.role === 'overseer' && isTemplateEcho(m.text) ? { ...m, templateEcho: true } : m
+  ));
+}
+
+/**
+ * Throw the conversation away and start a fresh one.
+ *
+ * The load-time purge handles the one failure that has actually happened, but
+ * it only knows that shape. The conversation is the model's own context, so
+ * anything that gets stuck in it stays stuck until something can empty it,
+ * and without this the only way out of the next such loop would be another
+ * release. Settings, the standing job and the fleet baseline are kept: this
+ * clears what was said, not how the overseer is set up.
+ */
+export function clearOverseerHistory(): { cleared: number } {
+  const state = loadState();
+  const cleared = state.messages.length;
+  if (cleared === 0) return { cleared: 0 };
+  state.messages = [];
+  saveState(state);
+  return { cleared };
 }
 
 // ── Fleet snapshot ──────────────────────────────────────────────────────
@@ -346,8 +388,14 @@ const HISTORY_TURN_LIMIT = 24;
 const HISTORY_CHAR_BUDGET = 6000;
 
 function serializeHistory(history: OverseerMessage[]): string {
-  const recent = history.slice(-HISTORY_TURN_LIMIT);
-  let omitted = history.length - recent.length;
+  // This is where the loop lived. Hermes was shown its own placeholder as
+  // something it had already said, so it said it again, and the prompt for
+  // the next turn then held two of them. Whatever the guard in finishTurn
+  // let through, or an older build wrote before that guard existed, stops
+  // here: an echo is never quoted back as an example to follow.
+  const usable = history.filter(m => m.role !== 'overseer' || !isTemplateEcho(m.text));
+  const recent = usable.slice(-HISTORY_TURN_LIMIT);
+  let omitted = usable.length - recent.length;
   const kept: string[] = [];
   let used = 0;
   // Walk newest-first so the char budget favors the most recent context.
@@ -384,10 +432,11 @@ export function composeTurn(
     '- You never claim to have done anything yourself. You only report, challenge, and propose.',
     '- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.',
     '- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.',
-    '- Reply with EXACTLY one JSON object and nothing else, before or after it, in this shape:',
-    '  {"say": "<what you tell Noah, plain text or light markdown>", "action": null}',
+    '- Reply with EXACTLY one JSON object and nothing else, before or after it. "say" is what you tell Noah, plain text or light markdown. Example:',
+    '  {"say": "Frontend has been waiting on your answer about the sidebar width for eleven minutes. Nothing else is blocked.", "action": null}',
     '  or, only when proposing to message one specific agent:',
-    '  {"say": "<...>", "action": {"kind": "message_agent", "agent_id": "<id from the snapshot>", "text": "<the exact message to send>"}}',
+    '  {"say": "Backend has retried the same failing test three times without changing anything. Worth asking it what it thinks is wrong.", "action": {"kind": "message_agent", "agent_id": "an id copied from the snapshot", "text": "What do you believe is making that test fail?"}}',
+    '- Those two are illustrations of the shape only. Never repeat their wording, and never treat them as facts about the fleet: write your own sentence about the snapshot below.',
     '- If no agent in the snapshot is the right target, action must be null.',
   ].join('\n');
 
@@ -486,6 +535,70 @@ function readEnvelope(candidate: string): ParsedEnvelope | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A reply that is the format example rather than an answer.
+ *
+ * The prompt shows Hermes the envelope to fill in. When it copies the example
+ * instead of filling it, the result is still valid JSON, so parseEnvelope
+ * accepts it and `say` becomes the placeholder itself. That happened once on
+ * Noah's install and then never stopped: every following turn was shown the
+ * placeholder as something the overseer had already said, and copied it in
+ * turn. Nineteen consecutive turns, none of which could recover on its own.
+ *
+ * Two tests, both exact, neither with a number in it to get wrong.
+ *
+ * The first is the tokens this app has itself put in front of the model. We
+ * know them exactly, so a reply carrying one verbatim is an echo and there is
+ * nothing to estimate. This is what catches a reply that wraps the template in
+ * a word or two, which the second test alone lets through: harmless as a
+ * displayed message, but serializeHistory asks the same question, so letting
+ * one back into the prompt is the loop starting again.
+ *
+ * The second is structural, for shapes we have never emitted, such as the
+ * gateway's own `[SILENT]`. Take out the placeholder spans and bare sentinel
+ * tokens, and see whether any message is left. Prose that merely happens to
+ * contain angle brackets keeps its words; a reply built only of placeholders
+ * has nothing left.
+ */
+const PLACEHOLDER_SPAN = /<[^<>]{0,120}>/g;
+/** `[SILENT]`, which the gateway emits for "produce no output" and which is
+ *  not a message either. Uppercase only, so a markdown link survives. */
+const BARE_SENTINEL = /\[[A-Z][A-Z_ ]{2,30}\]/g;
+/**
+ * Every placeholder token composeTurn has ever shown the model. The prompt no
+ * longer offers any of them (the examples it shows are filled in), but they
+ * are what is sitting in conversations written before that, and a model given
+ * one as context reproduces it verbatim. Kept with their angle brackets, so
+ * a reply that discusses the bug in prose is not mistaken for one.
+ */
+const EMITTED_PLACEHOLDERS = [
+  '<what you tell Noah, plain text or light markdown>',
+  '<id from the snapshot>',
+  '<the exact message to send>',
+  '<...>',
+];
+export function isTemplateEcho(say: string): boolean {
+  const text = say.trim();
+  if (!text) return true;
+
+  if (EMITTED_PLACEHOLDERS.some(token => text.includes(token))) return true;
+
+  const stripped = text.replace(PLACEHOLDER_SPAN, ' ').replace(BARE_SENTINEL, ' ');
+  // Nothing was a placeholder, so there is nothing to accuse it of.
+  if (stripped === text) return false;
+
+  // Nothing at all, rather than "not much". This started as a threshold of a
+  // dozen surviving characters, which is the kind of number that has to be
+  // guessed and was guessed wrong: it swallowed "[URGENT] Build KO." and
+  // "Voir <https://example.com/docs>.", which are messages, not templates.
+  // The real distinction needs no tuning. A reply that is the template has
+  // nothing left once the template is taken out of it; a reply that merely
+  // uses brackets is still a sentence without them. An emoji counts as
+  // something left: "[DONE] \u{1F44D}" is a person's answer, where "[DONE] !!!"
+  // is punctuation and stays folded.
+  return !/[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(stripped);
 }
 
 /**
@@ -633,9 +746,40 @@ function markConsumed(id: string): void {
 }
 
 /**
+ * Send a proposal the caller has already established is legitimate.
+ *
+ * Private on purpose. The only in-process caller is finishTurn's
+ * pre-authorised path, which builds the action two statements earlier from an
+ * envelope that has already been through isTemplateEcho and resolveTarget, so
+ * there is nothing left for a lookup to tell it. Everything arriving from
+ * outside this module goes through confirmPendingAction instead.
+ */
+async function dispatchApprovedAction(
+  action: OverseerAction,
+): Promise<{ success: boolean; error?: string; mode?: string }> {
+  if (consumedActionIds.has(action.actionId)) {
+    return { success: false, error: 'This action was already resolved.' };
+  }
+  markConsumed(action.actionId);
+  // Re-resolve now, immediately before writing: the fleet may have changed
+  // since the overseer proposed this (agent finished, was removed, moved
+  // project) in the minutes it can take Noah to read and approve it.
+  return sendToAgent(action.agentId, action.text);
+}
+
+/**
  * The user's decision on a proposed action. Nothing is written to any CLI
  * until this is called with approve:true - which only happens when Noah
  * presses send in the approval panel.
+ *
+ * The action arrives as an object handed over IPC, and it used to be taken at
+ * its word: whatever it named was dispatched. So an action still attached to
+ * a reply that was the format template, of which there are some sitting on
+ * disk from before that was refused, would be sent if anything ever offered
+ * it. The renderer has since stopped offering them, but a check that lives
+ * only in the renderer is not a check: the write happens here, so the
+ * invariant belongs here. The action must be one this conversation actually
+ * carries, on a message that reads as a real answer.
  */
 export async function confirmPendingAction(
   action: OverseerAction,
@@ -644,16 +788,34 @@ export async function confirmPendingAction(
   if (!action || !action.actionId || !action.agentId || !action.text) {
     return { success: false, error: 'Malformed action.' };
   }
-  if (consumedActionIds.has(action.actionId)) {
+
+  const carrier = loadState().messages.find(m => m.action?.actionId === action.actionId);
+  const authentic = carrier?.action ?? null;
+  if (!carrier || !authentic) {
+    return { success: false, error: 'That proposal is not in the conversation, so it cannot be sent.' };
+  }
+  if (isTemplateEcho(carrier.text)) {
+    return {
+      success: false,
+      error: 'That proposal came from a reply that was the format template rather than an answer, so it will not be sent.',
+    };
+  }
+
+  if (consumedActionIds.has(authentic.actionId)) {
     return { success: false, error: 'This action was already resolved.' };
   }
-  markConsumed(action.actionId);
-  if (!approve) return { success: true };
+  if (!approve) {
+    markConsumed(authentic.actionId);
+    return { success: true };
+  }
 
-  // Re-resolve now, immediately before writing: the fleet may have changed
-  // since the overseer proposed this (agent finished, was removed, moved
-  // project) in the minutes it can take Noah to read and approve it.
-  return sendToAgent(action.agentId, action.text);
+  // `authentic`, never the caller's `action`. Only the id was ever checked
+  // against the conversation, so dispatching the object that carried it meant
+  // an id that passed could still deliver a target and a body that had never
+  // been proposed or seen. What is sent is what the overseer actually wrote
+  // and what Noah was actually shown; the argument is a claim about which
+  // proposal is meant, not the proposal itself.
+  return dispatchApprovedAction(authentic);
 }
 
 // ── Talking to Hermes ────────────────────────────────────────────────────
@@ -909,6 +1071,19 @@ async function finishTurn(
 ): Promise<AskOverseerResult> {
   const envelope = parseEnvelope(replyText);
 
+  // Refused before anything else happens, and above all before it is written:
+  // a placeholder in the history is what turns one bad turn into every turn.
+  // Nothing is persisted, so the next turn is already the retry, composed
+  // from a prompt this reply never entered.
+  if (isTemplateEcho(envelope.say)) {
+    console.warn('[overseer] discarded a reply that echoed the format template:', envelope.say.slice(0, 120));
+    return {
+      ok: false,
+      reason: 'error',
+      error: 'Hermes sent back the reply template instead of an answer, so Tars discarded it rather than recording it. Ask again.',
+    };
+  }
+
   let action: OverseerAction | null = null;
   if (envelope.action) {
     const resolved = resolveTarget(envelope.action.agentId);
@@ -937,7 +1112,7 @@ async function finishTurn(
   if (action) {
     const rule = findAutoRule(state.settings.autoActions, { agentId: action.agentId });
     if (rule) {
-      const sent = await confirmPendingAction(action, true);
+      const sent = await dispatchApprovedAction(action);
       autoNote = sent.success
         ? `\n\n_Sent automatically to ${action.agentName}: ${rule.label.toLowerCase()}._`
         : `\n\n_Tried to send this automatically and could not: ${sent.error ?? 'unknown error'}._`;
@@ -1094,7 +1269,32 @@ export async function watchTick(): Promise<OverseerMessage | null> {
   if (!reason) return null;
 
   const result = await askOverseer(`Fleet change since the last check: ${reason}.`, { isBriefing: true });
-  return result.ok ? result.message : null;
+  if (!result.ok) {
+    // A briefing has nobody waiting on it, so a refusal here used to be a
+    // plain `null`: the five minute cycle failed over and over with nothing
+    // to see, which is the same silent failure the API server had when its
+    // port was taken. Recorded and logged, so the reason is answerable.
+    lastWatchFailure = { reason: result.reason, error: result.error, at: new Date().toISOString() };
+    console.warn(`[overseer] check-in produced no briefing (${result.reason}): ${result.error}`);
+    return null;
+  }
+  lastWatchFailure = null;
+  return result.message;
+}
+
+/** Why the last automatic check-in produced nothing, when it produced nothing.
+ *  Cleared by the next one that succeeds. */
+let lastWatchFailure: WatchFailure | null = null;
+
+export interface WatchFailure {
+  reason: string;
+  error: string;
+  /** ISO timestamp. */
+  at: string;
+}
+
+export function getLastWatchFailure(): WatchFailure | null {
+  return lastWatchFailure;
 }
 
 let watchTimer: ReturnType<typeof setInterval> | null = null;
