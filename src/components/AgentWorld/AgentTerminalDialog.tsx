@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { BrandSpinner, DialogShell, SegmentedControl } from '@/components/ui';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 import type { AgentTerminalDialogProps, PanelType } from './AgentDialogTypes';
 import { isSuperAgent } from './AgentDialogTypes';

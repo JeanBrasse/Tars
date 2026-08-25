@@ -1,6 +1,6 @@
 'use client';
 
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 import TrayPanel from '@/components/TrayPanel/TrayPanel';
 
 // Override xterm's internal viewport scrollbar so it overlays rather than

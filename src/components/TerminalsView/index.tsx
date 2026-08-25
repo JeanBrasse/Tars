@@ -22,7 +22,7 @@ import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import BroadcastIndicator from './components/BroadcastIndicator';
 import ContextMenu from './components/ContextMenu';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 

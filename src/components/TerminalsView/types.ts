@@ -41,8 +41,8 @@ export interface TerminalsViewState {
 
 export interface TerminalInstance {
   agentId: string;
-  terminal: import('xterm').Terminal | null;
-  fitAddon: import('xterm-addon-fit').FitAddon | null;
+  terminal: import('@xterm/xterm').Terminal | null;
+  fitAddon: import('@xterm/addon-fit').FitAddon | null;
   container: HTMLDivElement | null;
   disposed: boolean;
 }
