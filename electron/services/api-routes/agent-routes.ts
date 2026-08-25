@@ -361,6 +361,29 @@ function callerProject(req: RouteRequest): string | undefined {
 }
 
 /**
+ * Remember which agent asked for this work, so services/agent-watch.ts can
+ * tell it when the work is done.
+ *
+ * The MCP client has always sent X-Tars-Caller-Id and nothing has ever read
+ * it to establish a filiation, which is why delegation was one-directional:
+ * Tars knew an agent had finished but not who was waiting on it.
+ *
+ * Recorded on every route that starts work rather than only in
+ * spawnAgentSession, because the common delegation is a message into an
+ * already-live session, which spawns nothing. It is deliberately also cleared
+ * when the request has no caller: a start from the interface must not leave
+ * an orchestrator attached to work it never asked for, and would otherwise
+ * inherit the link from the last delegation.
+ */
+function recordRequester(agent: AgentStatus, req: RouteRequest): void {
+  const callerId = callerHeader(req, 'id');
+  const requestedBy = callerId && callerId !== agent.id ? callerId : undefined;
+  if (agent.requestedBy === requestedBy) return;
+  agent.requestedBy = requestedBy;
+  saveAgents();
+}
+
+/**
  * Cross-project guard: an orchestrator may only act on agents of its own
  * project. This is what stops an orchestrator from delegating to another
  * project's agents when the LLM picks a wrong ID from a global listing.
@@ -739,6 +762,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Agent not found' }, 404);
       return;
     }
+    recordRequester(agent, req);
 
     if (!assertSameProject(req, agent, sendJson)) return;
 
@@ -767,6 +791,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Agent not found' }, 404);
       return;
     }
+    recordRequester(agent, req);
 
     if (!assertSameProject(req, agent, sendJson)) return;
 
@@ -874,6 +899,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Agent not found' }, 404);
       return;
     }
+    recordRequester(agent, req);
 
     if (!assertSameProject(req, agent, sendJson)) return;
 

@@ -72,6 +72,16 @@ export interface AgentStatus {
    *  project; 'worker' agents receive tasks. Migrated from name-substring
    *  matching in loadAgents. */
   role?: 'orchestrator' | 'worker';
+  /**
+   * The agent that asked for this one's current work, from the
+   * X-Tars-Caller-Id header the MCP client sends on every call.
+   *
+   * Set on every route that starts work and cleared when the request carries
+   * no caller, so a start from the interface does not leave an orchestrator
+   * attached to work it never asked for. Read by services/agent-watch.ts,
+   * which is what tells the orchestrator its agent is done.
+   */
+  requestedBy?: string;
   currentSessionId?: string;
   /**
    * The last session this agent ran, kept so it can be resumed.
