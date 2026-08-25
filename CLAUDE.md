@@ -114,7 +114,9 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 ### QA Agent
 - **Owns**: `__tests__/`, `e2e/`, `vitest.config.mts`, `playwright.config.ts`
 - **Read-only** everywhere else: report defects, do not patch them
-- **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint` and `npm run lint:design` are clean, and `npm run e2e` shows no new visual diff and no page error
+- **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint` and `npm run lint:design` are clean, and `npm run e2e:auto` shows no new visual diff and no page error
+- `npm run e2e:auto` decides from the diff whether the surfaces can have moved, and runs the full suite whenever they can. It skips only when every changed file is outside the running app (`__tests__/`, `mcp-*/`, `hooks/`, `scripts/`, root markdown), and says so at length when it does. Anything it cannot classify runs. `electron/` always runs: the suite boots the real app against a seeded home, so a main process change can and does move a screenshot
+- Reach for `npm run e2e` directly to force the full suite, and `npm run e2e:guard` when a surface was added
 - A visual diff is a finding, not a licence to re-record. `npm run e2e:update` is only run when the design was deliberately changed and the Pencil frame already reflects it
 
 ### Orchestrator

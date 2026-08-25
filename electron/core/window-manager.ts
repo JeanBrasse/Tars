@@ -80,7 +80,20 @@ export function setMainWindow(window: BrowserWindow | null) {
 /**
  * Create the main application window
  */
+/**
+ * Is this run an automated test rather than somebody using the app?
+ *
+ * Set by the e2e specs. A test run happens while its author is working in
+ * another application, and until now it opened a full sized window in front of
+ * whatever that was, every time, taking the keyboard with it.
+ */
+function isE2E(): boolean {
+  return process.env.DOROTHY_E2E === '1';
+}
+
 export function createWindow() {
+  const e2e = isE2E();
+
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -89,14 +102,34 @@ export function createWindow() {
     title: 'Tars',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#121212',
+    // A test run stays out of the way: shown without ever being activated, so
+    // the window the author is actually typing in keeps the keyboard. Note the
+    // window is still shown, and deliberately so. Nothing about how it renders
+    // may change, because thirty six reference screenshots are compared
+    // against it, and a window that is never composited photographs blank.
+    show: !e2e,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       // No renderer of ours ever needs to reach out on its own.
       webviewTag: false,
+      // An unfocused window is throttled by default, which for a test run
+      // means frames arriving late or not at all under the screenshot.
+      backgroundThrottling: e2e ? false : undefined,
     },
   });
+
+  if (e2e) {
+    // macOS only, and the part that actually stops the interruption: an app
+    // with no dock icon is an accessory and cannot become the active
+    // application, so the window the author is typing in stays frontmost.
+    app.dock?.hide();
+    // showInactive, not show: the window appears and paints, and the app never
+    // becomes the active one.
+    mainWindow.showInactive();
+    mainWindow.setAlwaysOnTop(false);
+  }
 
   hardenWindow(mainWindow);
 
