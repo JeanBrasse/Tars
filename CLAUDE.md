@@ -49,7 +49,7 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 71 root frames. **Encrypted**: reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
+| `design/tars-redesign.pen` | Pencil source of truth, 72 root frames. **Encrypted**: reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header and this table both name the Pencil source `design/tars-redesign.pen` |
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
