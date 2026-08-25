@@ -24,10 +24,21 @@ vi.mock('../../../electron/constants', () => ({
   API_PORT: 31415,
   dataPath: (f: string) => path.join(tmp, f),
 }));
-vi.mock('../../../electron/core/agent-manager', () => ({ agents: new Map() }));
+/** Mutable so a test can move an agent and make watchTick see a fleet change. */
+const agents = new Map<string, Record<string, unknown>>();
+vi.mock('../../../electron/core/agent-manager', () => ({ agents }));
 vi.mock('../../../electron/services/git-review', () => ({ repoSummary: async () => ({ success: false }) }));
 vi.mock('../../../electron/services/hermes-config', () => ({
   usableHermesConnection: () => ({ url: 'http://gateway.test', token: 't' }),
+}));
+// No websocket transport, so every turn takes the cron path without first
+// spending three seconds finding out there is no socket to open. That is a
+// real configuration, not a shortcut: it is what an install behind a gateway
+// with no live endpoint does on every turn.
+vi.mock('../../../electron/services/hermes-session', () => ({
+  liveTransportAvailable: () => false,
+  createLiveSession: async () => { throw new Error('no live transport in tests'); },
+  askLiveSession: async () => ({ ok: false, error: 'unavailable' }),
 }));
 
 const TEMPLATE = '<what you tell Noah, plain text or light markdown>';
@@ -82,7 +93,15 @@ function seed(messages: { role: string; text: string }[]): void {
   }, null, 2));
 }
 
+function putAgent(status: string): void {
+  agents.set('a1', {
+    id: 'a1', name: 'Frontend', projectPath: '/tars', provider: 'claude',
+    status, output: [], lastCleanOutput: '', currentTask: 'the sidebar',
+  });
+}
+
 beforeEach(async () => {
+  agents.clear();
   promptsSent.length = 0;
   nextReply = 'the fleet is quiet';
   if (fs.existsSync(OVERSEER_FILE)) fs.rmSync(OVERSEER_FILE);
@@ -148,16 +167,41 @@ describe('a conversation that is already poisoned', () => {
     { role: 'user', text: 'ca dit quoi?' },
   ];
 
-  it('is cleaned up on load rather than needing the file edited by hand', async () => {
+  it('is flagged on read, never deleted from disk', async () => {
     seed(poisoned);
 
     const history = overseer.getOverseerHistory();
 
-    expect(history.map(m => m.text)).not.toContain(TEMPLATE);
-    expect(history).toHaveLength(3);
-    // Written back, so the next process does not start from the poison again.
-    expect(JSON.stringify(persisted())).not.toContain('what you tell Noah');
+    // Every message is still there. An earlier version of this fix dropped
+    // them and rewrote the file, which meant every mistake the rule made was
+    // permanent data loss; the rule is allowed to be wrong, not to destroy.
+    expect(history).toHaveLength(poisoned.length);
+    expect(history.filter(m => m.templateEcho)).toHaveLength(17);
+    expect(persisted()).toHaveLength(poisoned.length);
+    expect(fs.readFileSync(OVERSEER_FILE, 'utf-8')).toContain('what you tell Noah');
   });
+
+  it('flags only the echoes, and never a real message', async () => {
+    seed(poisoned);
+
+    const flagged = overseer.getOverseerHistory().filter(m => m.templateEcho).map(m => m.text);
+
+    expect(new Set(flagged)).toEqual(new Set([TEMPLATE]));
+  });
+
+  it('leaves the file untouched even after a full turn runs against it', async () => {
+    seed(poisoned);
+    const before = fs.readFileSync(OVERSEER_FILE, 'utf-8');
+    expect((before.match(/what you tell Noah/g) || []).length).toBe(17);
+
+    nextReply = JSON.stringify({ say: 'Frontend is waiting on you.', action: null });
+    await overseer.askOverseer('et maintenant?');
+
+    const after = fs.readFileSync(OVERSEER_FILE, 'utf-8');
+    // The turn appended; it did not prune.
+    expect((after.match(/what you tell Noah/g) || []).length).toBe(17);
+    expect(persisted()).toHaveLength(poisoned.length + 2);
+  }, 30000);
 
   it('keeps the real answers it is sitting between', async () => {
     seed(poisoned);
@@ -194,6 +238,107 @@ describe('a conversation that is already poisoned', () => {
     expect(instructions).not.toMatch(/<what you tell Noah/);
     expect(instructions).not.toMatch(/<id from the snapshot>/);
   }, 30000);
+});
+
+describe("short messages that carry brackets but are not templates", () => {
+  /**
+   * Every one of these was destroyed by the first version of this fix. They
+   * are the class the original guard never considered: real messages that are
+   * short AND bracketed, where the earlier "at least twelve surviving
+   * characters" rule left between four and ten and called them templates.
+   */
+  const REAL = [
+    '[API] down.',
+    '[URGENT] Build KO.',
+    '[MERGED] feat/qa.',
+    '[IMPORTANT] QA a fini.',
+    '[URGENT] Frontend KO.',
+    'Wrap it in <div>.',
+    'Use Map<string, Agent>.',
+    'Fix: a < b, not a > b.',
+    'Voir <https://example.com/docs>.',
+  ];
+
+  it('survive on disk, unflagged, when they are already in the conversation', async () => {
+    seed(REAL.map(text => ({ role: 'overseer', text })));
+
+    const history = overseer.getOverseerHistory();
+
+    expect(history).toHaveLength(REAL.length);
+    expect(history.filter(m => m.templateEcho)).toHaveLength(0);
+    expect(history.map(m => m.text)).toEqual(REAL);
+  });
+
+  it('are still quoted back to the model, because they are context', async () => {
+    seed(REAL.map(text => ({ role: 'overseer', text })));
+
+    await overseer.askOverseer('et maintenant?');
+
+    const prompt = promptsSent[promptsSent.length - 1];
+    for (const text of REAL) expect(prompt).toContain(text);
+  }, 30000);
+
+  it('are judged one by one, and none of them reads as a template', () => {
+    for (const text of REAL) {
+      expect(overseer.isTemplateEcho(text), `wrongly refused: ${text}`).toBe(false);
+    }
+    // And the shapes that are templates still are, so this is not the rule
+    // having simply been switched off.
+    expect(overseer.isTemplateEcho(TEMPLATE)).toBe(true);
+    expect(overseer.isTemplateEcho('[SILENT]')).toBe(true);
+    expect(overseer.isTemplateEcho('<...>')).toBe(true);
+  });
+
+  it('are accepted and recorded when Hermes sends one as its answer', async () => {
+    // One full turn rather than nine: the other nine paths are already driven
+    // end to end by the two tests above, which read and serialize all of them.
+    nextReply = JSON.stringify({ say: '[URGENT] Build KO.', action: null });
+
+    const result = await overseer.askOverseer('salut');
+
+    expect(result.ok).toBe(true);
+    expect(persisted().map(m => m.text)).toContain('[URGENT] Build KO.');
+  }, 30000);
+});
+
+describe('a refusal during an automatic check-in', () => {
+  /**
+   * Two ticks: the first only records a baseline, the second sees the move.
+   * It has to end on `waiting`, because a fleet diff only raises a note for a
+   * transition into waiting, completed or error.
+   */
+  async function tickTwice(): Promise<void> {
+    putAgent('running');
+    await overseer.watchTick();
+    putAgent('waiting');
+    await overseer.watchTick();
+  }
+
+  it('is recorded and readable instead of vanishing', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+
+    await tickTwice();
+
+    // Nobody is waiting on a briefing, so a plain null here was a cycle that
+    // failed every five minutes with nothing anywhere to show for it.
+    const failure = overseer.getLastWatchFailure();
+    expect(failure).not.toBeNull();
+    expect(failure?.error).toMatch(/template/i);
+    expect(failure?.at).toBeTypeOf('string');
+    // Still nothing written, which is the other half of the contract.
+    expect(persisted()).toHaveLength(0);
+  }, 40000);
+
+  it('is cleared by the next check-in that works', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+    await tickTwice();
+    expect(overseer.getLastWatchFailure()).not.toBeNull();
+
+    nextReply = JSON.stringify({ say: 'Frontend went idle.', action: null });
+    await tickTwice();
+
+    expect(overseer.getLastWatchFailure()).toBeNull();
+  }, 40000);
 });
 
 describe('clearing the conversation', () => {

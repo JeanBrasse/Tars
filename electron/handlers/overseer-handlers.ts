@@ -12,6 +12,7 @@ import {
   pauseOverseerWatch,
   resumeOverseerWatch,
   isOverseerWatchPaused,
+  getLastWatchFailure,
   isOverseerBusy,
   getOverseerSettings,
   setOverseerSettings,
@@ -155,7 +156,10 @@ export function registerOverseerHandlers(): void {
     return { success: true, paused: false };
   });
 
-  ipcMain.handle('overseer:watchStatus', async () => ({ paused: isOverseerWatchPaused() }));
+  ipcMain.handle('overseer:watchStatus', async () => ({
+    paused: isOverseerWatchPaused(),
+    lastFailure: getLastWatchFailure(),
+  }));
 
   ipcMain.handle('overseer:settings', async () => getOverseerSettings());
 

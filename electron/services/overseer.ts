@@ -112,6 +112,13 @@ export interface OverseerMessage {
   /** Files sent with this message. Kept beside the text rather than inside it
    *  so the bubble can show a chip and the text stays what was typed. */
   attachments?: OverseerAttachment[];
+  /**
+   * Set on read when this reply looks like the format template rather than an
+   * answer. Never stored: it is recomputed from the text every time, so a
+   * later, better rule re-judges old messages instead of inheriting the
+   * verdict of the rule that happened to be shipped when they arrived.
+   */
+  templateEcho?: boolean;
 }
 
 interface FleetAgentSnapshot {
@@ -203,24 +210,11 @@ function loadState(): OverseerState {
     // Spreading `raw` over the defaults is a shallow merge, so a state file
     // written before settings existed - or one holding only some of them -
     // would otherwise arrive with `settings` undefined and crash the callers.
-    const state: OverseerState = {
+    return {
       ...defaultState(),
       ...raw,
       settings: { ...defaultSettings(), ...(raw?.settings ?? {}) },
     };
-
-    // Fixing the code does not unstick an install that already went wrong:
-    // the echoes are on disk, and every one of them is another example for
-    // the next turn to copy. They are dropped once, here, so the running
-    // conversation recovers without anyone having to edit the file by hand.
-    const messages = state.messages.filter(m => m.role !== 'overseer' || !isTemplateEcho(m.text));
-    if (messages.length !== state.messages.length) {
-      const dropped = state.messages.length - messages.length;
-      console.warn(`[overseer] dropped ${dropped} reply/replies that were the format template rather than an answer`);
-      state.messages = messages;
-      saveState(state);
-    }
-    return state;
   } catch (err) {
     console.error('[overseer] could not read overseer.json, starting fresh:', err);
     return defaultState();
@@ -235,8 +229,20 @@ function saveState(state: OverseerState): void {
   }
 }
 
+/**
+ * The conversation, with the replies that look like the format template
+ * flagged rather than removed.
+ *
+ * This used to drop them from disk on load, which was wrong twice over: the
+ * loop is already broken by serializeHistory refusing to quote an echo back
+ * to the model, so deleting bought nothing, and a heuristic that writes to
+ * disk turns each of its own mistakes into permanent data loss. It flags
+ * instead. The interface can hide a flagged message; nothing can lose one.
+ */
 export function getOverseerHistory(): OverseerMessage[] {
-  return loadState().messages;
+  return loadState().messages.map(m => (
+    m.role === 'overseer' && isTemplateEcho(m.text) ? { ...m, templateEcho: true } : m
+  ));
 }
 
 /**
@@ -551,13 +557,6 @@ const PLACEHOLDER_SPAN = /<[^<>]{0,120}>/g;
 /** `[SILENT]`, which the gateway emits for "produce no output" and which is
  *  not a message either. Uppercase only, so a markdown link survives. */
 const BARE_SENTINEL = /\[[A-Z][A-Z_ ]{2,30}\]/g;
-/**
- * How much real writing has to survive the strip. A genuine reply that used a
- * placeholder as a figure of speech still carries a sentence around it; the
- * echoes carry nothing but stray punctuation and the odd stub like "say:".
- */
-const MIN_REAL_CHARS = 12;
-
 export function isTemplateEcho(say: string): boolean {
   const text = say.trim();
   if (!text) return true;
@@ -566,8 +565,14 @@ export function isTemplateEcho(say: string): boolean {
   // Nothing was a placeholder, so there is nothing to accuse it of.
   if (stripped === text) return false;
 
-  const real = stripped.replace(/[^\p{L}\p{N}]+/gu, '');
-  return real.length < MIN_REAL_CHARS;
+  // Nothing at all, rather than "not much". This started as a threshold of a
+  // dozen surviving characters, which is the kind of number that has to be
+  // guessed and was guessed wrong: it swallowed "[URGENT] Build KO." and
+  // "Voir <https://example.com/docs>.", which are messages, not templates.
+  // The real distinction needs no tuning. A reply that is the template has
+  // nothing left once the template is taken out of it; a reply that merely
+  // uses brackets is still a sentence without them.
+  return !/[\p{L}\p{N}]/u.test(stripped);
 }
 
 /**
@@ -1189,7 +1194,32 @@ export async function watchTick(): Promise<OverseerMessage | null> {
   if (!reason) return null;
 
   const result = await askOverseer(`Fleet change since the last check: ${reason}.`, { isBriefing: true });
-  return result.ok ? result.message : null;
+  if (!result.ok) {
+    // A briefing has nobody waiting on it, so a refusal here used to be a
+    // plain `null`: the five minute cycle failed over and over with nothing
+    // to see, which is the same silent failure the API server had when its
+    // port was taken. Recorded and logged, so the reason is answerable.
+    lastWatchFailure = { reason: result.reason, error: result.error, at: new Date().toISOString() };
+    console.warn(`[overseer] check-in produced no briefing (${result.reason}): ${result.error}`);
+    return null;
+  }
+  lastWatchFailure = null;
+  return result.message;
+}
+
+/** Why the last automatic check-in produced nothing, when it produced nothing.
+ *  Cleared by the next one that succeeds. */
+let lastWatchFailure: WatchFailure | null = null;
+
+export interface WatchFailure {
+  reason: string;
+  error: string;
+  /** ISO timestamp. */
+  at: string;
+}
+
+export function getLastWatchFailure(): WatchFailure | null {
+  return lastWatchFailure;
 }
 
 let watchTimer: ReturnType<typeof setInterval> | null = null;
