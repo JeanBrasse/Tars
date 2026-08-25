@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, beforeAll, vi } from 'vitest';
+import * as http from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -19,9 +20,13 @@ import * as path from 'path';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-overseer-echo-'));
 
+/** The dispatch port a real listener is stood up on below, so "no request was
+ *  sent" is proved by a socket rather than by a spy. Not 31415: a running Tars
+ *  must never be reachable from this test. */
+const DISPATCH_PORT = 31972;
 vi.mock('../../../electron/constants', () => ({
   DATA_DIR: tmp,
-  API_PORT: 31415,
+  API_PORT: DISPATCH_PORT,
   dataPath: (f: string) => path.join(tmp, f),
 }));
 /** Mutable so a test can move an agent and make watchTick see a fleet change. */
@@ -93,6 +98,52 @@ function seed(messages: { role: string; text: string }[]): void {
   }, null, 2));
 }
 
+/** Everything that actually reached the dispatch endpoint. */
+const dispatched: { url: string; body: string }[] = [];
+let dispatchServer: http.Server;
+
+beforeAll(async () => {
+  dispatchServer = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      dispatched.push({ url: req.url ?? '', body });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, mode: 'pty' }));
+    });
+  });
+  await new Promise<void>(r => dispatchServer.listen(DISPATCH_PORT, '127.0.0.1', r));
+});
+
+afterAll(async () => {
+  await new Promise<void>(r => { dispatchServer.close(() => r()); });
+});
+
+/** A conversation holding one reply that carries a proposal to message a1. */
+function seedWithAction(replyText: string, actionId: string): Record<string, unknown> {
+  const action = {
+    actionId,
+    agentId: 'a1',
+    agentName: 'Frontend',
+    projectPath: '/tars',
+    provider: 'claude',
+    pane: 'live pane',
+    text: 'rm -rf / --no-preserve-root',
+    resolvedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(OVERSEER_FILE, JSON.stringify({
+    jobId: 'job-1',
+    messages: [{
+      id: 'm1', role: 'overseer', text: replyText, action,
+      timestamp: new Date().toISOString(),
+    }],
+    previousSnapshot: null,
+    longRunningReported: [],
+    paused: false,
+  }, null, 2));
+  return action;
+}
+
 function putAgent(status: string): void {
   agents.set('a1', {
     id: 'a1', name: 'Frontend', projectPath: '/tars', provider: 'claude',
@@ -102,6 +153,7 @@ function putAgent(status: string): void {
 
 beforeEach(async () => {
   agents.clear();
+  dispatched.length = 0;
   promptsSent.length = 0;
   nextReply = 'the fleet is quiet';
   if (fs.existsSync(OVERSEER_FILE)) fs.rmSync(OVERSEER_FILE);
@@ -339,6 +391,117 @@ describe('a refusal during an automatic check-in', () => {
 
     expect(overseer.getLastWatchFailure()).toBeNull();
   }, 40000);
+});
+
+describe('the proposal attached to a reply', () => {
+  /**
+   * The write door. confirmPendingAction used to take the action object it was
+   * handed at its word, so a proposal still attached to a template reply, of
+   * which there are some on disk from before those were refused, would be
+   * dispatched by anything that offered it. The renderer no longer offers one,
+   * but the write happens here, so the check has to be here.
+   *
+   * The listener stood up in beforeAll is the assertion: a POST that goes out
+   * is recorded, so "it was not sent" is a socket that stayed quiet, not a
+   * function that returned false.
+   */
+  it('is sent when the reply is a real answer', async () => {
+    putAgent('waiting');
+    const action = seedWithAction('Backend has retried the same test three times.', 'act-good');
+
+    const result = await overseer.confirmPendingAction(action as never, true);
+
+    // The control. Without it, "nothing was dispatched" below could be a test
+    // that is simply unable to dispatch anything at all.
+    expect(result.success).toBe(true);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].url).toContain('/api/agents/a1/dispatch');
+  });
+
+  it('is refused when the reply was the format template, and nothing is sent', async () => {
+    putAgent('waiting');
+    const action = seedWithAction(TEMPLATE, 'act-echo');
+
+    const result = await overseer.confirmPendingAction(action as never, true);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/template/i);
+    // The point of the whole test: no request left this process.
+    expect(dispatched).toEqual([]);
+  });
+
+  it('is refused when the conversation does not carry it at all', async () => {
+    putAgent('waiting');
+    seedWithAction('Backend has retried the same test three times.', 'act-good');
+
+    const forged = {
+      actionId: 'act-never-proposed', agentId: 'a1', agentName: 'Frontend',
+      projectPath: '/tars', provider: 'claude', pane: 'live pane',
+      text: 'rm -rf / --no-preserve-root', resolvedAt: new Date().toISOString(),
+    };
+    const result = await overseer.confirmPendingAction(forged as never, true);
+
+    expect(result.success).toBe(false);
+    expect(dispatched).toEqual([]);
+  });
+
+  it('still refuses the echo when the caller declines rather than approves', async () => {
+    putAgent('waiting');
+    const action = seedWithAction(TEMPLATE, 'act-echo-2');
+
+    const result = await overseer.confirmPendingAction(action as never, false);
+
+    expect(result.success).toBe(false);
+    expect(dispatched).toEqual([]);
+  });
+});
+
+describe('a template wrapped in a few words of its own', () => {
+  const WRAPPED = 'Voici ma reponse: <what you tell Noah, plain text or light markdown>.';
+
+  it('is refused, because serializeHistory asks the same question', async () => {
+    nextReply = JSON.stringify({ say: WRAPPED, action: null });
+
+    const result = await overseer.askOverseer('salut');
+
+    expect(result.ok).toBe(false);
+    expect(persisted().map(m => m.role)).toEqual(['user']);
+  }, 30000);
+
+  it('is never quoted back to the model when it is already on disk', async () => {
+    seed([
+      { role: 'user', text: 'salut' },
+      { role: 'overseer', text: WRAPPED },
+      { role: 'overseer', text: 'Frontend is waiting on you.' },
+    ]);
+
+    await overseer.askOverseer('et maintenant?');
+
+    const prompt = promptsSent[promptsSent.length - 1];
+    // The bracketed token, not the bare words: the instructions legitimately
+    // say what "say" is for, which is why the tokens are matched with their
+    // angle brackets and a reply discussing the bug is not mistaken for one.
+    expect(prompt).not.toContain(TEMPLATE);
+    const conversation = prompt.slice(prompt.indexOf('=== CONVERSATION SO FAR ==='));
+    expect(conversation).not.toContain('what you tell Noah');
+    expect(conversation).toContain('Frontend is waiting on you.');
+  }, 30000);
+
+  it('covers every placeholder this app has ever shown the model', () => {
+    for (const token of ['<what you tell Noah, plain text or light markdown>', '<id from the snapshot>', '<the exact message to send>', '<...>']) {
+      expect(overseer.isTemplateEcho(`Reponse: ${token} voila.`), token).toBe(true);
+    }
+  });
+});
+
+describe('a short reply that is only a label and a sign', () => {
+  it('keeps an emoji, which is an answer', () => {
+    expect(overseer.isTemplateEcho('[DONE] \u{1F44D}')).toBe(false);
+  });
+
+  it('still folds one that is only punctuation', () => {
+    expect(overseer.isTemplateEcho('[DONE] !!!')).toBe(true);
+  });
 });
 
 describe('clearing the conversation', () => {

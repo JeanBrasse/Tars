@@ -547,19 +547,43 @@ function readEnvelope(candidate: string): ParsedEnvelope | null {
  * placeholder as something the overseer had already said, and copied it in
  * turn. Nineteen consecutive turns, none of which could recover on its own.
  *
- * The test is structural rather than a list of known strings, because a model
- * paraphrases its own template. Take out the placeholder spans, `<like this>`
- * and bare `[SENTINEL]` tokens, and see whether any actual message is left.
- * Prose that merely happens to contain angle brackets keeps its words and is
- * not touched; a reply built only of placeholders has nothing left.
+ * Two tests, both exact, neither with a number in it to get wrong.
+ *
+ * The first is the tokens this app has itself put in front of the model. We
+ * know them exactly, so a reply carrying one verbatim is an echo and there is
+ * nothing to estimate. This is what catches a reply that wraps the template in
+ * a word or two, which the second test alone lets through: harmless as a
+ * displayed message, but serializeHistory asks the same question, so letting
+ * one back into the prompt is the loop starting again.
+ *
+ * The second is structural, for shapes we have never emitted, such as the
+ * gateway's own `[SILENT]`. Take out the placeholder spans and bare sentinel
+ * tokens, and see whether any message is left. Prose that merely happens to
+ * contain angle brackets keeps its words; a reply built only of placeholders
+ * has nothing left.
  */
 const PLACEHOLDER_SPAN = /<[^<>]{0,120}>/g;
 /** `[SILENT]`, which the gateway emits for "produce no output" and which is
  *  not a message either. Uppercase only, so a markdown link survives. */
 const BARE_SENTINEL = /\[[A-Z][A-Z_ ]{2,30}\]/g;
+/**
+ * Every placeholder token composeTurn has ever shown the model. The prompt no
+ * longer offers any of them (the examples it shows are filled in), but they
+ * are what is sitting in conversations written before that, and a model given
+ * one as context reproduces it verbatim. Kept with their angle brackets, so
+ * a reply that discusses the bug in prose is not mistaken for one.
+ */
+const EMITTED_PLACEHOLDERS = [
+  '<what you tell Noah, plain text or light markdown>',
+  '<id from the snapshot>',
+  '<the exact message to send>',
+  '<...>',
+];
 export function isTemplateEcho(say: string): boolean {
   const text = say.trim();
   if (!text) return true;
+
+  if (EMITTED_PLACEHOLDERS.some(token => text.includes(token))) return true;
 
   const stripped = text.replace(PLACEHOLDER_SPAN, ' ').replace(BARE_SENTINEL, ' ');
   // Nothing was a placeholder, so there is nothing to accuse it of.
@@ -571,8 +595,10 @@ export function isTemplateEcho(say: string): boolean {
   // "Voir <https://example.com/docs>.", which are messages, not templates.
   // The real distinction needs no tuning. A reply that is the template has
   // nothing left once the template is taken out of it; a reply that merely
-  // uses brackets is still a sentence without them.
-  return !/[\p{L}\p{N}]/u.test(stripped);
+  // uses brackets is still a sentence without them. An emoji counts as
+  // something left: "[DONE] \u{1F44D}" is a person's answer, where "[DONE] !!!"
+  // is punctuation and stays folded.
+  return !/[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(stripped);
 }
 
 /**
@@ -720,9 +746,40 @@ function markConsumed(id: string): void {
 }
 
 /**
+ * Send a proposal the caller has already established is legitimate.
+ *
+ * Private on purpose. The only in-process caller is finishTurn's
+ * pre-authorised path, which builds the action two statements earlier from an
+ * envelope that has already been through isTemplateEcho and resolveTarget, so
+ * there is nothing left for a lookup to tell it. Everything arriving from
+ * outside this module goes through confirmPendingAction instead.
+ */
+async function dispatchApprovedAction(
+  action: OverseerAction,
+): Promise<{ success: boolean; error?: string; mode?: string }> {
+  if (consumedActionIds.has(action.actionId)) {
+    return { success: false, error: 'This action was already resolved.' };
+  }
+  markConsumed(action.actionId);
+  // Re-resolve now, immediately before writing: the fleet may have changed
+  // since the overseer proposed this (agent finished, was removed, moved
+  // project) in the minutes it can take Noah to read and approve it.
+  return sendToAgent(action.agentId, action.text);
+}
+
+/**
  * The user's decision on a proposed action. Nothing is written to any CLI
  * until this is called with approve:true - which only happens when Noah
  * presses send in the approval panel.
+ *
+ * The action arrives as an object handed over IPC, and it used to be taken at
+ * its word: whatever it named was dispatched. So an action still attached to
+ * a reply that was the format template, of which there are some sitting on
+ * disk from before that was refused, would be sent if anything ever offered
+ * it. The renderer has since stopped offering them, but a check that lives
+ * only in the renderer is not a check: the write happens here, so the
+ * invariant belongs here. The action must be one this conversation actually
+ * carries, on a message that reads as a real answer.
  */
 export async function confirmPendingAction(
   action: OverseerAction,
@@ -731,16 +788,26 @@ export async function confirmPendingAction(
   if (!action || !action.actionId || !action.agentId || !action.text) {
     return { success: false, error: 'Malformed action.' };
   }
+
+  const carrier = loadState().messages.find(m => m.action?.actionId === action.actionId);
+  if (!carrier) {
+    return { success: false, error: 'That proposal is not in the conversation, so it cannot be sent.' };
+  }
+  if (isTemplateEcho(carrier.text)) {
+    return {
+      success: false,
+      error: 'That proposal came from a reply that was the format template rather than an answer, so it will not be sent.',
+    };
+  }
+
   if (consumedActionIds.has(action.actionId)) {
     return { success: false, error: 'This action was already resolved.' };
   }
-  markConsumed(action.actionId);
-  if (!approve) return { success: true };
-
-  // Re-resolve now, immediately before writing: the fleet may have changed
-  // since the overseer proposed this (agent finished, was removed, moved
-  // project) in the minutes it can take Noah to read and approve it.
-  return sendToAgent(action.agentId, action.text);
+  if (!approve) {
+    markConsumed(action.actionId);
+    return { success: true };
+  }
+  return dispatchApprovedAction(action);
 }
 
 // ── Talking to Hermes ────────────────────────────────────────────────────
@@ -1037,7 +1104,7 @@ async function finishTurn(
   if (action) {
     const rule = findAutoRule(state.settings.autoActions, { agentId: action.agentId });
     if (rule) {
-      const sent = await confirmPendingAction(action, true);
+      const sent = await dispatchApprovedAction(action);
       autoNote = sent.success
         ? `\n\n_Sent automatically to ${action.agentName}: ${rule.label.toLowerCase()}._`
         : `\n\n_Tried to send this automatically and could not: ${sent.error ?? 'unknown error'}._`;
