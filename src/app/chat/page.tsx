@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { AlertCircle } from 'lucide-react';
 import { BrandSpinner, Button, PageHeader } from '@/components/ui';
 import { MessageCard } from '@/components/Overseer/MessageCard';
+import { EchoRun } from '@/components/Overseer/EchoRun';
+import { groupThread } from '@/components/Overseer/echo-runs';
 import { FleetRail } from '@/components/Overseer/FleetRail';
 import { Composer } from '@/components/Overseer/Composer';
 import { AttachmentChips } from '@/components/Overseer/AttachmentChips';
@@ -430,15 +432,26 @@ export default function ChatPage() {
                 </p>
               </div>
             ) : (
-              messages.map(m => (
-                <MessageCard
-                  key={m.id}
-                  message={m}
-                  fleet={fleet}
-                  actionState={m.action ? actionStates[m.action.actionId] : undefined}
-                  onCancelAction={handleCancelAction}
-                  onSendAction={handleSendAction}
-                />
+              groupThread(messages).map(item => (
+                item.kind === 'echo' ? (
+                  <EchoRun
+                    key={item.key}
+                    messages={item.messages}
+                    fleet={fleet}
+                    actionStates={actionStates}
+                    onCancelAction={handleCancelAction}
+                    onSendAction={handleSendAction}
+                  />
+                ) : (
+                  <MessageCard
+                    key={item.message.id}
+                    message={item.message}
+                    fleet={fleet}
+                    actionState={item.message.action ? actionStates[item.message.action.actionId] : undefined}
+                    onCancelAction={handleCancelAction}
+                    onSendAction={handleSendAction}
+                  />
+                )
               ))
             )}
             {queued.map((m, i) => (
