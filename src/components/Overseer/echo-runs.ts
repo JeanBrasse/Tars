@@ -17,14 +17,17 @@ export type ThreadItem =
  * cannot. Nothing is dropped - every message stays in the run it belongs to and
  * the fold opens onto all of them.
  *
- * `templateEcho` is only ever set on the overseer's own replies, so a line Noah
- * typed can never be folded away by this.
+ * The role is tested alongside the flag rather than trusted. Nothing marks a
+ * user message today, and the flag is computed rather than stored, but folding
+ * is the one thing that must never happen to a line Noah typed, so the rule
+ * that protects it is written where it is relied on instead of being inherited
+ * from how the reader currently happens to behave.
  */
 export function groupThread(messages: OverseerMessage[]): ThreadItem[] {
   const items: ThreadItem[] = [];
 
   for (const message of messages) {
-    if (!message.templateEcho) {
+    if (!message.templateEcho || message.role !== 'overseer') {
       items.push({ kind: 'message', message });
       continue;
     }

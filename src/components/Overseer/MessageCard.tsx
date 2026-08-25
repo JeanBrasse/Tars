@@ -34,9 +34,10 @@ export function MessageCard({
 }) {
   const isOverseer = message.role === 'overseer';
   const speaker = isOverseer ? 'Hermes' : 'You';
-  // A reply that came back as the format template. Only ever set on the
-  // overseer's own messages, never on a line Noah typed.
-  const isEcho = !!message.templateEcho;
+  // A reply that came back as the format template. The role is tested with the
+  // flag, not assumed from it: a line Noah typed must never be dimmed, retagged
+  // or stripped of a control, whatever a future reader decides to mark.
+  const isEcho = isOverseer && !!message.templateEcho;
 
   return (
     <div
