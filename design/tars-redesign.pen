@@ -88272,6 +88272,316 @@
           "fontWeight": "normal"
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "VpWw6",
+      "x": 13024,
+      "y": 1240,
+      "name": "Chat · replies that came back empty",
+      "width": 900,
+      "fill": "$bg",
+      "stroke": "$border",
+      "strokeWidth": 1,
+      "layout": "vertical",
+      "gap": 18,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "ft2WL",
+          "name": "h",
+          "fill": "#727272",
+          "content": "CHAT · REPLIES THAT CAME BACK EMPTY",
+          "lineHeight": 1.6,
+          "fontFamily": "$font-ui",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "xnmHu",
+          "name": "rule cap",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "A run of replies where Hermes wrote out its own format example instead of an answer. Nothing is deleted: they stay in the conversation on disk, and the flag that spots them is worked out at read time. But a bubble that says nothing must not read as a message, so a run folds into one line that says how many there were, in the place they happened, and opens on demand.",
+          "lineHeight": 1.5,
+          "fontFamily": "$font-ui",
+          "fontSize": 11.5,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "rRepx",
+          "name": "cap A",
+          "fill": "#727272",
+          "content": "COLLAPSED · WHAT THE THREAD SHOWS",
+          "lineHeight": 1.6,
+          "fontFamily": "$font-ui",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "I5n4e",
+          "name": "row collapsed",
+          "width": "fill_container",
+          "gap": 10,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "RqCAd",
+              "name": "rule l",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "$border"
+            },
+            {
+              "type": "text",
+              "id": "yotgs",
+              "name": "t",
+              "fill": "#727272",
+              "content": "3 replies came back empty",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "SSA1e",
+              "name": "b show",
+              "height": 26,
+              "fill": "$surface",
+              "cornerRadius": "$radius",
+              "stroke": "$border",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Qi3OA",
+                  "name": "l",
+                  "fill": "$text-secondary",
+                  "content": "show",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xexNU",
+              "name": "rule r",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "$border"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "t5usK",
+          "name": "cap B",
+          "fill": "#727272",
+          "content": "EXPANDED · AFTER SHOW",
+          "lineHeight": 1.6,
+          "fontFamily": "$font-ui",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "C9306",
+          "name": "row expanded",
+          "width": "fill_container",
+          "gap": 10,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Hasfz",
+              "name": "rule l",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "$border"
+            },
+            {
+              "type": "text",
+              "id": "i3Sv2G",
+              "name": "t",
+              "fill": "#727272",
+              "content": "3 replies came back empty",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "ZgX0R",
+              "name": "b hide",
+              "height": 26,
+              "fill": "$surface",
+              "cornerRadius": "$radius",
+              "stroke": "$border",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "l7S69",
+                  "name": "l",
+                  "fill": "$text-secondary",
+                  "content": "hide",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Bawu9",
+              "name": "rule r",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "$border"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "LQyt0",
+          "name": "m echo",
+          "opacity": 0.6,
+          "width": "fill_container",
+          "fill": "#1A1A1A",
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "layout": "vertical",
+          "gap": 6,
+          "padding": [
+            12,
+            14
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "rNzgl",
+              "name": "head",
+              "width": "fill_container",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "qIWc5",
+                  "name": "sq",
+                  "fill": "$accent",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "qbbDJ",
+                  "name": "w",
+                  "fill": "$accent",
+                  "content": "Hermes",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "mam0Y",
+                  "name": "sp",
+                  "width": "fill_container",
+                  "height": 1
+                },
+                {
+                  "type": "text",
+                  "id": "Kt2uM",
+                  "name": "t",
+                  "fill": "#727272",
+                  "content": "02:19",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "lCfsM",
+              "name": "tag",
+              "height": 18,
+              "fill": "$surface-raised",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "padding": [
+                0,
+                6
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "U2mnmi",
+                  "name": "l",
+                  "fill": "$text-muted",
+                  "content": "EMPTY REPLY",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 9.5,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "IT3fh",
+              "name": "p",
+              "fill": "$text-muted",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "<what you tell Noah, plain text or light markdown>",
+              "lineHeight": 1.45,
+              "fontFamily": "$font-mono",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "kfqfk",
+          "name": "note",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Noah's own messages never carry the flag and are never touched. Only a reply from Hermes can fold away, and only ever behind a line that says it is there.",
+          "lineHeight": 1.5,
+          "fontFamily": "$font-ui",
+          "fontSize": 11.5,
+          "fontWeight": "normal"
+        }
+      ]
     }
   ],
   "themes": {
