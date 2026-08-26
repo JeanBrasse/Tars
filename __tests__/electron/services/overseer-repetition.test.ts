@@ -95,6 +95,12 @@ function seedTheSameShapeWithNewWords(): void {
   raw.messages = raw.messages.map((m: { text: string }) => (
     m.text === STUCK ? { ...m, text: NOVEL } : m
   ));
+  // The fixture is a day old on disk. The last turn is stamped as just now,
+  // which is how the loop looked while Noah was watching it: the newest repeat
+  // had arrived minutes ago.
+  const last = raw.messages[raw.messages.length - 1];
+  last.timestamp = new Date().toISOString();
+  last.isBriefing = true;
   fs.writeFileSync(OVERSEER_FILE, JSON.stringify(raw, null, 1));
 }
 
@@ -170,11 +176,11 @@ describe("Noah's stuck conversation", () => {
     expect(conversation.split(NOVEL).length - 1).toBe(1);
   }, 30000);
 
-  it('refuses to record an unknown sentence it just said, too', async () => {
+  it('refuses to check in with an unknown sentence it just said, too', async () => {
     seedTheSameShapeWithNewWords();
     nextReply = JSON.stringify({ say: NOVEL, action: null });
 
-    const result = await overseer.askOverseer('ca dit quoi?');
+    const result = await overseer.askOverseer('fleet change', { isBriefing: true });
 
     expect(result.ok).toBe(false);
     expect(persisted().filter(m => m.text === NOVEL).length).toBeGreaterThan(150);
@@ -224,7 +230,7 @@ describe('a repetition that is not word for word', () => {
     ]);
     nextReply = JSON.stringify({ say: 'Frontend has been waiting for twelve minutes.', action: null });
 
-    const result = await overseer.askOverseer('et maintenant?');
+    const result = await overseer.askOverseer('fleet change', { isBriefing: true });
 
     expect(result.ok).toBe(false);
   }, 30000);
@@ -333,44 +339,134 @@ describe('the example in the prompt', () => {
 /**
  * Where the line actually falls, measured rather than assumed.
  *
- * The write refusal compares against the last thing the overseer itself said,
- * and nothing else: not the clock, not how many times Noah asked in between.
- * That is stricter than "an observation still true an hour later is
- * untouched", and it is worth pinning because it is the case Noah hits when he
- * asks again and nothing has moved. What rescues it is the prompt, which tells
- * the model to say that nothing has changed rather than repeat itself; if the
- * model complies there is no refusal, and if it does not, Noah is told to ask
- * again instead of being told the same thing.
+ * It has moved since this was first pinned, in two directions, and both moves
+ * are the point of the change. The refusal now applies only to a check-in
+ * nobody asked for, and only while the thing it repeats is recent. A question
+ * from Noah always gets an answer, because handing him an error instead is the
+ * exact thing he could not get past, and the same answer to the same question
+ * is an answer when nothing has moved.
  */
 describe('the repetition boundary', () => {
   const X = 'Frontend is still blocked on the sidebar width and nobody has answered.';
   const Y = 'Backend finished the usage backfill a moment ago.';
 
-  it('refuses a repeat that follows itself directly', async () => {
+  /** One overseer check-in, said `minutesAgo` minutes ago. */
+  function seedAged(text: string, minutesAgo: number): void {
+    fs.writeFileSync(OVERSEER_FILE, JSON.stringify({
+      jobId: 'job-1',
+      messages: [{
+        id: 'aged', role: 'overseer', text, action: null, isBriefing: true,
+        timestamp: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+      }],
+      previousSnapshot: null, longRunningReported: [], paused: false,
+    }, null, 2));
+  }
+
+  it('refuses a check-in that repeats the one just before it', async () => {
     putAgent('waiting');
-    seed([{ role: 'overseer', text: X }]);
+    seedAged(X, 3);
     nextReply = JSON.stringify({ say: X, action: null });
-    expect((await overseer.askOverseer('alors ?')).ok).toBe(false);
+
+    expect((await overseer.askOverseer('fleet change', { isBriefing: true })).ok).toBe(false);
   }, 30000);
 
-  it("still refuses when only Noah's turns came in between", async () => {
+  it('lets the same observation through once it has stood for long enough', async () => {
     putAgent('waiting');
-    seed([
-      { role: 'overseer', text: X },
-      { role: 'user', text: 'et maintenant ?' },
-      { role: 'user', text: 'toujours rien ?' },
-    ]);
+    // Still blocked an hour later is not a repetition, it is the news that it
+    // has not moved. This used to be refused, which is what Noah lost.
+    seedAged(X, 61);
     nextReply = JSON.stringify({ say: X, action: null });
-    // His questions do not reset it: only another observation does.
-    expect((await overseer.askOverseer('alors ?')).ok).toBe(false);
+
+    expect((await overseer.askOverseer('fleet change', { isBriefing: true })).ok).toBe(true);
+  }, 30000);
+
+  it('answers Noah even when the answer has not changed', async () => {
+    putAgent('waiting');
+    seedAged(X, 3);
+    nextReply = JSON.stringify({ say: X, action: null });
+
+    // He asked. An error in place of an answer is worse than an answer that
+    // happens to be the same as the last one.
+    expect((await overseer.askOverseer('alors ?')).ok).toBe(true);
   }, 30000);
 
   it('allows it again once the overseer has said something else', async () => {
     putAgent('waiting');
     seed([{ role: 'overseer', text: X }, { role: 'overseer', text: Y }]);
     nextReply = JSON.stringify({ say: X, action: null });
-    expect((await overseer.askOverseer('alors ?')).ok).toBe(true);
+
+    expect((await overseer.askOverseer('fleet change', { isBriefing: true })).ok).toBe(true);
   }, 30000);
+});
+
+/**
+ * The five the rule used to swallow, one by one.
+ *
+ * Each pair is two real observations that the edit budget merged into one, so
+ * the second was refused and lost. The first matters most: two agents failing
+ * one after the other, and only the first ever reported.
+ */
+describe('observations that name different subjects', () => {
+  it.each([
+    ['two different agents failing', 'Agent a1 errored', 'Agent a2 errored'],
+    ['a count that is not a duration', 'Two agents are waiting', 'Nine agents are waiting'],
+    ['a build that flipped', 'The build is green', 'The build is red'],
+    ['a status that changed', 'Frontend is done', 'Frontend is idle'],
+    ['two ids a letter apart', 'Agent ab', 'Agent ac'],
+  ])('keeps %s apart', (_name, a, b) => {
+    expect(overseer.isSameThingSaidAgain(a as string, b as string)).toBe(false);
+  });
+
+  it('does not drop the second agent to fail', async () => {
+    putAgent('error', 'a1');
+    putAgent('error', 'a2');
+    seed([{ role: 'overseer', text: 'Agent a1 errored on the migration.' }]);
+    nextReply = JSON.stringify({ say: 'Agent a2 errored on the migration.', action: null });
+
+    const result = await overseer.askOverseer('fleet change', { isBriefing: true });
+
+    expect(result.ok).toBe(true);
+    expect(persisted().map(m => m.text)).toContain('Agent a2 errored on the migration.');
+  }, 30000);
+
+  it('still merges a duration that only got older', () => {
+    expect(overseer.isSameThingSaidAgain(
+      'Frontend has been waiting for eleven minutes.',
+      'Frontend has been waiting for 12 minutes.',
+    )).toBe(true);
+  });
+});
+
+/**
+ * The conversation that started all this, replayed against the rule.
+ *
+ * Loosening for the false positives above must not let the loop back in. Those
+ * repeats were rigorously identical and close together, so they have to stay
+ * refused, and this counts them rather than trusting the reasoning.
+ */
+describe('the hundred and eighty repeats', () => {
+  it('are still refused, essentially all of them', () => {
+    const raw = JSON.parse(fs.readFileSync(FIXTURE, 'utf-8'));
+    const messages: { role: string; text: string; timestamp: string; isBriefing?: boolean }[] = raw.messages;
+
+    let checkIns = 0;
+    let refused = 0;
+    let previous: (typeof messages)[number] | undefined;
+    for (const m of messages) {
+      if (m.role !== 'overseer') continue;
+      if (previous && m.isBriefing) {
+        checkIns++;
+        const age = Date.parse(m.timestamp) - Date.parse(previous.timestamp);
+        if (overseer.isSameThingSaidAgain(m.text, previous.text) && age < 30 * 60 * 1000) refused++;
+      }
+      previous = m;
+    }
+
+    expect(checkIns).toBeGreaterThan(170);
+    // All but the handful that stood for over half an hour, which are exactly
+    // the ones worth hearing.
+    expect(refused / checkIns).toBeGreaterThan(0.95);
+  });
 });
 
 /**

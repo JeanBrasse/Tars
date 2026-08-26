@@ -385,69 +385,63 @@ function serializeSnapshot(snapshot: FleetSnapshot): string {
 // ── Prompt composition ───────────────────────────────────────────────────
 
 /**
- * The same thing said again, however the wording drifted.
+ * The same observation, told again.
  *
  * The guard before this one tested a shape of text, and shapes are what a
- * model varies. What actually went wrong twice is a behaviour: the overseer
- * saying what it just said, being shown that it said it, and saying it again.
- * Any sentence at all can enter that loop, so the test has to be about
- * sameness rather than about wording.
+ * model varies. What went wrong twice is a behaviour: the overseer saying what
+ * it just said, being shown that it said it, and saying it again. So the test
+ * is about sameness.
  *
- * Digits are flattened because "waiting for 11 minutes" and "waiting for 12
- * minutes" are one observation, not two, and a small edit budget covers a word
- * swapped for a synonym. Everything else is left alone: two genuinely
- * different sentences about two different agents are nowhere near each other.
+ * It used to allow a small edit budget on top, which sounds harmless and was
+ * not. Five percent of a sentence only exceeds three characters past sixty
+ * normalised characters, so in practice the rule was "identical give or take
+ * three", and three characters is the whole difference between "Agent a1
+ * errored" and "Agent a2 errored". Two agents failing one after the other, and
+ * the second one silently dropped. That is the same class of harm as the loop
+ * itself: something true, gone, with nobody told.
+ *
+ * There is no budget any more. Two tellings are the same telling when they are
+ * the same words, and the only thing normalised away is an elapsed duration,
+ * because "waiting for eleven minutes" and "waiting for 12 minutes" are one
+ * observation getting older. A number that is not counting a duration is left
+ * exactly as written: it is naming something. "Two agents" and "Nine agents"
+ * are different facts, and so are a1 and a2.
+ *
+ * A repeat that has been reworded gets through, and that is the right way to
+ * be wrong. A duplicate that slips past costs one line; a real observation
+ * merged into a previous one costs the observation. The fold in
+ * serializeHistory and the instruction in composeTurn carry that half.
  */
-/** Numbers as words, because "eleven minutes" and "11 minutes" are one
- *  observation and these sentences are mostly about elapsed time. Widening the
- *  edit budget instead would have started merging genuinely different short
- *  sentences, which is the failure that matters more. */
-const NUMBER_WORDS = new RegExp(
-  '\\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|'
-  + 'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|'
-  + 'forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\\b',
-  'g',
-);
+const NUMBER_WORD = '(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|'
+  + 'eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|'
+  + 'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)';
+const DURATION_UNIT = '(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?)';
+/** A number that measures how long, and only that. */
+const ELAPSED = new RegExp(`\\b(?:\\d+|${NUMBER_WORD})\\s+(${DURATION_UNIT})\\b`, 'g');
 
 function normaliseSaid(text: string): string {
   return text
     .toLowerCase()
-    .replace(/\d+/g, '#')
-    .replace(NUMBER_WORDS, '#')
+    .replace(ELAPSED, '# $1')
     .replace(/[^\p{L}\p{N}#]+/gu, ' ')
     .trim();
-}
-
-/** Levenshtein, abandoned as soon as it cannot come in under `budget`. */
-function withinEditBudget(a: string, b: string, budget: number): boolean {
-  if (Math.abs(a.length - b.length) > budget) return false;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    let best = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      const v = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
-      row.push(v);
-      if (v < best) best = v;
-    }
-    if (best > budget) return false;
-    prev = row;
-  }
-  return prev[b.length] <= budget;
 }
 
 export function isSameThingSaidAgain(a: string, b: string): boolean {
   const x = normaliseSaid(a);
   const y = normaliseSaid(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  // Five percent of the longer sentence, and never less than three
-  // characters, so a short reply is not swallowed by a generous ratio.
-  const budget = Math.max(3, Math.floor(Math.max(x.length, y.length) * 0.05));
-  return withinEditBudget(x, y, budget);
+  return x.length > 0 && x === y;
 }
 
+
+/**
+ * How long the same check-in has to stay quiet before it is news again.
+ *
+ * Six times the default watch interval. A repeat that is only the timer coming
+ * round again is refused; one that is still true half an hour later is saying
+ * something the first one could not, which is that it has not moved.
+ */
+const REPEAT_QUIET_MS = 30 * 60 * 1000;
 
 const HISTORY_TURN_LIMIT = 24;
 const HISTORY_CHAR_BUDGET = 6000;
@@ -1205,19 +1199,38 @@ async function finishTurn(
   // a placeholder in the history is what turns one bad turn into every turn.
   // Nothing is persisted, so the next turn is already the retry, composed
   // from a prompt this reply never entered.
-  // Said already, and immediately before this. The narrowest possible form of
-  // the rule: only the reply that directly follows an identical one is
-  // refused, so an observation that is genuinely still true an hour and
-  // several messages later is untouched. Nothing is written, so the next turn
-  // is composed without it and is free to answer properly.
+  // Said already, recently, and to nobody who asked.
+  //
+  // Three conditions, because the rule had only the first and refused things
+  // it should not have. Repeating an observation is not automatically a fault:
+  // "that agent is STILL blocked" an hour later is the thing Noah wants most,
+  // and it was being turned into an error.
+  //
+  // The clock is what separates the two. The repeats that ran for a day came
+  // round with the watch timer, a median of two and a half minutes apart, so a
+  // quiet window several times longer than the default check-in leaves all of
+  // them refused while letting a genuinely persistent one through. Measured on
+  // the conversation this exists to fix: four gaps out of a hundred and eighty
+  // four are longer than this window.
+  //
+  // And only a check-in nobody asked for. When Noah asks a question, the same
+  // answer as last time is an answer, and refusing it hands him an error
+  // instead, which is the very thing he could not get past. His turn always
+  // gets through; what stops it being the stale one is the fold in
+  // serializeHistory, which means the model was never shown the repetition.
   const previous = [...state.messages].reverse().find(m => m.role === 'overseer');
-  if (previous && isSameThingSaidAgain(envelope.say, previous.text)) {
-    console.warn('[overseer] discarded a reply that repeated the previous one:', envelope.say.slice(0, 120));
-    return {
-      ok: false,
-      reason: 'error',
-      error: 'Hermes answered with the same thing it had just said, so Tars discarded it rather than recording it again. Ask again.',
-    };
+  if (opts.isBriefing && previous && isSameThingSaidAgain(envelope.say, previous.text)) {
+    const age = Date.now() - Date.parse(previous.timestamp);
+    // An unreadable timestamp falls back to refusing, which is what this did
+    // before there was a clock at all. It only ever applies to a check-in.
+    if (!Number.isFinite(age) || age < REPEAT_QUIET_MS) {
+      console.warn('[overseer] discarded a check-in that repeated the previous one:', envelope.say.slice(0, 120));
+      return {
+        ok: false,
+        reason: 'error',
+        error: 'Hermes checked in with the same thing it had just said, so Tars discarded it rather than recording it again.',
+      };
+    }
   }
 
   if (isTemplateEcho(envelope.say)) {
