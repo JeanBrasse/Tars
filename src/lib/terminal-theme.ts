@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { ITheme } from '@xterm/xterm';
+import type { ITheme } from 'xterm';
 
 /**
  * Single source of truth for every xterm surface in the app.

@@ -29,7 +29,7 @@ import {
   SECTIONS,
 } from '@/components/Settings';
 import type { SettingsSection } from '@/components/Settings';
-import '@xterm/xterm/css/xterm.css';
+import 'xterm/css/xterm.css';
 
 /**
  * One action per sub-page, in the header.

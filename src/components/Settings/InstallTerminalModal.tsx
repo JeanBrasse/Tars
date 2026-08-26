@@ -8,7 +8,6 @@ import {
   TERMINAL_SURFACE_CLASS,
   useTerminalTheme,
 } from '@/lib/terminal-theme';
-import { attachMouseHandling } from '@/lib/terminal';
 
 interface InstallTerminalModalProps {
   show: boolean;
@@ -22,7 +21,7 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
   const [installExitCode, setInstallExitCode] = useState<number | null>(null);
   const [terminalReady, setTerminalReady] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
+  const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   // Follows the app theme, so the install log is not a black rectangle in light mode
   const terminalTheme = useTerminalTheme();
@@ -32,8 +31,8 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
     if (!show || !terminalRef.current || xtermRef.current) return;
 
     const initTerminal = async () => {
-      const { Terminal } = await import('@xterm/xterm');
-      const { FitAddon } = await import('@xterm/addon-fit');
+      const { Terminal } = await import('xterm');
+      const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
         ...createXtermOptions(),
@@ -42,8 +41,6 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
         cursorStyle: 'bar',
         scrollback: 10000,
       });
-
-      attachMouseHandling(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
