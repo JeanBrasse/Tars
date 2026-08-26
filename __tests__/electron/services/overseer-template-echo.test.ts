@@ -76,6 +76,17 @@ vi.mock('../../../electron/services/hermes-client', () => ({
 const OVERSEER_FILE = path.join(tmp, 'overseer.json');
 let overseer: typeof import('../../../electron/services/overseer');
 
+/** The conversation section alone, which is what conditions the reply. The
+ *  instructions carry the bracketed shape on purpose, so asserting against
+ *  the whole prompt would be asserting against the template itself. */
+function conversationOf(prompt: string): string {
+  const from = prompt.indexOf('=== CONVERSATION SO FAR');
+  const to = prompt.indexOf('=== FLEET SNAPSHOT');
+  expect(from, 'no conversation section').toBeGreaterThan(-1);
+  expect(to, 'the snapshot does not follow the conversation').toBeGreaterThan(from);
+  return prompt.slice(from, to);
+}
+
 /** The conversation as it is on disk, which is what conditions the next turn. */
 function persisted(): { role: string; text: string }[] {
   if (!fs.existsSync(OVERSEER_FILE)) return [];
@@ -274,25 +285,33 @@ describe('a conversation that is already poisoned', () => {
 
     await overseer.askOverseer('et maintenant?');
 
-    const prompt = promptsSent[promptsSent.length - 1];
-    expect(prompt).toBeTypeOf('string');
+    const conversation = conversationOf(promptsSent[promptsSent.length - 1]);
     // The conversation section is what conditions the reply. The 17 echoes
     // must not appear in it under any speaker.
-    expect(prompt).not.toContain(TEMPLATE);
+    expect(conversation).not.toContain(TEMPLATE);
     // The real turns still do, or the fix would have cost the context.
-    expect(prompt).toContain('Salut Noah. Rien de bloque');
+    expect(conversation).toContain('Salut Noah. Rien de bloque');
   }, 30000);
 
-  it('offers no bracketed placeholder for the model to copy in the first place', async () => {
+  /**
+   * This asserted the opposite a day ago, and the reversal is deliberate.
+   *
+   * The example was filled in with a plausible sentence so that copying it
+   * would be less tempting. The model copied it anyway, and because it read
+   * as a real observation nothing could tell: it went out a hundred and
+   * seventy eight times over a day. A bracketed hole is copied just as
+   * readily and is copied visibly, which isTemplateEcho then catches. Make
+   * the failure detectable rather than betting on it not happening.
+   */
+  it('offers the example as a hole to fill, which a copy of is detectable', async () => {
     await overseer.askOverseer('salut');
 
     const prompt = promptsSent[promptsSent.length - 1];
-    const instructions = prompt.slice(0, prompt.indexOf('=== FLEET SNAPSHOT ==='));
+    const instructions = prompt.slice(0, prompt.indexOf('=== CONVERSATION SO FAR'));
     expect(instructions).toContain('"say"');
-    // The example is filled in, so copying it verbatim is no longer the path
-    // of least resistance.
-    expect(instructions).not.toMatch(/<what you tell Noah/);
-    expect(instructions).not.toMatch(/<id from the snapshot>/);
+    expect(instructions).toMatch(/<what you tell Noah/);
+    // And a reply that copies it is refused, which is the point of the shape.
+    expect(overseer.isTemplateEcho('<what you tell Noah, plain text or light markdown>')).toBe(true);
   }, 30000);
 });
 
@@ -511,12 +530,10 @@ describe('a template wrapped in a few words of its own', () => {
 
     await overseer.askOverseer('et maintenant?');
 
-    const prompt = promptsSent[promptsSent.length - 1];
-    // The bracketed token, not the bare words: the instructions legitimately
-    // say what "say" is for, which is why the tokens are matched with their
-    // angle brackets and a reply discussing the bug is not mistaken for one.
-    expect(prompt).not.toContain(TEMPLATE);
-    const conversation = prompt.slice(prompt.indexOf('=== CONVERSATION SO FAR ==='));
+    const conversation = conversationOf(promptsSent[promptsSent.length - 1]);
+    // The conversation, not the whole prompt: the instructions carry the
+    // bracketed shape deliberately, so that a copy of it is recognisable.
+    expect(conversation).not.toContain(TEMPLATE);
     expect(conversation).not.toContain('what you tell Noah');
     expect(conversation).toContain('Frontend is waiting on you.');
   }, 30000);

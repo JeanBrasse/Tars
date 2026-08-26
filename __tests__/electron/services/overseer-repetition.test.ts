@@ -1,0 +1,331 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+/**
+ * The overseer saying one thing for a day.
+ *
+ * Yesterday's fix stopped it copying the bracketed placeholder out of its own
+ * prompt. What it did next was copy the filled in example that replaced the
+ * placeholder, a plausible sentence about a sidebar width, and say that a
+ * hundred and seventy eight times over twenty one hours, including straight
+ * back at Noah every time he tried to talk to it. Every guard passed, because
+ * every guard was about a shape of text and the problem is a behaviour.
+ *
+ * The fixture is Noah's real conversation, taken off his disk. These assert
+ * that it comes unstuck, and that a healthy conversation is untouched, rather
+ * than that some helper rejects one particular sentence.
+ */
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-overseer-rep-'));
+
+vi.mock('../../../electron/constants', () => ({
+  DATA_DIR: tmp,
+  API_PORT: 31973,
+  dataPath: (f: string) => path.join(tmp, f),
+}));
+const agents = new Map<string, Record<string, unknown>>();
+vi.mock('../../../electron/core/agent-manager', () => ({ agents }));
+vi.mock('../../../electron/services/git-review', () => ({ repoSummary: async () => ({ success: false }) }));
+vi.mock('../../../electron/services/hermes-config', () => ({
+  usableHermesConnection: () => ({ url: 'http://gateway.test', token: 't' }),
+}));
+vi.mock('../../../electron/services/hermes-session', () => ({
+  liveTransportAvailable: () => false,
+  createLiveSession: async () => { throw new Error('no live transport in tests'); },
+  askLiveSession: async () => ({ ok: false, error: 'unavailable' }),
+}));
+
+/** The sentence Noah watched for a day. It is the example composeTurn used. */
+const STUCK = 'Frontend has been waiting on your answer about the sidebar width for eleven minutes. Nothing else is blocked.';
+
+let nextReply = 'the fleet is quiet';
+const promptsSent: string[] = [];
+
+vi.mock('../../../electron/services/hermes-client', () => ({
+  probeHermes: async () => ({ reachable: true, authRequired: false, signedIn: true }),
+  createHermesCron: async () => ({ success: true, job: { id: 'job-1' } }),
+  updateHermesCron: async (_c: unknown, _id: string, patch: { prompt?: string }) => {
+    if (typeof patch?.prompt === 'string') promptsSent.push(patch.prompt);
+    return { success: true, job: { id: 'job-1' } };
+  },
+  hermesCronAction: async () => ({ success: true }),
+  fetchHermesCronRuns: async () => {
+    const t = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_');
+    return { success: true, runs: [{ id: `cron_job-1_${t.slice(0, 8)}_${t.slice(9, 15)}` }] };
+  },
+  fetchHermesSessionMessages: async () => ({
+    success: true,
+    messages: [{ role: 'assistant', content: nextReply }],
+  }),
+  fetchHermesModelOptions: async () => ({ success: true, provider: '', model: '', providers: [] }),
+  setHermesModel: async () => ({ success: true }),
+}));
+
+const OVERSEER_FILE = path.join(tmp, 'overseer.json');
+const FIXTURE = path.join(__dirname, '../../fixtures/overseer-repetition.json');
+let overseer: typeof import('../../../electron/services/overseer');
+
+function persisted(): { role: string; text: string }[] {
+  if (!fs.existsSync(OVERSEER_FILE)) return [];
+  return JSON.parse(fs.readFileSync(OVERSEER_FILE, 'utf-8')).messages ?? [];
+}
+
+/** Noah's conversation, exactly as it sat on his disk. */
+function seedNoahsConversation(): void {
+  fs.copyFileSync(FIXTURE, OVERSEER_FILE);
+}
+
+/**
+ * Noah's conversation with the stuck sentence swapped for one nothing knows
+ * about.
+ *
+ * His actual sentence is now refused by name, because it was the example
+ * composeTurn used to print. That fixes his install and fixes nothing else:
+ * the next lock-up will be on a sentence the model wrote itself. So the shape
+ * of his conversation, a hundred and seventy eight of one thing, is replayed
+ * with text no rule can have heard of, and the assertions about repetition
+ * are made against that.
+ */
+const NOVEL = 'The migration branch has been green for a while and nobody has merged it yet.';
+
+function seedTheSameShapeWithNewWords(): void {
+  const raw = JSON.parse(fs.readFileSync(FIXTURE, 'utf-8'));
+  raw.messages = raw.messages.map((m: { text: string }) => (
+    m.text === STUCK ? { ...m, text: NOVEL } : m
+  ));
+  fs.writeFileSync(OVERSEER_FILE, JSON.stringify(raw, null, 1));
+}
+
+function seed(messages: { role: string; text: string }[]): void {
+  fs.writeFileSync(OVERSEER_FILE, JSON.stringify({
+    jobId: 'job-1',
+    messages: messages.map((m, i) => ({
+      id: `seed-${i}`, role: m.role, text: m.text, action: null,
+      timestamp: new Date().toISOString(),
+    })),
+    previousSnapshot: null, longRunningReported: [], paused: false,
+  }, null, 2));
+}
+
+/** The conversation section of the prompt actually sent to the gateway. */
+function conversationSent(): string {
+  const prompt = promptsSent[promptsSent.length - 1];
+  expect(prompt, 'no prompt was sent').toBeTypeOf('string');
+  const from = prompt.indexOf('=== CONVERSATION SO FAR');
+  const to = prompt.indexOf('=== FLEET SNAPSHOT');
+  // Guarded, so a prompt whose sections are the other way round yields an
+  // empty string and quietly satisfies every assertion made about it.
+  expect(from, 'no conversation section').toBeGreaterThan(-1);
+  expect(to, 'the snapshot does not follow the conversation').toBeGreaterThan(from);
+  return prompt.slice(from, to);
+}
+
+function putAgent(status: string, id = 'a1'): void {
+  agents.set(id, {
+    id, name: 'Frontend', projectPath: '/tars', provider: 'claude',
+    status, output: [], lastCleanOutput: '', currentTask: 'the sidebar',
+  });
+}
+
+beforeEach(async () => {
+  agents.clear();
+  promptsSent.length = 0;
+  nextReply = 'the fleet is quiet';
+  if (fs.existsSync(OVERSEER_FILE)) fs.rmSync(OVERSEER_FILE);
+  vi.resetModules();
+  overseer = await import('../../../electron/services/overseer');
+});
+
+describe("Noah's stuck conversation", () => {
+  it('really is stuck, which is the precondition for the rest', () => {
+    seedNoahsConversation();
+    const texts = persisted().filter(m => m.role === 'overseer').map(m => m.text);
+
+    expect(texts.filter(t => t === STUCK).length).toBeGreaterThan(150);
+  });
+
+  it('stops being recited back to the model', async () => {
+    seedNoahsConversation();
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const conversation = conversationSent();
+    const occurrences = conversation.split(STUCK).length - 1;
+    // Once, as context, instead of the twenty four the window used to carry.
+    expect(occurrences).toBeLessThanOrEqual(1);
+  }, 30000);
+
+  it('is told, in the prompt, that it already said that', async () => {
+    // The same lock-up, on words no rule has ever seen. This is the class,
+    // and it is the half that will still hold the next time the model picks
+    // a sentence of its own to get stuck on.
+    seedTheSameShapeWithNewWords();
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const conversation = conversationSent();
+    expect(conversation).toMatch(/said that again \d+ more time\(s\)/);
+    expect(conversation.split(NOVEL).length - 1).toBe(1);
+  }, 30000);
+
+  it('refuses to record an unknown sentence it just said, too', async () => {
+    seedTheSameShapeWithNewWords();
+    nextReply = JSON.stringify({ say: NOVEL, action: null });
+
+    const result = await overseer.askOverseer('ca dit quoi?');
+
+    expect(result.ok).toBe(false);
+    expect(persisted().filter(m => m.text === NOVEL).length).toBeGreaterThan(150);
+  }, 30000);
+
+  it('loses nothing from the disk in the process', async () => {
+    seedNoahsConversation();
+    const before = persisted().length;
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    // The user's own turns and every overseer reply are still there: the
+    // repetition is filtered on the way into the prompt, never deleted.
+    expect(persisted().length).toBe(before + 2);
+    expect(persisted().filter(m => m.text === STUCK).length).toBeGreaterThan(150);
+  }, 30000);
+
+  it('refuses to record the same answer once more', async () => {
+    seedNoahsConversation();
+    nextReply = JSON.stringify({ say: STUCK, action: null });
+
+    const result = await overseer.askOverseer('ca dit quoi?');
+
+    expect(result.ok).toBe(false);
+    expect(persisted().filter(m => m.text === STUCK).length).toBeGreaterThan(150);
+    // Noah's turn is kept, the repeat is not, so the count grows by one only.
+  }, 30000);
+
+  it('accepts a genuinely new answer on the very next turn', async () => {
+    seedNoahsConversation();
+    nextReply = JSON.stringify({ say: 'Backend errored on the schema migration ten minutes ago and nothing has picked it up.', action: null });
+
+    const result = await overseer.askOverseer('ca dit quoi?');
+
+    expect(result.ok).toBe(true);
+    expect(persisted().map(m => m.text)).toContain(
+      'Backend errored on the schema migration ten minutes ago and nothing has picked it up.',
+    );
+  }, 30000);
+});
+
+describe('a repetition that is not word for word', () => {
+  it('is still the same repetition when only a number moved', async () => {
+    seed([
+      { role: 'user', text: 'salut' },
+      { role: 'overseer', text: 'Frontend has been waiting for eleven minutes.' },
+    ]);
+    nextReply = JSON.stringify({ say: 'Frontend has been waiting for twelve minutes.', action: null });
+
+    const result = await overseer.askOverseer('et maintenant?');
+
+    expect(result.ok).toBe(false);
+  }, 30000);
+
+  it('is still the same repetition when the number is spelled differently', () => {
+    expect(overseer.isSameThingSaidAgain(
+      'Frontend has been waiting for eleven minutes.',
+      'Frontend has been waiting for 11 minutes.',
+    )).toBe(true);
+  });
+});
+
+describe('an overseer that is still allowed to talk', () => {
+  it('says something new when something new happened', async () => {
+    seed([
+      { role: 'overseer', text: 'Frontend is waiting on the sidebar width.' },
+    ]);
+    nextReply = JSON.stringify({ say: 'QA has errored on the migration test, and Frontend is still waiting.', action: null });
+
+    const result = await overseer.askOverseer('et maintenant?');
+
+    expect(result.ok).toBe(true);
+  }, 30000);
+
+  it('may repeat an observation that is separated by a different one', async () => {
+    // Still blocked an hour later is worth saying again. Only the reply that
+    // directly follows an identical one is refused.
+    seed([
+      { role: 'overseer', text: 'Frontend is waiting on the sidebar width.' },
+      { role: 'overseer', text: 'QA has errored on the migration test.' },
+    ]);
+    nextReply = JSON.stringify({ say: 'Frontend is waiting on the sidebar width.', action: null });
+
+    const result = await overseer.askOverseer('et maintenant?');
+
+    expect(result.ok).toBe(true);
+  }, 30000);
+
+  it('keeps a healthy conversation intact in the prompt', async () => {
+    const healthy = [
+      { role: 'user', text: 'salut' },
+      { role: 'overseer', text: 'Frontend is waiting on the sidebar width.' },
+      { role: 'user', text: 'et backend?' },
+      { role: 'overseer', text: 'Backend is midway through the schema migration.' },
+      { role: 'user', text: 'et QA?' },
+      { role: 'overseer', text: 'QA has errored on the migration test.' },
+    ];
+    seed(healthy);
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const conversation = conversationSent();
+    for (const m of healthy) expect(conversation).toContain(m.text);
+    expect(conversation).not.toMatch(/said that again/);
+  }, 30000);
+});
+
+describe('the fleet as it is now', () => {
+  it('is put after the conversation, so it reads last before the question', async () => {
+    seedNoahsConversation();
+    putAgent('running');
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const prompt = promptsSent[promptsSent.length - 1];
+    // A day of history used to sit between the snapshot and the question.
+    expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeGreaterThan(prompt.indexOf('=== CONVERSATION SO FAR'));
+    expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeLessThan(prompt.indexOf('=== NOAH ==='));
+  }, 30000);
+
+  it('is labelled as now, and the conversation as the past', async () => {
+    seed([{ role: 'overseer', text: 'Frontend is waiting.' }]);
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const prompt = promptsSent[promptsSent.length - 1];
+    expect(prompt).toMatch(/FLEET SNAPSHOT \(the fleet as it is right now/);
+    expect(prompt).toMatch(/CONVERSATION SO FAR \(what was already said/);
+  }, 30000);
+});
+
+describe('the example in the prompt', () => {
+  it('is a hole to fill, not a sentence to copy', async () => {
+    seed([{ role: 'overseer', text: 'Frontend is waiting.' }]);
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const prompt = promptsSent[promptsSent.length - 1];
+    const instructions = prompt.slice(0, prompt.indexOf('=== CONVERSATION SO FAR'));
+    // A filled in example reads as an observation and is copied invisibly.
+    // A bracketed one is copied visibly, and isTemplateEcho catches it.
+    expect(instructions).not.toContain('sidebar width for eleven minutes');
+    expect(instructions).toContain('<what you tell Noah');
+  }, 30000);
+
+  it('is refused if it comes back anyway', () => {
+    expect(overseer.isTemplateEcho(STUCK)).toBe(true);
+    expect(overseer.isTemplateEcho(
+      'Backend has retried the same failing test three times without changing anything. Worth asking it.',
+    )).toBe(true);
+    // And a real sentence of the same shape is not.
+    expect(overseer.isTemplateEcho('Frontend is waiting on the sidebar width.')).toBe(false);
+  });
+});

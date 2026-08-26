@@ -7,6 +7,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 36,
+    version: '1.6.18',
+    date: '2026-08-27',
+    updates: [
+      'Chat stops repeating itself. It settled on one sentence about a sidebar width and said it a hundred and seventy eight times over a day, including straight back at you every time you wrote to it, while thirty agents worked on other things. It was copying the example sentence out of its own instructions, and then copying itself because the last twenty four turns it was shown were all that sentence. The example is a blank to fill in again rather than a finished sentence, an answer that repeats the one before it is not recorded, and a run of repeats is collapsed to one line before Chat is shown its own history, so a conversation that is already stuck comes back on its next message with nothing deleted from it',
+      'Chat looks at the fleet as it is now before it answers. The snapshot used to open the prompt and a day of conversation followed it, so the oldest thing in view was the freshest. It now reads last, right before your question, and is labelled as the current state',
+      'The automatic check-ins are about things that need you. An agent finishing is no longer one of them: it is the ordinary end of work, it is most of what happens once a fleet is thirty agents, and whoever asked for that agent is already told directly. An agent blocked on a question, an agent that errored, and an agent running far longer than usual still bring you a message',
+    ],
+  },
+  {
     id: 35,
     version: '1.6.17',
     date: '2026-08-27',

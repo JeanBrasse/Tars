@@ -384,6 +384,71 @@ function serializeSnapshot(snapshot: FleetSnapshot): string {
 
 // ── Prompt composition ───────────────────────────────────────────────────
 
+/**
+ * The same thing said again, however the wording drifted.
+ *
+ * The guard before this one tested a shape of text, and shapes are what a
+ * model varies. What actually went wrong twice is a behaviour: the overseer
+ * saying what it just said, being shown that it said it, and saying it again.
+ * Any sentence at all can enter that loop, so the test has to be about
+ * sameness rather than about wording.
+ *
+ * Digits are flattened because "waiting for 11 minutes" and "waiting for 12
+ * minutes" are one observation, not two, and a small edit budget covers a word
+ * swapped for a synonym. Everything else is left alone: two genuinely
+ * different sentences about two different agents are nowhere near each other.
+ */
+/** Numbers as words, because "eleven minutes" and "11 minutes" are one
+ *  observation and these sentences are mostly about elapsed time. Widening the
+ *  edit budget instead would have started merging genuinely different short
+ *  sentences, which is the failure that matters more. */
+const NUMBER_WORDS = new RegExp(
+  '\\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|'
+  + 'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|'
+  + 'forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\\b',
+  'g',
+);
+
+function normaliseSaid(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\d+/g, '#')
+    .replace(NUMBER_WORDS, '#')
+    .replace(/[^\p{L}\p{N}#]+/gu, ' ')
+    .trim();
+}
+
+/** Levenshtein, abandoned as soon as it cannot come in under `budget`. */
+function withinEditBudget(a: string, b: string, budget: number): boolean {
+  if (Math.abs(a.length - b.length) > budget) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const v = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
+      row.push(v);
+      if (v < best) best = v;
+    }
+    if (best > budget) return false;
+    prev = row;
+  }
+  return prev[b.length] <= budget;
+}
+
+export function isSameThingSaidAgain(a: string, b: string): boolean {
+  const x = normaliseSaid(a);
+  const y = normaliseSaid(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  // Five percent of the longer sentence, and never less than three
+  // characters, so a short reply is not swallowed by a generous ratio.
+  const budget = Math.max(3, Math.floor(Math.max(x.length, y.length) * 0.05));
+  return withinEditBudget(x, y, budget);
+}
+
+
 const HISTORY_TURN_LIMIT = 24;
 const HISTORY_CHAR_BUDGET = 6000;
 
@@ -398,16 +463,67 @@ function serializeHistory(history: OverseerMessage[]): string {
   let omitted = usable.length - recent.length;
   const kept: string[] = [];
   let used = 0;
-  // Walk newest-first so the char budget favors the most recent context.
+
+  /**
+   * A run of the overseer saying one thing becomes that thing, once, with the
+   * count.
+   *
+   * This is where the second loop is broken, and it is broken here rather than
+   * on the way in for two reasons. Nothing on disk is touched, so a heuristic
+   * that gets it wrong costs a line of context and not a message the user
+   * wrote. And it works on conversations that are already stuck: an install
+   * carrying a hundred and seventy eight copies of one sentence stops being
+   * conditioned by them the next time it composes a turn, with nobody having
+   * to clear anything.
+   *
+   * Noah's turns in between do not break the run. He asked the same question
+   * three times and got the same answer three times, which is one answer.
+   */
+  // Built newest first, then turned round at the end, so the line a run of
+  // repeats belongs to is always the one just added and never has to be found
+  // again by index.
+  const newestFirst: string[] = [];
+  let runIndex = -1;
+  let runOf: string | null = null;
+  let runExtra = 0;
+  const closeRun = () => {
+    if (runExtra > 0 && runIndex >= 0) {
+      newestFirst[runIndex] +=
+        `\n(the overseer said that again ${runExtra} more time(s) before this, adding nothing new. Do not say it again.)`;
+    }
+    runExtra = 0;
+    runIndex = -1;
+    runOf = null;
+  };
+
   for (let i = recent.length - 1; i >= 0; i--) {
     const m = recent[i];
+
+    if (m.role === 'overseer') {
+      if (runOf !== null && isSameThingSaidAgain(m.text, runOf)) {
+        runExtra++;
+        continue;
+      }
+      closeRun();
+    }
+
     const speaker = m.role === 'user' ? 'NOAH' : 'OVERSEER';
     const actionNote = m.action ? ` [proposed messaging agent ${m.action.agentId}]` : '';
     const line = `${speaker}: ${m.text}${actionNote}`;
-    if (used + line.length > HISTORY_CHAR_BUDGET) { omitted += i + 1; break; }
-    kept.unshift(line);
+    if (used + line.length > HISTORY_CHAR_BUDGET) {
+      closeRun();
+      omitted += i + 1;
+      break;
+    }
+    newestFirst.push(line);
     used += line.length;
+    if (m.role === 'overseer') {
+      runIndex = newestFirst.length - 1;
+      runOf = m.text;
+    }
   }
+  closeRun();
+  kept.push(...newestFirst.reverse());
   const lines: string[] = [];
   if (omitted > 0) lines.push(`(${omitted} earlier message(s) omitted)`);
   lines.push(...kept);
@@ -432,12 +548,13 @@ export function composeTurn(
     '- You never claim to have done anything yourself. You only report, challenge, and propose.',
     '- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.',
     '- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.',
-    '- Reply with EXACTLY one JSON object and nothing else, before or after it. "say" is what you tell Noah, plain text or light markdown. Example:',
-    '  {"say": "Frontend has been waiting on your answer about the sidebar width for eleven minutes. Nothing else is blocked.", "action": null}',
+    '- Reply with EXACTLY one JSON object and nothing else, before or after it, in this shape:',
+    '  {"say": "<what you tell Noah, plain text or light markdown>", "action": null}',
     '  or, only when proposing to message one specific agent:',
-    '  {"say": "Backend has retried the same failing test three times without changing anything. Worth asking it what it thinks is wrong.", "action": {"kind": "message_agent", "agent_id": "an id copied from the snapshot", "text": "What do you believe is making that test fail?"}}',
-    '- Those two are illustrations of the shape only. Never repeat their wording, and never treat them as facts about the fleet: write your own sentence about the snapshot below.',
+    '  {"say": "<...>", "action": {"kind": "message_agent", "agent_id": "<id from the snapshot>", "text": "<the exact message to send>"}}',
+    '- The angle brackets are holes for you to fill, never text to copy.',
     '- If no agent in the snapshot is the right target, action must be null.',
+    '- Look at the FLEET SNAPSHOT below before you write. It is the fleet as it is right now; the conversation above it is only what was already said, and some of it is hours old. Never repeat an earlier answer of yours: if nothing has changed since it, say that briefly instead of saying the same thing again.',
   ].join('\n');
 
   const turnLabel = opts.isBriefing
@@ -452,15 +569,20 @@ export function composeTurn(
   // is what makes "that is the third time it has restarted on this" possible.
   const history24h = summariseRuns();
 
+  // The snapshot sits after the conversation, not before it. It used to open
+  // the prompt, which put twenty four turns of history between the fleet as it
+  // is now and the question being asked, and a stuck conversation is exactly
+  // the case where those twenty four turns all say one thing. The freshest
+  // state now reads last, immediately above the turn it has to answer.
   return [
     instructions,
     '',
-    '=== FLEET SNAPSHOT ===',
-    serializeSnapshot(snapshot),
+    '=== CONVERSATION SO FAR (what was already said; the older lines may be hours old) ===',
+    history.length ? serializeHistory(history) : '(nothing yet, this is the first turn)',
     ...(history24h ? ['', `=== ${history24h}`] : []),
     '',
-    '=== CONVERSATION SO FAR ===',
-    history.length ? serializeHistory(history) : '(nothing yet, this is the first turn)',
+    '=== FLEET SNAPSHOT (the fleet as it is right now, taken this second) ===',
+    serializeSnapshot(snapshot),
     '',
     turnLabel,
     turnBody,
@@ -578,6 +700,14 @@ const EMITTED_PLACEHOLDERS = [
   '<id from the snapshot>',
   '<the exact message to send>',
   '<...>',
+  // The two sentences a previous version of composeTurn used as filled in
+  // examples. Replacing the brackets with plausible prose was meant to make
+  // copying less tempting; what it did was make copying invisible. One of
+  // them was then repeated a hundred and seventy eight times over a day,
+  // reading as a real observation the whole way. They are named here because
+  // a conversation already conditioned on them will keep producing them.
+  'Frontend has been waiting on your answer about the sidebar width for eleven minutes',
+  'Backend has retried the same failing test three times without changing anything',
 ];
 export function isTemplateEcho(say: string): boolean {
   const text = say.trim();
@@ -1075,6 +1205,21 @@ async function finishTurn(
   // a placeholder in the history is what turns one bad turn into every turn.
   // Nothing is persisted, so the next turn is already the retry, composed
   // from a prompt this reply never entered.
+  // Said already, and immediately before this. The narrowest possible form of
+  // the rule: only the reply that directly follows an identical one is
+  // refused, so an observation that is genuinely still true an hour and
+  // several messages later is untouched. Nothing is written, so the next turn
+  // is composed without it and is free to answer properly.
+  const previous = [...state.messages].reverse().find(m => m.role === 'overseer');
+  if (previous && isSameThingSaidAgain(envelope.say, previous.text)) {
+    console.warn('[overseer] discarded a reply that repeated the previous one:', envelope.say.slice(0, 120));
+    return {
+      ok: false,
+      reason: 'error',
+      error: 'Hermes answered with the same thing it had just said, so Tars discarded it rather than recording it again. Ask again.',
+    };
+  }
+
   if (isTemplateEcho(envelope.say)) {
     console.warn('[overseer] discarded a reply that echoed the format template:', envelope.say.slice(0, 120));
     return {
@@ -1231,8 +1376,20 @@ function detectFleetChange(prev: FleetSnapshot | null, next: FleetSnapshot, long
         to: a.status,
         task: a.currentTask ? a.currentTask.slice(0, 120) : undefined,
       });
-      if (a.status === 'completed') notes.push(`"${a.name}" (${a.id}) finished in ${a.projectPath}`);
-      else if (a.status === 'error') notes.push(`"${a.name}" (${a.id}) errored in ${a.projectPath}`);
+      // What is worth interrupting somebody for, and what is not.
+      //
+      // A finish is not. It is the expected end of work, it is the commonest
+      // event by far once a fleet is thirty agents, and it is already
+      // delivered straight to whoever dispatched that agent by
+      // services/agent-watch.ts, so nobody learns anything from the Chat
+      // announcing it a second time. Finishes are still recorded in the run
+      // ledger below, so a later turn can still say "that is the third time",
+      // they just do not start a turn of their own.
+      //
+      // Something that needs a person is: an agent waiting on an answer is
+      // blocked until someone gives one, and an agent that errored has
+      // stopped. Both are still here.
+      if (a.status === 'error') notes.push(`"${a.name}" (${a.id}) errored in ${a.projectPath}`);
       else if (a.status === 'waiting') notes.push(`"${a.name}" (${a.id}) is now waiting for input in ${a.projectPath}`);
       if (a.status !== 'running') longRunningReported.delete(a.id);
     }
