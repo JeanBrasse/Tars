@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.6.17",
+  "version": "1.6.18",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
