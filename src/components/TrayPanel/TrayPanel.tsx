@@ -72,7 +72,7 @@ export default function TrayPanel() {
   };
 
   return (
-    <div className="flex flex-col h-screen select-none bg-background">
+    <div className="app-shell flex flex-col h-screen select-none bg-background">
       {/* Header - brand mark on the left, running count on the right */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
         <Brand

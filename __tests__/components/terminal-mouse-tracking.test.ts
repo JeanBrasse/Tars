@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Terminal } from 'xterm';
-import { suppressMouseTracking, attachShiftEnterHandler } from '@/lib/terminal';
+import { suppressMouseTracking, suppressAlternateScreen, attachShiftEnterHandler } from '@/lib/terminal';
 
 /**
  * The board's panels could not scroll and could not be selected because the
@@ -109,5 +109,82 @@ describe('terminal key handler', () => {
 
     expect(key({ key: 'Enter', shiftKey: true })).toBe(false);
     expect(send).toHaveBeenCalledWith('\x1b[200~\n\x1b[201~');
+  });
+});
+
+/**
+ * The alternate screen buffer, refused.
+ *
+ * Claude Code sends `\x1b[?1049h` in its first frame and never the matching
+ * `l`. That buffer has no scrollback by definition, so a panel that entered it
+ * could not scroll at all, and xterm turns the wheel into cursor keys aimed at
+ * the pty instead. It read as intermittent only because a panel lands there
+ * when the retained output it replays on mount still carries that first frame:
+ * a chatty agent has already dropped it out of the ring and mounts into the
+ * normal buffer, a quiet one has not.
+ *
+ * Both directions are refused together. Leaving a buffer that was never
+ * entered would restore a cursor nobody saved.
+ */
+describe('suppressAlternateScreen', () => {
+  const set = (csi: Array<{ id: CsiId; handler: CsiHandler }>) => csi.find(c => c.id.final === 'h')!.handler;
+  const reset = (csi: Array<{ id: CsiId; handler: CsiHandler }>) => csi.find(c => c.id.final === 'l')!.handler;
+
+  it('registers on both directions of DEC private mode', () => {
+    const { term, csi } = stubTerminal();
+    suppressAlternateScreen(term);
+    expect(csi).toHaveLength(2);
+    expect(csi.map(c => c.id)).toEqual([{ prefix: '?', final: 'h' }, { prefix: '?', final: 'l' }]);
+  });
+
+  it('swallows the three buffer-swap modes, entering and leaving', () => {
+    const { term, csi } = stubTerminal();
+    suppressAlternateScreen(term);
+    // true = handled here, so xterm never sees it and never swaps the buffer.
+    for (const mode of [47, 1047, 1049]) {
+      expect(set(csi)([mode]), `?${mode}h`).toBe(true);
+      expect(reset(csi)([mode]), `?${mode}l`).toBe(true);
+    }
+  });
+
+  it('is the sequence Claude Code actually sends', () => {
+    const { term, csi } = stubTerminal();
+    suppressAlternateScreen(term);
+    // 1049 is the one in its first frame: swap buffer and save the cursor.
+    expect(set(csi)([1049])).toBe(true);
+  });
+
+  it('lets every unrelated private mode through', () => {
+    const { term, csi } = stubTerminal();
+    suppressAlternateScreen(term);
+    // Cursor visibility, bracketed paste, focus reporting, mouse tracking:
+    // none of them are ours to refuse here.
+    for (const mode of [25, 1000, 1002, 1004, 1006, 2004, 12]) {
+      expect(set(csi)([mode]), `?${mode}h`).toBe(false);
+      expect(reset(csi)([mode]), `?${mode}l`).toBe(false);
+    }
+  });
+
+  it('passes a mixed set through rather than dropping it wholesale', () => {
+    const { term, csi } = stubTerminal();
+    suppressAlternateScreen(term);
+    // `\x1b[?25;1049h` also hides the cursor. Swallowing it would swallow
+    // that too, so it is handed on and the buffer swap goes with it: refusing
+    // whole sequences is only safe when the whole sequence is ours.
+    expect(set(csi)([25, 1049])).toBe(false);
+    expect(set(csi)([])).toBe(false);
+  });
+
+  it('does not disturb the mouse handler registered beside it', () => {
+    const { term, csi } = stubTerminal();
+    suppressMouseTracking(term);
+    suppressAlternateScreen(term);
+    expect(csi).toHaveLength(3);
+    // The mouse handler still refuses its own modes, and the alternate-screen
+    // pair still refuses theirs: the two coexist on the same parser.
+    expect(csi[0].handler([1002])).toBe(true);
+    expect(csi[1].handler([1049])).toBe(true);
+    expect(csi[0].handler([1049])).toBe(false);
+    expect(csi[1].handler([1002])).toBe(false);
   });
 });

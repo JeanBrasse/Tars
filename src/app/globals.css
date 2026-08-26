@@ -310,6 +310,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "ss02", "cv01";
+  }
+  /*
+   * Body copy tracking. It sits on the shell rather than on `body` because
+   * xterm appends the two hidden spans it measures a character cell with
+   * straight to `document.body`. Inherited there, the tracking padded every
+   * cell by the 0.14px it adds to a glyph, so the terminal laid out a grid
+   * 0.14px per column wider than the text it then drew into it. The two shells
+   * that carry it are ClientLayout and TrayPanel; a new top-level window needs
+   * the class too.
+   */
+  .app-shell {
     letter-spacing: 0.01em;
   }
   /* Tabular nums for all tables and monospace elements */
@@ -555,8 +566,19 @@ button, a, input, textarea, select {
 /* ============================================
    XTERM TERMINAL SIZING
    ============================================ */
-/* Let xterm + FitAddon manage their own dimensions.
-   Only ensure the viewport scrollbar matches our theme. */
+/* Let xterm + FitAddon manage their own dimensions. */
+
+/* A terminal is measured, not merely rendered: xterm sizes a character cell by
+   laying out a hidden 32-character span, then builds the whole grid on the
+   result. Any tracking it inherits lands in that measurement, so every xterm
+   surface opts out and a cell is the glyph's own advance. That keeps the grid
+   honest however a future xterm chooses to measure, whether from the DOM as
+   5.3 does or from a canvas as 5.4 does. */
+.xterm {
+  letter-spacing: normal;
+}
+
+/* Only ensure the viewport scrollbar matches our theme. */
 .xterm-viewport::-webkit-scrollbar {
   width: 6px;
 }

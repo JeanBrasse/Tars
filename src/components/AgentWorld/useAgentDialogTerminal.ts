@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, stripCursorSequences, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripCursorSequences, suppressAlternateScreen, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 // Clean xterm query/focus escape sequences out of user input before forwarding.
@@ -85,6 +85,7 @@ export function useAgentDialogTerminal({
       // swallows the wheel, so the pane can neither scroll nor be selected.
       // The "Previous output" replay below carries the same sequences.
       suppressMouseTracking(term);
+      suppressAlternateScreen(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
