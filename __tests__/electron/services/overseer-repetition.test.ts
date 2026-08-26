@@ -390,6 +390,27 @@ describe('the repetition boundary', () => {
     expect((await overseer.askOverseer('alors ?')).ok).toBe(true);
   }, 30000);
 
+  // The window itself, not somewhere either side of it. 3 and 61 minutes hold
+  // whatever the constant is; these two fail if it moves, which is the point:
+  // thirty minutes was chosen against Noah's own gaps (median 2.6 min between
+  // repeats, 9 of 291 above the window) and a later change to it should have
+  // to be deliberate.
+  it('still refuses one minute inside the window', async () => {
+    putAgent('waiting');
+    seedAged(X, 29);
+    nextReply = JSON.stringify({ say: X, action: null });
+
+    expect((await overseer.askOverseer('fleet change', { isBriefing: true })).ok).toBe(false);
+  }, 30000);
+
+  it('accepts one minute outside it', async () => {
+    putAgent('waiting');
+    seedAged(X, 31);
+    nextReply = JSON.stringify({ say: X, action: null });
+
+    expect((await overseer.askOverseer('fleet change', { isBriefing: true })).ok).toBe(true);
+  }, 30000);
+
   it('allows it again once the overseer has said something else', async () => {
     putAgent('waiting');
     seed([{ role: 'overseer', text: X }, { role: 'overseer', text: Y }]);
