@@ -240,7 +240,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
   const mainMarginLeft = isMobile ? 0 : 216;
 
   return (
-    <div className="min-h-screen bg-bg-primary relative">
+    <div className="app-shell min-h-screen bg-bg-primary relative">
       {showSplash && <Splash onDone={dismissSplash} />}
       {/* Window drag strip, sidebar-wide only (desktop). Full width it sat on
           z-[60] across every page header and swallowed the clicks on the

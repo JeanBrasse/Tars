@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressAlternateScreen, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
@@ -72,6 +72,7 @@ export function useQuickTerminal({
       // and swallows the wheel, so the pane can neither scroll nor be selected.
       // The buffered output replayed below carries the same sequences.
       suppressMouseTracking(term);
+      suppressAlternateScreen(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
