@@ -7,12 +7,22 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 35,
+    version: '1.6.17',
+    date: '2026-08-27',
+    updates: [
+      'The terminal mouse change from 1.6.16 is rolled back. Letting the CLI take the mouse was meant to make a click place the cursor in a long message while Tars kept the wheel scrolling for you, and it went wrong: the scrollback stopped moving at all, full screen no longer helped, and output came back broken across lines and unreadable. The terminals behave as they did in 1.6.15 again, so scrolling and selection work and a click still does not move the cursor. The proper fix is being worked on',
+    ],
+  },
+  {
     id: 34,
     version: '1.6.16',
     date: '2026-08-25',
     updates: [
       'An orchestrator answers a question instead of turning it into a half hour job. Its instructions only ever described handing work to one agent or to several, so the smallest thing it could do with a passing remark was open a task, and it often opened three. It now sizes the response before it reaches for anything: reply itself, one agent, or several only when the pieces are genuinely independent, and when it is torn between two it takes the smaller. Real work spread across several areas still goes out in parallel',
       'An orchestrator is allowed to talk. It was told it was an agent manager only, which stopped it explaining anything, checking a fact in the code, or responding to feedback without delegating first. It still does not write the project code, that belongs to its agents, but answering and reporting are now its own work. The same applies from Telegram and Slack, where a question used to start with "Looking at available agents..." before anyone had established that an agent was needed',
+      'You can click into what you are typing in a terminal. A long message could only be corrected with the arrow keys, because Tars was refusing the mouse on the CLI\'s behalf: that was the only way it had found to keep the wheel and the selection working, since a terminal that hands the mouse over loses both. All three work at once now. Clicking places the cursor, the wheel still moves the scrollback because Tars scrolls it itself rather than letting it be sent to the CLI, and holding Option while you drag still selects text',
+      'Scrolling a panel stops breaking until you toggle full screen and back. What broke it was one sequence slipping through the old refusal, after which nothing ever put the mouse back; going full screen only helped because it threw the panel away and built a new one. Nothing is refused any more, so there is nothing left to slip through. The same handling now covers all nine terminals in the app rather than five of them, which is why some windows had the problem and others did not',
       'Your agents stop being handed another project\'s rules. Tars gives every agent it starts a short set of working habits, and when Tars was run from a checkout it sent them its own development rules instead: draw the screen in a design file first, do not touch these folders, open the pull request against this repository, run these build checks. Agents on unrelated projects were following all of it, which is why some of them kept reaching for tools their project had nothing to do with. They now receive the working habits only, and your project\'s own instructions always come first. An install that has the wrong file already repairs itself the next time Tars opens',
     ],
   },
