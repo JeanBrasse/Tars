@@ -329,3 +329,82 @@ describe('the example in the prompt', () => {
     expect(overseer.isTemplateEcho('Frontend is waiting on the sidebar width.')).toBe(false);
   });
 });
+
+/**
+ * Where the line actually falls, measured rather than assumed.
+ *
+ * The write refusal compares against the last thing the overseer itself said,
+ * and nothing else: not the clock, not how many times Noah asked in between.
+ * That is stricter than "an observation still true an hour later is
+ * untouched", and it is worth pinning because it is the case Noah hits when he
+ * asks again and nothing has moved. What rescues it is the prompt, which tells
+ * the model to say that nothing has changed rather than repeat itself; if the
+ * model complies there is no refusal, and if it does not, Noah is told to ask
+ * again instead of being told the same thing.
+ */
+describe('the repetition boundary', () => {
+  const X = 'Frontend is still blocked on the sidebar width and nobody has answered.';
+  const Y = 'Backend finished the usage backfill a moment ago.';
+
+  it('refuses a repeat that follows itself directly', async () => {
+    putAgent('waiting');
+    seed([{ role: 'overseer', text: X }]);
+    nextReply = JSON.stringify({ say: X, action: null });
+    expect((await overseer.askOverseer('alors ?')).ok).toBe(false);
+  }, 30000);
+
+  it("still refuses when only Noah's turns came in between", async () => {
+    putAgent('waiting');
+    seed([
+      { role: 'overseer', text: X },
+      { role: 'user', text: 'et maintenant ?' },
+      { role: 'user', text: 'toujours rien ?' },
+    ]);
+    nextReply = JSON.stringify({ say: X, action: null });
+    // His questions do not reset it: only another observation does.
+    expect((await overseer.askOverseer('alors ?')).ok).toBe(false);
+  }, 30000);
+
+  it('allows it again once the overseer has said something else', async () => {
+    putAgent('waiting');
+    seed([{ role: 'overseer', text: X }, { role: 'overseer', text: Y }]);
+    nextReply = JSON.stringify({ say: X, action: null });
+    expect((await overseer.askOverseer('alors ?')).ok).toBe(true);
+  }, 30000);
+});
+
+/**
+ * The two directions the rule can be wrong in, pinned at their real position.
+ *
+ * Normalisation flattens digits and number words, and the budget is five
+ * percent of the longer sentence with a floor of three. Five percent only
+ * exceeds three above sixty normalised characters, so for almost every real
+ * sentence the rule is "identical, give or take three characters". That is
+ * exactly right for the failure it exists for, a hundred and seventy eight
+ * identical lines, and it is loose on short sentences and blind to rewording.
+ */
+describe('what the rule merges and what it does not', () => {
+  it('merges the same observation whose number moved', () => {
+    expect(overseer.isSameThingSaidAgain(
+      'Frontend has been waiting for eleven minutes.',
+      'Frontend has been waiting for 12 minutes.',
+    )).toBe(true);
+  });
+
+  it('keeps two different agents apart', () => {
+    expect(overseer.isSameThingSaidAgain(
+      'Frontend is blocked on the sidebar width.',
+      'Backend is blocked on the sidebar width.',
+    )).toBe(false);
+  });
+
+  it('does not merely rewrite: a reworded repeat still gets through', () => {
+    // Not an assertion that this is desirable, an assertion of what it does.
+    // A model that rewords rather than repeats is not caught here, which is
+    // why the fold and the prompt instruction carry the rest of the load.
+    expect(overseer.isSameThingSaidAgain(
+      'Frontend is waiting for your answer.',
+      'Frontend is awaiting your reply.',
+    )).toBe(false);
+  });
+});
