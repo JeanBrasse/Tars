@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 35,
+    version: '1.6.17',
+    date: '2026-08-27',
+    updates: [
+      'The terminal mouse change from 1.6.16 is rolled back. Letting the CLI take the mouse was meant to make a click place the cursor in a long message while Tars kept the wheel scrolling for you, and it went wrong: the scrollback stopped moving at all, full screen no longer helped, and output came back broken across lines and unreadable. The terminals behave as they did in 1.6.15 again, so scrolling and selection work and a click still does not move the cursor. The proper fix is being worked on',
+    ],
+  },
+  {
     id: 34,
     version: '1.6.16',
     date: '2026-08-25',

@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, CheckCircle, XCircle } from 'lucide-react';
 import { BrandSpinner } from '@/components/ui';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import '@xterm/xterm/css/xterm.css';
+import 'xterm/css/xterm.css';
 
 interface SkillInstallTerminalProps {
   show: boolean;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler, attachMouseHandling } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -14,8 +14,8 @@ interface UseTrayTerminalProps {
 
 export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
   const terminalTheme = useTerminalTheme();
-  const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
-  const fitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null);
+  const xtermRef = useRef<import('xterm').Terminal | null>(null);
+  const fitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const agentIdRef = useRef(agentId);
   // Written in an effect, not during render: a ref assignment during render
   // is unsafe under concurrent rendering, and every reader of this one runs
@@ -45,8 +45,8 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
         return;
       }
 
-      const { Terminal } = await import('@xterm/xterm');
-      const { FitAddon } = await import('@xterm/addon-fit');
+      const { Terminal } = await import('xterm');
+      const { FitAddon } = await import('xterm-addon-fit');
       if (cancelled) return;
 
       const term = new Terminal({
@@ -63,7 +63,7 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
       // every redraw, and honouring it disables xterm's selection service and
       // swallows the wheel, so the pane can neither scroll nor be selected.
       // The replayed transcript below carries the same sequences.
-      attachMouseHandling(term);
+      suppressMouseTracking(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);

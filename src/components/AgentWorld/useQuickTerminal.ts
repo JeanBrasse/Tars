@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, attachMouseHandling } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
@@ -26,8 +26,8 @@ export function useQuickTerminal({
 }: UseQuickTerminalOptions) {
   const [quickTerminalReady, setQuickTerminalReady] = useState(false);
   const quickTerminalRef = useRef<HTMLDivElement>(null);
-  const quickXtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
-  const quickFitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null);
+  const quickXtermRef = useRef<import('xterm').Terminal | null>(null);
+  const quickFitAddonRef = useRef<import('xterm-addon-fit').FitAddon | null>(null);
   const quickPtyIdRef = useRef<string | null>(null);
 
   // App theme, as an xterm theme, re-applied below so the terminal follows light mode
@@ -53,8 +53,8 @@ export function useQuickTerminal({
         return;
       }
 
-      const { Terminal } = await import('@xterm/xterm');
-      const { FitAddon } = await import('@xterm/addon-fit');
+      const { Terminal } = await import('xterm');
+      const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
         // Read at creation time so a theme switch mid-session cannot go stale
@@ -71,7 +71,7 @@ export function useQuickTerminal({
       // almost every redraw, and honouring it disables xterm's selection service
       // and swallows the wheel, so the pane can neither scroll nor be selected.
       // The buffered output replayed below carries the same sequences.
-      attachMouseHandling(term);
+      suppressMouseTracking(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);

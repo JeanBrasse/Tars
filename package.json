@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.6.16",
+  "version": "1.6.17",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -145,8 +145,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@slack/bolt": "^4.0.1",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/xterm": "^5.5.0",
     "better-sqlite3": "^13.0.3",
     "call-bind": "^1.0.8",
     "call-bind-apply-helpers": "^1.0.2",
@@ -164,6 +162,8 @@
     "react-grid-layout": "^2.2.2",
     "set-function-length": "^1.2.2",
     "uuid": "^9.0.1",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
-import { attachMouseHandling } from '@/lib/terminal';
 import type { Skill } from '@/lib/skills-database';
 
 export interface SkillInstallState {
@@ -22,7 +21,7 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
   const [terminalReady, setTerminalReady] = useState(false);
   const xtermTheme = useTerminalTheme();
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
+  const xtermRef = useRef<import('xterm').Terminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
 
   // Initialize xterm when install terminal opens
@@ -30,8 +29,8 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
     if (!showInstallTerminal || !terminalRef.current || xtermRef.current) return;
 
     const initTerminal = async () => {
-      const { Terminal } = await import('@xterm/xterm');
-      const { FitAddon } = await import('@xterm/addon-fit');
+      const { Terminal } = await import('xterm');
+      const { FitAddon } = await import('xterm-addon-fit');
 
       const term = new Terminal({
         ...createXtermOptions(),
@@ -40,8 +39,6 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
         cursorStyle: 'bar',
         scrollback: 10000,
       });
-
-      attachMouseHandling(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);

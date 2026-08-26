@@ -1,13 +1,13 @@
 'use client';
 
 import { useRef, useEffect, useCallback, useState } from 'react';
-import type { Terminal } from '@xterm/xterm';
-import type { FitAddon } from '@xterm/addon-fit';
+import type { Terminal } from 'xterm';
+import type { FitAddon } from 'xterm-addon-fit';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler, attachMouseHandling } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -73,8 +73,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   const loadModules = useCallback(async () => {
     if (xtermModuleRef.current) return xtermModuleRef.current;
     const [{ Terminal }, { FitAddon }] = await Promise.all([
-      import('@xterm/xterm'),
-      import('@xterm/addon-fit'),
+      import('xterm'),
+      import('xterm-addon-fit'),
     ]);
     xtermModuleRef.current = { Terminal, FitAddon };
     return xtermModuleRef.current;
@@ -161,9 +161,9 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       });
 
       // Must come before the first write: the replay below carries the mouse
-      // tracking sequences Claude Code emits, and this is what watches them go
-      // past so the wheel keeps scrolling once one of them arms tracking.
-      attachMouseHandling(term);
+      // tracking sequences Claude Code emits, and honouring them is what left
+      // every panel unscrollable and unselectable. See suppressMouseTracking.
+      suppressMouseTracking(term);
 
       const fitAddon = new modules.FitAddon();
       term.loadAddon(fitAddon);
