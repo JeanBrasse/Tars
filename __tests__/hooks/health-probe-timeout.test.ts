@@ -142,6 +142,56 @@ describe('a half-open API does not swallow the session', () => {
     60_000,
   );
 
+  it('bounds every call, not only the probe that was found to be unbounded', () => {
+    // The probe is where it was noticed, not where the property lives. Any
+    // curl in any hook with no read deadline can hang the hook to its timeout,
+    // and the ones that post are the ones carrying the session's ownership and
+    // its output. Asserting only the /api/health lines would let the next one
+    // in through a different door.
+    const hooks = fs.readdirSync(HOOKS_DIR)
+      .filter(f => f.endsWith('.sh'))
+      .map(f => [f, fs.readFileSync(path.join(HOOKS_DIR, f), 'utf-8')] as const);
+
+    expect(hooks.length).toBeGreaterThan(0);
+    for (const [name, body] of hooks) {
+      // Join backslash continuations: nearly every POST here spans lines, and
+      // reading them one at a time would look bounded when it is not.
+      for (const call of body.replace(/\\\n/g, ' ').split('\n')) {
+        // An invocation, not the word: `curl` at a command position followed
+        // by a flag. Comments and the "curl result:" log lines are prose.
+        if (/^\s*#/.test(call)) continue;
+        if (!/(^|[;&|(]|\s)curl\s+-/.test(call)) continue;
+        expect(
+          call.includes('--max-time'),
+          `${name} makes a curl with no read deadline: ${call.trim().slice(0, 80)}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('leaves every hook a worst case that fits inside its own timeout', () => {
+    // The deadlines and the timeout are one budget, and nothing linked them.
+    // A hook whose calls can outlast the 30s Tars allows is killed mid-way,
+    // which for session-start means the registration POST never completes and
+    // the session starts unowned: the exact failure this branch closed, walked
+    // back in through a value someone raised for a good local reason.
+    const hooks = fs.readdirSync(HOOKS_DIR).filter(f => f.endsWith('.sh'));
+
+    for (const name of hooks) {
+      const body = fs.readFileSync(path.join(HOOKS_DIR, name), 'utf-8');
+      const waits = [...body.matchAll(/--max-time\s+(\d+)/g)].map(m => Number(m[1]));
+      const sleeps = [...body.matchAll(/^\s*sleep\s+(\d+)/gm)].map(m => Number(m[1]));
+      // Every call taking its full deadline: an upper bound, since several sit
+      // on branches that cannot all be taken.
+      const worstMs = [...waits, ...sleeps].reduce((a, b) => a + b, 0) * 1000;
+
+      expect(
+        worstMs,
+        `${name} can take ${worstMs}ms, and Tars kills it at ${HOOK_TIMEOUT_MS}ms`,
+      ).toBeLessThan(HOOK_TIMEOUT_MS);
+    }
+  });
+
   it('bounds the read and not just the connect, in every hook that probes', () => {
     // The property, asserted on the source: a probe with --connect-timeout and
     // no --max-time is the bug, and it is invisible against a healthy server.
