@@ -58,8 +58,9 @@ import { performDispatch } from '../../../../electron/services/api-routes/agent-
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { agents, armTaskStartWatch } from '../../../../electron/core/agent-manager';
 import { scheduleTick } from '../../../../electron/utils/agents-tick';
+import { registerHooksRoutes } from '../../../../electron/services/api-routes/hooks-routes';
+import { RouteApp, RouteRequest } from '../../../../electron/services/api-routes/types';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
-import { RouteContext } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
 
 /** Comfortably past the ten minute grace period, plus the tick's own delay. */
@@ -528,5 +529,124 @@ describe('the task that was dispatched', () => {
     expect(command).toContain('$0 and 100%');
     // And the record the rest of the app reads carries the whole thing.
     expect(agent.currentTask).toBe(task);
+  });
+});
+
+
+/**
+ * Registration as it actually happens, rather than as a field assignment.
+ *
+ * Every other test here sets `currentSessionId` by hand, which proves the
+ * guard reads it and nothing about how it comes to be set. That mattered less
+ * while only spawnAgentSession cleared the id. Now the watch clears it itself
+ * on all six paths, including the two that write into a pty that is already
+ * alive, and on those no SessionStart will ever fire again: that session
+ * announced itself long ago. The only thing that puts the id back is the
+ * adoption fallback in hooks-routes, on the first status post that carries a
+ * session id and no `source`.
+ *
+ * So the clearing and that fallback are now one mechanism held in two files.
+ * If the fallback tightened, an agent working perfectly well after a Slack or
+ * Telegram task would be marked broken ten minutes later, which is the exact
+ * error this whole check calls the worse one. These drive the real route.
+ */
+describe('a session that registers for real', () => {
+  function hooksApp(): RouteApp {
+    const app: RouteApp = {
+      routes: [],
+      add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
+      get(pattern, handler) { this.add('GET', pattern, handler); },
+      post(pattern, handler) { this.add('POST', pattern, handler); },
+      put(pattern, handler) { this.add('PUT', pattern, handler); },
+      delete(pattern, handler) { this.add('DELETE', pattern, handler); },
+    } as RouteApp;
+    registerHooksRoutes(app, ctx);
+    return app;
+  }
+
+  function postStatus(app: RouteApp, body: Record<string, unknown>): void {
+    const route = app.routes.find(r => r.pattern === '/api/hooks/status')!;
+    route.handler({ body, params: {} } as RouteRequest, vi.fn());
+  }
+
+  function relaunched(): AgentStatus {
+    const agent = putAgent({
+      id: 'a1',
+      name: 'Frontend',
+      status: 'running',
+      ptyId: 'pty-live',
+      currentSessionId: 'session-from-the-first-run',
+    });
+    ptyProcesses.set('pty-live', { write: vi.fn(), kill: vi.fn() } as never);
+    return agent;
+  }
+
+  it('is left alone when SessionStart registers it, on a fresh start', async () => {
+    const agent = relaunched();
+    const app = hooksApp();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      armTaskStartWatch(agent, agent.ptyId);
+      // What hooks/session-start.sh sends: `source` is the field only it sets.
+      postStatus(app, {
+        agent_id: 'a1',
+        session_id: 'session-from-the-second-run',
+        status: 'idle',
+        source: 'startup',
+      });
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.currentSessionId).toBe('session-from-the-second-run');
+    expect(agent.status).not.toBe('error');
+  });
+
+  it('is left alone when a prompt submit adopts it, which is the reused pty', async () => {
+    const agent = relaunched();
+    const app = hooksApp();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      // Slack and Telegram type into a pty whose claude is already up. Arming
+      // wipes the id that session registered under, and it will never send
+      // another SessionStart.
+      armTaskStartWatch(agent, agent.ptyId);
+      expect(agent.currentSessionId).toBeUndefined();
+
+      // What hooks/user-prompt-submit.sh sends when the task lands: a session
+      // id and no `source`. Adoption is what makes the agent owned again.
+      postStatus(app, {
+        agent_id: 'a1',
+        session_id: 'session-still-running',
+        status: 'running',
+      });
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.currentSessionId).toBe('session-still-running');
+    expect(agent.status).not.toBe('error');
+    expect(agent.error).toBeUndefined();
+  });
+
+  it('is still caught when nothing reports at all', async () => {
+    const agent = relaunched();
+    hooksApp();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      armTaskStartWatch(agent, agent.ptyId);
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The same fixture, the same route registered, only the post missing.
+    // Without this the two above would pass against a check that never fires.
+    expect(agent.status).toBe('error');
   });
 });
