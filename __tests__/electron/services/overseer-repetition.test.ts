@@ -198,15 +198,20 @@ describe("Noah's stuck conversation", () => {
     expect(persisted().filter(m => m.text === STUCK).length).toBeGreaterThan(150);
   }, 30000);
 
-  it('refuses to record the same answer once more', async () => {
+  it('does not record the same answer once more, and says so instead', async () => {
     seedNoahsConversation();
     nextReply = JSON.stringify({ say: STUCK, action: null });
 
     const result = await overseer.askOverseer('ca dit quoi?');
 
-    expect(result.ok).toBe(false);
+    // The sentence is one of the examples the prompt used to print, so it is
+    // refused by name. He asked a question, so he is told that rather than
+    // being left with an empty thread.
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.message.text).toMatch(/instead of an answer/i);
+    // And the count does not grow: the repeat itself is still not written.
     expect(persisted().filter(m => m.text === STUCK).length).toBeGreaterThan(150);
-    // Noah's turn is kept, the repeat is not, so the count grows by one only.
+    expect(persisted().filter(m => m.text === STUCK).length).toBeLessThan(200);
   }, 30000);
 
   it('accepts a genuinely new answer on the very next turn', async () => {
@@ -313,17 +318,19 @@ describe('the fleet as it is now', () => {
 });
 
 describe('the example in the prompt', () => {
-  it('is a hole to fill, not a sentence to copy', async () => {
+  it('is not there at all any more', async () => {
     seed([{ role: 'overseer', text: 'Frontend is waiting.' }]);
 
     await overseer.askOverseer('ca dit quoi?');
 
     const prompt = promptsSent[promptsSent.length - 1];
     const instructions = prompt.slice(0, prompt.indexOf('=== CONVERSATION SO FAR'));
-    // A filled in example reads as an observation and is copied invisibly.
-    // A bracketed one is copied visibly, and isTemplateEcho catches it.
+    // Filled in, it was copied and read as an observation. Blank, it was
+    // copied and read as gibberish. Neither shape is the problem: having
+    // something there to copy is.
     expect(instructions).not.toContain('sidebar width for eleven minutes');
-    expect(instructions).toContain('<what you tell Noah');
+    expect(instructions).not.toContain('{"say"');
+    expect(instructions).not.toContain('<what you tell Noah');
   }, 30000);
 
   it('is refused if it comes back anyway', () => {
