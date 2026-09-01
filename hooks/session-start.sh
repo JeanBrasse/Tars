@@ -19,26 +19,26 @@ API_URL="http://127.0.0.1:31415"
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 
-# Check if API is available.
+# There is deliberately no "is the API up?" probe here, and adding one back
+# would reopen the bug this hook was fixed for. Do not.
 #
-# --max-time as well as --connect-timeout, because the two bound different
-# things and only one of them was set. --connect-timeout bounds the TCP
-# handshake; a socket that accepts and then never answers passes it and leaves
-# curl blocked on the read with no deadline at all. Something half-open on
-# 31415 is not hypothetical: it is a port collision, an app being killed
-# mid-request, a sandbox on the same port.
+# It used to ask /api/health first and exit early if that call did not come
+# back. Whatever deadline the probe is given, the failure is categorical rather
+# than proportional: one millisecond over and the registration POST below is not
+# sent at all, so the session starts UNREGISTERED, the ownership contract in
+# hooks-routes.ts then drops every status, output and task-completed post it
+# makes, and the never-started watch accuses it ten minutes later while it is
+# working. Measured against an API that was alive but answering in 3s: probe at
+# --max-time 2 registered nothing, and the server saw only the probe.
 #
-# That is the whole of the "lost dispatch". This is the first statement in the
-# hook, so the registration POST below never runs, the hook is killed at the 30s
-# timeout Tars configures for it, and the session starts UNREGISTERED. The agent
-# then does the work, and every status, output and task-completed post it makes
-# is dropped as stale because no session ever claimed the agent. The order was
-# never lost; its result was.
-if ! curl -s --connect-timeout 1 --max-time 2 "$API_URL/api/health" > /dev/null 2>&1; then
-  # API not running, just continue
-  echo '{"continue":true,"suppressOutput":true}'
-  exit 0
-fi
+# The POST is the better probe, because it answers "is the API there?" by doing
+# the work instead of asking about it, and the answer lands server-side the
+# moment the request is received. curl giving up on the *response* does not undo
+# the registration: with the probe gone, an API answering in 8s still had the
+# POST in hand at 46ms and registered. A probe can only subtract.
+#
+# The API being down costs nothing either: the connection is refused at once,
+# and the retry's sleep makes that path about 1.1s.
 
 # Register this session as the agent's owner. The server recognizes the
 # `source` field (only SessionStart sends it) and records session_id WITHOUT

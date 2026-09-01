@@ -1,34 +1,39 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * The auto-updater is off in a PTY Tars started.
+ * The managed environment reaches every agent, on both spawn paths.
  *
- * Not because it loses a dispatch: it does not. Claude Code starts it from a
- * fire-and-forget effect in its footer component and re-runs it on a thirty
- * minute interval, and an agent on this machine was observed finishing a four
- * minute task while the updater cycled and failed underneath it. What it does
- * do is replace the binary under a live session, and redraw every thirty
- * minutes, which for an idle agent is the ONLY output it produces: the hundred
- * chunks Tars keeps per agent fill with update noise and the terminal's real
- * history is lost. Sixteen agents here had nothing else left in their buffer,
- * which is exactly what made the updater look like the cause.
+ * Two functions start an agent's CLI: initAgentPty, for a restored or
+ * renderer-started agent, and spawnAgentSession, for every API-driven one,
+ * which is every orchestrator delegation, /dispatch, /message and /start. They
+ * assembled their environments separately, so DISABLE_AUTOUPDATER shipped on
+ * the first and was missing from the second, and half the fleet kept updating
+ * itself mid-session. armTaskStartWatch had gone the same way one change
+ * earlier: the pattern is the bug, not either omission.
  *
- * Two things have to hold, and the second is the one worth proving: the
- * variable has to be set for the right binaries, and it has to actually reach
- * the process. So this drives the real initAgentPty, takes the env object it
- * hands to the spawn, and runs a real child process with it.
+ * So the env belongs to spawnAgentPty now, the one place that actually starts
+ * the process, and the tests below assert that rather than the variable: what
+ * has to hold is that a caller CANNOT skip it, which is why the last one reads
+ * the source for a direct pty.spawn.
+ *
+ * On the variable itself: the auto-updater is not what loses a dispatch, and
+ * saying so is the point of the comment on managedCliEnv. It is off because it
+ * swaps the binary under a live session and because its thirty minute redraw is
+ * the only output an idle agent makes, which fills the hundred chunks Tars
+ * keeps and loses the terminal's real history.
  */
 
-const spawnCalls: Array<{ env: Record<string, string> }> = [];
+const spawnCalls: Array<{ args: string[]; env: Record<string, string> }> = [];
 
 vi.mock('node-pty', () => ({
-  spawn: vi.fn((_shell: string, _args: string[], opts: { env: Record<string, string> }) => {
-    spawnCalls.push({ env: opts.env });
-    return { onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn(), pid: 1 };
+  spawn: vi.fn((_shell: string, args: string[], opts: { env: Record<string, string> }) => {
+    spawnCalls.push({ args, env: opts.env });
+    return { onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn(), pid: 1, resize: vi.fn() };
   }),
 }));
 
@@ -40,21 +45,47 @@ vi.mock('electron', () => ({
   Notification: vi.fn(),
 }));
 
-// Reached during spawn; none of it is what this test is about.
+// Reached during a spawn; none of it is what these tests are about. Note that
+// core/agent-pty is deliberately NOT mocked: it is the code under test, and
+// it is its own module precisely so a suite that stubs out pty-manager still
+// spawns through it.
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../../../electron/utils/agents-tick', () => ({ scheduleTick: vi.fn() }));
 vi.mock('../../../electron/services/agent-events', () => ({ emitAgentStatus: vi.fn() }));
 vi.mock('../../../electron/services/tasmania-client', () => ({
   getTasmaniaStatus: vi.fn(async () => ({ status: 'stopped' })),
 }));
+vi.mock('../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 
 import { managedCliEnv } from '../../../electron/providers/cli-provider';
 import { getAllProviders, getProvider } from '../../../electron/providers';
-import { initAgentPty } from '../../../electron/core/agent-manager';
-import type { AgentStatus } from '../../../electron/types';
+import { initAgentPty, agents } from '../../../electron/core/agent-manager';
+import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
+import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
+import type { AgentStatus, AppSettings } from '../../../electron/types';
 
 /** The five CLIs that are not the claude binary and have their own updaters. */
 const FOREIGN_BINARIES = ['codex', 'gemini', 'grok', 'opencode', 'pi'];
+
+const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-managed-env-'));
+
+function agent(overrides: Partial<AgentStatus>): AgentStatus {
+  return {
+    id: 'agent-under-test',
+    name: 'Agent Under Test',
+    status: 'idle',
+    projectPath: cwd,
+    skills: [],
+    output: [],
+    lastActivity: new Date().toISOString(),
+    ...overrides,
+  } as AgentStatus;
+}
+
+beforeEach(() => {
+  spawnCalls.length = 0;
+  agents.clear();
+});
 
 describe('which CLIs the variable is for', () => {
   it('covers every provider that re-points the claude binary, and no others', () => {
@@ -74,9 +105,8 @@ describe('which CLIs the variable is for', () => {
       }
     }
 
-    // Pinned so the scope of this change cannot drift silently: the registry is
-    // the source of truth, and a new claude-family provider is covered by
-    // construction rather than by a second edit.
+    // Pinned so the scope cannot drift silently: the registry is the source of
+    // truth, and a new claude-family provider is covered by construction.
     expect(claudeFamily.length).toBe(14);
     expect([...new Set(foreign)].sort()).toEqual(FOREIGN_BINARIES);
   });
@@ -88,46 +118,89 @@ describe('which CLIs the variable is for', () => {
   });
 });
 
-describe('the variable reaches the PTY environment', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-pty-env-'));
-
-  beforeEach(() => {
-    spawnCalls.length = 0;
-  });
-
-  function agent(overrides: Partial<AgentStatus>): AgentStatus {
-    return {
-      id: 'agent-under-test',
-      name: 'Agent Under Test',
-      status: 'idle',
-      projectPath: cwd,
-      ...overrides,
-    } as AgentStatus;
-  }
-
-  it('is in the env handed to the spawn for a claude agent', async () => {
+describe('the renderer and restore path', () => {
+  it('puts the variable in the env handed to the spawn', async () => {
     await initAgentPty(agent({ provider: 'claude' }), null, vi.fn(), vi.fn());
 
     expect(spawnCalls.length).toBe(1);
     expect(spawnCalls[0].env.DISABLE_AUTOUPDATER).toBe('1');
   });
 
-  it('is absent for a CLI that does not read it', async () => {
+  it('leaves it out for a CLI that does not read it', async () => {
     await initAgentPty(agent({ id: 'codex-agent', provider: 'codex' }), null, vi.fn(), vi.fn());
 
     expect(spawnCalls.length).toBe(1);
     expect(spawnCalls[0].env.DISABLE_AUTOUPDATER).toBeUndefined();
   });
+});
+
+describe('the API path, which is every delegation and dispatch', () => {
+  /** Drive the real POST /api/agents/:id/start, the way the MCP tools do. */
+  async function startViaApi(a: AgentStatus): Promise<unknown> {
+    agents.set(a.id, a);
+
+    type Handler = (req: RouteRequest, sendJson: (payload: unknown, status?: number) => void) => unknown;
+    const routes: Array<{ method: string; pattern: RegExp | string; handler: Handler }> = [];
+    const app = {
+      routes,
+      add(method: string, pattern: RegExp | string, handler: Handler) { routes.push({ method, pattern, handler }); },
+      get(p: RegExp | string, h: Handler) { this.add('GET', p, h); },
+      post(p: RegExp | string, h: Handler) { this.add('POST', p, h); },
+      put(p: RegExp | string, h: Handler) { this.add('PUT', p, h); },
+      delete(p: RegExp | string, h: Handler) { this.add('DELETE', p, h); },
+    } as unknown as RouteApp;
+
+    const ctx = {
+      mainWindow: { isDestroyed: () => false, webContents: { send: vi.fn() } },
+      appSettings: {} as AppSettings,
+      getAppSettings: () => ({} as AppSettings),
+      getTelegramBot: () => null,
+      getSlackApp: () => null,
+      slackResponseChannel: null,
+      slackResponseThreadTs: null,
+      handleStatusChangeNotificationCallback: vi.fn(),
+      sendNotificationCallback: vi.fn(),
+      initAgentPtyCallback: vi.fn(async () => 'new-pty-id'),
+      agentStatusEmitter: new EventEmitter(),
+    } as unknown as RouteContext;
+
+    registerAgentRoutes(app, ctx);
+    const route = routes.find(r => r.method === 'POST' && String(r.pattern).includes('start$'));
+    expect(route, 'POST /api/agents/:id/start is no longer registered').toBeTruthy();
+
+    let answer: unknown;
+    const req = {
+      method: 'POST',
+      pathname: `/api/agents/${a.id}/start`,
+      url: new URL(`http://localhost/api/agents/${a.id}/start`),
+      body: { prompt: 'do the thing' },
+      raw: { headers: {} },
+      res: {},
+      params: { id: a.id },
+    } as unknown as RouteRequest;
+
+    await route!.handler(req, (payload: unknown) => { answer = payload; });
+    return answer;
+  }
+
+  it('gets the variable too, which it did not when it built its own env', async () => {
+    // The defect: spawnAgentSession assembled spawnEnv itself and never
+    // included this, so every orchestrator delegation ran with the updater on.
+    const answer = await startViaApi(agent({ id: 'api-agent', provider: 'claude' }));
+
+    expect(answer, 'the route refused before it could spawn').toMatchObject({ success: true });
+    expect(spawnCalls.length).toBe(1);
+    expect(spawnCalls[0].env.DISABLE_AUTOUPDATER).toBe('1');
+  });
 
   it('survives into a real process started with that env', async () => {
-    await initAgentPty(agent({ id: 'real-env-agent', provider: 'openrouter' }), null, vi.fn(), vi.fn());
+    await startViaApi(agent({ id: 'api-real-env', provider: 'claude' }));
     expect(spawnCalls.length).toBe(1);
 
-    // The env object initAgentPty built, handed to a process that actually
-    // starts. node-pty is rebuilt against Electron's ABI, so spawning one here
-    // would be testing the build rather than the behaviour; a PTY and a pipe
-    // inherit the environment identically, and what is asserted is that the
-    // CLI would read it.
+    // The env the API path built, handed to a process that actually starts.
+    // node-pty is rebuilt against Electron's ABI, so spawning one here would
+    // test the build rather than the behaviour; a PTY and a pipe inherit the
+    // environment identically, and what matters is that the CLI would read it.
     const seen = execFileSync('/bin/sh', ['-c', 'printf %s "$DISABLE_AUTOUPDATER"'], {
       env: spawnCalls[0].env,
       encoding: 'utf-8',
@@ -137,11 +210,30 @@ describe('the variable reaches the PTY environment', () => {
   });
 
   it('does not reach for the administrator lockdown', async () => {
-    await initAgentPty(agent({ id: 'lockdown-agent', provider: 'claude' }), null, vi.fn(), vi.fn());
+    await startViaApi(agent({ id: 'api-lockdown', provider: 'claude' }));
 
     // DISABLE_UPDATES is checked first by the binary and also makes an
     // explicitly typed `claude update` refuse. These are real terminals the
     // user can take over, so a command they type stays theirs.
     expect(spawnCalls[0].env.DISABLE_UPDATES).toBeUndefined();
+  });
+});
+
+describe('a third spawn path could not miss it', () => {
+  it('starts no agent CLI except through spawnAgentPty', async () => {
+    // The property, and the reason this was a class rather than an oversight.
+    // Both agent spawn sites now go through one function, so the managed env
+    // is applied on the line that starts the process instead of by each
+    // caller. A new call site that reaches for node-pty directly is the exact
+    // shape of the bug, and would be invisible to every test above.
+    const fsp = await import('node:fs/promises');
+    for (const file of ['electron/core/agent-manager.ts', 'electron/services/api-routes/agent-routes.ts']) {
+      const source = await fsp.readFile(file, 'utf-8');
+      expect(
+        /pty\.spawn\s*\(/.test(source),
+        `${file} spawns a PTY directly instead of through spawnAgentPty`,
+      ).toBe(false);
+      expect(source).toContain('spawnAgentPty(');
+    }
   });
 });

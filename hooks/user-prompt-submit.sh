@@ -17,12 +17,6 @@ API_URL="http://127.0.0.1:31415"
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 
-# Check if API is available
-if ! curl -s --connect-timeout 1 --max-time 2 "$API_URL/api/health" > /dev/null 2>&1; then
-  echo '{"continue":true,"suppressOutput":true}'
-  exit 0
-fi
-
 # Update agent status to "running" and set current task to the user's prompt.
 #
 # Retried once, the same way SessionStart is, and for a heavier reason than

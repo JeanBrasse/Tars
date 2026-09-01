@@ -26,12 +26,6 @@ if [ -z "$NOTIFICATION_TYPE" ]; then
   exit 0
 fi
 
-# Check if API is available
-if ! curl -s --connect-timeout 1 --max-time 2 "$API_URL/api/health" > /dev/null 2>&1; then
-  echo '{"continue":true,"suppressOutput":true}'
-  exit 0
-fi
-
 # Forward notification to our API
 curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" \
   -H "Content-Type: application/json" \
