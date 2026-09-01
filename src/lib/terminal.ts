@@ -22,22 +22,6 @@ export function stripCursorSequences(data: string): string {
 const MOUSE_TRACKING_MODES = new Set([9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016]);
 
 /**
- * DEC private modes that swap the alternate screen buffer in: 47, 1047, and
- * 1049, which also saves and restores the cursor.
- */
-const ALTERNATE_SCREEN_MODES = new Set([47, 1047, 1049]);
-
-/**
- * A CSI handler that swallows the sequence when every mode in it is one of
- * `modes`. Mixed sets that also carry an unrelated mode are passed through
- * rather than dropped wholesale.
- */
-function refuse(modes: Set<number>) {
-  return (params: (number | number[])[]): boolean =>
-    params.length > 0 && params.every(p => typeof p === 'number' && modes.has(p));
-}
-
-/**
  * Refuse the mouse-tracking DEC private modes.
  *
  * The failure: no panel in the board could scroll and no text could be
@@ -59,33 +43,10 @@ function refuse(modes: Set<number>) {
  * mode are passed through rather than dropped wholesale.
  */
 export function suppressMouseTracking(term: Terminal): void {
-  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, refuse(MOUSE_TRACKING_MODES));
-}
-
-/**
- * Refuse the alternate screen buffer.
- *
- * Claude Code sends `\x1b[?1049h` in its first frame and never sends the
- * matching `l` for the life of the session. The alternate buffer has no
- * scrollback by definition, and xterm reads that as licence to turn the wheel
- * into cursor keys aimed at the pty, so a panel sitting in it does not scroll
- * at all: the wheel goes to the CLI as arrow presses instead.
- *
- * It read as intermittent because a panel only lands there when the retained
- * output it replays on mount still carries that first frame. The store keeps
- * the last few hundred chunks, so a chatty agent has already dropped it and
- * mounts into the normal buffer, where the wheel works; a quiet or freshly
- * started one has not. Going fullscreen appeared to repair it because it
- * rebuilds the panel around a newer tail, and a second toggle was sometimes
- * needed because the first tail still had the sequence in it. The state is the
- * emulator's, never the pty's, which is why the pty never had to be restarted.
- *
- * The `l` is refused with the `h`, or leaving a buffer that was never entered
- * would restore a cursor nobody saved.
- */
-export function suppressAlternateScreen(term: Terminal): void {
-  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, refuse(ALTERNATE_SCREEN_MODES));
-  term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, refuse(ALTERNATE_SCREEN_MODES));
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params =>
+    params.length > 0 &&
+    params.every(p => typeof p === 'number' && MOUSE_TRACKING_MODES.has(p)),
+  );
 }
 
 /**

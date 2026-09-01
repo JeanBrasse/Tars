@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler, suppressAlternateScreen, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -64,7 +64,6 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
       // swallows the wheel, so the pane can neither scroll nor be selected.
       // The replayed transcript below carries the same sequences.
       suppressMouseTracking(term);
-      suppressAlternateScreen(term);
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
