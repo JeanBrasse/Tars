@@ -39,6 +39,7 @@ import {
   clearSuperAgentOutputBuffer,
   killStalePty,
   superAgentTelegramTask,
+  armTaskStartWatch,
 } from './core/agent-manager';
 
 import {
@@ -601,6 +602,8 @@ app.whenReady().then(async () => {
       agent.status = 'running';
       agent.currentTask = prompt.slice(0, 100);
       agent.lastActivity = new Date().toISOString();
+      // Started by the Kanban automation, which carries a task like any other.
+      armTaskStartWatch(agent, agent.ptyId);
 
       const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
       const fullCommand = `cd '${workingPath}' && ${command}`;

@@ -14,6 +14,7 @@ import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
+import { emitAgentStatus } from '../services/agent-events';
 
 export const agents: Map<string, AgentStatus> = new Map();
 
@@ -477,6 +478,100 @@ export function loadAgents() {
  * while a live PTY already exists is handed that one rather than a second.
  */
 const ptyInitLocks = new Map<string, Promise<string>>();
+
+
+/**
+ * How long a session has to actually begin its task before it is disbelieved.
+ *
+ * Ten minutes, and the number is measured rather than picked. A warm start
+ * registers in about 1.4 seconds. A start with the network unreachable takes
+ * 77 seconds. And a start against a socket that accepts but never answers, the
+ * "Checking for updates" case Noah actually hit, had still not registered
+ * after 400 seconds while being perfectly healthy. Ninety seconds would have
+ * accused that agent, which is the error this whole check calls the worse one.
+ *
+ * Ten minutes is 400 times a normal start and about 8 times the worst slow
+ * start that does eventually arrive. The failure it looks for lasted hours, so
+ * waiting ten minutes to name it gives up almost none of the value.
+ */
+const TASK_START_GRACE_MS = 600_000;
+
+/**
+ * Notice a session that came up and never took its task.
+ *
+ * Noah watched an agent sit at a Claude Code banner with an empty prompt,
+ * marked `running`, for hours. Nothing was wrong with the process: it was
+ * alive, it had a pty. It simply had no task, and every surface that could
+ * have said so was reporting that it was working. That is the half that makes
+ * the failure expensive: an agent that is stuck and an agent that is thinking
+ * look identical from outside, so nobody looks.
+ *
+ * Lives here rather than beside one spawn site because the fault belongs to
+ * the agent, not to the route that started it. An agent started from the
+ * Agents page, from Telegram or from Slack goes nowhere near the API, and was
+ * left unwatched while being exactly as capable of sitting there doing
+ * nothing.
+ *
+ * Only for the CLIs that register at all. A session that has started its work
+ * registers through the SessionStart hook, which is what sets
+ * `currentSessionId`. The thirteen alternative providers run the same claude
+ * binary with a different base url, so they register too; the handful that do
+ * not are left alone rather than accused of a fault this cannot see. Being
+ * wrong that way costs a missed report, being wrong the other way marks a
+ * working agent broken.
+ */
+export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined): void {
+  if (!ptyId) return;
+  if (getProvider(agent.provider).binaryName !== 'claude') return;
+
+  // The precondition this check rests on, established here rather than trusted.
+  //
+  // The whole test below is "did a session register since this one started",
+  // read as `currentSessionId` being unset when the grace period expires. Only
+  // spawnAgentSession cleared it, for its own reason, so on the three paths
+  // that did not, an agent that had already registered once in this run kept
+  // the old id and the check quietly cancelled itself. Noah starts his agents
+  // from the Agents page and they run all day with ptys dying and coming back,
+  // so in his actual use it would almost never have fired: armed everywhere,
+  // triggering nowhere, which is the shape of bug this exists to catch.
+  //
+  // Owned by the watch, so a fifth path added tomorrow inherits it without
+  // knowing it exists. It is also the right thing on its own terms: a session
+  // is starting, so nothing before it is authoritative any more, which is the
+  // same reason spawnAgentSession clears it a few statements earlier.
+  agent.currentSessionId = undefined;
+
+  const timer = setTimeout(() => {
+    const live = agents.get(agent.id);
+    // Replaced by a newer start, or gone: not this session's business.
+    if (!live || live.ptyId !== ptyId) return;
+    // Already exited: onExit owns that outcome and knows the exit code.
+    if (!ptyProcesses.has(ptyId)) return;
+    // It registered, so it took its task.
+    if (live.currentSessionId) return;
+    // It moved on by itself, to waiting or completed or error.
+    if (live.status !== 'running') return;
+
+    console.error(
+      `[agent] ${live.name || live.id} has been running for `
+      + `${Math.round(TASK_START_GRACE_MS / 1000)}s without starting a turn: the task never reached the CLI`,
+    );
+    live.status = 'error';
+    live.error = 'The CLI started but never began the task, so nothing was run. '
+      + 'The session is open and idle; send the task again.';
+    live.lastActivity = new Date().toISOString();
+    saveAgents();
+    // Two audiences, two channels, and the interface is the one that was
+    // missing. scheduleTick is what the Agents page and the tray read, so
+    // without it the card kept saying "working", which is the whole of what
+    // Noah was looking at. emitAgentStatus is what /wait and the orchestrator
+    // that dispatched it hang off.
+    scheduleTick();
+    emitAgentStatus(live.id);
+  }, TASK_START_GRACE_MS);
+  // A pending check must never be the reason the app cannot quit.
+  timer.unref();
+}
 
 export async function initAgentPty(
   agent: AgentStatus,

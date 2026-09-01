@@ -22,7 +22,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
-import { killStalePty, ensureProjectTrusted, appendAgentOutput } from '../core/agent-manager';
+import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
@@ -764,6 +764,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     agent.status = 'running';
     agent.currentTask = prompt.slice(0, 100);
     agent.lastActivity = new Date().toISOString();
+    // Started from the Agents page, which never touches the API and so was
+    // the one path with no check on whether the task actually landed.
+    armTaskStartWatch(agent, agent.ptyId);
     broadcastToAllWindows('agent:status', {
       type: 'status',
       agentId: id,

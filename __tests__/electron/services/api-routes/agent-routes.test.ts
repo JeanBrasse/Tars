@@ -27,6 +27,10 @@ vi.mock('../../../../electron/core/agent-manager', () => ({
   initAgentPty: vi.fn(),
   killStalePty: vi.fn(),
   ensureProjectTrusted: vi.fn(),
+  appendAgentOutput: vi.fn(),
+  // Exported by agent-manager and imported by agent-routes: a mock that omits
+  // it makes the spawn path throw on an undefined call.
+  armTaskStartWatch: vi.fn(),
 }));
 
 vi.mock('../../../../electron/core/pty-manager', () => ({

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as pty from 'node-pty';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput } from '../../core/agent-manager';
+import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
@@ -259,6 +259,9 @@ async function spawnAgentSession(
     delete spawnEnv[key];
   }
 
+  // A session that never starts a turn must stop claiming to work. See
+  // TASK_START_GRACE_MS below for what this catches and why it is checked
+  // rather than assumed.
   const ptyProcess = pty.spawn(shell, ['-l', '-c', command], {
     name: 'xterm-256color',
     cols: 120,
@@ -290,6 +293,8 @@ async function spawnAgentSession(
   agent.currentSessionId = undefined;
   agent.lastActivity = new Date().toISOString();
   saveAgents();
+
+  armTaskStartWatch(agent, ptyId);
 
   ptyProcess.onData((data: string) => {
     appendAgentOutput(agent, data);
