@@ -131,6 +131,28 @@ function runHook(name: string, port: number, stdin: unknown): Promise<{ ms: numb
   });
 }
 
+/** As runHook, but keeping stdout: the hook's answer to the CLI is a contract. */
+function runHookCapturing(name: string, port: number, stdin: unknown): Promise<{ ms: number; out: string }> {
+  return new Promise(resolve => {
+    const started = Date.now();
+    const child = spawn('/bin/bash', [scriptUnderTest(name, port)], {
+      env: { ...process.env, CLAUDE_AGENT_ID: 'hook-test-agent', CLAUDE_PROJECT_PATH: tmp, HOME: tmp },
+    });
+    let out = '';
+    child.stdout.on('data', d => { out += String(d); });
+    child.stderr.resume();
+    child.on('exit', () => resolve({ ms: Date.now() - started, out }));
+    child.stdin.end(JSON.stringify(stdin));
+  });
+}
+
+/** A port nothing is listening on, so every call is refused at once. */
+async function deadPort(): Promise<number> {
+  const api = await startServer({ slowMs: 0 });
+  await api.close();
+  return api.port;
+}
+
 const SESSION = { session_id: 'hook-test-session', cwd: tmp, source: 'startup', prompt: 'go' };
 
 afterAll(() => {
@@ -280,4 +302,50 @@ describe('the properties that keep it that way', () => {
       ).toBeLessThan(HOOK_TIMEOUT_MS);
     }
   });
+});
+
+
+/**
+ * Tars not running at all, which is the ordinary case for these scripts.
+ *
+ * The probe existed to make this cheap: one refused connection and the hook
+ * returned. Deleting it was right, but it moved the cost from one call to
+ * every call in the script, and nothing measured what that came to. Refused
+ * connections are immediate, so the answer is the retry's own sleep rather
+ * than any network wait, but that is a fact about the current script and not
+ * a law: an added call with no deadline, or a longer backoff, lands here
+ * first, on the startup path of every session the user opens.
+ *
+ * Measured on this machine, with nothing listening: 1.5s for session-start,
+ * against the 30s Claude Code allows it. The bound below is generous enough
+ * for a loaded CI box and still an order of magnitude under the timeout.
+ */
+const NO_API_BUDGET_MS = 8_000;
+
+describe('an API that is not running', () => {
+  const HOOKS = ['session-start.sh', 'user-prompt-submit.sh', 'notification.sh',
+                 'permission-request.sh', 'session-end.sh'];
+
+  it.each(HOOKS)('%s costs little when every call is refused', async name => {
+    const port = await deadPort();
+
+    const { ms } = await runHookCapturing(name, port, SESSION);
+
+    expect(ms, `${name} took ${ms}ms with no API to talk to`).toBeLessThan(NO_API_BUDGET_MS);
+  }, 60_000);
+
+  it.each(HOOKS)('%s still answers the CLI in the shape it expects', async name => {
+    // stdout is a contract: Claude Code parses it. A script that falls through
+    // its error paths and prints a curl diagnostic, or half a JSON document,
+    // is not a slow hook, it is a broken one. Nothing asserted this while the
+    // probe was doing the returning.
+    const port = await deadPort();
+
+    const { out } = await runHookCapturing(name, port, SESSION);
+
+    const text = out.trim();
+    if (text === '') return;
+    expect(() => JSON.parse(text), `${name} wrote non-JSON to stdout: ${text.slice(0, 120)}`).not.toThrow();
+    expect(JSON.parse(text)).toHaveProperty('continue');
+  }, 60_000);
 });
