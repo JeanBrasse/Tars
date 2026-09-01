@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 37,
+    version: '1.6.19',
+    date: '2026-09-01',
+    updates: [
+      'An agent that never starts its task says so instead of looking busy. One came up, was given a session, was marked as working, and sat at an empty prompt for hours with nothing to do: from the outside an agent that is stuck and an agent that is thinking looked exactly alike, so nobody thought to check. If a session has not begun its work a minute and a half after it starts, it is now marked as failed with a note saying the task never ran, which unblocks anything waiting on it and tells whoever asked for it',
+    ],
+  },
+  {
     id: 36,
     version: '1.6.18',
     date: '2026-08-27',

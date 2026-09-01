@@ -30,6 +30,68 @@ function orchestratorInstructionsFile(isOrchestrator: boolean | undefined): stri
   return fs.existsSync(file) ? file : undefined;
 }
 
+/**
+ * How long a freshly spawned session has to actually begin its task.
+ *
+ * Generous on purpose. A cold CLI on a busy machine takes seconds, not
+ * milliseconds, and a false accusation here would be its own silent harm: an
+ * agent that was working reported as broken.
+ */
+const TASK_START_GRACE_MS = 90_000;
+
+/**
+ * Notice a session that came up and never took its task.
+ *
+ * Noah watched an agent sit at a Claude Code banner with an empty prompt,
+ * marked `running`, for hours. Nothing was wrong with the process: it was
+ * alive, it had a pty, it had been given a session id. It simply had no task,
+ * and every surface that could have said so was reporting that it was working.
+ * That is the half that makes the failure expensive: an agent that is stuck
+ * and an agent that is thinking look identical from outside.
+ *
+ * So the claim is checked instead of assumed. A session that has started its
+ * work registers through the SessionStart hook, which is what sets
+ * `currentSessionId`. If nothing has registered once the grace period is up,
+ * and this pty is still the agent's and still alive, then the task never
+ * reached the CLI, whatever swallowed it.
+ *
+ * Only for the CLIs that register at all. The thirteen alternative providers
+ * run the same claude binary with a different base url, so they register too;
+ * the handful that do not are left alone rather than accused of a fault this
+ * cannot see. Being wrong in that direction costs a missed report, being wrong
+ * in the other costs a working agent marked broken.
+ */
+function watchForATurnThatNeverStarts(agent: AgentStatus, ptyId: string, binaryName: string): void {
+  if (binaryName !== 'claude') return;
+
+  const timer = setTimeout(() => {
+    const live = agents.get(agent.id);
+    // Replaced by a newer dispatch, or gone: not this spawn's business.
+    if (!live || live.ptyId !== ptyId) return;
+    // Already exited: onExit has set the outcome and knows the exit code.
+    if (!ptyProcesses.has(ptyId)) return;
+    // It registered, so it took its task. Nothing to report.
+    if (live.currentSessionId) return;
+    // It moved on by itself, to waiting or completed or error.
+    if (live.status !== 'running') return;
+
+    console.error(
+      `[spawn] ${live.name || live.id} has been running for `
+      + `${Math.round(TASK_START_GRACE_MS / 1000)}s without starting a turn: the task never reached the CLI`,
+    );
+    live.status = 'error';
+    live.error = 'The CLI started but never began the task, so nothing was run. '
+      + 'The session is open and idle; send the task again.';
+    live.lastActivity = new Date().toISOString();
+    saveAgents();
+    // Everything that watches an agent hears this: the Agents page, /wait, and
+    // the orchestrator that dispatched it.
+    emitAgentStatus(live.id);
+  }, TASK_START_GRACE_MS);
+  // A pending check must never be the reason the app cannot quit.
+  timer.unref();
+}
+
 type SpawnOpts = {
   model?: string;
   permissionMode?: 'normal' | 'auto' | 'bypass';
@@ -259,6 +321,9 @@ async function spawnAgentSession(
     delete spawnEnv[key];
   }
 
+  // A session that never starts a turn must stop claiming to work. See
+  // TASK_START_GRACE_MS below for what this catches and why it is checked
+  // rather than assumed.
   const ptyProcess = pty.spawn(shell, ['-l', '-c', command], {
     name: 'xterm-256color',
     cols: 120,
@@ -290,6 +355,8 @@ async function spawnAgentSession(
   agent.currentSessionId = undefined;
   agent.lastActivity = new Date().toISOString();
   saveAgents();
+
+  watchForATurnThatNeverStarts(agent, ptyId, cliProvider.binaryName);
 
   ptyProcess.onData((data: string) => {
     appendAgentOutput(agent, data);
