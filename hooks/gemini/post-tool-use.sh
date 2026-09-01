@@ -36,7 +36,7 @@ store_observation() {
     --arg type "$type" \
     '{agent_id: $agent_id, project_path: $project_path, content: $content, type: $type}')
 
-  curl -s -X POST "$API_URL" \
+  curl -s --max-time 3 -X POST "$API_URL" \
     -H "Content-Type: application/json" \
     -H @<(printf "Authorization: Bearer %s" "$API_TOKEN") \
     -d "$payload" \

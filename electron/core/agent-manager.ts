@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as pty from 'node-pty';
 import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow, Notification } from 'electron';
 import { AgentStatus, AppSettings } from '../types';
@@ -9,6 +8,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { AGENTS_FILE, DATA_DIR, dataPath, API_PORT } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { ptyProcesses } from './pty-manager';
+import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
@@ -673,8 +673,10 @@ async function initAgentPtyLocked(
     savedSettings as unknown as AppSettings,
   );
 
-  const ptyProcess = pty.spawn(shell, ['-l'], {
-    name: 'xterm-256color',
+  const ptyProcess = spawnAgentPty({
+    binaryName: agentProvider.binaryName,
+    shell,
+    args: ['-l'],
     cols: 120,
     rows: 30,
     cwd,

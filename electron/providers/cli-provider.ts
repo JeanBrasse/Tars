@@ -216,6 +216,42 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
   return binaryName === 'claude';
 }
 
+/**
+ * Extra environment for a CLI that Tars launched, as opposed to one the user is
+ * driving themselves.
+ *
+ * This is NOT what loses a dispatch. Claude Code's auto-updater is a
+ * fire-and-forget effect inside its footer component: it is started without
+ * being awaited and re-runs on a thirty minute interval, and a real agent here
+ * has been observed finishing a four minute task while the updater cycled and
+ * failed underneath it. An agent that looks stopped on "Checking for updates"
+ * is not stopped by it.
+ *
+ * It is still wrong for a managed PTY, for two reasons that have both happened
+ * on this machine. It replaces the binary under a session that is already
+ * running, so an agent ends a task on a build it did not start on and the
+ * footer offers a restart the user is not the one performing. And its thirty
+ * minute redraw is the only output an idle agent produces, so it fills the
+ * hundred output chunks Tars keeps per agent and the terminal's real history is
+ * gone: sixteen agents here have nothing left in their buffer but update noise,
+ * which is what made the updater look like the cause in the first place.
+ *
+ * DISABLE_AUTOUPDATER rather than DISABLE_UPDATES. Both stop the background
+ * updater. DISABLE_UPDATES is the administrator lockdown: it is checked first,
+ * and it also makes an explicitly typed `claude update` refuse with a message
+ * about contacting your IT team. These are real terminals the user can take
+ * over at any time, so a command they type themselves stays theirs. Tars only
+ * takes back what it started.
+ *
+ * Only for the binary that reads it. The fourteen providers that re-point the
+ * claude binary get it; codex, gemini, grok, opencode and pi have their own
+ * updaters and would silently ignore it.
+ */
+export function managedCliEnv(binaryName: string): Record<string, string> {
+  if (binaryName !== 'claude') return {};
+  return { DISABLE_AUTOUPDATER: '1' };
+}
+
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;

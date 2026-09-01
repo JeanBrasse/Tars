@@ -1,10 +1,10 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import * as pty from 'node-pty';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
+import { spawnAgentPty } from '../../core/agent-pty';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { AgentStatus, AgentCharacter } from '../../types';
@@ -262,12 +262,14 @@ async function spawnAgentSession(
   // A session that never starts a turn must stop claiming to work. See
   // TASK_START_GRACE_MS below for what this catches and why it is checked
   // rather than assumed.
-  const ptyProcess = pty.spawn(shell, ['-l', '-c', command], {
-    name: 'xterm-256color',
+  const ptyProcess = spawnAgentPty({
+    binaryName: cliProvider.binaryName,
+    shell,
+    args: ['-l', '-c', command],
     cols: 120,
     rows: 40,
     cwd: rawWorkingDir,
-    env: spawnEnv as { [key: string]: string },
+    env: spawnEnv,
   });
 
   const ptyId = uuidv4();
