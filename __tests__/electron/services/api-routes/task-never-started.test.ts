@@ -150,6 +150,24 @@ describe('a session that never begins its task', () => {
     expect(emitted).toContain('a1');
   });
 
+  it('wakes the long poll that /wait is parked on', async () => {
+    const agent = putAgent({ id: 'a1', name: 'Frontend' });
+    const perAgent: string[] = [];
+    agentStatusEmitter.on('status:a1', () => perAgent.push('a1'));
+
+    try {
+      await dispatchThenWait(agent, 'do the thing');
+    } finally {
+      agentStatusEmitter.removeAllListeners('status:a1');
+    }
+
+    // `fleet-change` is what the fleet watchers read; `status:<id>` is the
+    // channel the /wait long poll parks on, and an orchestrator sitting in
+    // wait_for_agent hangs until its own timeout without it. emitAgentStatus
+    // sends both, and this pins the half that unblocks the caller.
+    expect(perAgent).toContain('a1');
+  });
+
   it('is still reported as working while the grace period runs', async () => {
     const agent = putAgent({ id: 'a1', name: 'Frontend' });
 
@@ -214,16 +232,44 @@ describe('a session that does begin its task', () => {
 });
 
 describe('a CLI that does not register sessions at all', () => {
-  it('is never accused of a fault this cannot see', async () => {
-    // codex has its own lifecycle and does not set currentSessionId through
-    // Claude Code's SessionStart hook, so an absent session id says nothing
-    // about whether it took its task.
-    const agent = putAgent({ id: 'a1', name: 'Codex', provider: 'codex' as never });
+  // These five have their own binary and their own lifecycle. They never set
+  // currentSessionId through Claude Code's SessionStart hook, so an absent
+  // session id says nothing about whether they took their task. Being wrong
+  // in this direction costs a missed report; being wrong in the other marks a
+  // working agent broken.
+  //
+  // Each case asserts the session was actually spawned first. Without that a
+  // provider whose command builder refused would take the same route out as
+  // one that was deliberately left alone, and the exemption would look proven
+  // by a dispatch that never happened.
+  it.each(['codex', 'gemini', 'grok', 'opencode', 'pi'])(
+    'never accuses %s of a fault this cannot see',
+    async (provider) => {
+      const agent = putAgent({ id: 'a1', name: provider, provider: provider as never });
+
+      await dispatchThenWait(agent, 'do the thing');
+
+      expect(vi.mocked(pty.spawn)).toHaveBeenCalled();
+      expect(agent.status).toBe('running');
+      expect(agent.error).toBeUndefined();
+    },
+  );
+});
+
+describe('a CLI that re-points the claude binary', () => {
+  it('is watched like claude, because it registers like claude', async () => {
+    // The thirteen alternative providers run the same binary against another
+    // vendor's base url, so they go through the same SessionStart hook and
+    // the same registration. Exempting them would leave most of the fleet in
+    // exactly the silence this was written to end.
+    ctx.getAppSettings = () => ({ openRouterApiKey: 'test-key' } as AppSettings);
+    const agent = putAgent({ id: 'a1', name: 'Kimi', provider: 'openrouter' as never });
 
     await dispatchThenWait(agent, 'do the thing');
 
-    expect(agent.status).toBe('running');
-    expect(agent.error).toBeUndefined();
+    expect(vi.mocked(pty.spawn)).toHaveBeenCalled();
+    expect(agent.status).toBe('error');
+    expect(agent.error).toMatch(/never began the task/i);
   });
 });
 
