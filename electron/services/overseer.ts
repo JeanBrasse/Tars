@@ -443,6 +443,26 @@ export function isSameThingSaidAgain(a: string, b: string): boolean {
  */
 const REPEAT_QUIET_MS = 30 * 60 * 1000;
 
+/**
+ * What Noah reads when Hermes answers with the format template.
+ *
+ * Never nothing. A guard that refuses a bad answer and leaves the thread empty
+ * has not protected anybody: before, he got a wrong answer and could see it was
+ * wrong; after, he got an error toast and a blank page and could not tell
+ * whether Chat was broken, the gateway was down, or nothing had happened.
+ *
+ * Worded without the template in it, on purpose. A message containing the
+ * template verbatim reads as an echo to the very rule above, and the thread
+ * folds flagged messages away, so the one line written to stop the page being
+ * empty would be the one line the page hides. It says what happened, why it
+ * usually happens, and the one thing that actually fixes it.
+ */
+const TEMPLATE_ECHO_NOTICE = [
+  'Hermes replied with the empty reply format instead of an answer, so there is nothing it observed to pass on.',
+  '',
+  'That almost always means the model the gateway is currently running is not following the reply format. Picking a stronger model for Chat, from the model control in the header, is what fixes it. Asking again is worth one try in case it was a one-off.',
+].join('\n');
+
 const HISTORY_TURN_LIMIT = 24;
 const HISTORY_CHAR_BUDGET = 6000;
 
@@ -542,12 +562,10 @@ export function composeTurn(
     '- You never claim to have done anything yourself. You only report, challenge, and propose.',
     '- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.',
     '- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.',
-    '- Reply with EXACTLY one JSON object and nothing else, before or after it, in this shape:',
-    '  {"say": "<what you tell Noah, plain text or light markdown>", "action": null}',
-    '  or, only when proposing to message one specific agent:',
-    '  {"say": "<...>", "action": {"kind": "message_agent", "agent_id": "<id from the snapshot>", "text": "<the exact message to send>"}}',
-    '- The angle brackets are holes for you to fill, never text to copy.',
-    '- If no agent in the snapshot is the right target, action must be null.',
+    '- Reply with EXACTLY one JSON object and nothing else, before or after it.',
+    '- The object has two keys. "say" is a string: what you are telling Noah, in plain text or light markdown, written by you about the snapshot below. "action" is null.',
+    '- Only when you are proposing to message one specific agent, "action" is instead an object with three keys: "kind", which is always the string message_agent; "agent_id", an id copied from the snapshot; and "text", the exact message you propose sending. If no agent in the snapshot is the right target, "action" stays null.',
+    '- There is no specimen of that object written here, deliberately. Three times now a model has answered by returning the example it was shown rather than filling it in, once for a whole day, and the shape of the example made no difference: a blank one was copied, then a filled in one was copied, and the filled in one was worse because it read like a real observation. Build the object from what you can actually see below.',
     '- Look at the FLEET SNAPSHOT below before you write. It is the fleet as it is right now; the conversation above it is only what was already said, and some of it is hours old. Never repeat an earlier answer of yours: if nothing has changed since it, say that briefly instead of saying the same thing again.',
   ].join('\n');
 
@@ -1233,17 +1251,34 @@ async function finishTurn(
     }
   }
 
-  if (isTemplateEcho(envelope.say)) {
-    console.warn('[overseer] discarded a reply that echoed the format template:', envelope.say.slice(0, 120));
+  // A reply that is the template carries no observation, so there is nothing
+  // to report from it. What happens next depends entirely on whether anybody
+  // is waiting for an answer.
+  const echoed = isTemplateEcho(envelope.say);
+  if (echoed && opts.isBriefing) {
+    // Nobody asked. Silence is the right outcome and the chat stays clean.
+    console.warn('[overseer] dropped a check-in that echoed the format template:', envelope.say.slice(0, 120));
     return {
       ok: false,
       reason: 'error',
-      error: 'Hermes sent back the reply template instead of an answer, so Tars discarded it rather than recording it. Ask again.',
+      error: 'Hermes checked in with the reply template instead of an answer, so Tars dropped it.',
     };
+  }
+  if (echoed) {
+    // Noah asked, so Noah gets something. Refusing here is what turned a
+    // visibly wrong answer into no answer at all: an error toast and an empty
+    // thread, which is the failure this codebase has spent three days
+    // removing from everywhere else.
+    //
+    // The text below is deliberately not a copy of what came back. A message
+    // holding the template verbatim would be flagged as an echo itself, and
+    // the thread folds flagged messages away, so the one message written to
+    // stop the page being empty would be the one message the page hides.
+    console.warn('[overseer] answering with a notice: the reply echoed the format template');
   }
 
   let action: OverseerAction | null = null;
-  if (envelope.action) {
+  if (!echoed && envelope.action) {
     const resolved = resolveTarget(envelope.action.agentId);
     // If the id doesn't resolve, the proposal is silently dropped from the
     // structured side - envelope.say still reaches Noah as the overseer's
@@ -1282,7 +1317,7 @@ async function finishTurn(
   const overseerMsg: OverseerMessage = {
     id: uuidv4(),
     role: 'overseer',
-    text: envelope.say + autoNote,
+    text: echoed ? TEMPLATE_ECHO_NOTICE : envelope.say + autoNote,
     action,
     isBriefing: opts.isBriefing,
     timestamp: new Date().toISOString(),

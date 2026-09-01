@@ -7,7 +7,7 @@ import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler, suppressAlternateScreen, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -160,12 +160,10 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         allowProposedApi: true,
       });
 
-      // Must come before the first write: the replay below carries both the
-      // mouse tracking sequences Claude Code emits and the alternate-screen
-      // switch from its first frame, and honouring either is what left a panel
-      // unscrollable. See suppressMouseTracking / suppressAlternateScreen.
+      // Must come before the first write: the replay below carries the mouse
+      // tracking sequences Claude Code emits, and honouring them is what left
+      // every panel unscrollable and unselectable. See suppressMouseTracking.
       suppressMouseTracking(term);
-      suppressAlternateScreen(term);
 
       const fitAddon = new modules.FitAddon();
       term.loadAddon(fitAddon);

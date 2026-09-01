@@ -177,14 +177,18 @@ beforeEach(async () => {
 });
 
 describe('a reply that is the format template', () => {
-  it('is refused, and never reaches the conversation', async () => {
+  it('never reaches the conversation, and never leaves Noah with nothing', async () => {
     nextReply = JSON.stringify({ say: TEMPLATE, action: null });
 
     const result = await overseer.askOverseer('salut');
 
-    expect(result.ok).toBe(false);
-    // Noah's own turn is kept: he did say it. The echo is not.
-    expect(persisted().map(m => m.role)).toEqual(['user']);
+    // This used to return an error and write nothing, which meant an empty
+    // thread and a toast. He asked a question, so he gets an answer.
+    expect(result.ok).toBe(true);
+    expect(persisted().map(m => m.role)).toEqual(['user', 'overseer']);
+    // What he gets says what happened. What Hermes actually sent does not go
+    // in: the template in a message would be folded away as an echo itself.
+    expect(result.ok && result.message.text).toMatch(/instead of an answer/i);
     expect(JSON.stringify(persisted())).not.toContain('what you tell Noah');
   }, 30000);
 
@@ -210,8 +214,9 @@ describe('a reply that is the format template', () => {
 
     const result = await overseer.askOverseer('salut');
 
-    expect(result.ok).toBe(false);
-    expect(persisted().map(m => m.role)).toEqual(['user']);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.message.text).toMatch(/instead of an answer/i);
+    expect(persisted().map(m => m.text)).not.toContain('[SILENT]');
   }, 30000);
 
   it('does not refuse a real answer that happens to use angle brackets', async () => {
@@ -303,14 +308,27 @@ describe('a conversation that is already poisoned', () => {
    * readily and is copied visibly, which isTemplateEcho then catches. Make
    * the failure detectable rather than betting on it not happening.
    */
-  it('offers the example as a hole to fill, which a copy of is detectable', async () => {
+  /**
+   * This has now asserted three different things, and the third is the one
+   * that follows from what actually happened. A blank specimen was copied. A
+   * filled in one was copied, and worse, because it read as a real
+   * observation. So there is no specimen: the object is described in words and
+   * there is nothing in the instructions to return unchanged.
+   */
+  it('shows no specimen of the reply object at all', async () => {
     await overseer.askOverseer('salut');
 
     const prompt = promptsSent[promptsSent.length - 1];
     const instructions = prompt.slice(0, prompt.indexOf('=== CONVERSATION SO FAR'));
+
+    // The contract is still stated, in prose.
     expect(instructions).toContain('"say"');
-    expect(instructions).toMatch(/<what you tell Noah/);
-    // And a reply that copies it is refused, which is the point of the shape.
+    expect(instructions).toContain('"action"');
+    // But nothing in it is a ready made answer.
+    expect(instructions).not.toContain('{"say"');
+    expect(instructions).not.toMatch(/<what you tell Noah/);
+    expect(instructions).not.toMatch(/<id from the snapshot>/);
+    // The old ones are still recognised, for conversations already holding them.
     expect(overseer.isTemplateEcho('<what you tell Noah, plain text or light markdown>')).toBe(true);
   }, 30000);
 });
@@ -416,6 +434,90 @@ describe('a refusal during an automatic check-in', () => {
   }, 40000);
 });
 
+/**
+ * A guard that leaves the user with nothing has not protected anybody.
+ *
+ * Shipped in 1.6.18: Hermes kept returning the template, the guard correctly
+ * refused it, and Noah got "la page chat ne fonctionne pas, aucun message" plus
+ * an error toast every time he wrote. A visibly wrong answer had been turned
+ * into no answer, which is the failure this codebase has spent days removing
+ * from everywhere else. The refusal was right; stopping there was not.
+ */
+describe('a question that Hermes answers with the template', () => {
+  it('is answered anyway, with something a person can act on', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+
+    const result = await overseer.askOverseer('ca dit quoi?');
+
+    expect(result.ok).toBe(true);
+    const text = result.ok ? result.message.text : '';
+    expect(text.length).toBeGreaterThan(40);
+    // It says what happened and what to do about it, not just that something
+    // failed: the cause is almost always the model the gateway is running.
+    expect(text).toMatch(/instead of an answer/i);
+    expect(text).toMatch(/model/i);
+  }, 30000);
+
+  it('leaves a thread with something in it, not an empty page', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+
+    await overseer.askOverseer('ca dit quoi?');
+
+    const thread = persisted();
+    expect(thread).toHaveLength(2);
+    expect(thread[1].role).toBe('overseer');
+    expect(thread[1].text.trim().length).toBeGreaterThan(0);
+  }, 30000);
+
+  it('writes a message the thread will actually show', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+
+    const result = await overseer.askOverseer('ca dit quoi?');
+
+    // The thread folds anything flagged as an echo. A notice that quoted the
+    // template would be flagged itself, so the one line written to stop the
+    // page being empty would be the one line the page hides.
+    expect(overseer.isTemplateEcho(result.ok ? result.message.text : '')).toBe(false);
+  }, 30000);
+
+  it('carries no proposal out of a reply that observed nothing', async () => {
+    putAgent('waiting');
+    nextReply = JSON.stringify({
+      say: TEMPLATE,
+      action: { kind: 'message_agent', agent_id: 'a1', text: 'do the thing' },
+    });
+
+    const result = await overseer.askOverseer('ca dit quoi?');
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.message.action).toBeNull();
+    expect(dispatched).toEqual([]);
+  }, 30000);
+
+  it('says nothing at all when it is a check-in nobody asked for', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+
+    const result = await overseer.askOverseer('fleet change', { isBriefing: true });
+
+    // Nobody is waiting, so a notice would just be noise in the thread.
+    expect(result.ok).toBe(false);
+    expect(persisted()).toEqual([]);
+  }, 30000);
+
+  it('does not let the notice become the next turn\'s example', async () => {
+    nextReply = JSON.stringify({ say: TEMPLATE, action: null });
+    await overseer.askOverseer('ca dit quoi?');
+
+    nextReply = JSON.stringify({ say: 'Frontend is waiting on the sidebar width.', action: null });
+    await overseer.askOverseer('et maintenant?');
+
+    // The loop stays shut: whatever Hermes returned is not in the prompt, and
+    // the notice that replaced it is a Tars line, not an observation to copy.
+    const conversation = conversationOf(promptsSent[promptsSent.length - 1]);
+    expect(conversation).not.toContain('what you tell Noah');
+  }, 30000);
+});
+
 describe('the proposal attached to a reply', () => {
   /**
    * The write door. confirmPendingAction used to take the action object it was
@@ -512,13 +614,14 @@ describe('the proposal attached to a reply', () => {
 describe('a template wrapped in a few words of its own', () => {
   const WRAPPED = 'Voici ma reponse: <what you tell Noah, plain text or light markdown>.';
 
-  it('is refused, because serializeHistory asks the same question', async () => {
+  it('does not reach the conversation, and still answers Noah', async () => {
     nextReply = JSON.stringify({ say: WRAPPED, action: null });
 
     const result = await overseer.askOverseer('salut');
 
-    expect(result.ok).toBe(false);
-    expect(persisted().map(m => m.role)).toEqual(['user']);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.message.text).toMatch(/instead of an answer/i);
+    expect(JSON.stringify(persisted())).not.toContain('what you tell Noah');
   }, 30000);
 
   it('is never quoted back to the model when it is already on disk', async () => {
