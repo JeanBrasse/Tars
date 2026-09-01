@@ -10,7 +10,7 @@ import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
-import { killStalePty } from '../core/agent-manager';
+import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 
 // ============== Telegram Bot State ==============
@@ -765,6 +765,8 @@ export function initTelegramBot() {
         agent.lastActivity = new Date().toISOString();
         writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
         saveAgents();
+        // Started from a phone, and just as able to come up with no task.
+        armTaskStartWatch(agent, agent.ptyId);
 
         const emoji = isSuperAgent(agent) ? '👑' : (TG_CHARACTER_FACES[agent.character || ''] || '🤖');
         telegramBot?.sendMessage(msg.chat.id,

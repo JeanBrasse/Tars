@@ -4,7 +4,7 @@ import { App as SlackApp, LogLevel } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
 import { SLACK_CHARACTER_FACES } from '../constants';
 import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructionsPath } from '../utils';
-import { agents, saveAgents, initAgentPty, killStalePty } from '../core/agent-manager';
+import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
@@ -486,6 +486,8 @@ export async function handleSlackCommand(
       agent.lastActivity = new Date().toISOString();
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       saveAgents();
+      // Started from Slack, and just as able to come up with no task.
+      armTaskStartWatch(agent, agent.ptyId);
 
       const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
       await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);

@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.6.19',
     date: '2026-09-01',
     updates: [
-      'An agent that never starts its task says so instead of looking busy. One came up, was given a session, was marked as working, and sat at an empty prompt for hours with nothing to do: from the outside an agent that is stuck and an agent that is thinking looked exactly alike, so nobody thought to check. If a session has not begun its work a minute and a half after it starts, it is now marked as failed with a note saying the task never ran, which unblocks anything waiting on it and tells whoever asked for it',
+      'An agent that never starts its task says so instead of looking busy. One came up, was given a session, was marked as working, and sat at an empty prompt for hours with nothing to do: from the outside an agent that is stuck and an agent that is thinking looked exactly alike, so nobody thought to check. If a session has not begun its work ten minutes after it starts, it is now marked as failed with a note saying the task never ran. The card on the Agents page changes with it, anything waiting on that agent is unblocked, and whoever asked for the work is told. Ten minutes because a normal start takes under two seconds but a start against a server that accepts and never answers can take several minutes and still be perfectly healthy, and calling a working agent broken would be the worse mistake',
     ],
   },
   {

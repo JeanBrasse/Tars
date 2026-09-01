@@ -31,19 +31,20 @@ vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
 }));
 
-vi.mock('../../../../electron/core/agent-manager', () => ({
-  agents: new Map(),
-  saveAgents: vi.fn(),
-  initAgentPty: vi.fn(),
-  killStalePty: vi.fn(),
-  ensureProjectTrusted: vi.fn(),
-  appendAgentOutput: vi.fn(),
+// agent-manager is the real module now: armTaskStartWatch lives in it, so
+// mocking it away would mock away the thing under test. Only the pieces that
+// reach outside the process are stubbed.
+vi.mock('../../../../electron/utils/broadcast', () => ({
+  broadcastToAllWindows: (channel: string, payload: unknown) => broadcasts.push({ channel, payload }),
 }));
 
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
 }));
+
+/** Every IPC broadcast the main process made, which is what the windows see. */
+const broadcasts: { channel: string; payload: unknown }[] = [];
 
 vi.mock('../../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 vi.mock('../../../../electron/services/memory-hub', () => ({
@@ -55,13 +56,13 @@ vi.mock('../../../../electron/services/memory-hub', () => ({
 import * as pty from 'node-pty';
 import { performDispatch } from '../../../../electron/services/api-routes/agent-routes';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
-import { agents } from '../../../../electron/core/agent-manager';
+import { agents, armTaskStartWatch } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { RouteContext } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
 
-/** Comfortably past the ninety second grace period. */
-const PAST_THE_GRACE = 120_000;
+/** Comfortably past the ten minute grace period, plus the tick's own delay. */
+const PAST_THE_GRACE = 700_000;
 
 let ctx: RouteContext;
 let emitted: string[];
@@ -72,6 +73,7 @@ beforeEach(() => {
   mockPtys.length = 0;
   uuidCounter = 0;
   emitted = [];
+  broadcasts.length = 0;
   vi.mocked(pty.spawn).mockClear();
 
   // emitAgentStatus publishes on the shared bus in services/agent-events, which
@@ -139,15 +141,28 @@ describe('a session that never begins its task', () => {
     expect(agent.error).toMatch(/never began the task/i);
   });
 
-  it('says so loudly enough for anything watching to hear', async () => {
+  it('tells the caller, through the bus /wait and the orchestrator listen on', async () => {
     const agent = putAgent({ id: 'a1', name: 'Frontend' });
 
     await dispatchThenWait(agent, 'do the thing');
 
-    // The Agents page, /wait and the orchestrator that dispatched it all hang
-    // off this. Without it the change would sit in memory and nobody would
-    // learn about it until somebody looked.
     expect(emitted).toContain('a1');
+  });
+
+  it('tells the Agents page, which is the screen Noah was looking at', async () => {
+    const agent = putAgent({ id: 'a1', name: 'Frontend' });
+
+    await dispatchThenWait(agent, 'do the thing');
+
+    // The card reads agents:tick and nothing else: no polling, no other
+    // channel. Marking the record without this left it saying "working",
+    // which is the whole of what he could see.
+    const ticks = broadcasts.filter(b => b.channel === 'agents:tick');
+    expect(ticks.length).toBeGreaterThan(0);
+    const card = (ticks[ticks.length - 1].payload as { id: string; displayStatus: string }[])
+      .find(a => a.id === 'a1');
+    expect(card).toBeDefined();
+    expect(card?.displayStatus).toBe('error');
   });
 
   it('wakes the long poll that /wait is parked on', async () => {
@@ -173,11 +188,11 @@ describe('a session that never begins its task', () => {
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     await performDispatch(agent, { message: 'do the thing' }, ctx, vi.fn());
-    await vi.advanceTimersByTimeAsync(60_000);
+    // Measured: a start against a socket that accepts and never answers had
+    // still not registered after 400 seconds, and was perfectly healthy.
+    await vi.advanceTimersByTimeAsync(400_000);
     vi.useRealTimers();
 
-    // A cold CLI on a busy machine takes seconds. Accusing it early would be
-    // its own silent harm: an agent that was working, reported broken.
     expect(agent.status).toBe('running');
   });
 });
@@ -270,6 +285,65 @@ describe('a CLI that re-points the claude binary', () => {
     expect(vi.mocked(pty.spawn)).toHaveBeenCalled();
     expect(agent.status).toBe('error');
     expect(agent.error).toMatch(/never began the task/i);
+  });
+});
+
+
+/**
+ * The three ways to start an agent that never touch the API.
+ *
+ * The check used to live beside spawnAgentSession, so an agent started from
+ * the Agents page, from Telegram or from Slack was never watched at all while
+ * being exactly as able to come up with no task. It lives on the agent now,
+ * and each of those paths arms it the same way, so this drives the shared
+ * mechanism the way they do.
+ */
+describe('an agent started outside the API', () => {
+  function armed(over: Partial<AgentStatus> = {}): AgentStatus {
+    const agent = putAgent({ id: 'a1', name: 'Frontend', status: 'running', ptyId: 'pty-hand', ...over });
+    ptyProcesses.set('pty-hand', { write: vi.fn(), kill: vi.fn() } as never);
+    return agent;
+  }
+
+  async function letTheGracePass(fn: () => void): Promise<void> {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fn();
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('is watched too, and its card is corrected', async () => {
+    const agent = armed();
+
+    await letTheGracePass(() => armTaskStartWatch(agent, agent.ptyId));
+
+    expect(agent.status).toBe('error');
+    const ticks = broadcasts.filter(b => b.channel === 'agents:tick');
+    const card = (ticks[ticks.length - 1].payload as { id: string; displayStatus: string }[])
+      .find(a => a.id === 'a1');
+    expect(card?.displayStatus).toBe('error');
+  });
+
+  it('is left alone when it did begin its task', async () => {
+    const agent = armed();
+
+    await letTheGracePass(() => {
+      armTaskStartWatch(agent, agent.ptyId);
+      agent.currentSessionId = 'session-abc';
+    });
+
+    expect(agent.status).toBe('running');
+  });
+
+  it('is not watched at all when it has no session yet to watch', async () => {
+    const agent = putAgent({ id: 'a1', name: 'Frontend', status: 'running' });
+
+    await letTheGracePass(() => armTaskStartWatch(agent, undefined));
+
+    expect(agent.status).toBe('running');
   });
 });
 
