@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as pty from 'node-pty';
 import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow, Notification } from 'electron';
 import { AgentStatus, AppSettings } from '../types';
