@@ -581,6 +581,53 @@ describe('a session that registers for real', () => {
     return agent;
   }
 
+  it('is left alone when the retried post is the one that lands', async () => {
+    const agent = relaunched();
+    const app = hooksApp();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      armTaskStartWatch(agent, agent.ptyId);
+      // The first post from user-prompt-submit.sh never reached the API, so
+      // the route sees nothing. A second later the hook sends it again, which
+      // is the retry this branch added, and that one arrives.
+      await vi.advanceTimersByTimeAsync(1_000);
+      postStatus(app, {
+        agent_id: 'a1',
+        session_id: 'session-live-1',
+        status: 'running',
+        current_task: 'rebase onto main',
+      });
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Ownership restored by adoption, and the agent is working, so it is not
+    // accused. Without the retry that post existed once and could be lost for
+    // good, and this agent would have been marked broken while working.
+    expect(agent.currentSessionId).toBe('session-live-1');
+    expect(agent.status).toBe('running');
+    expect(agent.error).toBeUndefined();
+  });
+
+  it('is accused only when no post arrives at all, which is the honest limit', async () => {
+    const agent = relaunched();
+    hooksApp();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      armTaskStartWatch(agent, agent.ptyId);
+      // Both attempts lost. Nothing anywhere says the task landed, so the
+      // check reports what it can see.
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.status).toBe('error');
+  });
+
   it('is left alone when SessionStart registers it, on a fresh start', async () => {
     const agent = relaunched();
     const app = hooksApp();

@@ -23,11 +23,34 @@ if ! curl -s --connect-timeout 1 "$API_URL/api/health" > /dev/null 2>&1; then
   exit 0
 fi
 
-# Update agent status to "running" and set current task to the user's prompt
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+# Update agent status to "running" and set current task to the user's prompt.
+#
+# Retried once, the same way SessionStart is, and for a heavier reason than
+# a status update.
+#
+# When Tars reuses a live session (a task sent from Slack or Telegram into an
+# already running claude), it clears the agent's session ownership as it arms
+# the never-started-a-turn check, because that check reads "no session has
+# registered yet". That live session will never send a second SessionStart, so
+# the only thing that restores ownership is this post: the server adopts the
+# first session that reports in without a `source`. Lost, and the agent is
+# both unowned and, ten minutes later, accused of never having started while
+# it is working. One attempt at best was too thin a thread for that.
+#
+# See armTaskStartWatch in electron/core/agent-manager.ts and the registration
+# fallback in electron/services/api-routes/hooks-routes.ts: this hook is the
+# third piece of that mechanism, and it is the only one written in shell.
+PAYLOAD="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}"
+RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
   -H "Content-Type: application/json" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}" \
-  > /dev/null 2>&1
+  -d "$PAYLOAD" 2>&1)
+if [ -z "$RESULT" ]; then
+  sleep 1
+  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" 2>&1)
+fi
+echo "[$(date)] USER_PROMPT_SUBMIT curl result: $RESULT" >> /tmp/dorothy-hooks.log
 
 echo '{"continue":true,"suppressOutput":true}'
 exit 0
