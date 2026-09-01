@@ -20,7 +20,7 @@ API_URL="http://127.0.0.1:31415"
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 
 # Check if API is available
-if ! curl -s --connect-timeout 1 "$API_URL/api/health" > /dev/null 2>&1; then
+if ! curl -s --connect-timeout 1 --max-time 2 "$API_URL/api/health" > /dev/null 2>&1; then
   echo '{"continue":true,"suppressOutput":true}'
   exit 0
 fi

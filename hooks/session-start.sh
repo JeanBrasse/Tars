@@ -19,8 +19,22 @@ API_URL="http://127.0.0.1:31415"
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 
-# Check if API is available
-if ! curl -s --connect-timeout 1 "$API_URL/api/health" > /dev/null 2>&1; then
+# Check if API is available.
+#
+# --max-time as well as --connect-timeout, because the two bound different
+# things and only one of them was set. --connect-timeout bounds the TCP
+# handshake; a socket that accepts and then never answers passes it and leaves
+# curl blocked on the read with no deadline at all. Something half-open on
+# 31415 is not hypothetical: it is a port collision, an app being killed
+# mid-request, a sandbox on the same port.
+#
+# That is the whole of the "lost dispatch". This is the first statement in the
+# hook, so the registration POST below never runs, the hook is killed at the 30s
+# timeout Tars configures for it, and the session starts UNREGISTERED. The agent
+# then does the work, and every status, output and task-completed post it makes
+# is dropped as stale because no session ever claimed the agent. The order was
+# never lost; its result was.
+if ! curl -s --connect-timeout 1 --max-time 2 "$API_URL/api/health" > /dev/null 2>&1; then
   # API not running, just continue
   echo '{"continue":true,"suppressOutput":true}'
   exit 0

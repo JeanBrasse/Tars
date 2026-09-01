@@ -11,6 +11,7 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { ptyProcesses } from './pty-manager';
 import { buildFullPath } from '../utils/path-builder';
 import { getProvider } from '../providers';
+import { managedCliEnv } from '../providers/cli-provider';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
@@ -690,6 +691,11 @@ async function initAgentPtyLocked(
       CLAUDE_MGR_API_URL: `http://127.0.0.1:${API_PORT}`,
       // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
       CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+      // A CLI Tars started must not replace its own binary underneath a running
+      // session, nor spend an idle agent's whole output buffer saying so. See
+      // managedCliEnv: it is keyed off the provider registry, so a new provider
+      // on the claude binary gets this without a second edit.
+      ...managedCliEnv(agentProvider.binaryName),
       ...tasmaniaEnv,
     },
   });
