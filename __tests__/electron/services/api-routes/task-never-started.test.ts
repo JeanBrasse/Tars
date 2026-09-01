@@ -57,6 +57,7 @@ import * as pty from 'node-pty';
 import { performDispatch } from '../../../../electron/services/api-routes/agent-routes';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { agents, armTaskStartWatch } from '../../../../electron/core/agent-manager';
+import { scheduleTick } from '../../../../electron/utils/agents-tick';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { RouteContext } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -116,6 +117,19 @@ function putAgent(over: Partial<AgentStatus> & { id: string }): AgentStatus {
   } as AgentStatus;
   agents.set(agent.id, agent);
   return agent;
+}
+
+/**
+ * The card the Agents page is holding for an agent: the last agents:tick
+ * payload actually broadcast, read the way the window reads it. Asserting on
+ * this rather than on scheduleTick having been called is the difference
+ * between proving the screen changed and proving a function ran.
+ */
+function lastCard(id: string): { id: string; displayStatus: string } | undefined {
+  const ticks = broadcasts.filter(b => b.channel === 'agents:tick');
+  if (ticks.length === 0) return undefined;
+  return (ticks[ticks.length - 1].payload as { id: string; displayStatus: string }[])
+    .find(a => a.id === id);
 }
 
 /** Dispatch, then let the grace period pass without touching real time. */
@@ -181,6 +195,43 @@ describe('a session that never begins its task', () => {
     // wait_for_agent hangs until its own timeout without it. emitAgentStatus
     // sends both, and this pins the half that unblocks the caller.
     expect(perAgent).toContain('a1');
+  });
+
+  it('stops the card saying working, read on both sides of the change', async () => {
+    const agent = putAgent({ id: 'a1', name: 'Frontend' });
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await performDispatch(agent, { message: 'do the thing' }, ctx, vi.fn());
+      // The "before" is a real broadcast taken while the agent is still
+      // inside its grace period, not an assumption about what the window
+      // held. Without it, asserting only the end state would pass just as
+      // well against a card that had never said anything else.
+      scheduleTick();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(lastCard('a1')?.displayStatus).toBe('working');
+
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+      expect(lastCard('a1')?.displayStatus).toBe('error');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('only fires because the spawn cleared the previous session id', async () => {
+    const agent = putAgent({
+      id: 'a1',
+      name: 'Frontend',
+      currentSessionId: 'session-from-the-last-task',
+    });
+
+    await dispatchThenWait(agent, 'do the thing');
+
+    // spawnAgentSession sets currentSessionId back to undefined before arming.
+    // That clearing is load-bearing: reading the previous task's registration
+    // as this one's would leave the check permanently silent for any agent
+    // that has already run once.
+    expect(agent.status).toBe('error');
   });
 
   it('is still reported as working while the grace period runs', async () => {
@@ -325,6 +376,35 @@ describe('an agent started outside the API', () => {
     const card = (ticks[ticks.length - 1].payload as { id: string; displayStatus: string }[])
       .find(a => a.id === 'a1');
     expect(card?.displayStatus).toBe('error');
+  });
+
+  it('corrects the card of an agent nobody asked for', async () => {
+    // The gap that made this worth checking: with no requester there is no
+    // orchestrator to notify, so no note is typed into a parent terminal, so
+    // nothing else in the app schedules a tick. If the watch did not push one
+    // itself this card would sit on "working" until the window remounted.
+    const agent = armed({ requestedBy: undefined });
+    expect(agent.requestedBy).toBeUndefined();
+    expect([...agents.values()].some(a => a.role === 'orchestrator')).toBe(false);
+
+    await letTheGracePass(() => armTaskStartWatch(agent, agent.ptyId));
+
+    expect(lastCard('a1')?.displayStatus).toBe('error');
+  });
+
+  it('accuses once when one start armed the same pty twice', async () => {
+    const agent = armed();
+
+    await letTheGracePass(() => {
+      armTaskStartWatch(agent, agent.ptyId);
+      armTaskStartWatch(agent, agent.ptyId);
+    });
+
+    // Two timers, one verdict: the second finds the status already moved and
+    // returns. A caller parked on /wait must not be woken twice for one
+    // failure, and the fleet must not see it happen twice either.
+    expect(agent.status).toBe('error');
+    expect(emitted.filter(id => id === 'a1')).toHaveLength(1);
   });
 
   it('is left alone when it did begin its task', async () => {
