@@ -427,6 +427,84 @@ describe('an agent started outside the API', () => {
   });
 });
 
+/**
+ * The stale session id, which is Noah's case exactly.
+ *
+ * The check reads "nothing registered since this session started" as
+ * `currentSessionId` being unset. Only spawnAgentSession cleared it, so on
+ * every other path an agent that had already registered once in this run kept
+ * the old id and the check cancelled itself without a word. He starts his
+ * agents from the Agents page and they run all day with ptys dying and coming
+ * back, so the protection was armed everywhere and fired nowhere.
+ */
+describe('an agent relaunched after it had already run once', () => {
+  function relaunched(): AgentStatus {
+    const agent = putAgent({
+      id: 'a1',
+      name: 'Frontend',
+      status: 'running',
+      ptyId: 'pty-second',
+      // Left over from the session that died. Nothing on this path clears it.
+      currentSessionId: 'session-from-the-first-run',
+    });
+    ptyProcesses.set('pty-second', { write: vi.fn(), kill: vi.fn() } as never);
+    return agent;
+  }
+
+  async function letTheGracePass(fn: () => void): Promise<void> {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fn();
+      await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('is still watched, and is caught when its task never lands', async () => {
+    const agent = relaunched();
+
+    await letTheGracePass(() => armTaskStartWatch(agent, agent.ptyId));
+
+    expect(agent.status).toBe('error');
+    expect(agent.error).toMatch(/never began the task/i);
+  });
+
+  it('clears the stale id as it arms, so the caller cannot forget to', () => {
+    const agent = relaunched();
+
+    armTaskStartWatch(agent, agent.ptyId);
+
+    // The precondition belongs to the watch. A path added tomorrow inherits it
+    // without knowing it exists.
+    expect(agent.currentSessionId).toBeUndefined();
+  });
+
+  it('is left alone once the new session registers', async () => {
+    const agent = relaunched();
+
+    await letTheGracePass(() => {
+      armTaskStartWatch(agent, agent.ptyId);
+      // The SessionStart hook of the run that actually began.
+      agent.currentSessionId = 'session-from-the-second-run';
+    });
+
+    expect(agent.status).toBe('running');
+    expect(agent.error).toBeUndefined();
+  });
+
+  it('corrects the card, which is what he was looking at', async () => {
+    const agent = relaunched();
+
+    await letTheGracePass(() => armTaskStartWatch(agent, agent.ptyId));
+
+    const ticks = broadcasts.filter(b => b.channel === 'agents:tick');
+    const card = (ticks[ticks.length - 1].payload as { id: string; displayStatus: string }[])
+      .find(a => a.id === 'a1');
+    expect(card?.displayStatus).toBe('error');
+  });
+});
+
 describe('the task that was dispatched', () => {
   it('reaches the CLI whole, well past four thousand characters', async () => {
     const agent = putAgent({ id: 'a1', name: 'Frontend' });

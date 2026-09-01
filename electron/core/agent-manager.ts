@@ -524,6 +524,23 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined)
   if (!ptyId) return;
   if (getProvider(agent.provider).binaryName !== 'claude') return;
 
+  // The precondition this check rests on, established here rather than trusted.
+  //
+  // The whole test below is "did a session register since this one started",
+  // read as `currentSessionId` being unset when the grace period expires. Only
+  // spawnAgentSession cleared it, for its own reason, so on the three paths
+  // that did not, an agent that had already registered once in this run kept
+  // the old id and the check quietly cancelled itself. Noah starts his agents
+  // from the Agents page and they run all day with ptys dying and coming back,
+  // so in his actual use it would almost never have fired: armed everywhere,
+  // triggering nowhere, which is the shape of bug this exists to catch.
+  //
+  // Owned by the watch, so a fifth path added tomorrow inherits it without
+  // knowing it exists. It is also the right thing on its own terms: a session
+  // is starting, so nothing before it is authoritative any more, which is the
+  // same reason spawnAgentSession clears it a few statements earlier.
+  agent.currentSessionId = undefined;
+
   const timer = setTimeout(() => {
     const live = agents.get(agent.id);
     // Replaced by a newer start, or gone: not this session's business.

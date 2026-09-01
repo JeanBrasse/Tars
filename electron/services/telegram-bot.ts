@@ -1311,6 +1311,8 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       // Start new Claude session
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
       saveAgents();
+      // A cold start of the super agent carries a task like any other start.
+      armTaskStartWatch(superAgent, superAgent.ptyId);
 
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
     } else {
