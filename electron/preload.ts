@@ -654,7 +654,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('cliPaths:detect'),
     get: () =>
       ipcRenderer.invoke('cliPaths:get'),
-    save: (paths: { amp: string; claude: string; codex: string; gemini: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string; additionalPaths: string[] }) =>
+    save: (paths: { amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string; additionalPaths: string[] }) =>
       ipcRenderer.invoke('cliPaths:save', paths),
   },
 

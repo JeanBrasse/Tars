@@ -120,22 +120,44 @@ export interface AgentStatus {
   cliPath?: string;              // Custom CLI binary path override
 }
 
-export interface CLIPaths {
-  amp: string;
-  claude: string;
-  codex: string;
-  gemini: string;
-  grok: string;
-  qwencode: string;
-  opencode: string;
-  pi: string;
-  gws: string;
-  gcloud: string;
-  gh: string;
-  node: string;
-  minimax: string;
+/**
+ * Every binary Tars locates for the user, and whose directory goes on the PATH
+ * of an agent's PTY.
+ *
+ * A runtime list and not only an interface, because four places in the main
+ * process walked these keys and each carried its own copy of them. They had
+ * already drifted: one forgot opencode and pi, two forgot grok and minimax,
+ * and the preload's save signature forgot grok before Amp was ever added. Each
+ * was silent, and each grew by one more omission per provider.
+ *
+ * This is deliberately NOT derived from the provider registry. It is a superset
+ * of it: gh, node, gws and gcloud are tools an agent needs on its PATH and are
+ * nobody's provider, while qwencode and minimax are path keys whose providers
+ * run the claude binary under another name. Deriving from getAllProviders would
+ * have quietly dropped four working entries.
+ */
+export const CLI_PATH_KEYS = [
+  'amp',
+  'claude',
+  'codex',
+  'gemini',
+  'grok',
+  'qwencode',
+  'opencode',
+  'pi',
+  'gws',
+  'gcloud',
+  'gh',
+  'node',
+  'minimax',
+] as const;
+
+export type CLIPathKey = typeof CLI_PATH_KEYS[number];
+
+export type CLIPaths = Record<CLIPathKey, string> & {
+  /** Extra directories the user added by hand, already directories not files. */
   additionalPaths: string[];
-}
+};
 
 export interface AppSettings {
   notificationsEnabled: boolean;
@@ -237,6 +259,18 @@ export interface AppSettings {
   memoryHonchoEnabled?: boolean;
   memoryHonchoMcpUrl?: string;
   memoryHonchoApiKey?: string;
+  /**
+   * Sent as the X-Honcho-Workspace-ID header on every Honcho call.
+   *
+   * Not a nicety: none of Honcho's tools declares workspace_id as required
+   * in its schema, so an agent reads it as optional and omits it, and the
+   * server then refuses the call at execution time. list_workspaces, the
+   * one way out, answers 502. The header is the only clean way to bind a
+   * workspace, and the server's own error message asks for it by name.
+   *
+   * Empty means no header, which is exactly today's behaviour.
+   */
+  memoryHonchoWorkspaceId?: string;
   defaultProvider?: AgentProvider;
   obsidianVaultPaths?: string[];
   notificationSounds?: {
