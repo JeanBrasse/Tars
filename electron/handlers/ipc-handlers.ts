@@ -358,7 +358,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const currentSettings = getAppSettings();
     const cliExtraPaths: string[] = [];
     if (currentSettings.cliPaths) {
-      for (const key of ['claude', 'codex', 'gemini', 'opencode', 'pi', 'gws', 'gh', 'node'] as const) {
+      for (const key of ['amp', 'claude', 'codex', 'gemini', 'opencode', 'pi', 'gws', 'gh', 'node'] as const) {
         const val = (currentSettings.cliPaths as unknown as Record<string, string>)[key];
         if (val) cliExtraPaths.push(path.dirname(val));
       }
@@ -584,7 +584,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       const currentSettings = getAppSettings();
       const extraPaths: string[] = [];
       if (currentSettings.cliPaths) {
-        for (const key of ['claude', 'codex', 'gemini', 'opencode', 'pi', 'gws', 'gh', 'node'] as const) {
+        for (const key of ['amp', 'claude', 'codex', 'gemini', 'opencode', 'pi', 'gws', 'gh', 'node'] as const) {
           const val = (currentSettings.cliPaths as unknown as Record<string, string>)[key];
           if (val) extraPaths.push(path.dirname(val));
         }

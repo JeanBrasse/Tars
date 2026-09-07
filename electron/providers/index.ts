@@ -1,5 +1,6 @@
 import type { AgentProvider } from '../types';
 import type { CLIProvider } from './cli-provider';
+import { AmpProvider } from './amp-provider';
 import { ClaudeProvider } from './claude-provider';
 import { CodexProvider } from './codex-provider';
 import { GeminiProvider } from './gemini-provider';
@@ -30,6 +31,7 @@ export type {
 } from './cli-provider';
 
 const providers: Record<string, CLIProvider> = {
+  amp: new AmpProvider(),
   claude: new ClaudeProvider(),
   codex: new CodexProvider(),
   gemini: new GeminiProvider(),
