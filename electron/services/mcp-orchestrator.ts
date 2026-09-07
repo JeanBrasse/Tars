@@ -226,18 +226,27 @@ async function installBundledSkills(): Promise<void> {
  * pi) manage their own MCP configs and are out of scope here.
  */
 export function setupMemoryBackends(appSettings?: AppSettings): void {
+  // Honcho refuses a call whose workspace it cannot infer, and advertises no
+  // tool that would let an agent find one: list_workspaces answers 502, and
+  // workspace_id is absent from all 31 tool schemas, so an agent treats it as
+  // optional and omits it. The header is the only clean way to bind it, and
+  // the server's own error message names it. An empty setting sends nothing,
+  // which leaves the config byte for byte what it is today.
+  const honchoWorkspaceId = appSettings?.memoryHonchoWorkspaceId?.trim();
   const backends = [
     {
       name: 'gbrain',
       enabled: !!(appSettings?.memoryGbrainEnabled && appSettings?.memoryGbrainMcpUrl?.trim()),
       url: appSettings?.memoryGbrainMcpUrl?.trim() || '',
       bearerToken: appSettings?.memoryGbrainAuthToken?.trim() || undefined,
+      extraHeaders: undefined as Record<string, string> | undefined,
     },
     {
       name: 'honcho',
       enabled: !!(appSettings?.memoryHonchoEnabled && appSettings?.memoryHonchoMcpUrl?.trim()),
       url: appSettings?.memoryHonchoMcpUrl?.trim() || '',
       bearerToken: appSettings?.memoryHonchoApiKey?.trim() || undefined,
+      extraHeaders: honchoWorkspaceId ? { 'X-Honcho-Workspace-ID': honchoWorkspaceId } : undefined,
     },
   ];
 
@@ -255,7 +264,13 @@ export function setupMemoryBackends(appSettings?: AppSettings): void {
   let changed = false;
   for (const b of backends) {
     const cur = cfg.mcpServers[b.name];
-    const desiredHeaders = b.bearerToken ? { Authorization: `Bearer ${b.bearerToken}` } : undefined;
+    // Built in a fixed order, because the comparison below is a string compare
+    // of the serialised object: the same headers in another order would read as
+    // a change and rewrite the config on every start.
+    const headerPairs: Record<string, string> = {};
+    if (b.bearerToken) headerPairs.Authorization = `Bearer ${b.bearerToken}`;
+    if (b.extraHeaders) Object.assign(headerPairs, b.extraHeaders);
+    const desiredHeaders = Object.keys(headerPairs).length > 0 ? headerPairs : undefined;
 
     if (b.enabled) {
       const matches = cur

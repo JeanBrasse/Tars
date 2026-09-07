@@ -12,6 +12,15 @@ export interface McpEndpoint {
   url: string;
   token?: string;
   label: string;
+  /**
+   * Extra headers this server needs on every call, beyond the bearer token.
+   *
+   * Honcho binds its workspace this way and has no other means: none of its
+   * tools declares workspace_id as required, so an agent omits it and the call
+   * is refused at execution time. Optional, and absent for gbrain, which needs
+   * nothing of the sort.
+   */
+  headers?: Record<string, string>;
 }
 
 export interface McpTool {
@@ -39,6 +48,9 @@ function headersFor(endpoint: McpEndpoint): Record<string, string> {
     'MCP-Protocol-Version': PROTOCOL_VERSION,
   };
   if (endpoint.token) headers.Authorization = `Bearer ${endpoint.token}`;
+  // After the defaults so a server can correct them, before Mcp-Session-Id,
+  // which belongs to this client and is not the caller's to set.
+  if (endpoint.headers) Object.assign(headers, endpoint.headers);
   const session = sessions.get(endpoint.url);
   if (session) headers['Mcp-Session-Id'] = session;
   return headers;

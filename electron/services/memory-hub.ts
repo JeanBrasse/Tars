@@ -36,6 +36,8 @@ export interface MemorySettings {
   memoryHonchoEnabled?: boolean;
   memoryHonchoMcpUrl?: string;
   memoryHonchoApiKey?: string;
+  /** See AppSettings: binds the workspace Honcho refuses to infer. */
+  memoryHonchoWorkspaceId?: string;
   /** Absolute paths to Obsidian vaults. Already collected by Settings for the
    *  Vault page; a vault is a folder of markdown, which is what every other
    *  local source here is too. */
@@ -186,7 +188,16 @@ function gbrainEndpoint(s: MemorySettings): McpEndpoint | null {
 
 function honchoEndpoint(s: MemorySettings): McpEndpoint | null {
   if (!s.memoryHonchoEnabled || !s.memoryHonchoMcpUrl) return null;
-  return { url: s.memoryHonchoMcpUrl, token: s.memoryHonchoApiKey, label: 'Honcho' };
+  // The Brain page calls Honcho directly, without going through a CLI, so the
+  // header has to be set here as well as in the MCP config the CLIs read.
+  // Missing one of the two would work everywhere except one screen.
+  const workspaceId = s.memoryHonchoWorkspaceId?.trim();
+  return {
+    url: s.memoryHonchoMcpUrl,
+    token: s.memoryHonchoApiKey,
+    label: 'Honcho',
+    ...(workspaceId ? { headers: { 'X-Honcho-Workspace-ID': workspaceId } } : {}),
+  };
 }
 
 /** The first tool whose name looks like a search over stored knowledge. */

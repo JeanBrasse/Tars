@@ -17,6 +17,7 @@ import { App as SlackApp, LogLevel } from '@slack/bolt';
 // Import types
 import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort } from '../types';
 import { buildFullPath } from '../utils/path-builder';
+import { cliPathDirs } from '../utils/cli-path-dirs';
 import { decodeProjectPath } from '../utils/decode-project-path';
 import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
@@ -356,17 +357,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // Build PATH that includes user-configured paths, nvm, and other common locations for claude
     const currentSettings = getAppSettings();
-    const cliExtraPaths: string[] = [];
-    if (currentSettings.cliPaths) {
-      for (const key of ['amp', 'claude', 'codex', 'gemini', 'opencode', 'pi', 'gws', 'gh', 'node'] as const) {
-        const val = (currentSettings.cliPaths as unknown as Record<string, string>)[key];
-        if (val) cliExtraPaths.push(path.dirname(val));
-      }
-      if (currentSettings.cliPaths.additionalPaths) {
-        cliExtraPaths.push(...currentSettings.cliPaths.additionalPaths.filter(Boolean));
-      }
-    }
-    const fullPath = buildFullPath(cliExtraPaths);
+    const fullPath = buildFullPath(cliPathDirs(currentSettings.cliPaths));
 
     // Create PTY for this agent
     // Strip nested-session env vars to prevent errors
@@ -582,15 +573,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
 
       const currentSettings = getAppSettings();
-      const extraPaths: string[] = [];
-      if (currentSettings.cliPaths) {
-        for (const key of ['amp', 'claude', 'codex', 'gemini', 'opencode', 'pi', 'gws', 'gh', 'node'] as const) {
-          const val = (currentSettings.cliPaths as unknown as Record<string, string>)[key];
-          if (val) extraPaths.push(path.dirname(val));
-        }
-        if (currentSettings.cliPaths.additionalPaths) extraPaths.push(...currentSettings.cliPaths.additionalPaths.filter(Boolean));
-      }
-      const fullPathForLocal = buildFullPath(extraPaths);
+      const fullPathForLocal = buildFullPath(cliPathDirs(currentSettings.cliPaths));
 
       const cleanEnvLocal = { ...process.env as { [key: string]: string } };
       delete cleanEnvLocal['CLAUDECODE'];

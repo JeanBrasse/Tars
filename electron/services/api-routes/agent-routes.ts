@@ -7,6 +7,7 @@ import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
 import { spawnAgentPty } from '../../core/agent-pty';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
+import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { AgentStatus, AgentCharacter } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { getSuperAgentInstructionsPath } from '../../utils';
@@ -204,19 +205,7 @@ async function spawnAgentSession(
 
   const shell = '/bin/bash';
   // Include user-configured CLI dirs so non-claude binaries resolve too.
-  const cliExtraPaths: string[] = [];
-  const cliPaths = appSettings.cliPaths as unknown as Record<string, unknown> | undefined;
-  if (cliPaths) {
-    for (const key of ['amp', 'claude', 'codex', 'gemini', 'grok', 'qwencode', 'opencode', 'pi', 'gws', 'gh', 'node']) {
-      if (typeof cliPaths[key] === 'string' && cliPaths[key]) {
-        cliExtraPaths.push(path.dirname(cliPaths[key] as string));
-      }
-    }
-    if (Array.isArray(cliPaths.additionalPaths)) {
-      cliExtraPaths.push(...(cliPaths.additionalPaths as string[]).filter(Boolean));
-    }
-  }
-  const fullPath = buildFullPath(cliExtraPaths);
+  const fullPath = buildFullPath(cliPathDirs(appSettings.cliPaths as unknown as Record<string, unknown> | undefined));
 
   // Kill any existing PTY for this agent before spawning a new one.
   // Agents started via the API use one-shot PTYs that stay alive (the claude

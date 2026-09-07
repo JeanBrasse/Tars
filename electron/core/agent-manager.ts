@@ -10,6 +10,7 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { ptyProcesses } from './pty-manager';
 import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
+import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -623,17 +624,7 @@ async function initAgentPtyLocked(
     const settingsFile = dataPath('app-settings.json');
     if (fs.existsSync(settingsFile)) {
       savedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-      const cliPaths = savedSettings.cliPaths as Record<string, unknown> | undefined;
-      if (cliPaths) {
-        for (const key of ['amp', 'claude', 'codex', 'gemini', 'grok', 'gws', 'gh', 'node']) {
-          if (cliPaths[key]) {
-            cliExtraPaths.push(path.dirname(cliPaths[key] as string));
-          }
-        }
-        if (cliPaths.additionalPaths) {
-          cliExtraPaths.push(...(cliPaths.additionalPaths as string[]).filter(Boolean));
-        }
-      }
+      cliExtraPaths.push(...cliPathDirs(savedSettings.cliPaths as Record<string, unknown> | undefined));
     }
   } catch {
     // Ignore settings load errors
