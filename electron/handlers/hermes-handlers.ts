@@ -331,27 +331,36 @@ export function registerHermesHandlers(): void {
   ipcMain.handle('hermes:memory:setProvider', async (_event, params: { provider: string }) =>
     setHermesMemoryProvider(readConnection(), params.provider));
 
-  // Reachability check of the remote Hermes gateway (any HTTP response counts:
-  // we only prove the tailnet route works, not the gateway's API shape).
+  /**
+   * Test a gateway URL, including whether the session it would use works.
+   *
+   * This used to open a socket, take any HTTP response at all, and answer
+   * `success: true`. Against a gateway that answers its public routes and
+   * rejects every authenticated one, that is a green light on a dead session:
+   * the exact reading that hid a week of Unauthorized. It now goes through the
+   * same probe the Settings page uses, so the two cannot disagree, and it
+   * distinguishes the three states that matter rather than two.
+   *
+   * `reachable` and `signedIn` are the contract; `success` stays and keeps its
+   * meaning of "nothing more to do here", so an existing caller reading only
+   * that gets a truthful answer without knowing about the third state.
+   */
   ipcMain.handle('hermes:testGateway', async (_event, url: string) => {
     if (typeof url !== 'string' || !/^https?:\/\//.test(url.trim())) {
-      return { success: false, error: 'Enter an http(s):// URL first' };
+      return { success: false, reachable: false, signedIn: false, error: 'Enter an http(s):// URL first' };
     }
-    try {
-      const target = new URL(url.trim());
-      const mod = target.protocol === 'https:' ? await import('https') : await import('http');
-      const status = await new Promise<number>((resolve, reject) => {
-        const req = mod.request(target, { method: 'GET', timeout: 6000 }, res => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
-        });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-        req.end();
-      });
-      return { success: true, status };
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    // The saved connection's token comes along, because a token gateway is
+    // authenticated by that header and testing without it would call a working
+    // setup broken. Only the URL under test is overridden.
+    const probe = await probeHermes({ ...readConnection(), mode: 'remote', url: url.trim() });
+    return {
+      success: probe.reachable && (!probe.authRequired || probe.signedIn),
+      reachable: probe.reachable,
+      signedIn: probe.signedIn,
+      needsSignIn: probe.reachable && probe.authRequired && !probe.signedIn,
+      status: probe.status,
+      version: probe.version,
+      error: probe.error,
+    };
   });
 }
