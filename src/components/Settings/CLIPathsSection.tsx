@@ -25,6 +25,7 @@ const BINARIES: { key: BinaryKey; label: string }[] = [
   { key: 'grok', label: 'Grok' },
   { key: 'qwencode', label: 'Qwen Code' },
   { key: 'opencode', label: 'OpenCode' },
+  { key: 'amp', label: 'Amp' },
   { key: 'pi', label: 'Pi Terminal' },
   { key: 'gws', label: 'Google Workspace (gws)' },
   { key: 'gcloud', label: 'Google Cloud SDK (gcloud)' },
@@ -35,7 +36,7 @@ const BINARIES: { key: BinaryKey; label: string }[] = [
 
 const EMPTY_CLI_PATHS: CLIPaths = {
   claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '',
-  pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [],
+  amp: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [],
 };
 
 export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSectionProps) => {

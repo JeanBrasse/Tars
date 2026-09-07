@@ -59,6 +59,7 @@ export function AgentOptionsBody(props: {
         { key: 'gemini', label: 'Gemini' },
         { key: 'grok', label: 'Grok' },
         { key: 'opencode', label: 'OpenCode' },
+        { key: 'amp', label: 'Amp' },
         { key: 'pi', label: 'Pi' },
         { key: 'qwencode', label: 'Qwen Code' },
         { key: 'minimax', label: 'MiniMax' },

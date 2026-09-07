@@ -26,6 +26,7 @@ const CLI_BINARIES = [
   { name: 'Gemini', binary: 'gemini' },
   { name: 'Qwen Code', binary: 'qwen-code' },
   { name: 'OpenCode', binary: 'opencode' },
+  { name: 'Amp', binary: 'amp' },
   { name: 'Pi', binary: 'pi' },
   { name: 'MiniMax', binary: 'minimax' },
 ];

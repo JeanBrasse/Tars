@@ -130,6 +130,23 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     defaultModel: 'default',
   },
   {
+    id: 'amp',
+    label: 'Amp',
+    // No vector mark in the tree, so the same lettered badge OpenCode and
+    // Custom (OpenAI) use. Teal is what the registry gives a CLI with no brand
+    // colour of its own; the four that have one keep it.
+    icon: { type: 'text', content: 'AMP' },
+    accent: 'teal-500',
+    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
+    requiresCli: true,
+    // Amp takes no model flag: it picks its own mix of open and frontier
+    // models per request, so there is one row here and it says so.
+    models: [
+      { id: 'default', name: 'Default', description: 'Use configured default' },
+    ],
+    defaultModel: 'default',
+  },
+  {
     id: 'pi',
     label: 'Pi',
     icon: { type: 'cpu' },
@@ -390,6 +407,7 @@ export function computeProviderAvailability(
     grok: !!paths?.grok,
     qwencode: !!paths?.qwencode,
     opencode: !!paths?.opencode,
+    amp: !!paths?.amp,
     pi: !!paths?.pi,
     local: true,
     openrouter: viaOpenRouter,
