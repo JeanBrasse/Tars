@@ -625,7 +625,7 @@ async function initAgentPtyLocked(
       savedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
       const cliPaths = savedSettings.cliPaths as Record<string, unknown> | undefined;
       if (cliPaths) {
-        for (const key of ['claude', 'codex', 'gemini', 'grok', 'gws', 'gh', 'node']) {
+        for (const key of ['amp', 'claude', 'codex', 'gemini', 'grok', 'gws', 'gh', 'node']) {
           if (cliPaths[key]) {
             cliExtraPaths.push(path.dirname(cliPaths[key] as string));
           }

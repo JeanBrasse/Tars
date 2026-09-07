@@ -170,8 +170,11 @@ function loadAppSettings(): AppSettings {
     autoStartAgentsOnLaunch: true,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
+    ampEnabled: false,
+    ampDefaultModel: '',
     defaultProvider: 'claude',
     cliPaths: {
+      amp: '',
       claude: '',
       codex: '',
       gemini: '',

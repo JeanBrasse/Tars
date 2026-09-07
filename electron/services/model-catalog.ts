@@ -81,6 +81,10 @@ const PROVIDER_KEYS: Record<string, string> = {
   // or self-hosted endpoint is by definition not in a public catalogue. Its
   // one model comes from what the user typed in Settings - see
   // custom-openai-provider.ts's getModels() and the models:list IPC handler.
+  //
+  // No 'amp' entry, and it is not an oversight: Amp publishes no model
+  // selection and picks its own mix per request, so there is nothing to price
+  // per model. `amp usage` is where its spend lives, on Amp's side.
 };
 
 /** Prices of last resort, used only when the catalogue is unreachable and no

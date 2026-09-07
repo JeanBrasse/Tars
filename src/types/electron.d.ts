@@ -212,6 +212,7 @@ export interface WorktreeConfig {
 export type AgentCharacter = 'robot' | 'ninja' | 'wizard' | 'astronaut' | 'knight' | 'pirate' | 'alien' | 'viking' | 'frog';
 
 export type AgentProvider =
+  | 'amp'
   | 'claude'
   | 'codex'
   | 'gemini'
@@ -801,6 +802,7 @@ export interface ElectronAPI {
       /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
       providerBudgets?: Record<string, number>;
   cliPaths?: {
+        amp: string;
         claude: string;
         codex: string;
         gemini: string;
@@ -874,6 +876,7 @@ export interface ElectronAPI {
       defaultProjectPath?: string;
       providerBudgets?: Record<string, number>;
       cliPaths?: {
+        amp: string;
         claude: string;
         codex: string;
         gemini: string;
@@ -1050,6 +1053,7 @@ export interface ElectronAPI {
   // CLI paths management
   cliPaths?: {
     detect: () => Promise<{
+      amp: string;
       claude: string;
       codex: string;
       gemini: string;
@@ -1064,6 +1068,7 @@ export interface ElectronAPI {
       minimax: string;
     }>;
     get: () => Promise<{
+      amp: string;
       claude: string;
       codex: string;
       gemini: string;
@@ -1079,6 +1084,7 @@ export interface ElectronAPI {
       additionalPaths: string[];
     }>;
     save: (paths: {
+      amp: string;
       claude: string;
       codex: string;
       gemini: string;

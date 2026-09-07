@@ -6,6 +6,7 @@ export interface WorktreeConfig {
 export type AgentCharacter = 'robot' | 'ninja' | 'wizard' | 'astronaut' | 'knight' | 'pirate' | 'alien' | 'viking';
 
 export type AgentProvider =
+  | 'amp'
   | 'claude'
   | 'codex'
   | 'gemini'
@@ -120,6 +121,7 @@ export interface AgentStatus {
 }
 
 export interface CLIPaths {
+  amp: string;
   claude: string;
   codex: string;
   gemini: string;
@@ -176,6 +178,10 @@ export interface AppSettings {
   cliPaths: CLIPaths;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
+  ampEnabled?: boolean;
+  ampDefaultModel?: string;
+  /** Amp access token (sgamp_...), passed to the PTY as AMP_API_KEY. */
+  ampApiKey?: string;
   /** External AI provider keys. All alt providers use the claude binary
    *  with ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY injected into the PTY. */
   openRouterEnabled?: boolean;

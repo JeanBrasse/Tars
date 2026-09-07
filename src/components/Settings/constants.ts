@@ -185,6 +185,7 @@ export const DEFAULT_APP_SETTINGS = {
     grok: '',
     qwencode: '',
     opencode: '',
+    amp: '',
     pi: '',
     gws: '',
     gcloud: '',

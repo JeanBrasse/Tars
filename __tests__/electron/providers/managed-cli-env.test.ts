@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import * as os from 'node:os';
@@ -64,8 +64,23 @@ import { registerAgentRoutes } from '../../../electron/services/api-routes/agent
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
-/** The five CLIs that are not the claude binary and have their own updaters. */
-const FOREIGN_BINARIES = ['codex', 'gemini', 'grok', 'opencode', 'pi'];
+/**
+ * The CLIs that are not the claude binary and have their own updaters.
+ *
+ * Hand-written on purpose, and the only line here that a new provider has to
+ * touch. Deriving it from the registry is the obvious idea after it has lagged
+ * twice, and it is the wrong one: the assertion below would then compare the
+ * registry with itself and hold for any classification at all, including a
+ * foreign CLI quietly handed Claude's managed environment. The list is not
+ * bookkeeping, it is the second opinion that makes the assertion mean
+ * something.
+ *
+ * What deserved fixing was the diagnostics. Adding a provider used to fail as
+ * two sorted arrays that differ somewhere, which says nothing about what to do
+ * about it. It now fails naming the provider and asking the question that
+ * decides: does this CLI run the claude binary?
+ */
+const FOREIGN_BINARIES = ['amp', 'codex', 'gemini', 'grok', 'opencode', 'pi'];
 
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-managed-env-'));
 
@@ -82,9 +97,65 @@ function agent(overrides: Partial<AgentStatus>): AgentStatus {
   } as AgentStatus;
 }
 
+/**
+ * The variables this suite is about, read from the product rather than typed
+ * out, so a second managed variable is isolated the day it is added.
+ */
+/**
+ * The administrator lockdown, which Tars deliberately never sets. Named once
+ * and used both to isolate and to assert, so the two cannot drift apart.
+ */
+const LOCKDOWN_KEY = 'DISABLE_UPDATES';
+
+/**
+ * Every variable this suite makes a claim about, and therefore must not
+ * inherit: the ones the product sets, read from the product, plus the one it
+ * promises not to set. DISABLE_UPDATES was the same defect one variable over -
+ * a developer on an IT-managed laptop, where the lockdown is exactly what is
+ * set, saw this suite go red for a property it holds perfectly well.
+ */
+const MANAGED_KEYS = [...Object.keys(managedCliEnv('claude')), LOCKDOWN_KEY];
+let ambient: Record<string, string | undefined> = {};
+
+// The isolation below is derived from the function under test, so an empty
+// managedCliEnv would quietly turn it into a no-op. It cannot cause a false
+// pass - the assertions that need those keys fail first - but it would fail
+// for the wrong reason, so the coupling says so out loud.
+it('has something to isolate, or the setup below is a no-op', () => {
+  expect(MANAGED_KEYS).toContain('DISABLE_AUTOUPDATER');
+  expect(MANAGED_KEYS).toContain(LOCKDOWN_KEY);
+});
+
 beforeEach(() => {
   spawnCalls.length = 0;
   agents.clear();
+
+  // initAgentPty spreads process.env into the spawn, which is correct: a PTY
+  // inherits the user's environment. It also means "Tars did not add this" and
+  // "this is not present" are different statements, and every assertion below
+  // is about the first. Tars has run its own agents with DISABLE_AUTOUPDATER=1
+  // since 1.6.19, so this suite was green in CI and red in any terminal Tars
+  // had started, including the one a Tars agent runs these tests in. A test
+  // whose result depends on who launches it guards nothing.
+  //
+  // Neutralised rather than excused: adding the variable to some allowed list
+  // would make the codex case assert that Tars sets it or that the shell does,
+  // which is not a property anyone wants.
+  ambient = {};
+  for (const key of MANAGED_KEYS) {
+    ambient[key] = process.env[key];
+    delete process.env[key];
+  }
+});
+
+afterEach(() => {
+  // Restored exactly, absent stays absent: this process goes on to run the
+  // rest of the suite, and in a Tars terminal it inherited the variable for a
+  // reason.
+  for (const [key, value] of Object.entries(ambient)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 describe('which CLIs the variable is for', () => {
@@ -105,10 +176,21 @@ describe('which CLIs the variable is for', () => {
       }
     }
 
-    // Pinned so the scope cannot drift silently: the registry is the source of
-    // truth, and a new claude-family provider is covered by construction.
-    expect(claudeFamily.length).toBe(14);
+    // Pinned so the scope cannot drift silently. A new claude-family provider
+    // moves the first count; a new foreign one moves the second list. Either
+    // way somebody has to say which it is, which is the whole point.
+    const unclassified = [...new Set(foreign)].filter(b => !FOREIGN_BINARIES.includes(b));
+    expect(
+      unclassified,
+      `${unclassified.join(', ')}: new CLI(s) here. Does it run the claude binary? `
+      + 'If yes its provider should report binaryName "claude" and it is covered already. '
+      + 'If no, it has its own updater: add it to FOREIGN_BINARIES above.',
+    ).toEqual([]);
     expect([...new Set(foreign)].sort()).toEqual(FOREIGN_BINARIES);
+    expect(
+      claudeFamily.length,
+      'a provider joined or left the claude family; confirm it re-points the claude binary',
+    ).toBe(14);
   });
 
   it("follows the registry's own fallback, so 'local' is covered too", () => {
@@ -215,7 +297,7 @@ describe('the API path, which is every delegation and dispatch', () => {
     // DISABLE_UPDATES is checked first by the binary and also makes an
     // explicitly typed `claude update` refuse. These are real terminals the
     // user can take over, so a command they type stays theirs.
-    expect(spawnCalls[0].env.DISABLE_UPDATES).toBeUndefined();
+    expect(spawnCalls[0].env[LOCKDOWN_KEY]).toBeUndefined();
   });
 });
 

@@ -22,13 +22,13 @@ export interface CLIPathsHandlerDependencies {
  * Detect CLI paths from the system.
  * If savedPaths is provided, manually-set paths are checked first and used if the binary exists.
  */
-async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string }> {
+async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string }> {
   const homeDir = os.homedir();
-  const paths = { claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '' };
+  const paths = { amp: '', claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '' };
 
   // If a user manually set a path in settings, use it if the binary exists
   if (savedPaths) {
-    const cliKeys = ['claude', 'codex', 'gemini', 'grok', 'qwencode', 'opencode', 'pi', 'gws', 'gcloud', 'gh', 'node', 'minimax'] as const;
+    const cliKeys = ['amp', 'claude', 'codex', 'gemini', 'grok', 'qwencode', 'opencode', 'pi', 'gws', 'gcloud', 'gh', 'node', 'minimax'] as const;
     for (const key of cliKeys) {
       const savedPath = savedPaths[key];
       if (savedPath && fs.existsSync(savedPath)) {
@@ -188,6 +188,29 @@ async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ claude:
       });
       if (stdout.trim()) {
         paths.opencode = stdout.trim();
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Check for amp
+  if (!paths.amp) for (const dir of commonPaths) {
+    const ampPath = path.join(dir, 'amp');
+    if (fs.existsSync(ampPath)) {
+      paths.amp = ampPath;
+      break;
+    }
+  }
+
+  // Try which command for amp
+  if (!paths.amp) {
+    try {
+      const { stdout } = await execAsync('which amp', {
+        env: { ...process.env, PATH: `${commonPaths.join(':')}:${process.env.PATH}` },
+      });
+      if (stdout.trim()) {
+        paths.amp = stdout.trim();
       }
     } catch {
       // Ignore
@@ -440,7 +463,7 @@ export function registerCLIPathsHandlers(deps: CLIPathsHandlerDependencies): voi
   // Get CLI paths from app settings
   ipcMain.handle('cliPaths:get', async () => {
     const settings = getAppSettings();
-    return settings.cliPaths || { claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [] };
+    return settings.cliPaths || { amp: '', claude: '', codex: '', gemini: '', grok: '', qwencode: '', opencode: '', pi: '', gws: '', gcloud: '', gh: '', node: '', minimax: '', additionalPaths: [] };
   });
 
   // Save CLI paths
@@ -494,6 +517,7 @@ export function getCLIPathsConfig(): CLIPaths & { fullPath: string } {
   }
 
   return {
+    amp: '',
     claude: '',
     codex: '',
     gemini: '',

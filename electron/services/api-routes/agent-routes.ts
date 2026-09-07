@@ -207,7 +207,7 @@ async function spawnAgentSession(
   const cliExtraPaths: string[] = [];
   const cliPaths = appSettings.cliPaths as unknown as Record<string, unknown> | undefined;
   if (cliPaths) {
-    for (const key of ['claude', 'codex', 'gemini', 'grok', 'qwencode', 'opencode', 'pi', 'gws', 'gh', 'node']) {
+    for (const key of ['amp', 'claude', 'codex', 'gemini', 'grok', 'qwencode', 'opencode', 'pi', 'gws', 'gh', 'node']) {
       if (typeof cliPaths[key] === 'string' && cliPaths[key]) {
         cliExtraPaths.push(path.dirname(cliPaths[key] as string));
       }

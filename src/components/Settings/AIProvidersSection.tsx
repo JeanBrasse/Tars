@@ -26,9 +26,31 @@ const CLI_BINARIES = [
   { name: 'Gemini', binary: 'gemini' },
   { name: 'Qwen Code', binary: 'qwen-code' },
   { name: 'OpenCode', binary: 'opencode' },
+  { name: 'Amp', binary: 'amp' },
   { name: 'Pi', binary: 'pi' },
   { name: 'MiniMax', binary: 'minimax' },
 ];
+
+/**
+ * The version to print for a CLI, out of whatever its `--version` says.
+ *
+ * `shell:version` hands back the raw output and that is the right contract for
+ * a generic handler, so the tidying belongs here. Both CLIs installed on the
+ * machine this was checked on append a parenthesised note to the version:
+ *
+ *   claude --version  ->  2.1.258 (Claude Code)
+ *   amp --version     ->  0.0.1788811227-gce258b (released 2026-09-07T20:00:27.000Z, 1h ago)
+ *
+ * Amp's note says how old the build is, so a column headed version was reading
+ * `1h ago`, and `2h ago` an hour later. Only a parenthesised group at the very
+ * end is dropped, and only if something is left: a subtractive rule cannot pick
+ * the wrong token out of an output nobody has seen, an annotation in the middle
+ * of a line is left alone, and a plain `0.5.0` comes back untouched.
+ */
+function displayVersion(raw: string): string {
+  const line = raw.trim().split('\n')[0].trim();
+  return line.replace(/\s*\([^()]*\)$/, '').trim() || line;
+}
 
 interface CLIProviderStatus {
   name: string;
@@ -108,7 +130,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
           try {
             const result = await window.electronAPI?.shell?.version(cli.binary);
             const version = result?.success && result.output && !result.output.includes('not found') && !result.output.includes('command not found')
-              ? result.output.trim().split('\n')[0]
+              ? displayVersion(result.output)
               : null;
             return { ...cli, version, loading: false };
           } catch {

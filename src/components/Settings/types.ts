@@ -31,6 +31,7 @@ export interface CLIPaths {
   grok: string;
   qwencode: string;
   opencode: string;
+  amp: string;
   pi: string;
   gws: string;
   gcloud: string;
