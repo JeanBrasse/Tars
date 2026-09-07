@@ -176,6 +176,7 @@ export const DEFAULT_APP_SETTINGS = {
   memoryHonchoEnabled: false,
   memoryHonchoMcpUrl: 'https://mcp.honcho.dev',
   memoryHonchoApiKey: '',
+  memoryHonchoWorkspaceId: '',
   favoriteProjects: [] as string[],
   hiddenProjects: [] as string[],
   cliPaths: {

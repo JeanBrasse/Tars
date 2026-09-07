@@ -128,6 +128,7 @@ export interface AppSettings {
   memoryHonchoEnabled?: boolean;
   memoryHonchoMcpUrl?: string;
   memoryHonchoApiKey?: string;
+  memoryHonchoWorkspaceId?: string;
   anthropicApiKey?: string;
   defaultClaudeModel?: string;
   favoriteProjects?: string[];
