@@ -168,6 +168,24 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
         onUrlChange={(url, persist) => write({ memoryHonchoMcpUrl: url }, persist)}
         onTokenChange={(token, persist) => write({ memoryHonchoApiKey: token }, persist)}
       />
+
+      {/* Honcho only, so it is a sibling row rather than a fourth row on
+          BackendRows: gbrain needs no workspace and should not grow a field
+          it would leave empty forever. */}
+      <SettingsRow
+        label="Workspace ID"
+        description="Honcho refuses any tool call that does not name a workspace, and none of its tools asks for one, so an agent cannot supply it by itself. Without this a valid API key connects and then does nothing at all. Copy it from your Honcho dashboard. Left empty, no workspace is sent and Tars behaves exactly as it did before."
+        control={
+          <Input
+            mono
+            width="control"
+            value={appSettings.memoryHonchoWorkspaceId || ''}
+            onChange={e => write({ memoryHonchoWorkspaceId: e.target.value }, false)}
+            onBlur={e => write({ memoryHonchoWorkspaceId: e.target.value.trim() }, true)}
+            placeholder="Sent as X-Honcho-Workspace-ID"
+          />
+        }
+      />
     </SettingsCard>
 
     <OverseerAutonomy />
