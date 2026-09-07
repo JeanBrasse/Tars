@@ -50,6 +50,33 @@ export function writeAtomicSync(filePath: string, contents: string, mode?: numbe
 }
 
 /**
+ * Describe a failure to read one of these files, without quoting the file.
+ *
+ * `console.error('...', err)` on a credential file logs the file back out.
+ * Node builds a JSON.parse message out of the input: corruption at the start
+ * of hermes-session.json produced `Unexpected token 'e', "es_session"... is
+ * not valid JSON`, which is a cookie name in a log that is not 0600 while the
+ * file is. The fragment is ten characters and usually harmless, but the rule
+ * that no secret reaches a log is only worth having if it holds when the leak
+ * is small.
+ *
+ * redactSecrets is the wrong tool: it matches secret SHAPES (sk-ant-, bearer,
+ * NAME=value), and an arbitrary ten-character slice of a file matches none of
+ * them, so it would pass `es_session` through and look like it had worked.
+ *
+ * What a reader needs is why the file was unusable, not what was in it: the
+ * parser rejected it, or the filesystem did and here is its code.
+ */
+export function describeSecretFileError(err: unknown): string {
+  if (err instanceof SyntaxError) return 'not valid JSON';
+  if (err && typeof err === 'object' && 'code' in err) {
+    return String((err as { code: unknown }).code);
+  }
+  if (err instanceof Error) return err.name;
+  return 'unknown error';
+}
+
+/**
  * Narrow an existing file to 0600 if it is wider. Called at startup for the
  * files that predate this helper.
  */

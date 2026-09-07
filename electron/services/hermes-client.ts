@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
 import { DATA_DIR } from '../constants';
-import { writeSecretFileSync } from '../utils/secret-file';
+import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * Minimal Hermes gateway client.
@@ -68,7 +68,9 @@ function loadJars(): void {
   } catch (err) {
     // A corrupt session file must not stop the app booting - the worst case is
     // one sign-in.
-    console.error('[hermes] could not restore the session jar:', err);
+    // The error itself is not logged: Node's JSON.parse message quotes the
+    // start of the file back, and this one is a jar of session cookies.
+    console.error(`[hermes] could not restore the session jar: ${describeSecretFileError(err)}`);
   }
 }
 
