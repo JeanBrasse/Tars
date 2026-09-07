@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
 import { DATA_DIR } from '../constants';
-import { writeSecretFileSync } from '../utils/secret-file';
+import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * Minimal Hermes gateway client.
@@ -51,14 +51,26 @@ function loadJars(): void {
     if (!fs.existsSync(SESSION_FILE)) return;
     const raw = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')) as Record<string, Record<string, string>>;
     for (const [baseUrl, cookies] of Object.entries(raw)) {
-      if (cookies && typeof cookies === 'object') {
-        cookieJars.set(baseUrl, new Map(Object.entries(cookies)));
+      if (!cookies || typeof cookies !== 'object') continue;
+      // Jars written before storeCookies could recognise a cleared cookie hold
+      // `""` entries, and prefixed names an insecure origin should never have
+      // kept. Restoring them would send revoked tokens back and go on reporting
+      // a session that died a week ago, so they do not survive the load. The
+      // cleaned jar reaches disk on the next write.
+      const jar = new Map<string, string>();
+      for (const [name, stored] of Object.entries(cookies)) {
+        if (!isSecureOrigin(baseUrl) && prefixedForSecureOriginOnly(name)) continue;
+        const value = cookieValue(String(stored));
+        if (value) jar.set(name, value);
       }
+      if (jar.size > 0) cookieJars.set(baseUrl, jar);
     }
   } catch (err) {
     // A corrupt session file must not stop the app booting - the worst case is
     // one sign-in.
-    console.error('[hermes] could not restore the session jar:', err);
+    // The error itself is not logged: Node's JSON.parse message quotes the
+    // start of the file back, and this one is a jar of session cookies.
+    console.error(`[hermes] could not restore the session jar: ${describeSecretFileError(err)}`);
   }
 }
 
@@ -88,16 +100,84 @@ function cookieHeader(baseUrl: string): string | undefined {
   return Array.from(jar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
+/**
+ * A cookie value with one RFC 6265 pair of surrounding quotes removed.
+ *
+ * cookie-value is `*cookie-octet / ( DQUOTE *cookie-octet DQUOTE )`, so a
+ * gateway clearing a cookie may write `name=""` rather than `name=`. That is
+ * two characters, not zero, and testing it for emptiness without unquoting
+ * calls it a real value. Nine of them sat in a jar for a week while every
+ * authenticated call came back 401, because Tars kept sending them back.
+ */
+function cookieValue(raw: string): string {
+  const trimmed = raw.trim();
+  return trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+}
+
+/**
+ * Whether a Set-Cookie's attributes say "delete this", rather than its value.
+ *
+ * An empty value is the common way; these are the other two, and they can
+ * carry any value at all, so a jar that only looks at the value keeps a dead
+ * cookie forever. Handled here rather than left out because it is the same
+ * failure with a different spelling, and the one that got us cost a week.
+ *
+ * Max-Age wins over Expires when both are present, per RFC 6265 section 5.3.
+ */
+function attributesClearCookie(attributes: string[]): boolean {
+  let expiresAt: number | undefined;
+  for (const attr of attributes) {
+    const eq = attr.indexOf('=');
+    if (eq < 0) continue;
+    const key = attr.slice(0, eq).trim().toLowerCase();
+    const value = attr.slice(eq + 1).trim();
+    if (key === 'max-age') {
+      const seconds = Number(value);
+      // A malformed Max-Age is ignored, as a browser would, and Expires below
+      // is then the only thing left to read.
+      if (Number.isFinite(seconds)) return seconds <= 0;
+    } else if (key === 'expires' && expiresAt === undefined) {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) expiresAt = parsed;
+    }
+  }
+  return expiresAt !== undefined && expiresAt <= Date.now();
+}
+
+/**
+ * Whether this cookie name only means anything over https.
+ *
+ * A browser refuses to store `__Secure-` unless the response came over https
+ * with the Secure attribute, and `__Host-` on top of that requires Path=/ and
+ * no Domain. Tars was keeping both over plain http and sending them back,
+ * which no browser would do: it turned three session cookies into nine, and
+ * made the jar three times harder to read at exactly the moment someone
+ * needed to read it. They are dropped on an insecure origin instead.
+ */
+function prefixedForSecureOriginOnly(name: string): boolean {
+  return name.startsWith('__Host-') || name.startsWith('__Secure-');
+}
+
+function isSecureOrigin(baseUrl: string): boolean {
+  return baseUrl.startsWith('https://');
+}
+
 function storeCookies(baseUrl: string, setCookies: string[]): void {
   const jar = jarFor(baseUrl);
+  const secure = isSecureOrigin(baseUrl);
   for (const raw of setCookies) {
-    const [pair] = raw.split(';');
+    const parts = raw.split(';');
+    const pair = parts[0];
     const idx = pair.indexOf('=');
     if (idx <= 0) continue;
     const name = pair.slice(0, idx).trim();
-    const value = pair.slice(idx + 1).trim();
-    // An expired/cleared cookie comes back empty: drop it from the jar.
-    if (!value) jar.delete(name);
+    if (!secure && prefixedForSecureOriginOnly(name)) continue;
+    const value = cookieValue(pair.slice(idx + 1));
+    // Cleared, by an empty value or by an attribute saying so: drop it from
+    // the jar rather than storing a token the gateway has already revoked.
+    if (!value || attributesClearCookie(parts.slice(1))) jar.delete(name);
     else jar.set(name, value);
   }
   persistJars();
@@ -108,10 +188,25 @@ export function clearHermesSession(baseUrl: string): void {
   persistJars();
 }
 
+/**
+ * Whether the jar holds a session cookie that still carries something.
+ *
+ * This read the NAMES and never the values, so a jar full of cookies the
+ * gateway had cleared answered yes: the Settings page said signed in, the
+ * Schedules page said Unauthorized, and both were reading the same jar. A
+ * cookie with no value is not a session.
+ *
+ * Values are unquoted on the way in now, so a bare length check is enough;
+ * cookieValue is applied anyway because this is the function everything else
+ * trusts, and it should not depend on who filled the jar.
+ */
 export function hasHermesSession(baseUrl: string): boolean {
   const jar = cookieJars.get(baseUrl);
   if (!jar) return false;
-  return Array.from(jar.keys()).some(k => k.includes('hermes_session'));
+  for (const [name, value] of jar) {
+    if (name.includes('hermes_session') && cookieValue(value).length > 0) return true;
+  }
+  return false;
 }
 
 export function hermesRequest(
@@ -165,6 +260,32 @@ export interface HermesStatus {
   error?: string;
 }
 
+/**
+ * Whether the credentials we hold are actually accepted, asked of the gateway.
+ *
+ * Reading the jar only tells us what we are holding, not whether it works, and
+ * those two answers were different for a week: the cookies were there and the
+ * gateway had revoked them. So this spends one request on the endpoint the
+ * Schedules page uses, which is the one that was answering Unauthorized while
+ * the Settings page said the connection was fine.
+ *
+ * A status other than 2xx/401/403 says nothing about the session (a gateway
+ * too old for this route answers 404, a broken one 500), so the jar is the
+ * fallback rather than a guess in either direction.
+ */
+async function verifyHermesSession(baseUrl: string, token?: string): Promise<boolean> {
+  // Nothing to present means not signed in, and no request worth making.
+  if (!hasHermesSession(baseUrl) && !token) return false;
+  try {
+    const { status } = await hermesRequest(baseUrl, '/api/cron/jobs?profile=all', { token });
+    if (status >= 200 && status < 300) return true;
+    if (status === 401 || status === 403) return false;
+    return hasHermesSession(baseUrl);
+  } catch {
+    return hasHermesSession(baseUrl);
+  }
+}
+
 export async function probeHermes(conn: HermesConnection): Promise<HermesStatus & { baseUrl: string }> {
   const baseUrl = resolveHermesBaseUrl(conn);
   if (!baseUrl) {
@@ -183,7 +304,9 @@ export async function probeHermes(conn: HermesConnection): Promise<HermesStatus 
       authRequired,
       authFlows: Array.isArray(info.auth_flows) ? info.auth_flows as string[] : [],
       authProviders: Array.isArray(info.auth_providers) ? info.auth_providers as string[] : [],
-      signedIn: !authRequired || hasHermesSession(baseUrl),
+      // Asked of the gateway rather than of the jar: holding a cookie and
+      // being accepted are different things, and this is where they parted.
+      signedIn: !authRequired || await verifyHermesSession(baseUrl, conn.token),
     };
   } catch (err) {
     return { baseUrl, reachable: false, authRequired: false, authFlows: [], authProviders: [], signedIn: false, error: err instanceof Error ? err.message : String(err) };

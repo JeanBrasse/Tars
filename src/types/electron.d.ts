@@ -1243,7 +1243,21 @@ export interface ElectronAPI {
       serveCommand: string;
     }>;
     testWebhook: (params: { agentName?: string; agentId?: string; projectPath?: string }) => Promise<{ success: boolean; status?: number; response?: unknown; error?: string }>;
-    testGateway: (url: string) => Promise<{ success: boolean; status?: number; error?: string }>;
+    /**
+     * Three states, not two: unreachable, reachable but not signed in, and
+     * signed in. `success` keeps its old meaning of "nothing more to do",
+     * so a caller reading only that stays correct; `needsSignIn` is what
+     * separates a gateway that answers from a session that works.
+     */
+    testGateway: (url: string) => Promise<{
+      success: boolean;
+      reachable: boolean;
+      signedIn: boolean;
+      needsSignIn?: boolean;
+      status?: number;
+      version?: string;
+      error?: string;
+    }>;
     mcpServers: () => Promise<
       | { success: true; servers: HermesMcpServer[] }
       | { success: false; error: string; needsSignIn?: boolean }

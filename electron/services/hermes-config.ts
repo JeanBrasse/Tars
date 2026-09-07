@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { defaultHermesConnection, type HermesConnection } from '../types/hermes';
-import { ensureSecretFileMode, writeSecretFileSync } from '../utils/secret-file';
+import { describeSecretFileError, ensureSecretFileMode, writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * The gateway connection, read from one place. The IPC handlers and the local
@@ -27,7 +27,9 @@ export function readHermesConnection(): HermesConnection {
       return { ...defaultHermesConnection(), ...JSON.parse(fs.readFileSync(HERMES_CONNECTION_FILE, 'utf-8')) };
     }
   } catch (err) {
-    console.error('[hermes] cannot read connection config:', err);
+    // Same reason as the session jar: this file holds `token`, and a parse
+    // error would quote its first characters into the log.
+    console.error(`[hermes] cannot read connection config: ${describeSecretFileError(err)}`);
   }
   return defaultHermesConnection();
 }
