@@ -796,6 +796,7 @@ export interface ElectronAPI {
       memoryHonchoEnabled?: boolean;
       memoryHonchoMcpUrl?: string;
       memoryHonchoApiKey?: string;
+      memoryHonchoWorkspaceId?: string;
       favoriteProjects?: string[];
       hiddenProjects?: string[];
       defaultProjectPath?: string;
@@ -862,6 +863,7 @@ export interface ElectronAPI {
       memoryHonchoEnabled?: boolean;
       memoryHonchoMcpUrl?: string;
       memoryHonchoApiKey?: string;
+      memoryHonchoWorkspaceId?: string;
       veniceEnabled?: boolean;
       veniceApiKey?: string;
       ollamaBaseUrl?: string;
