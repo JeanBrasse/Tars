@@ -92,6 +92,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:resize', params),
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) =>
       ipcRenderer.invoke('agent:setSecondaryProject', params),
+    /**
+     * The agent's real conversation, from the journal Claude Code writes.
+     * Oldest first. Page upwards by passing the previous answer's nextCursor
+     * as `before`. Answers available:false with a named reason for the CLIs
+     * that write no transcript, rather than an empty list.
+     */
+    transcript: (params: { agentId: string; before?: string; limit?: number }) =>
+      ipcRenderer.invoke('agent:transcript', params),
 
     // Event listeners
     onOutput: (callback: AgentEventCallback) => {
