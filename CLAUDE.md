@@ -160,8 +160,33 @@ Never the other way round. Do not "build it then draw it". If a surface is new, 
 | No em dashes | everywhere | `—` and `–` never appear in anything a user reads: interface copy, the changelog, the agent prompts Tars writes, the landing page, or the repo's own documents. Noah has asked for this twice. Rewrite the sentence rather than swapping in ` - ` every time. The one exception is the `next dev` block at the tail of this file, which is regenerated on every run |
 | Screenshots | `screenshots/` | If a surface changed. They come from `npx playwright test --update-snapshots`, which photographs the real app against a seeded sandbox, never hand-made or reused from an older UI |
 
+**Draw through the `pen` CLI, not the `pencil` MCP tools.** Measured on 2026-09-11: the
+MCP server is launched `--app desktop`, so it is bound to whatever document the Pen window
+happens to have open, and its `filePath` argument is accepted and then ignored. Passing
+`design/tars-redesign.pen` to it returned the 27 frames of an unrelated document that was
+open at the time. It is now a *required* parameter, so it looks honoured when it is not: a
+mutation sent that way writes your frames into somebody else's file.
+
+The CLI binds a session to a file instead, and saves without a human:
+
+```bash
+nvm use 22                       # the CLI needs >=22.19; under Node 18 it dumps its own
+                                 # minified source instead of failing cleanly
+pen interactive --in design/tars-redesign.pen --out design/tars-redesign.pen
+pen > execute({ input: 'Get((n,c)=>{c.skipChildren();Print(n.id,n.name)})' })
+pen > save()
+pen > exit()
+```
+
+Verified: that session reads the 72 Tars frames while the desktop app sits on another
+document, and `save()` writes the `.pen` to disk unattended. Installed with
+`npm install -g @pen.dev/cli` (`@pencil.dev/cli` is deprecated), authenticated per user in
+`~/.pencil/session-cli.json`, separate from the desktop app's session.
+
 Pencil traps that will cost you an afternoon:
-- `filePath` is ignored: every mutation lands in the app's **active** document. Call `get_app_state` first and guard on a known variable before writing
+- `save()` is explicit. An agent that forgets it loses the whole session's work with no error
+- The headless session is a **separate engine** from the desktop app. Never edit the same
+  `.pen` in both at once: the last one to save wins and the other's work is gone
 - Insert the whole tree in **one** `Insert` with nested `children`. Parent-then-child inserts read back fine and export black
 - Text needs `textGrowth: "fixed-width"` with a width; `width` alone wraps nothing
 - Helpers do not persist between `execute` calls. Re-inject the prelude every time
