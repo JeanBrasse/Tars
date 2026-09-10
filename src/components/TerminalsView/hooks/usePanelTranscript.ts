@@ -1,21 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AgentTranscript, TranscriptMessage, TranscriptUnavailableReason } from '@/types/electron';
-
-/**
- * The preload exposes this on `agent` (see electron/preload.ts), while the type
- * mirror in src/types/electron.d.ts declares it inside the `pty` block. Calling
- * `pty.transcript` would type-check and be undefined at runtime, so the method
- * is reached through this narrow shape until the declaration is moved. Delete
- * this and call `window.electronAPI.agent.transcript` directly once it is.
- */
-type TranscriptFn = (params: { agentId: string; before?: string; limit?: number }) => Promise<AgentTranscript>;
-
-function transcriptApi(): TranscriptFn | undefined {
-  const agent = window.electronAPI?.agent as unknown as { transcript?: TranscriptFn } | undefined;
-  return agent?.transcript;
-}
+import type { TranscriptMessage, TranscriptUnavailableReason } from '@/types/electron';
 
 export interface Unavailable {
   reason: TranscriptUnavailableReason;
@@ -57,7 +43,7 @@ export function usePanelTranscript(agentId: string, enabled: boolean): PanelTran
 
   useEffect(() => {
     if (!enabled) return;
-    const api = transcriptApi();
+    const api = window.electronAPI?.agent?.transcript;
     if (!api) {
       setError('The transcript reader is not available in this build.');
       return;
@@ -90,7 +76,7 @@ export function usePanelTranscript(agentId: string, enabled: boolean): PanelTran
   }, [agentId, enabled, readToken]);
 
   const loadOlder = useCallback(() => {
-    const api = transcriptApi();
+    const api = window.electronAPI?.agent?.transcript;
     const before = cursorRef.current;
     if (!api || !before || loadingOlder) return;
     setLoadingOlder(true);
