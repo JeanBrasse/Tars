@@ -1,9 +1,11 @@
 'use client';
 
-import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
 import TerminalPanelHeader from './TerminalPanelHeader';
+import type { PanelView } from './TerminalPanelHeader';
+import PanelHistory from './PanelHistory';
 
 interface TerminalPanelProps {
   agent: AgentStatus;
@@ -88,6 +90,10 @@ function TerminalPanel({
     };
   }, [agent.id]);
 
+  // Per panel, and not persisted: the live terminal is what a board is for, so
+  // a panel opens on it every time.
+  const [view, setView] = useState<PanelView>('live');
+
   const handleClick = useCallback(() => {
     onFocus(agent.id);
   }, [agent.id, onFocus]);
@@ -112,6 +118,8 @@ function TerminalPanel({
       {/* Header */}
       <TerminalPanelHeader
         agent={agent}
+        view={view}
+        onViewChange={setView}
         isFullscreen={isFullscreen}
         isBroadcasting={isBroadcasting}
         tabType={tabType}
@@ -124,11 +132,17 @@ function TerminalPanel({
         onContextMenu={handleContextMenu}
       />
 
-      {/* Terminal body */}
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 overflow-hidden relative bg-background"
-      />
+      {/* Terminal body.
+          History is drawn over the terminal, never instead of it: the xterm
+          stays mounted at full size, so switching views neither disposes it nor
+          resizes the pty. Three attempts at repairing the terminal itself were
+          reverted; this one leaves it alone. */}
+      <div className="flex-1 min-h-0 overflow-hidden relative bg-background">
+        <div ref={containerRef} className="absolute inset-0" />
+        {view === 'history' && (
+          <PanelHistory agentId={agent.id} agentName={agent.name || 'This agent'} />
+        )}
+      </div>
     </div>
   );
 }
