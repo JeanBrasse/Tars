@@ -12,7 +12,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 
 | Route | Name | Frame |
 |---|---|---|
-| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light |
+| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Dashboard · panel history, Panel history · states |
 | `/chat` | Chat (Hermes overseer) | Chat · Overseer |
 | `/agents` | Agents | Agents · dark |
 | `/kanban` | Kanban | Kanban · dark |
@@ -64,8 +64,28 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 - Add agent dropdown (dashboard)
 - Terminal context menu (right-click)
 - Global toolbar, terminal panel header menu, layout preset selector
+- Panel view switch (`live` / `history`), in the terminal panel header
 - Project tab bar (dashboard)
 - Toggle, StatusBadge/StatusDot, Field (label/input/select/textarea), Button
+
+## Panel history
+
+A terminal panel has two views, switched from a segmented control in its own
+header. `live` is the pty as it is: a full-screen CLI holds the alternate
+screen, so that view does not scroll and is not meant to. `history` reads the
+transcript Claude Code writes line by line and shows the conversation instead:
+one row per turn, a timestamp column, a role column, and tool calls dimmed to
+a single monospace line so they never read as an answer.
+
+| Frame | What it holds |
+|---|---|
+| Dashboard · panel history | The board with one panel switched to `history`, the other three live |
+| Panel history · states | Reading (skeleton in the real shape) and no transcript |
+
+The `history` control is present on every panel, including the CLIs that write
+no transcript. Pressing it there is what surfaces the reason: only the fifteen
+providers that run on the `claude` binary keep the file, so Codex, Gemini,
+Grok, OpenCode, Pi and Amp land on the empty state rather than a blank list.
 
 ## States every data surface must show
 
