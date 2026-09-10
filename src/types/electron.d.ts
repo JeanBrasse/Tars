@@ -565,11 +565,6 @@ export interface ElectronAPI {
     create: (params: { cwd?: string; cols?: number; rows?: number }) => Promise<{ id: string }>;
     write: (params: { id: string; data: string }) => Promise<{ success: boolean }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
-    /**
-     * The agent's real conversation, oldest first. Page upwards with the
-     * previous answer's nextCursor as `before`. Default 50 messages, 200 max.
-     */
-    transcript: (params: { agentId: string; before?: string; limit?: number }) => Promise<AgentTranscript>;
     kill: (params: { id: string }) => Promise<{ success: boolean }>;
     onData: (callback: (event: PtyDataEvent) => void) => () => void;
     onExit: (callback: (event: PtyExitEvent) => void) => () => void;
@@ -616,6 +611,11 @@ export interface ElectronAPI {
     remove: (id: string) => Promise<{ success: boolean }>;
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
+    /**
+     * The agent's real conversation, oldest first. Page upwards with the
+     * previous answer's nextCursor as `before`. Default 50 messages, 200 max.
+     */
+    transcript: (params: { agentId: string; before?: string; limit?: number }) => Promise<AgentTranscript>;
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;
     onOutput: (callback: (event: AgentEvent) => void) => () => void;
     onError: (callback: (event: AgentEvent) => void) => () => void;
