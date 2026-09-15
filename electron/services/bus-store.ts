@@ -29,10 +29,14 @@ import type {
  * (slashes and dots to dashes) is lossy and two projects can collide in it,
  * and an id that cannot be read back is not worth the shortening.
  *
- * What this file does NOT do, on purpose, is deliver anything. Recording that a
- * message is `queued` is not the same as writing it into a session: the queue
- * is agent-watch.ts, generalised in a later commit, and until then a delivery
- * row says exactly what has happened and nothing more.
+ * The global room is today's super chat and stays it: its messages are read
+ * from the overseer's own conversation through an injected reader, never
+ * copied into this journal. Two stores for one conversation would drift, and
+ * the overseer's behaviour does not change in v1.
+ *
+ * What this file does NOT do is deliver. Recording that a message is `queued`
+ * is not writing it into a session: the queue is agent-watch.ts, generalised
+ * separately, and a delivery row says exactly what has happened and no more.
  */
 
 const BUS_SCHEMA_VERSION = 1;
@@ -40,6 +44,23 @@ const BUS_SCHEMA_VERSION = 1;
 /** Bounds per anchor, from the contract: three rounds, ten agent messages. */
 export const MAX_ROUNDS = 3;
 export const MAX_AGENT_MESSAGES = 10;
+
+/**
+ * Silence is first class.
+ *
+ * An agent with nothing to add says so in one of these, and that is not a
+ * message: it is never stored, never shown, never delivered and never counted
+ * against the bounds. Recognised at publication so an agent cannot spend a
+ * thread's budget saying nothing. The list is Hermes's, which is where the
+ * mechanism is from.
+ */
+export const SILENCE_MARKERS = ['(pass)', '[SILENT]', 'SILENT', 'NO_REPLY', 'NO REPLY'];
+
+export function isSilence(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  return SILENCE_MARKERS.some(marker => trimmed.toUpperCase() === marker.toUpperCase());
+}
 
 export const GLOBAL_ROOM_ID = 'global';
 export const projectRoomId = (projectPath: string) => `project:${projectPath}`;
@@ -58,6 +79,20 @@ type BusFile = {
 
 let state: BusFile = emptyFile();
 let loaded = false;
+
+/**
+ * Where the global room's messages come from.
+ *
+ * Injected rather than imported, so this module stays a leaf: the overseer
+ * service imports the fleet and the journal would then import it back, which
+ * is a require cycle that types cannot see and that fails at runtime.
+ */
+type GlobalHistoryReader = () => BusMessage[];
+let readGlobalHistory: GlobalHistoryReader | undefined;
+
+export function setGlobalHistoryReader(reader: GlobalHistoryReader | undefined): void {
+  readGlobalHistory = reader;
+}
 
 function emptyFile(): BusFile {
   return {
@@ -148,6 +183,13 @@ export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?
   const room = getRoom(roomId);
   if (!room) return undefined;
 
+  // The global room is the super chat, read from where it already lives.
+  if (room.kind === 'global') {
+    const history = readGlobalHistory ? readGlobalHistory() : [];
+    const limit = Math.max(1, Math.min(opts?.limit ?? 200, 1000));
+    return { room, threads: [], messages: history.slice(-limit), deliveries: [] };
+  }
+
   let messages = state.messages.filter(m => m.roomId === roomId);
   if (opts?.before) {
     const cut = state.messages.find(m => m.id === opts.before)?.createdAt;
@@ -176,7 +218,7 @@ export function openThread(roomId: string, anchorMessageId: string): BusThread {
     roomId,
     anchorMessageId,
     state: 'open',
-    round: 0,
+    round: 1,
     agentMessageCount: 0,
     openedAt: new Date().toISOString(),
   };
@@ -192,6 +234,10 @@ export function getThread(threadId: string): BusThread | undefined {
   return state.threads.find(t => t.id === threadId);
 }
 
+export function messagesOfThread(threadId: string): BusMessage[] {
+  return state.messages.filter(m => m.threadId === threadId);
+}
+
 export function closeThread(threadId: string, next: BusThread['state']): BusThread | undefined {
   const thread = getThread(threadId);
   if (!thread || thread.state !== 'open') return thread;
@@ -201,7 +247,30 @@ export function closeThread(threadId: string, next: BusThread['state']): BusThre
 }
 
 /**
- * Add a message to a room.
+ * Who has already spoken in the round now in progress.
+ *
+ * Derived from the journal rather than stored on the thread: the contract
+ * fixes what a thread carries, and a round is a reading of the messages, not
+ * another field to keep in step with them. A round ends when an agent that has
+ * already spoken in it speaks again, which is the rotation: everyone gets one
+ * turn before anyone gets a second.
+ */
+function currentRound(threadId: string): { round: number; heard: Set<string> } {
+  let round = 1;
+  let heard = new Set<string>();
+  for (const message of messagesOfThread(threadId)) {
+    if (message.authorKind !== 'agent') continue;
+    if (heard.has(message.authorId)) {
+      round += 1;
+      heard = new Set<string>();
+    }
+    heard.add(message.authorId);
+  }
+  return { round, heard };
+}
+
+/**
+ * Add a human message to a room.
  *
  * A human message closes the anchor in flight and opens a new one, which is
  * the contract's rule: the turn already running finishes, and the discussion
@@ -247,13 +316,99 @@ export function appendMessage(input: {
 
   if (input.authorKind === 'agent') {
     thread.agentMessageCount += 1;
-    if (thread.agentMessageCount >= MAX_AGENT_MESSAGES || thread.round >= MAX_ROUNDS) {
+    const { round } = currentRound(thread.id);
+    thread.round = round;
+    if (thread.agentMessageCount >= MAX_AGENT_MESSAGES || round > MAX_ROUNDS) {
       thread.state = 'bounded';
     }
   }
 
   saveBus();
   return { message, thread, supersededThreadId };
+}
+
+export type PublishRefusal =
+  | 'silence'
+  | 'no_open_thread'
+  | 'thread_stopped'
+  | 'thread_bounded'
+  | 'thread_superseded'
+  | 'not_a_member'
+  | 'self_reply'
+  | 'not_your_turn';
+
+/**
+ * An agent publishes into a room, with every bound applied here.
+ *
+ * Server side on purpose: an agent that writes faster must not be able to get
+ * around the bounds, so the tool is a caller of this and never a second
+ * implementation of it. Refusals are returned with a reason rather than
+ * swallowed, because a message that quietly never appears is the silent
+ * failure this app has already had once.
+ */
+export function publishAgentMessage(input: {
+  roomId: string;
+  agentId: string;
+  text: string;
+  mentions?: string[];
+}): { published: true; message: BusMessage; thread: BusThread } | { published: false; reason: PublishRefusal; detail: string } {
+  loadBus();
+
+  if (isSilence(input.text)) {
+    return { published: false, reason: 'silence', detail: 'Nothing to add: not published, and not counted against the thread.' };
+  }
+
+  const room = getRoom(input.roomId);
+  if (!room) return { published: false, reason: 'no_open_thread', detail: 'That room does not exist.' };
+  if (!room.memberIds.includes(input.agentId)) {
+    return { published: false, reason: 'not_a_member', detail: 'Only the agents of this room can post in it.' };
+  }
+
+  const thread = openThreadOf(input.roomId);
+  if (!thread) {
+    return {
+      published: false,
+      reason: 'no_open_thread',
+      detail: 'No thread is open here. A thread opens on a human message, not on an agent one.',
+    };
+  }
+  if (thread.state === 'stopped') return { published: false, reason: 'thread_stopped', detail: 'This thread was stopped.' };
+  if (thread.state === 'bounded') {
+    return { published: false, reason: 'thread_bounded', detail: 'This thread reached its bounds. Only a human message reopens it.' };
+  }
+  if (thread.state === 'superseded') {
+    return { published: false, reason: 'thread_superseded', detail: 'A newer message replaced this thread.' };
+  }
+
+  const priors = messagesOfThread(thread.id);
+  const last = priors[priors.length - 1];
+  if (last && last.authorKind === 'agent' && last.authorId === input.agentId) {
+    return { published: false, reason: 'self_reply', detail: 'No replying to your own message.' };
+  }
+
+  const { round, heard } = currentRound(thread.id);
+  if (round > 1 || heard.size > 0) {
+    // After the first voice, a turn is earned by being named: only an agent
+    // another has mentioned, and that has not spoken in this round, speaks.
+    const mentionedByAnother = priors.some(m => m.authorId !== input.agentId && m.mentions.includes(input.agentId));
+    if (!mentionedByAnother) {
+      return { published: false, reason: 'not_your_turn', detail: 'After the first round, only an agent another one mentioned speaks.' };
+    }
+    if (heard.has(input.agentId)) {
+      return { published: false, reason: 'not_your_turn', detail: 'You have already spoken in this round.' };
+    }
+  }
+
+  const agent = agents.get(input.agentId);
+  const { message, thread: updated } = appendMessage({
+    roomId: input.roomId,
+    authorKind: 'agent',
+    authorId: input.agentId,
+    authorName: agent?.name || input.agentId,
+    text: input.text,
+    mentions: input.mentions,
+  });
+  return { published: true, message, thread: updated };
 }
 
 /* ── Deliveries ────────────────────────────────────────────────────────── */
@@ -285,6 +440,21 @@ export function deliveriesOf(messageId: string): BusDelivery[] {
   return state.deliveries.filter(d => d.messageId === messageId);
 }
 
+/** Mark every delivery still queued for a thread as dropped, with its reason:
+ *  what Stop means for messages that had not gone out yet. */
+export function cancelQueuedDeliveries(threadId: string, reason: string): BusDelivery[] {
+  const ids = new Set(messagesOfThread(threadId).map(m => m.id));
+  const cancelled: BusDelivery[] = [];
+  for (const delivery of state.deliveries) {
+    if (delivery.state !== 'queued' || !ids.has(delivery.messageId)) continue;
+    delivery.state = 'dropped';
+    delivery.reason = reason;
+    cancelled.push(delivery);
+  }
+  if (cancelled.length) saveBus();
+  return cancelled;
+}
+
 export function setMembers(
   roomId: string,
   memberIds: string[],
@@ -310,4 +480,5 @@ export function setMembers(
 export function resetBusStore(): void {
   state = emptyFile();
   loaded = false;
+  readGlobalHistory = undefined;
 }
