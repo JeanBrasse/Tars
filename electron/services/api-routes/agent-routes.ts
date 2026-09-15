@@ -18,6 +18,7 @@ import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
 import { withSessionTruth, sessionModel } from '../agent-truth';
+import { callerHeader, callerProject } from './utils';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -341,25 +342,8 @@ function projectAgent(agent: AgentStatus) {
   return { ...rest, outputChunks: output.length };
 }
 
-/** Project path of the calling agent, injected as a header by the MCP client
- *  from its PTY environment. Absent for the UI and other local callers.
- *
- *  Two names on purpose. The MCP client was renamed to send `X-Tars-Caller-*`
- *  while this reader still expected `x-dorothy-caller-project`; the bundles on
- *  disk predate the rename, so it worked by accident and would have broken the
- *  moment anyone rebuilt them - project scoping would have silently switched
- *  off, and every guarded route would 403. Accepting both is what makes the
- *  rename safe in either order. The old name can go once no shipped bundle
- *  sends it. */
-function callerHeader(req: RouteRequest, suffix: 'project' | 'id'): string | undefined {
-  const headers = req.raw?.headers;
-  const value = headers?.[`x-tars-caller-${suffix}`] ?? headers?.[`x-dorothy-caller-${suffix}`];
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function callerProject(req: RouteRequest): string | undefined {
-  return callerHeader(req, 'project');
-}
+// callerHeader and callerProject live in ./utils: the bus routes read the same
+// headers, and one copy of a header name is one thing to change.
 
 /**
  * Remember which agent asked for this work, so services/agent-watch.ts can

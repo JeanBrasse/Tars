@@ -1,24 +1,20 @@
 import { ipcMain } from 'electron';
-import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { getOverseerHistory } from '../services/overseer';
-import { queueBusMessage, setBusDeliveredHook } from '../services/agent-watch';
+import { setBusDeliveredHook } from '../services/agent-watch';
+import { broadcastPublication, closeAndAnnounce, fanOutDeliveries } from '../services/bus-delivery';
 import {
   appendMessage,
-  cancelQueuedDeliveries,
   closeThread,
   getRoomSnapshot,
-  getThread,
-  hasEndOfTurn,
   listRooms,
   loadBus,
   markDelivered,
-  recordDelivery,
   setGlobalHistoryReader,
   setMembers,
   GLOBAL_ROOM_ID,
 } from '../services/bus-store';
-import type { BusDelivery, BusMessage } from '../types';
+import type { BusMessage } from '../types';
 
 /**
  * The bus over IPC: five calls and three pushes, exactly the contract.
@@ -28,20 +24,15 @@ import type { BusDelivery, BusMessage } from '../types';
  * reaches the window. Nothing else is pushed, and there is no sixth call: a
  * room's deliveries come back with its snapshot.
  *
- * A delivery row is the only thing the interface may show as proof a message
- * went somewhere, so this is careful about what it writes into one. Nothing is
- * written into a session here: a target that can be reached is recorded
- * `queued` for the queue to drain, and one that cannot is recorded `not_sent`
- * with its reason, which is what the Chat page renders as NOT SENT. Nothing is
- * ever inferred from silence.
+ * What a message does once published is not decided here. That lives in
+ * bus-delivery, because an agent's room_post arrives over the API instead and
+ * has to do exactly the same thing: two copies of the fan-out would be two
+ * opinions about who got what, and a delivery row is the only thing the
+ * interface may show as proof.
  */
 export function registerBusHandlers(): void {
   loadBus();
 
-  // The global room is the super chat, and stays where it already lives: read
-  // from the overseer's own conversation, never copied into the bus journal.
-  // Injected here rather than imported by the store, which would close a
-  // require cycle the types cannot see.
   // A queued message that actually reached a terminal is the only thing that
   // turns a delivery into `delivered`, and the Chat page hears about it the
   // moment it happens rather than inferring it from silence.
@@ -50,6 +41,10 @@ export function registerBusHandlers(): void {
     if (delivered) broadcastToAllWindows('bus:delivery', delivered);
   });
 
+  // The global room is the super chat, and stays where it already lives: read
+  // from the overseer's own conversation, never copied into the bus journal.
+  // Injected here rather than imported by the store, which would close a
+  // require cycle the types cannot see.
   setGlobalHistoryReader(() => getOverseerHistory().map((m): BusMessage => ({
     id: m.id,
     roomId: GLOBAL_ROOM_ID,
@@ -104,54 +99,11 @@ export function registerBusHandlers(): void {
         mentions: params.mentions,
       });
 
-      // Who this message is for: the agents named in it, or every member of
-      // the room when it names nobody.
-      const targets = (message.mentions.length > 0 ? message.mentions : room.memberIds)
-        .filter(id => id !== message.authorId);
-
-      const deliveries: BusDelivery[] = [];
-      for (const targetAgentId of targets) {
-        const target = agents.get(targetAgentId);
-        if (!target) continue;
-        const reachable = hasEndOfTurn(target);
-        const queued = reachable && queueBusMessage(targetAgentId, {
-          messageId: message.id,
-          roomId: message.roomId,
-          threadId: message.threadId,
-          authorName: message.authorName,
-          text: message.text,
-        });
-        deliveries.push(recordDelivery({
-          messageId: message.id,
-          targetAgentId,
-          // Kept and shown rather than dropped: a provider with no end of turn
-          // cannot be written to at rest, so this waits for a human action
-          // instead of sitting in a queue that would never drain.
-          state: queued ? 'queued' : 'not_sent',
-          reason: queued
-            ? undefined
-            : reachable
-              ? 'no live session to deliver into yet'
-              : `${target.provider ?? 'this provider'} stays running until its process exits, so nothing can be delivered to it at rest`,
-          queuedAt: new Date().toISOString(),
-        }));
-      }
-
-      broadcastToAllWindows('bus:message', message);
-      broadcastToAllWindows('bus:thread', thread);
-      if (supersededThreadId) {
-        const superseded = getThread(supersededThreadId);
-        if (superseded) {
-          // The anchor this replaced takes its queued deliveries with it: a
-          // reply to a thread nobody is in any more is not worth waking an
-          // agent for.
-          for (const dropped of cancelQueuedDeliveries(superseded.id, 'a newer message replaced this thread')) {
-            broadcastToAllWindows('bus:delivery', dropped);
-          }
-          broadcastToAllWindows('bus:thread', superseded);
-        }
-      }
-      for (const delivery of deliveries) broadcastToAllWindows('bus:delivery', delivery);
+      const deliveries = fanOutDeliveries(message, room);
+      broadcastPublication(message, thread, deliveries);
+      // The anchor this replaced takes its queued deliveries with it: a reply
+      // to a thread nobody is in any more is not worth waking an agent for.
+      if (supersededThreadId) closeAndAnnounce(supersededThreadId, 'a newer message replaced this thread');
 
       return { success: true, messageId: message.id, threadId: thread.id, deliveries };
     } catch (err) {
@@ -165,10 +117,7 @@ export function registerBusHandlers(): void {
       const thread = closeThread(threadId, 'stopped');
       if (!thread) return { success: false, error: 'Thread not found' };
       // Stop is a barrier: what had not gone out does not go out.
-      for (const dropped of cancelQueuedDeliveries(thread.id, 'the thread was stopped')) {
-        broadcastToAllWindows('bus:delivery', dropped);
-      }
-      broadcastToAllWindows('bus:thread', thread);
+      closeAndAnnounce(thread.id, 'the thread was stopped');
       return { success: true, thread };
     } catch (err) {
       console.error('[bus] stopThread failed:', err);
@@ -183,12 +132,7 @@ export function registerBusHandlers(): void {
       // Changing the members closes the anchor in flight, and that close is a
       // thread change like any other: it goes out on bus:thread so the Chat
       // page never has to infer it from a room that looks different.
-      if (result.superseded) {
-        for (const dropped of cancelQueuedDeliveries(result.superseded.id, 'the room members changed')) {
-          broadcastToAllWindows('bus:delivery', dropped);
-        }
-        broadcastToAllWindows('bus:thread', result.superseded);
-      }
+      if (result.superseded) closeAndAnnounce(result.superseded.id, 'the room members changed');
       return { success: true, room: result.room };
     } catch (err) {
       console.error('[bus] setMembers failed:', err);
