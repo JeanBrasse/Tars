@@ -200,6 +200,30 @@ export function orchestratorToolFlags(orchestratorMode: boolean | undefined): st
 }
 
 /**
+ * The task, as the CLI's positional argument, after `--`.
+ *
+ * Several of claude's options are variadic (`--add-dir <directories...>`,
+ * `--mcp-config`, `--allowed-tools`, `--disallowed-tools`, `--betas`, `--file`),
+ * and one written just before the prompt takes the prompt as one more of its
+ * values. Tars ends its command line with `--add-dir ~/.dorothy`, so every task
+ * handed over as an argument was being read as a second directory: the CLI came
+ * up with no task at all, registered its session about a second later, and Tars
+ * marked the agent as working. Measured on claude 2.1.241 through 2.1.268, and
+ * on every spawn path here.
+ *
+ * `--` rather than `--add-dir=<path>`: it ends option parsing outright, so it
+ * also covers a task that begins with a dash and any variadic option added
+ * later, wherever it lands in the line.
+ *
+ * No task, no operand. The skills directive on its own is not a task, and an
+ * agent started without one should not spend a turn being told what it may use.
+ */
+export function promptOperand(prompt: string | undefined): string {
+  if (!prompt || !prompt.trim()) return '';
+  return ` -- '${prompt.replace(/'/g, "'\\''")}'`;
+}
+
+/**
  * Whether orchestrator mode is enforced for a binary, or only asked for.
  *
  * `--disallowed-tools` is Claude Code's flag. Fourteen providers run that
