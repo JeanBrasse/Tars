@@ -84,7 +84,8 @@ function expectAbsence(result: AgentTranscript, reason: string): void {
   if (result.available) return;
   expect(result.detail).toMatch(/^[A-Z][^\n]*\.$/);
   expect(result.detail).not.toContain(home);
-  expect(result.detail).not.toMatch(/\.claude|\.jsonl|[–—]/);
+  expect(result.detail).not.toMatch(/\.claude|\.jsonl/);
+  for (const dash of [0x2013, 0x2014]) expect(result.detail).not.toContain(String.fromCharCode(dash));
 }
 
 describe('the four named absences, as a panel receives them', () => {
