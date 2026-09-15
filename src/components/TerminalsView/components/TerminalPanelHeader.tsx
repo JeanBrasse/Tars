@@ -3,11 +3,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { GripVertical, ShieldOff, Bot, Shield, Gauge } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { StatusSquare } from '@/components/ui';
+import { SegmentedControl, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
+
+export type PanelView = 'live' | 'history';
+
+const VIEWS = [
+  { value: 'live' as const, label: 'live', title: 'The terminal as it is running' },
+  { value: 'history' as const, label: 'history', title: 'The conversation, read from the transcript' },
+];
 
 interface TerminalPanelHeaderProps {
   agent: AgentStatus;
+  view: PanelView;
+  onViewChange: (view: PanelView) => void;
   isFullscreen: boolean;
   isBroadcasting: boolean;
   tabType: 'custom' | 'project';
@@ -27,6 +36,8 @@ function statusTone(status: AgentStatus['status']): StatusTone {
 
 export default function TerminalPanelHeader({
   agent,
+  view,
+  onViewChange,
   isFullscreen,
   isBroadcasting,
   tabType,
@@ -143,6 +154,21 @@ export default function TerminalPanelHeader({
           {model}
         </span>
       )}
+
+      {/* Live or history. It is the panel's view switch, so it sits with the
+          panel's actions and uses the app's segmented control rather than a
+          third vocabulary. The control is offered on every panel, including the
+          CLIs that write no transcript: pressing it there is what surfaces the
+          reason, which is better than a switch that is silently missing. */}
+      <div onMouseDown={e => e.stopPropagation()}>
+        <SegmentedControl
+          options={VIEWS}
+          value={view}
+          onChange={onViewChange}
+          ariaLabel="Panel view"
+          className="mr-0.5"
+        />
+      </div>
 
       {/* Start / stop. The panel's primary action, so it is a button you can
           see and hit - not a row inside the overflow menu. A grid of terminals

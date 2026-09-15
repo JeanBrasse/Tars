@@ -506,6 +506,59 @@ export interface OverseerModelProvider {
   isCurrent: boolean;
 }
 
+/** One message of an agent's conversation, from Claude Code's own journal. */
+export interface TranscriptToolCall {
+  id: string;
+  name: string;
+  /** One short line naming what the tool was called on. */
+  summary: string;
+}
+
+export interface TranscriptMessage {
+  /** The record's uuid, and the cursor to page above it. */
+  id: string;
+  role: 'user' | 'assistant';
+  /** ISO 8601. */
+  timestamp: string;
+  /** What to show. Empty when the message carried only tool activity. */
+  text: string;
+  /** The text hit the 4000 character cap and was cut. */
+  truncated?: boolean;
+  model?: string;
+  toolCalls?: TranscriptToolCall[];
+  /** Present when this record is a tool's answer, not something a person said.
+   *  Nine user records in ten are this. */
+  toolResult?: { toolUseId: string; isError: boolean };
+  /** Assistant thinking, separate so it can be folded away. Expect it to be
+   *  absent: Claude Code writes these blocks with an empty body, all 1756 of
+   *  them measured here, so do not build a view that depends on it. */
+  thinking?: string;
+}
+
+export type TranscriptUnavailableReason =
+  | 'unsupported-provider'
+  | 'no-session'
+  | 'not-found'
+  | 'unreadable';
+
+export type AgentTranscript =
+  | {
+      available: false;
+      reason: TranscriptUnavailableReason;
+      /** A plain sentence, safe to show as is. */
+      detail: string;
+    }
+  | {
+      available: true;
+      sessionId: string;
+      /** Oldest first. */
+      messages: TranscriptMessage[];
+      /** Something older than messages[0] exists. */
+      hasMore: boolean;
+      /** Pass as `before` for the page above this one. */
+      nextCursor?: string;
+    };
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -558,6 +611,11 @@ export interface ElectronAPI {
     remove: (id: string) => Promise<{ success: boolean }>;
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
+    /**
+     * The agent's real conversation, oldest first. Page upwards with the
+     * previous answer's nextCursor as `before`. Default 50 messages, 200 max.
+     */
+    transcript: (params: { agentId: string; before?: string; limit?: number }) => Promise<AgentTranscript>;
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;
     onOutput: (callback: (event: AgentEvent) => void) => () => void;
     onError: (callback: (event: AgentEvent) => void) => () => void;

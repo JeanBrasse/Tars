@@ -98,6 +98,7 @@ import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
+import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch } from './services/overseer';
 import { startAgentWatch } from './services/agent-watch';
@@ -404,6 +405,7 @@ app.whenReady().then(async () => {
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
+  registerTranscriptHandlers();
   registerOverseerHandlers();
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
