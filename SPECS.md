@@ -678,7 +678,7 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 
 ## §13 Known limitations
 
-- **Delivery over the PTY is fire-and-forget.** `/dispatch` returns when bytes are written. Only `/run-task` returns a receipt.
+- **Delivery over the PTY is confirmed for a spawn, fire-and-forget for a message.** A spawn carries its task until a turn actually starts: if none has begun fifteen seconds after the session registers, `armTaskStartWatch` types the task into the live session once, and marks the agent failed if that does not start one either. `/dispatch` into a session that is already running still returns when the bytes are written, and only `/run-task` returns a receipt.
 - **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path.
 - **The `/run-task` status event name does not match what `/wait` listens on.** `emit('status', …)` vs `` `status:${agentId}` ``.
 - **The caller-identity header name has drifted between the MCP source and the server.** Shipped bundles still send the old name and work; rebuilding the MCP servers disables project scoping and 403s every guarded route until one side is renamed.

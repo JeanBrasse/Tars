@@ -488,7 +488,7 @@ export async function handleSlackCommand(
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       saveAgents();
       // Started from Slack, and just as able to come up with no task.
-      armTaskStartWatch(agent, agent.ptyId);
+      armTaskStartWatch(agent, agent.ptyId, task);
 
       const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
       await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);

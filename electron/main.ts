@@ -606,7 +606,7 @@ app.whenReady().then(async () => {
       agent.currentTask = prompt.slice(0, 100);
       agent.lastActivity = new Date().toISOString();
       // Started by the Kanban automation, which carries a task like any other.
-      armTaskStartWatch(agent, agent.ptyId);
+      armTaskStartWatch(agent, agent.ptyId, finalPrompt);
 
       const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
       const fullCommand = `cd '${workingPath}' && ${command}`;
