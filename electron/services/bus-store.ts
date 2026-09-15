@@ -440,6 +440,19 @@ export function deliveriesOf(messageId: string): BusDelivery[] {
   return state.deliveries.filter(d => d.messageId === messageId);
 }
 
+/** A queued message actually reached a terminal. The only place a delivery
+ *  becomes `delivered`, so the interface can never show that on a guess. */
+export function markDelivered(targetAgentId: string, messageId: string): BusDelivery | undefined {
+  const delivery = state.deliveries.find(
+    d => d.messageId === messageId && d.targetAgentId === targetAgentId && d.state === 'queued',
+  );
+  if (!delivery) return undefined;
+  delivery.state = 'delivered';
+  delivery.deliveredAt = new Date().toISOString();
+  saveBus();
+  return delivery;
+}
+
 /** Mark every delivery still queued for a thread as dropped, with its reason:
  *  what Stop means for messages that had not gone out yet. */
 export function cancelQueuedDeliveries(threadId: string, reason: string): BusDelivery[] {

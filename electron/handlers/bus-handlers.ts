@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { getOverseerHistory } from '../services/overseer';
+import { queueBusMessage, setBusDeliveredHook } from '../services/agent-watch';
 import {
   appendMessage,
   cancelQueuedDeliveries,
@@ -11,6 +12,7 @@ import {
   hasEndOfTurn,
   listRooms,
   loadBus,
+  markDelivered,
   recordDelivery,
   setGlobalHistoryReader,
   setMembers,
@@ -40,6 +42,14 @@ export function registerBusHandlers(): void {
   // from the overseer's own conversation, never copied into the bus journal.
   // Injected here rather than imported by the store, which would close a
   // require cycle the types cannot see.
+  // A queued message that actually reached a terminal is the only thing that
+  // turns a delivery into `delivered`, and the Chat page hears about it the
+  // moment it happens rather than inferring it from silence.
+  setBusDeliveredHook((targetAgentId, messageId) => {
+    const delivered = markDelivered(targetAgentId, messageId);
+    if (delivered) broadcastToAllWindows('bus:delivery', delivered);
+  });
+
   setGlobalHistoryReader(() => getOverseerHistory().map((m): BusMessage => ({
     id: m.id,
     roomId: GLOBAL_ROOM_ID,
@@ -104,16 +114,25 @@ export function registerBusHandlers(): void {
         const target = agents.get(targetAgentId);
         if (!target) continue;
         const reachable = hasEndOfTurn(target);
+        const queued = reachable && queueBusMessage(targetAgentId, {
+          messageId: message.id,
+          roomId: message.roomId,
+          threadId: message.threadId,
+          authorName: message.authorName,
+          text: message.text,
+        });
         deliveries.push(recordDelivery({
           messageId: message.id,
           targetAgentId,
           // Kept and shown rather than dropped: a provider with no end of turn
           // cannot be written to at rest, so this waits for a human action
           // instead of sitting in a queue that would never drain.
-          state: reachable ? 'queued' : 'not_sent',
-          reason: reachable
+          state: queued ? 'queued' : 'not_sent',
+          reason: queued
             ? undefined
-            : `${target.provider ?? 'this provider'} stays running until its process exits, so nothing can be delivered to it at rest`,
+            : reachable
+              ? 'no live session to deliver into yet'
+              : `${target.provider ?? 'this provider'} stays running until its process exits, so nothing can be delivered to it at rest`,
           queuedAt: new Date().toISOString(),
         }));
       }
