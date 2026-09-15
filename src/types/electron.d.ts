@@ -559,6 +559,72 @@ export type AgentTranscript =
       nextCursor?: string;
     };
 
+/* ── The agent bus ─────────────────────────────────────────────────────────
+ * Mirror of electron/types/index.ts. The Chat page reads these and never
+ * invents a channel: both sides move in the same commit.
+ */
+export type BusRoomKind = 'global' | 'project';
+
+export interface BusRoom {
+  /** `global`, or `project:<project path>`. */
+  id: string;
+  kind: BusRoomKind;
+  projectPath?: string;
+  title: string;
+  memberIds: string[];
+  createdAt: string;
+}
+
+/** `open` is live; `bounded` hit three rounds or ten agent messages and only a
+ *  human message reopens it; `stopped` was stopped by hand; `superseded` was
+ *  closed by a newer human message or by a change of members. */
+export type BusThreadState = 'open' | 'bounded' | 'stopped' | 'superseded';
+
+export interface BusThread {
+  id: string;
+  roomId: string;
+  anchorMessageId: string;
+  state: BusThreadState;
+  round: number;
+  agentMessageCount: number;
+  openedAt: string;
+}
+
+export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
+
+export interface BusMessage {
+  id: string;
+  roomId: string;
+  threadId: string;
+  authorKind: BusMessageAuthorKind;
+  authorId: string;
+  authorName: string;
+  text: string;
+  mentions: string[];
+  createdAt: string;
+}
+
+/** `not_sent` is the state to render as NOT SENT: the target has no end of
+ *  turn, so nothing is queued and nothing leaves on its own. It carries its
+ *  reason and moves only on an explicit human action. */
+export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
+
+export interface BusDelivery {
+  messageId: string;
+  targetAgentId: string;
+  state: BusDeliveryState;
+  reason?: string;
+  queuedAt: string;
+  deliveredAt?: string;
+}
+
+export interface BusRoomSnapshot {
+  room: BusRoom;
+  threads: BusThread[];
+  messages: BusMessage[];
+  deliveries: BusDelivery[];
+}
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -1192,6 +1258,38 @@ export interface ElectronAPI {
   };
 
   // Kanban board
+  /** The agent bus. Mirror of the `bus` namespace in electron/preload.ts:
+   *  five calls, and three pushes so the Chat page never polls. */
+  bus?: {
+    listRooms: () => Promise<{ rooms: BusRoom[]; error?: string }>;
+    getRoom: (
+      roomId: string,
+      params?: { limit?: number; before?: string },
+    ) => Promise<{
+      success: boolean;
+      room?: BusRoom;
+      threads?: BusThread[];
+      messages?: BusMessage[];
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
+    postMessage: (params: { roomId: string; text: string; mentions?: string[] }) => Promise<{
+      success: boolean;
+      messageId?: string;
+      threadId?: string;
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
+    stopThread: (threadId: string) => Promise<{ success: boolean; thread?: BusThread; error?: string }>;
+    setMembers: (
+      roomId: string,
+      memberIds: string[],
+    ) => Promise<{ success: boolean; room?: BusRoom; error?: string }>;
+    onMessage: (callback: (message: BusMessage) => void) => () => void;
+    onDelivery: (callback: (delivery: BusDelivery) => void) => () => void;
+    onThread: (callback: (thread: BusThread) => void) => () => void;
+  };
+
   kanban?: {
     list: () => Promise<{ tasks: KanbanTaskElectron[]; error?: string }>;
     get: (id: string) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;

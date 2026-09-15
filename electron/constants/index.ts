@@ -48,6 +48,9 @@ export const TELEGRAM_DOWNLOADS_DIR = path.join(DATA_DIR, 'telegram-downloads');
 export const VAULT_DIR = path.join(DATA_DIR, 'vault');
 export const VAULT_DB_FILE = path.join(DATA_DIR, 'vault.db');
 export const API_TOKEN_FILE = path.join(DATA_DIR, 'api-token');
+/** The agent bus journal: rooms, threads, messages and deliveries. One file,
+ *  written the way agents.json is (temp file then rename), no new service. */
+export const BUS_FILE = path.join(DATA_DIR, 'bus.json');
 
 // Updates come from the fork. Pointing this at the upstream repo offered an
 // upstream build as an update to a fork install, which would overwrite it.

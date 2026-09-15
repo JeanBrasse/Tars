@@ -288,3 +288,92 @@ export interface AppSettings {
   /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
   providerBudgets?: Record<string, number>;
 }
+
+/* ── The agent bus ─────────────────────────────────────────────────────────
+ * The shared contract, read by the Backend that implements it, the Frontend
+ * that builds the Chat page on it and the QA that tests it. A room holds
+ * threads, a thread anchors messages, and a delivery is the only thing the
+ * interface may show as proof that a message reached an agent.
+ */
+
+/** `global` is today's super chat, watching every project; `project` is one
+ *  room per project, whose members are that project's agents. */
+export type BusRoomKind = 'global' | 'project';
+
+export interface BusRoom {
+  /** `global`, or `project:<project path>`. */
+  id: string;
+  kind: BusRoomKind;
+  projectPath?: string;
+  title: string;
+  memberIds: string[];
+  createdAt: string;
+}
+
+/**
+ * A thread is the anchor, and the bounds are per anchor.
+ *
+ * `open` is live, `bounded` hit three rounds or ten agent messages and only a
+ * human message reopens it, `stopped` was stopped by hand, and `superseded`
+ * was closed by a newer human message or by a change of members. Late replies
+ * to anything but `open` are dropped with that reason.
+ */
+export type BusThreadState = 'open' | 'bounded' | 'stopped' | 'superseded';
+
+export interface BusThread {
+  id: string;
+  roomId: string;
+  anchorMessageId: string;
+  state: BusThreadState;
+  round: number;
+  agentMessageCount: number;
+  openedAt: string;
+}
+
+export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
+
+export interface BusMessage {
+  id: string;
+  roomId: string;
+  threadId: string;
+  authorKind: BusMessageAuthorKind;
+  /** Agent id, or `human` for Noah. */
+  authorId: string;
+  authorName: string;
+  text: string;
+  /** Agent ids named in the text: after the first round, only a mentioned
+   *  agent that has not spoken since gets a turn. */
+  mentions: string[];
+  createdAt: string;
+}
+
+/**
+ * Where a message got to, per target.
+ *
+ * `queued` waits for the target to leave `running`, `delivered` was written
+ * into its session, `dropped` will never be sent and says why. `not_sent` is
+ * the fourth state and the one that needs saying: amp, codex, grok, opencode
+ * and pi never leave `running` in an interactive session, so nothing can be
+ * delivered to them at rest. A message aimed at one of those is neither queued
+ * nor delivered on its own: it is kept, shown as NOT SENT with its reason, and
+ * moves only on an explicit human action. Never inferred from silence, which
+ * is idleness detection and deliberately out of v1.
+ */
+export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
+
+export interface BusDelivery {
+  messageId: string;
+  targetAgentId: string;
+  state: BusDeliveryState;
+  reason?: string;
+  queuedAt: string;
+  deliveredAt?: string;
+}
+
+/** What `bus:getRoom` answers: the room and its journal, newest last. */
+export interface BusRoomSnapshot {
+  room: BusRoom;
+  threads: BusThread[];
+  messages: BusMessage[];
+  deliveries: BusDelivery[];
+}

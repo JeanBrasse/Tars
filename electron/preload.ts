@@ -740,6 +740,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
     quit: () => ipcRenderer.invoke('tray:quit'),
   },
 
+  // The agent bus: rooms, threads, messages and deliveries. The channels and
+  // their types are written here and mirrored in src/types/electron.d.ts, in
+  // the same commit, because the renderer consumes them and never invents one.
+  bus: {
+    listRooms: () =>
+      ipcRenderer.invoke('bus:listRooms'),
+    getRoom: (roomId: string, params?: { limit?: number; before?: string }) =>
+      ipcRenderer.invoke('bus:getRoom', roomId, params),
+    postMessage: (params: { roomId: string; text: string; mentions?: string[] }) =>
+      ipcRenderer.invoke('bus:postMessage', params),
+    stopThread: (threadId: string) =>
+      ipcRenderer.invoke('bus:stopThread', threadId),
+    setMembers: (roomId: string, memberIds: string[]) =>
+      ipcRenderer.invoke('bus:setMembers', roomId, memberIds),
+
+    // Pushed from the main process, so the Chat page never polls.
+    onMessage: (callback: (message: unknown) => void) => {
+      const listener = (_: unknown, message: unknown) => callback(message);
+      ipcRenderer.on('bus:message', listener);
+      return () => ipcRenderer.removeListener('bus:message', listener);
+    },
+    onDelivery: (callback: (delivery: unknown) => void) => {
+      const listener = (_: unknown, delivery: unknown) => callback(delivery);
+      ipcRenderer.on('bus:delivery', listener);
+      return () => ipcRenderer.removeListener('bus:delivery', listener);
+    },
+    onThread: (callback: (thread: unknown) => void) => {
+      const listener = (_: unknown, thread: unknown) => callback(thread);
+      ipcRenderer.on('bus:thread', listener);
+      return () => ipcRenderer.removeListener('bus:thread', listener);
+    },
+  },
+
   // Platform info
   platform: process.platform,
 });
