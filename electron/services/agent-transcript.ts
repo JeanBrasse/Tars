@@ -319,7 +319,11 @@ export async function readAgentTranscript(params: {
     return { available: false, reason: 'no-session', detail: 'This agent has no usable session id.' };
   }
 
-  const limit = Math.min(Math.max(1, Math.trunc(params.limit ?? DEFAULT_PAGE)), MAX_PAGE);
+  // NaN is no request at all: `??` lets it through, trunc, max and min all
+  // return it unchanged, and `ring.length > NaN` is never true, so it used to
+  // hand back the whole transcript as one page. Infinity is left alone on
+  // purpose and still clamps to MAX_PAGE, which the page-cap test pins.
+  const limit = Math.min(Math.max(1, Math.trunc(Number.isNaN(params.limit) ? DEFAULT_PAGE : (params.limit ?? DEFAULT_PAGE))), MAX_PAGE);
   const root = path.join(homeDir, '.claude', 'projects');
 
   // An agent with a worktree ran there, so that is where its transcript was
