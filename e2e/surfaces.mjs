@@ -10,6 +10,8 @@
  * @property {string=} clickText   texte d'un bouton à cliquer après chargement (ouvre un overlay)
  * @property {string=} clickText2  second clic (navigation dans l'overlay)
  * @property {number=} settle      ms d'attente avant screenshot (défaut 900)
+ * @property {string=} within      nom d'un panneau : clickText est cherché dans son en-tête
+ * @property {string=} shows       texte que la vue doit afficher avant la capture
  */
 
 /** @type {Surface[]} */
@@ -84,3 +86,25 @@ export const OVERLAYS = [
 ];
 
 export const ALL = [...PAGES, ...SETTINGS_SECTIONS, ...OVERLAYS];
+
+// Panel history: two states of a Dashboard panel, reached through that panel's
+// own live | history switch. The inventory's "Dashboard · panel history" and
+// the no-transcript half of "Panel history · states". The skeleton half is a
+// state that lasts as long as one small IPC read, so it is not photographed.
+//
+// Deliberately not in ALL. e2e/panel-history.spec.ts drives them in a sandbox
+// of its own: the sweep above leaves auto start on, so every agent on the
+// board is a real CLI, and what a claude panel's history shows would depend on
+// how fast that CLI registers its session. There nothing starts, the
+// Orchestrator reads a transcript seeded on disk, and the Backend Engineer
+// runs codex, which writes none.
+export const PANEL_HISTORY = [
+  {
+    name: 'dashboard-panel-history', route: '/', clickText: 'history', within: 'Orchestrator',
+    shows: 'Ship it, with the test that caught it.',
+  },
+  {
+    name: 'panel-history-no-transcript', route: '/', clickText: 'history', within: 'Backend Engineer',
+    shows: 'Codex CLI does not write a transcript Tars can read.',
+  },
+];
