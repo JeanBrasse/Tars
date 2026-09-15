@@ -119,6 +119,21 @@ describe('the four named absences, as a panel receives them', () => {
 });
 
 describe('which agents get read', () => {
+  it('an agent restarted since its last session is read through resumableSessionId, the one id a restart keeps', async () => {
+    // loadAgents clears currentSessionId on every app start and keeps
+    // resumableSessionId, so right after a restart this is every agent.
+    const sessionId = randomUUID();
+    writeTranscript(sessionId, 'Pick the migration up where it stopped.');
+
+    const result = await transcript(addAgent({ resumableSessionId: sessionId }));
+
+    expect(result).toMatchObject({
+      available: true,
+      sessionId,
+      messages: [{ role: 'user', text: 'Pick the migration up where it stopped.' }],
+    });
+  });
+
   it('a provider that runs the claude binary is read like Claude Code itself', async () => {
     const sessionId = randomUUID();
     writeTranscript(sessionId, 'Rename the invoices table.');

@@ -264,6 +264,16 @@ describe('ceilings', () => {
     expect(page.hasMore).toBe(true);
   });
 
+  it('a limit that is not a number asks for nothing in particular: the default 50, never the whole transcript', async () => {
+    const { records, ids } = conversation(250);
+    writeTranscript(records);
+
+    const page = await readPage({ limit: NaN });
+
+    expect(idsOf(page)).toEqual(ids.slice(200));
+    expect(page.hasMore).toBe(true);
+  });
+
   it('a typed message longer than 4000 characters is cut there, and says so', async () => {
     const long = `Here is the whole log:\n${'x'.repeat(10_000)}`;
     writeTranscript([typed(long)]);
