@@ -766,7 +766,7 @@ export function initTelegramBot() {
         writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
         saveAgents();
         // Started from a phone, and just as able to come up with no task.
-        armTaskStartWatch(agent, agent.ptyId);
+        armTaskStartWatch(agent, agent.ptyId, task);
 
         const emoji = isSuperAgent(agent) ? '👑' : (TG_CHARACTER_FACES[agent.character || ''] || '🤖');
         telegramBot?.sendMessage(msg.chat.id,
@@ -1312,7 +1312,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
       saveAgents();
       // A cold start of the super agent carries a task like any other start.
-      armTaskStartWatch(superAgent, superAgent.ptyId);
+      armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
 
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
     } else {

@@ -782,6 +782,10 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   later status post from that session. It then fetches `/api/agents/$CLAUDE_AGENT_ID/bootstrap`
   (identity + team roster) and `/api/memory/context`, and injects both as
   `hookSpecificOutput.additionalContext`.
+- `user-prompt-submit.sh`: POSTs `{agent_id, session_id, status: running, event:
+  UserPromptSubmit, current_task}`. `event` is what tells the server a turn actually began:
+  `status: running` on its own cannot, because `post-tool-use.sh` sends that too and a dispatch
+  has already set it at spawn. It is what clears the pending delivery in `armTaskStartWatch`.
 - `post-tool-use.sh`: marks the agent `running` and POSTs the observation to
   `/api/memory/remember`.
 - `on-stop.sh`: extracts the last assistant message (from `last_assistant_message`, or by

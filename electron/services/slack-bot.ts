@@ -9,7 +9,6 @@ import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { app } from 'electron';
-import * as os from 'os';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -459,27 +458,29 @@ export async function handleSlackCommand(
       }
 
       const slackAgentProvider = getProvider(agent.provider);
-      const slackBinaryPath = slackAgentProvider.resolveBinaryPath(appSettings).replace(/'/g, "'\\''");
-      let command = `'${slackBinaryPath}'`;
-      if (agent.permissionMode === 'auto' || agent.permissionMode === 'bypass' || (!agent.permissionMode && agent.skipPermissions)) command += ' --dangerously-skip-permissions';
+      let mcpConfigPath: string | undefined;
       if (slackAgentProvider.getMcpConfigStrategy() === 'flag') {
-        const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
-        if (fs.existsSync(mcpConfigPath)) command += ` --mcp-config '${mcpConfigPath}'`;
+        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        if (fs.existsSync(possibleMcpPath)) mcpConfigPath = possibleMcpPath;
       }
-      if (agent.secondaryProjectPath) {
-        command += ` --add-dir '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
-      }
-      command += ` --add-dir '${os.homedir()}/.dorothy'`;
-      // BUG 5: orchestrator-mode agents cannot edit files: must delegate.
-      if (isSuperAgent(agent) || agent.orchestratorMode) {
-        command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
-      }
-      if (agent.skills && agent.skills.length > 0 && !isSuperAgent(agent)) {
-        const slackSkillsList = agent.skills.join(', ');
-        command += ` '[IMPORTANT: Use these skills for this session: ${slackSkillsList}. Invoke them with /<skill-name> when relevant to the task.] ${task.replace(/'/g, "'\\''")}'`;
-      } else {
-        command += ` '${task.replace(/'/g, "'\\''")}'`;
-      }
+      // Through the provider builder, like Telegram. Its own copy of the command
+      // put the task straight after `--add-dir`, where claude's variadic option
+      // read it as one more directory and the session came up with no task; the
+      // copy had also drifted, missing `Task` from the orchestrator restrictions
+      // and hardcoding ~/.dorothy instead of DATA_DIR.
+      const command = slackAgentProvider.buildInteractiveCommand({
+        binaryPath: slackAgentProvider.resolveBinaryPath(appSettings),
+        prompt: task,
+        model: agent.model,
+        permissionMode: agent.permissionMode ?? (agent.skipPermissions ? 'bypass' : 'normal'),
+        effort: agent.effort,
+        secondaryProjectPath: agent.secondaryProjectPath,
+        obsidianVaultPaths: agent.obsidianVaultPaths,
+        mcpConfigPath,
+        skills: [...new Set(agent.skills || [])],
+        isSuperAgent: isSuperAgent(agent),
+        orchestratorMode: isSuperAgent(agent) || agent.orchestratorMode,
+      });
 
       agent.status = 'running';
       agent.currentTask = task.slice(0, 100);
@@ -487,7 +488,7 @@ export async function handleSlackCommand(
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       saveAgents();
       // Started from Slack, and just as able to come up with no task.
-      armTaskStartWatch(agent, agent.ptyId);
+      armTaskStartWatch(agent, agent.ptyId, task);
 
       const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
       await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);

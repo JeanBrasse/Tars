@@ -749,7 +749,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     agent.lastActivity = new Date().toISOString();
     // Started from the Agents page, which never touches the API and so was
     // the one path with no check on whether the task actually landed.
-    armTaskStartWatch(agent, agent.ptyId);
+    armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
     broadcastToAllWindows('agent:status', {
       type: 'status',
       agentId: id,
