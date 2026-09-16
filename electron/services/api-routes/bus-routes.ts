@@ -65,7 +65,11 @@ function resolveRoom(
     return undefined;
   }
   if (room.kind === 'global') {
-    sendJson({ error: 'The global room is the super chat and is not open to room_post.' }, 403);
+    // Not a room of the bus at all. Its snapshot is not a bus journal: the
+    // handlers wire it to getOverseerHistory(), which is Noah's own
+    // conversation with the super chat. An agent has no business reading it
+    // and cannot post to it, so neither door opens.
+    sendJson({ error: 'The global room is the super chat, and is not open to agents.' }, 403);
     return undefined;
   }
   return room.id;
@@ -125,17 +129,15 @@ export function registerBusRoutes(app: RouteApp): void {
     const caller = callingAgent(req, sendJson);
     if (!caller) return;
 
-    const asked = req.url.searchParams.get('room') ?? undefined;
-    const roomId = asked && asked.trim() ? asked.trim() : projectRoomId(caller.projectPath);
-    const room = listRooms().find(r => r.id === roomId);
-    if (!room) {
-      sendJson({ error: `No room "${roomId}".` }, 404);
-      return;
-    }
-    if (room.kind === 'project' && room.projectPath !== caller.projectPath) {
-      sendJson({ error: `That room belongs to ${room.projectPath}.` }, 403);
-      return;
-    }
+    // The same resolver as the write door, rather than a second copy of its
+    // rules. The copy that used to live here asked only whether a *project*
+    // room belonged to the caller, so `global`, which is not a project room,
+    // fell through every check: any agent could read Noah's private
+    // conversation with the super chat, up to a thousand messages, under its
+    // own legitimate identity. Two copies of one rule is how one of them
+    // drifts; there is one now.
+    const roomId = resolveRoom(caller, req.url.searchParams.get('room') ?? undefined, sendJson);
+    if (!roomId) return;
 
     const limitParam = Number(req.url.searchParams.get('limit'));
     const snapshot = getRoomSnapshot(roomId, {
