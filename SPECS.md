@@ -23,7 +23,7 @@ Electron main process (electron/, ~23k LOC)
 │
 ├── Local HTTP API  127.0.0.1:31415  (electron/services/api-server.ts)
 │     ├── Bearer ~/.dorothy/api-token  (exempt: /api/health, /api/hooks/*,
-│     │                                 /api/local-file, /api/kanban/complete)
+│     │                                 /api/local-file)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
@@ -642,7 +642,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
 | Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600` |
-| Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, `/api/kanban/complete`, all called by shell hooks that send no `Origin` |
+| Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |

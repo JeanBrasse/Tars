@@ -169,7 +169,7 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/status');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ agent_id: 'nope', status: 'running' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'nope', session_id: 'sess-x', status: 'running' }), sendJson, ctx);
       expect(sendJson).toHaveBeenCalledWith({ success: false, message: 'Agent not found' });
     });
 
