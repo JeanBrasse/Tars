@@ -447,6 +447,7 @@ work.
 | `~/.dorothy/hermes-webhook-secret` | `electron/handlers/hermes-handlers.ts` (`readWebhookSecret`) | bearer for `POST /api/webhooks/hermes`; auto-provisioned with 32 random bytes at mode `0600` on first read |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | board |
+| `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
@@ -564,6 +565,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET/POST/PUT/DELETE | `/api/vault/documents[/:id]` · `/api/vault/folders[/:id]` · `/api/vault/search` · `/:id/attach` |
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` · `/api/kanban/complete` |
+| POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent named in `X-Tars-Caller-Id`) |
 | POST | `/api/telegram/{send,send-photo,send-video,send-document}` · `/api/slack/send` |
 | POST | `/api/webhooks/hermes` |
 

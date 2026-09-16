@@ -273,6 +273,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `stop_agent` / `remove_agent` | |
 | `wait_for_agent` | Single long-poll against `/wait`, no polling loop |
 | `delegate_task` | The composite. ACP first, terminal dispatch as fallback |
+| `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
 | `send_telegram` / `send_slack` | Reply to whichever channel the request came from |
 
 Auth: `Authorization: Bearer <~/.dorothy/api-token>`, plus `X-Tars-Client: mcp` and caller identity headers. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
@@ -484,6 +485,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`). `~/.claude-manage
 | `templates.json` / `templates.backup.json` | `{ user: AgentTemplate[], overrides }` | template handlers | backup pair |
 | `team-templates.json` | `{ user: TeamTemplate[] }` | team-template handlers | builtins are code, not data |
 | `kanban-tasks.json` | `KanbanTask[]` | kanban handlers | local board only; the Hermes board is remote |
+| `bus.json` | `{ version: 1, savedAt, memberOverrides, threads[], messages[], deliveries[] }` | `services/bus-store.ts` | **Atomic**: the shared `writeAtomicSync`. Rooms are not stored: they are a view over the fleet, and the global room reads the overseer's own conversation rather than copying it |
 | `vault.db` + `vault/` | SQLite (WAL, FK on) + `vault/attachments/` | better-sqlite3 | transactional |
 | `usage-ledger.jsonl` | one `UsageEntry` per line | `recordUsage()` | append-only, self-trimming at 20 000 → 12 000 |
 | `observations/<encoded>.jsonl` | one `Observation` per line | `/api/memory/remember` | append-only, 1000 → 500 |
@@ -678,7 +680,8 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 
 ## §13 Known limitations
 
-- **Delivery over the PTY is fire-and-forget.** `/dispatch` returns when bytes are written. Only `/run-task` returns a receipt.
+- **Delivery over the PTY is fire-and-forget.** `/dispatch` returns when bytes are written. Only `/run-task` returns a receipt. A bus message is the exception: it carries a delivery row that says queued, delivered, dropped or not sent, with a reason code.
+- **The bus leaves four things out of v1, on purpose.** No "send now" button that writes into a turn already running (that is a decision for Noah, and the button is drawn disabled with the reason); amp, codex, grok, opencode and pi cannot receive, because they never leave `running` in an interactive session, so their messages sit as NOT SENT until a human sends them; no heartbeat; and no ACP steering or cancellation, since `AcpSession.cancel()` still has no caller. None of these is inferred from silence: idleness detection is deliberately absent.
 - **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path.
 - **The `/run-task` status event name does not match what `/wait` listens on.** `emit('status', …)` vs `` `status:${agentId}` ``.
 - **The caller-identity header name has drifted between the MCP source and the server.** Shipped bundles still send the old name and work; rebuilding the MCP servers disables project scoping and 403s every guarded route until one side is renamed.
