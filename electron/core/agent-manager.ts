@@ -613,6 +613,16 @@ const TURN_START_BOUND_MS = 15_000;
 export function noteSessionRegistered(agent: AgentStatus): void {
   const pending = agent.pendingDelivery;
   if (!pending || !agent.ptyId || pending.ptyId !== agent.ptyId) return;
+  // SessionStart arrives more than once. session-start.sh retries its POST
+  // when the reply comes back empty, which is what happens when curl gives up
+  // waiting for a response the server has already acted on, so two
+  // registrations for one session is a normal Tuesday rather than an edge
+  // case. Two registrations used to arm two timers: the first redelivered and
+  // set `retried`, and the second read that flag a second later and went
+  // straight to `error` while the redelivery was still landing. Tars called a
+  // working agent dead, and its own retry was the trigger.
+  if (pending.checkArmed) return;
+  pending.checkArmed = true;
   scheduleDeliveryCheck(agent.id, pending.ptyId);
 }
 
@@ -638,6 +648,8 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
     const pending = live.pendingDelivery;
     // A turn started, or a newer start replaced this one: not this task's business.
     if (!pending || pending.ptyId !== ptyId || live.ptyId !== ptyId) return;
+    // This one has fired: nothing is armed until something arms it again.
+    pending.checkArmed = false;
     const ptyProcess = ptyProcesses.get(ptyId);
     // The process is gone: onExit owns that outcome and knows the exit code.
     if (!ptyProcess) return;
@@ -654,6 +666,7 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
       live.lastActivity = new Date().toISOString();
       saveAgents();
       writeProgrammaticInput(ptyProcess, pending.task, true);
+      pending.checkArmed = true;
       scheduleDeliveryCheck(agentId, ptyId);
       return;
     }

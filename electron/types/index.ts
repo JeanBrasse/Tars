@@ -119,7 +119,7 @@ export interface AgentStatus {
    * the live session once and the agent is marked failed if that fails too.
    * Runtime state: reset on load, like ptyId.
    */
-  pendingDelivery?: { ptyId: string; task: string; dispatchedAt: string; retried?: boolean };
+  pendingDelivery?: { ptyId: string; task: string; dispatchedAt: string; retried?: boolean; checkArmed?: boolean };
   /** Why the agent is 'waiting': 'permission' = blocking permission dialog
    *  (auto-continue must NOT type into it), 'idle' = waiting for next prompt. */
   waitingReason?: string;
