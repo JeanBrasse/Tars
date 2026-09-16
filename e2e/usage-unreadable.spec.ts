@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox } from './fixture.mjs';
 
 /**
  * The Usage page saying what it could not read.
@@ -48,9 +48,8 @@ test('names how many transcripts it could not read, and prices the rest', async 
   fs.writeFileSync(blocked, assistantLine(3));
   fs.chmodSync(blocked, 0o000);
 
-  const app = await electron.launch({
-    args: ['.'],
-    env: { ...process.env, HOME: home, NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31491', DOROTHY_E2E: '1' },
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31491', DOROTHY_E2E: '1' },
   });
   const page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

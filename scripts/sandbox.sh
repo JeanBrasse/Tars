@@ -37,6 +37,10 @@ echo "API port     : 31499 (prod intacte sur 31415)"
 echo "App          : $APP"
 
 LOG="$SANDBOX/tars.log"
-HOME="$SANDBOX" DOROTHY_API_PORT=31499 nohup "$BIN" "$@" > "$LOG" 2>&1 &
+# HOME ne suffit pas sur macOS : Electron trouve le dossier personnel, et donc
+# son profil (~/Library/Application Support), par le systeme et non par HOME.
+# Sans CFFIXED_USER_HOME, le bac a sable ouvrait le profil de la Tars vivante
+# et app.getPath('home') repondait le vrai dossier (mesure le 16/09).
+HOME="$SANDBOX" CFFIXED_USER_HOME="$SANDBOX" DOROTHY_API_PORT=31499 nohup "$BIN" "$@" > "$LOG" 2>&1 &
 disown
 echo "PID $! — les deux Tars tournent en parallèle. Logs: $LOG"

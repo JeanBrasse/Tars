@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox } from './fixture.mjs';
 
 /**
  * Saving the Settings page must not write back what nobody touched.
@@ -45,9 +45,8 @@ test('saving the Git toggle carries that key and nothing else', async () => {
   };
   fs.writeFileSync(settings, JSON.stringify(before, null, 2));
 
-  const app = await electron.launch({
-    args: ['.'],
-    env: { ...process.env, HOME: home, NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31492', DOROTHY_E2E: '1' },
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31492', DOROTHY_E2E: '1' },
   });
   const page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
