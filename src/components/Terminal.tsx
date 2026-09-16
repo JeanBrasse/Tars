@@ -5,6 +5,7 @@ import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { stripTerminalReplies } from '@/lib/terminal';
 
 interface TerminalProps {
   ptyId?: string;
@@ -42,9 +43,13 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Handle terminal input
+    // Handle terminal input. The terminal's own replies to queries from the
+    // program in the pty (DA, CPR, DSR, focus, mouse) arrive here exactly like
+    // a keystroke, and are dropped before anyone sees them: the parent's
+    // callback is no more entitled to them than the pty is.
+    // See stripTerminalReplies.
     term.onData((data) => {
-      const cleaned = data.replace(/\x1b\[(?:I|O)/g, '');
+      const cleaned = stripTerminalReplies(data);
       if (!cleaned) return;
       onData?.(cleaned);
 

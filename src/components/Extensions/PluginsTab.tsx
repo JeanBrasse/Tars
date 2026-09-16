@@ -26,6 +26,7 @@ import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { stripTerminalReplies } from '@/lib/terminal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingPanel } from '@/components/ui';
 // Import xterm CSS
 import 'xterm/css/xterm.css';
@@ -241,10 +242,14 @@ export default function PluginsTab() {
 
       xtermRef.current = term;
 
-      // Handle user input - send to PTY
+      // Handle user input - send to PTY. This one filtered nothing at all, so
+      // every reply the terminal made to the installer went back into it
+      // verbatim. See stripTerminalReplies.
       term.onData((data) => {
+        const cleaned = stripTerminalReplies(data);
+        if (!cleaned) return;
         if (ptyIdRef.current && window.electronAPI?.plugin?.installWrite) {
-          window.electronAPI.plugin.installWrite({ id: ptyIdRef.current, data });
+          window.electronAPI.plugin.installWrite({ id: ptyIdRef.current, data: cleaned });
         }
       });
 

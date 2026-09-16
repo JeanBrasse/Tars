@@ -8,6 +8,7 @@ import {
   TERMINAL_SURFACE_CLASS,
   useTerminalTheme,
 } from '@/lib/terminal-theme';
+import { stripTerminalReplies } from '@/lib/terminal';
 
 interface InstallTerminalModalProps {
   show: boolean;
@@ -49,9 +50,11 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
 
       xtermRef.current = term;
 
-      // Handle user input - send to PTY
+      // Handle user input - send to PTY. The terminal's own replies to queries
+      // from the installer arrive here like a keystroke and must never be
+      // forwarded. See stripTerminalReplies.
       term.onData((data) => {
-        const cleaned = data.replace(/\x1b\[(?:I|O)/g, '');
+        const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
         if (ptyIdRef.current && window.electronAPI?.plugin?.installWrite) {
           window.electronAPI.plugin.installWrite({ id: ptyIdRef.current, data: cleaned });
