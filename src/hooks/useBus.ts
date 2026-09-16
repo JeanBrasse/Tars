@@ -1,0 +1,158 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
+
+/**
+ * The agent bus, as the Chat page sees it.
+ *
+ * The main process pushes `bus:message`, `bus:delivery` and `bus:thread`, so
+ * this never polls: the snapshot is fetched once per room and then kept up to
+ * date by the three subscriptions. A delivery is keyed by message *and*
+ * target, because one message aimed at a room has one delivery per member and
+ * they do not all end the same way.
+ */
+
+export interface BusSnapshot {
+  room: BusRoom | null;
+  threads: BusThread[];
+  messages: BusMessage[];
+  deliveries: BusDelivery[];
+}
+
+const EMPTY: BusSnapshot = { room: null, threads: [], messages: [], deliveries: [] };
+
+const deliveryKey = (d: BusDelivery) => `${d.messageId}:${d.targetAgentId}`;
+
+/** True inside the desktop app with a backend that carries the bus. */
+export function hasBus(): boolean {
+  return typeof window !== 'undefined' && !!window.electronAPI?.bus;
+}
+
+export function useBusRooms() {
+  const [rooms, setRooms] = useState<BusRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    if (!hasBus()) { setLoading(false); return; }
+    const r = await window.electronAPI!.bus!.listRooms();
+    setRooms(r?.rooms ?? []);
+    setError(r?.error ?? null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  // A room appears when its first message lands, and its membership changes
+  // through setMembers, so the list is refreshed on both rather than polled.
+  useEffect(() => {
+    if (!hasBus()) return;
+    const offMessage = window.electronAPI!.bus!.onMessage(() => { void reload(); });
+    return () => { offMessage(); };
+  }, [reload]);
+
+  return { rooms, loading, error, reload };
+}
+
+export function useBusRoom(roomId: string | null) {
+  const [snapshot, setSnapshot] = useState<BusSnapshot>(EMPTY);
+  const [loading, setLoading] = useState(!!roomId);
+  const [error, setError] = useState<string | null>(null);
+  /** Bumped to ask for a fresh read of the same room. */
+  const [refreshToken, setRefreshToken] = useState(0);
+
+  // Fetch per room, and drop an answer that arrives after you have moved on:
+  // a slow getRoom for the room you just left must not overwrite the one you
+  // are looking at.
+  useEffect(() => {
+    if (!roomId || !hasBus()) { setSnapshot(EMPTY); setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      const r = await window.electronAPI!.bus!.getRoom(roomId);
+      if (cancelled) return;
+      setSnapshot({
+        room: r?.room ?? null,
+        threads: r?.threads ?? [],
+        messages: r?.messages ?? [],
+        deliveries: r?.deliveries ?? [],
+      });
+      setError(r?.success ? null : (r?.error ?? 'The bus did not answer.'));
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [roomId, refreshToken]);
+
+  const reload = useCallback(() => { setRefreshToken(t => t + 1); }, []);
+
+  // Re-subscribed per room, which is cheaper than keeping the id in a ref and
+  // lets each handler compare against the room it was installed for.
+  useEffect(() => {
+    if (!roomId || !hasBus()) return;
+    const bus = window.electronAPI!.bus!;
+
+    const offMessage = bus.onMessage((message: BusMessage) => {
+      if (message.roomId !== roomId) return;
+      setSnapshot(prev => (prev.messages.some(m => m.id === message.id)
+        ? prev
+        : { ...prev, messages: [...prev.messages, message] }));
+    });
+
+    const offDelivery = bus.onDelivery((delivery: BusDelivery) => {
+      setSnapshot(prev => {
+        // Only deliveries for messages this room already holds: a delivery
+        // arrives with no room id of its own.
+        if (!prev.messages.some(m => m.id === delivery.messageId)) return prev;
+        const key = deliveryKey(delivery);
+        return { ...prev, deliveries: [...prev.deliveries.filter(d => deliveryKey(d) !== key), delivery] };
+      });
+    });
+
+    const offThread = bus.onThread((thread: BusThread) => {
+      if (thread.roomId !== roomId) return;
+      setSnapshot(prev => ({
+        ...prev,
+        threads: [...prev.threads.filter(t => t.id !== thread.id), thread],
+      }));
+    });
+
+    return () => { offMessage(); offDelivery(); offThread(); };
+  }, [roomId]);
+
+  const post = useCallback(async (text: string, mentions: string[]) => {
+    if (!roomId || !hasBus()) return { success: false, error: 'The bus is not available.' };
+    const r = await window.electronAPI!.bus!.postMessage({ roomId, text, mentions });
+    // The message itself arrives on bus:message; the deliveries come back from
+    // the call, so the receipts under your own line appear with it.
+    if (r?.success && r.deliveries?.length) {
+      const fresh = r.deliveries;
+      setSnapshot(prev => {
+        const keys = new Set(fresh.map(deliveryKey));
+        return { ...prev, deliveries: [...prev.deliveries.filter(d => !keys.has(deliveryKey(d))), ...fresh] };
+      });
+    }
+    return r ?? { success: false, error: 'The bus did not answer.' };
+  }, [roomId]);
+
+  const stopThread = useCallback(async (threadId: string) => {
+    if (!hasBus()) return { success: false, error: 'The bus is not available.' };
+    const r = await window.electronAPI!.bus!.stopThread(threadId);
+    if (r?.thread) {
+      const stopped = r.thread;
+      setSnapshot(prev => ({ ...prev, threads: [...prev.threads.filter(t => t.id !== stopped.id), stopped] }));
+    }
+    return r ?? { success: false, error: 'The bus did not answer.' };
+  }, []);
+
+  const setMembers = useCallback(async (memberIds: string[]) => {
+    if (!roomId || !hasBus()) return { success: false, error: 'The bus is not available.' };
+    const r = await window.electronAPI!.bus!.setMembers(roomId, memberIds);
+    // Changing the members closes the open anchor, so the threads are stale:
+    // read the room again rather than patch one field of it.
+    if (r?.success) reload();
+    return r ?? { success: false, error: 'The bus did not answer.' };
+  }, [roomId, reload]);
+
+  return { snapshot, loading, error, reload, post, stopThread, setMembers };
+}

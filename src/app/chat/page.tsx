@@ -1,9 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AlertCircle } from 'lucide-react';
 import { BrandSpinner, Button, PageHeader } from '@/components/ui';
+import { ConversationList } from '@/components/Chat/ConversationList';
+import type { ConversationSummary } from '@/components/Chat/ConversationList';
+import { RoomView } from '@/components/Chat/RoomView';
+import { TeamRail } from '@/components/Chat/TeamRail';
+import { useBusRoom, useBusRooms } from '@/hooks/useBus';
+import { useRoomAgents } from '@/hooks/useRoomAgents';
 import { MessageCard } from '@/components/Overseer/MessageCard';
 import { EchoRun } from '@/components/Overseer/EchoRun';
 import { groupThread } from '@/components/Overseer/echo-runs';
@@ -37,6 +44,9 @@ interface PendingMessage {
  */
 
 type GatewayState = 'checking' | 'ok' | 'not_configured' | 'needs_sign_in' | 'unreachable';
+
+/** The room id the contract gives the super chat. */
+const GLOBAL_ID = 'global';
 
 interface ActionState {
   sending: boolean;
@@ -102,6 +112,89 @@ function PendingTurn({ startedAt }: { startedAt: number }) {
   );
 }
 
+/**
+ * One project's room, with its own hooks.
+ *
+ * A sub-component rather than a branch inside the page: the room's snapshot,
+ * its agents and its live subscriptions are hooks, and hooks cannot be called
+ * only when a room happens to be selected.
+ */
+function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React.ReactNode) => void }) {
+  const router = useRouter();
+  const { snapshot, loading, post, stopThread } = useBusRoom(roomId);
+  const agents = useRoomAgents(snapshot.room);
+  const pending = useMemo(() => {
+    const per: Record<string, { queued: number; notSent: number }> = {};
+    for (const d of snapshot.deliveries) {
+      const row = per[d.targetAgentId] ?? { queued: 0, notSent: 0 };
+      if (d.state === 'queued') row.queued += 1;
+      if (d.state === 'not_sent') row.notSent += 1;
+      per[d.targetAgentId] = row;
+    }
+    return per;
+  }, [snapshot.deliveries]);
+
+  // The open anchor is what Stop stops. Published to the page's header so the
+  // action sits with the room's state rather than inside the log.
+  const open = snapshot.threads.find(t => t.state === 'open') ?? null;
+  useEffect(() => {
+    const running = agents.filter(a => a.status === 'running').length;
+    onHeader(
+      <>
+        <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
+          <span className={`w-1.5 h-1.5 shrink-0 ${running ? 'bg-status-running' : 'bg-status-idle'}`} />
+          <span className="font-mono text-[10.5px] text-muted-foreground">
+            {running ? 'relaying' : open ? 'open' : 'quiet'}
+          </span>
+        </div>
+        <Button
+          className="font-mono"
+          disabled={!open}
+          title={open ? 'Stop this exchange. Anything queued for it is cancelled.' : 'Nothing is running in this room.'}
+          onClick={() => { if (open) void stopThread(open.id); }}
+        >
+          stop
+        </Button>
+      </>,
+    );
+  }, [agents, open, onHeader, stopThread]);
+
+  if (!snapshot.room) {
+    return (
+      <div className="flex-1 min-w-0 flex items-center justify-center">
+        {loading
+          ? <BrandSpinner size={30} label="Opening the room" />
+          : <p className="text-sm text-muted-foreground">This room is not available.</p>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <RoomView
+        room={snapshot.room}
+        threads={snapshot.threads}
+        messages={snapshot.messages}
+        deliveries={snapshot.deliveries}
+        agents={agents}
+        loading={loading}
+        onPost={post}
+      />
+      <TeamRail
+        agents={agents}
+        pending={pending}
+        // The terminal an agent lives in is the Dashboard's, so `open` goes
+        // there rather than opening a second one here.
+        onOpen={() => router.push('/')}
+        onStop={agent => { void window.electronAPI?.agent?.stop?.(agent.id); }}
+        // Disabled in the rail itself: the bus has no release call yet.
+        onSend={() => {}}
+        onAdd={() => router.push('/agents')}
+      />
+    </>
+  );
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<OverseerMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -129,6 +222,12 @@ export default function ChatPage() {
   const [sendError, setSendError] = useState<{ message: string; detail: string | null } | null>(null);
 
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+
+  /** The global room is Hermes: the super chat that watches every project and
+   *  is already what this page was. A project room is the other level. */
+  const [selectedId, setSelectedId] = useState<string>(GLOBAL_ID);
+  const [roomHeader, setRoomHeader] = useState<React.ReactNode>(null);
+  const { rooms } = useBusRooms();
 
   const threadRef = useRef<HTMLDivElement>(null);
   const autoScroll = useRef(true);
@@ -211,6 +310,42 @@ export default function ChatPage() {
         ? `every ${Math.round(settings.watchIntervalMs / 3600000)}h`
         : `every ${Math.round(settings.watchIntervalMs / 60000)} min`)
     : 'periodically';
+
+  /**
+   * The list on the left. What it shows per room is what the bus actually
+   * carries: `listRooms` gives a title, a project and a membership, and no
+   * last message, unread count or activity. Those are not guessed here, so a
+   * room's line says what it is rather than inventing what happened in it.
+   */
+  const globalSummary: ConversationSummary = {
+    id: GLOBAL_ID,
+    name: 'Hermes',
+    sub: 'overseer',
+    tone: paused ? 'idle' : 'running',
+    time: '',
+    preview: paused ? 'Watching is paused.' : `Watching every project, ${cadenceLabel}.`,
+    counts: [{ label: `${fleet?.agents.length ?? 0} agents` }],
+  };
+
+  const roomSummaries: ConversationSummary[] = useMemo(
+    () => rooms
+      .filter(room => room.kind !== 'global')
+      .map(room => {
+        const parts = (room.projectPath ?? '').split('/').filter(Boolean);
+        const members = room.memberIds.length;
+        return {
+          id: room.id,
+          name: room.title || parts[parts.length - 1] || room.id,
+          tone: (members ? 'idle' : 'none') as ConversationSummary['tone'],
+          time: '',
+          preview: members
+            ? 'Open the room to see what its agents are saying.'
+            : 'No agents in this project yet',
+          counts: [{ label: members ? `${members} ${members === 1 ? 'member' : 'members'}` : 'no agents' }],
+        };
+      }),
+    [rooms],
+  );
 
   // The fleet listing is what the approval block's "still reachable" check
   // and the rail both read - keep it fresh while the page is open.
@@ -387,8 +522,8 @@ export default function ChatPage() {
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col" data-gateway-state={gatewayState}>
       <PageHeader
         title="Chat"
-        subtitle="Hermes watches every project and answers for the fleet."
-        actions={
+        subtitle="Hermes watches every project. Each project has a room where its agents talk to each other and to you."
+        actions={selectedId !== GLOBAL_ID ? roomHeader : (
           <>
             <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
               <span className={`w-1.5 h-1.5 shrink-0 ${paused ? 'bg-status-idle' : 'bg-status-running'}`} />
@@ -400,10 +535,24 @@ export default function ChatPage() {
               {paused ? 'resume' : 'pause'}
             </Button>
           </>
-        }
+        )}
       />
 
       <div className="flex-1 min-h-0 flex gap-2.5">
+        {/* Two levels in one page, not a replacement: the super chat that
+            watches every project stays exactly what it was, and a room per
+            project sits beside it. */}
+        <ConversationList
+          global={globalSummary}
+          rooms={roomSummaries}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+
+        {selectedId !== GLOBAL_ID ? (
+          <ChatRoom roomId={selectedId} onHeader={setRoomHeader} />
+        ) : (
+        <>
         {/* No max width: the rail is a fixed 332 and the frame's 830 is simply
             what is left beside it at 1440. Capping the conversation as well
             left a hole between the two on any wider window, so the rail
@@ -516,6 +665,8 @@ export default function ChatPage() {
         </div>
 
         <FleetRail fleet={fleet} />
+        </>
+        )}
       </div>
     </div>
   );

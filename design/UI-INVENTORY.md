@@ -13,7 +13,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | Route | Name | Frame |
 |---|---|---|
 | `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Dashboard · panel history, Panel history · states |
-| `/chat` | Chat (Hermes overseer) | Chat · Overseer |
+| `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer, Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents |
 | `/agents` | Agents | Agents · dark |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
