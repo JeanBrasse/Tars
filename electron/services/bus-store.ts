@@ -9,9 +9,11 @@ import type {
   AgentStatus,
   BusDelivery,
   BusDeliveryReason,
+  BusMember,
   BusMessage,
   BusRoom,
   BusRoomSnapshot,
+  BusSystemKind,
   BusThread,
 } from '../types';
 
@@ -129,6 +131,12 @@ export function loadBus(): void {
 }
 
 function saveBus(): void {
+  // Never write a journal that was never read. saveAgents has had this guard
+  // for the same reason: without it, importing this module in a test and
+  // touching anything writes ~/.dorothy/bus.json, the real one, with whatever
+  // empty state the import started from. A test that forgets to redirect
+  // BUS_FILE should lose its own data, not Noah's.
+  if (!loaded) return;
   try {
     state.savedAt = new Date().toISOString();
     writeAtomicSync(BUS_FILE, JSON.stringify(state, null, 2));
@@ -164,6 +172,13 @@ export function listRooms(): BusRoom[] {
 
   for (const projectPath of projectPaths) {
     const id = projectRoomId(projectPath);
+    // Enough for the conversation list to sort itself and show a line, read
+    // from the journal already in memory. Unread counts are not here: they
+    // need a per-viewer read marker, which is state this file does not keep.
+    // The global room has neither, because its history lives in the overseer's
+    // own conversation and reading it on every room listing would put a file
+    // read on a path that runs on every publication.
+    const last = [...state.messages].reverse().find(m => m.roomId === id);
     rooms.push({
       id,
       kind: 'project',
@@ -171,6 +186,8 @@ export function listRooms(): BusRoom[] {
       title: projectPath.split('/').filter(Boolean).pop() || projectPath,
       memberIds: memberIdsFor(id, 'project', projectPath),
       createdAt,
+      lastMessageAt: last?.createdAt,
+      lastMessagePreview: last ? `${last.authorName}: ${last.text.slice(0, 120)}` : undefined,
     });
   }
   return rooms;
@@ -178,6 +195,59 @@ export function listRooms(): BusRoom[] {
 
 export function getRoom(roomId: string): BusRoom | undefined {
   return listRooms().find(r => r.id === roomId);
+}
+
+/**
+ * A machine line in a room: something Tars did, written where the conversation
+ * is so the page can draw it in place.
+ *
+ * Its own entry point rather than appendMessage, whose job is anchors: a human
+ * message opens one, and an agent message that finds none open would open one
+ * too. A system line must do neither. It attaches to the thread it is about,
+ * including a closed one, and counts against no bound.
+ */
+export function appendSystemMessage(input: {
+  roomId: string;
+  threadId: string;
+  systemKind: BusSystemKind;
+  text: string;
+}): BusMessage {
+  loadBus();
+  const message: BusMessage = {
+    id: uuidv4(),
+    roomId: input.roomId,
+    threadId: input.threadId,
+    authorKind: 'system',
+    authorId: 'system',
+    authorName: 'Tars',
+    text: input.text,
+    mentions: [],
+    systemKind: input.systemKind,
+    createdAt: new Date().toISOString(),
+  };
+  state.messages.push(message);
+  saveBus();
+  return message;
+}
+
+/**
+ * The room's members as the page needs them, reachability included.
+ *
+ * hasEndOfTurn is read from the provider's hook configuration here, the same
+ * read the delivery path makes, so the renderer stops keeping its own copy of
+ * which five CLIs cannot be reached. A copy of a derived value goes stale the
+ * day a provider gains hooks, and it would go stale silently.
+ */
+function membersOf(room: BusRoom): BusMember[] {
+  return room.memberIds.map(id => {
+    const agent = agents.get(id);
+    return {
+      id,
+      name: agent?.name || id,
+      provider: agent?.provider,
+      hasEndOfTurn: agent ? hasEndOfTurn(agent) : false,
+    };
+  });
 }
 
 export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?: string }): BusRoomSnapshot | undefined {
@@ -188,7 +258,7 @@ export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?
   if (room.kind === 'global') {
     const history = readGlobalHistory ? readGlobalHistory() : [];
     const limit = Math.max(1, Math.min(opts?.limit ?? 200, 1000));
-    return { room, threads: [], messages: history.slice(-limit), deliveries: [] };
+    return { room, members: membersOf(room), threads: [], messages: history.slice(-limit), deliveries: [] };
   }
 
   let messages = state.messages.filter(m => m.roomId === roomId);
@@ -205,6 +275,7 @@ export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?
   const threadIds = new Set(messages.map(m => m.threadId));
   return {
     room,
+    members: membersOf(room),
     threads: state.threads.filter(t => threadIds.has(t.id)),
     messages,
     deliveries: state.deliveries.filter(d => messageIds.has(d.messageId)),
@@ -233,6 +304,12 @@ export function openThreadOf(roomId: string): BusThread | undefined {
 
 export function getThread(threadId: string): BusThread | undefined {
   return state.threads.find(t => t.id === threadId);
+}
+
+/** The room's most recent anchor, open or not. What openThreadOf deliberately
+ *  will not return, and what you need to tell "stopped" from "never was". */
+export function latestThreadOf(roomId: string): BusThread | undefined {
+  return [...state.threads].reverse().find(t => t.roomId === roomId);
 }
 
 export function messagesOfThread(threadId: string): BusMessage[] {
@@ -365,7 +442,12 @@ export function publishAgentMessage(input: {
     return { published: false, reason: 'not_a_member', detail: 'Only the agents of this room can post in it.' };
   }
 
-  const thread = openThreadOf(input.roomId);
+  // The latest anchor, open or not. Asking for the open one made the three
+  // refusals below unreachable: a thread that had just been stopped by hand
+  // answered `no_open_thread`, so an agent Noah had deliberately silenced was
+  // told no conversation had ever existed. Every other refusal here is true;
+  // that one lied, and the page renders these reasons to a human.
+  const thread = latestThreadOf(input.roomId);
   if (!thread) {
     return {
       published: false,
@@ -389,14 +471,27 @@ export function publishAgentMessage(input: {
 
   const { round, heard } = currentRound(thread.id);
   if (round > 1 || heard.size > 0) {
-    // After the first voice, a turn is earned by being named: only an agent
-    // another has mentioned, and that has not spoken in this round, speaks.
-    const mentionedByAnother = priors.some(m => m.authorId !== input.agentId && m.mentions.includes(input.agentId));
-    if (!mentionedByAnother) {
-      return { published: false, reason: 'not_your_turn', detail: 'After the first round, only an agent another one mentioned speaks.' };
-    }
-    if (heard.has(input.agentId)) {
-      return { published: false, reason: 'not_your_turn', detail: 'You have already spoken in this round.' };
+    // A turn after the first is earned by being named, and named *since you
+    // last spoke*: a mention from before your own message is one you have
+    // already answered.
+    //
+    // This is also the only thing that ends a round. currentRound advances
+    // when an agent that has already been heard speaks again, so refusing
+    // that message, which is what this guard used to do, left the round
+    // stuck at one forever: MAX_ROUNDS was unreachable, and in a room of
+    // fewer than ten agents a thread never reached `bounded` at all. It
+    // simply refused everyone, with no state the interface could show.
+    const mineAt = priors.map(m => m.authorId).lastIndexOf(input.agentId);
+    const since = priors.slice(mineAt + 1);
+    const namedSince = since.some(m => m.authorId !== input.agentId && m.mentions.includes(input.agentId));
+    if (!namedSince) {
+      return {
+        published: false,
+        reason: 'not_your_turn',
+        detail: heard.has(input.agentId)
+          ? 'You have spoken in this round. Another agent has to name you before you speak again.'
+          : 'After the first round, only an agent another one mentioned speaks.',
+      };
     }
   }
 
@@ -441,15 +536,39 @@ export function deliveriesOf(messageId: string): BusDelivery[] {
   return state.deliveries.filter(d => d.messageId === messageId);
 }
 
-/** A queued message actually reached a terminal. The only place a delivery
- *  becomes `delivered`, so the interface can never show that on a guess. */
+export function getMessage(messageId: string): BusMessage | undefined {
+  return state.messages.find(m => m.id === messageId);
+}
+
+/** What is being held for an agent, oldest first: the order a human releasing
+ *  a queue expects to see it arrive in. */
+export function notSentFor(targetAgentId: string): BusDelivery[] {
+  loadBus();
+  return state.deliveries
+    .filter(d => d.targetAgentId === targetAgentId && d.state === 'not_sent')
+    .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+}
+
+/** A message actually reached a terminal. The only place a delivery becomes
+ *  `delivered`, so the interface can never show that on a guess.
+ *
+ *  `not_sent` is accepted as well as `queued`: a held message released by hand
+ *  reaches the terminal the same way, and it would be a poor answer to write
+ *  it in and go on calling it not sent. */
 export function markDelivered(targetAgentId: string, messageId: string): BusDelivery | undefined {
   const delivery = state.deliveries.find(
-    d => d.messageId === messageId && d.targetAgentId === targetAgentId && d.state === 'queued',
+    d => d.messageId === messageId && d.targetAgentId === targetAgentId
+      && (d.state === 'queued' || d.state === 'not_sent'),
   );
   if (!delivery) return undefined;
   delivery.state = 'delivered';
   delivery.deliveredAt = new Date().toISOString();
+  // A released message keeps no trace of why it was once held: a row that says
+  // delivered and, beside it, that this provider can never be delivered to, is
+  // a row that contradicts itself on screen.
+  delivery.reasonCode = undefined;
+  delivery.reason = undefined;
+  delivery.refusedAt = undefined;
   saveBus();
   return delivery;
 }
@@ -463,11 +582,13 @@ export function cancelQueuedDeliveries(
 ): BusDelivery[] {
   const ids = new Set(messagesOfThread(threadId).map(m => m.id));
   const cancelled: BusDelivery[] = [];
+  const now = new Date().toISOString();
   for (const delivery of state.deliveries) {
     if (delivery.state !== 'queued' || !ids.has(delivery.messageId)) continue;
     delivery.state = 'dropped';
     delivery.reasonCode = reasonCode;
     delivery.reason = reason;
+    delivery.refusedAt = now;
     cancelled.push(delivery);
   }
   if (cancelled.length) saveBus();
@@ -495,6 +616,7 @@ export function markDropped(
   delivery.state = 'dropped';
   delivery.reasonCode = reasonCode;
   delivery.reason = reason;
+  delivery.refusedAt = new Date().toISOString();
   saveBus();
   return delivery;
 }

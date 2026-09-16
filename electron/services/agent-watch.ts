@@ -351,6 +351,36 @@ function composeBusNote(message: QueuedBusMessage): string {
   ].join('\n');
 }
 
+/**
+ * Write held messages into an agent's terminal now, because a human said so.
+ *
+ * The queue will never do this by itself for a provider with no end of turn:
+ * there is no moment it can call safe, and inventing one from silence is the
+ * idleness detection this bus refuses. A human pressing the button is that
+ * moment, and the decision is theirs, so this is the one path that writes into
+ * a session whose state Tars does not know.
+ *
+ * Sequential with the same spacing flush uses: a second write issued before
+ * the first has sent its carriage return lands inside it and is submitted by
+ * it, which would paste two messages into one prompt.
+ */
+export async function releaseBusMessagesNow(
+  agentId: string,
+  messages: QueuedBusMessage[],
+): Promise<string[]> {
+  const agent = agents.get(agentId);
+  const ptyProcess = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  if (!ptyProcess) return [];
+
+  const written: string[] = [];
+  for (const message of messages) {
+    writeProgrammaticInput(ptyProcess, composeBusNote(message), true);
+    written.push(message.messageId);
+    await new Promise(resolve => setTimeout(resolve, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
+  }
+  return written;
+}
+
 /** Test seam: the queues are process memory, and a test that drives several
  *  fleets through one module needs them empty between runs. */
 export function resetAgentWatch(): void {

@@ -15,6 +15,43 @@ export function stripCursorSequences(data: string): string {
 }
 
 /**
+ * Replies xterm sends to the PTY on its own, in answer to a query from the
+ * program running there. They reach `onData` exactly like a keystroke, so every
+ * terminal that forwards `onData` has to drop them.
+ *
+ * Every alternative matches a COMPLETE sequence, from the ESC to its final
+ * byte. That is the whole point: the previous filter knew `\x1b[?...c` (DA1)
+ * but not `\x1b[>...c` (DA2), and carried an unanchored `\d+;\d+c` rule meant
+ * to mop up stray fragments. On xterm's DA2 reply `\x1b[>0;276;0c` that rule
+ * matched `276;0c` in the middle and left the head `\x1b[>0;` behind, which was
+ * then typed into the PTY as a truncated escape sequence. A rule that can match
+ * part of a sequence manufactures fragments instead of removing them.
+ *
+ * Mouse reports are here too. `suppressMouseTracking` refuses the tracking
+ * modes in the parser, but it passes mixed mode sets through on purpose, so a
+ * report can still be produced; these panels never forward one.
+ */
+const TERMINAL_REPLIES = new RegExp([
+  '\\x1b\\[\\?[0-9;]*c',        // DA1: \x1b[?1;2c
+  '\\x1b\\[>[0-9;]*c',          // DA2: \x1b[>0;276;0c
+  '\\x1b\\[\\?[0-9;]*\\$y',     // DECRPM: \x1b[?1;2$y
+  '\\x1b\\[[0-9;]*R',           // CPR: \x1b[24;80R
+  '\\x1b\\[[0-9;]*n',           // DSR: \x1b[0n
+  '\\x1b\\[[IO]',               // focus in / focus out
+  '\\x1b\\[<[0-9;]*[Mm]',       // SGR mouse report: \x1b[<35;48;1M
+  '\\x1b\\[M[\\s\\S]{3}',       // X10 mouse report: \x1b[M + 3 bytes
+  '\\x1bP[\\s\\S]*?\\x1b\\\\',  // DCS reply (XTVERSION, DECRQSS)
+].join('|'), 'g');
+
+/**
+ * Remove the terminal's own replies from a chunk of `onData`, leaving whatever
+ * the user actually typed. Returns '' when the chunk was nothing but replies.
+ */
+export function stripTerminalReplies(data: string): string {
+  return data.replace(TERMINAL_REPLIES, '');
+}
+
+/**
  * DEC private modes a full-screen app sets to take the mouse over: 9 (X10),
  * 1000/1001/1002/1003 (tracking protocols) and 1005/1006/1015/1016 (report
  * encodings).

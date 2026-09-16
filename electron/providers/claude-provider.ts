@@ -11,7 +11,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort, orchestratorToolFlags } from './cli-provider';
+import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR } from '../constants';
 
 export class ClaudeProvider implements CLIProvider {
@@ -112,17 +112,14 @@ export class ClaudeProvider implements CLIProvider {
     // Tars's CLAUDE.md via ~/.dorothy
     command += ` --add-dir '${DATA_DIR}'`;
 
-    // Prompt with skills directive
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    // Prompt with skills directive, and no operand at all without a task.
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       const skillsList = params.skills.join(', ');
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
 
-    if (finalPrompt) {
-      const escaped = finalPrompt.replace(/'/g, "'\\''");
-      command += ` '${escaped}'`;
-    }
+    command += promptOperand(finalPrompt);
 
     return command;
   }

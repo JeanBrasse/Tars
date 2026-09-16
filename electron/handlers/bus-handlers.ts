@@ -1,12 +1,21 @@
 import { ipcMain } from 'electron';
+import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { getOverseerHistory } from '../services/overseer';
 import { setBusDeliveredHook, setBusDroppedHook } from '../services/agent-watch';
-import { announceDropped, broadcastPublication, closeAndAnnounce, fanOutDeliveries } from '../services/bus-delivery';
+import {
+  announceDropped,
+  announceSystem,
+  broadcastPublication,
+  closeAndAnnounce,
+  fanOutDeliveries,
+  releaseNotSent,
+} from '../services/bus-delivery';
 import {
   appendMessage,
   closeThread,
   getRoomSnapshot,
+  latestThreadOf,
   listRooms,
   loadBus,
   markDelivered,
@@ -125,6 +134,10 @@ export function registerBusHandlers(): void {
       if (!thread) return { success: false, error: 'Thread not found' };
       // Stop is a barrier: what had not gone out does not go out.
       closeAndAnnounce(thread.id, 'thread_stopped', 'the thread was stopped');
+      // And say so in the room, where the conversation is: a thread that ends
+      // by a human decision should read as one, not as a transcript that just
+      // stops.
+      announceSystem(thread.roomId, thread.id, 'thread_stopped', 'You stopped this conversation.');
       return { success: true, thread };
     } catch (err) {
       console.error('[bus] stopThread failed:', err);
@@ -132,14 +145,45 @@ export function registerBusHandlers(): void {
     }
   });
 
+  // The way out of `not_sent`. A human decision, aimed at an agent Tars cannot
+  // read the state of, so it is theirs to make and theirs alone: nothing here
+  // is triggered by time, by silence, or by anything the agent did.
+  ipcMain.handle('bus:releaseNotSent', async (_event, agentId: string) => {
+    try {
+      if (!agents.has(agentId)) return { success: false, error: 'Agent not found' };
+      const { released, reason } = await releaseNotSent(agentId);
+      if (reason) return { success: false, error: reason, deliveries: [] };
+      return { success: true, deliveries: released };
+    } catch (err) {
+      console.error('[bus] releaseNotSent failed:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Failed to release' };
+    }
+  });
+
   ipcMain.handle('bus:setMembers', async (_event, roomId: string, memberIds: string[]) => {
     try {
+      const before = listRooms().find(r => r.id === roomId)?.memberIds ?? [];
       const result = setMembers(roomId, Array.isArray(memberIds) ? memberIds : []);
       if (!result) return { success: false, error: 'Room not found' };
       // Changing the members closes the anchor in flight, and that close is a
       // thread change like any other: it goes out on bus:thread so the Chat
       // page never has to infer it from a room that looks different.
       if (result.superseded) closeAndAnnounce(result.superseded.id, 'members_changed', 'the room members changed');
+
+      // Name who joined and who left, on the anchor it concerns. A room with
+      // no thread yet has nothing to draw this into, so nothing is written.
+      const nameOf = (id: string) => agents.get(id)?.name || id;
+      const after = result.room.memberIds;
+      const added = after.filter(id => !before.includes(id)).map(nameOf);
+      const removed = before.filter(id => !after.includes(id)).map(nameOf);
+      const anchor = result.superseded ?? latestThreadOf(roomId);
+      if (anchor && (added.length || removed.length)) {
+        const said = [
+          added.length ? `added ${added.join(', ')}` : '',
+          removed.length ? `removed ${removed.join(', ')}` : '',
+        ].filter(Boolean).join(' and ');
+        announceSystem(roomId, anchor.id, 'members_changed', `You ${said}.`);
+      }
       return { success: true, room: result.room };
     } catch (err) {
       console.error('[bus] setMembers failed:', err);

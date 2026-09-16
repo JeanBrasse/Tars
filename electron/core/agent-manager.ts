@@ -7,7 +7,7 @@ import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { AGENTS_FILE, DATA_DIR, dataPath, API_PORT } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
-import { ptyProcesses } from './pty-manager';
+import { ptyProcesses, writeProgrammaticInput } from './pty-manager';
 import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
@@ -404,6 +404,7 @@ export function loadAgents() {
       agent.status = 'idle';
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
+      agent.pendingDelivery = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did
@@ -520,10 +521,21 @@ const TASK_START_GRACE_MS = 600_000;
  * not are left alone rather than accused of a fault this cannot see. Being
  * wrong that way costs a missed report, being wrong the other way marks a
  * working agent broken.
+ *
+ * Registration is where this check ends and the delivery check begins. "It
+ * registered, so it took its task" was never true: a CLI handed a task it never
+ * received registers exactly the same way, about a second in, which is the
+ * failure that hid behind this watch for weeks. With a task to deliver, the
+ * agent now carries it until a turn actually starts. See noteSessionRegistered.
  */
-export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined): void {
+export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined, task?: string): void {
   if (!ptyId) return;
   if (getProvider(agent.provider).binaryName !== 'claude') return;
+
+  // Only a real task is worth confirming: a start with none has nothing to lose.
+  agent.pendingDelivery = task && task.trim()
+    ? { ptyId, task, dispatchedAt: new Date().toISOString() }
+    : undefined;
 
   // The precondition this check rests on, established here rather than trusted.
   //
@@ -570,6 +582,108 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined)
     scheduleTick();
     emitAgentStatus(live.id);
   }, TASK_START_GRACE_MS);
+  // A pending check must never be the reason the app cannot quit.
+  timer.unref();
+}
+
+/**
+ * How long a registered session has to begin its turn before the task is taken
+ * to have been lost on the way in.
+ *
+ * Measured the same way as the grace period above, by replaying
+ * spawnAgentSession in a pty: once the SessionStart hook has registered, a
+ * session that did receive its task starts the turn in 0.32 to 1.24 seconds
+ * (median 0.73, thirty turns), with the full MCP configuration, with a three
+ * thousand character task, cold or warm. Fifteen seconds is twelve times the
+ * worst of those.
+ *
+ * Anchored on registration rather than on the spawn, deliberately: reaching
+ * registration is the part that takes 77 seconds on a dead network and can take
+ * forever against a socket that never answers, and that phase belongs to
+ * TASK_START_GRACE_MS. This one only measures a CLI that is already up.
+ */
+const TURN_START_BOUND_MS = 15_000;
+
+/**
+ * A session registered itself through the SessionStart hook.
+ *
+ * All this starts is the clock on the delivery it was spawned for. Nothing here
+ * treats registration as evidence that the task arrived.
+ */
+export function noteSessionRegistered(agent: AgentStatus): void {
+  const pending = agent.pendingDelivery;
+  if (!pending || !agent.ptyId || pending.ptyId !== agent.ptyId) return;
+  // SessionStart arrives more than once. session-start.sh retries its POST
+  // when the reply comes back empty, which is what happens when curl gives up
+  // waiting for a response the server has already acted on, so two
+  // registrations for one session is a normal Tuesday rather than an edge
+  // case. Two registrations used to arm two timers: the first redelivered and
+  // set `retried`, and the second read that flag a second later and went
+  // straight to `error` while the redelivery was still landing. Tars called a
+  // working agent dead, and its own retry was the trigger.
+  if (pending.checkArmed) return;
+  pending.checkArmed = true;
+  scheduleDeliveryCheck(agent.id, pending.ptyId);
+}
+
+/**
+ * The current session started a turn, from the UserPromptSubmit hook: the only
+ * evidence Tars has that a task actually reached the CLI.
+ */
+export function noteTurnStarted(agent: AgentStatus): void {
+  agent.lastTurnStartedAt = new Date().toISOString();
+  agent.pendingDelivery = undefined;
+}
+
+/**
+ * Confirm the delivery, and send it a second way before giving up.
+ *
+ * The second way is the one that has always worked: typing into the live
+ * session, which is what /dispatch does to an agent that is already running.
+ */
+function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
+  const timer = setTimeout(() => {
+    const live = agents.get(agentId);
+    if (!live) return;
+    const pending = live.pendingDelivery;
+    // A turn started, or a newer start replaced this one: not this task's business.
+    if (!pending || pending.ptyId !== ptyId || live.ptyId !== ptyId) return;
+    // This one has fired: nothing is armed until something arms it again.
+    pending.checkArmed = false;
+    const ptyProcess = ptyProcesses.get(ptyId);
+    // The process is gone: onExit owns that outcome and knows the exit code.
+    if (!ptyProcess) return;
+    // A blocking permission dialog reads typed text as its answer, so a
+    // redelivery there would accept the dialog rather than deliver anything.
+    if (live.status === 'waiting' && live.waitingReason === 'permission') return;
+
+    if (!pending.retried) {
+      console.warn(
+        `[agent] ${live.name || live.id} registered but has not started a turn after `
+        + `${Math.round(TURN_START_BOUND_MS / 1000)}s: typing the task into the live session`,
+      );
+      pending.retried = true;
+      live.lastActivity = new Date().toISOString();
+      saveAgents();
+      writeProgrammaticInput(ptyProcess, pending.task, true);
+      pending.checkArmed = true;
+      scheduleDeliveryCheck(agentId, ptyId);
+      return;
+    }
+
+    console.error(
+      `[agent] ${live.name || live.id} never started a turn: the task reached the CLI neither as an `
+      + 'argument nor typed in',
+    );
+    live.pendingDelivery = undefined;
+    live.status = 'error';
+    live.error = 'The session came up but never took the task, which was sent twice: on the command '
+      + 'line, then typed into the session. Nothing was run, and the session is still open.';
+    live.lastActivity = new Date().toISOString();
+    saveAgents();
+    scheduleTick();
+    emitAgentStatus(live.id);
+  }, TURN_START_BOUND_MS);
   // A pending check must never be the reason the app cannot quit.
   timer.unref();
 }
