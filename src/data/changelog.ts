@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 41,
+    version: '1.7.4',
+    date: '2026-09-16',
+    updates: [
+      'A message you write to your agents in the Chat page now reaches them as yours. Every room message arrives in an agent\'s terminal with a note saying who wrote it, and that note said it came from a teammate and not from you, so that an agent never takes a colleague\'s request for your instruction. It said the same on your own messages, which told the agent the opposite of the truth. The note now follows who actually wrote the message, and an agent that happens to carry your name is still introduced as a teammate',
+    ],
+  },
+  {
     id: 37,
     version: '1.7.0',
     date: '2026-09-16',
