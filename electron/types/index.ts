@@ -308,6 +308,11 @@ export interface BusRoom {
   title: string;
   memberIds: string[];
   createdAt: string;
+  /** The newest message in this room, for sorting the conversation list and
+   *  showing a line under each. Absent on the global room, whose history is
+   *  the overseer's own conversation and is not in this journal. */
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
 }
 
 /**

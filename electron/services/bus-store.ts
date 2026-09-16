@@ -172,6 +172,13 @@ export function listRooms(): BusRoom[] {
 
   for (const projectPath of projectPaths) {
     const id = projectRoomId(projectPath);
+    // Enough for the conversation list to sort itself and show a line, read
+    // from the journal already in memory. Unread counts are not here: they
+    // need a per-viewer read marker, which is state this file does not keep.
+    // The global room has neither, because its history lives in the overseer's
+    // own conversation and reading it on every room listing would put a file
+    // read on a path that runs on every publication.
+    const last = [...state.messages].reverse().find(m => m.roomId === id);
     rooms.push({
       id,
       kind: 'project',
@@ -179,6 +186,8 @@ export function listRooms(): BusRoom[] {
       title: projectPath.split('/').filter(Boolean).pop() || projectPath,
       memberIds: memberIdsFor(id, 'project', projectPath),
       createdAt,
+      lastMessageAt: last?.createdAt,
+      lastMessagePreview: last ? `${last.authorName}: ${last.text.slice(0, 120)}` : undefined,
     });
   }
   return rooms;
@@ -554,6 +563,12 @@ export function markDelivered(targetAgentId: string, messageId: string): BusDeli
   if (!delivery) return undefined;
   delivery.state = 'delivered';
   delivery.deliveredAt = new Date().toISOString();
+  // A released message keeps no trace of why it was once held: a row that says
+  // delivered and, beside it, that this provider can never be delivered to, is
+  // a row that contradicts itself on screen.
+  delivery.reasonCode = undefined;
+  delivery.reason = undefined;
+  delivery.refusedAt = undefined;
   saveBus();
   return delivery;
 }
