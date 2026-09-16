@@ -81,8 +81,26 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
   }, [ptyId, onData]);
 
   useEffect(() => {
-    const cleanup = initTerminal();
-    return cleanup;
+    // Created on a later task, not in the effect body, and the reason is in
+    // xterm rather than here. `term.open()` constructs the Viewport, whose
+    // constructor does `requestAnimationFrame(() => this.syncScrollArea())`
+    // and keeps no handle for it, so `dispose()` cannot cancel that frame.
+    // A terminal opened and disposed in the same tick therefore leaves a
+    // callback that runs against a render service that no longer exists, and
+    // it throws reading `dimensions`.
+    //
+    // React mounts an effect, runs its cleanup and runs the effect again in
+    // development, so opening the terminal in the effect body made that
+    // guaranteed: every open of this dialog threw twice. One task of delay
+    // means a cleanup arriving first cancels the creation instead of
+    // disposing something already open, and nothing is ever opened that is
+    // about to be thrown away.
+    let cleanup: (() => void) | undefined;
+    const pending = setTimeout(() => { cleanup = initTerminal(); }, 0);
+    return () => {
+      clearTimeout(pending);
+      cleanup?.();
+    };
   }, [initTerminal]);
 
   // Repaint on app theme change
