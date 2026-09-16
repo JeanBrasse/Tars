@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 38,
+    version: '1.7.1',
+    date: '2026-09-16',
+    updates: [
+      'An agent that stopped on a failure no longer tells you it is waiting for you. A minute after a turn fails, the assistant goes idle at its prompt exactly as it does after a turn that went well, and Tars turned that into the notification "is waiting for your input" for an agent that could do nothing until you logged it in again. The card already kept showing the failure; the notification now agrees with it. You still get the error notification with the assistant\'s own words, and once a new turn starts in that agent, waiting notifications come back as usual',
+    ],
+  },
+  {
     id: 37,
     version: '1.7.0',
     date: '2026-09-16',
