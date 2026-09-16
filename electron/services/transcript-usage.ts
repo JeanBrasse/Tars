@@ -183,7 +183,24 @@ function listTranscripts(root: string): string[] {
   return out;
 }
 
-let cache: { at: number; value: TranscriptUsage } | null = null;
+/**
+ * The memo, and which home it was computed for.
+ *
+ * `homeDir` is a parameter of the scan, but the memo was module scope and
+ * unkeyed, so two different homes inside the sixty second window handed each
+ * other their numbers. Production never noticed, since every caller passes
+ * os.homedir(), and the tests avoided it by clearing in a beforeEach: a guard
+ * on the calling side for a trap set on the called side. The key is here now,
+ * so the protection does not depend on remembering it.
+ *
+ * `fileCache` needs no key: it is keyed by absolute path already.
+ */
+let cache: { at: number; homeDir: string; value: TranscriptUsage } | null = null;
+
+/** Bumped by clearTranscriptUsageCache, so a scan that started before a clear
+ *  cannot write its result into the memo afterwards. Without it, "clear" meant
+ *  "clear, unless something is already running". */
+let generation = 0;
 const CACHE_TTL = 60_000;
 
 /**
@@ -402,16 +419,23 @@ async function breatheIfDue(): Promise<void> {
 
 /** The scan in progress, if any. Three callers share one: the page and both
  *  bots asking at once used to mean three full passes over 883 MB. */
-let inFlight: Promise<TranscriptUsage> | null = null;
+const inFlight = new Map<string, Promise<TranscriptUsage>>();
 
 export function computeTranscriptUsage(homeDir = os.homedir()): Promise<TranscriptUsage> {
-  if (cache && Date.now() - cache.at < CACHE_TTL) return Promise.resolve(cache.value);
-  if (inFlight) return inFlight;
-  inFlight = scanTranscripts(homeDir).finally(() => { inFlight = null; });
-  return inFlight;
+  if (cache && cache.homeDir === homeDir && Date.now() - cache.at < CACHE_TTL) {
+    return Promise.resolve(cache.value);
+  }
+  const running = inFlight.get(homeDir);
+  if (running) return running;
+  const scan = scanTranscripts(homeDir).finally(() => { inFlight.delete(homeDir); });
+  inFlight.set(homeDir, scan);
+  return scan;
 }
 
 async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
+  // Which generation this scan belongs to. A clear that happens while it runs
+  // makes its result stale before it exists, and it must not be memoised.
+  const startedAt = generation;
 
   const root = path.join(homeDir, '.claude', 'projects');
   // Null-prototype: a transcript's model id is attacker-influenceable, and
@@ -529,7 +553,10 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
     unreadable,
   };
 
-  cache = { at: Date.now(), value };
+  // Returned to whoever asked either way: they asked before the clear, and
+  // these numbers were true then. Only the memo is refused, so the next caller
+  // reads the world as it is now rather than as it was.
+  if (generation === startedAt) cache = { at: Date.now(), homeDir, value };
   return value;
 }
 
@@ -541,6 +568,12 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
  * parse, since (mtimeMs, size) is all that identifies it.
  */
 export function clearTranscriptUsageCache(): void {
+  generation += 1;
   cache = null;
   fileCache.clear();
+  // The scan in progress went with them. This function says it clears the
+  // cache and used to leave this behind: harmless while every caller awaited,
+  // and a wrong billing figure the day one did not, handed over from another
+  // home with nothing to say where it came from.
+  inFlight.clear();
 }

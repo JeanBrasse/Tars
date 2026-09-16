@@ -106,8 +106,10 @@ export async function getClaudeStats(): Promise<ClaudeStats | null> {
     // The transcripts do carry the usage blocks: read them.
     const hasTokens =
       base && Object.keys((base.modelUsage as Record<string, unknown>) || {}).length > 0;
+    let unreadable = 0;
     if (!hasTokens) {
       const usage = await computeTranscriptUsage();
+      unreadable = usage.unreadable ?? 0;
       if (Object.keys(usage.modelUsage).length > 0) {
         const merged = {
           ...(base || {}),
@@ -124,8 +126,17 @@ export async function getClaudeStats(): Promise<ClaudeStats | null> {
       }
     }
 
-    statsMemo = { at: Date.now(), value: base };
-    return base;
+    // And it survives the branch not being taken, which is the case that
+    // matters most: if every transcript fails to open there is no usage at
+    // all, so the merge above never happens, and the count of what could not
+    // be read used to be dropped exactly when all of it was unreadable. A
+    // figure built from nothing has to say so rather than come back as a
+    // smaller bill or as nothing at all.
+    const value = unreadable > 0
+      ? ({ ...(base || {}), unreadable } as ClaudeStats)
+      : base;
+    statsMemo = { at: Date.now(), value };
+    return value;
   } catch {
     return null;
   }
