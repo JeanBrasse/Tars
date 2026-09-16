@@ -8,7 +8,7 @@ import { afterAll } from 'vitest';
  * codex spawn; the spawn spreads `process.env`, which is right for a pty, so
  * "Tars did not add this" and "this is not present" are different statements
  * and only the first is the property. Tars has run its own agents with that
- * variable set since 1.6.19, so the suite was green in CI and red in every
+ * variable set since 1.7.0, so the suite was green in CI and red in every
  * terminal Tars had started - including the one an agent runs the suite in.
  * DISABLE_UPDATES was the same defect one variable over, and would have hit any
  * developer on an IT-managed laptop. `constants.test.ts` has the mirror image:

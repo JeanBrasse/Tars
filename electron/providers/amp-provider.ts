@@ -53,7 +53,7 @@ export class AmpProvider implements CLIProvider {
    * is not one of them: the update control is a setting, `amp.updates.mode`,
    * whose values are warn, disabled and auto. So the only honest way to stop a
    * CLI Tars launched from replacing its own binary under a running session
-   * (the 1.6.19 lesson) is to hand it a settings file that says so.
+   * (the 1.7.0 lesson) is to hand it a settings file that says so.
    *
    * It is a merge of whatever the user already has rather than a fresh file,
    * which makes it correct whichever way AMP_SETTINGS_FILE behaves: --help says
