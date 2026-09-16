@@ -405,3 +405,53 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
     );
   }
 }
+
+/** Where Electron keeps what it writes on its own, each asked of the running app. */
+const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', 'logs', 'crashDumps'];
+
+/**
+ * The one way a spec starts the app: inside its sandbox, Chromium profile
+ * included, or not at all.
+ *
+ * HOME moves ~/.dorothy and ~/.claude and nothing else. Electron finds its own
+ * folders through macOS, which answers with the account's home whatever HOME
+ * says, so a launch with HOME alone opened ~/Library/Application Support/tars.
+ * On a case-insensitive disk that is the installed Tars's own profile, the same
+ * inode as .../Tars. Measured on 2026-09-16 while Noah's app was running: a
+ * probe launched with HOME alone reported every path under /Users/noah, and
+ * DevToolsActivePort in that profile was rewritten during an e2e run by the
+ * debugging port Playwright opens. Every run until then could read and write
+ * that app's local storage, cookies and IndexedDB.
+ *
+ * `--user-data-dir` moves the Chromium profile, and CFFIXED_USER_HOME moves
+ * what macOS calls home, so application support, caches and logs follow. Then
+ * the app is asked where each of those landed, and one outside the sandbox
+ * closes it and fails the spec before a page is opened.
+ */
+export async function launchSandboxed(electron, sandboxHome, { env = {}, ...options } = {}) {
+  const app = await electron.launch({
+    ...options,
+    args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`],
+    env: { ...process.env, ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
+  });
+  const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries(
+    names.map(name => {
+      try {
+        return [name, running.getPath(name)];
+      } catch (error) {
+        return [name, `unavailable: ${error}`];
+      }
+    }),
+  ), ELECTRON_PATHS);
+  const roots = [sandboxHome, fs.realpathSync(sandboxHome)];
+  const outside = Object.entries(landed)
+    .filter(([, where]) => !roots.some(root => where === root || where.startsWith(root + path.sep)));
+  if (outside.length > 0) {
+    await app.close();
+    throw new Error(
+      `the app would have run outside its sandbox ${sandboxHome}:\n`
+      + outside.map(([name, where]) => `  ${name}: ${where}`).join('\n'),
+    );
+  }
+  return app;
+}

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PANEL_HISTORY } from './surfaces.mjs';
-import { seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox } from './fixture.mjs';
 
 /**
  * A Dashboard panel switched to its history view, in a sandbox where nothing
@@ -36,13 +36,10 @@ interface TerminalGeometry {
 test.beforeAll(async () => {
   sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-history-'));
   seedSandbox(sandboxHome, { panelHistory: true });
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, sandboxHome, {
     // The renderer reads the clock too, and it is the one that formats the rows.
     timezoneId: 'UTC',
     env: {
-      ...process.env,
-      HOME: sandboxHome,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the two other suites may still be holding 31498 and 31497.

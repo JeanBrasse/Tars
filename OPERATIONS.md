@@ -192,8 +192,10 @@ The spec launches the **real Electron app** (`electron.launch({ args: ['.'] })`)
 | `DOROTHY_DEV_URL` | `http://localhost:3100` | |
 | `DOROTHY_API_PORT` | `31498` | never collides with prod (31415) or sandbox (31499) |
 | `DOROTHY_E2E` | `1` | suppresses `openDevTools()` |
+| `CFFIXED_USER_HOME` | the sandbox HOME | macOS ignores `HOME` for application support, caches and logs |
+| `--user-data-dir` (argument) | `<sandbox>/electron-profile` | the Chromium profile, which `HOME` does not move |
 
-The sandbox HOME is `rm -rf`'d in `afterAll`. Your live install is never touched.
+The sandbox HOME is `rm -rf`'d in `afterAll`. `HOME` alone did not keep the live install out of reach: the dev app is named `tars`, and on a case-insensitive disk its profile is the installed Tars's `~/Library/Application Support/Tars`, which every run opened until 2026-09-16. Every spec launches through `launchSandboxed` in `e2e/fixture.mjs`, which adds the two rows above and asks the running app where each of its folders landed before any page opens.
 
 **Nothing in the E2E path compiles the main process.** `main` points at
 `electron/dist/main.js`; if it is stale or missing, Playwright launches an old build or fails

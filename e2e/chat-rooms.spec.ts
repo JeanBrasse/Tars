@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CHAT_ROOMS, splitPageErrors } from './surfaces.mjs';
-import { seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox } from './fixture.mjs';
 
 /**
  * The Chat room, one frame per state, in a sandbox of its own.
@@ -32,12 +32,9 @@ type ChatSurface = { name: string; route: string; clickText?: string; shows: str
 test.beforeAll(async () => {
   sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-chat-'));
   seedSandbox(sandboxHome, { chatRooms: true });
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, sandboxHome, {
     timezoneId: 'UTC',
     env: {
-      ...process.env,
-      HOME: sandboxHome,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the other suites may still be holding 31498 and 31496.

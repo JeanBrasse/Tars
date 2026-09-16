@@ -14,9 +14,12 @@ import { fileURLToPath } from 'node:url';
  * initAgentPty and spawnAgentSession, both call ensureProjectTrusted, and that
  * reads the whole of `os.homedir()/.claude.json` and writes it back with one
  * more project. env-isolation.ts kept HOME on purpose and left each suite to
- * redirect it, and that suite never did. Run with a throwaway HOME, the whole
- * suite wrote into it exactly one product file, that one: the class had a
- * single member, and a rule each file has to remember is how it got one.
+ * redirect it, and that suite never did. With the guard below and without the
+ * redirect, three files write into the home they start in: that one and
+ * task-never-started.test.ts into ~/.claude.json, and
+ * agent-start-missing-skills.test.ts into ~/.dorothy/amp-settings.json, which
+ * Noah's copy shows rewritten at the minute a suite ran. A rule each file has to
+ * remember is how the class got three members.
  *
  * So this does it for every file, before the file's imports, which matters for
  * the same reason it does in env-isolation.ts: constants.ts computes DATA_DIR
