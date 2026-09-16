@@ -1,8 +1,21 @@
 # Tars 1.5.0: surface inventory
 
-Every surface the app can render today. The Pencil document `design/tars-redesign.pen`
-must contain a frame for each line here; `npm run e2e:guard` checks the routed
-ones are covered by the visual suite too.
+Every surface the app can render today. A frame must exist for each line here;
+`npm run e2e:guard` checks the routed ones are covered by the visual suite too.
+
+The frames live in two Pencil documents, and the second is a fork of the first
+rather than a companion to it. `design/tars-redesign.pen` holds 74 root frames.
+`design/chat-design.pen` holds those same 74, with the same ids and the same
+names, plus the ten frames of the Chat room listed on the `/chat` line below:
+84 in all. The room frames were drawn in the fork and exist nowhere else, so
+until the two are reconciled, `chat-design.pen` is the newer of the two and the
+only place the Chat room is specified.
+
+Reconciling them means one document again, and it is deliberately not done here:
+a headless Pen session and the Pen desktop app writing the same `.pen` end with
+the last save erasing the other, so it waits for a moment when Pen is closed.
+Until then, draw a Chat room frame in `chat-design.pen` and anything else in
+`tars-redesign.pen`.
 
 Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,
@@ -13,7 +26,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | Route | Name | Frame |
 |---|---|---|
 | `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Dashboard · panel history, Panel history · states |
-| `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer, Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents |
+| `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all ten in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of |
 | `/agents` | Agents | Agents · dark |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
