@@ -110,6 +110,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // status: the agent was just dispatched a task and is about to work.
     if (source) {
       agent.currentSessionId = session_id;
+      // What the task-start watch reads, instead of an emptied ownership field.
+      agent.sessionRegisteredAt = new Date().toISOString();
+      agent.sessionPtyId = agent.ptyId;
       // Remembered separately so a restart can resume it: currentSessionId is
       // ownership and gets cleared on load, this is where the work got to.
       agent.resumableSessionId = session_id;
