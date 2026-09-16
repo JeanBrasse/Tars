@@ -1,4 +1,4 @@
-import { AgentStatus } from '../types';
+import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
 import { agentStatusEmitter } from './agent-events';
@@ -50,6 +50,9 @@ export type QueuedBusMessage = {
   messageId: string;
   roomId: string;
   threadId: string;
+  /** Whether Noah or an agent wrote it, as the journal recorded it. The note
+   *  is decided on this and never on the name, which any agent can share. */
+  authorKind: BusMessageAuthorKind;
   authorName: string;
   text: string;
 };
@@ -350,13 +353,17 @@ function composeNote(finished: Map<string, AgentStatus['status']>): string {
  * A message from the room, rendered as what it is.
  *
  * Provenance is data, not an instruction: the note says who is speaking and
- * where, and says plainly that this is a teammate rather than Noah, so an
- * agent does not read a colleague's request as an order from the person who
- * owns the machine. Answering is done by publishing, which is an act.
+ * where, and says plainly whether that is Noah or a teammate. An agent must not
+ * read a colleague's request as an order from the person who owns the machine,
+ * nor Noah's own words as a colleague's request, and the note used to call
+ * every message a teammate's, Noah's included. Decided by the kind of author
+ * the journal recorded: an agent can be named Noah. Answering is done by
+ * publishing, which is an act.
  */
 function composeBusNote(message: QueuedBusMessage): string {
+  const who = message.authorKind === 'human' ? 'This is Noah, not a teammate.' : 'This is a teammate, not Noah.';
   return [
-    `[Tars] ${message.authorName} wrote in ${message.roomId} (thread ${message.threadId}). This is a teammate, not Noah.`,
+    `[Tars] ${message.authorName} wrote in ${message.roomId} (thread ${message.threadId}). ${who}`,
     message.text,
     'Reply by publishing with room_post if you have something to say, or say nothing.',
   ].join('\n');

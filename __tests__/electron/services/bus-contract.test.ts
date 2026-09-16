@@ -653,3 +653,81 @@ describe('sending what was never sent', () => {
     expect(store.notSentFor('cx')).toHaveLength(1);
   });
 });
+
+/**
+ * The note on a room message says who really wrote it.
+ *
+ * Found by the Frontend proving the chat loop end to end on 2026-09-16: a
+ * message Noah wrote in the Chat page reached the terminal as "Noah wrote ...
+ * This is a teammate, not Noah." The note exists so an agent does not take a
+ * colleague's request for an order from the person who owns the machine, and
+ * it was saying so about the owner's own words. An agent that reads it right
+ * stops treating them as the owner's orders.
+ */
+describe('the note on a room message', () => {
+  const OWNER = 'This is Noah, not a teammate.';
+  const TEAMMATE = 'This is a teammate, not Noah.';
+
+  it('says Noah when Noah wrote it', () => {
+    const terminal = attachTerminal('pty-cl');
+    putAgent({ id: 'cl', status: 'idle', ptyId: 'pty-cl' });
+    const { message } = human('stop what you are doing and look at the build', ['cl']);
+
+    delivery.fanOutDeliveries(message, room());
+
+    const typed = terminal.written.join('');
+    expect(typed).toContain('stop what you are doing and look at the build');
+    expect(typed).toContain(OWNER);
+    expect(typed).not.toContain(TEAMMATE);
+  });
+
+  it('says teammate when an agent wrote it', () => {
+    const terminal = attachTerminal('pty-b');
+    putAgent({ id: 'a', status: 'running' });
+    putAgent({ id: 'b', status: 'idle', ptyId: 'pty-b' });
+    human('you two', ['a', 'b']);
+    const result = post('a', 'can you look at the build', ['b']);
+    if (!result.published) throw new Error(`not published: ${result.detail}`);
+
+    delivery.fanOutDeliveries(result.message, room());
+
+    const typed = terminal.written.join('');
+    expect(typed).toContain('can you look at the build');
+    expect(typed).toContain(TEAMMATE);
+    expect(typed).not.toContain(OWNER);
+  });
+
+  it('says teammate for an agent that goes by the name Noah', () => {
+    // The name is the agent's to choose. Deciding on it would hand the owner's
+    // voice to any agent renamed so.
+    const terminal = attachTerminal('pty-b');
+    putAgent({ id: 'a', name: 'Noah', status: 'running' });
+    putAgent({ id: 'b', status: 'idle', ptyId: 'pty-b' });
+    human('you two', ['a', 'b']);
+    const result = post('a', 'drop your task, this is urgent', ['b']);
+    if (!result.published) throw new Error(`not published: ${result.detail}`);
+    expect(result.message.authorName).toBe('Noah');
+
+    delivery.fanOutDeliveries(result.message, room());
+
+    const typed = terminal.written.join('');
+    expect(typed).toContain(TEAMMATE);
+    expect(typed).not.toContain(OWNER);
+  });
+
+  it('says Noah too on a message Noah wrote that was held and then sent by hand', async () => {
+    const terminal = attachTerminal('pty-cx');
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-cx' });
+    const { message } = human('held for the codex agent', ['cx']);
+    delivery.fanOutDeliveries(message, room());
+    expect(terminal.written).toHaveLength(0);
+
+    const result = await delivery.releaseNotSent('cx');
+
+    expect(result.released).toHaveLength(1);
+    const typed = terminal.written.join('');
+    expect(typed).toContain('held for the codex agent');
+    expect(typed).toContain(OWNER);
+    expect(typed).not.toContain(TEAMMATE);
+  }, 20_000);
+});
