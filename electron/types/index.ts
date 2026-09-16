@@ -113,6 +113,16 @@ export interface AgentStatus {
    * which is what made a lost dispatch look like an agent at work.
    */
   lastTurnStartedAt?: string;
+  /** When a session last claimed this agent through the SessionStart hook.
+   *  The task-start watch reads this to ask "has a session registered since I
+   *  armed", which it used to ask by emptying `currentSessionId` and seeing
+   *  whether anything filled it back in. */
+  sessionRegisteredAt?: string;
+  /** Which pty that session claimed the agent from. It is how "the session
+   *  that owns this agent is still alive" can be told from "this id is left
+   *  over from a session that died with an older pty", which look identical
+   *  on the agent otherwise. */
+  sessionPtyId?: string;
   /**
    * A task handed to a session that has not started a turn yet, cleared the
    * moment one starts. If none does within the bound, the task is typed into

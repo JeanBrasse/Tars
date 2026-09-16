@@ -537,22 +537,42 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined,
     ? { ptyId, task, dispatchedAt: new Date().toISOString() }
     : undefined;
 
-  // The precondition this check rests on, established here rather than trusted.
+  // The question this watch asks is "has a session registered since I armed",
+  // and it used to ask it by emptying `currentSessionId` and seeing whether
+  // anything filled it back in. That worked, and it cost far too much. Seven
+  // callers arm this; only one, spawnAgentSession, has just ended the previous
+  // session and laid its tombstone. The other six reuse a pty whose session is
+  // alive and working. Emptying the field left that agent with no owner while
+  // it worked, so the stale-session guard had nothing to compare against and
+  // ownership went to whichever session posted next. It was restored only if a
+  // UserPromptSubmit arrived; when none did, the agent worked on while
+  // everything it said was dropped as unowned, and then this very watch
+  // accused it of never having started.
   //
-  // The whole test below is "did a session register since this one started",
-  // read as `currentSessionId` being unset when the grace period expires. Only
-  // spawnAgentSession cleared it, for its own reason, so on the three paths
-  // that did not, an agent that had already registered once in this run kept
-  // the old id and the check quietly cancelled itself. Noah starts his agents
-  // from the Agents page and they run all day with ptys dying and coming back,
-  // so in his actual use it would almost never have fired: armed everywhere,
-  // triggering nowhere, which is the shape of bug this exists to catch.
+  // The question is asked directly now, and nothing is erased. Two facts
+  // answer it, and either means the task landed: a session registered after
+  // this moment, or a turn began after it. The first is the spawn, where a new
+  // session is coming. The second is a dispatch typed into a session already
+  // live, where no registration is ever coming and the turn is the only
+  // evidence there will be. spawnAgentSession still clears the field a few
+  // statements earlier, for its own reason: it really did end that session.
+  const armedAt = Date.now();
+
+  // Is the session that owns this agent still alive? It is, only if it claimed
+  // the agent from the pty being armed. An id that was registered from an
+  // older pty is left over from a session that died with it, and the two look
+  // identical on the agent, which is why this used to be cleared every time.
   //
-  // Owned by the watch, so a fifth path added tomorrow inherits it without
-  // knowing it exists. It is also the right thing on its own terms: a session
-  // is starting, so nothing before it is authoritative any more, which is the
-  // same reason spawnAgentSession clears it a few statements earlier.
-  agent.currentSessionId = undefined;
+  // Cleared when it is stale, because it is: the guard would otherwise reject
+  // the new session's own hooks as coming from the wrong session, which is the
+  // failure this whole contract exists to prevent. Kept when it is live,
+  // because erasing it is what left six of the seven callers dispatching into
+  // an agent that then had no owner at all while it worked.
+  const ownerIsLive = !!agent.currentSessionId && agent.sessionPtyId === ptyId;
+  if (!ownerIsLive) {
+    agent.currentSessionId = undefined;
+  }
+  const ownerAtArming = agent.currentSessionId;
 
   const timer = setTimeout(() => {
     const live = agents.get(agent.id);
@@ -560,8 +580,13 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined,
     if (!live || live.ptyId !== ptyId) return;
     // Already exited: onExit owns that outcome and knows the exit code.
     if (!ptyProcesses.has(ptyId)) return;
-    // It registered, so it took its task.
-    if (live.currentSessionId) return;
+    // It took its task: a session claimed the agent after this armed, or a
+    // turn began after it. Either is proof, and neither needs the ownership
+    // field to have been emptied first.
+    if (live.currentSessionId && live.currentSessionId !== ownerAtArming) return;
+    const registeredAt = live.sessionRegisteredAt ? Date.parse(live.sessionRegisteredAt) : 0;
+    const turnStartedAt = live.lastTurnStartedAt ? Date.parse(live.lastTurnStartedAt) : 0;
+    if (registeredAt > armedAt || turnStartedAt > armedAt) return;
     // It moved on by itself, to waiting or completed or error.
     if (live.status !== 'running') return;
 
