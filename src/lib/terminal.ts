@@ -59,6 +59,20 @@ export function stripTerminalReplies(data: string): string {
 const MOUSE_TRACKING_MODES = new Set([9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016]);
 
 /**
+ * The mouse a program asked for and `suppressMouseTracking` kept from xterm,
+ * recorded the way xterm 5.3 applies those modes: 9, 1000, 1002 and 1003 set
+ * the tracking protocol and resetting any of them turns tracking off; 1006 and
+ * 1016 set the report encoding and resetting either restores the default; RIS
+ * clears both. xterm 5.3 ignores 1001, 1005 and 1015, and so does this.
+ */
+interface MouseRequest {
+  protocol: 0 | 9 | 1000 | 1002 | 1003;
+  encoding: 0 | 1006 | 1016;
+}
+
+const mouseRequests = new WeakMap<Terminal, MouseRequest>();
+
+/**
  * Refuse the mouse-tracking DEC private modes.
  *
  * The failure: no panel in the board could scroll and no text could be
@@ -78,12 +92,46 @@ const MOUSE_TRACKING_MODES = new Set([9, 1000, 1001, 1002, 1003, 1005, 1006, 101
  * Registered handlers run before the built-in one and `true` stops the
  * sequence, so the mode is never set. Mixed sets that also carry an unrelated
  * mode are passed through rather than dropped wholesale.
+ *
+ * What was refused is still recorded, with the resets, for
+ * `passWheelToProgram`: a program that asked for wheel reports gets those, and
+ * nothing else of the mouse.
  */
 export function suppressMouseTracking(term: Terminal): void {
-  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params =>
-    params.length > 0 &&
-    params.every(p => typeof p === 'number' && MOUSE_TRACKING_MODES.has(p)),
-  );
+  const request: MouseRequest = { protocol: 0, encoding: 0 };
+  mouseRequests.set(term, request);
+  const record = (params: (number | number[])[], set: boolean) => {
+    for (const p of params) {
+      if (p === 9 || p === 1000 || p === 1002 || p === 1003) request.protocol = set ? p : 0;
+      else if (p === 1006 || p === 1016) request.encoding = set ? p : 0;
+    }
+  };
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params => {
+    const mouse = params.length > 0 &&
+      params.every(p => typeof p === 'number' && MOUSE_TRACKING_MODES.has(p));
+    if (mouse) record(params, true);
+    return mouse;
+  });
+  // `false` on both: xterm still applies resets and RIS itself.
+  term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, params => {
+    record(params, false);
+    return false;
+  });
+  term.parser.registerEscHandler({ final: 'c' }, () => {
+    request.protocol = 0;
+    request.encoding = 0;
+    return false;
+  });
+}
+
+/**
+ * xterm's own condition for turning the wheel into arrow keys: the active
+ * buffer keeps no history. The alternate screen never does; a normal buffer
+ * only with scrollback 0 (1000 is xterm's default when the option was never
+ * set).
+ */
+function wheelTypesArrows(term: Terminal): boolean {
+  return term.buffer.active.type === 'alternate' || (term.options.scrollback ?? 1000) <= 0;
 }
 
 /**
@@ -115,13 +163,74 @@ export function suppressMouseTracking(term: Terminal): void {
  */
 export function stopWheelTyping(term: Terminal): void {
   term.element?.addEventListener('wheel', event => {
-    // xterm's own condition for converting: the active buffer keeps no history.
-    // The alternate screen never does; a normal buffer only with scrollback 0
-    // (1000 is xterm's default when the option was never set).
-    const noHistory = term.buffer.active.type === 'alternate' || (term.options.scrollback ?? 1000) <= 0;
-    if (!noHistory) return;
+    if (!wheelTypesArrows(term)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+  }, { capture: true, passive: false });
+}
+
+/**
+ * Scroll a full-screen CLI with the wheel, the one part of the mouse it gets.
+ *
+ * Claude Code with `"tui": "fullscreen"` in its settings keeps the conversation
+ * itself and draws it on the alternate screen, where xterm has no history to
+ * scroll: once `stopWheelTyping` stopped the wheel typing arrows there, the
+ * wheel did nothing at all. Claude Code scrolls its conversation on wheel
+ * reports, and asks for them as it starts, on every resize and again when
+ * input reaches it (`?1000h ?1002h ?1003h ?1006h`). `suppressMouseTracking`
+ * still keeps the mouse from xterm, so clicks, drags, selection and
+ * Option+click stay here; only the wheel goes to the program, encoded as xterm
+ * would have encoded it: SGR, button 64 up and 65 down, the cell under the
+ * pointer, Alt and Ctrl added.
+ *
+ * One report per line of travel, measured the way xterm measures its own
+ * scroll: pixels over the row height, the remainder carried to the next event.
+ * Claude Code moves one line per report here. It moves three for xterm.js, but
+ * it recognises xterm.js by the reply to XTVERSION, which xterm 5.3 never
+ * sends, and one report per event moved a mouse notch a single line.
+ *
+ * Only when the program asked for tracking with SGR reports, and xterm is not
+ * tracking the mouse itself (a mixed mode set it let through). Otherwise the
+ * wheel is `stopWheelTyping`'s: stopped where it would type arrows, left to
+ * xterm where there is history to scroll. Use it instead of `stopWheelTyping`
+ * on a terminal that forwards to a CLI, after `suppressMouseTracking`, right
+ * after `term.open()`.
+ *
+ * The request is read from the output this terminal parsed. A panel rebuilt
+ * from stored output that no longer reaches back to it (a long turn with no
+ * input fills the stored chunks) forwards nothing until Claude Code asks again,
+ * at the next key or resize.
+ *
+ * Measured with Claude Code 2.1.273, in a Dashboard panel and in fullscreen:
+ * the conversation scrolls back to its first line, no line is cut or
+ * overlapped on any screen, and a round trip through fullscreen keeps it so.
+ */
+export function passWheelToProgram(term: Terminal, send: (data: string) => void): void {
+  let travel = 0;
+  term.element?.addEventListener('wheel', event => {
+    const request = mouseRequests.get(term);
+    const wanted = request !== undefined && request.protocol >= 1000 && request.encoding === 1006 &&
+      term.modes.mouseTrackingMode === 'none';
+    if (!wanted && !wheelTypesArrows(term)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // xterm scrolls nothing for a horizontal or shifted wheel either.
+    if (!wanted || event.deltaY === 0 || event.shiftKey) return;
+    const box = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+    if (!box || box.width <= 0 || box.height <= 0) return;
+    const rowHeight = box.height / term.rows;
+    // deltaMode 0 is pixels, 1 lines, 2 pages (WheelEvent.DOM_DELTA_*, written
+    // out so this runs where WheelEvent is not defined, as in the unit tests).
+    travel += event.deltaMode === 0 ? event.deltaY / rowHeight
+      : event.deltaMode === 2 ? event.deltaY * term.rows
+        : event.deltaY;
+    const lines = Math.trunc(travel);
+    travel -= lines;
+    if (lines === 0) return;
+    const col = Math.min(Math.max(Math.floor((event.clientX - box.left) / (box.width / term.cols)), 0), term.cols - 1) + 1;
+    const row = Math.min(Math.max(Math.floor((event.clientY - box.top) / rowHeight), 0), term.rows - 1) + 1;
+    const button = (lines < 0 ? 64 : 65) | (event.altKey ? 8 : 0) | (event.ctrlKey ? 16 : 0);
+    send(`\x1b[<${button};${col};${row}M`.repeat(Math.abs(lines)));
   }, { capture: true, passive: false });
 }
 

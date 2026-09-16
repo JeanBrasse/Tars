@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler, disposeTerminalSafely, stopWheelTyping, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -68,7 +68,9 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(container);
-      stopWheelTyping(term);
+      passWheelToProgram(term, input => {
+        window.electronAPI?.agent?.sendInput({ id: agentIdRef.current, input });
+      });
 
       if (cancelled) { disposeTerminalSafely(term); return; }
 
