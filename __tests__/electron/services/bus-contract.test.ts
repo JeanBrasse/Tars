@@ -38,6 +38,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 type AgentStatus = import('../../../electron/types').AgentStatus;
+type BusThread = import('../../../electron/types').BusThread;
 
 let store: typeof import('../../../electron/services/bus-store');
 let delivery: typeof import('../../../electron/services/bus-delivery');
@@ -125,10 +126,11 @@ describe('the bounds, applied where an agent cannot get around them', () => {
   /**
    * Driven through the store's own append rather than through the rotation.
    *
-   * An exchange between agents stops after one round today, which the Backend
-   * is repairing while this is written: a bound reached by way of that would
-   * pin the defect rather than the bound. These put the messages in directly,
-   * so each one names the bound that actually closed the thread.
+   * Not because the rotation is broken, it advances since 424b1d5 and the
+   * describe at the bottom of this file drives it end to end. It is so that
+   * each case here names the bound that actually closed the thread: reaching
+   * ten messages through three voices also reaches the third round, and a test
+   * that trips both at once cannot say which one did the work.
    */
   function agentSays(speaker: string, text: string) {
     return store.appendMessage({
@@ -355,6 +357,146 @@ describe('replacement and Stop', () => {
     delivery.fanOutDeliveries(message, room());
 
     expect(store.deliveriesOf(message.id)[0].state).toBe('queued');
+  });
+});
+
+/**
+ * The round ending, which is what makes every bound above reachable at all.
+ *
+ * Pinned only now. Until 424b1d5 an exchange stopped after one round: the
+ * guard refused an agent that had already been heard, and that refused message
+ * was precisely the one that would have advanced the counter. So MAX_ROUNDS
+ * was dead code, and a room with fewer members than MAX_AGENT_MESSAGES, which
+ * is every real room, never reached `bounded` at all. It simply refused
+ * everyone, with no state the interface could show.
+ */
+describe('a round that ends, so a thread can bound itself', () => {
+  const others = (ids: string[], speaker: string) => ids.filter(id => id !== speaker);
+
+  function threeTalking(): string[] {
+    const ids = ['a', 'b', 'c'];
+    for (const id of ids) putAgent({ id, status: 'running' });
+    human('you three, sort it out', ids);
+    return ids;
+  }
+
+  it('advances one, two, three as three agents cite each other', () => {
+    const ids = threeTalking();
+    const rounds: number[] = [];
+
+    for (let n = 0; n < 9; n++) {
+      const speaker = ids[n % 3];
+      const result = post(speaker, `message ${n + 1}`, others(ids, speaker));
+      expect(result.published, `message ${n + 1} from ${speaker}`).toBe(true);
+      if (result.published) rounds.push(result.thread.round);
+    }
+
+    expect(rounds).toEqual([1, 1, 1, 2, 2, 2, 3, 3, 3]);
+  });
+
+  it('stops three agents in bounded, and refuses what comes after', () => {
+    const ids = threeTalking();
+
+    let last: ReturnType<typeof post> | undefined;
+    for (let n = 0; n < 10; n++) {
+      const speaker = ids[n % 3];
+      last = post(speaker, `message ${n + 1}`, others(ids, speaker));
+      expect(last.published, `message ${n + 1}`).toBe(true);
+    }
+
+    expect(last && last.published && last.thread.state).toBe('bounded');
+    expect(store.openThreadOf(ROOM)).toBeUndefined();
+    expect(post('a', 'one more', ['b', 'c']).published).toBe(false);
+  });
+
+  it('bounds a room of two on rounds, which no room could reach before', () => {
+    putAgent({ id: 'a', status: 'running' });
+    putAgent({ id: 'b', status: 'running' });
+    human('you two', ['a', 'b']);
+
+    const accepted: BusThread[] = [];
+    for (let n = 0; n < 8; n++) {
+      const speaker = n % 2 === 0 ? 'a' : 'b';
+      const result = post(speaker, `message ${n + 1}`, [speaker === 'a' ? 'b' : 'a']);
+      if (result.published) accepted.push(result.thread);
+    }
+
+    // Two voices means a round every two messages, so the seventh opens the
+    // fourth round and closes the thread on seven messages, nowhere near ten.
+    expect(accepted).toHaveLength(7);
+    expect(accepted[6].state).toBe('bounded');
+    expect(accepted[6].agentMessageCount).toBe(7);
+    expect(accepted[6].round).toBe(4);
+  });
+
+  /**
+   * The negative control: the same exchange, refereed by the guard as it was.
+   *
+   * It runs on its own journal rather than being asked about the real one.
+   * That is the whole point: the old guard refused the message that would have
+   * ended the round, so the journal it produced is not the journal produced
+   * today, and asking it about messages it would never have let through would
+   * flatter it. Here it only ever sees what it accepted.
+   */
+  type OldEntry = { authorKind: 'human' | 'agent'; authorId: string; mentions: string[] };
+
+  /** currentRound, which the fix did not touch, over an arbitrary journal. */
+  const roundAndHeard = (journal: OldEntry[]) => {
+    let round = 1;
+    let heard = new Set<string>();
+    for (const entry of journal) {
+      if (entry.authorKind !== 'agent') continue;
+      if (heard.has(entry.authorId)) { round += 1; heard = new Set<string>(); }
+      heard.add(entry.authorId);
+    }
+    return { round, heard };
+  };
+
+  /** The guard as it read before 424b1d5, over what it had itself accepted. */
+  function runOldGuard(voices: string[], attempts: number) {
+    // The opening human message, which names everyone, exactly as the room
+    // helper posts it: the old guard scanned it too when looking for a mention.
+    const journal: OldEntry[] = [{ authorKind: 'human', authorId: 'human', mentions: voices }];
+    let taken = 0;
+
+    for (let n = 0; n < attempts; n++) {
+      const me = voices[n % voices.length];
+      const { round, heard } = roundAndHeard(journal);
+      if (round > 1 || heard.size > 0) {
+        const mentionedByAnother = journal.some(m => m.authorId !== me && m.mentions.includes(me));
+        if (!mentionedByAnother) continue;
+        if (heard.has(me)) continue;
+      }
+      journal.push({ authorKind: 'agent', authorId: me, mentions: others(voices, me) });
+      taken += 1;
+    }
+    return { taken, round: roundAndHeard(journal).round };
+  }
+
+  it('is what the old guard prevented: it took three and then refused everyone', () => {
+    const ids = threeTalking();
+    let published = 0;
+    for (let n = 0; n < 9; n++) {
+      const speaker = ids[n % 3];
+      if (post(speaker, `message ${n + 1}`, others(ids, speaker)).published) published += 1;
+    }
+
+    const old = runOldGuard(ids, 9);
+
+    // Nine today, three then. The old guard refused the fourth message, the one
+    // that would have ended the round, so every message after it was refused
+    // too: the third voice had spoken, so nobody was left that the round had
+    // not already heard, and nothing ever cleared it.
+    expect(published).toBe(9);
+    expect(old.taken).toBe(3);
+    expect(old.round).toBe(1);
+  });
+
+  it('is what the old guard prevented: one turn each, at any number of voices', () => {
+    // Measured against the real store before the fix, and reproduced here: one
+    // message per voice and no more, whatever the room size.
+    expect(runOldGuard(['a', 'b', 'c', 'd'], 12).taken).toBe(4);
+    expect(runOldGuard(['a', 'b'], 8).taken).toBe(2);
   });
 });
 
