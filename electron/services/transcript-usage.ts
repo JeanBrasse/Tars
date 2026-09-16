@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { StringDecoder } from 'string_decoder';
 import { priceFor } from './model-catalog';
 
 /**
@@ -26,6 +27,17 @@ export interface ModelUsage {
 
 export interface TranscriptUsage {
   modelUsage: Record<string, ModelUsage>;
+  /**
+   * How many transcripts could not be read on this pass, and therefore
+   * contributed nothing.
+   *
+   * This feeds billing. A file that fails to open or parse used to be skipped
+   * in silence, which shows up as a smaller bill rather than as a gap: the one
+   * error that looks like good news and so never gets reported. Whoever renders
+   * these numbers is expected to say the figure is incomplete when this is not
+   * zero, rather than present it as the total.
+   */
+  unreadable?: number;
   /**
    * `costUSD` is the day priced from that day's own tokens, cache included.
    * `tokensByModel` stays input+output only, which is why the number has to
@@ -237,17 +249,60 @@ function localDateKey(isoTimestamp: string): string | null {
  * session replays its earlier messages into a new transcript and both copies
  * carry the same message id.
  */
-function readTranscript(file: string): FileContribution {
+/**
+ * The file, in chunks, with a breath between them.
+ *
+ * readFileSync on the largest transcript here, 65 MB, is 165 ms the main
+ * thread cannot be interrupted in, and it was the whole of the worst pause
+ * once everything around it had been sliced. Four megabytes at a time is about
+ * ten. The decoder is what makes chunking safe: a UTF-8 character can straddle
+ * a boundary, and cutting one in half would corrupt the line it sits in.
+ */
+async function readFileInSlices(file: string): Promise<string | null> {
+  const CHUNK = 4 * 1024 * 1024;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const decoder = new StringDecoder('utf8');
+    const buffer = Buffer.allocUnsafe(CHUNK);
+    let content = '';
+    for (;;) {
+      const read = fs.readSync(fd, buffer, 0, CHUNK, null);
+      if (read <= 0) break;
+      content += decoder.write(buffer.subarray(0, read));
+      await breatheIfDue();
+    }
+    return content + decoder.end();
+  } catch {
+    return null;
+  } finally {
+    try { fs.closeSync(fd); } catch { /* already gone */ }
+  }
+}
+
+async function readTranscript(file: string): Promise<FileContribution | null> {
   const turns: FileContribution = [];
 
-  let content: string;
-  try {
-    content = fs.readFileSync(file, 'utf-8');
-  } catch {
-    return turns;
-  }
+  // Null, not an empty list. An empty list is a transcript that holds no
+  // usage, which is a fact; a file that would not open is not, and returning
+  // one as the other is how a failure turns into a smaller bill.
+  const content = await readFileInSlices(file);
+  if (content === null) return null;
 
-  for (const line of content.split('\n')) {
+  // Walked rather than split: `split('\n')` on the 65 MB transcript is one
+  // more atomic 59 ms, building thirty thousand strings before the loop can
+  // begin. Walking spends the same time, a breath at a time.
+  let lines = 0;
+  let start = 0;
+  while (start < content.length) {
+    const newline = content.indexOf('\n', start);
+    const line = newline === -1 ? content.slice(start) : content.slice(start, newline);
+    start = newline === -1 ? content.length : newline + 1;
+    if ((++lines & 1023) === 0) await breatheIfDue();
     if (!line.includes('"usage"')) continue;
 
     let entry: Record<string, unknown>;
@@ -298,7 +353,7 @@ function readTranscript(file: string): FileContribution {
 }
 
 /** The file's contribution, parsed only if it has changed since last time. */
-function contributionFor(file: string): FileContribution | null {
+async function contributionFor(file: string): Promise<FileContribution | null> {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
@@ -308,13 +363,55 @@ function contributionFor(file: string): FileContribution | null {
   const hit = fileCache.get(file);
   if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.value;
 
-  const value = readTranscript(file);
-  fileCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+  const value = await readTranscript(file);
+  // Only a real parse is remembered. Caching a failure would turn one bad read
+  // into a permanently missing file.
+  if (value) fileCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
   return value;
 }
 
-export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage {
-  if (cache && Date.now() - cache.at < CACHE_TTL) return cache.value;
+/**
+ * The scan, in slices, off the thread that draws.
+ *
+ * Measured on this machine before any of this: 1826 transcripts, 883 MB, and
+ * 2775 ms of unbroken synchronous work on the main thread the first time, then
+ * 2656 to 3270 ms every time the memo expired, because the per-file cache
+ * spares the parsing and not the walking or the adding up. For those seconds
+ * the window painted nothing and answered nothing: a freeze, not a delay, and
+ * one that three callers can trigger, the Usage page and /stats from either
+ * bot.
+ *
+ * So it yields. Every SLICE files it hands the loop back, which is what keeps
+ * the window alive while this runs. The totals are identical either way: the
+ * awaits are inserted between files, never inside the arithmetic of one.
+ */
+const BREATH_MS = 8;
+let lastBreath = 0;
+
+/** Hand the loop back if this pass has held it longer than a frame.
+ *
+ *  Measured by time rather than by file count, because the corpus is skewed:
+ *  1826 transcripts, 16 of them over 10 MB and the largest 65 MB, so a slice of
+ *  twenty-five files was 604 ms whenever a big one fell inside it. */
+async function breatheIfDue(): Promise<void> {
+  const now = Date.now();
+  if (now - lastBreath < BREATH_MS) return;
+  lastBreath = now;
+  await new Promise<void>(resolve => setImmediate(resolve));
+}
+
+/** The scan in progress, if any. Three callers share one: the page and both
+ *  bots asking at once used to mean three full passes over 883 MB. */
+let inFlight: Promise<TranscriptUsage> | null = null;
+
+export function computeTranscriptUsage(homeDir = os.homedir()): Promise<TranscriptUsage> {
+  if (cache && Date.now() - cache.at < CACHE_TTL) return Promise.resolve(cache.value);
+  if (inFlight) return inFlight;
+  inFlight = scanTranscripts(homeDir).finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
 
   const root = path.join(homeDir, '.claude', 'projects');
   // Null-prototype: a transcript's model id is attacker-influenceable, and
@@ -344,9 +441,13 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
   const applied = new Map<string, Counts>();
 
   const files = listTranscripts(root);
+  let unreadable = 0;
+  lastBreath = Date.now();
   for (const file of files) {
-    const turns = contributionFor(file);
-    if (!turns) continue;
+    await breatheIfDue();
+    const turns = await contributionFor(file);
+    // Counted, not skipped in silence: see `unreadable` on TranscriptUsage.
+    if (!turns) { unreadable += 1; continue; }
 
     for (const turn of turns) {
       let delta = turn.counts;
@@ -425,6 +526,7 @@ export function computeTranscriptUsage(homeDir = os.homedir()): TranscriptUsage 
       }))
       .sort((a, b) => a.date.localeCompare(b.date)),
     lastComputedDate,
+    unreadable,
   };
 
   cache = { at: Date.now(), value };

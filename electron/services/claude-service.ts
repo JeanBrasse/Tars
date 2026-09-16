@@ -107,13 +107,17 @@ export async function getClaudeStats(): Promise<ClaudeStats | null> {
     const hasTokens =
       base && Object.keys((base.modelUsage as Record<string, unknown>) || {}).length > 0;
     if (!hasTokens) {
-      const usage = computeTranscriptUsage();
+      const usage = await computeTranscriptUsage();
       if (Object.keys(usage.modelUsage).length > 0) {
         const merged = {
           ...(base || {}),
           modelUsage: usage.modelUsage,
           dailyModelTokens: usage.dailyModelTokens,
           lastComputedDate: usage.lastComputedDate ?? (base?.lastComputedDate as string | undefined),
+          // Carried to all three callers, the page and /stats on either bot,
+          // so a figure built from fewer transcripts than exist can say so
+          // rather than read as a smaller bill.
+          unreadable: usage.unreadable ?? 0,
         } as ClaudeStats;
         statsMemo = { at: Date.now(), value: merged };
         return merged;

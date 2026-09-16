@@ -19,9 +19,11 @@ import { broadcastPublication, fanOutDeliveries } from '../bus-delivery';
  * messages, the silence markers or the rotation, because this route applies
  * none of them itself and refuses whatever the store refuses.
  *
- * Authenticated like everything else under /api: the four exempt routes are
- * /api/local-file, /api/health, /api/hooks/* and /api/kanban/complete, and this
- * is not one of them.
+ * Authenticated like everything else under /api: the three exempt routes are
+ * /api/local-file, /api/health and /api/hooks/*, and this is not one of them.
+ * It was four until /api/kanban/complete was removed, unauthenticated and
+ * uncalled, and a comment that still says four is how someone reopens that
+ * hole believing it was already open.
  */
 
 /** The agent behind this call, from the header its MCP client always sends. */
