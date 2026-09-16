@@ -169,7 +169,12 @@ function loadAppSettings(): AppSettings {
     gwsEnabled: false,
     gwsSkillsInstalled: false,
     verboseModeEnabled: false,
-    statusLineEnabled: false,
+    // statusLineEnabled is deliberately absent. It used to default to false,
+    // two lines above a check reading `!== false` and a comment saying it
+    // defaults to true for new users, so for everyone who had never touched
+    // the switch the app took the disable branch on every launch and deleted
+    // `statusLine` out of ~/.claude/settings.json. Absent means unchosen, and
+    // unchosen means Tars leaves that file alone.
     chromeEnabled: false,
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
@@ -366,9 +371,14 @@ app.whenReady().then(async () => {
   // statusLineEnabled defaults to true for new users
   try {
     const { enableStatusLine, disableStatusLine } = await import('./utils/statusline');
-    if (appSettings.statusLineEnabled !== false) {
+    // Only an explicit choice acts here. This runs on every launch and is not
+    // a user action: it exists to refresh the script after an update. Reading
+    // an absent setting as "off" turned that refresh into a deletion in
+    // another program's configuration file, once per launch, for anyone who
+    // had never opened that switch.
+    if (appSettings.statusLineEnabled === true) {
       enableStatusLine();
-    } else {
+    } else if (appSettings.statusLineEnabled === false) {
       disableStatusLine();
     }
   } catch {
