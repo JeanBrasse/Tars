@@ -332,6 +332,19 @@ export interface BusThread {
 
 export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
 
+/**
+ * What a machine line is about.
+ *
+ * The Chat page draws these as distinct rows, and with only `text` they all
+ * collapse into one grey line. Each value here has a producer in this process;
+ * a kind nobody emits would be a row the page can never show, which is the
+ * same mistake as a state with no way out.
+ *
+ * There is deliberately no `passed`: an agent with nothing to add is refused
+ * before anything is stored, so a silence has no row and no source of data.
+ */
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+
 export interface BusMessage {
   id: string;
   roomId: string;
@@ -344,6 +357,8 @@ export interface BusMessage {
   /** Agent ids named in the text: after the first round, only a mentioned
    *  agent that has not spoken since gets a turn. */
   mentions: string[];
+  /** Set only when `authorKind` is `system`: which machine event this is. */
+  systemKind?: BusSystemKind;
   createdAt: string;
 }
 
@@ -389,11 +404,31 @@ export interface BusDelivery {
   reason?: string;
   queuedAt: string;
   deliveredAt?: string;
+  /** When this stopped being on its way: set with `dropped` and with
+   *  `not_sent`. Without it the page can say a message is refused but not
+   *  when, which for `not_sent` is the whole of how old a held message is. */
+  refusedAt?: string;
+}
+
+/**
+ * A member of a room, as the page needs to draw it.
+ *
+ * `hasEndOfTurn` is derived here from the provider's hook configuration, the
+ * same read the delivery path makes. It is exposed because the renderer was
+ * otherwise copying the list of five CLIs by hand, and a hand-written copy of
+ * a derived value is a copy that goes stale the day a provider gains hooks.
+ */
+export interface BusMember {
+  id: string;
+  name: string;
+  provider?: string;
+  hasEndOfTurn: boolean;
 }
 
 /** What `bus:getRoom` answers: the room and its journal, newest last. */
 export interface BusRoomSnapshot {
   room: BusRoom;
+  members: BusMember[];
   threads: BusThread[];
   messages: BusMessage[];
   deliveries: BusDelivery[];

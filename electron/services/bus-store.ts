@@ -9,9 +9,11 @@ import type {
   AgentStatus,
   BusDelivery,
   BusDeliveryReason,
+  BusMember,
   BusMessage,
   BusRoom,
   BusRoomSnapshot,
+  BusSystemKind,
   BusThread,
 } from '../types';
 
@@ -180,6 +182,59 @@ export function getRoom(roomId: string): BusRoom | undefined {
   return listRooms().find(r => r.id === roomId);
 }
 
+/**
+ * A machine line in a room: something Tars did, written where the conversation
+ * is so the page can draw it in place.
+ *
+ * Its own entry point rather than appendMessage, whose job is anchors: a human
+ * message opens one, and an agent message that finds none open would open one
+ * too. A system line must do neither. It attaches to the thread it is about,
+ * including a closed one, and counts against no bound.
+ */
+export function appendSystemMessage(input: {
+  roomId: string;
+  threadId: string;
+  systemKind: BusSystemKind;
+  text: string;
+}): BusMessage {
+  loadBus();
+  const message: BusMessage = {
+    id: uuidv4(),
+    roomId: input.roomId,
+    threadId: input.threadId,
+    authorKind: 'system',
+    authorId: 'system',
+    authorName: 'Tars',
+    text: input.text,
+    mentions: [],
+    systemKind: input.systemKind,
+    createdAt: new Date().toISOString(),
+  };
+  state.messages.push(message);
+  saveBus();
+  return message;
+}
+
+/**
+ * The room's members as the page needs them, reachability included.
+ *
+ * hasEndOfTurn is read from the provider's hook configuration here, the same
+ * read the delivery path makes, so the renderer stops keeping its own copy of
+ * which five CLIs cannot be reached. A copy of a derived value goes stale the
+ * day a provider gains hooks, and it would go stale silently.
+ */
+function membersOf(room: BusRoom): BusMember[] {
+  return room.memberIds.map(id => {
+    const agent = agents.get(id);
+    return {
+      id,
+      name: agent?.name || id,
+      provider: agent?.provider,
+      hasEndOfTurn: agent ? hasEndOfTurn(agent) : false,
+    };
+  });
+}
+
 export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?: string }): BusRoomSnapshot | undefined {
   const room = getRoom(roomId);
   if (!room) return undefined;
@@ -188,7 +243,7 @@ export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?
   if (room.kind === 'global') {
     const history = readGlobalHistory ? readGlobalHistory() : [];
     const limit = Math.max(1, Math.min(opts?.limit ?? 200, 1000));
-    return { room, threads: [], messages: history.slice(-limit), deliveries: [] };
+    return { room, members: membersOf(room), threads: [], messages: history.slice(-limit), deliveries: [] };
   }
 
   let messages = state.messages.filter(m => m.roomId === roomId);
@@ -205,6 +260,7 @@ export function getRoomSnapshot(roomId: string, opts?: { limit?: number; before?
   const threadIds = new Set(messages.map(m => m.threadId));
   return {
     room,
+    members: membersOf(room),
     threads: state.threads.filter(t => threadIds.has(t.id)),
     messages,
     deliveries: state.deliveries.filter(d => messageIds.has(d.messageId)),
@@ -233,6 +289,12 @@ export function openThreadOf(roomId: string): BusThread | undefined {
 
 export function getThread(threadId: string): BusThread | undefined {
   return state.threads.find(t => t.id === threadId);
+}
+
+/** The room's most recent anchor, open or not. What openThreadOf deliberately
+ *  will not return, and what you need to tell "stopped" from "never was". */
+export function latestThreadOf(roomId: string): BusThread | undefined {
+  return [...state.threads].reverse().find(t => t.roomId === roomId);
 }
 
 export function messagesOfThread(threadId: string): BusMessage[] {
@@ -476,11 +538,13 @@ export function cancelQueuedDeliveries(
 ): BusDelivery[] {
   const ids = new Set(messagesOfThread(threadId).map(m => m.id));
   const cancelled: BusDelivery[] = [];
+  const now = new Date().toISOString();
   for (const delivery of state.deliveries) {
     if (delivery.state !== 'queued' || !ids.has(delivery.messageId)) continue;
     delivery.state = 'dropped';
     delivery.reasonCode = reasonCode;
     delivery.reason = reason;
+    delivery.refusedAt = now;
     cancelled.push(delivery);
   }
   if (cancelled.length) saveBus();
@@ -508,6 +572,7 @@ export function markDropped(
   delivery.state = 'dropped';
   delivery.reasonCode = reasonCode;
   delivery.reason = reason;
+  delivery.refusedAt = new Date().toISOString();
   saveBus();
   return delivery;
 }

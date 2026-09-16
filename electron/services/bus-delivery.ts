@@ -1,8 +1,8 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { queueBusMessage } from './agent-watch';
-import { cancelQueuedDeliveries, getThread, hasEndOfTurn, markDropped, recordDelivery } from './bus-store';
-import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusThread } from '../types';
+import { appendSystemMessage, cancelQueuedDeliveries, getThread, hasEndOfTurn, markDropped, recordDelivery } from './bus-store';
+import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusSystemKind, BusThread } from '../types';
 
 /**
  * What happens to a message once it has been published.
@@ -53,9 +53,28 @@ export function fanOutDeliveries(message: BusMessage, room: BusRoom): BusDeliver
           ? 'no live session to deliver into yet'
           : `${target.provider ?? 'this provider'} stays running until its process exits, so nothing can be delivered to it at rest`,
       queuedAt: new Date().toISOString(),
+      refusedAt: queued ? undefined : new Date().toISOString(),
     }));
   }
   return deliveries;
+}
+
+/**
+ * A machine line, written into the room and pushed like any other message.
+ *
+ * Here rather than in the handlers because both doors need it and because a
+ * system line is a message: the page renders it in the transcript, in place,
+ * and would otherwise have to reconstruct it from a thread push.
+ */
+export function announceSystem(
+  roomId: string,
+  threadId: string,
+  systemKind: BusSystemKind,
+  text: string,
+): BusMessage {
+  const message = appendSystemMessage({ roomId, threadId, systemKind, text });
+  broadcastToAllWindows('bus:message', message);
+  return message;
 }
 
 /** Push a message, its thread, and its deliveries to every window. */

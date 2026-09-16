@@ -592,6 +592,11 @@ export interface BusThread {
 
 export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
 
+/** What a machine line is about, so the page can draw each as its own row
+ *  instead of collapsing them into one grey line. There is no `passed`: a
+ *  silence is refused before anything is stored, so it has no row. */
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+
 export interface BusMessage {
   id: string;
   roomId: string;
@@ -601,6 +606,8 @@ export interface BusMessage {
   authorName: string;
   text: string;
   mentions: string[];
+  /** Set only when `authorKind` is `system`. */
+  systemKind?: BusSystemKind;
   createdAt: string;
 }
 
@@ -628,10 +635,23 @@ export interface BusDelivery {
   reason?: string;
   queuedAt: string;
   deliveredAt?: string;
+  /** When it stopped being on its way: set with `dropped` and `not_sent`. */
+  refusedAt?: string;
+}
+
+/** A member of a room, reachability included. `hasEndOfTurn` is derived in the
+ *  main process from the provider's hook configuration: do not keep a copy of
+ *  which CLIs cannot be reached, it goes stale silently. */
+export interface BusMember {
+  id: string;
+  name: string;
+  provider?: string;
+  hasEndOfTurn: boolean;
 }
 
 export interface BusRoomSnapshot {
   room: BusRoom;
+  members: BusMember[];
   threads: BusThread[];
   messages: BusMessage[];
   deliveries: BusDelivery[];
