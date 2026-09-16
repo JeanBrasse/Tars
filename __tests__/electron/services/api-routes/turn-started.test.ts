@@ -18,14 +18,27 @@ import { EventEmitter } from 'events';
  * These drive the real route and assert on the agent record.
  */
 
-vi.mock('../../../../electron/core/agent-manager', () => ({
-  agents: new Map(),
-  saveAgents: vi.fn(),
+// agent-manager is the real module here, deliberately. The route records the
+// turn by calling noteTurnStarted, which lives in it, so mocking the module
+// away would mock away the thing under test: the first version of this file
+// did exactly that and failed on its own mock rather than on the behaviour.
+// Only what reaches outside the process is stubbed, the way
+// task-never-started.test.ts does it. saveAgents is inert in a suite: it
+// returns early until loadAgents has run, which no test does.
+vi.mock('node-pty', () => ({
+  spawn: vi.fn(() => ({ onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn() })),
 }));
-
+vi.mock('uuid', () => ({ v4: vi.fn(() => 'pty-1') }));
 vi.mock('electron', () => ({
+  app: { getPath: () => '/Users/test', getAppPath: () => process.cwd() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
+vi.mock('../../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+vi.mock('../../../../electron/core/pty-manager', () => ({
+  ptyProcesses: new Map(),
+  writeProgrammaticInput: vi.fn(),
+}));
+vi.mock('../../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 
 import { registerHooksRoutes } from '../../../../electron/services/api-routes/hooks-routes';
 import { agents } from '../../../../electron/core/agent-manager';
