@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, disposeTerminalSafely, stopWheelTyping, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, passWheelToProgram, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseAgentDialogTerminalOptions {
@@ -83,7 +83,12 @@ export function useAgentDialogTerminal({
 
       try {
         term.open(terminalRef.current);
-        stopWheelTyping(term);
+        passWheelToProgram(term, input => {
+          const id = agentIdRef.current;
+          if (id && window.electronAPI?.agent?.sendInput) {
+            window.electronAPI.agent.sendInput({ id, input }).catch(() => {});
+          }
+        });
         if (cancelled) { disposeTerminalSafely(term); return; }
 
         xtermRef.current = term;

@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 40,
+    version: '1.7.3',
+    date: '2026-09-17',
+    updates: [
+      'The wheel scrolls back through the conversation in a Claude Code terminal, in a Dashboard panel and in fullscreen alike. With Claude Code set to its fullscreen mode, the conversation is kept inside Claude Code and not in the terminal, so the terminal has no history of its own to scroll: since 1.7.2 the wheel no longer typed arrows there, but it did nothing else either. Claude Code scrolls that conversation itself when the terminal hands it the wheel, and Tars now does, the wheel and nothing more. Clicking, dragging to select text and Option+click stay with the terminal as before. A notch moves the conversation about as far as it moves any other terminal, a trackpad works too, a long session goes back to its first line, and nothing is typed into the prompt. Switching the panel to fullscreen and back leaves it readable and still scrolling. The agent window, the quick terminal and the tray work the same way. A program that has not asked for the mouse still gets nothing from the wheel, and a terminal that keeps its own history still scrolls it',
+    ],
+  },
+  {
     id: 39,
     version: '1.7.2',
     date: '2026-09-16',
