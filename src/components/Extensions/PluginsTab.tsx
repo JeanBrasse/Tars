@@ -467,7 +467,7 @@ export default function PluginsTab() {
   // Only the first `visibleCount` cards are mounted; "Load more" grows the slice.
   // The window is reset during render (not in an effect) whenever the filters
   // change, so a filter reset can never commit the previous, larger slice first.
-  const filterKey = `${debouncedSearch} ${selectedCategory} ${selectedMarketplace} ${selectedAuthor}`;
+  const filterKey = `${debouncedSearch}\u0000${selectedCategory}\u0000${selectedMarketplace}\u0000${selectedAuthor}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
