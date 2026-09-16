@@ -8,7 +8,7 @@ import {
   TERMINAL_SURFACE_CLASS,
   useTerminalTheme,
 } from '@/lib/terminal-theme';
-import { stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
 
 interface InstallTerminalModalProps {
   show: boolean;
@@ -86,8 +86,9 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
         ptyIdRef.current = null;
       }
       if (xtermRef.current) {
-        xtermRef.current.dispose();
+        const term = xtermRef.current;
         xtermRef.current = null;
+        disposeTerminalSafely(term);
       }
       setTerminalReady(false);
     };

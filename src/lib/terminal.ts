@@ -122,3 +122,26 @@ export function attachShiftEnterHandler(
     return true;
   });
 }
+
+/**
+ * Dispose a terminal without racing the frame xterm scheduled for it.
+ *
+ * `term.open()` constructs the Viewport, and that constructor ends with
+ * `requestAnimationFrame(() => this.syncScrollArea())` while keeping no handle
+ * for it. Nothing can cancel that frame, `dispose()` included, so a terminal
+ * disposed inside the window leaves the callback to read a render service that
+ * is already gone: `Cannot read properties of undefined (reading 'dimensions')`.
+ *
+ * Measured on the plugin install dialog: closing it 1500, 400 or 120 ms after
+ * opening threw nothing, closing it after 30 ms threw. The window is one frame
+ * wide, and the only thing our own code can do about a handle it cannot reach
+ * is stop disposing inside it. A timer rather than a frame on purpose: an
+ * animation frame does not run in a window that is in the background, and a
+ * terminal that is never disposed would be the worse bug.
+ *
+ * Callers should drop their own reference first, so nothing writes to a
+ * terminal that is on its way out.
+ */
+export function disposeTerminalSafely(term: Pick<Terminal, 'dispose'>): void {
+  setTimeout(() => term.dispose(), 40);
+}

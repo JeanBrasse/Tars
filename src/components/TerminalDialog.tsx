@@ -6,7 +6,7 @@ import { isElectron } from '@/hooks/useElectron';
 import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
 import { BrandSpinner, Button } from '@/components/ui';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
 import 'xterm/css/xterm.css';
 
 interface TerminalDialogProps {
@@ -113,8 +113,9 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
         ptyIdRef.current = null;
       }
       if (xtermRef.current) {
-        xtermRef.current.dispose();
+        const term = xtermRef.current;
         xtermRef.current = null;
+        disposeTerminalSafely(term);
       }
       setTerminalReady(false);
     };
@@ -262,8 +263,9 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
     }
     ptyIdRef.current = null;
     if (xtermRef.current) {
-      xtermRef.current.dispose();
+      const term = xtermRef.current;
       xtermRef.current = null;
+      disposeTerminalSafely(term);
     }
     onClose(installComplete && installExitCode === 0);
   };
