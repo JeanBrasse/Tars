@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ALL, KNOWN_PAGE_ERRORS, splitPageErrors } from './surfaces.mjs';
-import { seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
 
 /** Which declared known defects this run actually ran into. */
 const sawKnownError = new Set<string>();
@@ -11,9 +11,10 @@ const sawKnownError = new Set<string>();
 /**
  * Visual + technical sweep of the real Electron app.
  *
- * The app boots fully sandboxed: HOME points at a temp dir, so ~/.dorothy and
- * ~/.claude are empty test fixtures and the API binds a dedicated port —
- * the user's live Tars instance is never touched.
+ * The app boots sandboxed through launchSandboxed in fixture.mjs: HOME points
+ * at a temp dir, so ~/.dorothy and ~/.claude are test fixtures, its Chromium
+ * profile is moved there too, which HOME alone does not do, and the API binds
+ * a dedicated port.
  *
  * For each surface in e2e/surfaces.mjs:
  *  - navigate (and click through to overlays / settings sections)
@@ -35,11 +36,8 @@ test.beforeAll(async () => {
   // truncation or a full column - so the screenshots guarded almost nothing.
   // Must happen before launch: this is the last moment the app has not read it.
   seedSandbox(sandboxHome);
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, sandboxHome, {
     env: {
-      ...process.env,
-      HOME: sandboxHome,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       DOROTHY_API_PORT: '31498',
