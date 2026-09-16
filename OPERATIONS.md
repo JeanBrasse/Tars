@@ -112,11 +112,18 @@ npm run sandbox
 # or: bash scripts/sandbox.sh /path/to/Tars.app
 ```
 
-`scripts/sandbox.sh` launches `release/mac-arm64/Tars.app` with `HOME=$HOME/Tars-sandbox` and
-`DOROTHY_API_PORT=31499`. That redirects `~/.dorothy`, `~/.claude` and
-`~/Library/Application Support/Tars` into the sandbox, so agents, settings, the API token and
-window state are all throwaway copies. Your production install (port 31415) is untouched and
-keeps running.
+`scripts/sandbox.sh` launches `release/mac-arm64/Tars.app` with `HOME=$HOME/Tars-sandbox`,
+`CFFIXED_USER_HOME` set to the same directory, and `DOROTHY_API_PORT=31499`. That redirects
+`~/.dorothy`, `~/.claude` and `~/Library/Application Support/Tars` into the sandbox, so agents,
+settings, the API token and window state are all throwaway copies. Your production install
+(port 31415) is untouched and keeps running.
+
+`HOME` alone is not enough on macOS. Electron finds the home directory, and with it the profile
+under `~/Library/Application Support`, through the system and not through `HOME`: measured on
+2026-09-16, with only `HOME` moved, `app.getPath('home')` still answered the real home. Until
+then the sandbox opened the live install's profile, and spawned its agents with the real
+`~/.claude/mcp.json`. The main process now takes its home from `os.homedir()` everywhere, and
+`CFFIXED_USER_HOME` moves the profile.
 
 The sandbox is **persistent** across launches. To reset it:
 

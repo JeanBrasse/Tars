@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
 import { SLACK_CHARACTER_FACES } from '../constants';
@@ -8,7 +9,6 @@ import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } fro
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
-import { app } from 'electron';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -460,7 +460,7 @@ export async function handleSlackCommand(
       const slackAgentProvider = getProvider(agent.provider);
       let mcpConfigPath: string | undefined;
       if (slackAgentProvider.getMcpConfigStrategy() === 'flag') {
-        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
         if (fs.existsSync(possibleMcpPath)) mcpConfigPath = possibleMcpPath;
       }
       // Through the provider builder, like Telegram. Its own copy of the command
@@ -614,7 +614,7 @@ export async function sendToSuperAgentFromSlack(
 
       let superAgentMcpConfigPath: string | undefined;
       if (superAgentSlackProvider.getMcpConfigStrategy() === 'flag') {
-        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
         if (fs.existsSync(possibleMcpPath)) superAgentMcpConfigPath = possibleMcpPath;
       }
 

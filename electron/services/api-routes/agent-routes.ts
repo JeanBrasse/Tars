@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { app } from 'electron';
+import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
@@ -133,7 +133,9 @@ async function spawnAgentSession(
   // MCP config for flag-strategy providers (all claude-based ones).
   let mcpConfigPath: string | undefined;
   if (cliProvider.getMcpConfigStrategy() === 'flag') {
-    const candidate = path.join(app.getPath('home'), '.claude', 'mcp.json');
+    // os.homedir(), which follows HOME, and never Electron's home path, which
+    // on macOS does not: a sandboxed Tars handed its agents the real one.
+    const candidate = path.join(os.homedir(), '.claude', 'mcp.json');
     if (fs.existsSync(candidate)) mcpConfigPath = candidate;
   }
 
