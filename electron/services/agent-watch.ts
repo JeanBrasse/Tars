@@ -204,11 +204,18 @@ function queueForRequester(child: AgentStatus): void {
 }
 
 /**
- * Hand a bus message to an agent when it is next free.
+ * Hold a bus message for an agent, to be handed over when it is next free.
  *
  * Refused rather than queued when the target cannot be reached at all: the
  * caller records that as a delivery the interface shows, instead of a queue
  * that would never drain. Nothing here infers an end of turn from silence.
+ *
+ * Holds only, and writes nothing, even to an agent that is free this instant:
+ * deliverBusMessages does that, once the caller has recorded the delivery row.
+ * The write is what marks the row delivered, and this used to write at once,
+ * before the row existed. The mark found no row, the row was then created as
+ * `queued` and stayed so, and a later close of the thread turned it `dropped`,
+ * on a message the agent had read and answered.
  */
 export function queueBusMessage(targetAgentId: string, message: QueuedBusMessage): boolean {
   const target = agents.get(targetAgentId);
@@ -224,9 +231,18 @@ export function queueBusMessage(targetAgentId: string, message: QueuedBusMessage
   if (held.bus.some(m => m.messageId === message.messageId)) return true;
   held.bus.push(message);
   pending.set(targetAgentId, held);
-
-  flush(targetAgentId);
   return true;
+}
+
+/**
+ * Hand an agent what is held for it, if this is a moment it can take it.
+ *
+ * Called by whoever queued a bus message, after recording its delivery row.
+ * An agent that is busy is left alone, as always, and its own next transition
+ * hands the message over.
+ */
+export function deliverBusMessages(targetAgentId: string): void {
+  flush(targetAgentId);
 }
 
 /**

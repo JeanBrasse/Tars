@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron';
 import { agents } from '../core/agent-manager';
-import { broadcastToAllWindows } from '../utils/broadcast';
 import { getOverseerHistory } from '../services/overseer';
 import { setBusDeliveredHook, setBusDroppedHook } from '../services/agent-watch';
 import {
+  announceDelivered,
   announceDropped,
   announceSystem,
   broadcastPublication,
@@ -18,7 +18,6 @@ import {
   latestThreadOf,
   listRooms,
   loadBus,
-  markDelivered,
   setGlobalHistoryReader,
   setMembers,
   GLOBAL_ROOM_ID,
@@ -45,10 +44,7 @@ export function registerBusHandlers(): void {
   // A queued message that actually reached a terminal is the only thing that
   // turns a delivery into `delivered`, and the Chat page hears about it the
   // moment it happens rather than inferring it from silence.
-  setBusDeliveredHook((targetAgentId, messageId) => {
-    const delivered = markDelivered(targetAgentId, messageId);
-    if (delivered) broadcastToAllWindows('bus:delivery', delivered);
-  });
+  setBusDeliveredHook(announceDelivered);
 
   // And the other half: a message the queue gives up on stops saying queued.
   // The session it was held for is gone, and its messages belong to it.
