@@ -389,14 +389,27 @@ export function publishAgentMessage(input: {
 
   const { round, heard } = currentRound(thread.id);
   if (round > 1 || heard.size > 0) {
-    // After the first voice, a turn is earned by being named: only an agent
-    // another has mentioned, and that has not spoken in this round, speaks.
-    const mentionedByAnother = priors.some(m => m.authorId !== input.agentId && m.mentions.includes(input.agentId));
-    if (!mentionedByAnother) {
-      return { published: false, reason: 'not_your_turn', detail: 'After the first round, only an agent another one mentioned speaks.' };
-    }
-    if (heard.has(input.agentId)) {
-      return { published: false, reason: 'not_your_turn', detail: 'You have already spoken in this round.' };
+    // A turn after the first is earned by being named, and named *since you
+    // last spoke*: a mention from before your own message is one you have
+    // already answered.
+    //
+    // This is also the only thing that ends a round. currentRound advances
+    // when an agent that has already been heard speaks again, so refusing
+    // that message, which is what this guard used to do, left the round
+    // stuck at one forever: MAX_ROUNDS was unreachable, and in a room of
+    // fewer than ten agents a thread never reached `bounded` at all. It
+    // simply refused everyone, with no state the interface could show.
+    const mineAt = priors.map(m => m.authorId).lastIndexOf(input.agentId);
+    const since = priors.slice(mineAt + 1);
+    const namedSince = since.some(m => m.authorId !== input.agentId && m.mentions.includes(input.agentId));
+    if (!namedSince) {
+      return {
+        published: false,
+        reason: 'not_your_turn',
+        detail: heard.has(input.agentId)
+          ? 'You have spoken in this round. Another agent has to name you before you speak again.'
+          : 'After the first round, only an agent another one mentioned speaks.',
+      };
     }
   }
 
