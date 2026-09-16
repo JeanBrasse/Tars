@@ -37,6 +37,11 @@ export const PAGES = [
   { name: 'brain-backends', route: '/memory', clickText: 'Backends' },
   { name: 'whats-new', route: '/whats-new' },
   { name: 'settings-general', route: '/settings' },
+  // The menu-bar popover, listed in the inventory since the redesign and
+  // automated by nobody: the guard read its route list from a hand-written
+  // copy, so this one sat outside every check. It carries a terminal, which
+  // the sweep masks like any other.
+  { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
 // Les 16 sections de Settings. Depuis le regroupement, chaque section est un
