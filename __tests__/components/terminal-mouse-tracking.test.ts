@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { Terminal } from 'xterm';
 import { suppressMouseTracking, attachShiftEnterHandler, stripTerminalReplies } from '@/lib/terminal';
@@ -211,40 +212,165 @@ describe('what a person types reaches the pty untouched', () => {
 });
 
 /**
- * The class, not the site.
+ * The class, not the site, and counted rather than listed.
  *
- * The filter was copied into four terminals and every copy carried the same
- * defect, so the fix is only finished if no copy is left to drift. These read
- * the shipped sources rather than a fixture.
+ * This block used to name four files. That is exactly how the class stayed
+ * half open: PluginsTab.tsx held raw NUL bytes, so grep, ripgrep and the ugrep
+ * our agents run all treated it as binary and skipped it without a word. The
+ * count for this class read four while it was nine, and a hand-written list of
+ * four checked precisely the four already fixed. A list cannot notice the site
+ * nobody remembered.
+ *
+ * So the sites are discovered from the sources here, and the file that hides
+ * from a text tool is the one this is built to catch.
  */
-describe('no terminal keeps a filter of its own', () => {
-  const FORWARDERS = [
-    'src/components/TerminalsView/hooks/useMultiTerminal.ts',
-    'src/components/AgentWorld/useQuickTerminal.ts',
-    'src/components/AgentWorld/useAgentDialogTerminal.ts',
-    'src/components/TrayPanel/useTrayTerminal.ts',
-  ];
+describe('every terminal that forwards input goes through the one filter', () => {
+  const SRC = path.join(process.cwd(), 'src');
 
-  it.each(FORWARDERS)('%s forwards through the shared filter', (file) => {
-    const source = fs.readFileSync(path.join(process.cwd(), file), 'utf-8');
-    expect(source).toContain('stripTerminalReplies(data)');
-    // The rule that manufactured the fragment, in any copy, anywhere.
-    expect(source).not.toContain(String.raw`\d+;\d+c`);
-  });
+  /**
+   * Bytes in, string out, with nothing asked about whether the file "looks"
+   * textual. A scan that steps over a file and calls itself satisfied is the
+   * habit this whole block exists to refuse.
+   */
+  const readText = (file: string) => fs.readFileSync(file).toString('utf-8');
 
-  it('and the unanchored rule exists nowhere in src but the note explaining it', () => {
-    const offenders: string[] = [];
+  function sources(root: string): string[] {
+    const out: string[] = [];
     const walk = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) { walk(full); continue; }
-        if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-        if (fs.readFileSync(full, 'utf-8').includes(String.raw`\d+;\d+c`)) offenders.push(full);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.(ts|tsx)$/.test(entry.name)) out.push(full);
       }
     };
-    walk(path.join(process.cwd(), 'src'));
+    walk(root);
+    return out.sort();
+  }
 
+  /**
+   * The end of the call whose opening bracket is at `open`, stepping over
+   * strings, template literals and comments so a bracket inside one does not
+   * close it early. A shape it cannot parse returns -1 and fails the case
+   * rather than quietly returning a short body.
+   */
+  function endOfCall(text: string, open: number): number {
+    let depth = 0;
+    for (let i = open; i < text.length; i++) {
+      const c = text[i];
+      if (c === '"' || c === "'" || c === '`') {
+        const quote = c;
+        for (i++; i < text.length; i++) {
+          if (text[i] === '\\') { i++; continue; }
+          if (text[i] === quote) break;
+        }
+        continue;
+      }
+      if (c === '/' && text[i + 1] === '/') {
+        i = text.indexOf('\n', i);
+        if (i === -1) return -1;
+        continue;
+      }
+      if (c === '/' && text[i + 1] === '*') {
+        i = text.indexOf('*/', i);
+        if (i === -1) return -1;
+        i += 1;
+        continue;
+      }
+      if (c === '(') depth += 1;
+      else if (c === ')') { depth -= 1; if (depth === 0) return i; }
+    }
+    return -1;
+  }
+
+  interface Forwarder { file: string; param: string; body: string }
+
+  /**
+   * Every xterm onData subscription under a tree.
+   *
+   * The other direction is not one of these: `electronAPI.pty.onData` is the
+   * pty pushing its output at the renderer, and nothing it carries was ever
+   * typed by anyone.
+   */
+  function forwarders(root: string): Forwarder[] {
+    const found: Forwarder[] = [];
+    for (const file of sources(root)) {
+      const text = readText(file);
+      for (let at = text.indexOf('.onData('); at !== -1; at = text.indexOf('.onData(', at + 1)) {
+        if (text.slice(Math.max(0, at - 40), at).includes('electronAPI')) continue;
+        const open = at + '.onData'.length;
+        const close = endOfCall(text, open);
+        const callback = close === -1 ? '' : text.slice(open + 1, close);
+        const arrow = callback.indexOf('=>');
+        found.push({
+          file: path.relative(process.cwd(), file),
+          param: arrow === -1 ? '' : callback.slice(0, arrow).replace(/async/, '').replace(/[()\s]/g, ''),
+          body: arrow === -1 ? '' : callback.slice(arrow + 2),
+        });
+      }
+    }
+    return found;
+  }
+
+  const HANDLERS = forwarders(SRC);
+
+  it('finds nine of them, and a tenth is meant to land here first', () => {
+    // Not a list of which nine: that is the mistake this replaced. A count, so
+    // a site added tomorrow stops someone here long enough to confirm it
+    // belongs to the class, and the cases below then hold it to the invariant.
+    expect(HANDLERS.length, HANDLERS.map(h => h.file).join('\n')).toBe(9);
+  });
+
+  it.each(HANDLERS)('$file filters what it forwards', ({ param, body }: Forwarder) => {
+    expect(param).toMatch(/^[A-Za-z_$][\w$]*$/);
+    expect(body).toContain(`stripTerminalReplies(${param})`);
+
+    // And forwards the result rather than the chunk it came in on. A site that
+    // filters into a variable and then writes the raw data anyway reads like a
+    // fix and is none, so the raw parameter may not survive the filter call.
+    // An object key of the same name is not a use of it: `data: cleaned`.
+    const afterFilter = body.replace(`stripTerminalReplies(${param})`, '');
+    expect(new RegExp(String.raw`\b${param}\b(?!\s*:)`).test(afterFilter)).toBe(false);
+  });
+
+  /** The shapes the four copies carried. None may survive in a forwarder. */
+  const OLD_COPY = [
+    String.raw`\d+;\d+c`,
+    String.raw`\d+;\d+R`,
+    String.raw`(?:I|O)`,
+    String.raw`[\d;]*c`,
+  ];
+
+  it.each(HANDLERS)('$file keeps no filter of its own', ({ file }: Forwarder) => {
+    const source = readText(path.join(process.cwd(), file));
+    for (const shape of OLD_COPY) expect(source).not.toContain(shape);
+  });
+
+  it('and the unanchored rule exists nowhere in src but the note explaining it', () => {
+    const offenders = sources(SRC).filter(f => readText(f).includes(String.raw`\d+;\d+c`));
     // terminal.ts names the old rule in the comment that explains why it went.
     expect(offenders.map(f => path.basename(f))).toEqual(['terminal.ts']);
+  });
+
+  /**
+   * The control for the scan itself, which is the only part of this that could
+   * fail silently. Plant a forwarder that filters nothing in a file carrying
+   * NUL bytes, exactly the shape that hid a site for weeks, and fail if the
+   * walk goes past it.
+   */
+  it('reads a source with NUL bytes in it rather than stepping over it', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nul-forwarder-'));
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'Planted.tsx'),
+        `const marker = '   ';\nterm.onData((data) => { send(data); });\n`,
+      );
+      const planted = forwarders(dir);
+
+      expect(fs.readFileSync(path.join(dir, 'Planted.tsx')).includes(0x00)).toBe(true);
+      expect(planted).toHaveLength(1);
+      expect(planted[0].body).not.toContain('stripTerminalReplies');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
