@@ -214,6 +214,9 @@ export class ClaudeProvider implements CLIProvider {
     const hookFiles = [
       { type: 'PostToolUse', file: 'post-tool-use.sh', matcher: '*' },
       { type: 'Stop', file: 'on-stop.sh', matcher: undefined },
+      // A turn that ends on an API error fires this instead of Stop, and with no
+      // listener the agent stayed `running` for good. See the script.
+      { type: 'StopFailure', file: 'stop-failure.sh', matcher: undefined },
       { type: 'SessionStart', file: 'session-start.sh', matcher: '*' },
       { type: 'SessionEnd', file: 'session-end.sh', matcher: '*' },
       { type: 'Notification', file: 'notification.sh', matcher: '*' },

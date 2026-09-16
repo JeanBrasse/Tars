@@ -757,7 +757,7 @@ and delegates to every provider whose `getHookConfig().supportsNativeHooks` is t
 
 ### Claude: `~/.claude/settings.json`
 
-Eight hooks, each installed as `{ type: 'command', command: '<hooksDir>/<file>', timeout: 30 }`:
+Nine hooks, each installed as `{ type: 'command', command: '<hooksDir>/<file>', timeout: 30 }`:
 
 | event | script | matcher |
 |---|---|---|
@@ -765,6 +765,7 @@ Eight hooks, each installed as `{ type: 'command', command: '<hooksDir>/<file>',
 | `UserPromptSubmit` | `user-prompt-submit.sh` | - |
 | `PostToolUse` | `post-tool-use.sh` | `*` |
 | `Stop` | `on-stop.sh` | - |
+| `StopFailure` | `stop-failure.sh` | - |
 | `SessionEnd` | `session-end.sh` | `*` |
 | `Notification` | `notification.sh` | `*` |
 | `PermissionRequest` | `permission-request.sh` | - |
@@ -799,6 +800,14 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   has no `tac`, and tolerant of a truncated final line still being flushed), truncates to
   4 000 chars, POSTs to `/api/hooks/output`, then `/api/hooks/status` idle and
   `/api/hooks/agent-stopped`.
+- `stop-failure.sh`: a turn that ends on an API error fires `StopFailure`, never `Stop`, and
+  the CLI stays alive at its prompt, so without this the agent stays `running` for good. POSTs
+  `{status: error, event: StopFailure, error_kind, error_message}` to `/api/hooks/status`, built
+  with `jq -n --arg` because the message is the CLI's text. The server sets `status: error` and
+  `agent.error` to that message verbatim, capped at 500 chars, which is also the body of the
+  error notification. Measured with claude 2.1.268 and a HOME holding no credential:
+  `error: authentication_failed`, `last_assistant_message: "Not logged in · Please run /login"`.
+  The next `UserPromptSubmit` clears `agent.error`.
 
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
