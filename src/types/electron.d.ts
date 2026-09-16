@@ -1325,7 +1325,15 @@ export interface ElectronAPI {
     ) => Promise<{ success: boolean; room?: BusRoom; error?: string }>;
     /** Send what is held for an agent that has no end of turn, oldest first.
      *  A human decision: it writes into a session whose state Tars does not
-     *  know, which is why nothing does it automatically. */
+     *  know, which is why nothing does it automatically.
+     *
+     *  Two things to know before calling it. It writes into whatever session
+     *  is live at the moment of the call, not the one the messages were held
+     *  for: an agent killed and relaunched since the button was drawn still
+     *  receives them, because a person aiming at an agent means the agent and
+     *  not a session id. And one release runs at a time per agent: a second
+     *  call while one is in flight is refused with a reason rather than
+     *  queued, since both would write into the same terminal at once. */
     releaseNotSent: (agentId: string) => Promise<{
       success: boolean;
       deliveries?: BusDelivery[];

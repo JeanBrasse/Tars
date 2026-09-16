@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { BUS_FILE } from '../constants';
 import { writeAtomicSync } from '../utils/secret-file';
@@ -130,13 +132,39 @@ export function loadBus(): void {
   }
 }
 
+/**
+ * The journal of the account this process runs as, whatever HOME says.
+ *
+ * `os.userInfo()` reads the password database and ignores the environment,
+ * while `os.homedir()` honours HOME. That difference is the whole point: a
+ * test that redirects HOME to a temp directory is redirected, and a test that
+ * redirects nothing is not, and only the second one is dangerous.
+ */
+function realAccountJournal(): string | undefined {
+  try {
+    return path.join(os.userInfo().homedir, '.dorothy', 'bus.json');
+  } catch {
+    return undefined;
+  }
+}
+
+function inTestProcess(): boolean {
+  return !!process.env.VITEST || process.env.NODE_ENV === 'test';
+}
+
 function saveBus(): void {
-  // Never write a journal that was never read. saveAgents has had this guard
-  // for the same reason: without it, importing this module in a test and
-  // touching anything writes ~/.dorothy/bus.json, the real one, with whatever
-  // empty state the import started from. A test that forgets to redirect
-  // BUS_FILE should lose its own data, not Noah's.
+  // Never write a journal that was never read.
   if (!loaded) return;
+
+  // And that guard alone does not hold, which was worth finding out before the
+  // QA wrote against it: loadBus sets `loaded` even when there is no file, so
+  // any test that actually exercises a path flips it and the next write lands
+  // on the real journal. This is the one that holds. A test may write a journal
+  // it redirected; it may not write the one belonging to the account.
+  if (inTestProcess() && BUS_FILE === realAccountJournal()) {
+    console.warn('[bus] refusing to write the account journal from a test process: redirect BUS_FILE');
+    return;
+  }
   try {
     state.savedAt = new Date().toISOString();
     writeAtomicSync(BUS_FILE, JSON.stringify(state, null, 2));
