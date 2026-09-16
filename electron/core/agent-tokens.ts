@@ -18,14 +18,16 @@ import * as crypto from 'crypto';
  * starts, in the environment. The server names the caller from the token and
  * from nothing else: a call on the shared token is no agent at all.
  *
- * What this does not stop. The environment a process was started with is
- * readable by every other process of the same user: `ps -Eww -p <pid>` prints
- * it, measured on 2026-09-16 by reading one agent's CLAUDE_AGENT_ID from
- * another agent's shell. An agent set on it can read a colleague's token the
- * same way and present it. The token ends the impersonation that took writing
- * a header. It is not a boundary against a process that reads the process
- * table, and no check in the API can be one while agents run as the user
- * without a sandbox.
+ * What this does not stop. The token travels in the environment of the agent's
+ * CLI and of the MCP servers it starts, and the environment of those processes
+ * is readable by every other process of the same user: `ps -Eww -p <pid>`
+ * prints it, measured on 2026-09-16 by reading one agent's CLAUDE_AGENT_ID from
+ * another agent's shell. Only Apple's platform binaries, /bin/zsh among them,
+ * hide theirs, and neither `claude` nor `node` is one. An agent set on it can
+ * read a colleague's token the same way and present it. The token ends the
+ * impersonation that took writing a header. It is not a boundary against a
+ * process that reads the process table, and no check in the API can be one
+ * while agents run as the user without a sandbox.
  *
  * In memory, deliberately, and never next to api-token: a file is what made
  * the shared token shared. An agent removed from the fleet needs no
