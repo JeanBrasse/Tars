@@ -14,7 +14,8 @@ import { createHash } from 'node:crypto';
  * of all, is refused with exit 99 and written to the log like every call.
  */
 
-export type FakeAsset = { name: string; size: number; digest: string | null };
+/** `state` is `uploaded` unless given: GitHub lists an asset whose upload has not finished as `open`. */
+export type FakeAsset = { name: string; size: number; digest: string | null; state?: string };
 export type FakeGhState = {
   /** Every call fails as gh does with no network. */
   offline?: boolean;

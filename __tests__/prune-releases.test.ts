@@ -154,6 +154,18 @@ describe('what the purge may delete', () => {
     expect(lines.join('\n')).toContain('has no zip');
   });
 
+  it('keeps a version whose zip is still being uploaded', async () => {
+    // Name, size and digest can all be right on an upload GitHub has not
+    // finished: only its state says the file cannot be downloaded yet.
+    const { release } = checkoutWith(['1.0.1', ...NEWEST]);
+    gh.setState({ releases: { 'v1.0.1': { assets: publishedAssets('1.0.1').map(a => (a.name.endsWith('.zip') ? { ...a, state: 'open' } : a)) } } });
+
+    const lines = await prune(release);
+
+    expect(versionsIn(release)).toEqual(['1.0.1', ...NEWEST]);
+    expect(lines.join('\n')).toContain('has no zip');
+  });
+
   it('keeps a version whose published files are not the local ones, by size or by content', async () => {
     const { release } = checkoutWith(FIVE);
     gh.setState({

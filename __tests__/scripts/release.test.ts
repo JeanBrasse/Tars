@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fakeGh, publishedAssets, sha256, type FakeGh, type FakeGhState } from './fake-gh';
-import { main, moveToCanonical, Refusal } from '../../scripts/release.mjs';
+import { main, moveToCanonical, Refusal, verifyArtifacts } from '../../scripts/release.mjs';
 
 /**
  * `npm run release`, the only way a release is published, and every way it
@@ -250,6 +250,55 @@ describe('npm run release --dry-run', () => {
   });
 });
 
+describe('checking a build against its manifest', () => {
+  /** A consistent build of VERSION, then one thing in it made wrong. */
+  function build(edit: (releaseDir: string) => void): string {
+    const releaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-release-verify-'));
+    artifacts(releaseDir, VERSION);
+    edit(releaseDir);
+    return releaseDir;
+  }
+
+  const rewrite = (file: string, from: string, to: string) => {
+    const text = fs.readFileSync(file, 'utf8');
+    if (!text.includes(from)) throw new Error(`${from} is not in ${file}`);
+    fs.writeFileSync(file, text.replace(from, to));
+  };
+
+  it('accepts the build as the harness lays it out, so each refusal below is its own check', async () => {
+    await expect(verifyArtifacts(build(() => {}), VERSION)).resolves.toMatchObject({ yml: expect.stringMatching(/latest-mac\.yml$/) });
+  });
+
+  it('stops on a manifest written for another version', async () => {
+    // The updater compares this field to the running app: a manifest that
+    // says 2.0.0 offers every installed 2.0.0 nothing to update to.
+    const releaseDir = build(dir => rewrite(path.join(dir, 'latest-mac.yml'), `version: ${VERSION}`, 'version: 2.0.0'));
+
+    await expect(verifyArtifacts(releaseDir, VERSION)).rejects.toThrow(`latest-mac.yml is for 2.0.0, not ${VERSION}`);
+  });
+
+  it('stops on a size in the manifest that is not the file', async () => {
+    // The dmg and the zip of the harness have the same length, so the entry is
+    // found by its url rather than by the size it carries.
+    const dmgBytes = Buffer.byteLength(`dmg of ${VERSION}`);
+    const releaseDir = build(dir => {
+      const yml = path.join(dir, 'latest-mac.yml');
+      const entry = new RegExp(`(  - url: Tars-${VERSION.replace(/\./g, '\\.')}-arm64\\.dmg\\n    sha512: [^\\n]+\\n    size: )${dmgBytes}\\n`);
+      const text = fs.readFileSync(yml, 'utf8');
+      if (!entry.test(text)) throw new Error(`no dmg entry of ${dmgBytes} bytes in ${yml}`);
+      fs.writeFileSync(yml, text.replace(entry, `$1${dmgBytes + 1}\n`));
+    });
+
+    await expect(verifyArtifacts(releaseDir, VERSION)).rejects.toThrow(`latest-mac.yml gives Tars-${VERSION}-arm64.dmg ${dmgBytes + 1} bytes, the file has ${dmgBytes}`);
+  });
+
+  it('stops on a built app that says another version', async () => {
+    const releaseDir = build(dir => rewrite(path.join(dir, 'mac-arm64', 'Tars.app', 'Contents', 'Info.plist'), `<string>${VERSION}</string>`, '<string>2.0.0</string>'));
+
+    await expect(verifyArtifacts(releaseDir, VERSION)).rejects.toThrow(`the built app says 2.0.0, not ${VERSION}`);
+  });
+});
+
 describe('moving a build into the release/ that is kept', () => {
   function folders() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-release-move-'));
@@ -283,6 +332,33 @@ describe('moving a build into the release/ that is kept', () => {
 
     await expect(moveToCanonical({ fromDir, toDir, version: VERSION, repo: REPO }))
       .rejects.toThrow('holds 2.0.0, which is not proven published');
+
+    expect([listing(fromDir), listing(toDir)]).toEqual(before);
+    expect(fs.readFileSync(path.join(toDir, 'latest-mac.yml'), 'utf8')).toContain('version: 2.0.0');
+  });
+
+  it('will not replace the manifest of a published older version when it is not the manifest GitHub serves', async () => {
+    // The version is published with this dmg and this zip, but the
+    // latest-mac.yml beside them is another one: the local copy may be the
+    // only right one left, which is how 1.6.19's was lost.
+    const { fromDir, toDir } = folders();
+    artifacts(fromDir, VERSION);
+    const old = artifacts(toDir, '2.0.0');
+    gh.setState({
+      releases: {
+        'v2.0.0': {
+          assets: [
+            { name: old.dmg, size: Buffer.byteLength(old.dmgBytes), digest: sha256(old.dmgBytes) },
+            { name: old.zip, size: Buffer.byteLength(old.zipBytes), digest: sha256(old.zipBytes) },
+            { name: 'latest-mac.yml', size: 1, digest: sha256('the manifest that was published') },
+          ],
+        },
+      },
+    });
+    const before = [listing(fromDir), listing(toDir)];
+
+    await expect(moveToCanonical({ fromDir, toDir, version: VERSION, repo: REPO }))
+      .rejects.toThrow('the latest-mac.yml of 2.0.0 in');
 
     expect([listing(fromDir), listing(toDir)]).toEqual(before);
     expect(fs.readFileSync(path.join(toDir, 'latest-mac.yml'), 'utf8')).toContain('version: 2.0.0');
