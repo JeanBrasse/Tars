@@ -596,41 +596,45 @@ export async function sendToSuperAgentFromSlack(
         "'\\''",
       );
 
-      // Build command with instructions file, use provider-aware binary
       const superAgentSlackProvider = getProvider(superAgent.provider);
-      const superAgentSlackBinary = superAgentSlackProvider.resolveBinaryPath(appSettings).replace(/'/g, "'\\''");
-      let command = `'${superAgentSlackBinary}'`;
-
-      if (superAgentSlackProvider.getMcpConfigStrategy() === 'flag') {
-        const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
-        if (fs.existsSync(mcpConfigPath)) {
-          command += ` --mcp-config '${mcpConfigPath}'`;
-        }
-      }
-
-      // Pass the instructions as a file, like the Telegram path does.
-      // This used to inline the file's contents into a DOUBLE-quoted shell word
-      // (`--append-system-prompt "..."`) with only ' " and \n escaped. The line
-      // goes straight to a live bash PTY, so the ~124 markdown backticks in
-      // super-agent-instructions.md were command substitutions: `whoami` really
-      // ran, every backticked MCP tool name was executed as a command and its
-      // text deleted from the prompt, and the '\'' sequences leaked in
-      // literally (single-quote escaping is wrong inside double quotes). Every
-      // Slack-initiated cold start therefore ran stray commands in the agent's
-      // cwd and handed the CLI a mangled system prompt. A file path is data.
+      // Through the provider builder, like Telegram's cold start and like the
+      // other Slack site. This copy ended with `--disallowed-tools "Edit"
+      // "Write" "MultiEdit" "NotebookEdit"` immediately before the prompt, and
+      // claude's variadic option read the task as one more tool name: every
+      // super agent cold start from Slack came up with no task at all. The
+      // builder ends its options with `--`, so an operand stays an operand.
+      //
+      // The instructions still travel as a FILE, which is what this site was
+      // fixed for once before: inlined into a double-quoted shell word, the
+      // ~124 markdown backticks in super-agent-instructions.md became command
+      // substitutions, so `whoami` really ran, every backticked MCP tool name
+      // was executed and its text deleted from the prompt. A file path is data.
       const superAgentInstructionsPath = getSuperAgentInstructionsPath();
-      if (fs.existsSync(superAgentInstructionsPath)) {
-        command += ` --append-system-prompt-file '${superAgentInstructionsPath.replace(/'/g, "'\\''")}'`;
+      const systemPromptFile = fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
+
+      let superAgentMcpConfigPath: string | undefined;
+      if (superAgentSlackProvider.getMcpConfigStrategy() === 'flag') {
+        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        if (fs.existsSync(possibleMcpPath)) superAgentMcpConfigPath = possibleMcpPath;
       }
 
-      if (superAgent.permissionMode === 'auto' || superAgent.permissionMode === 'bypass' || (!superAgent.permissionMode && superAgent.skipPermissions)) command += ' --dangerously-skip-permissions';
-
-      // BUG 5: Super Agent is an orchestrator: block file-mutating tools.
-      command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
-
-      // Simple prompt with Slack context - the detailed instructions come from the file
+      // Simple prompt with Slack context: the detail comes from the file.
       const userPrompt = `[FROM SLACK - Use send_slack MCP tool to respond!] ${sanitizedMessage}`;
-      command += ` '${userPrompt.replace(/'/g, "'\\''")}'`;
+
+      const command = superAgentSlackProvider.buildInteractiveCommand({
+        binaryPath: superAgentSlackProvider.resolveBinaryPath(appSettings),
+        prompt: userPrompt,
+        model: superAgent.model,
+        permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
+        effort: superAgent.effort,
+        secondaryProjectPath: superAgent.secondaryProjectPath,
+        obsidianVaultPaths: superAgent.obsidianVaultPaths,
+        mcpConfigPath: superAgentMcpConfigPath,
+        systemPromptFile,
+        skills: [...new Set(superAgent.skills || [])],
+        isSuperAgent: true,
+        orchestratorMode: true,
+      });
 
       superAgent.status = 'running';
       superAgent.currentTask = sanitizedMessage.slice(0, 100);
@@ -641,6 +645,8 @@ export async function sendToSuperAgentFromSlack(
 
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       saveAgents();
+      // A cold start of the super agent carries a task like any other start.
+      armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
 
       await say(':crown: Super Agent is processing your request...');
     } else {
