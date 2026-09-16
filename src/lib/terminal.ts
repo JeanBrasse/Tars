@@ -141,6 +141,12 @@ export function attachShiftEnterHandler(
  *
  * Callers should drop their own reference first, so nothing writes to a
  * terminal that is on its way out.
+ *
+ * 40 ms is a threshold, not a guarantee: a frame can run late on a loaded main
+ * thread, and in a backgrounded window it does not run until the window comes
+ * back, which is after this timer. Those cases fall back to the old behaviour
+ * for that one terminal, a console error and nothing else. Covering them for
+ * real would mean a handle on the frame, which only xterm can give.
  */
 export function disposeTerminalSafely(term: Pick<Terminal, 'dispose'>): void {
   setTimeout(() => term.dispose(), 40);

@@ -7,7 +7,7 @@ import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -264,7 +264,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     if (entry) {
       entry.resizeObserver?.disconnect();
       if (!entry.disposed) {
-        entry.terminal.dispose();
+        disposeTerminalSafely(entry.terminal);
         entry.disposed = true;
       }
     }
@@ -296,7 +296,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     // Dispose old terminal if switching containers
     if (existing && !existing.disposed) {
       existing.resizeObserver?.disconnect();
-      existing.terminal.dispose();
+      disposeTerminalSafely(existing.terminal);
       existing.disposed = true;
     }
 
@@ -440,7 +440,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       terminalsRef.current.forEach((entry) => {
         entry.resizeObserver?.disconnect();
         if (!entry.disposed) {
-          entry.terminal.dispose();
+          disposeTerminalSafely(entry.terminal);
           entry.disposed = true;
         }
       });

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
@@ -78,7 +78,7 @@ export function useQuickTerminal({
 
       try {
         term.open(quickTerminalRef.current);
-        if (cancelled) { term.dispose(); return; }
+        if (cancelled) { disposeTerminalSafely(term); return; }
 
         quickXtermRef.current = term;
         quickFitAddonRef.current = fitAddon;
@@ -137,9 +137,10 @@ export function useQuickTerminal({
     return () => {
       cancelled = true;
       if (quickXtermRef.current) {
-        quickXtermRef.current.dispose();
+        const term = quickXtermRef.current;
         quickXtermRef.current = null;
         quickFitAddonRef.current = null;
+        disposeTerminalSafely(term);
       }
       setQuickTerminalReady(false);
     };
@@ -154,9 +155,10 @@ export function useQuickTerminal({
   useEffect(() => {
     if (!open) {
       if (quickXtermRef.current) {
-        quickXtermRef.current.dispose();
+        const term = quickXtermRef.current;
         quickXtermRef.current = null;
         quickFitAddonRef.current = null;
+        disposeTerminalSafely(term);
       }
       setQuickTerminalReady(false);
     }
@@ -185,9 +187,10 @@ export function useQuickTerminal({
       }
     }
     if (quickXtermRef.current) {
-      quickXtermRef.current.dispose();
+      const term = quickXtermRef.current;
       quickXtermRef.current = null;
       quickFitAddonRef.current = null;
+      disposeTerminalSafely(term);
     }
     quickPtyIdRef.current = null;
     setQuickTerminalReady(false);
