@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
@@ -112,13 +112,10 @@ export function useQuickTerminal({
           }
         });
 
+        // The terminal's own replies to queries from the shell arrive here like
+        // a keystroke and must never be forwarded. See stripTerminalReplies.
         term.onData(async (data) => {
-          if (/^(\x1b\[\?[\d;]*c|\d+;\d+c)+$/.test(data)) return;
-          const cleaned = data
-            .replace(/\x1b\[\?[\d;]*c/g, '')
-            .replace(/\x1b\[\d+;\d+R/g, '')
-            .replace(/\x1b\[(?:I|O)/g, '')
-            .replace(/\d+;\d+c/g, '');
+          const cleaned = stripTerminalReplies(data);
           if (!cleaned) return;
           if (quickPtyIdRef.current && window.electronAPI?.pty?.write) {
             await window.electronAPI.pty.write({ id: quickPtyIdRef.current, data: cleaned });
