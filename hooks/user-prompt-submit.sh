@@ -34,7 +34,9 @@ AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 # See armTaskStartWatch in electron/core/agent-manager.ts and the registration
 # fallback in electron/services/api-routes/hooks-routes.ts: this hook is the
 # third piece of that mechanism, and it is the only one written in shell.
-PAYLOAD="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}"
+# `event` names what happened: the server cannot tell a turn starting from any
+# other "running" post, and a dispatch has already set that status at spawn.
+PAYLOAD="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"event\": \"UserPromptSubmit\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}"
 RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" 2>&1)
