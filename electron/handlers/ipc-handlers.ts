@@ -378,8 +378,14 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     let ptyProcess: pty.IPty;
     try {
-      ptyProcess = pty.spawn(shell, ['-l'], {
-        name: 'xterm-256color',
+      // Through spawnAgentPty: this is an agent's pty, so it needs what Tars
+      // imposes on one. Found while fixing the local switch, and it is the
+      // same hole: getPtyEnvVars puts CLAUDE_AGENT_ID in here, so an agent
+      // created in a sandbox posted its hooks to 31415 under a real id.
+      ptyProcess = spawnAgentPty({
+        binaryName: agentProvider.binaryName,
+        shell,
+        args: ['-l'],
         cols: 120,
         rows: 30,
         cwd,

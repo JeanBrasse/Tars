@@ -19,10 +19,14 @@ import { API_PORT } from '../constants';
  * A third spawn site would have to go through this to exist.
  *
  * The claim this comment used to make, that a third spawn site would have to
- * come through here to exist, was wrong: switching an agent to the local
- * provider recreated its pty with a direct pty.spawn and predated all of this,
- * which is how it kept its own environment and lost the API address. It comes
- * through here now. What deliberately does not are the shells that run no
+ * come through here to exist, was wrong twice over. Switching an agent to the
+ * local provider recreated its pty with a direct pty.spawn, and creating an
+ * agent from the renderer spawned one too. Both predate all of this, both put
+ * CLAUDE_AGENT_ID in the environment through getPtyEnvVars, and neither had
+ * the API address, so both posted their hooks to whichever Tars owned 31415.
+ * Five sites now, all through here. The fifth is the kanban automation in
+ * main.ts, creating agents of its own under a comment saying it duplicates the
+ * agent:create handler, which it did, defect included. What deliberately does not are the shells that run no
  * agent: the quick terminal, the skill and plugin runners, and the npx
  * installer. They carry no CLAUDE_AGENT_ID, so a hook fired from one of them
  * has no agent to name and is refused. Anything that spawns an agent belongs
