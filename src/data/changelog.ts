@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 42,
+    version: '1.7.5',
+    date: '2026-09-16',
+    updates: [
+      'An agent the super chat starts, gives a task to or stops now changes on the pages you already have open. The super chat drives agents through the same local address the assistants use, and that path changed the agent without telling the window, so the Agents page, the Dashboard and the list beside the Chat went on showing the old state until you left the page and came back. The same goes for an agent created, removed or given a delegated task that way, and for an agent whose process ends',
+      'An agent you stop from the interface stays stopped. The assistant you stopped still sends a last word as it shuts down, saying its session has ended, and Tars accepted it as coming from the agent\'s current session, so an agent you had just stopped went back to showing as done a moment later. That last word is now recognised as coming from the session you ended, as it already was when an agent was stopped by another agent',
+    ],
+  },
+  {
     id: 37,
     version: '1.7.0',
     date: '2026-09-16',
