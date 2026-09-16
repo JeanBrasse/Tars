@@ -10,30 +10,50 @@ import { createHash } from 'node:crypto';
  * It answers the calls the scripts make the way gh 2.88 does, measured on
  * 16/09: a missing release is `release not found` with exit 1, an outage is
  * `error connecting to ...` with the same exit 1, and a missing tag through
- * `gh api` is `gh: Not Found (HTTP 404)`. Anything else, `release create` first
- * of all, is refused with exit 99 and written to the log like every call.
+ * `gh api` is `gh: Not Found (HTTP 404)`. Anything else is refused with exit 99
+ * and written to the log like every call, and so is `release create` unless the
+ * test has called `allowPublishing()`: a test publishes because it says so by
+ * name, never because of a state it copied from another test.
  */
 
 /** `state` is `uploaded` unless given: GitHub lists an asset whose upload has not finished as `open`. */
 export type FakeAsset = { name: string; size: number; digest: string | null; state?: string };
+export type FakeRelease = {
+  assets: FakeAsset[];
+  /** The commit its tag points at. `release create` records its `--target`. */
+  target?: string;
+  title?: string;
+  notes?: string;
+};
 export type FakeGhState = {
   /** Every call fails as gh does with no network. */
   offline?: boolean;
   /** Per tag, a failure that is neither "not found" nor an outage. */
   failFor?: Record<string, string>;
-  releases?: Record<string, { assets: FakeAsset[] }>;
+  releases?: Record<string, FakeRelease>;
   /** Tags that exist with no release. */
   tags?: string[];
   latest?: string;
+  /**
+   * What GitHub serves instead of what it was sent: the commit every tag points
+   * at, the digest of an asset by name, the bytes of a downloaded
+   * latest-mac.yml, the tag of /releases/latest.
+   */
+  serve?: { target?: string; digests?: Record<string, string>; manifest?: string; latest?: string };
 };
 
 const SCRIPT = `
 const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify(args) + '\\n');
+const home = path.dirname(process.env.FAKE_GH_STATE);
 const state = JSON.parse(fs.readFileSync(process.env.FAKE_GH_STATE, 'utf8'));
+const serve = state.serve || {};
 const fail = (text, code) => { process.stderr.write(text + '\\n'); process.exit(code); };
 const outage = () => fail('error connecting to api.github.com\\ncheck your internet connection or https://githubstatus.com', 1);
+const option = name => { const i = args.indexOf(name); return i === -1 ? undefined : args[i + 1]; };
 const [cmd, sub] = args;
 if (cmd === 'release' && sub === 'view') {
   const tag = args[2];
@@ -41,7 +61,8 @@ if (cmd === 'release' && sub === 'view') {
   if (state.failFor && state.failFor[tag]) fail(state.failFor[tag], 1);
   const release = state.releases && state.releases[tag];
   if (!release) fail('release not found', 1);
-  process.stdout.write(JSON.stringify({ tagName: tag, assets: release.assets.map(a => Object.assign({ state: 'uploaded' }, a)) }));
+  const served = a => (serve.digests && serve.digests[a.name] ? { digest: serve.digests[a.name] } : {});
+  process.stdout.write(JSON.stringify({ tagName: tag, assets: release.assets.map(a => Object.assign({ state: 'uploaded' }, a, served(a))) }));
   process.exit(0);
 }
 if (cmd === 'release' && sub === 'list') {
@@ -49,18 +70,51 @@ if (cmd === 'release' && sub === 'list') {
   process.stdout.write(JSON.stringify(Object.keys(state.releases || {}).map(tagName => ({ tagName }))));
   process.exit(0);
 }
+if (cmd === 'release' && sub === 'create') {
+  if (!fs.existsSync(path.join(home, 'publishing-allowed'))) fail('fake gh: this test did not allow publishing: ' + args.join(' '), 99);
+  if (state.offline) outage();
+  const tag = args[2];
+  state.releases = state.releases || {};
+  if (state.releases[tag]) fail('a release with the same tag name already exists: ' + tag, 1);
+  const files = [];
+  for (let i = 3; i < args.length && !args[i].startsWith('--'); i++) files.push(args[i]);
+  const uploads = path.join(home, 'uploads', tag);
+  fs.mkdirSync(uploads, { recursive: true });
+  const assets = files.map(file => {
+    const bytes = fs.readFileSync(file);
+    fs.writeFileSync(path.join(uploads, path.basename(file)), bytes);
+    return { name: path.basename(file), size: bytes.length, digest: 'sha256:' + crypto.createHash('sha256').update(bytes).digest('hex'), state: 'uploaded' };
+  });
+  state.releases[tag] = { assets, target: option('--target'), title: option('--title'), notes: fs.readFileSync(option('--notes-file'), 'utf8') };
+  if (args.includes('--latest')) state.latest = tag;
+  fs.writeFileSync(process.env.FAKE_GH_STATE, JSON.stringify(state));
+  process.stdout.write('https://github.com/' + option('--repo') + '/releases/tag/' + tag + '\\n');
+  process.exit(0);
+}
+if (cmd === 'release' && sub === 'download') {
+  const tag = args[2];
+  if (state.offline) outage();
+  if (!(state.releases && state.releases[tag])) fail('release not found', 1);
+  const name = option('--pattern');
+  const uploaded = path.join(home, 'uploads', tag, name);
+  if (!fs.existsSync(uploaded)) fail('no assets match the file pattern', 1);
+  const bytes = name === 'latest-mac.yml' && typeof serve.manifest === 'string' ? serve.manifest : fs.readFileSync(uploaded);
+  fs.writeFileSync(path.join(option('--dir'), name), bytes);
+  process.exit(0);
+}
 if (cmd === 'api') {
   if (state.offline) outage();
   const ref = /^repos\\/[^/]+\\/[^/]+\\/git\\/ref\\/tags\\/(.+)$/.exec(args[1] || '');
   if (ref) {
-    if ((state.tags || []).includes(ref[1]) || (state.releases && state.releases[ref[1]])) {
-      process.stdout.write(JSON.stringify({ object: { type: 'commit', sha: '0'.repeat(40) } }));
+    const release = state.releases && state.releases[ref[1]];
+    if ((state.tags || []).includes(ref[1]) || release) {
+      process.stdout.write(JSON.stringify({ object: { type: 'commit', sha: serve.target || (release && release.target) || '0'.repeat(40) } }));
       process.exit(0);
     }
     fail('gh: Not Found (HTTP 404)', 1);
   }
   if (/^repos\\/[^/]+\\/[^/]+\\/releases\\/latest$/.test(args[1] || '')) {
-    process.stdout.write(JSON.stringify({ tag_name: state.latest }));
+    process.stdout.write(JSON.stringify({ tag_name: serve.latest || state.latest }));
     process.exit(0);
   }
 }
@@ -73,6 +127,10 @@ export type FakeGh = {
   /** Put the PATH back as it was. */
   uninstall(): void;
   setState(state: FakeGhState): void;
+  /** What the fake GitHub holds now, with what `release create` added to it. */
+  state(): FakeGhState;
+  /** Let `release create` publish into this fake. Without it, it exits 99. */
+  allowPublishing(): void;
   /** Every argv gh was called with, in order. */
   calls(): string[][];
 };
@@ -91,10 +149,15 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
   const saved: Record<string, string | undefined> = {};
   return {
     install() {
-      for (const key of ['PATH', 'FAKE_GH_STATE', 'FAKE_GH_LOG']) saved[key] = process.env[key];
+      for (const key of ['PATH', 'FAKE_GH_STATE', 'FAKE_GH_LOG', 'GH_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKEN']) saved[key] = process.env[key];
       process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
       process.env.FAKE_GH_STATE = stateFile;
       process.env.FAKE_GH_LOG = logFile;
+      // Should a real gh ever run in its place, it finds no account to act as:
+      // with an empty config directory and no token, gh says it is not logged in.
+      process.env.GH_CONFIG_DIR = path.join(dir, 'no-gh-config');
+      delete process.env.GH_TOKEN;
+      delete process.env.GITHUB_TOKEN;
     },
     uninstall() {
       for (const [key, value] of Object.entries(saved)) {
@@ -104,6 +167,12 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
     },
     setState(next) {
       fs.writeFileSync(stateFile, JSON.stringify(next));
+    },
+    state() {
+      return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    },
+    allowPublishing() {
+      fs.writeFileSync(path.join(dir, 'publishing-allowed'), '');
     },
     calls() {
       return fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));

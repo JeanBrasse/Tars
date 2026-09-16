@@ -15,7 +15,10 @@
  *      the top entry of src/data/changelog.ts is that version, and no newer
  *      version is already published;
  *   2. npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN, so
- *      electron-builder never publishes anything by itself;
+ *      electron-builder never publishes anything by itself, and only once
+ *      nothing it would write over is a build GitHub does not prove published:
+ *      neither in release/ here, nor, from a worktree, in the folder step 7
+ *      moves the build into;
  *   3. check the artifacts: latest-mac.yml names this version, the size and
  *      sha512 it gives the dmg and the zip are the files', and the built app
  *      says this version;
@@ -28,8 +31,9 @@
  *   8. prune that folder, which deletes only what GitHub proves published;
  *   9. print where the dmg is and where the release is.
  *
- * `--dry-run` does 1, 3 when artifacts exist, and 4, and says what the rest
- * would do: nothing is built, published, moved or deleted.
+ * `--dry-run` does 1, the checks of 2, 3 when release/ holds a build of this
+ * version, and 4, and says what the rest would do: nothing is built, published,
+ * moved or deleted.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -222,21 +226,52 @@ async function appVersion(releaseDir) {
   return shown.code === 0 ? shown.stdout.trim() : undefined;
 }
 
+/** What every build writes whatever its version, so they belong to the last build put in a folder. */
+const SHARED = ['latest-mac.yml', 'builder-debug.yml', 'mac-arm64'];
+
+/**
+ * The build `dir` holds, and whether a build of `version` may take its place.
+ *
+ * Two things write over that build: electron-builder, in the folder it builds
+ * into, and step 7, in the kept folder. Another version's build is given up
+ * only when it is older and GitHub proves it published with that very
+ * manifest, since writing over the manifest of an unpublished version is how
+ * 1.6.19's was lost. A build of `version` itself is returned for the caller to
+ * judge.
+ */
+export async function buildHeldIn({ dir, version, repo }) {
+  const shared = SHARED.filter(n => existsSync(join(dir, n)));
+  if (shared.length === 0) return { version: undefined, shared };
+  const yml = join(dir, 'latest-mac.yml');
+  const there = existsSync(yml) ? parseLatestMac(readFileSync(yml, 'utf8')).version : await appVersion(dir);
+  if (!there) throw new Refusal(`${dir} holds a build whose version cannot be read: not overwritten`);
+  if (there === version) return { version: there, shared };
+  if (compareVersions(there, version) < 0) throw new Refusal(`${dir} holds ${there}, newer than ${version}: not overwritten`);
+
+  const proof = await publicationOf(there, repo, readdirSync(dir).filter(n => versionOf(n) === there).map(n => join(dir, n)));
+  if (proof.status !== 'published') throw new Refusal(`${dir} holds ${there}, which is not proven published (${proof.reason}): its manifest is not overwritten`);
+  if (existsSync(yml)) {
+    const served = await ghJson(['release', 'view', `v${there}`, '--repo', repo, '--json', 'assets']);
+    const asset = served.assets?.find(a => a.name === 'latest-mac.yml');
+    if (!asset?.digest || asset.digest !== `sha256:${await sha256Of(yml)}`) {
+      throw new Refusal(`the latest-mac.yml of ${there} in ${dir} is not the one published: not overwritten`);
+    }
+  }
+  return { version: there, shared };
+}
+
 /**
  * Step 7. Everything is checked before anything moves, and nothing is copied.
  *
- * The files of this version must not already be there with other bytes. The
- * manifest, the debug log and the unpacked app belong to whichever build was
- * put in that folder last: they are replaced only when that build is an older
- * version that GitHub proves published with that very manifest, since writing
- * over the manifest of an unpublished version is how 1.6.19's was lost.
+ * The files of this version must not already be there with other bytes, and
+ * the build the kept folder holds is replaced only as `buildHeldIn` allows.
  */
 export async function moveToCanonical({ fromDir, toDir, version, repo }) {
   if (realpathSync(fromDir) === (existsSync(toDir) ? realpathSync(toDir) : toDir)) return { moved: [], replaced: [] };
   mkdirSync(toDir, { recursive: true });
 
   const own = readdirSync(fromDir).filter(n => versionOf(n) === version);
-  const shared = ['latest-mac.yml', 'builder-debug.yml', 'mac-arm64'].filter(n => existsSync(join(fromDir, n)));
+  const shared = SHARED.filter(n => existsSync(join(fromDir, n)));
 
   const drop = [];
   for (const name of own) {
@@ -247,30 +282,15 @@ export async function moveToCanonical({ fromDir, toDir, version, repo }) {
   }
 
   const replace = [];
-  const existingYml = join(toDir, 'latest-mac.yml');
-  const occupied = shared.some(n => existsSync(join(toDir, n)));
-  if (occupied) {
-    const there = existsSync(existingYml) ? parseLatestMac(readFileSync(existingYml, 'utf8')).version : await appVersion(toDir);
-    if (!there) throw new Refusal(`${toDir} holds a build whose version cannot be read: not overwritten`);
-    if (there === version) {
-      if (!existsSync(existingYml) || !sameBytes(join(fromDir, 'latest-mac.yml'), existingYml)) {
-        throw new Refusal(`${toDir} already holds another build of ${version}: not overwritten`);
-      }
-      drop.push(...shared);
-    } else if (compareVersions(there, version) < 0) {
-      throw new Refusal(`${toDir} holds ${there}, newer than ${version}: not overwritten`);
-    } else {
-      const proof = await publicationOf(there, repo, readdirSync(toDir).filter(n => versionOf(n) === there).map(n => join(toDir, n)));
-      if (proof.status !== 'published') throw new Refusal(`${toDir} holds ${there}, which is not proven published (${proof.reason}): its manifest is not overwritten`);
-      if (existsSync(existingYml)) {
-        const served = await ghJson(['release', 'view', `v${there}`, '--repo', repo, '--json', 'assets']);
-        const asset = served.assets?.find(a => a.name === 'latest-mac.yml');
-        if (!asset?.digest || asset.digest !== `sha256:${await sha256Of(existingYml)}`) {
-          throw new Refusal(`the latest-mac.yml of ${there} in ${toDir} is not the one published: not overwritten`);
-        }
-      }
-      replace.push(...shared.filter(n => existsSync(join(toDir, n))));
+  const held = await buildHeldIn({ dir: toDir, version, repo });
+  if (held.version === version) {
+    const existingYml = join(toDir, 'latest-mac.yml');
+    if (!existsSync(existingYml) || !sameBytes(join(fromDir, 'latest-mac.yml'), existingYml)) {
+      throw new Refusal(`${toDir} already holds another build of ${version}: not overwritten`);
     }
+    drop.push(...shared);
+  } else {
+    replace.push(...shared.filter(n => held.shared.includes(n)));
   }
 
   const moved = [];
@@ -340,9 +360,25 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     const { head, top: entry } = await checkPreconditions({ root, repo, version });
     log(`1. checks passed: HEAD ${head.slice(0, 7)} is origin/main, tracked tree clean, v${version} not on GitHub, changelog top entry ${version}, nothing newer published`);
 
+    // Before anything is built, and in a dry run too, so that it says what the
+    // real run would refuse. The build writes over the build release/ holds.
+    // From a worktree, step 7 then moves it into the kept folder: whatever would
+    // stop that move has to stop the release now, not once it is public.
+    const held = await buildHeldIn({ dir: releaseDir, version, repo });
+    if (!inMainCheckout) {
+      const kept = await buildHeldIn({ dir: canonical.dir, version, repo });
+      if (kept.version === version || (existsSync(canonical.dir) && readdirSync(canonical.dir).some(n => versionOf(n) === version))) {
+        throw new Refusal(`${canonical.dir} already holds a build of ${version}: the one built here could not be moved there once published`);
+      }
+    }
+    const over = !held.version ? ''
+      : held.version === version ? `, over an earlier build of ${version}, which was never published`
+        : `, over the build of ${held.version}, published with that manifest`;
+
     if (dryRun) {
-      log('2. would run npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN');
+      log(`2. would run npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN${over}`);
     } else {
+      log(`2. npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN${over}`);
       const env = { ...process.env };
       for (const key of ['CI', 'GH_TOKEN', 'GITHUB_TOKEN']) delete env[key];
       const build = spawnSync('npm', ['run', 'electron:build'], { cwd: root, env, stdio: 'inherit' });
@@ -350,8 +386,14 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     }
 
     let artifacts;
-    if (dryRun && !existsSync(join(releaseDir, 'latest-mac.yml'))) {
-      log(`3. no artifacts in ${releaseDir} yet: would check them once built`);
+    const manifest = join(releaseDir, 'latest-mac.yml');
+    // Between two releases, release/ of the main checkout keeps the last one's
+    // manifest: a dry run checks a build of this version, or waits for it.
+    const built = existsSync(manifest) ? parseLatestMac(readFileSync(manifest, 'utf8')).version : undefined;
+    if (dryRun && built !== version) {
+      log(built
+        ? `3. ${releaseDir} holds the build of ${built}: would check the artifacts of ${version} once built`
+        : `3. no artifacts in ${releaseDir} yet: would check them once built`);
     } else {
       artifacts = await verifyArtifacts(releaseDir, version);
       log(`3. artifacts checked: ${basename(artifacts.dmg)}, ${basename(artifacts.zip)} and latest-mac.yml agree, and the app says ${version}`);
@@ -362,8 +404,7 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
 
     const dmgName = artifacts ? artifacts.dmg : join(releaseDir, `Tars-${version}-arm64.dmg`);
     const zipName = artifacts ? artifacts.zip : join(releaseDir, `Tars-${version}-arm64-mac.zip`);
-    const ymlName = join(releaseDir, 'latest-mac.yml');
-    const create = ['release', 'create', `v${version}`, dmgName, zipName, ymlName, '--repo', repo, '--target', head,
+    const create = ['release', 'create', `v${version}`, dmgName, zipName, manifest, '--repo', repo, '--target', head,
       '--title', `Tars ${version}`, '--latest', '--notes-file'];
 
     if (dryRun) {

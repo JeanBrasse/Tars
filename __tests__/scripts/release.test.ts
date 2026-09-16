@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { fakeGh, publishedAssets, sha256, type FakeGh, type FakeGhState } from './fake-gh';
+import { fakeGh, publishedAssets, sha256, type FakeGh, type FakeGhState, type FakeRelease } from './fake-gh';
 import { main, moveToCanonical, Refusal, verifyArtifacts } from '../../scripts/release.mjs';
 
 /**
@@ -14,8 +14,10 @@ import { main, moveToCanonical, Refusal, verifyArtifacts } from '../../scripts/r
  * Each case builds a real git checkout with a local origin, so HEAD, the fetch
  * and the tree are git's own answers, and puts a fake gh first on the PATH.
  * The first case passes every check: the others break exactly one thing each,
- * so a refusal is that check and not the setup. No test builds, publishes, or
- * reaches the real release/ or GitHub.
+ * so a refusal is that check and not the setup. No test runs electron-builder
+ * or reaches the real release/ or GitHub: a build is a script of the harness
+ * that lays out files, and a release is made in the fake gh only by a test that
+ * calls allowPublishing().
  */
 
 const VERSION = '2.0.1';
@@ -105,11 +107,61 @@ function artifacts(releaseDir: string, version: string, { wrongSha = false } = {
   return { dmg, zip, dmgBytes, zipBytes };
 }
 
+/** GitHub's release of `version` made from exactly its dmg, zip and latest-mac.yml in `releaseDir`. */
+function releasedFrom(releaseDir: string, version: string): FakeRelease {
+  return {
+    assets: [`Tars-${version}-arm64.dmg`, `Tars-${version}-arm64-mac.zip`, 'latest-mac.yml'].map(name => {
+      const bytes = fs.readFileSync(path.join(releaseDir, name));
+      return { name, size: bytes.length, digest: sha256(bytes) };
+    }),
+  };
+}
+
+/**
+ * Commits and pushes an `electron:build` that lays a consistent build of
+ * VERSION out in release/, as electron-builder does, and writes BUILD_ENV: which
+ * of the variables that let electron-builder publish on its own it was given.
+ */
+function buildable(dir: string) {
+  const staged = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-release-staged-'));
+  artifacts(staged, VERSION);
+  fs.writeFileSync(path.join(dir, 'build.js'), [
+    "const fs = require('fs');",
+    `fs.cpSync(${JSON.stringify(staged)}, 'release', { recursive: true });`,
+    "fs.writeFileSync('BUILD_ENV', JSON.stringify(['CI', 'GH_TOKEN', 'GITHUB_TOKEN'].filter(key => key in process.env)));",
+    '',
+  ].join('\n'));
+  const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  pkg.scripts['electron:build'] = 'node build.js';
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'a build that lays out its artifacts');
+  git(dir, 'push', '-q', 'origin', 'main');
+}
+
 async function release(cwd: string, ...argv: string[]): Promise<{ code: number; out: string }> {
   const lines: string[] = [];
   const code = await main(argv, { cwd, log: (line: string) => lines.push(line) });
   return { code, out: lines.join('\n') };
 }
+
+/** Every path under these roots with its size, the .git internals aside: a fetch writes there. */
+function inventory(...roots: string[]): string[] {
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.git') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else found.push(`${full} ${fs.statSync(full).size}`);
+    }
+  };
+  for (const root of roots) walk(root);
+  return found.sort();
+}
+
+/** The calls that would have written to GitHub. */
+const writesToGitHub = () => gh.calls().filter(args => !['view', 'list', 'download'].includes(args[1]) && args[0] !== 'api');
 
 describe('npm run release, before anything is built', () => {
   it('passes every check on a clean checkout of main, so each refusal below is the check it names', async () => {
@@ -196,21 +248,6 @@ describe('npm run release, before anything is built', () => {
 });
 
 describe('npm run release --dry-run', () => {
-  /** Every path under these roots with its size, the .git internals aside: a fetch writes there. */
-  function inventory(...roots: string[]): string[] {
-    const found: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (entry.name === '.git') continue;
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else found.push(`${full} ${fs.statSync(full).size}`);
-      }
-    };
-    for (const root of roots) walk(root);
-    return found.sort();
-  }
-
   it('builds, publishes, moves and deletes nothing, from a worktree with a build ready', async () => {
     const { root, dir } = checkout();
     // The folder that is kept holds five older published versions: a real run
@@ -235,8 +272,44 @@ describe('npm run release --dry-run', () => {
     expect(code).toBe(0);
     expect(inventory(dir, worktree)).toEqual(before);
     expect(fs.existsSync(path.join(worktree, 'BUILD_RAN'))).toBe(false);
-    const writes = gh.calls().filter(args => !['view', 'list'].includes(args[1]) && args[0] !== 'api');
-    expect(writes, 'the dry run called gh for more than reading').toEqual([]);
+    expect(writesToGitHub(), 'the dry run called gh for more than reading').toEqual([]);
+  });
+
+  // Found by the QA on #99 (S1): the command OPERATIONS.md has Noah run first
+  // stopped on "latest-mac.yml is for 2.0.0, not 2.0.1", because release/ of the
+  // main checkout keeps the last release's manifest by design. Their scenario,
+  // with one change: 2.0.0 is published from these very files and this
+  // manifest, as 1.7.1 is from Noah's release/. In the harness's default, GitHub
+  // has 2.0.0 with other bytes: the real run now refuses to build over that, so
+  // the dry run must refuse too, and the next test is that case as they wrote it.
+  it('passes in the main checkout with the previous release still in release/, as OPERATIONS.md has it run', async () => {
+    const { dir } = checkout();
+    const kept = path.join(dir, 'release');
+    artifacts(kept, '2.0.0');
+    gh.setState({ releases: { 'v2.0.0': releasedFrom(kept, '2.0.0') }, latest: 'v2.0.0' });
+    const before = inventory(dir);
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(out).toContain(`3. ${fs.realpathSync(kept)} holds the build of 2.0.0: would check the artifacts of ${VERSION} once built`);
+    expect(code).toBe(0);
+    expect(inventory(dir)).toEqual(before);
+    expect(writesToGitHub()).toEqual([]);
+  });
+
+  it('refuses, like the real run, when the build release/ holds is not proven published', async () => {
+    // The dry run is the command that says whether the release can start: one
+    // that passed here would send the real run into the refusal below.
+    const { dir } = checkout();
+    const kept = path.join(dir, 'release');
+    artifacts(kept, '2.0.0');
+    const before = inventory(dir);
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(code).toBe(1);
+    expect(out).toContain(`${fs.realpathSync(kept)} holds 2.0.0, which is not proven published (the published Tars-2.0.0-arm64.dmg is not the local file (size differs))`);
+    expect(inventory(dir)).toEqual(before);
   });
 
   it('stops on artifacts that do not match their manifest', async () => {
@@ -247,6 +320,176 @@ describe('npm run release --dry-run', () => {
 
     expect(code).toBe(1);
     expect(out).toContain(`the sha512 in latest-mac.yml is not that of Tars-${VERSION}-arm64-mac.zip`);
+  });
+});
+
+describe('npm run release, before it builds', () => {
+  // Found by the QA on #99 (S2), and their scenario: in the main checkout the
+  // build wrote the manifest, the debug log and the app over those of the
+  // build release/ held, before anything checked them, which is how the
+  // manifest of 1.6.19 was lost. Only a move from a worktree was guarded.
+  it('does not build over an older build that was never published, in the main checkout', async () => {
+    const { dir } = checkout();
+    fs.writeFileSync(path.join(dir, 'build.js'), "const fs = require('fs'); fs.mkdirSync('release', { recursive: true }); fs.writeFileSync('release/latest-mac.yml', 'version: 2.0.1\\n'); fs.writeFileSync('release/builder-debug.yml', 'debug of 2.0.1');\n");
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    pkg.scripts['electron:build'] = 'node build.js';
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-q', '-m', 'a build that writes the manifest, as electron-builder does');
+    git(dir, 'push', '-q', 'origin', 'main');
+    artifacts(path.join(dir, 'release'), '2.0.0');
+    gh.setState({ releases: {}, latest: 'v1.9.9' });
+    const before = fs.readFileSync(path.join(dir, 'release', 'latest-mac.yml'), 'utf8');
+    const everything = inventory(dir);
+
+    const { code, out } = await release(dir);
+    const after = fs.readFileSync(path.join(dir, 'release', 'latest-mac.yml'), 'utf8');
+
+    expect(after).toBe(before);
+    expect(code).toBe(1);
+    expect(out).toContain(`holds 2.0.0, which is not proven published (there is no release v2.0.0 on ${REPO})`);
+    expect(inventory(dir)).toEqual(everything);
+    expect(writesToGitHub()).toEqual([]);
+  });
+
+  it.each([
+    ['a newer version', (dir: string) => artifacts(dir, '2.1.0'), 'holds 2.1.0, newer than 2.0.1'],
+    ['a build whose version cannot be read', (dir: string) => {
+      fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(dir, 'builder-debug.yml'), 'x');
+    }, 'holds a build whose version cannot be read'],
+  ])('refuses a release/ that holds %s', async (_, lay, refusal) => {
+    const { dir } = checkout();
+    lay(path.join(dir, 'release'));
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(out).toContain(refusal);
+    expect(code).toBe(1);
+  });
+
+  // Each case runs git, npm and a dozen gh processes: seconds on a busy machine, not milliseconds.
+  describe('from a worktree', { timeout: 30_000 }, () => {
+    /** A checkout whose build lays out VERSION, and a worktree of origin/main beside it for the release to run in. */
+    function worktreeOf() {
+      const { root, dir } = checkout();
+      buildable(dir);
+      const worktree = path.join(root, 'worktree');
+      git(dir, 'worktree', 'add', '-q', '--detach', worktree, 'origin/main');
+      return { kept: path.join(dir, 'release'), worktree };
+    }
+
+    it('does not start a release whose build the kept folder would refuse once it is public, and the dry run says so', async () => {
+      // Step 7 refuses this move, and it used to refuse it after gh release
+      // create: the release public, its build left in the worktree.
+      const { kept, worktree } = worktreeOf();
+      artifacts(kept, '2.0.0');
+      gh.setState({ releases: {}, latest: 'v1.9.9' });
+      gh.allowPublishing();
+      const before = inventory(kept);
+
+      for (const argv of [['--dry-run'], []]) {
+        const { code, out } = await release(worktree, ...argv);
+
+        expect(out).toContain(`${fs.realpathSync(kept)} holds 2.0.0, which is not proven published`);
+        expect(code).toBe(1);
+      }
+      expect(fs.existsSync(path.join(worktree, 'BUILD_ENV')), 'it built').toBe(false);
+      expect(writesToGitHub()).toEqual([]);
+      expect(inventory(kept)).toEqual(before);
+    });
+
+    it.each([
+      ['a file of it', (kept: string) => fs.writeFileSync(path.join(kept, `Tars-${VERSION}-arm64.dmg`), 'an earlier build')],
+      ['its manifest', (kept: string) => fs.writeFileSync(path.join(kept, 'latest-mac.yml'), `version: ${VERSION}\n`)],
+    ])('does not start a release when the kept folder already holds %s', async (_, lay) => {
+      const { kept, worktree } = worktreeOf();
+      fs.mkdirSync(kept);
+      lay(kept);
+      gh.allowPublishing();
+
+      const { code, out } = await release(worktree);
+
+      expect(out).toContain(`${fs.realpathSync(kept)} already holds a build of ${VERSION}`);
+      expect(code).toBe(1);
+      expect(fs.existsSync(path.join(worktree, 'BUILD_ENV')), 'it built').toBe(false);
+      expect(writesToGitHub()).toEqual([]);
+    });
+  });
+});
+
+// Each case runs git, npm and a dozen gh processes: seconds on a busy machine, not milliseconds.
+describe('npm run release, publishing', { timeout: 30_000 }, () => {
+  it('publishes the build it checked, built without CI, GH_TOKEN or GITHUB_TOKEN', async () => {
+    // With any of the three, electron-builder publishes by itself, before step
+    // 3 has checked anything. Placeholders only: nothing here reaches GitHub.
+    const { dir } = checkout();
+    buildable(dir);
+    gh.allowPublishing();
+    const names = ['CI', 'GH_TOKEN', 'GITHUB_TOKEN'];
+    const saved = names.map(name => [name, process.env[name]] as const);
+    for (const name of names) process.env[name] = 'set-by-the-test';
+    let result: { code: number; out: string };
+    try {
+      result = await release(dir);
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+
+    const kept = path.join(dir, 'release');
+    expect(result.out).toContain('6. GitHub serves exactly what was built');
+    expect(result.code).toBe(0);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'BUILD_ENV'), 'utf8')), 'the build was given what lets it publish').toEqual([]);
+    const published = gh.state().releases?.[`v${VERSION}`];
+    expect(published?.assets).toEqual(releasedFrom(kept, VERSION).assets.map(asset => ({ ...asset, state: 'uploaded' })));
+    expect(published?.target).toBe(git(dir, 'rev-parse', 'HEAD').trim());
+    expect(published?.notes).toContain("- An agent's change, said the way the app says it");
+    expect(result.out).toContain(`9. ${path.join(fs.realpathSync(kept), `Tars-${VERSION}-arm64.dmg`)}`);
+  });
+
+  it('cannot publish into the fake gh unless the test allows it', () => {
+    // What every other test here relies on: none of them calls allowPublishing().
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-release-gate-'));
+    const manifest = path.join(dir, 'latest-mac.yml');
+    const notes = path.join(dir, 'notes.md');
+    fs.writeFileSync(manifest, `version: ${VERSION}\n`);
+    fs.writeFileSync(notes, 'notes');
+    const create = () => execFileSync('gh', ['release', 'create', `v${VERSION}`, manifest, '--repo', REPO, '--notes-file', notes], { stdio: 'pipe' });
+
+    let status: number | null = null;
+    try {
+      create();
+    } catch (err) {
+      status = (err as { status: number | null }).status;
+    }
+    expect(status).toBe(99);
+    expect(gh.state().releases?.[`v${VERSION}`]).toBeUndefined();
+
+    gh.allowPublishing();
+    create();
+    expect(gh.state().releases?.[`v${VERSION}`]?.assets.map(asset => asset.name)).toEqual(['latest-mac.yml']);
+  });
+
+  it.each([
+    ['its tag on another commit', { target: 'f'.repeat(40) }, `v${VERSION} points at ${'f'.repeat(40)}, not at the commit built`],
+    ['the dmg with other bytes', { digests: { [`Tars-${VERSION}-arm64.dmg`]: sha256('other bytes') } }, `GitHub serves Tars-${VERSION}-arm64.dmg with ${sha256('other bytes')}`],
+    ['another latest-mac.yml', { manifest: `version: ${VERSION}\n` }, 'the latest-mac.yml GitHub serves is not the one checked'],
+    ['another release as the latest', { latest: 'v2.0.0' }, `/releases/latest is v2.0.0, not v${VERSION}`],
+  ])('stops, once published, on GitHub serving %s, and goes no further', async (_, serve, refusal) => {
+    const { dir } = checkout();
+    buildable(dir);
+    gh.setState({ ...BEFORE, serve });
+    gh.allowPublishing();
+
+    const { code, out } = await release(dir);
+
+    expect(out).toContain(`5. published v${VERSION}`);
+    expect(out).toContain(refusal);
+    expect(code).toBe(1);
+    expect(out).not.toMatch(/^[6-9]\. /m);
   });
 });
 

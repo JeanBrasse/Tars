@@ -432,9 +432,13 @@ Before it, as always: the version bumped in `package.json`, its entry at the top
 the final e2e).
 
 ```bash
-npm run release -- --dry-run   # the checks, the artifacts if built, the notes; nothing else
+npm run release -- --dry-run   # the checks, the artifacts of this version if built, the notes; nothing else
 npm run release                # the release
 ```
+
+Between two releases, `release/` of the main checkout holds the last release's build, its
+`latest-mac.yml` included. The dry run says so and checks the artifacts only once `release/` holds
+a build of the version being released.
 
 `scripts/release.mjs` stops at the first thing that is not as it should be:
 
@@ -443,7 +447,13 @@ npm run release                # the release
    changelog is that version, and no newer version is published. A GitHub it cannot ask is a
    refusal, not a pass;
 2. runs `npm run electron:build` in this checkout (a worktree is fine), without `CI`, `GH_TOKEN`
-   or `GITHUB_TOKEN`, so `electron-builder` never publishes anything by itself;
+   or `GITHUB_TOKEN`, so `electron-builder` never publishes anything by itself. **Not before**
+   checking what the build writes over: `latest-mac.yml`, `builder-debug.yml` and `mac-arm64` in
+   `release/` belong to the last build put there. They may go only if that build is an earlier
+   attempt at this same version, or an older version GitHub proves published with that very
+   `latest-mac.yml`. From a worktree, the kept folder must also be able to take the build at step
+   7: no file of this version in it, and the same proof for the build it holds, or the release
+   would be public before the move is refused. The dry run makes the same checks;
 3. checks the artifacts: `version` of `latest-mac.yml`, the size and sha512 (base64 of the whole
    file) it gives the dmg and the zip, and `CFBundleShortVersionString` of the built app;
 4. writes the notes from that changelog entry, with the footer on the ad hoc signature, in the
@@ -453,9 +463,10 @@ npm run release                # the release
 6. reads back what GitHub serves: the tag on that commit, the `sha256` digest of every asset
    against the local file, `latest-mac.yml` byte for byte, and `/releases/latest`;
 7. from a worktree, **moves** (never copies) the dmg, the zip, their blockmaps, `latest-mac.yml`,
-   `builder-debug.yml` and `mac-arm64` into the kept folder. It overwrites no file of this version
-   with other bytes, and replaces the previous build's manifest and app only when GitHub proves
-   that version published with that very manifest;
+   `builder-debug.yml` and `mac-arm64` into the kept folder. It checks again what step 2 checked
+   before building: it overwrites no file of this version with other bytes, and replaces the
+   previous build's manifest and app only when GitHub proves that version published with that very
+   manifest;
 8. prunes the kept folder;
 9. prints the local path of the dmg and the URL of the release.
 
@@ -477,6 +488,10 @@ version that is not published, or published with other files, is kept and named.
 cannot be had at all (gh missing, logged out, offline, an API error), nothing is deleted, the
 build still succeeds, and every version kept for that reason is named. It runs at the end of every
 `electron:build` and as step 8 of the release.
+
+Beside the versions, the folder holds the `latest-mac.yml`, `builder-debug.yml` and `mac-arm64`
+of the last release. Leave them: the next release checks them before building over them (step 2),
+and a manifest deleted by hand is one that nothing can compare any more.
 
 ---
 
