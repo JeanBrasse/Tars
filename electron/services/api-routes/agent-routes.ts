@@ -163,6 +163,10 @@ async function spawnAgentSession(
     }
   }
 
+  // The task as the CLI receives it, and as it gets typed in if the argument
+  // never becomes a turn.
+  const taskPrompt = `${identityHeader}${memoryBlock}\n\n${prompt}`;
+
   // Build the CLI command through the provider so non-claude CLIs (codex,
   // gemini, grok, opencode, pi) get their own syntax instead of claude flags.
   let cliCommand: string;
@@ -170,7 +174,7 @@ async function spawnAgentSession(
     cliCommand = cliProvider.buildInteractiveCommand({
       resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
       binaryPath,
-      prompt: `${identityHeader}${memoryBlock}\n\n${prompt}`,
+      prompt: taskPrompt,
       model: resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined,
       permissionMode: effectiveMode,
       effort: agent.effort,
@@ -285,7 +289,7 @@ async function spawnAgentSession(
   agent.lastActivity = new Date().toISOString();
   saveAgents();
 
-  armTaskStartWatch(agent, ptyId);
+  armTaskStartWatch(agent, ptyId, taskPrompt);
 
   ptyProcess.onData((data: string) => {
     appendAgentOutput(agent, data);

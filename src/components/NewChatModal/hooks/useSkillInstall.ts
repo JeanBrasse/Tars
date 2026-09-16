@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
+import { stripTerminalReplies } from '@/lib/terminal';
 import type { Skill } from '@/lib/skills-database';
 
 export interface SkillInstallState {
@@ -47,10 +48,14 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
 
       xtermRef.current = term;
 
-      // Handle user input
+      // Handle user input. This one filtered nothing at all, so every reply the
+      // terminal made to the installer went back into it verbatim.
+      // See stripTerminalReplies.
       term.onData((data) => {
+        const cleaned = stripTerminalReplies(data);
+        if (!cleaned) return;
         if (ptyIdRef.current && window.electronAPI?.skill?.installWrite) {
-          window.electronAPI.skill.installWrite({ id: ptyIdRef.current, data });
+          window.electronAPI.skill.installWrite({ id: ptyIdRef.current, data: cleaned });
         }
       });
 

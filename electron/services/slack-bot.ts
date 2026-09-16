@@ -9,7 +9,6 @@ import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { app } from 'electron';
-import * as os from 'os';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -459,27 +458,29 @@ export async function handleSlackCommand(
       }
 
       const slackAgentProvider = getProvider(agent.provider);
-      const slackBinaryPath = slackAgentProvider.resolveBinaryPath(appSettings).replace(/'/g, "'\\''");
-      let command = `'${slackBinaryPath}'`;
-      if (agent.permissionMode === 'auto' || agent.permissionMode === 'bypass' || (!agent.permissionMode && agent.skipPermissions)) command += ' --dangerously-skip-permissions';
+      let mcpConfigPath: string | undefined;
       if (slackAgentProvider.getMcpConfigStrategy() === 'flag') {
-        const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
-        if (fs.existsSync(mcpConfigPath)) command += ` --mcp-config '${mcpConfigPath}'`;
+        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        if (fs.existsSync(possibleMcpPath)) mcpConfigPath = possibleMcpPath;
       }
-      if (agent.secondaryProjectPath) {
-        command += ` --add-dir '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
-      }
-      command += ` --add-dir '${os.homedir()}/.dorothy'`;
-      // BUG 5: orchestrator-mode agents cannot edit files: must delegate.
-      if (isSuperAgent(agent) || agent.orchestratorMode) {
-        command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
-      }
-      if (agent.skills && agent.skills.length > 0 && !isSuperAgent(agent)) {
-        const slackSkillsList = agent.skills.join(', ');
-        command += ` '[IMPORTANT: Use these skills for this session: ${slackSkillsList}. Invoke them with /<skill-name> when relevant to the task.] ${task.replace(/'/g, "'\\''")}'`;
-      } else {
-        command += ` '${task.replace(/'/g, "'\\''")}'`;
-      }
+      // Through the provider builder, like Telegram. Its own copy of the command
+      // put the task straight after `--add-dir`, where claude's variadic option
+      // read it as one more directory and the session came up with no task; the
+      // copy had also drifted, missing `Task` from the orchestrator restrictions
+      // and hardcoding ~/.dorothy instead of DATA_DIR.
+      const command = slackAgentProvider.buildInteractiveCommand({
+        binaryPath: slackAgentProvider.resolveBinaryPath(appSettings),
+        prompt: task,
+        model: agent.model,
+        permissionMode: agent.permissionMode ?? (agent.skipPermissions ? 'bypass' : 'normal'),
+        effort: agent.effort,
+        secondaryProjectPath: agent.secondaryProjectPath,
+        obsidianVaultPaths: agent.obsidianVaultPaths,
+        mcpConfigPath,
+        skills: [...new Set(agent.skills || [])],
+        isSuperAgent: isSuperAgent(agent),
+        orchestratorMode: isSuperAgent(agent) || agent.orchestratorMode,
+      });
 
       agent.status = 'running';
       agent.currentTask = task.slice(0, 100);
@@ -487,7 +488,7 @@ export async function handleSlackCommand(
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       saveAgents();
       // Started from Slack, and just as able to come up with no task.
-      armTaskStartWatch(agent, agent.ptyId);
+      armTaskStartWatch(agent, agent.ptyId, task);
 
       const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
       await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);
@@ -595,41 +596,45 @@ export async function sendToSuperAgentFromSlack(
         "'\\''",
       );
 
-      // Build command with instructions file, use provider-aware binary
       const superAgentSlackProvider = getProvider(superAgent.provider);
-      const superAgentSlackBinary = superAgentSlackProvider.resolveBinaryPath(appSettings).replace(/'/g, "'\\''");
-      let command = `'${superAgentSlackBinary}'`;
-
-      if (superAgentSlackProvider.getMcpConfigStrategy() === 'flag') {
-        const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
-        if (fs.existsSync(mcpConfigPath)) {
-          command += ` --mcp-config '${mcpConfigPath}'`;
-        }
-      }
-
-      // Pass the instructions as a file, like the Telegram path does.
-      // This used to inline the file's contents into a DOUBLE-quoted shell word
-      // (`--append-system-prompt "..."`) with only ' " and \n escaped. The line
-      // goes straight to a live bash PTY, so the ~124 markdown backticks in
-      // super-agent-instructions.md were command substitutions: `whoami` really
-      // ran, every backticked MCP tool name was executed as a command and its
-      // text deleted from the prompt, and the '\'' sequences leaked in
-      // literally (single-quote escaping is wrong inside double quotes). Every
-      // Slack-initiated cold start therefore ran stray commands in the agent's
-      // cwd and handed the CLI a mangled system prompt. A file path is data.
+      // Through the provider builder, like Telegram's cold start and like the
+      // other Slack site. This copy ended with `--disallowed-tools "Edit"
+      // "Write" "MultiEdit" "NotebookEdit"` immediately before the prompt, and
+      // claude's variadic option read the task as one more tool name: every
+      // super agent cold start from Slack came up with no task at all. The
+      // builder ends its options with `--`, so an operand stays an operand.
+      //
+      // The instructions still travel as a FILE, which is what this site was
+      // fixed for once before: inlined into a double-quoted shell word, the
+      // ~124 markdown backticks in super-agent-instructions.md became command
+      // substitutions, so `whoami` really ran, every backticked MCP tool name
+      // was executed and its text deleted from the prompt. A file path is data.
       const superAgentInstructionsPath = getSuperAgentInstructionsPath();
-      if (fs.existsSync(superAgentInstructionsPath)) {
-        command += ` --append-system-prompt-file '${superAgentInstructionsPath.replace(/'/g, "'\\''")}'`;
+      const systemPromptFile = fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
+
+      let superAgentMcpConfigPath: string | undefined;
+      if (superAgentSlackProvider.getMcpConfigStrategy() === 'flag') {
+        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        if (fs.existsSync(possibleMcpPath)) superAgentMcpConfigPath = possibleMcpPath;
       }
 
-      if (superAgent.permissionMode === 'auto' || superAgent.permissionMode === 'bypass' || (!superAgent.permissionMode && superAgent.skipPermissions)) command += ' --dangerously-skip-permissions';
-
-      // BUG 5: Super Agent is an orchestrator: block file-mutating tools.
-      command += ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit"';
-
-      // Simple prompt with Slack context - the detailed instructions come from the file
+      // Simple prompt with Slack context: the detail comes from the file.
       const userPrompt = `[FROM SLACK - Use send_slack MCP tool to respond!] ${sanitizedMessage}`;
-      command += ` '${userPrompt.replace(/'/g, "'\\''")}'`;
+
+      const command = superAgentSlackProvider.buildInteractiveCommand({
+        binaryPath: superAgentSlackProvider.resolveBinaryPath(appSettings),
+        prompt: userPrompt,
+        model: superAgent.model,
+        permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
+        effort: superAgent.effort,
+        secondaryProjectPath: superAgent.secondaryProjectPath,
+        obsidianVaultPaths: superAgent.obsidianVaultPaths,
+        mcpConfigPath: superAgentMcpConfigPath,
+        systemPromptFile,
+        skills: [...new Set(superAgent.skills || [])],
+        isSuperAgent: true,
+        orchestratorMode: true,
+      });
 
       superAgent.status = 'running';
       superAgent.currentTask = sanitizedMessage.slice(0, 100);
@@ -640,6 +645,8 @@ export async function sendToSuperAgentFromSlack(
 
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       saveAgents();
+      // A cold start of the super agent carries a task like any other start.
+      armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
 
       await say(':crown: Super Agent is processing your request...');
     } else {

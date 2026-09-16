@@ -6,6 +6,7 @@ import { isElectron } from '@/hooks/useElectron';
 import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
 import { BrandSpinner, Button } from '@/components/ui';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { stripTerminalReplies } from '@/lib/terminal';
 import 'xterm/css/xterm.css';
 
 interface TerminalDialogProps {
@@ -68,9 +69,11 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
 
       xtermRef.current = term;
 
-      // Handle user input - send to PTY
+      // Handle user input - send to PTY. The terminal's own replies to queries
+      // from the installer arrive here like a keystroke and must never be
+      // forwarded. See stripTerminalReplies.
       term.onData((data) => {
-        const cleaned = data.replace(/\x1b\[(?:I|O)/g, '');
+        const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
         if (!ptyIdRef.current) return;
         if (isCommandMode) {

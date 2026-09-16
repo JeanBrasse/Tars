@@ -254,7 +254,7 @@ describe('a jar file that is not a jar', () => {
     ['JSON null', 'null'],
     ['JSON array', '[1,2,3]'],
     ['a bare string', '"just a string"'],
-    ['NUL bytes', '   '],
+    ['NUL bytes', '\u0000\u0000\u0000'],
     ['jar of nulls', '{"http://gw":null}'],
     ['jar of strings', '{"http://gw":"not-an-object"}'],
     ['deeply wrong values', '{"http://gw":{"a":{"b":1}}}'],
