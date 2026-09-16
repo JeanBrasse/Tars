@@ -1,5 +1,6 @@
 import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
+import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 
 /**
@@ -49,6 +50,13 @@ export function spawnAgentPty(opts: {
   rows: number;
   env: Record<string, string | undefined>;
 }): pty.IPty {
+  // Whose process this is. Set by the callers through getPtyEnvVars, and read
+  // back here rather than taken as a parameter so that a caller cannot spawn
+  // an agent pty with one identity in the environment and another in the
+  // token. The shells that run no agent carry no id, and are meant to get no
+  // token: the quick terminal, the skill and plugin runners, the installer.
+  const agentId = opts.env.CLAUDE_AGENT_ID;
+
   return pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
     cols: opts.cols,
@@ -68,6 +76,16 @@ export function spawnAgentPty(opts: {
       // parent's value, and the app that spawns a CLI is the app that CLI must
       // report to.
       CLAUDE_MGR_API_URL: `http://127.0.0.1:${API_PORT}`,
+      // What this CLI is, provably. CLAUDE_AGENT_ID travels in the same
+      // environment and says who the agent is, but anything that can read an
+      // environment can repeat it, so it was a claim and not a proof. This
+      // cannot be guessed, and the API resolves the caller from it.
+      //
+      // Here for the same reason as the address above: five spawn sites, and
+      // a secret that has to reach every agent process cannot depend on each
+      // of them remembering. Minted per spawn, so a restart invalidates the
+      // token the previous process ran with.
+      ...(agentId ? { CLAUDE_MGR_API_TOKEN: mintAgentToken(agentId) } : {}),
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });

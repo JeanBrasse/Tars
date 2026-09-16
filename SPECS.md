@@ -276,7 +276,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
 | `send_telegram` / `send_slack` | Reply to whichever channel the request came from |
 
-Auth: `Authorization: Bearer <~/.dorothy/api-token>`, plus `X-Tars-Client: mcp` and caller identity headers. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
+Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` when the process was spawned with one and `~/.dorothy/api-token` otherwise, plus `X-Tars-Client: mcp` and caller identity headers, which the server checks against the token. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
 
 `delegate_task` in full:
 
@@ -643,7 +643,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Control | Value |
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
-| Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600` |
+| Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory at each spawn. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403 |
 | Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
@@ -653,7 +653,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### Residual risk
 
-- Any process running as the user can read `~/.dorothy/api-token` and drive every agent. This is the intended trust model for a single-user desktop app, but it is a flat one: the token is not scoped per agent.
+- Any process running as the user can read `~/.dorothy/api-token` and drive every agent. This is the intended trust model for a single-user desktop app. Agents now call with a token of their own, which the server trusts over any header, but **until the transition fallback is removed the shared token still carries a caller's header as its identity**, so a process that reads the file can still claim to be any agent. Each such call is written to `~/.dorothy/identity-transition.log`.
 - `permissionMode: 'auto'` is the default for agents created over the API and maps to `--permission-mode auto` (only `bypass` emits `--dangerously-skip-permissions`), and `ensureProjectTrusted()` pre-accepts the workspace-trust dialog. An agent has the user's full filesystem authority inside its cwd and beyond.
 - API keys for the ten alt providers are stored in plaintext in `app-settings.json` and passed to the CLI as `ANTHROPIC_API_KEY` in the PTY environment.
 

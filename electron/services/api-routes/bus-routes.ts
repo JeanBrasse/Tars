@@ -1,6 +1,6 @@
 import { agents } from '../../core/agent-manager';
 import { RouteApp, RouteRequest, SendJson } from './types';
-import { callerHeader } from './utils';
+import { callerId as resolveCallerId } from './utils';
 import {
   getRoomSnapshot,
   listRooms,
@@ -26,9 +26,22 @@ import { broadcastPublication, fanOutDeliveries } from '../bus-delivery';
  * hole believing it was already open.
  */
 
-/** The agent behind this call, from the header its MCP client always sends. */
+/**
+ * The agent behind this call.
+ *
+ * From the token the call presents, which was minted for one agent at its
+ * spawn, and only from the header when there is no such token: an agent whose
+ * bundled MCP server predates per-agent tokens still names itself that way,
+ * and the server logs each of those calls so the fallback can be removed on
+ * evidence rather than on a guess.
+ *
+ * A call that presents a token and claims to be somebody else never reaches
+ * here: resolveCaller refuses it at the door. So the two can only agree by the
+ * time this runs, and the room this caller ends up in is the room of an agent
+ * it has proved it is.
+ */
 function callingAgent(req: RouteRequest, sendJson: SendJson): { id: string; projectPath: string } | undefined {
-  const callerId = callerHeader(req, 'id');
+  const callerId = resolveCallerId(req);
   if (!callerId) {
     sendJson({
       error: 'This call has no agent identity, so it cannot be placed in a room. '

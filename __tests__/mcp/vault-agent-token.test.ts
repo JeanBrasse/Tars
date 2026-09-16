@@ -1,0 +1,82 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+/**
+ * mcp-vault presents the agent's own token when it has one.
+ *
+ * The only one of the three API-calling servers that cannot be pointed at a
+ * test server: it writes to 127.0.0.1:31415 whatever CLAUDE_MGR_API_URL says,
+ * which is the port of the Tars the suite may be running inside. So the
+ * transport is replaced and nothing else: the real client builds the request,
+ * and these read the headers it would have sent.
+ */
+
+const sent: Array<{ port?: number; headers: Record<string, string> }> = [];
+
+vi.mock('http', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('http')>();
+  return {
+    ...actual,
+    request: vi.fn((options: { port?: number; headers: Record<string, string> }, onResponse: (res: EventEmitter) => void) => {
+      sent.push({ port: options.port, headers: options.headers });
+      const req = new EventEmitter() as EventEmitter & { write: () => void; end: () => void };
+      req.write = () => {};
+      req.end = () => {
+        const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+        onResponse(res);
+        res.emit('data', '{}');
+        res.emit('end');
+      };
+      return req;
+    }),
+  };
+});
+
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vault-token-'));
+let saved: Record<string, string | undefined>;
+
+beforeEach(() => {
+  sent.length = 0;
+  saved = { HOME: process.env.HOME, CLAUDE_MGR_API_TOKEN: process.env.CLAUDE_MGR_API_TOKEN };
+  // The shared file an agent without a token of its own falls back to.
+  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
+  process.env.HOME = home;
+});
+
+afterEach(() => {
+  for (const [k, v] of Object.entries(saved)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+});
+
+/** Loaded afresh each time: the client reads its environment when it loads. */
+async function vaultClient() {
+  vi.resetModules();
+  return import('../../mcp-vault/src/utils/api');
+}
+
+describe('the vault client', () => {
+  it("presents the agent's own token rather than the machine's shared one", async () => {
+    process.env.CLAUDE_MGR_API_TOKEN = 'the-token-minted-for-this-agent';
+    const { apiRequest } = await vaultClient();
+
+    await apiRequest('GET', '/api/vault/documents');
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].headers.Authorization).toBe('Bearer the-token-minted-for-this-agent');
+  });
+
+  it('still presents the shared token for a session started before tokens existed', async () => {
+    delete process.env.CLAUDE_MGR_API_TOKEN;
+    const { apiRequest } = await vaultClient();
+
+    await apiRequest('GET', '/api/vault/documents');
+
+    expect(sent[0].headers.Authorization).toBe('Bearer the-shared-token-from-the-file');
+  });
+});

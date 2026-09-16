@@ -10,6 +10,9 @@ import { AgentStatus, AppSettings } from '../types';
 import { API_PORT, API_TOKEN_FILE } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
+import { callerHeaderFrom } from './api-routes/utils';
+import { agentForToken, hasAgentToken } from '../core/agent-tokens';
+import { noteIdentity } from './identity-journal';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -114,6 +117,87 @@ export function getApiToken(): string {
     return initApiToken();
   }
   return apiToken;
+}
+
+/** Authorised, and who by: an agent when its own token says so. */
+export type CallerResolution =
+  | { ok: true; agentId?: string }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Who this call is from, decided by what it presents rather than what it says.
+ *
+ * Three outcomes, and the middle one is the whole point.
+ *
+ * - An **agent's own token**, minted at its spawn: the caller is that agent,
+ *   and nothing it writes in a header can change that. If it also sends an
+ *   X-Tars-Caller-Id naming somebody else, that is not a mistake any honest
+ *   caller makes, since the id and the token come from the same environment,
+ *   so the call is refused rather than quietly re-labelled. That refusal is
+ *   the only place an attempt to be another agent is visible.
+ * - The **shared token**, `~/.dorothy/api-token`: authorised, with no identity
+ *   attached. The renderer and the shell hooks are here and always will be,
+ *   and so is every agent whose bundled MCP server predates this change: their
+ *   header is still honoured downstream, and every such call is logged so the
+ *   day nobody is left on that path can be read rather than guessed. Removing
+ *   the fallback means ignoring the header for these callers. It does not mean
+ *   refusing the shared token, which is what the interface authenticates with.
+ * - Anything else: unauthorised, with the same flat message as before, which
+ *   tells a prober nothing about which of the two it got wrong.
+ */
+export function resolveCaller(
+  headers: http.IncomingHttpHeaders,
+  pathname: string,
+): CallerResolution {
+  const auth = headers.authorization;
+  const presented = typeof auth === 'string' && auth.startsWith('Bearer ')
+    ? auth.slice('Bearer '.length)
+    : '';
+  const claimed = callerHeaderFrom(headers, 'id');
+
+  const provenAgentId = presented ? agentForToken(presented) : undefined;
+  if (provenAgentId) {
+    if (claimed && claimed !== provenAgentId) {
+      noteIdentity(
+        `refused|${provenAgentId}|${claimed}|${pathname}`,
+        `[identity] refused ${pathname}: token belongs to agent ${provenAgentId}, `
+        + `X-Tars-Caller-Id claimed ${claimed}`,
+      );
+      return {
+        ok: false,
+        status: 403,
+        error: 'This call carries the token of one agent and the identity of another. '
+          + 'An agent speaks as itself.',
+      };
+    }
+    return { ok: true, agentId: provenAgentId };
+  }
+
+  if (apiToken && presented === apiToken) {
+    if (claimed) {
+      // The journal the transition is read from. Only a caller that names an
+      // agent lands here: the interface sends no such header and is silent.
+      //
+      // Two kinds of line, because only one of them can be a colleague's name
+      // in someone else's mouth. Any process that can read ~/.dorothy can still
+      // present the shared token and any id it likes until this fallback goes.
+      // An agent started before tokens existed has no token, and that is just
+      // old. An agent that holds one and does not present it either runs an
+      // MCP bundle that predates it, or is being claimed by something else.
+      const holdsOne = hasAgentToken(claimed);
+      noteIdentity(
+        `shared|${holdsOne ? 'claimed' : 'old'}|${claimed}|${pathname}`,
+        holdsOne
+          ? `[identity] ${pathname}: a call on the shared token claimed agent ${claimed}, which holds a token `
+            + `of its own. Either its MCP server predates per-agent tokens, or this call is not from ${claimed}.`
+          : `[identity] ${pathname}: agent ${claimed} still identifies itself with the shared token. `
+            + 'Restart it from Tars to give it one of its own.',
+      );
+    }
+    return { ok: true };
+  }
+
+  return { ok: false, status: 401, error: 'Unauthorized' };
 }
 
 function createRouteApp(): RouteApp {
@@ -222,11 +306,15 @@ export function startApiServer(
       return;
     }
 
+    // Resolved once, before routing, so no route has to decide for itself who
+    // it is talking to. Exempt paths keep their own guards: the hooks answer
+    // to session ownership, which is stronger than anything a header could say.
+    let caller: CallerResolution = { ok: true };
     if (!authExempt) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || authHeader !== `Bearer ${apiToken}`) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized' }));
+      caller = resolveCaller(req.headers, pathname);
+      if (!caller.ok) {
+        res.writeHead(caller.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: caller.error }));
         return;
       }
     }
@@ -287,6 +375,7 @@ export function startApiServer(
           raw: req,
           res,
           params,
+          callerAgentId: caller.ok ? caller.agentId : undefined,
         };
         await route.handler(routeReq, sendJson, ctx);
         return;

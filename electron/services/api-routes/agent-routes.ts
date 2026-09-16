@@ -18,7 +18,7 @@ import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
 import { withSessionTruth, sessionModel } from '../agent-truth';
-import { callerHeader, callerProject } from './utils';
+import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -346,8 +346,8 @@ function projectAgent(agent: AgentStatus) {
   return { ...rest, outputChunks: output.length };
 }
 
-// callerHeader and callerProject live in ./utils: the bus routes read the same
-// headers, and one copy of a header name is one thing to change.
+// callerId and callerProject live in ./utils: the bus routes ask the same two
+// questions, and one answer to each is one thing to change.
 
 /**
  * Remember which agent asked for this work, so services/agent-watch.ts can
@@ -365,7 +365,7 @@ function projectAgent(agent: AgentStatus) {
  * inherit the link from the last delegation.
  */
 function recordRequester(agent: AgentStatus, req: RouteRequest): void {
-  const callerId = callerHeader(req, 'id');
+  const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
   // Bound to the session this work is about to run in. When the route ends up
   // spawning a fresh one, spawnAgentSession re-stamps it with the new ptyId
