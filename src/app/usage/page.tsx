@@ -640,6 +640,9 @@ export default function UsagePage() {
   }
 
   const stats = data?.stats;
+  // Only the transcript path sets this, and only when it had to reconstruct
+  // the figures itself, so it is absent far more often than it is zero.
+  const unreadableCount = stats?.unreadable ?? 0;
   const maxCost = Math.max(...costChartData.map(d => d.cost), 0.01);
 
   // Latest day: the reconstructed per-day map first, then Tars' own ledger of
@@ -685,7 +688,22 @@ export default function UsagePage() {
     <div className="space-y-3 overflow-x-clip">
       <PageHeader
         title="Usage"
-        subtitle="What every provider has cost you, and where the tokens went."
+        subtitle={
+          <>
+            What every provider has cost you, and where the tokens went.
+            {/* A reserve on the figures, not an error: the total is right for
+                what was read, and lower than the truth by however many
+                transcripts could not be opened. Warning rather than danger,
+                because nothing here is broken. */}
+            {unreadableCount > 0 && (
+              <span className="block mt-0.5 text-[11.5px] text-warning">
+                {unreadableCount === 1
+                  ? '1 transcript could not be read. These figures cover everything else.'
+                  : `${unreadableCount} transcripts could not be read. These figures cover everything else.`}
+              </span>
+            )}
+          </>
+        }
       />
 
       {/* The four figures. Colour here is reserved for money and for being over budget. */}
