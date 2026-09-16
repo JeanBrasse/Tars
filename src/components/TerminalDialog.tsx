@@ -6,7 +6,7 @@ import { isElectron } from '@/hooks/useElectron';
 import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
 import { BrandSpinner, Button } from '@/components/ui';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';
 import 'xterm/css/xterm.css';
 
 interface TerminalDialogProps {
@@ -65,6 +65,7 @@ export default function TerminalDialog({ open, repo, title, onClose, availablePr
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalRef.current!);
+      stopWheelTyping(term);
       fitAddon.fit();
 
       xtermRef.current = term;

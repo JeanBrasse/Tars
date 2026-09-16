@@ -87,6 +87,45 @@ export function suppressMouseTracking(term: Terminal): void {
 }
 
 /**
+ * Keep the wheel from typing into the program on the other end.
+ *
+ * On a buffer with no history, which is the alternate screen every full-screen
+ * CLI holds, xterm 5.3 turns wheel travel into arrow keys: one `ESC [ A` or
+ * `ESC [ B` (`ESC O A` / `ESC O B` in application cursor mode) per line
+ * scrolled, sent through `onData` exactly like a keystroke. It is the `wheel`
+ * listener xterm registers on its own element. A mouse protocol would have
+ * made it a mouse report instead, but `suppressMouseTracking` refuses those, so
+ * arrows are what went out. At Claude Code's prompt an arrow walks back through
+ * the messages already sent: scrolling to read the conversation put an old
+ * message in the box, one Enter away from being sent again. Measured on a
+ * Dashboard panel: six notches of a mouse wheel wrote 120 bytes, forty arrows,
+ * and one trackpad swipe sixteen.
+ *
+ * `stripTerminalReplies` cannot catch it, because those bytes are exactly what
+ * the arrow keys send. The only place the two still differ is before xterm,
+ * while the event is a wheel. A capture listener on the terminal's element runs
+ * ahead of xterm's own, which sits on that element in the bubble phase, and
+ * stopping the event there leaves xterm nothing to convert. The mouse and the
+ * trackpad are the same event: a trackpad sends small pixel deltas that xterm
+ * adds up into lines, so dropping every event also drops the sum, inertia
+ * included. The main buffer is left alone, since there the wheel scrolls the
+ * history, which is what it is for.
+ *
+ * Call it right after `term.open()`, which creates the element.
+ */
+export function stopWheelTyping(term: Terminal): void {
+  term.element?.addEventListener('wheel', event => {
+    // xterm's own condition for converting: the active buffer keeps no history.
+    // The alternate screen never does; a normal buffer only with scrollback 0
+    // (1000 is xterm's default when the option was never set).
+    const noHistory = term.buffer.active.type === 'alternate' || (term.options.scrollback ?? 1000) <= 0;
+    if (!noHistory) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, { capture: true, passive: false });
+}
+
+/**
  * Install the terminal's custom key handler. xterm keeps exactly one, so every
  * key this app claims has to live here:
  *

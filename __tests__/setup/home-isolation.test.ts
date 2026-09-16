@@ -71,9 +71,23 @@ describe('the suite runs in a HOME of its own', () => {
   });
 
   it('still lets a test write into the repository, which sits under the same home', () => {
-    const scratch = fs.mkdtempSync(path.join(process.cwd(), 'node_modules', '.tars-home-isolation-'));
-    fs.writeFileSync(path.join(scratch, 'ok'), 'ok');
-    fs.rmSync(scratch, { recursive: true, force: true });
+    // Under node_modules, which git ignores, so a run that dies halfway leaves
+    // nothing to commit. A worktree resolves its packages from the checkout
+    // above it and may have no node_modules of its own, which made this fail
+    // there on ENOENT before the guard was even asked: the folder is made for
+    // the test then, and taken away with it once it is empty again.
+    const modules = path.join(process.cwd(), 'node_modules');
+    const made = !fs.existsSync(modules);
+    if (made) fs.mkdirSync(modules);
+    try {
+      const scratch = fs.mkdtempSync(path.join(modules, '.tars-home-isolation-'));
+      fs.writeFileSync(path.join(scratch, 'ok'), 'ok');
+      fs.rmSync(scratch, { recursive: true, force: true });
+    } finally {
+      // Not empty means something else wrote there in the meantime, which is
+      // not this test's to delete.
+      if (made && fs.readdirSync(modules).length === 0) fs.rmdirSync(modules);
+    }
     expect(guard.violations).toEqual([]);
   });
 });
