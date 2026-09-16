@@ -12,7 +12,7 @@ import { currentThread, summarise, threadNotice, toRows } from './bus-view';
 /**
  * One project's room: the log, what is still waiting under it, and the
  * composer. Frames: `Chat · Room · agents at work`, `· you step in`,
- * `· limit reached`, `· all stopped`, `· no agents`.
+ * `· limit reached`, `· all stopped`, `· no agents`, `· at rest or stopped`.
  */
 
 function MetaBar({ room, thread }: { room: BusRoom; thread: BusThread | null }) {
@@ -108,12 +108,16 @@ export function RoomView({
   const targets: ComposerTarget[] = useMemo(() => agents.map(a => ({
     id: a.id,
     label: a.name ?? a.id.slice(0, 8),
-    busy: a.status === 'running',
+    busy: a.status === 'running' && !a.stopped,
     noTurnSignal: !a.hasEndOfTurn,
+    stopped: a.stopped,
   })), [agents]);
 
   const target = targets.find(t => t.id === targetId);
-  const everyoneStopped = agents.length > 0 && agents.every(a => a.status === 'idle' || a.status === 'completed');
+  // Stopped is a session that is gone, never a status word. This read `idle`,
+  // which is where Claude Code rests between every turn with its session open,
+  // so a room of agents answering each other said every one of them was stopped.
+  const everyoneStopped = agents.length > 0 && agents.every(a => a.stopped);
 
   // The button says what pressing it will do. Nothing here writes into a turn
   // that is running: a message for a busy agent is queued, and one for an
@@ -121,6 +125,7 @@ export function RoomView({
   const sendMode: SendMode = target?.noTurnSignal ? 'hold' : target?.busy ? 'queue' : 'send';
 
   const hint = (() => {
+    if (target?.stopped) return `${target.label} is stopped`;
     if (target?.noTurnSignal) return `${target.label} has no turn signal: you send it`;
     if (target?.busy) return `${target.label} is mid-turn: this waits for its turn to end`;
     const busy = targets.filter(t => t.busy).map(t => t.label);
@@ -199,7 +204,10 @@ export function RoomView({
           agents.length === 0
             ? 'Add an agent before you write here.'
             : everyoneStopped
-              ? 'Every agent here is stopped. What you write waits until you start one.'
+              // It also said "what you write waits until you start one", which
+              // nothing does on its own: a message to an agent with no session is
+              // recorded not sent, or dropped, and starting the agent sends none.
+              ? 'Every agent here is stopped. Nothing moves until you start one.'
               : 'Write to the room, or pick who it is for.'
         }
       />

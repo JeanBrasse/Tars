@@ -40,6 +40,9 @@ export interface ComposerTarget {
   busy: boolean;
   /** Its CLI never reports a turn end, so nothing reaches it on its own. */
   noTurnSignal: boolean;
+  /** Tars holds no live session for it: nothing reaches it until it starts.
+   *  Not the same as at rest, which is where an idle agent waits between turns. */
+  stopped: boolean;
 }
 
 export function RoomComposer({
@@ -88,7 +91,7 @@ export function RoomComposer({
     ...targets.filter(t => t.id).map(t => ({
       value: t.id,
       label: t.label,
-      hint: t.noTurnSignal ? 'no turn signal' : t.busy ? 'mid-turn' : undefined,
+      hint: t.stopped ? 'stopped' : t.noTurnSignal ? 'no turn signal' : t.busy ? 'mid-turn' : undefined,
     })),
   ];
 

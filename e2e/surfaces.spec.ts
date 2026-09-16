@@ -2,18 +2,16 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL, KNOWN_PAGE_ERRORS, splitPageErrors } from './surfaces.mjs';
-import { seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
-
-/** Which declared known defects this run actually ran into. */
-const sawKnownError = new Set<string>();
+import { ALL, recordPageErrors } from './surfaces.mjs';
+import { launchSandboxed, seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
 
 /**
  * Visual + technical sweep of the real Electron app.
  *
- * The app boots fully sandboxed: HOME points at a temp dir, so ~/.dorothy and
- * ~/.claude are empty test fixtures and the API binds a dedicated port —
- * the user's live Tars instance is never touched.
+ * The app boots sandboxed through launchSandboxed in fixture.mjs: HOME points
+ * at a temp dir, so ~/.dorothy and ~/.claude are test fixtures, its Chromium
+ * profile is moved there too, which HOME alone does not do, and the API binds
+ * a dedicated port.
  *
  * For each surface in e2e/surfaces.mjs:
  *  - navigate (and click through to overlays / settings sections)
@@ -35,11 +33,8 @@ test.beforeAll(async () => {
   // truncation or a full column - so the screenshots guarded almost nothing.
   // Must happen before launch: this is the last moment the app has not read it.
   seedSandbox(sandboxHome);
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, sandboxHome, {
     env: {
-      ...process.env,
-      HOME: sandboxHome,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       DOROTHY_API_PORT: '31498',
@@ -111,15 +106,12 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
 
     await page.waitForTimeout(surface.settle ?? 900);
 
-    // Known pre-existing defects are annotated rather than failed. Each one is
-    // declared in surfaces.mjs, and the last test in this file fails when a
+    // Known pre-existing defects are recorded rather than failed. Each one is
+    // declared in surfaces.mjs, and e2e/known-errors.spec.ts fails when a
     // declared one stops happening, so an allowance cannot outlive its defect.
-    // Any OTHER uncaught error still fails the surface.
-    const { fatal, seen } = splitPageErrors(pageErrors.slice(errorsBefore));
-    for (const key of seen) {
-      sawKnownError.add(key);
-      test.info().annotations.push({ type: 'known-issue', description: key });
-    }
+    // Recorded before the screenshot, so a surface that fails on its picture
+    // still counts for what it saw. Any OTHER uncaught error fails the surface.
+    const fatal = recordPageErrors(test.info(), 'surfaces', surface.name, pageErrors.slice(errorsBefore));
     expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
 
     // Mask the terminal bodies. The dashboard screenshots real PTY output, which
@@ -153,20 +145,3 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     });
   });
 }
-
-/**
- * The allowance list, held to its own defects.
- *
- * Declared last so it runs after every surface above. A known-issue entry that
- * nothing trips any more is an entry describing a defect somebody fixed, and
- * leaving it in place is how the next real error of that shape gets waved
- * through. Failing here is the reminder to delete the entry, and deleting it
- * is what makes the suite green again.
- */
-test('every tolerated page error still happens, or its entry is stale', () => {
-  const gone = KNOWN_PAGE_ERRORS.filter(k => !sawKnownError.has(k.key));
-  expect(
-    gone.map(k => `${k.key}: ${k.why}`),
-    'these are tolerated and no longer occur: remove them from KNOWN_PAGE_ERRORS',
-  ).toEqual([]);
-});

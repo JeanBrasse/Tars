@@ -3,6 +3,7 @@
 import { Button, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
+import { errorReason } from '@/app/agents/constants';
 
 /**
  * The right rail, 264 wide: who is in this room, then how the room runs.
@@ -33,8 +34,17 @@ function tone(agent: RoomAgent): StatusTone | 'none' {
   }
 }
 
+/** Stopped as the rail shows it. An error keeps its own word and its colour,
+ *  since its reason says more than the absence of a session does. */
+function shownStopped(agent: RoomAgent): boolean {
+  return agent.stopped && agent.status !== 'error';
+}
+
 function statusLabel(agent: RoomAgent): string {
   if (!agent.hasEndOfTurn) return 'no turn signal';
+  // Idle is an agent at rest between turns, still holding its session, so the
+  // word is only replaced when there is no session to rest in.
+  if (shownStopped(agent)) return 'stopped';
   return agent.status === 'completed' ? 'finished' : agent.status;
 }
 
@@ -46,11 +56,20 @@ function statusLabel(agent: RoomAgent): string {
  *  looking like it did. */
 function detail(agent: RoomAgent): string {
   if (!agent.hasEndOfTurn) return 'Tars sees its output, not its turns';
+  // Why it stopped before what it was asked. An agent whose turn failed still
+  // has its task set, and the task came first here, so the reason this rail
+  // was written to show only ever appeared for an agent that had no task.
+  const reason = errorReason(agent);
+  if (reason) return reason;
+  // Before the task, which a stopped agent can still carry: it is on nothing.
+  // And never `listening`, the word below for idle, which is exactly what an
+  // agent with no session cannot do.
+  if (shownStopped(agent)) return 'no live session';
   if (agent.currentTask) return agent.currentTask;
   switch (agent.status) {
     case 'running': return 'working';
     case 'waiting': return 'waiting on you';
-    case 'error': return agent.error || 'stopped on an error';
+    case 'error': return 'stopped on an error';
     case 'completed': return 'finished its turn';
     default: return 'listening';
   }
@@ -94,7 +113,9 @@ export function TeamRail({
             return (
               <div key={agent.id} className="flex gap-2 px-2.5 py-[9px] border-b border-border last:border-b-0">
                 <span className="pt-1.5 shrink-0">
-                  {t === 'none' ? <span className="block w-1.5 h-1.5" /> : <StatusSquare tone={t} />}
+                  {t === 'none'
+                    ? <span className="block w-1.5 h-1.5" />
+                    : <StatusSquare tone={t} hollow={shownStopped(agent)} />}
                 </span>
                 <div className="flex-1 min-w-0 flex flex-col gap-[3px]">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -132,7 +153,7 @@ export function TeamRail({
                         send
                       </Button>
                     )}
-                    {agent.status !== 'idle' && agent.status !== 'completed' && (
+                    {!agent.stopped && agent.status !== 'idle' && agent.status !== 'completed' && (
                       <Button size="sm" className="font-mono" onClick={() => onStop(agent)}>stop</Button>
                     )}
                   </div>

@@ -112,11 +112,18 @@ npm run sandbox
 # or: bash scripts/sandbox.sh /path/to/Tars.app
 ```
 
-`scripts/sandbox.sh` launches `release/mac-arm64/Tars.app` with `HOME=$HOME/Tars-sandbox` and
-`DOROTHY_API_PORT=31499`. That redirects `~/.dorothy`, `~/.claude` and
-`~/Library/Application Support/Tars` into the sandbox, so agents, settings, the API token and
-window state are all throwaway copies. Your production install (port 31415) is untouched and
-keeps running.
+`scripts/sandbox.sh` launches `release/mac-arm64/Tars.app` with `HOME=$HOME/Tars-sandbox`,
+`CFFIXED_USER_HOME` set to the same directory, and `DOROTHY_API_PORT=31499`. That redirects
+`~/.dorothy`, `~/.claude` and `~/Library/Application Support/Tars` into the sandbox, so agents,
+settings, the API token and window state are all throwaway copies. Your production install
+(port 31415) is untouched and keeps running.
+
+`HOME` alone is not enough on macOS. Electron finds the home directory, and with it the profile
+under `~/Library/Application Support`, through the system and not through `HOME`: measured on
+2026-09-16, with only `HOME` moved, `app.getPath('home')` still answered the real home. Until
+then the sandbox opened the live install's profile, and spawned its agents with the real
+`~/.claude/mcp.json`. The main process now takes its home from `os.homedir()` everywhere, and
+`CFFIXED_USER_HOME` moves the profile.
 
 The sandbox is **persistent** across launches. To reset it:
 
@@ -192,8 +199,10 @@ The spec launches the **real Electron app** (`electron.launch({ args: ['.'] })`)
 | `DOROTHY_DEV_URL` | `http://localhost:3100` | |
 | `DOROTHY_API_PORT` | `31498` | never collides with prod (31415) or sandbox (31499) |
 | `DOROTHY_E2E` | `1` | suppresses `openDevTools()` |
+| `CFFIXED_USER_HOME` | the sandbox HOME | macOS ignores `HOME` for application support, caches and logs |
+| `--user-data-dir` (argument) | `<sandbox>/electron-profile` | the Chromium profile, which `HOME` does not move |
 
-The sandbox HOME is `rm -rf`'d in `afterAll`. Your live install is never touched.
+The sandbox HOME is `rm -rf`'d in `afterAll`. `HOME` alone did not keep the live install out of reach: the dev app is named `tars`, and on a case-insensitive disk its profile is the installed Tars's `~/Library/Application Support/Tars`, which every run opened until 2026-09-16. Every spec launches through `launchSandboxed` in `e2e/fixture.mjs`, which adds the two rows above and asks the running app where each of its folders landed before any page opens.
 
 **Nothing in the E2E path compiles the main process.** `main` points at
 `electron/dist/main.js`; if it is stale or missing, Playwright launches an old build or fails
@@ -816,7 +825,11 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   `agent.error` to that message verbatim, capped at 500 chars, which is also the body of the
   error notification. Measured with claude 2.1.268 and a HOME holding no credential:
   `error: authentication_failed`, `last_assistant_message: "Not logged in · Please run /login"`.
-  The next `UserPromptSubmit` clears `agent.error`.
+  The next `UserPromptSubmit` clears `agent.error`. About 60 s after the failure the CLI raises its
+  idle prompt, which `notification.sh` sends twice, as a notification and as `status: waiting`:
+  for an agent in `error` neither lands (`isStoppedOnAFailure` in `hooks-routes.ts`), so the
+  card keeps the failure and no "is waiting" alert contradicts it. A permission prompt is not
+  held back, since it only occurs inside a turn, and a turn has already left `error`.
 
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears

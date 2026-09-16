@@ -18,7 +18,8 @@ vi.mock('uuid', () => ({
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/Users/test' },
-  BrowserWindow: vi.fn(),
+  // The routes tell every open window when an agent changes; here there are none.
+  BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
 }));
 
 vi.mock('../../../../electron/core/agent-manager', () => ({

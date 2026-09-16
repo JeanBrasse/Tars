@@ -1,6 +1,6 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
-import { queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
+import { deliverBusMessages, queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
 import {
   appendSystemMessage,
   cancelQueuedDeliveries,
@@ -65,6 +65,10 @@ export function fanOutDeliveries(message: BusMessage, room: BusRoom): BusDeliver
       queuedAt: new Date().toISOString(),
       refusedAt: queued ? undefined : new Date().toISOString(),
     }));
+    // Only now, with the row in the journal. Handing the message over is what
+    // marks the row delivered, so an agent at rest, which takes it at once,
+    // has to have a row to mark.
+    if (queued) deliverBusMessages(targetAgentId);
   }
   return deliveries;
 }
@@ -165,6 +169,18 @@ export function closeAndAnnounce(threadId: string, reasonCode: BusDeliveryReason
   }
   const thread = getThread(threadId);
   if (thread) broadcastToAllWindows('bus:thread', thread);
+}
+
+/**
+ * A queued message reached a terminal.
+ *
+ * Wired into agent-watch, which calls it the moment it writes the message. The
+ * only thing that turns a delivery `delivered`, and the Chat page hears it at
+ * once rather than inferring it from silence.
+ */
+export function announceDelivered(targetAgentId: string, messageId: string): void {
+  const delivered = markDelivered(targetAgentId, messageId);
+  if (delivered) broadcastToAllWindows('bus:delivery', delivered);
 }
 
 /**

@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import * as http from 'http';
+import * as net from 'net';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -19,12 +20,34 @@ import * as path from 'path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-api-port-'));
-/** Far from 31415 and 31499 so a running Tars or sandbox cannot fail this. */
-const PORT = 31961;
+/**
+ * A port nothing else holds, picked by the system once for this file. It was
+ * 31961, fixed, and a suite run by another agent at the same moment took it
+ * first: the squatter below then raced a stranger instead of the server. The
+ * system never hands out 31415 or 31499, so a running Tars or sandbox still
+ * cannot fail this.
+ */
+let port = 0;
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port: picked } = probe.address() as net.AddressInfo;
+      probe.close(() => resolve(picked));
+    });
+  });
+}
+
+beforeAll(async () => {
+  port = await freePort();
+});
 
 vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
-  return { ...actual, API_PORT: PORT, API_TOKEN_FILE: path.join(tmp, 'api-token') };
+  // Read when the server listens, which is after beforeAll has picked it.
+  return { ...actual, get API_PORT() { return port; }, API_TOKEN_FILE: path.join(tmp, 'api-token') };
 });
 
 let api: typeof import('../../../electron/services/api-server');
@@ -35,7 +58,7 @@ const notifications: Array<{ title: string; body: string }> = [];
 function occupyPort(): Promise<void> {
   return new Promise((resolve) => {
     squatter = http.createServer((_req, res) => res.end('busy'));
-    squatter.listen(PORT, '127.0.0.1', resolve);
+    squatter.listen(port, '127.0.0.1', resolve);
   });
 }
 
@@ -83,7 +106,7 @@ function waitForPhase(phases: string[], timeoutMs: number): Promise<string> {
 
 function get(pathname: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: PORT, path: pathname }, (res) => {
+    http.get({ host: '127.0.0.1', port: port, path: pathname }, (res) => {
       let body = '';
       res.on('data', (c) => { body += c; });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
@@ -109,7 +132,7 @@ describe('the local API when the port is busy', () => {
 
     const state = api.getApiServerState();
     expect(state.phase).toBe('listening');
-    expect(state.port).toBe(PORT);
+    expect(state.port).toBe(port);
     expect(state.attempts).toBe(1);
     expect(state.lastError).toBeNull();
     expect(state.listeningSince).toBeTypeOf('number');
@@ -218,7 +241,7 @@ describe('the local API when it has given up', () => {
     expect(api.getApiServerState().phase).toBe('failed');
 
     const said = errors.mock.calls.flat().join(' ');
-    expect(said).toMatch(new RegExp(String(PORT)));
+    expect(said).toMatch(new RegExp(String(port)));
     expect(said).toMatch(/hooks/i);
     errors.mockRestore();
   }, 20000);
@@ -229,7 +252,7 @@ describe('the local API when it has given up', () => {
 
     expect(notifications).toHaveLength(1);
     expect(notifications[0].title).toMatch(/port/i);
-    expect(notifications[0].body).toMatch(new RegExp(String(PORT)));
+    expect(notifications[0].body).toMatch(new RegExp(String(port)));
     vi.restoreAllMocks();
   }, 20000);
 
