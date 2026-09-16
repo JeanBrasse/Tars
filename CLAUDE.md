@@ -216,7 +216,7 @@ npm run e2e:guard                        # every inventory page is covered by th
 npm run e2e                              # Playwright drives the real Electron app, 35 surfaces
 ```
 
-`npm run e2e` boots Electron with `HOME` pointed at a temp dir, so your real `~/.dorothy` and `~/.claude` are never touched. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process.
+`npm run e2e` boots Electron in a sandbox through `launchSandboxed` (`e2e/fixture.mjs`). `HOME` pointed at a temp dir moves `~/.dorothy` and `~/.claude` and nothing else: Electron finds its profile through macOS, so until 2026-09-16 every run opened `~/Library/Application Support/tars`, the installed Tars's own profile. `--user-data-dir` and `CFFIXED_USER_HOME` move it now, and the launch fails if the app reports any of its folders outside the sandbox. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process. `npm test` runs in a throwaway `HOME` too (`__tests__/setup/home-isolation.ts`), and fails a file that writes into the real one.
 
 To see a change in a real packaged build without disturbing your live instance: `npm run electron:pack` then `npm run sandbox`.
 

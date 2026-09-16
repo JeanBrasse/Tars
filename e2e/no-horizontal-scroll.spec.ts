@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ALL } from './surfaces.mjs';
-import { seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox } from './fixture.mjs';
 
 /**
  * The page must never scroll sideways, with every dropdown open or shut.
@@ -47,11 +47,8 @@ function overflow(p: Page): Promise<number> {
 test.beforeAll(async () => {
   sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-hscroll-'));
   seedSandbox(sandboxHome);
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, sandboxHome, {
     env: {
-      ...process.env,
-      HOME: sandboxHome,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the surfaces suite may still be holding 31498.

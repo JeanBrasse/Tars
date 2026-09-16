@@ -72,6 +72,24 @@ function isStaleSessionPost(agent: AgentStatus, sessionId?: string): boolean {
   return !!owner && id !== owner;
 }
 
+/**
+ * An agent whose turn failed is not waiting for anyone.
+ *
+ * Claude Code raises its idle prompt about sixty seconds after StopFailure,
+ * exactly as it does after a turn that ended well, and the prompt reaches Tars
+ * twice: as a `waiting` status post from notification.sh, and as the desktop
+ * notification "X is waiting". Both told Noah the agent wanted his answer when
+ * it had stopped and could do nothing until he logged it in again, and the
+ * notification went on saying so after the card had been fixed to say the
+ * opposite.
+ *
+ * So both ask this, and only a new turn, which sets `running`, reopens them.
+ * The same rule written in two places is how one of them was forgotten.
+ */
+function isStoppedOnAFailure(agent: AgentStatus): boolean {
+  return agent.status === 'error';
+}
+
 /** Long enough for any message the CLI writes in place of an answer, and short
  *  enough for the notification and the card that show it. */
 const TURN_FAILURE_TEXT_MAX = 500;
@@ -235,7 +253,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       agent.status = 'running';
       agent.waitingReason = undefined;
       if (current_task) agent.currentTask = current_task;
-    } else if (status === 'waiting' && agent.status !== 'waiting' && agent.status !== 'error') {
+    } else if (status === 'waiting' && agent.status !== 'waiting' && !isStoppedOnAFailure(agent)) {
       // An agent whose turn failed stays in error until a new turn starts.
       // Claude Code sends idle_prompt about sixty seconds after StopFailure,
       // as a `waiting` post, and without this guard it replaced the error:
@@ -422,6 +440,18 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
         );
       }
     } else if (type === 'idle_prompt') {
+      // The second channel the idle prompt reached. The error notification,
+      // which carries the CLI's own sentence, has already gone out; this one
+      // would contradict it a minute later. Nothing is broadcast either: an
+      // idle prompt after a failure is not an event any screen should show.
+      //
+      // Only the idle prompt. A permission prompt belongs to a turn in
+      // progress, which has already left `error`, and it is a question that
+      // really does wait on Noah.
+      if (isStoppedOnAFailure(agent)) {
+        sendJson({ success: true, suppressed: 'the agent stopped on a failure and is not waiting' });
+        return;
+      }
       if (ctx.getAppSettings().notifyOnWaiting) {
         ctx.sendNotificationCallback(
           `${agentName} is waiting`,

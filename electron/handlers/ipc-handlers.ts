@@ -693,8 +693,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     let mcpConfigPath: string | undefined;
     let systemPromptFile: string | undefined;
     if (cliProvider.getMcpConfigStrategy() === 'flag') {
-      const { app } = await import('electron');
-      const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+      const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
       if (fs.existsSync(possibleMcpPath)) {
         mcpConfigPath = possibleMcpPath;
       }

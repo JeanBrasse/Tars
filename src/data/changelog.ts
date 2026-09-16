@@ -7,10 +7,11 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    id: 40,
-    version: '1.7.3',
+    id: 38,
+    version: '1.7.1',
     date: '2026-09-16',
     updates: [
+      'An agent that stopped on a failure no longer tells you it is waiting for you. A minute after a turn fails, the assistant goes idle at its prompt exactly as it does after a turn that went well, and Tars turned that into the notification "is waiting for your input" for an agent that could do nothing until you logged it in again. The card already kept showing the failure; the notification now agrees with it. You still get the error notification with the assistant\'s own words, and once a new turn starts in that agent, waiting notifications come back as usual',
       'The Chat page no longer marks as dropped a message your agent read and answered. A message sent to an agent that was not busy reached its terminal at once, but Tars wrote down the delivery a moment after writing the message, so the mark that says delivered had nothing to land on: the message went on showing as queued, and turned dropped as soon as you wrote again, even though the agent had already replied. The delivery is now written down before the message goes out, so what the page shows is what happened. A message to an agent that is busy was never affected: it waits, and shows as delivered when the agent takes it',
     ],
   },
