@@ -88,6 +88,13 @@ export const PROGRAMMATIC_SUBMIT_DELAY_MS = 300;
  * newline, which are content inside a paste. What is left of any other escape
  * sequence is its printable tail, which is inert.
  *
+ * A marker has two spellings, and only one of them has a bracket. `\x1b[201~`
+ * is the 7-bit form; in the 8-bit form the single byte `\x9b` *is* ESC plus
+ * `[`, so the sequence is `\x9b201~` with no bracket to match. A pattern that
+ * requires one, `[\x1b\x9b]\[201~`, can therefore never match the 8-bit form:
+ * the second pass then eats the `\x9b` and prints the `201~`. Hence the
+ * alternation below rather than a character class, and do not fold it back.
+ *
  * This lives here rather than in the callers because the callers are the
  * problem: bus, Telegram, Slack and dispatch all pass text they did not write,
  * and a fifth added tomorrow would have to remember. The guarantee belongs on
@@ -95,7 +102,7 @@ export const PROGRAMMATIC_SUBMIT_DELAY_MS = 300;
  */
 function asTypedText(data: string): string {
   return data
-    .replace(/[\u001b\u009b]\[20[01]~/g, '')
+    .replace(/(?:\u001b\[|\u009b)20[01]~/g, '')
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
 }
 
