@@ -14,7 +14,15 @@ export const useSettings = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
+  /**
+   * Which keys the user actually touched since this page loaded.
+   *
+   * Every section changes settings through `updateSettings`, so this is the one
+   * place that can know the difference between a value someone chose and a
+   * value that merely came along in the snapshot.
+   */
+  const [changedKeys, setChangedKeys] = useState<Set<keyof ClaudeSettings>>(new Set());
+  const hasChanges = changedKeys.size > 0;
 
   const fetchSettings = useCallback(async () => {
     if (!isElectron() || !window.electronAPI?.settings) {
@@ -34,6 +42,8 @@ export const useSettings = () => {
 
       if (settingsData) {
         setSettings(settingsData);
+        // A fresh read replaces the snapshot, so nothing is pending against it.
+        setChangedKeys(new Set());
       }
       if (infoData) {
         setInfo(infoData);
@@ -63,13 +73,28 @@ export const useSettings = () => {
   const handleSave = async () => {
     if (!settings || !window.electronAPI?.settings) return;
 
+    // Send only the keys someone changed, the way the app settings beside this
+    // already do. The main process merges what arrives onto the file, so a key
+    // present in the payload wins even when nobody touched it, and the snapshot
+    // this page loaded is stale the moment anything else writes that file.
+    //
+    // The sequence that made this real: open Settings before Tars has written
+    // its hooks, so the snapshot carries the `hooks: {}` that a missing file
+    // reads as; Tars writes the hooks; press Save; `{}` goes back over them.
+    // The main process now guards hooks and a few others, but it cannot guard
+    // `includeCoAuthoredBy`: it is a boolean, and a stale `false` is
+    // indistinguishable from a chosen `false`. Only not sending it works.
+    const delta = Object.fromEntries(
+      [...changedKeys].map(key => [key, settings[key]]),
+    ) as Partial<ClaudeSettings>;
+
     try {
       setSaving(true);
-      const result = await window.electronAPI.settings.save(settings);
+      const result = await window.electronAPI.settings.save(delta);
 
       if (result.success) {
         setSaved(true);
-        setHasChanges(false);
+        setChangedKeys(new Set());
         setTimeout(() => setSaved(false), 2000);
       } else {
         setError(result.error || 'Failed to save settings');
@@ -109,7 +134,11 @@ export const useSettings = () => {
   const updateSettings = (updates: Partial<ClaudeSettings>) => {
     if (!settings) return;
     setSettings({ ...settings, ...updates });
-    setHasChanges(true);
+    setChangedKeys(prev => {
+      const next = new Set(prev);
+      for (const key of Object.keys(updates) as (keyof ClaudeSettings)[]) next.add(key);
+      return next;
+    });
   };
 
   const updateLocalAppSettings = (updates: Partial<AppSettings>) => {
