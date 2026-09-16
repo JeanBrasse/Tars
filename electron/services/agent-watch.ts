@@ -108,6 +108,17 @@ export function setBusDroppedHook(hook: BusDroppedHook | undefined): void {
  */
 const delivering = new Map<string, ReturnType<typeof setTimeout>>();
 
+/**
+ * Agents whose held messages are being written out right now.
+ *
+ * The spacing below orders writes inside one call and only inside one call, so
+ * two releases of the same agent would interleave into the same terminal,
+ * which is the exact thing that spacing exists to prevent. Two clicks, or two
+ * windows, are enough: the window is hundreds of milliseconds per message.
+ * Same idea as `delivering`, one release at a time per agent.
+ */
+const releasing = new Set<string>();
+
 let listening = false;
 
 export function startAgentWatch(): void {
@@ -367,18 +378,39 @@ function composeBusNote(message: QueuedBusMessage): string {
 export async function releaseBusMessagesNow(
   agentId: string,
   messages: QueuedBusMessage[],
-): Promise<string[]> {
-  const agent = agents.get(agentId);
-  const ptyProcess = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  if (!ptyProcess) return [];
+  onWritten?: (messageId: string) => void,
+): Promise<{ written: string[]; refused?: 'no_terminal' | 'already_releasing' }> {
+  // One release at a time per agent. Without this, two callers read the same
+  // held list, write the same messages twice, and interleave while doing it.
+  if (releasing.has(agentId)) return { written: [], refused: 'already_releasing' };
 
-  const written: string[] = [];
-  for (const message of messages) {
-    writeProgrammaticInput(ptyProcess, composeBusNote(message), true);
-    written.push(message.messageId);
-    await new Promise(resolve => setTimeout(resolve, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
+  const agent = agents.get(agentId);
+  // The session barrier is deliberately NOT applied here, and this is the only
+  // path where that is true. `flush` drops what it holds when the session that
+  // was owed it is gone, because that queue belongs to a session. This does
+  // not: a human looked at an agent, saw messages held for it, and pressed
+  // send. They are aiming at the agent, not at a session id, and an agent that
+  // was killed and relaunched between the button being drawn and the click is
+  // still the agent they meant. So the messages go into whatever session is
+  // live now. Assumed, and written down rather than left to be discovered.
+  const ptyProcess = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  if (!ptyProcess) return { written: [], refused: 'no_terminal' };
+
+  releasing.add(agentId);
+  try {
+    const written: string[] = [];
+    for (const message of messages) {
+      writeProgrammaticInput(ptyProcess, composeBusNote(message), true);
+      written.push(message.messageId);
+      // Reported as it lands, not at the end: a caller that records state per
+      // message leaves nothing ambiguous if this throws halfway.
+      onWritten?.(message.messageId);
+      await new Promise(resolve => setTimeout(resolve, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
+    }
+    return { written };
+  } finally {
+    releasing.delete(agentId);
   }
-  return written;
 }
 
 /** Test seam: the queues are process memory, and a test that drives several
@@ -386,6 +418,7 @@ export async function releaseBusMessagesNow(
 export function resetAgentWatch(): void {
   lastSeen.clear();
   pending.clear();
+  releasing.clear();
   for (const timer of delivering.values()) clearTimeout(timer);
   delivering.clear();
   onBusDelivered = undefined;

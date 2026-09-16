@@ -123,17 +123,23 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
   }
   if (!queued.length) return { released: [] };
 
-  const written = await releaseBusMessagesNow(agentId, queued);
-  if (!written.length) {
-    return { released: [], reason: 'That agent has no live terminal to write into.' };
-  }
-
+  // Each one is recorded the moment it is written rather than all of them at
+  // the end. The held list was read before the first write, and the writes take
+  // hundreds of milliseconds each: anything that reads the journal in between
+  // should see what has already gone out, not the state this call started from.
   const released: BusDelivery[] = [];
-  for (const messageId of written) {
+  const { written, refused } = await releaseBusMessagesNow(agentId, queued, messageId => {
     const delivery = markDelivered(agentId, messageId);
-    if (!delivery) continue;
+    if (!delivery) return;
     released.push(delivery);
     broadcastToAllWindows('bus:delivery', delivery);
+  });
+
+  if (refused === 'already_releasing') {
+    return { released: [], reason: 'These messages are already being sent. Wait for that to finish.' };
+  }
+  if (refused === 'no_terminal' || !written.length) {
+    return { released: [], reason: 'That agent has no live terminal to write into.' };
   }
 
   // Said in the room, on the anchor the last one belongs to: a human action
