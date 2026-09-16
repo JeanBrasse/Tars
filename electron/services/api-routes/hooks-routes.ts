@@ -1,4 +1,4 @@
-import { agents, saveAgents } from '../../core/agent-manager';
+import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
 import { findAgentByIdOrSession } from './utils';
 import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
@@ -72,11 +72,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
   // POST /api/hooks/status
   app.post('/api/hooks/status', (req, sendJson) => {
-    const { agent_id, session_id, status, source, waiting_reason, current_task } = req.body as {
+    const { agent_id, session_id, status, source, event, waiting_reason, current_task } = req.body as {
       agent_id: string;
       session_id: string;
       status: 'running' | 'waiting' | 'idle' | 'completed';
       source?: string;
+      event?: string;
       reason?: string;
       waiting_reason?: string;
       current_task?: string;
@@ -113,6 +114,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // ownership and gets cleared on load, this is where the work got to.
       agent.resumableSessionId = session_id;
       agent.lastActivity = new Date().toISOString();
+      // Registered is not started: this only puts the task this session was
+      // spawned with on the clock.
+      noteSessionRegistered(agent);
       saveAgents();
       sendJson({ success: true, registered: true, agent: { id: agent.id, status: agent.status } });
       return;
@@ -129,6 +133,13 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     if (!agent.currentSessionId && session_id) {
       agent.currentSessionId = session_id;
       agent.resumableSessionId = session_id;
+    }
+
+    // The one post that proves a task reached the CLI. It cannot be read off
+    // `status: 'running'`: PostToolUse sends that too, and a dispatch has
+    // already set that status at spawn, so the hook names the event instead.
+    if (event === 'UserPromptSubmit') {
+      noteTurnStarted(agent);
     }
 
     const oldStatus = agent.status;

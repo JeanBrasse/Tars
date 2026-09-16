@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -112,13 +112,10 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
         window.electronAPI?.agent?.sendInput({ id: agentIdRef.current, input: data });
       });
 
+      // The terminal's own replies to queries from the CLI arrive here like a
+      // keystroke and must never be forwarded. See stripTerminalReplies.
       term.onData((data) => {
-        if (/^(\x1b\[\?[\d;]*c|\d+;\d+c)+$/.test(data)) return;
-        const cleaned = data
-          .replace(/\x1b\[\?[\d;]*c/g, '')
-          .replace(/\x1b\[\d+;\d+R/g, '')
-          .replace(/\x1b\[(?:I|O)/g, '')
-          .replace(/\d+;\d+c/g, '');
+        const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
         window.electronAPI?.agent?.sendInput({ id: agentIdRef.current, input: cleaned });
       });

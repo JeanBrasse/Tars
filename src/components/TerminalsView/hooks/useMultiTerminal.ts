@@ -7,7 +7,7 @@ import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -227,16 +227,11 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         sendOrBroadcast(data);
       });
 
-      // Forward keyboard input from xterm to PTY
-      // Filter out terminal query responses (DA, CPR, focus) that xterm.js emits
-      // automatically: these must not be forwarded as user input.
+      // Forward keyboard input from xterm to PTY. The terminal's own replies to
+      // queries from the CLI (DA, CPR, DSR, focus, mouse) arrive here too and
+      // must never be forwarded as user input. See stripTerminalReplies.
       term.onData((data) => {
-        if (/^(\x1b\[\?[\d;]*c|\d+;\d+c)+$/.test(data)) return;
-        const cleaned = data
-          .replace(/\x1b\[\?[\d;]*c/g, '')     // DA response: \x1b[?1;2c
-          .replace(/\x1b\[\d+;\d+R/g, '')       // CPR response: \x1b[row;colR
-          .replace(/\x1b\[(?:I|O)/g, '')         // Focus in/out: \x1b[I / \x1b[O
-          .replace(/\d+;\d+c/g, '');             // Bare DA fragments: 1;2c
+        const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
         sendOrBroadcast(cleaned);
       });

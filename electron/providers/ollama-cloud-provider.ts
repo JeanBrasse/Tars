@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort, orchestratorToolFlags } from './cli-provider';
+import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 export const OLLAMA_CLOUD_BASE_URL = 'https://ollama.com'; // claude appends /v1/messages
@@ -95,14 +95,12 @@ export class OllamaCloudProvider implements CLIProvider {
 
     command += ` --add-dir '${DATA_DIR}'`;
 
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}.] ${params.prompt}`;
     }
 
-    if (finalPrompt) {
-      command += ` '${finalPrompt.replace(/'/g, "'\\''")}'`;
-    }
+    command += promptOperand(finalPrompt);
 
     return command;
   }

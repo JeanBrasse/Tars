@@ -105,6 +105,21 @@ export interface AgentStatus {
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */
   lastKilledSessionId?: string;
+  /**
+   * When the current session last began a turn, from the UserPromptSubmit hook.
+   *
+   * Distinct from `currentSessionId`, which only says that a session registered.
+   * A session that never received its task registers in exactly the same way,
+   * which is what made a lost dispatch look like an agent at work.
+   */
+  lastTurnStartedAt?: string;
+  /**
+   * A task handed to a session that has not started a turn yet, cleared the
+   * moment one starts. If none does within the bound, the task is typed into
+   * the live session once and the agent is marked failed if that fails too.
+   * Runtime state: reset on load, like ptyId.
+   */
+  pendingDelivery?: { ptyId: string; task: string; dispatchedAt: string; retried?: boolean; checkArmed?: boolean };
   /** Why the agent is 'waiting': 'permission' = blocking permission dialog
    *  (auto-continue must NOT type into it), 'idle' = waiting for next prompt. */
   waitingReason?: string;
@@ -308,6 +323,11 @@ export interface BusRoom {
   title: string;
   memberIds: string[];
   createdAt: string;
+  /** The newest message in this room, for sorting the conversation list and
+   *  showing a line under each. Absent on the global room, whose history is
+   *  the overseer's own conversation and is not in this journal. */
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
 }
 
 /**
@@ -332,6 +352,19 @@ export interface BusThread {
 
 export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
 
+/**
+ * What a machine line is about.
+ *
+ * The Chat page draws these as distinct rows, and with only `text` they all
+ * collapse into one grey line. Each value here has a producer in this process;
+ * a kind nobody emits would be a row the page can never show, which is the
+ * same mistake as a state with no way out.
+ *
+ * There is deliberately no `passed`: an agent with nothing to add is refused
+ * before anything is stored, so a silence has no row and no source of data.
+ */
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+
 export interface BusMessage {
   id: string;
   roomId: string;
@@ -344,6 +377,8 @@ export interface BusMessage {
   /** Agent ids named in the text: after the first round, only a mentioned
    *  agent that has not spoken since gets a turn. */
   mentions: string[];
+  /** Set only when `authorKind` is `system`: which machine event this is. */
+  systemKind?: BusSystemKind;
   createdAt: string;
 }
 
@@ -389,11 +424,31 @@ export interface BusDelivery {
   reason?: string;
   queuedAt: string;
   deliveredAt?: string;
+  /** When this stopped being on its way: set with `dropped` and with
+   *  `not_sent`. Without it the page can say a message is refused but not
+   *  when, which for `not_sent` is the whole of how old a held message is. */
+  refusedAt?: string;
+}
+
+/**
+ * A member of a room, as the page needs to draw it.
+ *
+ * `hasEndOfTurn` is derived here from the provider's hook configuration, the
+ * same read the delivery path makes. It is exposed because the renderer was
+ * otherwise copying the list of five CLIs by hand, and a hand-written copy of
+ * a derived value is a copy that goes stale the day a provider gains hooks.
+ */
+export interface BusMember {
+  id: string;
+  name: string;
+  provider?: string;
+  hasEndOfTurn: boolean;
 }
 
 /** What `bus:getRoom` answers: the room and its journal, newest last. */
 export interface BusRoomSnapshot {
   room: BusRoom;
+  members: BusMember[];
   threads: BusThread[];
   messages: BusMessage[];
   deliveries: BusDelivery[];

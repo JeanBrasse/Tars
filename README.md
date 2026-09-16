@@ -176,7 +176,7 @@ completion hook, it simply has no screen of its own.
 | Screen | What it is for |
 |---|---|
 | **Dashboard** | The terminal grid. Every agent, live, grouped by project |
-| **Chat** | A Hermes agent watching every project, reporting to you, asking before it acts |
+| **Chat** | Hermes watching every project and asking before it acts, plus a room per project where that project's agents talk to each other and to you |
 | **Agents** | Create, configure, start and stop. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |

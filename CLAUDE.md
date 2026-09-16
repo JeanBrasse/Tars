@@ -49,8 +49,9 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 72 root frames. **Encrypted**: reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
-| `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header and this table both name the Pencil source `design/tars-redesign.pen` |
+| `design/tars-redesign.pen` | Pencil source of truth, 74 root frames. **Encrypted**: reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
+| `design/chat-design.pen` | The same 74 frames, same ids, plus the 10 frames of the Chat room, which exist nowhere else: 84 in all. A fork, not a companion, and the newer of the two. Draw a Chat room frame here and anything else in `tars-redesign.pen`, until the two are reconciled with Pen closed |
+| `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
@@ -96,7 +97,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 ### Frontend Agent
 - **Owns**: `src/app/`, `src/components/`, `src/hooks/`, `src/lib/`, `src/store/`, `landing/`
 - **Never touches**: `electron/`, `mcp-*/`, `hooks/`, `__tests__/`, `e2e/`
-- **Design rule**: the frames in `design/tars-redesign.pen` and the tokens in `DESIGN.md` are the specification. Never invent a layout, a colour, or a control height. Controls are **26px** (small) or **32px** (standard), nothing else. The shell is identical on every page: sidebar 240 wide (72 collapsed), header 84 tall with padding `22/26/14/26`, content `0/26/22/26`
+- **Design rule**: the frames in `design/tars-redesign.pen`, plus `design/chat-design.pen` for the Chat room, and the tokens in `DESIGN.md` are the specification. Never invent a layout, a colour, or a control height. Controls are **26px** (small) or **32px** (standard), nothing else. The shell is identical on every page: sidebar 240 wide (72 collapsed), header 84 tall with padding `22/26/14/26`, content `0/26/22/26`
 - **Never** mark an active state with an accent rule: no 2px orange line under a tab, beside a menu item, or under a button. Active is a **box**: tinted fill, or surface plus border
 - **Never** hardcode a hex or a raw Tailwind palette class outside `src/components/ui/`. `npm run lint:design` will catch you
 - The mark is the orange square grid (`public/icon.svg`, `src/components/Splash.tsx`), never a `>_` terminal prompt
@@ -143,7 +144,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 
 Every design or feature change goes through, in this order:
 
-1. **`design/tars-redesign.pen`**: the frame exists and is correct before any TSX is written
+1. **The Pencil document**: the frame exists and is correct before any TSX is written. `design/tars-redesign.pen`, except for the Chat room, whose ten frames live only in `design/chat-design.pen`. Looking for them in the wrong file and finding nothing is how three passes of design nearly went unnoticed
 2. **The app**: `src/` implements the frame, not an approximation of it
 3. **The landing page**: `landing/` picks up the change
 4. **`README.md`**: last

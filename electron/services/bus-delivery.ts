@@ -1,8 +1,18 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
-import { queueBusMessage } from './agent-watch';
-import { cancelQueuedDeliveries, getThread, hasEndOfTurn, markDropped, recordDelivery } from './bus-store';
-import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusThread } from '../types';
+import { queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
+import {
+  appendSystemMessage,
+  cancelQueuedDeliveries,
+  getMessage,
+  getThread,
+  hasEndOfTurn,
+  markDelivered,
+  markDropped,
+  notSentFor,
+  recordDelivery,
+} from './bus-store';
+import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusSystemKind, BusThread } from '../types';
 
 /**
  * What happens to a message once it has been published.
@@ -53,9 +63,28 @@ export function fanOutDeliveries(message: BusMessage, room: BusRoom): BusDeliver
           ? 'no live session to deliver into yet'
           : `${target.provider ?? 'this provider'} stays running until its process exits, so nothing can be delivered to it at rest`,
       queuedAt: new Date().toISOString(),
+      refusedAt: queued ? undefined : new Date().toISOString(),
     }));
   }
   return deliveries;
+}
+
+/**
+ * A machine line, written into the room and pushed like any other message.
+ *
+ * Here rather than in the handlers because both doors need it and because a
+ * system line is a message: the page renders it in the transcript, in place,
+ * and would otherwise have to reconstruct it from a thread push.
+ */
+export function announceSystem(
+  roomId: string,
+  threadId: string,
+  systemKind: BusSystemKind,
+  text: string,
+): BusMessage {
+  const message = appendSystemMessage({ roomId, threadId, systemKind, text });
+  broadcastToAllWindows('bus:message', message);
+  return message;
 }
 
 /** Push a message, its thread, and its deliveries to every window. */
@@ -63,6 +92,59 @@ export function broadcastPublication(message: BusMessage, thread: BusThread, del
   broadcastToAllWindows('bus:message', message);
   broadcastToAllWindows('bus:thread', thread);
   for (const delivery of deliveries) broadcastToAllWindows('bus:delivery', delivery);
+}
+
+/**
+ * Send what was never sent, because a human said to.
+ *
+ * `not_sent` is the state with no way out on its own: the target has no end of
+ * turn, so nothing will ever be a safe moment and the queue refuses to guess
+ * one. That refusal does not move. What moves is that a person can now decide,
+ * and this is what their decision does: the held messages go in, oldest first,
+ * into a session whose state Tars does not know. Specifying a state the
+ * interface can show but never resolve is the silent failure this bus exists
+ * to remove, so it gets a door.
+ */
+export async function releaseNotSent(agentId: string): Promise<{ released: BusDelivery[]; reason?: string }> {
+  const held = notSentFor(agentId);
+  if (!held.length) return { released: [] };
+
+  const queued: QueuedBusMessage[] = [];
+  for (const delivery of held) {
+    const message = getMessage(delivery.messageId);
+    if (!message) continue;
+    queued.push({
+      messageId: message.id,
+      roomId: message.roomId,
+      threadId: message.threadId,
+      authorName: message.authorName,
+      text: message.text,
+    });
+  }
+  if (!queued.length) return { released: [] };
+
+  const written = await releaseBusMessagesNow(agentId, queued);
+  if (!written.length) {
+    return { released: [], reason: 'That agent has no live terminal to write into.' };
+  }
+
+  const released: BusDelivery[] = [];
+  for (const messageId of written) {
+    const delivery = markDelivered(agentId, messageId);
+    if (!delivery) continue;
+    released.push(delivery);
+    broadcastToAllWindows('bus:delivery', delivery);
+  }
+
+  // Said in the room, on the anchor the last one belongs to: a human action
+  // that writes into a terminal should leave a trace where the conversation is.
+  const last = queued.find(q => q.messageId === written[written.length - 1]);
+  if (last) {
+    const name = agents.get(agentId)?.name || agentId;
+    announceSystem(last.roomId, last.threadId, 'queue_released',
+      `You sent ${written.length} held message${written.length > 1 ? 's' : ''} to ${name}.`);
+  }
+  return { released };
 }
 
 /**
