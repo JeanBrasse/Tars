@@ -402,6 +402,36 @@ describe('the waiting notification after a failed turn', () => {
       ['Tars-Backend is waiting', expect.stringContaining('Claude is waiting for your input'), 'a1', ctx.getAppSettings()],
     ]);
   });
+
+  /**
+   * The guard is for the idle prompt only, as hooks-routes.ts and OPERATIONS.md
+   * both say, and nothing held it to that: holding back every notification of
+   * an agent in error passed the whole file. A permission prompt comes from a
+   * turn in progress and waits on Noah's answer, so if one ever meets an agent
+   * still marked `error`, a turn whose start Tars missed, hiding it would leave
+   * that turn blocked with nobody told.
+   *
+   * Not a measured payload: the idle prompt's, with the type and the message a
+   * permission prompt carries, through the real hook.
+   */
+  it('still raises a permission prompt, which only a turn in progress can ask', async () => {
+    withTheAppDefaults();
+    const agent = putAgent();
+    await failTurn(MEASURED_STOP_FAILURE);
+    expect(agent.status).toBe('error');
+
+    const posts = await runHook(NOTIFICATION_HOOK, {
+      ...MEASURED_IDLE_PROMPT,
+      message: 'Claude needs your permission to use Bash',
+      notification_type: 'permission_prompt',
+    });
+    expect(posts.map(p => p.url)).toEqual(['/api/hooks/notification']);
+    for (const p of posts) send(p.url, p.body);
+
+    expect(vi.mocked(ctx.sendNotificationCallback).mock.calls).toEqual([
+      ['Tars-Backend needs permission', expect.stringContaining('Claude needs your permission to use Bash'), 'a1', ctx.getAppSettings()],
+    ]);
+  });
 });
 
 describe('the hook reaches every claude-family CLI', () => {
