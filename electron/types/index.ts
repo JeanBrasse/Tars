@@ -361,10 +361,31 @@ export interface BusMessage {
  */
 export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
 
+/**
+ * Why a delivery is not going anywhere, as a value rather than a sentence.
+ *
+ * The interface has to render this, and matching on English prose is how a
+ * wording change silently turns a visible state invisible. The sentence stays
+ * beside it for a human to read.
+ *
+ * `no_end_of_turn` is the one that names the five: amp, codex, grok, opencode
+ * and pi never leave `running` in an interactive session. `session_replaced`
+ * is a message queued for a session that was killed before it drained: it
+ * belongs to that session and is not handed to whatever took its place.
+ */
+export type BusDeliveryReason =
+  | 'no_end_of_turn'
+  | 'no_live_session'
+  | 'session_replaced'
+  | 'thread_stopped'
+  | 'thread_replaced'
+  | 'members_changed';
+
 export interface BusDelivery {
   messageId: string;
   targetAgentId: string;
   state: BusDeliveryState;
+  reasonCode?: BusDeliveryReason;
   reason?: string;
   queuedAt: string;
   deliveredAt?: string;

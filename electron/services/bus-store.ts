@@ -8,6 +8,7 @@ import { getProvider } from '../providers';
 import type {
   AgentStatus,
   BusDelivery,
+  BusDeliveryReason,
   BusMessage,
   BusRoom,
   BusRoomSnapshot,
@@ -455,17 +456,47 @@ export function markDelivered(targetAgentId: string, messageId: string): BusDeli
 
 /** Mark every delivery still queued for a thread as dropped, with its reason:
  *  what Stop means for messages that had not gone out yet. */
-export function cancelQueuedDeliveries(threadId: string, reason: string): BusDelivery[] {
+export function cancelQueuedDeliveries(
+  threadId: string,
+  reasonCode: BusDeliveryReason,
+  reason: string,
+): BusDelivery[] {
   const ids = new Set(messagesOfThread(threadId).map(m => m.id));
   const cancelled: BusDelivery[] = [];
   for (const delivery of state.deliveries) {
     if (delivery.state !== 'queued' || !ids.has(delivery.messageId)) continue;
     delivery.state = 'dropped';
+    delivery.reasonCode = reasonCode;
     delivery.reason = reason;
     cancelled.push(delivery);
   }
   if (cancelled.length) saveBus();
   return cancelled;
+}
+
+/**
+ * One queued delivery will never leave, and says so.
+ *
+ * The queue drops what it is holding when the session it was held for is gone.
+ * Without this the row would read `queued` for ever, which is the state the
+ * contract exists to make impossible: a message that is not moving has to look
+ * like a message that is not moving.
+ */
+export function markDropped(
+  targetAgentId: string,
+  messageId: string,
+  reasonCode: BusDeliveryReason,
+  reason: string,
+): BusDelivery | undefined {
+  const delivery = state.deliveries.find(
+    d => d.messageId === messageId && d.targetAgentId === targetAgentId && d.state === 'queued',
+  );
+  if (!delivery) return undefined;
+  delivery.state = 'dropped';
+  delivery.reasonCode = reasonCode;
+  delivery.reason = reason;
+  saveBus();
+  return delivery;
 }
 
 export function setMembers(

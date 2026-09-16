@@ -1,8 +1,8 @@
 import { ipcMain } from 'electron';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { getOverseerHistory } from '../services/overseer';
-import { setBusDeliveredHook } from '../services/agent-watch';
-import { broadcastPublication, closeAndAnnounce, fanOutDeliveries } from '../services/bus-delivery';
+import { setBusDeliveredHook, setBusDroppedHook } from '../services/agent-watch';
+import { announceDropped, broadcastPublication, closeAndAnnounce, fanOutDeliveries } from '../services/bus-delivery';
 import {
   appendMessage,
   closeThread,
@@ -39,6 +39,13 @@ export function registerBusHandlers(): void {
   setBusDeliveredHook((targetAgentId, messageId) => {
     const delivered = markDelivered(targetAgentId, messageId);
     if (delivered) broadcastToAllWindows('bus:delivery', delivered);
+  });
+
+  // And the other half: a message the queue gives up on stops saying queued.
+  // The session it was held for is gone, and its messages belong to it.
+  setBusDroppedHook((targetAgentId, messageId) => {
+    announceDropped(targetAgentId, messageId, 'session_replaced',
+      'the session this was queued for is gone, so it was not handed to the one that replaced it');
   });
 
   // The global room is the super chat, and stays where it already lives: read
@@ -103,7 +110,7 @@ export function registerBusHandlers(): void {
       broadcastPublication(message, thread, deliveries);
       // The anchor this replaced takes its queued deliveries with it: a reply
       // to a thread nobody is in any more is not worth waking an agent for.
-      if (supersededThreadId) closeAndAnnounce(supersededThreadId, 'a newer message replaced this thread');
+      if (supersededThreadId) closeAndAnnounce(supersededThreadId, 'thread_replaced', 'a newer message replaced this thread');
 
       return { success: true, messageId: message.id, threadId: thread.id, deliveries };
     } catch (err) {
@@ -117,7 +124,7 @@ export function registerBusHandlers(): void {
       const thread = closeThread(threadId, 'stopped');
       if (!thread) return { success: false, error: 'Thread not found' };
       // Stop is a barrier: what had not gone out does not go out.
-      closeAndAnnounce(thread.id, 'the thread was stopped');
+      closeAndAnnounce(thread.id, 'thread_stopped', 'the thread was stopped');
       return { success: true, thread };
     } catch (err) {
       console.error('[bus] stopThread failed:', err);
@@ -132,7 +139,7 @@ export function registerBusHandlers(): void {
       // Changing the members closes the anchor in flight, and that close is a
       // thread change like any other: it goes out on bus:thread so the Chat
       // page never has to infer it from a room that looks different.
-      if (result.superseded) closeAndAnnounce(result.superseded.id, 'the room members changed');
+      if (result.superseded) closeAndAnnounce(result.superseded.id, 'members_changed', 'the room members changed');
       return { success: true, room: result.room };
     } catch (err) {
       console.error('[bus] setMembers failed:', err);

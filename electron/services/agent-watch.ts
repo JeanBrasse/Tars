@@ -88,6 +88,15 @@ export function setBusDeliveredHook(hook: BusDeliveredHook | undefined): void {
   onBusDelivered = hook;
 }
 
+/** Called when a queued bus message is given up on, so the journal stops
+ *  saying `queued` for something that will never move. */
+type BusDroppedHook = (targetAgentId: string, messageId: string) => void;
+let onBusDropped: BusDroppedHook | undefined;
+
+export function setBusDroppedHook(hook: BusDroppedHook | undefined): void {
+  onBusDropped = hook;
+}
+
 /**
  * Recipients whose terminal is mid-write, until the trailing carriage
  * return of writeProgrammaticInput has landed.
@@ -229,6 +238,7 @@ function flush(requesterId: string): void {
 
   const requester = agents.get(requesterId);
   if (!requester) {
+    abandonBusMessages(requesterId, held);
     pending.delete(requesterId);
     return;
   }
@@ -253,6 +263,7 @@ function flush(requesterId: string): void {
     // whatever session takes its place, so it is dropped rather than
     // delivered to an agent that never asked for any of it.
     console.warn(`[agent-watch] ${requesterId} is no longer the session that was owed this, dropping ${holding(held)} pending item(s)`);
+    abandonBusMessages(requesterId, held);
     pending.delete(requesterId);
     return;
   }
@@ -286,6 +297,25 @@ function flush(requesterId: string): void {
     delivering.delete(requesterId);
     flush(requesterId);
   }, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
+}
+
+/**
+ * Say so when a room message is given up on.
+ *
+ * A dropped delegation result is only a note nobody will read, but a dropped
+ * room message has a row in the journal that would otherwise read `queued` for
+ * ever. Something that is not moving has to look like something that is not
+ * moving.
+ */
+function abandonBusMessages(recipientId: string, held: Pending): void {
+  for (const message of held.bus) {
+    try {
+      onBusDropped?.(recipientId, message.messageId);
+    } catch (err) {
+      console.error('[agent-watch] bus dropped hook failed:', err);
+    }
+  }
+  held.bus = [];
 }
 
 function composeNote(finished: Map<string, AgentStatus['status']>): string {
@@ -329,4 +359,5 @@ export function resetAgentWatch(): void {
   for (const timer of delivering.values()) clearTimeout(timer);
   delivering.clear();
   onBusDelivered = undefined;
+  onBusDropped = undefined;
 }

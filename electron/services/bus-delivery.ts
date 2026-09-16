@@ -1,8 +1,8 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { queueBusMessage } from './agent-watch';
-import { cancelQueuedDeliveries, getThread, hasEndOfTurn, recordDelivery } from './bus-store';
-import type { BusDelivery, BusMessage, BusRoom, BusThread } from '../types';
+import { cancelQueuedDeliveries, getThread, hasEndOfTurn, markDropped, recordDelivery } from './bus-store';
+import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusThread } from '../types';
 
 /**
  * What happens to a message once it has been published.
@@ -46,6 +46,7 @@ export function fanOutDeliveries(message: BusMessage, room: BusRoom): BusDeliver
       messageId: message.id,
       targetAgentId,
       state: queued ? 'queued' : 'not_sent',
+      reasonCode: queued ? undefined : reachable ? 'no_live_session' : 'no_end_of_turn',
       reason: queued
         ? undefined
         : reachable
@@ -70,10 +71,22 @@ export function broadcastPublication(message: BusMessage, thread: BusThread, del
  * Stop, a newer human message and a change of members all end a thread, and a
  * reply nobody is waiting for any more is not worth waking an agent for.
  */
-export function closeAndAnnounce(threadId: string, reason: string): void {
-  for (const dropped of cancelQueuedDeliveries(threadId, reason)) {
+export function closeAndAnnounce(threadId: string, reasonCode: BusDeliveryReason, reason: string): void {
+  for (const dropped of cancelQueuedDeliveries(threadId, reasonCode, reason)) {
     broadcastToAllWindows('bus:delivery', dropped);
   }
   const thread = getThread(threadId);
   if (thread) broadcastToAllWindows('bus:thread', thread);
+}
+
+/**
+ * The queue could not keep what it was holding.
+ *
+ * Wired into agent-watch, which drops a recipient's queue when the session it
+ * was queued for is gone. The row stops saying `queued` and says why, and the
+ * Chat page hears it like any other delivery change.
+ */
+export function announceDropped(targetAgentId: string, messageId: string, reasonCode: BusDeliveryReason, reason: string): void {
+  const dropped = markDropped(targetAgentId, messageId, reasonCode, reason);
+  if (dropped) broadcastToAllWindows('bus:delivery', dropped);
 }
