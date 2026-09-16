@@ -17,6 +17,8 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
+import { broadcastToAllWindows } from '../../utils/broadcast';
+import { scheduleTick } from '../../utils/agents-tick';
 import { withSessionTruth, sessionModel } from '../agent-truth';
 import { callerHeader, callerProject } from './utils';
 
@@ -49,6 +51,28 @@ type SpawnOpts = {
  *
  * Returns false if validation failed. An error response has already been sent.
  */
+/**
+ * Tell every open window that this agent changed, on both channels it reads.
+ *
+ * The routes here changed agents and told nothing but the in-process emitter,
+ * which is /wait's and agent-watch's. A page already open went on showing an
+ * agent the super chat had just started, given a task or stopped, until it was
+ * reloaded, and the super chat drives every agent it touches through these
+ * routes. Both channels, because they are not interchangeable: the Chat page's
+ * rail reloads the fleet on `agent:status`, and the Agents page and the
+ * Dashboard redraw on `agents:tick`, so either one alone leaves a view wrong.
+ * The payload is the one the IPC paths send.
+ */
+function announceAgent(agent: AgentStatus): void {
+  broadcastToAllWindows('agent:status', {
+    type: 'status',
+    agentId: agent.id,
+    status: agent.status,
+    timestamp: agent.lastActivity,
+  });
+  scheduleTick();
+}
+
 async function spawnAgentSession(
   agent: AgentStatus,
   prompt: string,
@@ -293,6 +317,7 @@ async function spawnAgentSession(
   saveAgents();
 
   armTaskStartWatch(agent, ptyId, taskPrompt);
+  announceAgent(agent);
 
   ptyProcess.onData((data: string) => {
     appendAgentOutput(agent, data);
@@ -304,6 +329,8 @@ async function spawnAgentSession(
     if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
       ctx.mainWindow.webContents.send('agent:output', { agentId: agent.id, data });
     }
+    // As initAgentPty does: the tick carries the line the cards show.
+    scheduleTick();
   });
 
   ptyProcess.onExit(({ exitCode }) => {
@@ -334,6 +361,12 @@ async function spawnAgentSession(
       agent.lastActivity = new Date().toISOString();
       saveAgents();
       emitAgentStatus(agent.id);
+      // The terminal is gone, so the record stops naming it, and the windows
+      // hear it. Only after the emit above: agent-watch tells whoever
+      // delegated this work by matching the link it recorded against this
+      // ptyId, and clearing it first silently cancelled that notification.
+      agent.ptyId = undefined;
+      announceAgent(agent);
     }, 1500);
   });
 
@@ -484,6 +517,7 @@ async function performDispatchLocked(
     agent.lastCleanOutput = undefined;
     agent.lastActivity = new Date().toISOString();
     saveAgents();
+    announceAgent(agent);
     sendJson({ success: true, mode: 'message', previousStatus, agent: { id: agent.id, name: agent.name, status: agent.status } });
     return;
   }
@@ -749,6 +783,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     };
     agents.set(id, agent);
     saveAgents();
+    announceAgent(agent);
     sendJson({ agent });
   });
 
@@ -839,6 +874,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // `status:${agentId}` (see the .on below), so an emit on 'status' reached
     // nobody and a caller waiting on this agent hung until its timeout.
     emitAgentStatus(agent.id);
+    announceAgent(agent);
 
     const result = await delegateOverAcp({
       agent,
@@ -853,6 +889,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
     saveAgents();
     emitAgentStatus(agent.id);
+    announceAgent(agent);
 
     sendJson(result, result.ok ? 200 : 502);
   });
@@ -874,6 +911,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         ptyProcesses.delete(agent.ptyId);
       }
     }
+    // No terminal any more, as the interface's own stop already says. Left
+    // set, it named a dead pty for the windows, and the exit handler of that
+    // pty still took it for the live one, so a non-zero exit wrote an error
+    // onto an agent that had just been stopped on purpose.
+    agent.ptyId = undefined;
     agent.status = 'idle';
     agent.currentTask = undefined;
     agent.waitingReason = undefined;
@@ -886,6 +928,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     agent.lastActivity = new Date().toISOString();
     saveAgents();
     emitAgentStatus(agent.id);
+    announceAgent(agent);
     sendJson({ success: true });
   });
 
@@ -941,6 +984,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         agent.waitingReason = undefined;
         agent.lastActivity = new Date().toISOString();
         saveAgents();
+        announceAgent(agent);
         sendJson({ success: true });
         return;
       }
@@ -967,6 +1011,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     agents.delete(req.params.id);
     saveAgents();
+    // Gone from the next tick, and the rail reloads a fleet without it.
+    announceAgent(agent);
     sendJson({ success: true });
   });
 }
