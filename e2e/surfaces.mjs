@@ -103,6 +103,48 @@ export const ALL = [...PAGES, ...SETTINGS_SECTIONS, ...OVERLAYS];
 // how fast that CLI registers its session. There nothing starts, the
 // Orchestrator reads a transcript seeded on disk, and the Backend Engineer
 // runs codex, which writes none.
+// The Chat room, the six frames `design/chat-design.pen` specifies as states
+// of the page rather than as overlays. One room per state, because a room is
+// derived from a project and a journal can only put a given one in a single
+// state at a time.
+//
+// Deliberately not in ALL, for the reason PANEL_HISTORY is not: they need a
+// sandbox whose agents do not start, whose projects are five rather than two,
+// and whose bus journal is seeded. e2e/chat-rooms.spec.ts drives them.
+//
+// `delivered`, `dropped`, `bounded` and `superseded` are rendered here for the
+// first time. Every one of them was code that had never been on a screen.
+export const CHAT_ROOMS = [
+  {
+    name: 'chat-hermes-with-rooms', route: '/chat',
+    shows: 'All projects',
+  },
+  {
+    name: 'chat-room-agents-at-work', route: '/chat', clickText: 'tars',
+    shows: 'Then I hold the write until the fit resolves, and add the test that caught it.',
+  },
+  {
+    name: 'chat-room-you-step-in', route: '/chat', clickText: 'orion',
+    shows: 'Stop there, both of you. Cache the parts, and measure it before you tune it.',
+  },
+  {
+    name: 'chat-room-limit-reached', route: '/chat', clickText: '1212-capital',
+    shows: 'Nobody was stopped: every agent finished its turn and is waiting for you.',
+  },
+  {
+    // The room says this in the composer's placeholder rather than in the log,
+    // which is the point of the frame: the room is readable and the box tells
+    // you why nothing will move.
+    name: 'chat-room-all-stopped', route: '/chat', clickText: 'atlas',
+    placeholder: 'Every agent here is stopped. What you write waits until you start one.',
+    shows: 'Three paragraphs assume the reader already has an account. I have marked them.',
+  },
+  {
+    name: 'chat-room-no-agents', route: '/chat', clickText: 'mercury',
+    shows: 'Nobody in this room yet',
+  },
+];
+
 export const PANEL_HISTORY = [
   {
     name: 'dashboard-panel-history', route: '/', clickText: 'history', within: 'Orchestrator',
