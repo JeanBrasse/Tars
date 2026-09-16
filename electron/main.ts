@@ -95,6 +95,7 @@ import {
 import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-handlers';
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
 import { registerKanbanHandlers } from './handlers/kanban-handlers';
+import { registerBusHandlers } from './handlers/bus-handlers';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
@@ -410,6 +411,7 @@ app.whenReady().then(async () => {
   registerHermesHandlers();
   registerTranscriptHandlers();
   registerOverseerHandlers();
+  registerBusHandlers();
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.

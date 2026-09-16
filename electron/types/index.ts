@@ -303,3 +303,153 @@ export interface AppSettings {
   /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
   providerBudgets?: Record<string, number>;
 }
+
+/* ── The agent bus ─────────────────────────────────────────────────────────
+ * The shared contract, read by the Backend that implements it, the Frontend
+ * that builds the Chat page on it and the QA that tests it. A room holds
+ * threads, a thread anchors messages, and a delivery is the only thing the
+ * interface may show as proof that a message reached an agent.
+ */
+
+/** `global` is today's super chat, watching every project; `project` is one
+ *  room per project, whose members are that project's agents. */
+export type BusRoomKind = 'global' | 'project';
+
+export interface BusRoom {
+  /** `global`, or `project:<project path>`. */
+  id: string;
+  kind: BusRoomKind;
+  projectPath?: string;
+  title: string;
+  memberIds: string[];
+  createdAt: string;
+  /** The newest message in this room, for sorting the conversation list and
+   *  showing a line under each. Absent on the global room, whose history is
+   *  the overseer's own conversation and is not in this journal. */
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
+}
+
+/**
+ * A thread is the anchor, and the bounds are per anchor.
+ *
+ * `open` is live, `bounded` hit three rounds or ten agent messages and only a
+ * human message reopens it, `stopped` was stopped by hand, and `superseded`
+ * was closed by a newer human message or by a change of members. Late replies
+ * to anything but `open` are dropped with that reason.
+ */
+export type BusThreadState = 'open' | 'bounded' | 'stopped' | 'superseded';
+
+export interface BusThread {
+  id: string;
+  roomId: string;
+  anchorMessageId: string;
+  state: BusThreadState;
+  round: number;
+  agentMessageCount: number;
+  openedAt: string;
+}
+
+export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
+
+/**
+ * What a machine line is about.
+ *
+ * The Chat page draws these as distinct rows, and with only `text` they all
+ * collapse into one grey line. Each value here has a producer in this process;
+ * a kind nobody emits would be a row the page can never show, which is the
+ * same mistake as a state with no way out.
+ *
+ * There is deliberately no `passed`: an agent with nothing to add is refused
+ * before anything is stored, so a silence has no row and no source of data.
+ */
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+
+export interface BusMessage {
+  id: string;
+  roomId: string;
+  threadId: string;
+  authorKind: BusMessageAuthorKind;
+  /** Agent id, or `human` for Noah. */
+  authorId: string;
+  authorName: string;
+  text: string;
+  /** Agent ids named in the text: after the first round, only a mentioned
+   *  agent that has not spoken since gets a turn. */
+  mentions: string[];
+  /** Set only when `authorKind` is `system`: which machine event this is. */
+  systemKind?: BusSystemKind;
+  createdAt: string;
+}
+
+/**
+ * Where a message got to, per target.
+ *
+ * `queued` waits for the target to leave `running`, `delivered` was written
+ * into its session, `dropped` will never be sent and says why. `not_sent` is
+ * the fourth state and the one that needs saying: amp, codex, grok, opencode
+ * and pi never leave `running` in an interactive session, so nothing can be
+ * delivered to them at rest. A message aimed at one of those is neither queued
+ * nor delivered on its own: it is kept, shown as NOT SENT with its reason, and
+ * moves only on an explicit human action. Never inferred from silence, which
+ * is idleness detection and deliberately out of v1.
+ */
+export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
+
+/**
+ * Why a delivery is not going anywhere, as a value rather than a sentence.
+ *
+ * The interface has to render this, and matching on English prose is how a
+ * wording change silently turns a visible state invisible. The sentence stays
+ * beside it for a human to read.
+ *
+ * `no_end_of_turn` is the one that names the five: amp, codex, grok, opencode
+ * and pi never leave `running` in an interactive session. `session_replaced`
+ * is a message queued for a session that was killed before it drained: it
+ * belongs to that session and is not handed to whatever took its place.
+ */
+export type BusDeliveryReason =
+  | 'no_end_of_turn'
+  | 'no_live_session'
+  | 'session_replaced'
+  | 'thread_stopped'
+  | 'thread_replaced'
+  | 'members_changed';
+
+export interface BusDelivery {
+  messageId: string;
+  targetAgentId: string;
+  state: BusDeliveryState;
+  reasonCode?: BusDeliveryReason;
+  reason?: string;
+  queuedAt: string;
+  deliveredAt?: string;
+  /** When this stopped being on its way: set with `dropped` and with
+   *  `not_sent`. Without it the page can say a message is refused but not
+   *  when, which for `not_sent` is the whole of how old a held message is. */
+  refusedAt?: string;
+}
+
+/**
+ * A member of a room, as the page needs to draw it.
+ *
+ * `hasEndOfTurn` is derived here from the provider's hook configuration, the
+ * same read the delivery path makes. It is exposed because the renderer was
+ * otherwise copying the list of five CLIs by hand, and a hand-written copy of
+ * a derived value is a copy that goes stale the day a provider gains hooks.
+ */
+export interface BusMember {
+  id: string;
+  name: string;
+  provider?: string;
+  hasEndOfTurn: boolean;
+}
+
+/** What `bus:getRoom` answers: the room and its journal, newest last. */
+export interface BusRoomSnapshot {
+  room: BusRoom;
+  members: BusMember[];
+  threads: BusThread[];
+  messages: BusMessage[];
+  deliveries: BusDelivery[];
+}

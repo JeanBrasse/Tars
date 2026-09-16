@@ -100,6 +100,133 @@ const KANBAN = {
 const HISTORY_SESSION = '7c1e4f2a-9b3d-4e8f-a6c5-2d1b0f9e8a73';
 
 /**
+ * Three more projects, and the agents that make their rooms exist.
+ *
+ * A room is derived, not stored: `listRooms` builds one per project path any
+ * agent holds, so a room per state needs an agent per state. These are behind
+ * the `chatRooms` flag rather than in the shared seed because adding six agents
+ * and three projects to the sweep would move every other baseline in the suite.
+ */
+const REL_ATLAS = 'projects/atlas';
+const REL_MERCURY = 'projects/mercury';
+const REL_ORION = 'projects/orion';
+
+const CHAT_AGENTS = [
+  { id: 'c1', name: 'Atlas Writer', provider: 'claude', model: 'claude-sonnet-5', status: 'idle', rel: REL_ATLAS, effort: 'medium' },
+  { id: 'c2', name: 'Atlas Reviewer', provider: 'claude', model: 'claude-opus-5', status: 'completed', rel: REL_ATLAS, effort: 'low' },
+  { id: 'c3', name: 'Mercury Caretaker', provider: 'claude', model: 'claude-sonnet-5', status: 'idle', rel: REL_MERCURY, effort: 'low' },
+  { id: 'c4', name: 'Orion Lead', provider: 'claude', model: 'claude-opus-5', status: 'running', rel: REL_ORION, effort: 'high' },
+  { id: 'c5', name: 'Orion Second', provider: 'claude', model: 'claude-sonnet-5', status: 'running', rel: REL_ORION, effort: 'medium' },
+].map((a, i) => ({
+  character: 'robot', role: 'worker', skills: [],
+  createdAt: ISO(5 - i), lastActivity: ISO(0, 10 + i),
+  ...a,
+}));
+
+/**
+ * The journal behind the five room states, written the way the bus writes one.
+ *
+ * Every state the Chat room can render came from code nobody had seen on a
+ * screen: `delivered`, `dropped`, `bounded` and `superseded` had no data that
+ * produced them. Each one is here, on the room whose frame is meant to show it.
+ * The counters agree with the log rather than being set to a round number: the
+ * bounded thread really does carry its ten agent messages.
+ */
+function chatJournal(paths) {
+  const room = project => `project:${project}`;
+  const msg = (id, roomId, threadId, authorKind, authorId, authorName, text, createdAt, mentions = []) =>
+    ({ id, roomId, threadId, authorKind, authorId, authorName, text, mentions, createdAt });
+  const delivered = (messageId, targetAgentId, at) =>
+    ({ messageId, targetAgentId, state: 'delivered', queuedAt: at, deliveredAt: at });
+
+  const messages = [];
+  const threads = [];
+  const deliveries = [];
+
+  // tars: an exchange still running. One row of each live delivery state.
+  const tars = room(paths.tars);
+  threads.push({ id: 't-tars', roomId: tars, anchorMessageId: 'm-tars-1', state: 'open', round: 2, agentMessageCount: 2, openedAt: ISO(0, 9) });
+  messages.push(
+    msg('m-tars-1', tars, 't-tars', 'human', 'human', 'Noah', 'The scroll lock drops a line when a panel is resized. Take it between you.', ISO(0, 9), ['a1', 'a2']),
+    msg('m-tars-2', tars, 't-tars', 'agent', 'a1', 'Orchestrator', 'It is in the fit handler: the resize runs before the row count has settled.', ISO(0, 10), ['a2']),
+    msg('m-tars-3', tars, 't-tars', 'agent', 'a2', 'Frontend Engineer', 'Then I hold the write until the fit resolves, and add the test that caught it.', ISO(0, 11)),
+  );
+  deliveries.push(
+    delivered('m-tars-1', 'a1', ISO(0, 9)),
+    delivered('m-tars-2', 'a2', ISO(0, 10)),
+    { messageId: 'm-tars-3', targetAgentId: 'a1', state: 'queued', queuedAt: ISO(0, 11) },
+    {
+      messageId: 'm-tars-3', targetAgentId: 'a3', state: 'not_sent', queuedAt: ISO(0, 11), refusedAt: ISO(0, 11),
+      reasonCode: 'no_end_of_turn',
+      reason: 'codex stays running until its process exits, so nothing can be delivered to it at rest',
+    },
+  );
+
+  // 1212-capital: the bound reached, ten agent messages and no human since.
+  const capital = room(paths.capital);
+  threads.push({ id: 't-cap', roomId: capital, anchorMessageId: 'm-cap-0', state: 'bounded', round: 5, agentMessageCount: 10, openedAt: ISO(1, 14) });
+  messages.push(msg('m-cap-0', capital, 't-cap', 'human', 'human', 'Noah', 'Why is the migration refusing the connection? Work it out between you.', ISO(1, 14), ['a5', 'a6']));
+  const capitalTurns = [
+    ['a5', 'Database migration and schema review', 'The socket is refused at 5432, so nothing of mine ever opened.', 'a6'],
+    ['a6', 'Audit', 'The port is right. Check whether the server is listening on the socket file instead.', 'a5'],
+    ['a5', 'Database migration and schema review', 'It is a unix socket, and the path in the config is the Homebrew one.', 'a6'],
+    ['a6', 'Audit', 'Then the server here is the Postgres.app build, which puts its socket elsewhere.', 'a5'],
+    ['a5', 'Database migration and schema review', 'Confirmed, two servers installed and the config names the one that is not running.', 'a6'],
+    ['a6', 'Audit', 'Point the config at the running one rather than starting the other.', 'a5'],
+    ['a5', 'Database migration and schema review', 'Done locally, the connection opens. I have not touched the committed config.', 'a6'],
+    ['a6', 'Audit', 'Leave it uncommitted: that path is this machine, not the project.', 'a5'],
+    ['a5', 'Database migration and schema review', 'Agreed. The migration runs clean against the local server now.', 'a6'],
+    ['a6', 'Audit', 'Nothing left on my side. This needs Noah to say which server the project assumes.', 'a5'],
+  ];
+  capitalTurns.forEach(([id, name, text, to], i) => {
+    messages.push(msg(`m-cap-${i + 1}`, capital, 't-cap', 'agent', id, name, text, ISO(1, 15 + i), [to]));
+    deliveries.push(delivered(`m-cap-${i + 1}`, to, ISO(1, 15 + i)));
+  });
+
+  // atlas: a room whose agents have all finished. Nothing is pending.
+  const atlas = room(paths.atlas);
+  threads.push({ id: 't-atlas', roomId: atlas, anchorMessageId: 'm-atlas-1', state: 'open', round: 1, agentMessageCount: 1, openedAt: ISO(2, 11) });
+  messages.push(
+    msg('m-atlas-1', atlas, 't-atlas', 'human', 'human', 'Noah', 'Read the onboarding copy and tell me what a new reader would not understand.', ISO(2, 11), ['c1']),
+    msg('m-atlas-2', atlas, 't-atlas', 'agent', 'c1', 'Atlas Writer', 'Three paragraphs assume the reader already has an account. I have marked them.', ISO(2, 12)),
+  );
+  deliveries.push(delivered('m-atlas-1', 'c1', ISO(2, 11)));
+
+  // orion: Noah stepped in. The old anchor is superseded and what it was still
+  // holding was dropped, which is the pair of states nothing had produced.
+  const orion = room(paths.orion);
+  threads.push(
+    { id: 't-orion-old', roomId: orion, anchorMessageId: 'm-orion-1', state: 'superseded', round: 1, agentMessageCount: 2, openedAt: ISO(0, 13) },
+    { id: 't-orion-new', roomId: orion, anchorMessageId: 'm-orion-4', state: 'open', round: 1, agentMessageCount: 0, openedAt: ISO(0, 16) },
+  );
+  messages.push(
+    msg('m-orion-1', orion, 't-orion-old', 'human', 'human', 'Noah', 'Pick the cache strategy for the feed and tell me which one you took.', ISO(0, 13), ['c4', 'c5']),
+    msg('m-orion-2', orion, 't-orion-old', 'agent', 'c4', 'Orion Lead', 'I would cache per user, since the feed differs for everyone who reads it.', ISO(0, 14), ['c5']),
+    msg('m-orion-3', orion, 't-orion-old', 'agent', 'c5', 'Orion Second', 'Per user multiplies the store by the user count. I would cache the parts instead.', ISO(0, 15), ['c4']),
+    msg('m-orion-4', orion, 't-orion-new', 'human', 'human', 'Noah', 'Stop there, both of you. Cache the parts, and measure it before you tune it.', ISO(0, 16), ['c4', 'c5']),
+  );
+  deliveries.push(
+    delivered('m-orion-2', 'c5', ISO(0, 14)),
+    {
+      messageId: 'm-orion-3', targetAgentId: 'c4', state: 'dropped', queuedAt: ISO(0, 15), refusedAt: ISO(0, 16),
+      reasonCode: 'thread_replaced', reason: 'a newer message from Noah replaced the exchange this was queued for',
+    },
+    { messageId: 'm-orion-4', targetAgentId: 'c4', state: 'queued', queuedAt: ISO(0, 16) },
+    { messageId: 'm-orion-4', targetAgentId: 'c5', state: 'queued', queuedAt: ISO(0, 16) },
+  );
+
+  return {
+    savedAt: ISO(0, 16),
+    // mercury keeps its room and loses its members, which is the only way to
+    // reach the empty room: the room exists because an agent names the project.
+    memberOverrides: { [room(paths.mercury)]: [] },
+    threads,
+    messages,
+    deliveries,
+  };
+}
+
+/**
  * Shaped like the records Claude Code writes, the ones the reader drops
  * included: an attachment, an empty thinking block, a tool answer that went
  * fine and one that failed.
@@ -147,11 +274,19 @@ function historyTranscript(cwd) {
  * `panelHistory` is for e2e/panel-history.spec.ts alone: auto start off, and a
  * transcript on disk for the Orchestrator. Every other suite seeds without it.
  */
-export function seedSandbox(home, { panelHistory = false } = {}) {
+export function seedSandbox(home, { panelHistory = false, chatRooms = false } = {}) {
   PROJECT = path.join(home, REL_PROJECT);
   SECOND = path.join(home, REL_SECOND);
   const dir = path.join(home, '.dorothy');
   fs.mkdirSync(dir, { recursive: true });
+
+  const chatPaths = {
+    tars: PROJECT,
+    capital: SECOND,
+    atlas: path.join(home, REL_ATLAS),
+    mercury: path.join(home, REL_MERCURY),
+    orion: path.join(home, REL_ORION),
+  };
 
   const agents = AGENTS.map(a => ({
     ...a,
@@ -161,6 +296,12 @@ export function seedSandbox(home, { panelHistory = false } = {}) {
     // so it is exactly what a panel reads right after a restart.
     ...(panelHistory && a.id === 'a1' ? { resumableSessionId: HISTORY_SESSION } : {}),
   }));
+  if (chatRooms) {
+    for (const a of CHAT_AGENTS) {
+      const { rel, ...rest } = a;
+      agents.push({ ...rest, projectPath: path.join(home, rel) });
+    }
+  }
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents, null, 2));
   fs.writeFileSync(path.join(dir, 'kanban-tasks.json'), JSON.stringify(KANBAN, null, 2));
   fs.writeFileSync(
@@ -176,6 +317,23 @@ export function seedSandbox(home, { panelHistory = false } = {}) {
   for (const dir of [PROJECT, SECOND]) fs.mkdirSync(dir, { recursive: true });
   for (const branch of ['feat/frontend', 'feat/backend']) {
     fs.mkdirSync(path.join(PROJECT, '.worktrees', branch), { recursive: true });
+  }
+
+  if (chatRooms) {
+    for (const p of [chatPaths.atlas, chatPaths.mercury, chatPaths.orion]) fs.mkdirSync(p, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'projects.json'),
+      JSON.stringify([
+        { path: PROJECT, name: 'tars' }, { path: SECOND, name: '1212-capital' },
+        { path: chatPaths.atlas, name: 'atlas' }, { path: chatPaths.mercury, name: 'mercury' },
+        { path: chatPaths.orion, name: 'orion' },
+      ], null, 2),
+    );
+    fs.writeFileSync(path.join(dir, 'bus.json'), JSON.stringify(chatJournal(chatPaths), null, 2));
+    // Nothing starts, so the statuses on screen are the ones seeded above:
+    // `all stopped` is a room whose agents are idle, and autostart would run
+    // every one of them as a real CLI and make that frame impossible.
+    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }, null, 2));
   }
 
   if (panelHistory) {

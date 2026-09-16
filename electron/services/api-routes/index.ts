@@ -8,8 +8,10 @@ import { registerKanbanRoutes } from './kanban-routes';
 import { registerVaultRoutes } from './vault-routes';
 import { registerMemoryRoutes } from './memory-routes';
 import { registerWebhookRoutes } from './webhook-routes';
+import { registerBusRoutes } from './bus-routes';
 
 export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
+  registerBusRoutes(app);
   registerHealthRoutes(app, ctx);
   registerHooksRoutes(app, ctx);
   registerAgentRoutes(app, ctx);

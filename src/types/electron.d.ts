@@ -559,6 +559,109 @@ export type AgentTranscript =
       nextCursor?: string;
     };
 
+/* ── The agent bus ─────────────────────────────────────────────────────────
+ * Mirror of electron/types/index.ts. The Chat page reads these and never
+ * invents a channel: both sides move in the same commit.
+ */
+export type BusRoomKind = 'global' | 'project';
+
+export interface BusRoom {
+  /** `global`, or `project:<project path>`. */
+  id: string;
+  kind: BusRoomKind;
+  projectPath?: string;
+  title: string;
+  memberIds: string[];
+  createdAt: string;
+  /** The newest message in this room, for sorting the conversation list and
+   *  showing a line under each. Absent on the global room, whose history is
+   *  the overseer's own conversation and is not in this journal. */
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
+}
+
+/** `open` is live; `bounded` hit three rounds or ten agent messages and only a
+ *  human message reopens it; `stopped` was stopped by hand; `superseded` was
+ *  closed by a newer human message or by a change of members. */
+export type BusThreadState = 'open' | 'bounded' | 'stopped' | 'superseded';
+
+export interface BusThread {
+  id: string;
+  roomId: string;
+  anchorMessageId: string;
+  state: BusThreadState;
+  round: number;
+  agentMessageCount: number;
+  openedAt: string;
+}
+
+export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
+
+/** What a machine line is about, so the page can draw each as its own row
+ *  instead of collapsing them into one grey line. There is no `passed`: a
+ *  silence is refused before anything is stored, so it has no row. */
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+
+export interface BusMessage {
+  id: string;
+  roomId: string;
+  threadId: string;
+  authorKind: BusMessageAuthorKind;
+  authorId: string;
+  authorName: string;
+  text: string;
+  mentions: string[];
+  /** Set only when `authorKind` is `system`. */
+  systemKind?: BusSystemKind;
+  createdAt: string;
+}
+
+/** `not_sent` is the state to render as NOT SENT: the target has no end of
+ *  turn, so nothing is queued and nothing leaves on its own. It carries its
+ *  reason and moves only on an explicit human action. */
+export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
+
+/** Why a delivery is not going anywhere, as a value the Chat page can render
+ *  without matching on English. The sentence in `reason` is for a human.
+ *  `no_end_of_turn` names the five providers that never leave `running`. */
+export type BusDeliveryReason =
+  | 'no_end_of_turn'
+  | 'no_live_session'
+  | 'session_replaced'
+  | 'thread_stopped'
+  | 'thread_replaced'
+  | 'members_changed';
+
+export interface BusDelivery {
+  messageId: string;
+  targetAgentId: string;
+  state: BusDeliveryState;
+  reasonCode?: BusDeliveryReason;
+  reason?: string;
+  queuedAt: string;
+  deliveredAt?: string;
+  /** When it stopped being on its way: set with `dropped` and `not_sent`. */
+  refusedAt?: string;
+}
+
+/** A member of a room, reachability included. `hasEndOfTurn` is derived in the
+ *  main process from the provider's hook configuration: do not keep a copy of
+ *  which CLIs cannot be reached, it goes stale silently. */
+export interface BusMember {
+  id: string;
+  name: string;
+  provider?: string;
+  hasEndOfTurn: boolean;
+}
+
+export interface BusRoomSnapshot {
+  room: BusRoom;
+  members: BusMember[];
+  threads: BusThread[];
+  messages: BusMessage[];
+  deliveries: BusDelivery[];
+}
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -1192,6 +1295,55 @@ export interface ElectronAPI {
   };
 
   // Kanban board
+  /** The agent bus. Mirror of the `bus` namespace in electron/preload.ts:
+   *  five calls, and three pushes so the Chat page never polls. */
+  bus?: {
+    listRooms: () => Promise<{ rooms: BusRoom[]; error?: string }>;
+    getRoom: (
+      roomId: string,
+      params?: { limit?: number; before?: string },
+    ) => Promise<{
+      success: boolean;
+      room?: BusRoom;
+      members?: BusMember[];
+      threads?: BusThread[];
+      messages?: BusMessage[];
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
+    postMessage: (params: { roomId: string; text: string; mentions?: string[] }) => Promise<{
+      success: boolean;
+      messageId?: string;
+      threadId?: string;
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
+    stopThread: (threadId: string) => Promise<{ success: boolean; thread?: BusThread; error?: string }>;
+    setMembers: (
+      roomId: string,
+      memberIds: string[],
+    ) => Promise<{ success: boolean; room?: BusRoom; error?: string }>;
+    /** Send what is held for an agent that has no end of turn, oldest first.
+     *  A human decision: it writes into a session whose state Tars does not
+     *  know, which is why nothing does it automatically.
+     *
+     *  Two things to know before calling it. It writes into whatever session
+     *  is live at the moment of the call, not the one the messages were held
+     *  for: an agent killed and relaunched since the button was drawn still
+     *  receives them, because a person aiming at an agent means the agent and
+     *  not a session id. And one release runs at a time per agent: a second
+     *  call while one is in flight is refused with a reason rather than
+     *  queued, since both would write into the same terminal at once. */
+    releaseNotSent: (agentId: string) => Promise<{
+      success: boolean;
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
+    onMessage: (callback: (message: BusMessage) => void) => () => void;
+    onDelivery: (callback: (delivery: BusDelivery) => void) => () => void;
+    onThread: (callback: (thread: BusThread) => void) => () => void;
+  };
+
   kanban?: {
     list: () => Promise<{ tasks: KanbanTaskElectron[]; error?: string }>;
     get: (id: string) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
