@@ -570,8 +570,8 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 
 | Route | Name | What it is | Frame |
 |---|---|---|---|
-| `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown | `Dashboard · dark` / `· light` |
-| `/agents` | Agents | Roster with per-project filter tabs, sort by created/status/activity/name, management card per agent | `Agents · dark` |
+| `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown. A pane in error shows the reason in its header | `Dashboard · dark` / `· light`, `Agent error · reason` |
+| `/agents` | Agents | Roster with per-project filter tabs, sort by created/status/activity/name, management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agent error · reason` |
 | `/projects` | Projects | Project registry (backed by `~/.dorothy/projects.json`), file browser, per-project agent view. 1153 lines | `Projects · dark` |
 | `/kanban` | Kanban | Two sources: the Hermes board (default, Hermes owns the task harness) and the local `kanban-tasks.json` board. Choice persisted in `localStorage` | `Kanban · dark` |
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |

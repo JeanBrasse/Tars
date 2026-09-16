@@ -13,13 +13,13 @@ export function useElectronAgents() {
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Mirror of `agents.length`, readable from event callbacks without making
-  // them depend on the current state. Kept in sync after every commit so the
-  // agents:tick handler can compare counts *outside* of a setState updater
-  // (see the comment on onTick below).
-  const agentCountRef = useRef(0);
+  // Mirror of `agents`, readable from event callbacks without making them
+  // depend on the current state. Kept in sync after every commit so the
+  // agents:tick handler can compare *outside* of a setState updater (see the
+  // comment on onTick below).
+  const agentsRef = useRef<AgentStatus[]>([]);
   useEffect(() => {
-    agentCountRef.current = agents.length;
+    agentsRef.current = agents;
   });
 
   // Fetch all agents
@@ -42,7 +42,8 @@ export function useElectronAgents() {
             prevAgent.id !== agent.id ||
             prevAgent.status !== agent.status ||
             prevAgent.currentTask !== agent.currentTask ||
-            prevAgent.lastActivity !== agent.lastActivity
+            prevAgent.lastActivity !== agent.lastActivity ||
+            prevAgent.error !== agent.error
           );
         });
         return hasChanged ? list : prev;
@@ -164,6 +165,14 @@ export function useElectronAgents() {
     });
 
     const unsubStatus = window.electronAPI!.agent.onStatus?.((event: { agentId: string; status: string; timestamp: string }) => {
+      // Neither this event nor the tick says why an agent is in error: the
+      // reason is only on the full record. Patching the status alone put
+      // `error` beside whatever reason this copy last read, which is nothing
+      // for a first failure and the previous failure's sentence for a second.
+      if (event.status === 'error') {
+        fetchAgents();
+        return;
+      }
       setAgents(prev => prev.map(a =>
         a.id === event.agentId
           ? { ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString() }
@@ -182,7 +191,19 @@ export function useElectronAgents() {
       // fire several duplicate `agent:list` IPC round trips. The count is
       // therefore read from a ref, outside the updater, and the updater below
       // stays a pure function of `prev`.
-      if (agentCountRef.current !== tickAgents.length) {
+      const known = agentsRef.current;
+      if (known.length !== tickAgents.length) {
+        fetchAgents();
+        return;
+      }
+      // An agent that has just entered error is read again rather than
+      // patched, for the reason given on onStatus above. The watches that
+      // mark a task that never started only send this tick, not a status
+      // event, so the check has to be here as well.
+      const enteredError = tickAgents.some(t =>
+        t.status === 'error' && known.find(a => a.id === t.id)?.status !== 'error',
+      );
+      if (enteredError) {
         fetchAgents();
         return;
       }
