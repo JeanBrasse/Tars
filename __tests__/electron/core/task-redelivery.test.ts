@@ -260,4 +260,48 @@ describe('the cases where typing into the terminal would be wrong', () => {
     expect(retyped()).toHaveLength(0);
     expect(agent.status).toBe('error');
   });
+
+});
+
+/**
+ * F3: the task did arrive, and nothing ever says so.
+ *
+ * The audit found that armTaskStartWatch clears `currentSessionId` on every
+ * path, while only the API spawn drops the previous session itself. The five
+ * other paths reuse a live PTY, so an agent can be left with no session owner
+ * while its session is running, and ownership goes to whoever posts first.
+ *
+ * Put that beside the delivery check and a case falls out that nobody
+ * dispatched badly: the task reached the CLI on the command line, the CLI is
+ * working on it, and the one post that would say so never arrives, because the
+ * hooks are not installed, or `jq` is missing, or the API refused it. From
+ * Tars's side that is indistinguishable from a task that never landed.
+ *
+ * Written as observed rather than as it ought to be, and reported rather than
+ * repaired here: this is a permanent outcome for a misconfigured agent, on
+ * every dispatch, not a rare race.
+ */
+describe('F3: the task arrived and no hook ever reports it', () => {
+  it('types the task in a second time, although the CLI already has it', async () => {
+    const agent = liveAgent();
+
+    // The dispatch went out on the command line and the CLI took it. What is
+    // missing is only the UserPromptSubmit post.
+    await afterRegistration(PAST_THE_TURN_BOUND);
+
+    expect(retyped()).toHaveLength(1);
+    expect(retyped()[0][1]).toBe(TASK);
+    // The whole of what Tars can see: no turn was ever reported.
+    expect(agent.lastTurnStartedAt).toBeUndefined();
+  });
+
+  it('marks the agent broken while its session is working', async () => {
+    const agent = liveAgent();
+
+    await afterRegistration(PAST_EVERYTHING);
+
+    expect(agent.status).toBe('error');
+    expect(agent.error).toMatch(/sent twice|never took the task/i);
+    expect(agent.lastTurnStartedAt).toBeUndefined();
+  });
 });
