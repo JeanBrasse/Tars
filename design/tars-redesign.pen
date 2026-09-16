@@ -5949,6 +5949,17 @@
                           "fontFamily": "$font-ui",
                           "fontSize": 12.5,
                           "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "U35Yi",
+                          "name": "Reserve",
+                          "fill": "#E8C547",
+                          "content": "3 transcripts could not be read. These figures cover everything else.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -68908,6 +68919,17 @@
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "WO4sm",
+                          "name": "Reserve",
+                          "fill": "#9A6700",
+                          "content": "3 transcripts could not be read. These figures cover everything else.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
                           "fontWeight": "normal"
                         }
                       ]

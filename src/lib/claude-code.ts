@@ -72,6 +72,17 @@ export interface ClaudeSettings {
 export interface ClaudeStats {
   version: number;
   lastComputedDate: string;
+  /**
+   * How many transcripts the main process could not read on the pass that
+   * produced these figures, and which therefore contributed nothing.
+   *
+   * Set alongside the numbers it qualifies, in `getClaudeStats`. A transcript
+   * that fails to open used to be skipped in silence, which surfaces as a
+   * smaller bill rather than as a gap: the one error that looks like good news.
+   * When this is not zero the figures are correct for what was read and lower
+   * than the truth, and the page has to say so.
+   */
+  unreadable?: number;
   dailyActivity: Array<{
     date: string;
     messageCount: number;

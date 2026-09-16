@@ -89,7 +89,16 @@ export function useClaude() {
                 return prevP?.id !== p.id || prevP?.sessions.length !== (p.sessions || []).length;
               }) &&
               // Check if rateLimits changed
-              JSON.stringify(prev.rateLimits) === JSON.stringify(rateLimits);
+              JSON.stringify(prev.rateLimits) === JSON.stringify(rateLimits) &&
+              // And the figures themselves. Without this the poll kept the
+              // first stats it ever saw for as long as no project or session
+              // count moved, so a cost that grew, or a transcript that stopped
+              // being readable, never reached the page. Compared on the two
+              // fields the Usage page actually reads rather than the whole
+              // object, which carries a per-day array that is expensive to
+              // stringify every ten seconds.
+              prev.stats?.lastComputedDate === (result.stats as ClaudeStats | null)?.lastComputedDate &&
+              prev.stats?.unreadable === (result.stats as ClaudeStats | null)?.unreadable;
             // No significant changes
             if (unchanged) return prev;
 
