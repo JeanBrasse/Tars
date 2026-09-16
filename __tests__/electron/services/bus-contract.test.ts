@@ -30,15 +30,20 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
   };
 });
 
+/** The IPC handlers registerBusHandlers installs, by channel, so a test can call one as the window does. */
+const ipcHandlers = new Map<string, (...args: unknown[]) => unknown>();
+
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('electron', () => ({
   app: { getPath: () => tmp, getAppPath: () => process.cwd() },
   BrowserWindow: { getAllWindows: () => [] },
+  ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => { ipcHandlers.set(channel, handler); } },
 }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 type AgentStatus = import('../../../electron/types').AgentStatus;
 type BusThread = import('../../../electron/types').BusThread;
+type BusDelivery = import('../../../electron/types').BusDelivery;
 
 let store: typeof import('../../../electron/services/bus-store');
 let delivery: typeof import('../../../electron/services/bus-delivery');
@@ -46,6 +51,7 @@ let watch: typeof import('../../../electron/services/agent-watch');
 let manager: typeof import('../../../electron/core/agent-manager');
 let ptyManager: typeof import('../../../electron/core/pty-manager');
 let events: typeof import('../../../electron/services/agent-events');
+let broadcast: typeof import('../../../electron/utils/broadcast');
 
 const ROOM = 'project:/tars';
 
@@ -106,6 +112,7 @@ beforeEach(async () => {
   watch = await import('../../../electron/services/agent-watch');
   store = await import('../../../electron/services/bus-store');
   delivery = await import('../../../electron/services/bus-delivery');
+  broadcast = await import('../../../electron/utils/broadcast');
   manager.agents.clear();
   ptyManager.ptyProcesses.clear();
   store.resetBusStore();
@@ -115,6 +122,12 @@ beforeEach(async () => {
   fs.rmSync(path.join(tmp, 'bus.json'), { force: true });
   watch.resetAgentWatch();
   watch.startAgentWatch();
+  // Wired as the app wires it, by the app's own function. Without the hook a
+  // row can never become `delivered` here, so every test would agree with a
+  // row stuck at `queued`, which is exactly how that went unseen.
+  ipcHandlers.clear();
+  const { registerBusHandlers } = await import('../../../electron/handlers/bus-handlers');
+  registerBusHandlers();
 });
 
 afterEach(() => {
@@ -244,7 +257,7 @@ describe('a provider with no end of turn', () => {
     expect(terminals.flatMap(t => t.written)).toHaveLength(0);
   });
 
-  it('queues for a provider that does have one, which is the same call', () => {
+  it('queues for a provider that does have one, which is the same call, and one at rest takes it at once', () => {
     const terminal = attachTerminal('pty-cl');
     putAgent({ id: 'writer', status: 'running' });
     putAgent({ id: 'cl', provider: 'claude', status: 'idle', ptyId: 'pty-cl' });
@@ -252,7 +265,9 @@ describe('a provider with no end of turn', () => {
 
     const deliveries = delivery.fanOutDeliveries(message, room());
 
-    expect(deliveries[0]).toMatchObject({ targetAgentId: 'cl', state: 'queued' });
+    // Written into the terminal, so delivered. This read `queued` beside a
+    // terminal that had just received the message, and passed.
+    expect(deliveries[0]).toMatchObject({ targetAgentId: 'cl', state: 'delivered' });
     expect(terminal.written.join('')).toContain('anyone there?');
   });
 
@@ -301,7 +316,100 @@ describe('the session barrier', () => {
     events.emitAgentStatus('busy');
 
     expect(terminal.written.join('')).toContain('for you when you are free');
-    expect(store.deliveriesOf(message.id)[0].state).toBe('queued');
+    expect(store.deliveriesOf(message.id)[0].state).toBe('delivered');
+  });
+});
+
+/**
+ * A delivery row says what reached the terminal.
+ *
+ * Measured in a sandbox on 2026-09-16, two Claude agents: five delivery rows
+ * out of seven were wrong. Every message handed to an agent at rest stayed
+ * `queued`, then turned `dropped` when Noah wrote again, on messages the
+ * transcripts show were received 0.3 s after publication and answered. The
+ * queue wrote into a free terminal before fanOutDeliveries recorded the row,
+ * so the mark that says delivered found no row to mark.
+ *
+ * Driven through the bus:postMessage handler the Chat page calls, with the
+ * hooks registerBusHandlers wires. What the window is told is read as it was
+ * sent: the pushes carry the journal's own objects, and reading them afterwards
+ * would show their state now, which can only ever agree with the journal.
+ */
+describe('a delivery row says what reached the terminal', () => {
+  let pushed: Array<{ messageId: string; targetAgentId: string; state: string }>;
+
+  beforeEach(() => {
+    pushed = [];
+    vi.mocked(broadcast.broadcastToAllWindows).mockImplementation((channel: string, payload: unknown) => {
+      if (channel !== 'bus:delivery') return;
+      const { messageId, targetAgentId, state } = payload as BusDelivery;
+      pushed.push({ messageId, targetAgentId, state });
+    });
+  });
+
+  async function noahWrites(text: string, mentions: string[]): Promise<{ messageId: string; deliveries: BusDelivery[] }> {
+    const post = ipcHandlers.get('bus:postMessage');
+    if (!post) throw new Error('registerBusHandlers installed no bus:postMessage');
+    const result = await post(null, { roomId: ROOM, text, mentions }) as
+      { success: boolean; error?: string; messageId: string; deliveries: BusDelivery[] };
+    expect(result.success, result.error).toBe(true);
+    return result;
+  }
+
+  /** The last state the window was told for this row. */
+  const shown = (messageId: string, targetAgentId: string) =>
+    pushed.filter(p => p.messageId === messageId && p.targetAgentId === targetAgentId).at(-1)?.state;
+
+  it('is delivered for an agent at rest, which takes the message at once, and stays so when Noah writes again', async () => {
+    const terminal = attachTerminal('pty-rest');
+    putAgent({ id: 'rest', status: 'idle', ptyId: 'pty-rest' });
+
+    const first = await noahWrites('are you there?', ['rest']);
+
+    expect(terminal.written.join('')).toContain('are you there?');
+    expect(store.deliveriesOf(first.messageId)[0].state).toBe('delivered');
+    expect(first.deliveries[0].state).toBe('delivered');
+    expect(shown(first.messageId, 'rest')).toBe('delivered');
+
+    // What put DROPPED on screen: writing again closes the previous thread,
+    // and closing a thread drops whatever it still has queued.
+    await noahWrites('something else now', ['rest']);
+
+    expect(store.deliveriesOf(first.messageId)[0].state).toBe('delivered');
+    expect(shown(first.messageId, 'rest')).toBe('delivered');
+  });
+
+  it('is queued while an agent is at work, delivered when its turn ends, and stays so when Noah writes again', async () => {
+    const terminal = attachTerminal('pty-busy');
+    const agent = putAgent({ id: 'busy', status: 'running', ptyId: 'pty-busy' });
+
+    const first = await noahWrites('when you are free', ['busy']);
+
+    expect(terminal.written).toHaveLength(0);
+    expect(store.deliveriesOf(first.messageId)[0].state).toBe('queued');
+    expect(shown(first.messageId, 'busy')).toBe('queued');
+
+    agent.status = 'idle';
+    events.emitAgentStatus('busy');
+
+    expect(terminal.written.join('')).toContain('when you are free');
+    expect(store.deliveriesOf(first.messageId)[0].state).toBe('delivered');
+    expect(shown(first.messageId, 'busy')).toBe('delivered');
+
+    await noahWrites('something else now', ['busy']);
+
+    expect(store.deliveriesOf(first.messageId)[0].state).toBe('delivered');
+  });
+
+  it('is still dropped when what was queued never went out', async () => {
+    attachTerminal('pty-busy');
+    putAgent({ id: 'busy', status: 'running', ptyId: 'pty-busy' });
+
+    const first = await noahWrites('when you are free', ['busy']);
+    await noahWrites('never mind, this instead', ['busy']);
+
+    expect(store.deliveriesOf(first.messageId)[0]).toMatchObject({ state: 'dropped', reasonCode: 'thread_replaced' });
+    expect(shown(first.messageId, 'busy')).toBe('dropped');
   });
 });
 
