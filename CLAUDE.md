@@ -55,7 +55,7 @@
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
-| `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh` / `on-stop.sh` own the status lifecycle |
+| `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
 
 ## Environment Variables
 

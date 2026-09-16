@@ -658,6 +658,11 @@ export function noteSessionRegistered(agent: AgentStatus): void {
 export function noteTurnStarted(agent: AgentStatus): void {
   agent.lastTurnStartedAt = new Date().toISOString();
   agent.pendingDelivery = undefined;
+  // Whatever stopped the last turn is not what this agent is doing now. Kept,
+  // it would be shown again the next time the agent lands in `error` for a
+  // reason that carries no text of its own, such as its process exiting: a
+  // login that was fixed an hour ago offered as the cause of a crash.
+  agent.error = undefined;
 }
 
 /**

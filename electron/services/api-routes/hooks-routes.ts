@@ -72,6 +72,27 @@ function isStaleSessionPost(agent: AgentStatus, sessionId?: string): boolean {
   return !!owner && id !== owner;
 }
 
+/** Long enough for any message the CLI writes in place of an answer, and short
+ *  enough for the notification and the card that show it. */
+const TURN_FAILURE_TEXT_MAX = 500;
+
+/**
+ * What to tell Noah about a turn that failed: the CLI's own words.
+ *
+ * Verbatim, because they are what he needs and what he could not see. The
+ * night this was found, every terminal read "Not logged in · Please run
+ * /login" while Tars reported the agents as working. A paraphrase would put
+ * Tars between him and the one sentence that said what to do.
+ */
+function describeTurnFailure(message: string | undefined, kind: string | undefined): string {
+  const text = message?.trim();
+  if (text) return text.slice(0, TURN_FAILURE_TEXT_MAX);
+  const name = kind?.trim();
+  return name
+    ? `The turn stopped on an error the CLI reported as ${name.slice(0, 80)}, with no message.`
+    : 'The turn stopped on an error the CLI did not describe.';
+}
+
 export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/hooks/output: capture clean text output from agent transcript
   app.post('/api/hooks/output', (req, sendJson) => {
@@ -104,15 +125,21 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
   // POST /api/hooks/status
   app.post('/api/hooks/status', (req, sendJson) => {
-    const { agent_id, session_id, status, source, event, waiting_reason, current_task } = req.body as {
+    const {
+      agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message,
+    } = req.body as {
       agent_id: string;
       session_id: string;
-      status: 'running' | 'waiting' | 'idle' | 'completed';
+      status: 'running' | 'waiting' | 'idle' | 'completed' | 'error';
       source?: string;
       event?: string;
       reason?: string;
       waiting_reason?: string;
       current_task?: string;
+      /** StopFailure only: the CLI's name for what failed, e.g. authentication_failed. */
+      error_kind?: string;
+      /** StopFailure only: what the CLI wrote in the terminal instead of an answer. */
+      error_message?: string;
     };
 
     console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
@@ -208,7 +235,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       agent.status = 'running';
       agent.waitingReason = undefined;
       if (current_task) agent.currentTask = current_task;
-    } else if (status === 'waiting' && agent.status !== 'waiting') {
+    } else if (status === 'waiting' && agent.status !== 'waiting' && agent.status !== 'error') {
+      // An agent whose turn failed stays in error until a new turn starts.
+      // Claude Code sends idle_prompt about sixty seconds after StopFailure,
+      // as a `waiting` post, and without this guard it replaced the error:
+      // an agent left alone, the very case the error exists for, stopped
+      // showing why it had stopped. Only `running` clears it.
       agent.status = 'waiting';
       agent.waitingReason = waiting_reason;
     } else if (status === 'idle') {
@@ -217,6 +249,23 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     } else if (status === 'completed') {
       agent.status = 'completed';
       agent.waitingReason = undefined;
+    } else if (status === 'error') {
+      // The turn ended on an error the CLI reported itself, through StopFailure.
+      // Without this the agent stayed `running` for good: the process lives on
+      // at its prompt, so nothing exits, and a turn did begin, so nothing that
+      // watches for one ever fires. See hooks/stop-failure.sh for the
+      // measurement.
+      //
+      // This is not a watch on a quiet agent, and must not become one. Nothing
+      // here is timed and nothing is inferred from silence: an agent that works
+      // slowly never sends this, and one whose turn failed always does.
+      agent.status = 'error';
+      agent.waitingReason = undefined;
+      agent.error = describeTurnFailure(error_message, error_kind);
+      // The turn happened and failed. A delivery still pending would be typed in
+      // again fifteen seconds later, into a CLI that cannot run it, and its own
+      // verdict would then replace the reason the CLI gave.
+      agent.pendingDelivery = undefined;
     }
 
     agent.lastActivity = new Date().toISOString();
