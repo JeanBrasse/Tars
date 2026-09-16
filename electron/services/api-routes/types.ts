@@ -27,6 +27,14 @@ export interface RouteRequest {
   raw: http.IncomingMessage;
   res: http.ServerResponse;
   params: Record<string, string>;
+  /**
+   * The agent this call comes from: the one its bearer token was minted for,
+   * resolved once by the server before any route sees the request. Undefined
+   * on the shared token, whoever presents it: the super chat, the shell hooks,
+   * Hermes, or a process that read the file. Never set from a header: the
+   * header is the claim this field exists to check.
+   */
+  callerAgentId?: string;
 }
 
 export type SendJson = (data: unknown, status?: number) => void;
