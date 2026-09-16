@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.7.2',
     date: '2026-09-16',
     updates: [
-      'An agent can no longer pass itself off as another. Every agent used to prove only that it was running on this machine, and then said which agent it was, so one agent could claim to be a teammate and read that teammate\'s project conversation, or post in it under the teammate\'s name. Each agent now carries a secret of its own from the moment Tars starts it, and Tars believes that rather than the name it gives. Agents started before this update keep working, and each time one of them still introduces itself the old way Tars writes it down, so that old way can be removed once nothing uses it',
+      'An agent can no longer pass itself off as another just by giving a teammate\'s name. Every agent used to prove only that it was running on this machine, and then said which agent it was, so one agent could name a teammate and read that teammate\'s project conversation, or post in it under the teammate\'s name. Each agent now receives a secret of its own when Tars starts it, and so does a task delegated to it, and Tars goes by that secret rather than by any name. A call that only knows the secret shared by the whole machine is no agent at all, and enters no conversation. This stops impersonation by name, not every way in: agents run with your permissions, so an agent set on it can still read what you can',
     ],
   },
   {
