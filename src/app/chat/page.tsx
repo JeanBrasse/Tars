@@ -121,7 +121,7 @@ function PendingTurn({ startedAt }: { startedAt: number }) {
  */
 function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React.ReactNode) => void }) {
   const router = useRouter();
-  const { snapshot, loading, error, post, stopThread } = useBusRoom(roomId);
+  const { snapshot, loading, error, post, stopThread, releaseHeld } = useBusRoom(roomId);
   const agents = useRoomAgents(snapshot.members);
   const pending = useMemo(() => {
     const per: Record<string, { queued: number; notSent: number }> = {};
@@ -202,8 +202,7 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
         // there rather than opening a second one here.
         onOpen={() => router.push('/')}
         onStop={agent => { void window.electronAPI?.agent?.stop?.(agent.id); }}
-        // Disabled in the rail itself: the bus has no release call yet.
-        onSend={() => {}}
+        onSend={agent => { void releaseHeld(agent.id); }}
         onAdd={() => router.push('/agents')}
       />
     </>

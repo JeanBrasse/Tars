@@ -117,19 +117,16 @@ export function TeamRail({
                   )}
                   <div className="flex items-center gap-2 pt-[5px]">
                     <Button size="sm" className="font-mono" onClick={() => onOpen(agent)}>open</Button>
-                    {/* The send that would empty what is held for an agent with
-                        no turn signal, oldest first. Disabled because the bus
-                        exposes no call for it: listRooms, getRoom, postMessage,
-                        stopThread and setMembers are the whole surface. It is
-                        drawn anyway, with the reason, because a held message
-                        the page never mentions is the omission this page exists
-                        to stop. */}
+                    {/* Empties what is held for an agent whose CLI reports no
+                        turn end, oldest first. It was drawn disabled while the
+                        bus had no call for it; `releaseNotSent` exists now, so
+                        the button does what it says instead of explaining why
+                        it cannot. */}
                     {waiting.notSent > 0 && (
                       <Button
                         size="sm"
                         className="font-mono"
-                        disabled
-                        title="Releasing a held message is not in this version: the bus has no call for it yet."
+                        title={`Send the ${waiting.notSent === 1 ? 'message' : `${waiting.notSent} messages`} held for this agent, oldest first.`}
                         onClick={() => onSend(agent)}
                       >
                         send

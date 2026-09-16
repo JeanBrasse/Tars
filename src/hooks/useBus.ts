@@ -167,6 +167,23 @@ export function useBusRoom(roomId: string | null) {
     return r ?? { success: false, error: 'The bus did not answer.' };
   }, []);
 
+  // What is held for an agent whose CLI reports no turn end, sent on your word,
+  // oldest first. The deliveries come back from the call the way they do from
+  // `post`, so the receipts change under the message you are looking at rather
+  // than on the next refresh.
+  const releaseHeld = useCallback(async (agentId: string) => {
+    if (!hasBus()) return { success: false, error: 'The bus is not available.' };
+    const r = await window.electronAPI!.bus!.releaseNotSent(agentId);
+    if (r?.success && r.deliveries?.length) {
+      const fresh = r.deliveries;
+      setSnapshot(prev => {
+        const keys = new Set(fresh.map(deliveryKey));
+        return { ...prev, deliveries: [...prev.deliveries.filter(d => !keys.has(deliveryKey(d))), ...fresh] };
+      });
+    }
+    return r ?? { success: false, error: 'The bus did not answer.' };
+  }, []);
+
   const setMembers = useCallback(async (memberIds: string[]) => {
     if (!roomId || !hasBus()) return { success: false, error: 'The bus is not available.' };
     const r = await window.electronAPI!.bus!.setMembers(roomId, memberIds);
@@ -176,5 +193,5 @@ export function useBusRoom(roomId: string | null) {
     return r ?? { success: false, error: 'The bus did not answer.' };
   }, [roomId, reload]);
 
-  return { snapshot, loading, error, reload, post, stopThread, setMembers };
+  return { snapshot, loading, error, reload, post, stopThread, setMembers, releaseHeld };
 }
