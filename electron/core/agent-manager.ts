@@ -13,6 +13,7 @@ import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
+import { carriedByTrim } from '../utils/terminal-modes';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
@@ -246,11 +247,16 @@ const OUTPUT_RETAIN = 400;
  *
  * Five PTY handlers pushed into agent.output and none of them capped it, so a
  * chatty CLI grew that array for the life of the app, once per agent.
+ *
+ * What is trimmed goes on counting for the replay: the modes it left set, the
+ * alternate screen and the mouse request first of all, come back as the first
+ * chunk. See terminal-modes.ts.
  */
 export function appendAgentOutput(agent: AgentStatus, chunk: string): void {
   agent.output.push(chunk);
   if (agent.output.length > OUTPUT_CHUNK_CAP) {
-    agent.output.splice(0, agent.output.length - OUTPUT_RETAIN);
+    const carried = carriedByTrim(agent.output.splice(0, agent.output.length - OUTPUT_RETAIN));
+    if (carried) agent.output.unshift(carried);
   }
   markAgentsDirty();
 }

@@ -82,6 +82,14 @@ import type { AgentStatus, AppSettings } from '../../../electron/types';
  */
 const FOREIGN_BINARIES = ['amp', 'codex', 'gemini', 'grok', 'opencode', 'pi'];
 
+/**
+ * What a CLI running the claude binary is given, written out rather than read
+ * from managedCliEnv for the same reason as the list above. The mouse clicks
+ * variable is there because a Tars terminal passes Claude Code the wheel and
+ * never a click: without it Claude's hint offers a click that does nothing.
+ */
+const CLAUDE_MANAGED_ENV = { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };
+
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-managed-env-'));
 
 function agent(overrides: Partial<AgentStatus>): AgentStatus {
@@ -166,7 +174,7 @@ describe('which CLIs the variable is for', () => {
     for (const provider of getAllProviders()) {
       const vars = managedCliEnv(provider.binaryName);
       if (provider.binaryName === 'claude') {
-        expect(vars, `${provider.id} runs claude and must have it`).toEqual({ DISABLE_AUTOUPDATER: '1' });
+        expect(vars, `${provider.id} runs claude and must have it`).toEqual(CLAUDE_MANAGED_ENV);
         claudeFamily.push(provider.id);
       } else {
         // Setting it on a binary that never reads it would only look like
@@ -196,7 +204,7 @@ describe('which CLIs the variable is for', () => {
   it("follows the registry's own fallback, so 'local' is covered too", () => {
     // `local` is a claude sub-mode: getProvider falls back to claude for it and
     // for any unknown id, and this reads the same binaryName the spawn does.
-    expect(managedCliEnv(getProvider('local').binaryName)).toEqual({ DISABLE_AUTOUPDATER: '1' });
+    expect(managedCliEnv(getProvider('local').binaryName)).toEqual(CLAUDE_MANAGED_ENV);
   });
 });
 
@@ -206,6 +214,7 @@ describe('the renderer and restore path', () => {
 
     expect(spawnCalls.length).toBe(1);
     expect(spawnCalls[0].env.DISABLE_AUTOUPDATER).toBe('1');
+    expect(spawnCalls[0].env.CLAUDE_CODE_DISABLE_MOUSE_CLICKS).toBe('1');
   });
 
   it('leaves it out for a CLI that does not read it', async () => {
@@ -213,6 +222,7 @@ describe('the renderer and restore path', () => {
 
     expect(spawnCalls.length).toBe(1);
     expect(spawnCalls[0].env.DISABLE_AUTOUPDATER).toBeUndefined();
+    expect(spawnCalls[0].env.CLAUDE_CODE_DISABLE_MOUSE_CLICKS).toBeUndefined();
   });
 });
 
@@ -273,6 +283,7 @@ describe('the API path, which is every delegation and dispatch', () => {
     expect(answer, 'the route refused before it could spawn').toMatchObject({ success: true });
     expect(spawnCalls.length).toBe(1);
     expect(spawnCalls[0].env.DISABLE_AUTOUPDATER).toBe('1');
+    expect(spawnCalls[0].env.CLAUDE_CODE_DISABLE_MOUSE_CLICKS).toBe('1');
   });
 
   it('survives into a real process started with that env', async () => {
