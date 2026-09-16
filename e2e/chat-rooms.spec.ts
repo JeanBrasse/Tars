@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CHAT_ROOMS } from './surfaces.mjs';
+import { CHAT_ROOMS, splitPageErrors } from './surfaces.mjs';
 import { seedSandbox } from './fixture.mjs';
 
 /**
@@ -84,17 +84,12 @@ for (const surface of CHAT_ROOMS as ChatSurface[]) {
     }
     await page.waitForTimeout(900);
 
-    // The same carve-out the main sweep makes, and for the same reason: Next
-    // hydration mismatches are a known pre-existing class across this app,
-    // annotated so each page's redesign pass clears its own, while any other
-    // uncaught error still fails the surface. Splitting them here rather than
-    // failing on them keeps one rule for the whole suite.
-    const newErrors = pageErrors.slice(errorsBefore);
-    const hydration = newErrors.filter(e => /Hydration|hydration/.test(e));
-    const fatal = newErrors.filter(e => !/Hydration|hydration/.test(e));
-    if (hydration.length > 0) {
-      test.info().annotations.push({ type: 'known-issue', description: `${hydration.length} hydration error(s) on ${surface.name}` });
-    }
+    // One rule for the whole suite: the known defects declared in surfaces.mjs
+    // are annotated, anything else fails. The check that none of those
+    // allowances has outlived its defect belongs to the sweep, which visits
+    // every surface; this file only has to agree about what is tolerated.
+    const { fatal, seen } = splitPageErrors(pageErrors.slice(errorsBefore));
+    for (const key of seen) test.info().annotations.push({ type: 'known-issue', description: key });
     expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
 
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
