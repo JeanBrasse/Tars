@@ -235,7 +235,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       agent.status = 'running';
       agent.waitingReason = undefined;
       if (current_task) agent.currentTask = current_task;
-    } else if (status === 'waiting' && agent.status !== 'waiting') {
+    } else if (status === 'waiting' && agent.status !== 'waiting' && agent.status !== 'error') {
+      // An agent whose turn failed stays in error until a new turn starts.
+      // Claude Code sends idle_prompt about sixty seconds after StopFailure,
+      // as a `waiting` post, and without this guard it replaced the error:
+      // an agent left alone, the very case the error exists for, stopped
+      // showing why it had stopped. Only `running` clears it.
       agent.status = 'waiting';
       agent.waitingReason = waiting_reason;
     } else if (status === 'idle') {
