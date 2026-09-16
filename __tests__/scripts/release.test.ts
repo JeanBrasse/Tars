@@ -450,6 +450,23 @@ describe('npm run release, publishing', { timeout: 30_000 }, () => {
     expect(result.out).toContain(`9. ${path.join(fs.realpathSync(kept), `Tars-${VERSION}-arm64.dmg`)}`);
   });
 
+  it('builds over an earlier attempt at this same version, never published, and publishes the new build', async () => {
+    // A release that stopped after its build leaves that build in release/, and
+    // the retry replaces it rather than refusing: nothing of it can be public,
+    // since step 1 stops on a release or a tag of this version on GitHub.
+    const { dir } = checkout();
+    buildable(dir);
+    const kept = path.join(dir, 'release');
+    artifacts(kept, VERSION, { wrongSha: true });
+    gh.allowPublishing();
+
+    const { code, out } = await release(dir);
+
+    expect(out).toContain(`2. npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN, over an earlier build of ${VERSION}, which was never published`);
+    expect(code).toBe(0);
+    expect(gh.state().releases?.[`v${VERSION}`]?.assets).toEqual(releasedFrom(kept, VERSION).assets.map(asset => ({ ...asset, state: 'uploaded' })));
+  });
+
   it('cannot publish into the fake gh unless the test allows it', () => {
     // What every other test here relies on: none of them calls allowPublishing().
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-release-gate-'));
@@ -564,6 +581,24 @@ describe('moving a build into the release/ that is kept', () => {
 
     expect([listing(fromDir), listing(toDir)]).toEqual(before);
     expect(fs.readFileSync(path.join(toDir, dmg), 'utf8')).toBe('another build of the same version');
+  });
+
+  it('will not take the place of another build of this version whose manifest differs, and deletes nothing', async () => {
+    // Step 7 runs after the release is public: dropping the manifest built here
+    // because one of the same version is already there would throw away the
+    // manifest GitHub now serves. Only a kept manifest with the very same bytes
+    // lets it go.
+    const { fromDir, toDir } = folders();
+    artifacts(fromDir, VERSION);
+    artifacts(toDir, VERSION, { wrongSha: true });
+    const before = [listing(fromDir), listing(toDir)];
+    const manifest = fs.readFileSync(path.join(fromDir, 'latest-mac.yml'), 'utf8');
+
+    await expect(moveToCanonical({ fromDir, toDir, version: VERSION, repo: REPO }))
+      .rejects.toThrow(`${toDir} already holds another build of ${VERSION}: not overwritten`);
+
+    expect([listing(fromDir), listing(toDir)]).toEqual(before);
+    expect(fs.readFileSync(path.join(fromDir, 'latest-mac.yml'), 'utf8')).toBe(manifest);
   });
 
   it('will not overwrite the build of an older version GitHub does not prove published', async () => {
