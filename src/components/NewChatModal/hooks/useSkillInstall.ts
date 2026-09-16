@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
-import { stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
 import type { Skill } from '@/lib/skills-database';
 
 export interface SkillInstallState {
@@ -79,8 +79,9 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
 
     return () => {
       if (xtermRef.current) {
-        xtermRef.current.dispose();
+        const term = xtermRef.current;
         xtermRef.current = null;
+        disposeTerminalSafely(term);
       }
       setTerminalReady(false);
     };
@@ -158,8 +159,9 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
     setInstallingSkill(null);
     ptyIdRef.current = null;
     if (xtermRef.current) {
-      xtermRef.current.dispose();
+      const term = xtermRef.current;
       xtermRef.current = null;
+      disposeTerminalSafely(term);
     }
   }, [installComplete]);
 

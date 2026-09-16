@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseAgentDialogTerminalOptions {
@@ -38,9 +38,10 @@ export function useAgentDialogTerminal({
     if (!open || !agent) return;
 
     if (xtermRef.current) {
-      xtermRef.current.dispose();
+      const term = xtermRef.current;
       xtermRef.current = null;
       fitAddonRef.current = null;
+      disposeTerminalSafely(term);
     }
 
     // Reset scroll-lock state for new session
@@ -82,7 +83,7 @@ export function useAgentDialogTerminal({
 
       try {
         term.open(terminalRef.current);
-        if (cancelled) { term.dispose(); return; }
+        if (cancelled) { disposeTerminalSafely(term); return; }
 
         xtermRef.current = term;
         fitAddonRef.current = fitAddon;
@@ -169,9 +170,10 @@ export function useAgentDialogTerminal({
     return () => {
       cancelled = true;
       if (xtermRef.current) {
-        xtermRef.current.dispose();
+        const term = xtermRef.current;
         xtermRef.current = null;
         fitAddonRef.current = null;
+        disposeTerminalSafely(term);
       }
       setTerminalReady(false);
     };

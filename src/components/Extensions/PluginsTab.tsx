@@ -26,7 +26,7 @@ import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingPanel } from '@/components/ui';
 // Import xterm CSS
 import 'xterm/css/xterm.css';
@@ -274,8 +274,9 @@ export default function PluginsTab() {
 
     return () => {
       if (xtermRef.current) {
-        xtermRef.current.dispose();
+        const term = xtermRef.current;
         xtermRef.current = null;
+        disposeTerminalSafely(term);
       }
       setTerminalReady(false);
     };
