@@ -1,46 +1,78 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { fakeGh, publishedAssets, sha256, type FakeGh, type FakeGhState } from './scripts/fake-gh';
+import { canonicalReleaseDir, main } from '../scripts/prune-releases.mjs';
 
 /**
- * Keeping the last three builds and deleting the rest.
+ * Keeping the last three builds and deleting the rest, and only what GitHub
+ * proves published.
  *
  * electron-builder never cleans up, so release/ reached 6.3GB across thirteen
- * versions. The part that has to be right is the ordering: a string sort puts
- * 1.6.9 above 1.6.10 and would delete the newest build in the directory.
+ * versions. The part that has to be right first is the ordering: a string sort
+ * puts 1.6.9 above 1.6.10 and would delete the newest build in the directory.
+ * Then what may be deleted at all: on 16/09 the purge ran in a worktree's
+ * release/ instead of the one Noah opens, and it would have deleted the last
+ * copy of 1.6.19, which had never been published.
+ *
+ * gh is a fake on the PATH throughout. No test reaches GitHub or the real
+ * release/.
  */
 
 const script = path.resolve('scripts/prune-releases.mjs');
+const SUFFIXES = ['-arm64.dmg', '-arm64.dmg.blockmap', '-arm64-mac.zip', '-arm64-mac.zip.blockmap'];
+const PACKAGE = JSON.stringify({ name: 'tars', version: '0.0.0', build: { publish: { provider: 'github', owner: 'acme', repo: 'tars' } } });
+
+let gh: FakeGh;
+
+beforeEach(() => {
+  gh = fakeGh();
+  gh.install();
+});
+
+afterEach(() => {
+  gh.uninstall();
+});
+
+/** A checkout-shaped folder: package.json and a release/ with these versions, each file holding `x`. */
+function checkoutWith(versions: string[], dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-prune-'))): { dir: string; release: string } {
+  const release = path.join(dir, 'release');
+  fs.mkdirSync(release, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'package.json'), PACKAGE);
+  for (const v of versions) {
+    for (const suffix of SUFFIXES) fs.writeFileSync(path.join(release, `Tars-${v}${suffix}`), 'x');
+  }
+  return { dir, release };
+}
+
+/** Every version GitHub lists, published with exactly the local files. */
+function allPublished(versions: string[]): FakeGhState {
+  return { releases: Object.fromEntries(versions.map(v => [`v${v}`, { assets: publishedAssets(v) }])) };
+}
+
+const versionsIn = (release: string) => [...new Set(fs.readdirSync(release)
+  .map(n => /^Tars-(\d+\.\d+\.\d+)-/.exec(n)?.[1])
+  .filter((v): v is string => !!v))].sort();
 
 function run(versions: string[]): string[] {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-prune-'));
-  const release = path.join(dir, 'release');
-  fs.mkdirSync(release);
-  for (const v of versions) {
-    for (const suffix of ['-arm64.dmg', '-arm64.dmg.blockmap', '-arm64-mac.zip', '-arm64-mac.zip.blockmap']) {
-      fs.writeFileSync(path.join(release, `Tars-${v}${suffix}`), 'x');
-    }
-  }
+  const { dir, release } = checkoutWith(versions);
   // Things that are not versioned artifacts and must survive.
   fs.writeFileSync(path.join(release, 'latest-mac.yml'), 'version: x');
   fs.writeFileSync(path.join(release, 'builder-debug.yml'), 'x');
   fs.mkdirSync(path.join(release, 'mac-arm64'));
+  gh.setState(allPublished(versions));
 
-  execFileSync(process.execPath, [script], { cwd: dir, stdio: 'pipe' });
+  execFileSync(process.execPath, [script, '--release-dir', 'release'], { cwd: dir, stdio: 'pipe' });
 
-  const left = new Set<string>();
-  for (const name of fs.readdirSync(release)) {
-    const m = name.match(/^Tars-(\d+\.\d+\.\d+)-/);
-    if (m) left.add(m[1]);
-  }
+  const left = versionsIn(release);
   const survivors = fs.readdirSync(release);
   fs.rmSync(dir, { recursive: true, force: true });
   expect(survivors).toContain('latest-mac.yml');
   expect(survivors).toContain('builder-debug.yml');
   expect(survivors).toContain('mac-arm64');
-  return [...left];
+  return left;
 }
 
 describe('pruning old builds', () => {
@@ -65,15 +97,10 @@ describe('pruning old builds', () => {
   });
 
   it('deletes every file of a pruned version, not just the dmg', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-prune-'));
-    const release = path.join(dir, 'release');
-    fs.mkdirSync(release);
-    for (const v of ['1.6.1', '1.6.2', '1.6.3', '1.6.4']) {
-      for (const suffix of ['-arm64.dmg', '-arm64.dmg.blockmap', '-arm64-mac.zip', '-arm64-mac.zip.blockmap']) {
-        fs.writeFileSync(path.join(release, `Tars-${v}${suffix}`), 'x');
-      }
-    }
-    execFileSync(process.execPath, [script], { cwd: dir, stdio: 'pipe' });
+    const versions = ['1.6.1', '1.6.2', '1.6.3', '1.6.4'];
+    const { dir, release } = checkoutWith(versions);
+    gh.setState(allPublished(versions));
+    execFileSync(process.execPath, [script, '--release-dir', 'release'], { cwd: dir, stdio: 'pipe' });
     const left = fs.readdirSync(release);
     expect(left.filter(n => n.includes('1.6.1-'))).toEqual([]);
     expect(left.filter(n => n.includes('1.6.4-'))).toHaveLength(4);
@@ -82,7 +109,153 @@ describe('pruning old builds', () => {
 
   it('does not fail when there is nothing built', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-prune-'));
-    expect(() => execFileSync(process.execPath, [script], { cwd: dir, stdio: 'pipe' })).not.toThrow();
+    fs.writeFileSync(path.join(dir, 'package.json'), PACKAGE);
+    expect(() => execFileSync(process.execPath, [script, '--release-dir', 'release'], { cwd: dir, stdio: 'pipe' })).not.toThrow();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('what the purge may delete', () => {
+  const FIVE = ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4'];
+  const NEWEST = ['1.0.2', '1.0.3', '1.0.4'];
+
+  async function prune(release: string, cwd = path.dirname(release)): Promise<string[]> {
+    const lines: string[] = [];
+    await main(['--release-dir', release], { cwd, log: (line: string) => lines.push(line) });
+    return lines;
+  }
+
+  it('never deletes a version that is not published, and names it', async () => {
+    const { release } = checkoutWith(FIVE);
+    gh.setState({ releases: { 'v1.0.0': { assets: publishedAssets('1.0.0') } } });
+
+    const lines = await prune(release);
+
+    expect(versionsIn(release)).toEqual(['1.0.1', ...NEWEST]);
+    expect(lines.join('\n')).toContain('kept 1.0.1, not published: there is no release v1.0.1 on acme/tars');
+  });
+
+  it('deletes a published version beyond the three newest', async () => {
+    const { release } = checkoutWith(FIVE);
+    gh.setState(allPublished(FIVE));
+
+    await prune(release);
+
+    expect(versionsIn(release)).toEqual(NEWEST);
+  });
+
+  it('keeps a version published without its zip', async () => {
+    const { release } = checkoutWith(['1.0.1', ...NEWEST]);
+    gh.setState({ releases: { 'v1.0.1': { assets: publishedAssets('1.0.1').filter(a => !a.name.endsWith('.zip')) } } });
+
+    const lines = await prune(release);
+
+    expect(versionsIn(release)).toEqual(['1.0.1', ...NEWEST]);
+    expect(lines.join('\n')).toContain('has no zip');
+  });
+
+  it('keeps a version whose published files are not the local ones, by size or by content', async () => {
+    const { release } = checkoutWith(FIVE);
+    gh.setState({
+      releases: {
+        // Same name, another size, and GitHub gives no digest.
+        'v1.0.0': { assets: publishedAssets('1.0.0').map(a => ({ ...a, size: 2, digest: null })) },
+        // Same name and size, other bytes.
+        'v1.0.1': { assets: publishedAssets('1.0.1').map(a => ({ ...a, digest: sha256('y') })) },
+      },
+    });
+
+    const lines = (await prune(release)).join('\n');
+
+    expect(versionsIn(release)).toEqual(FIVE);
+    expect(lines).toContain('(size differs)');
+    expect(lines).toContain('(sha256 differs)');
+  });
+
+  it('deletes nothing when GitHub cannot be asked, and names every version kept for that', async () => {
+    const { release } = checkoutWith(FIVE);
+    gh.setState({ ...allPublished(FIVE), offline: true });
+
+    const lines = (await prune(release)).join('\n');
+
+    expect(versionsIn(release)).toEqual(FIVE);
+    expect(lines).toContain('kept 1.0.0, its publication could not be checked: error connecting to api.github.com');
+    expect(lines).toContain('kept 1.0.1, its publication could not be checked: error connecting to api.github.com');
+  });
+
+  it('deletes nothing when one version cannot be checked, even though another is proven published', async () => {
+    // Read as "not published", the failure would keep only its own version, and
+    // the proven one would go. An outage must not read as an answer.
+    const { release } = checkoutWith(FIVE);
+    gh.setState({ ...allPublished(FIVE), failFor: { 'v1.0.1': 'HTTP 502: Bad Gateway (https://api.github.com/graphql)' } });
+
+    const lines = (await prune(release)).join('\n');
+
+    expect(versionsIn(release)).toEqual(FIVE);
+    expect(lines).toContain('kept 1.0.1, its publication could not be checked: HTTP 502');
+    expect(lines).toContain('kept 1.0.0, nothing is deleted while another version cannot be checked');
+  });
+
+  it('deletes nothing when gh is not installed', async () => {
+    const { release } = checkoutWith(FIVE);
+    gh.setState(allPublished(FIVE));
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-no-gh-'));
+    const savedPath = process.env.PATH;
+    process.env.PATH = empty;
+    try {
+      const lines = (await prune(release)).join('\n');
+      expect(lines).toContain('gh is not installed');
+    } finally {
+      process.env.PATH = savedPath;
+    }
+
+    expect(versionsIn(release)).toEqual(FIVE);
+  });
+
+  describe('where it looks', () => {
+    const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: gitEnv, stdio: 'pipe' });
+
+    /** A main checkout with a committed package.json, and a worktree of it. */
+    function checkoutAndWorktree() {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-prune-git-'));
+      const mainDir = path.join(root, 'main');
+      fs.mkdirSync(mainDir);
+      git(mainDir, 'init', '-q', '-b', 'main');
+      fs.writeFileSync(path.join(mainDir, 'package.json'), PACKAGE);
+      fs.writeFileSync(path.join(mainDir, '.gitignore'), 'release/\n');
+      git(mainDir, 'add', '.');
+      git(mainDir, 'commit', '-q', '-m', 'init');
+      const worktree = path.join(root, 'worktree');
+      git(mainDir, 'worktree', 'add', '-q', worktree, '-b', 'other');
+      return { mainDir, worktree };
+    }
+
+    it("finds the main checkout's release/ from a worktree, and prunes that one", async () => {
+      const { mainDir, worktree } = checkoutAndWorktree();
+      checkoutWith(FIVE, mainDir);
+      checkoutWith(FIVE, worktree);
+      gh.setState(allPublished(FIVE));
+
+      const found = await canonicalReleaseDir(worktree);
+      await main([], { cwd: worktree, log: () => {} });
+
+      expect(fs.realpathSync(found.dir!)).toBe(fs.realpathSync(path.join(mainDir, 'release')));
+      expect(versionsIn(path.join(mainDir, 'release'))).toEqual(NEWEST);
+      // The worktree's own release/ is not the folder that is kept, and is left alone.
+      expect(versionsIn(path.join(worktree, 'release'))).toEqual(FIVE);
+    });
+
+    it('never falls back to release/ of the current directory', async () => {
+      // Outside any checkout, with a release/ here that a fallback would prune.
+      const { dir, release } = checkoutWith(FIVE);
+      gh.setState(allPublished(FIVE));
+      const lines: string[] = [];
+
+      expect(await main([], { cwd: dir, log: (l: string) => lines.push(l) })).toBe(0);
+
+      expect(versionsIn(release)).toEqual(FIVE);
+      expect(lines.join('\n')).toContain('nothing pruned');
+    });
   });
 });
