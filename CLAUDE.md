@@ -50,7 +50,7 @@
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
 | `design/tars-redesign.pen` | Pencil source of truth, 75 root frames. **Encrypted**: reach it only through the `pencil` MCP tools, never `Read`/`Grep` |
-| `design/chat-design.pen` | The same 75 frames (the first 74 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 10 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion, and the newer of the two. Draw a Chat room frame here and anything else in `tars-redesign.pen`, until the two are reconciled with Pen closed |
+| `design/chat-design.pen` | The same 75 frames (the first 74 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 86 in all. A fork, not a companion, and the newer of the two. Draw a Chat room frame here and anything else in `tars-redesign.pen`, until the two are reconciled with Pen closed |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
@@ -144,7 +144,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 
 Every design or feature change goes through, in this order:
 
-1. **The Pencil document**: the frame exists and is correct before any TSX is written. `design/tars-redesign.pen`, except for the Chat room, whose ten frames live only in `design/chat-design.pen`. Looking for them in the wrong file and finding nothing is how three passes of design nearly went unnoticed
+1. **The Pencil document**: the frame exists and is correct before any TSX is written. `design/tars-redesign.pen`, except for the Chat room, whose eleven frames live only in `design/chat-design.pen`. Looking for them in the wrong file and finding nothing is how three passes of design nearly went unnoticed
 2. **The app**: `src/` implements the frame, not an approximation of it
 3. **The landing page**: `landing/` picks up the change
 4. **`README.md`**: last

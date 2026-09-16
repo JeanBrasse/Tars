@@ -26,12 +26,18 @@ const TONES: Record<AnyTone, { text: string; fill: string; word: StatusTone }> =
 /**
  * The status mark: a 6px solid square, no radius. Replaces emoji tiles, pulsing
  * dots and `rounded-full` status pills everywhere a status is shown.
+ *
+ * `hollow` is the same square in outline, in the muted ink: an agent Tars holds
+ * no live session for. It reads as a state that is absent rather than as one
+ * more colour. Frames: `Chat · Room · all stopped`, `· at rest or stopped`.
  */
-export function StatusSquare({ tone = 'idle', className = '' }: {
+export function StatusSquare({ tone = 'idle', hollow = false, className = '' }: {
   tone?: AnyTone;
+  hollow?: boolean;
   className?: string;
 }) {
-  return <span className={`inline-block w-1.5 h-1.5 shrink-0 ${TONES[tone].fill} ${className}`} />;
+  const ink = hollow ? 'border border-text-muted' : TONES[tone].fill;
+  return <span className={`inline-block w-1.5 h-1.5 shrink-0 ${ink} ${className}`} />;
 }
 
 /**
