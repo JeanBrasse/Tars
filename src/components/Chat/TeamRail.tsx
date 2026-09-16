@@ -34,8 +34,17 @@ function tone(agent: RoomAgent): StatusTone | 'none' {
   }
 }
 
+/** Stopped as the rail shows it. An error keeps its own word and its colour,
+ *  since its reason says more than the absence of a session does. */
+function shownStopped(agent: RoomAgent): boolean {
+  return agent.stopped && agent.status !== 'error';
+}
+
 function statusLabel(agent: RoomAgent): string {
   if (!agent.hasEndOfTurn) return 'no turn signal';
+  // Idle is an agent at rest between turns, still holding its session, so the
+  // word is only replaced when there is no session to rest in.
+  if (shownStopped(agent)) return 'stopped';
   return agent.status === 'completed' ? 'finished' : agent.status;
 }
 
@@ -52,6 +61,10 @@ function detail(agent: RoomAgent): string {
   // was written to show only ever appeared for an agent that had no task.
   const reason = errorReason(agent);
   if (reason) return reason;
+  // Before the task, which a stopped agent can still carry: it is on nothing.
+  // And never `listening`, the word below for idle, which is exactly what an
+  // agent with no session cannot do.
+  if (shownStopped(agent)) return 'no live session';
   if (agent.currentTask) return agent.currentTask;
   switch (agent.status) {
     case 'running': return 'working';
@@ -100,7 +113,9 @@ export function TeamRail({
             return (
               <div key={agent.id} className="flex gap-2 px-2.5 py-[9px] border-b border-border last:border-b-0">
                 <span className="pt-1.5 shrink-0">
-                  {t === 'none' ? <span className="block w-1.5 h-1.5" /> : <StatusSquare tone={t} />}
+                  {t === 'none'
+                    ? <span className="block w-1.5 h-1.5" />
+                    : <StatusSquare tone={t} hollow={shownStopped(agent)} />}
                 </span>
                 <div className="flex-1 min-w-0 flex flex-col gap-[3px]">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -138,7 +153,7 @@ export function TeamRail({
                         send
                       </Button>
                     )}
-                    {agent.status !== 'idle' && agent.status !== 'completed' && (
+                    {!agent.stopped && agent.status !== 'idle' && agent.status !== 'completed' && (
                       <Button size="sm" className="font-mono" onClick={() => onStop(agent)}>stop</Button>
                     )}
                   </div>
