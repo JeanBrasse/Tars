@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 40,
+    version: '1.7.3',
+    date: '2026-09-16',
+    updates: [
+      'The Chat page no longer marks as dropped a message your agent read and answered. A message sent to an agent that was not busy reached its terminal at once, but Tars wrote down the delivery a moment after writing the message, so the mark that says delivered had nothing to land on: the message went on showing as queued, and turned dropped as soon as you wrote again, even though the agent had already replied. The delivery is now written down before the message goes out, so what the page shows is what happened. A message to an agent that is busy was never affected: it waits, and shows as delivered when the agent takes it',
+    ],
+  },
+  {
     id: 37,
     version: '1.7.0',
     date: '2026-09-16',
