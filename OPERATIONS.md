@@ -528,7 +528,7 @@ Three layers, in order:
    reach `127.0.0.1`, and CORS hides the response but not the side effect. Shell hooks send no
    `Origin` at all, which is why they pass.
 2. **Bearer token.** `Authorization: Bearer <~/.dorothy/api-token>`, else `401`.
-   Exempt paths: `/api/health`, `/api/local-file`, `/api/kanban/complete`, and anything under
+   Exempt paths: `/api/health`, `/api/local-file`, and anything under
    `/api/hooks/`.
 3. **Body limit.** 4 MiB (`MAX_BODY_BYTES`) → `413`, enforced *before* routing so the exempt
    hook paths cannot exhaust main-process memory without a credential. `__proto__` and
@@ -563,7 +563,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/memory/{context,search,status}` · POST `/api/memory/{write,remember}` |
 | GET/POST/PUT/DELETE | `/api/vault/documents[/:id]` · `/api/vault/folders[/:id]` · `/api/vault/search` · `/:id/attach` |
 | GET | `/api/local-file` |
-| POST | `/api/kanban/generate` · `/api/kanban/complete` |
+| POST | `/api/kanban/generate` |
 | POST | `/api/telegram/{send,send-photo,send-video,send-document}` · `/api/slack/send` |
 | POST | `/api/webhooks/hermes` |
 

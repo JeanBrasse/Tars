@@ -123,7 +123,18 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     // Stale-session guard: only the registered session may drive status.
-    if (agent.currentSessionId && session_id && session_id !== agent.currentSessionId) {
+    //
+    // Naming no session at all is refused here too, and that is the point of
+    // this guard rather than a detail of it. A status change emits
+    // fleet-change, agent-watch answers it with flush(), and flush writes a
+    // note into the agent's pty. flush also refuses a requester that is
+    // `running`, so posting `idle` for a busy agent is precisely how an
+    // outsider could make Tars write into a turn in progress, which it
+    // otherwise refuses on principle. The old condition required a session id
+    // to be present before comparing it, so omitting the field skipped the
+    // comparison: the guard cancelled itself exactly when the caller gave it
+    // nothing to check. Every hook Tars ships sends one.
+    if (agent.currentSessionId && session_id !== agent.currentSessionId) {
       console.log(`[hooks] Ignored stale status post for ${agent.id}: ${status} from session ${session_id} (current: ${agent.currentSessionId})`);
       sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
       return;
@@ -290,19 +301,28 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
-    if (agent && isStaleSessionPost(agent, session_id)) {
+    // An unknown agent_id used to skip the guard below, because the guard was
+    // conditioned on the agent existing: the alert still went to the desktop,
+    // carrying the caller's own `message`, under the name "Claude". Same shape
+    // as the missing session id above, a guard that lapses when the value it
+    // checks is absent.
+    if (!agent) {
+      sendJson({ success: false, message: 'Agent not found' });
+      return;
+    }
+    if (isStaleSessionPost(agent, session_id)) {
       console.log(`[hooks] Ignored ${type} notification from session ${session_id} for ${agent.id} (current: ${agent.currentSessionId ?? 'none'})`);
       sendJson({ success: false, stale: true });
       return;
     }
-    const agentName = agent?.name || 'Claude';
+    const agentName = agent.name || 'Claude';
 
     if (type === 'permission_prompt') {
       if (ctx.getAppSettings().notifyOnWaiting) {
         ctx.sendNotificationCallback(
           `${agentName} needs permission`,
           message || 'Claude needs your permission to proceed',
-          agent?.id,
+          agent.id,
           ctx.getAppSettings()
         );
       }
@@ -311,7 +331,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
         ctx.sendNotificationCallback(
           `${agentName} is waiting`,
           message || 'Claude is waiting for your input',
-          agent?.id,
+          agent.id,
           ctx.getAppSettings()
         );
       }

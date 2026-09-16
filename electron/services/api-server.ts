@@ -201,11 +201,15 @@ export function startApiServer(
     const url = new URL(req.url || '/', `http://localhost:${API_PORT}`);
     const pathname = url.pathname;
 
-    // Auth check: exempt local-only endpoints called from hooks/shell scripts
+    // Auth check: exempt local-only endpoints called from hooks/shell scripts.
+    // Three, not four. /api/kanban/complete was the fourth and had no caller
+    // at all: not the hooks, not mcp-kanban which writes the file itself, not
+    // the renderer. Unauthenticated, it marked any task done with a summary
+    // the caller supplied and deleted the agent the task had created from the
+    // live fleet, leaving its pty orphaned. The route is gone with it.
     const authExempt = pathname === '/api/local-file'
       || pathname === '/api/health'
-      || pathname.startsWith('/api/hooks/')
-      || pathname === '/api/kanban/complete';
+      || pathname.startsWith('/api/hooks/');
 
     // A browser tab on any site can reach 127.0.0.1. CORS hides the response
     // but not the side effect, so reject cross-origin callers outright: our
