@@ -17,6 +17,21 @@ const MAX_LINES = 8;
 const LINE_HEIGHT_PX = 22;
 const MIN_BOX_PX = 44;
 
+/**
+ * What pressing send will actually do. The button's word, its variant and its
+ * explanation are all read from this, so nothing here decides anything by
+ * comparing the word back to a string. The version that did carried a fourth
+ * operand, `start and send`, that no caller ever produced: a dead branch is
+ * invisible precisely because a string comparison cannot fail to compile.
+ */
+export type SendMode = 'send' | 'queue' | 'hold';
+
+const SEND: Record<SendMode, { label: string; variant: 'primary' | 'secondary'; title: string }> = {
+  send: { label: 'send', variant: 'primary', title: 'Send to the room.' },
+  queue: { label: 'queue', variant: 'secondary', title: 'Queued now, delivered when that turn ends.' },
+  hold: { label: 'hold', variant: 'secondary', title: 'Held for you: this CLI never reports a turn end.' },
+};
+
 export interface ComposerTarget {
   /** '' is the whole room. */
   id: string;
@@ -36,7 +51,7 @@ export function RoomComposer({
   onTargetChange,
   disabled = false,
   placeholder,
-  sendLabel = 'send',
+  sendMode = 'send',
   hint,
 }: {
   value: string;
@@ -47,7 +62,7 @@ export function RoomComposer({
   onTargetChange: (id: string) => void;
   disabled?: boolean;
   placeholder: string;
-  sendLabel?: string;
+  sendMode?: SendMode;
   hint?: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -104,15 +119,19 @@ export function RoomComposer({
 
       <div className="flex items-center justify-between gap-2.5 min-w-0">
         <div className="flex-1 min-w-0 flex items-center gap-2">
-          <button
-            type="button"
+          {/* The kit, not a hand-dressed button: this one carried its own
+              disabled opacity of 50 where every other disabled control in the
+              app fades to 40, so the one dead control on the page faded by a
+              different amount than the dead control beside it. */}
+          <Button
+            size="sm"
+            variant="ghost"
             disabled
             title="Attachments are not in this version."
-            className="inline-flex items-center gap-1.5 h-[26px] px-2 text-[11px] text-muted-foreground disabled:opacity-50"
           >
             <Paperclip className="w-3 h-3 shrink-0" />
             attach
-          </button>
+          </Button>
           <Dropdown
             value={targetId}
             options={options}
@@ -138,7 +157,7 @@ export function RoomComposer({
             </Button>
           )}
           <Button
-            variant={sendLabel === 'send' || sendLabel === 'start and send' ? 'primary' : 'secondary'}
+            variant={SEND[sendMode].variant}
             className="font-mono"
             onClick={onSend}
             disabled={disabled || !value.trim()}
@@ -149,14 +168,10 @@ export function RoomComposer({
                 ? 'Add an agent to this room before you write here.'
                 : !value.trim()
                   ? 'Write something first.'
-                  : sendLabel === 'queue'
-                    ? 'Queued now, delivered when that turn ends.'
-                    : sendLabel === 'hold'
-                      ? 'Held for you: this CLI never reports a turn end.'
-                      : 'Send to the room.'
+                  : SEND[sendMode].title
             }
           >
-            {sendLabel}
+            {SEND[sendMode].label}
           </Button>
         </div>
       </div>

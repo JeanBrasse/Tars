@@ -2,6 +2,7 @@ import type {
   AgentStatus,
   BusDelivery,
   BusDeliveryReason,
+  BusDeliveryState,
   BusMessage,
   BusRoom,
   BusThread,
@@ -12,14 +13,25 @@ import type {
  *
  * The page renders delivery and thread state, never a guess: every label here
  * comes from a value the contract defines (`BusDeliveryState`,
- * `BusDeliveryReason`, `BusThreadState`). Nothing matches on English, so a
- * reworded `reason` from the main process cannot change what is drawn.
+ * `BusDeliveryReason`, `BusThreadState`).
+ *
+ * What is drawn is decided by those values and never by English. The sentence
+ * printed in a note is the exception and it is deliberate: `reasonText` prefers
+ * the main process's own `reason` because that sentence names the agent, so a
+ * rewording there does change what is written, while the row it is written on
+ * stays what the state says it is. This paragraph used to claim English was
+ * never read at all, which the code below then disproved twice.
  */
 
-/** The five CLIs that never report the end of a turn, so nothing can be
- *  delivered to them at rest. The backend says so per delivery with
- *  `no_end_of_turn`; this list is only for what the team rail shows *before*
- *  anyone writes to them. */
+/** The CLIs that never report the end of a turn, so nothing can be delivered to
+ *  them at rest. The backend does not keep a list: it derives the same answer
+ *  from `getHookConfig().supportsNativeHooks` (`bus-store.ts`), so that a CLI
+ *  which gains hooks stops being an exception the day it gains them.
+ *
+ *  This copy is on borrowed time. It exists because the renderer contract has
+ *  no such field yet, and the day `src/types/electron.d.ts` carries one, delete
+ *  the list and read it. Until then the two can drift, and the way that shows
+ *  is the rail promising a message waits for you while the bus has queued it. */
 const NO_TURN_SIGNAL = new Set(['amp', 'codex', 'grok', 'opencode', 'pi']);
 
 export function reportsTurnEnds(provider: string | undefined): boolean {
@@ -35,9 +47,23 @@ export type RowKind =
   | 'system';  // the room itself talking
 
 export interface RowTag {
+  /** The delivery state this tag stands for. Everything the page decides
+   *  switches on this; `label` is only ever printed. */
+  state: BusDeliveryState;
   label: string;
   note: string;
 }
+
+/** Which row a message becomes, given the strongest thing that happened to it.
+ *  A record rather than a chain of comparisons: add a state to the contract and
+ *  this stops compiling, which is the point. `delivered` is here for
+ *  completeness, since a fully delivered message carries no tag at all. */
+const KIND_FOR_STATE: Record<BusDeliveryState, RowKind> = {
+  delivered: 'say',
+  queued: 'queued',
+  not_sent: 'unsent',
+  dropped: 'dropped',
+};
 
 export interface RoomRowModel {
   id: string;
@@ -107,16 +133,20 @@ export function receipts(deliveries: BusDelivery[], agents: AgentStatus[]): stri
 function messageTag(deliveries: BusDelivery[], agents: AgentStatus[]): RowTag | undefined {
   const dropped = deliveries.find(d => d.state === 'dropped');
   if (dropped) {
-    return { label: 'DROPPED', note: `for ${nameOf(agents, dropped.targetAgentId)}. ${reasonText(dropped)}` };
+    return {
+      state: 'dropped',
+      label: 'DROPPED',
+      note: `for ${nameOf(agents, dropped.targetAgentId)}. ${reasonText(dropped)}`,
+    };
   }
   const notSent = deliveries.find(d => d.state === 'not_sent');
   if (notSent) {
-    return { label: 'NOT SENT', note: reasonText(notSent) };
+    return { state: 'not_sent', label: 'NOT SENT', note: reasonText(notSent) };
   }
   const queued = deliveries.filter(d => d.state === 'queued');
   if (queued.length) {
     const names = list(queued.map(d => nameOf(agents, d.targetAgentId)));
-    return { label: 'QUEUED', note: `for ${names}. Delivered when that turn ends.` };
+    return { state: 'queued', label: 'QUEUED', note: `for ${names}. Delivered when that turn ends.` };
   }
   return undefined;
 }
@@ -142,7 +172,9 @@ export function toRows(
         to,
         text: message.text,
         note: receipts(mine, agents) || undefined,
-        tag: tag && tag.label !== 'QUEUED' ? tag : undefined,
+        // Your own line already lists who has it and who is waiting, so a
+        // QUEUED tag on top of the receipts would say it twice.
+        tag: tag && tag.state !== 'queued' ? tag : undefined,
       };
     }
 
@@ -159,13 +191,7 @@ export function toRows(
       };
     }
 
-    const kind: RowKind = tag?.label === 'NOT SENT'
-      ? 'unsent'
-      : tag?.label === 'DROPPED'
-        ? 'dropped'
-        : tag?.label === 'QUEUED'
-          ? 'queued'
-          : 'say';
+    const kind: RowKind = tag ? KIND_FOR_STATE[tag.state] : 'say';
 
     return {
       id: message.id,

@@ -1,8 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import type { AgentStatus, BusRoom } from '@/types/electron';
+
+/** One empty array for every empty answer. A fresh `[]` per call is a new
+ *  dependency per render for anyone who watches the result. */
+const NONE: AgentStatus[] = [];
 
 /**
  * The agents a room is made of.
@@ -32,15 +36,23 @@ export function useRoomAgents(room: BusRoom | null) {
     return () => { offStatus?.(); };
   }, [load]);
 
-  if (!room) return [];
+  // Memoised because the result is a dependency, not just a value: an effect
+  // that publishes the room header watches this array, and a new array on every
+  // render is a changed dependency on every render. Unmemoised, that effect set
+  // state in the parent, the parent re-rendered, and the array was new again:
+  // 50 rounds, a React warning, and away it went for as long as the room stayed
+  // open, with the screen perfectly still the whole time.
+  return useMemo(() => {
+    if (!room) return NONE;
 
-  // Members first, in the room's own order. A member that no longer exists is
-  // dropped rather than drawn as a ghost row.
-  const byId = new Map(agents.map(a => [a.id, a]));
-  const members = room.memberIds.map(id => byId.get(id)).filter((a): a is AgentStatus => !!a);
-  if (members.length) return members;
+    // Members first, in the room's own order. A member that no longer exists is
+    // dropped rather than drawn as a ghost row.
+    const byId = new Map(agents.map(a => [a.id, a]));
+    const members = room.memberIds.map(id => byId.get(id)).filter((a): a is AgentStatus => !!a);
+    if (members.length) return members;
 
-  // A room with no membership recorded yet still has the project's agents:
-  // showing them is what makes an empty room readable the first time.
-  return room.projectPath ? agents.filter(a => a.projectPath === room.projectPath) : [];
+    // A room with no membership recorded yet still has the project's agents:
+    // showing them is what makes an empty room readable the first time.
+    return room.projectPath ? agents.filter(a => a.projectPath === room.projectPath) : NONE;
+  }, [room, agents]);
 }

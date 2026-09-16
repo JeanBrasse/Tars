@@ -102,11 +102,16 @@ export function ConversationList({
   rooms,
   selectedId,
   onSelect,
+  error = null,
 }: {
   global: ConversationSummary;
   rooms: ConversationSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** The bus refused or failed to answer. Without this, a bus that is down
+   *  renders exactly like a fleet that has not spoken yet, under a sentence
+   *  promising rooms will appear. */
+  error?: string | null;
 }) {
   return (
     <div className="w-[224px] shrink-0 flex flex-col min-h-0 border border-border bg-card">
@@ -122,7 +127,13 @@ export function ConversationList({
         <Row conversation={global} active={selectedId === global.id} onSelect={() => onSelect(global.id)} />
 
         <Caption>one room per project</Caption>
-        {rooms.length === 0 ? (
+        {error ? (
+          // Same treatment as the room's own error line, so a failure reads the
+          // same wherever it happens on this page.
+          <p className="mx-2.5 my-2.5 border border-danger/40 px-2 py-1.5 text-[11px] leading-[1.5] text-danger">
+            The bus did not answer, so this list is not the whole truth. {error}
+          </p>
+        ) : rooms.length === 0 ? (
           <p className="px-2.5 py-3 text-[11px] leading-[1.5] text-muted-foreground">
             No project room yet. A room appears for a project as soon as one of its agents speaks.
           </p>

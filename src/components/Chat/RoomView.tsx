@@ -5,7 +5,7 @@ import { BrandSpinner } from '@/components/ui';
 import type { AgentStatus, BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
 import { RoomRow, RoomNotice } from './RoomRow';
 import { RoomComposer } from './RoomComposer';
-import type { ComposerTarget } from './RoomComposer';
+import type { ComposerTarget, SendMode } from './RoomComposer';
 import { currentThread, reportsTurnEnds, summarise, threadNotice, toRows } from './bus-view';
 
 /**
@@ -117,7 +117,7 @@ export function RoomView({
   // The button says what pressing it will do. Nothing here writes into a turn
   // that is running: a message for a busy agent is queued, and one for an
   // agent whose CLI reports no turn end is held until you send it on.
-  const sendLabel = target?.noTurnSignal ? 'hold' : target?.busy ? 'queue' : 'send';
+  const sendMode: SendMode = target?.noTurnSignal ? 'hold' : target?.busy ? 'queue' : 'send';
 
   const hint = (() => {
     if (target?.noTurnSignal) return `${target.label} has no turn signal: you send it`;
@@ -192,7 +192,7 @@ export function RoomView({
         targetId={targetId}
         onTargetChange={setTargetId}
         disabled={agents.length === 0}
-        sendLabel={sendLabel}
+        sendMode={sendMode}
         hint={hint}
         placeholder={
           agents.length === 0

@@ -121,7 +121,7 @@ function PendingTurn({ startedAt }: { startedAt: number }) {
  */
 function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React.ReactNode) => void }) {
   const router = useRouter();
-  const { snapshot, loading, post, stopThread } = useBusRoom(roomId);
+  const { snapshot, loading, error, post, stopThread } = useBusRoom(roomId);
   const agents = useRoomAgents(snapshot.room);
   const pending = useMemo(() => {
     const per: Record<string, { queued: number; notSent: number }> = {};
@@ -137,8 +137,14 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
   // The open anchor is what Stop stops. Published to the page's header so the
   // action sits with the room's state rather than inside the log.
   const open = snapshot.threads.find(t => t.state === 'open') ?? null;
+
+  // The header needs one number out of the fleet, so it depends on that number
+  // and not on the list it came from. The fleet list is re-read on every status
+  // tick, and republishing the header each time is work nobody asked for even
+  // when the count has not moved.
+  const running = useMemo(() => agents.filter(a => a.status === 'running').length, [agents]);
+
   useEffect(() => {
-    const running = agents.filter(a => a.status === 'running').length;
     onHeader(
       <>
         <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
@@ -157,14 +163,23 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
         </Button>
       </>,
     );
-  }, [agents, open, onHeader, stopThread]);
+  }, [running, open, onHeader, stopThread]);
 
   if (!snapshot.room) {
     return (
-      <div className="flex-1 min-w-0 flex items-center justify-center">
-        {loading
-          ? <BrandSpinner size={30} label="Opening the room" />
-          : <p className="text-sm text-muted-foreground">This room is not available.</p>}
+      <div className="flex-1 min-w-0 flex items-center justify-center px-6">
+        {loading ? (
+          <BrandSpinner size={30} label="Opening the room" />
+        ) : error ? (
+          // A room that could not be read is not a room that is empty. Saying
+          // "not available" for a bus that refused hides the refusal, which is
+          // the one thing this page exists to stop doing.
+          <p className="max-w-[440px] border border-danger/40 px-3 py-2 text-[11.5px] leading-[1.5] text-danger">
+            This room could not be read. {error}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">This room is not available.</p>
+        )}
       </div>
     );
   }
@@ -227,7 +242,7 @@ export default function ChatPage() {
    *  is already what this page was. A project room is the other level. */
   const [selectedId, setSelectedId] = useState<string>(GLOBAL_ID);
   const [roomHeader, setRoomHeader] = useState<React.ReactNode>(null);
-  const { rooms } = useBusRooms();
+  const { rooms, error: roomsError } = useBusRooms();
 
   const threadRef = useRef<HTMLDivElement>(null);
   const autoScroll = useRef(true);
@@ -333,10 +348,24 @@ export default function ChatPage() {
       .map(room => {
         const parts = (room.projectPath ?? '').split('/').filter(Boolean);
         const members = room.memberIds.length;
+
+        // A square that always said idle was an assertion the room list cannot
+        // support: listRooms carries membership, not activity, so a room whose
+        // agents were all working still read as quiet. The fleet listing is
+        // where activity lives, and when a member is missing from it, which the
+        // snapshot admits by truncating, no square at all beats claiming calm.
+        const states = room.memberIds.map(id => fleet?.agents.find(a => a.id === id)?.status);
+        const allKnown = states.every(s => s !== undefined);
+        const tone: ConversationSummary['tone'] = !members || !allKnown
+          ? 'none'
+          : states.some(s => s === 'running')
+            ? 'running'
+            : 'idle';
+
         return {
           id: room.id,
           name: room.title || parts[parts.length - 1] || room.id,
-          tone: (members ? 'idle' : 'none') as ConversationSummary['tone'],
+          tone,
           time: '',
           preview: members
             ? 'Open the room to see what its agents are saying.'
@@ -344,7 +373,7 @@ export default function ChatPage() {
           counts: [{ label: members ? `${members} ${members === 1 ? 'member' : 'members'}` : 'no agents' }],
         };
       }),
-    [rooms],
+    [rooms, fleet],
   );
 
   // The fleet listing is what the approval block's "still reachable" check
@@ -547,6 +576,7 @@ export default function ChatPage() {
           rooms={roomSummaries}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          error={roomsError}
         />
 
         {selectedId !== GLOBAL_ID ? (

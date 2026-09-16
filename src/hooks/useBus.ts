@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
 
 /**
@@ -44,12 +44,29 @@ export function useBusRooms() {
 
   useEffect(() => { void reload(); }, [reload]);
 
-  // A room appears when its first message lands, and its membership changes
-  // through setMembers, so the list is refreshed on both rather than polled.
+  // A room appears when its first message lands, and `setMembers` emits nothing
+  // of its own, so this refresh is the only thing keeping the list's member
+  // counts current. It stays, and it is coalesced: an active room was paying a
+  // full listRooms round trip per message to learn nothing had changed. A burst
+  // now costs one read. The real answer is a room event from the main process,
+  // which the contract does not have.
+  const pendingReload = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!hasBus()) return;
-    const offMessage = window.electronAPI!.bus!.onMessage(() => { void reload(); });
-    return () => { offMessage(); };
+    const offMessage = window.electronAPI!.bus!.onMessage(() => {
+      if (pendingReload.current) return;
+      pendingReload.current = setTimeout(() => {
+        pendingReload.current = null;
+        void reload();
+      }, 400);
+    });
+    return () => {
+      offMessage();
+      if (pendingReload.current) {
+        clearTimeout(pendingReload.current);
+        pendingReload.current = null;
+      }
+    };
   }, [reload]);
 
   return { rooms, loading, error, reload };
