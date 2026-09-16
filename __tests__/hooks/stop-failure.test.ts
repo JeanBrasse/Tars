@@ -47,6 +47,8 @@ import type { AgentStatus, AppSettings } from '../../electron/types';
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const HOOK = path.join(HOOKS_DIR, 'stop-failure.sh');
+const NOTIFICATION_HOOK = path.join(HOOKS_DIR, 'notification.sh');
+const PROMPT_HOOK = path.join(HOOKS_DIR, 'user-prompt-submit.sh');
 const SESSION = 'd684e49b-3c9c-483b-a162-ea96d695ae01';
 const CLI_MESSAGE = 'Not logged in · Please run /login';
 
@@ -66,7 +68,32 @@ const MEASURED_STOP_FAILURE = {
   last_assistant_message: CLI_MESSAGE,
 };
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-stop-failure-'));
+/**
+ * What came next on the same kind of bench, re-measured on 2.1.268: left alone,
+ * the CLI raised its idle prompt 60 seconds after the failure (+61.79 s), and a
+ * prompt typed into that terminal afterwards (+75.66 s) began a new turn.
+ */
+const MEASURED_IDLE_PROMPT = {
+  session_id: SESSION,
+  transcript_path: MEASURED_STOP_FAILURE.transcript_path,
+  cwd: MEASURED_STOP_FAILURE.cwd,
+  prompt_id: MEASURED_STOP_FAILURE.prompt_id,
+  hook_event_name: 'Notification',
+  message: 'Claude is waiting for your input',
+  notification_type: 'idle_prompt',
+};
+
+const MEASURED_NEXT_PROMPT = {
+  session_id: SESSION,
+  transcript_path: MEASURED_STOP_FAILURE.transcript_path,
+  cwd: MEASURED_STOP_FAILURE.cwd,
+  prompt_id: 'b2ec308d-0ae6-4503-8e19-fad5bfe601e4',
+  permission_mode: 'default',
+  hook_event_name: 'UserPromptSubmit',
+  prompt: 'reply with the single word OK again',
+};
+
+const tmp =fs.mkdtempSync(path.join(os.tmpdir(), 'tars-stop-failure-'));
 let server: http.Server;
 let port: number;
 let received: { url: string; body: string }[] = [];
@@ -127,8 +154,8 @@ function putAgent(over: Partial<AgentStatus> = {}): AgentStatus {
   return agent;
 }
 
-/** A post to /api/hooks/status, handled by the real route. */
-function post(body: Record<string, unknown>): void {
+/** A post to a hook route, handled by the real code. Returns what the route answered. */
+function send(url: string, body: Record<string, unknown>): Record<string, unknown> {
   const app = { routes: [] as RouteApp['routes'] } as RouteApp;
   app.add = (method, pattern, handler) => { app.routes.push({ method, pattern, handler }); };
   app.get = (p, h) => app.add('GET', p, h);
@@ -136,19 +163,27 @@ function post(body: Record<string, unknown>): void {
   app.put = (p, h) => app.add('PUT', p, h);
   app.delete = (p, h) => app.add('DELETE', p, h);
   registerHooksRoutes(app, ctx);
-  const route = app.routes.find(r => r.pattern === '/api/hooks/status');
-  if (!route) throw new Error('/api/hooks/status is not registered');
-  route.handler({ body, params: {} } as RouteRequest, vi.fn(), ctx);
+  const route = app.routes.find(r => r.pattern === url);
+  if (!route) throw new Error(`${url} is not registered`);
+  let answer: Record<string, unknown> = {};
+  route.handler({ body, params: {} } as RouteRequest, data => { answer = data as Record<string, unknown>; }, ctx);
+  return answer;
+}
+
+/** A post to /api/hooks/status, handled by the real route. */
+function post(body: Record<string, unknown>): Record<string, unknown> {
+  return send('/api/hooks/status', body);
 }
 
 /**
- * Run the real script the way the CLI does, pointed at the capturing server
- * through the variable Tars puts in every agent's environment, then deliver
- * each post it made to the real route.
+ * Run a real hook script the way the CLI does, pointed at the capturing server
+ * through the variable Tars puts in every agent's environment. Returns the
+ * posts this run made, in order.
  */
-async function failTurn(payload: Record<string, unknown>): Promise<void> {
+async function runHook(script: string, payload: Record<string, unknown>): Promise<{ url: string; body: Record<string, unknown> }[]> {
+  const from = received.length;
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('/bin/bash', [HOOK], {
+    const child = spawn('/bin/bash', [script], {
       env: { ...process.env, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, CLAUDE_AGENT_ID: 'a1', HOME: tmp },
     });
     child.stdout.resume();
@@ -157,9 +192,14 @@ async function failTurn(payload: Record<string, unknown>): Promise<void> {
     child.on('exit', () => resolve());
     child.stdin.end(JSON.stringify(payload));
   });
-  for (const { url, body } of received) {
+  return received.slice(from).map(({ url, body }) => ({ url, body: JSON.parse(body) }));
+}
+
+/** The real StopFailure hook, each post it made delivered to the real route. */
+async function failTurn(payload: Record<string, unknown>): Promise<void> {
+  for (const { url, body } of await runHook(HOOK, payload)) {
     expect(url).toBe('/api/hooks/status');
-    post(JSON.parse(body));
+    post(body);
   }
 }
 
@@ -236,6 +276,68 @@ describe('a turn that fails on an API error', () => {
 
     expect(agent.status).toBe('running');
     expect(agent.error).toBeUndefined();
+  });
+});
+
+/**
+ * An agent is left alone after its turn failed, which is the case the error is
+ * for. Measured on 2.1.268: a minute after StopFailure the CLI raises its idle
+ * prompt, and notification.sh posts that as `status: waiting`. The waiting
+ * branch applied it over `error`, so the agent stopped showing why it had
+ * stopped. Only a new turn may take it out of `error`.
+ *
+ * Both tests assert the status and not only the sentence, because each has a
+ * neighbour that settles the sentence on its own. The waiting branch never
+ * touches `agent.error`, so the sentence outlived the old defect; and
+ * noteTurnStarted clears it on a new turn even for an agent left in `error`.
+ * TeamRail shows the sentence only while the status is `error`.
+ */
+describe('a failed turn left alone', () => {
+  it('still shows the failure when the idle prompt comes a minute later', async () => {
+    const agent = putAgent();
+    post({ agent_id: 'a1', session_id: SESSION, status: 'running', event: 'UserPromptSubmit' });
+    await failTurn(MEASURED_STOP_FAILURE);
+    expect(agent.status).toBe('error');
+
+    const posts = await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT);
+    // The waiting post is really made, and the route accepts it as the live
+    // session's. Missing, or refused as stale, it would keep the agent in
+    // error with no help from the guard, and this test would prove nothing.
+    expect(posts.map(p => p.url)).toEqual(['/api/hooks/notification', '/api/hooks/status']);
+    expect(posts[1].body).toMatchObject({ session_id: SESSION, status: 'waiting', waiting_reason: 'idle' });
+    const answers = posts.map(p => send(p.url, p.body));
+    expect(answers[1]).toMatchObject({ success: true });
+    expect(answers[1]).not.toHaveProperty('stale');
+
+    expect(agent.status).toBe('error');
+    expect(agent.error).toBe(CLI_MESSAGE);
+    expect(agent.waitingReason).toBeUndefined();
+    // One status notification, for the failure, and none saying it waits.
+    expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenCalledTimes(1);
+    expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenCalledWith(agent, 'error');
+  });
+
+  it('leaves the error when a new turn begins, and waits normally after it', async () => {
+    const agent = putAgent();
+    await failTurn(MEASURED_STOP_FAILURE);
+    for (const p of await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT)) send(p.url, p.body);
+    // Still in error when the turn begins, or this would test another transition.
+    expect(agent.status).toBe('error');
+
+    // Noah runs /login in that terminal and types the task again.
+    const posts = await runHook(PROMPT_HOOK, MEASURED_NEXT_PROMPT);
+    expect(posts.map(p => p.url)).toEqual(['/api/hooks/status']);
+    send(posts[0].url, posts[0].body);
+
+    expect(agent.status).toBe('running');
+    expect(agent.error).toBeUndefined();
+    expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenLastCalledWith(agent, 'running');
+
+    // The same idle prompt, now that the agent is out of error, is a wait
+    // like any other: the guard holds the error, not every waiting post.
+    for (const p of await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT)) send(p.url, p.body);
+    expect(agent.status).toBe('waiting');
+    expect(agent.waitingReason).toBe('idle');
   });
 });
 
