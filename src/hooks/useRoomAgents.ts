@@ -2,21 +2,34 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import type { AgentStatus, BusRoom } from '@/types/electron';
+import type { AgentStatus, BusMember } from '@/types/electron';
 
 /** One empty array for every empty answer. A fresh `[]` per call is a new
  *  dependency per render for anyone who watches the result. */
-const NONE: AgentStatus[] = [];
+const NONE: RoomAgent[] = [];
+
+/**
+ * A room member with the state the rest of the app already knows about it.
+ *
+ * `hasEndOfTurn` comes from the room, not from here: the main process derives
+ * it from the provider's hook configuration. The renderer used to keep its own
+ * list of the CLIs that report nothing, which is a copy of a derived value and
+ * goes stale in silence the day a CLI gains hooks. There is no default: an
+ * agent the fleet does not know is dropped rather than guessed at.
+ */
+export interface RoomAgent extends AgentStatus {
+  hasEndOfTurn: boolean;
+}
 
 /**
  * The agents a room is made of.
  *
- * A room's membership is `memberIds` on the room itself, and the agents' own
- * state comes from the agent list the rest of the app already reads. The tick
- * the main process broadcasts keeps it current, so the rail never polls on its
- * own timer beside the one Tars already runs.
+ * Membership is the room's own `members`, in its order, and the agents' state
+ * comes from the agent list the rest of the app already reads. The tick the
+ * main process broadcasts keeps it current, so the rail never polls on its own
+ * timer beside the one Tars already runs.
  */
-export function useRoomAgents(room: BusRoom | null) {
+export function useRoomAgents(members: BusMember[]): RoomAgent[] {
   const [agents, setAgents] = useState<AgentStatus[]>([]);
 
   const load = useCallback(async () => {
@@ -43,16 +56,17 @@ export function useRoomAgents(room: BusRoom | null) {
   // 50 rounds, a React warning, and away it went for as long as the room stayed
   // open, with the screen perfectly still the whole time.
   return useMemo(() => {
-    if (!room) return NONE;
+    if (!members.length) return NONE;
 
-    // Members first, in the room's own order. A member that no longer exists is
-    // dropped rather than drawn as a ghost row.
+    // Members first, in the room's own order. A member that no longer exists in
+    // the fleet is dropped rather than drawn as a ghost row.
     const byId = new Map(agents.map(a => [a.id, a]));
-    const members = room.memberIds.map(id => byId.get(id)).filter((a): a is AgentStatus => !!a);
-    if (members.length) return members;
-
-    // A room with no membership recorded yet still has the project's agents:
-    // showing them is what makes an empty room readable the first time.
-    return room.projectPath ? agents.filter(a => a.projectPath === room.projectPath) : NONE;
-  }, [room, agents]);
+    const joined = members
+      .map(m => {
+        const agent = byId.get(m.id);
+        return agent ? { ...agent, hasEndOfTurn: m.hasEndOfTurn } : null;
+      })
+      .filter((a): a is RoomAgent => !!a);
+    return joined.length ? joined : NONE;
+  }, [members, agents]);
 }

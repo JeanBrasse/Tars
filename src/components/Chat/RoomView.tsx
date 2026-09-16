@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BrandSpinner } from '@/components/ui';
-import type { AgentStatus, BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
+import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
+import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { RoomRow, RoomNotice } from './RoomRow';
 import { RoomComposer } from './RoomComposer';
 import type { ComposerTarget, SendMode } from './RoomComposer';
-import { currentThread, reportsTurnEnds, summarise, threadNotice, toRows } from './bus-view';
+import { currentThread, summarise, threadNotice, toRows } from './bus-view';
 
 /**
  * One project's room: the log, what is still waiting under it, and the
@@ -82,7 +83,7 @@ export function RoomView({
   threads: BusThread[];
   messages: BusMessage[];
   deliveries: BusDelivery[];
-  agents: AgentStatus[];
+  agents: RoomAgent[];
   loading: boolean;
   onPost: (text: string, mentions: string[]) => Promise<{ success: boolean; error?: string }>;
 }) {
@@ -108,7 +109,7 @@ export function RoomView({
     id: a.id,
     label: a.name ?? a.id.slice(0, 8),
     busy: a.status === 'running',
-    noTurnSignal: !reportsTurnEnds(a.provider),
+    noTurnSignal: !a.hasEndOfTurn,
   })), [agents]);
 
   const target = targets.find(t => t.id === targetId);

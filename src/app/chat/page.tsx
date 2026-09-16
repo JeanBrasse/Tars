@@ -122,7 +122,7 @@ function PendingTurn({ startedAt }: { startedAt: number }) {
 function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React.ReactNode) => void }) {
   const router = useRouter();
   const { snapshot, loading, error, post, stopThread } = useBusRoom(roomId);
-  const agents = useRoomAgents(snapshot.room);
+  const agents = useRoomAgents(snapshot.members);
   const pending = useMemo(() => {
     const per: Record<string, { queued: number; notSent: number }> = {};
     for (const d of snapshot.deliveries) {

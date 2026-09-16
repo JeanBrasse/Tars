@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
+import type { BusDelivery, BusMember, BusMessage, BusRoom, BusThread } from '@/types/electron';
 
 /**
  * The agent bus, as the Chat page sees it.
@@ -15,12 +15,16 @@ import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electr
 
 export interface BusSnapshot {
   room: BusRoom | null;
+  /** The room's members, each carrying whether its CLI reports the end of a
+   *  turn. Derived in the main process from the provider's hook configuration,
+   *  so the page never decides reachability from a provider name. */
+  members: BusMember[];
   threads: BusThread[];
   messages: BusMessage[];
   deliveries: BusDelivery[];
 }
 
-const EMPTY: BusSnapshot = { room: null, threads: [], messages: [], deliveries: [] };
+const EMPTY: BusSnapshot = { room: null, members: [], threads: [], messages: [], deliveries: [] };
 
 const deliveryKey = (d: BusDelivery) => `${d.messageId}:${d.targetAgentId}`;
 
@@ -91,6 +95,7 @@ export function useBusRoom(roomId: string | null) {
       if (cancelled) return;
       setSnapshot({
         room: r?.room ?? null,
+        members: r?.members ?? [],
         threads: r?.threads ?? [],
         messages: r?.messages ?? [],
         deliveries: r?.deliveries ?? [],

@@ -2,8 +2,7 @@
 
 import { Button, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
-import type { AgentStatus } from '@/types/electron';
-import { reportsTurnEnds } from './bus-view';
+import type { RoomAgent } from '@/hooks/useRoomAgents';
 
 /**
  * The right rail, 264 wide: who is in this room, then how the room runs.
@@ -22,10 +21,10 @@ const RULES: Array<[string, string]> = [
   ['you', 'only you stop, add or change an agent'],
 ];
 
-function tone(agent: AgentStatus): StatusTone | 'none' {
+function tone(agent: RoomAgent): StatusTone | 'none' {
   // An agent whose CLI never reports a turn end has no state Tars can vouch
   // for, so it gets no square rather than a green one that would claim work.
-  if (!reportsTurnEnds(agent.provider)) return 'none';
+  if (!agent.hasEndOfTurn) return 'none';
   switch (agent.status) {
     case 'running': return 'running';
     case 'waiting': return 'waiting';
@@ -34,8 +33,8 @@ function tone(agent: AgentStatus): StatusTone | 'none' {
   }
 }
 
-function statusLabel(agent: AgentStatus): string {
-  if (!reportsTurnEnds(agent.provider)) return 'no turn signal';
+function statusLabel(agent: RoomAgent): string {
+  if (!agent.hasEndOfTurn) return 'no turn signal';
   return agent.status === 'completed' ? 'finished' : agent.status;
 }
 
@@ -45,8 +44,8 @@ function statusLabel(agent: AgentStatus): string {
  *  an idle CLI is its shell prompt (`Mac:tars-hermes noah$`). A prompt is not a
  *  description of work, and putting one here told the reader nothing while
  *  looking like it did. */
-function detail(agent: AgentStatus): string {
-  if (!reportsTurnEnds(agent.provider)) return 'Tars sees its output, not its turns';
+function detail(agent: RoomAgent): string {
+  if (!agent.hasEndOfTurn) return 'Tars sees its output, not its turns';
   if (agent.currentTask) return agent.currentTask;
   switch (agent.status) {
     case 'running': return 'working';
@@ -65,13 +64,13 @@ export function TeamRail({
   onSend,
   onAdd,
 }: {
-  agents: AgentStatus[];
+  agents: RoomAgent[];
   /** Per agent: how many messages are waiting, and how many will not move
    *  without you. Both come from the bus, never from a guess. */
   pending: Record<string, { queued: number; notSent: number }>;
-  onOpen: (agent: AgentStatus) => void;
-  onStop: (agent: AgentStatus) => void;
-  onSend: (agent: AgentStatus) => void;
+  onOpen: (agent: RoomAgent) => void;
+  onStop: (agent: RoomAgent) => void;
+  onSend: (agent: RoomAgent) => void;
   onAdd: () => void;
 }) {
   return (

@@ -23,21 +23,6 @@ import type {
  * never read at all, which the code below then disproved twice.
  */
 
-/** The CLIs that never report the end of a turn, so nothing can be delivered to
- *  them at rest. The backend does not keep a list: it derives the same answer
- *  from `getHookConfig().supportsNativeHooks` (`bus-store.ts`), so that a CLI
- *  which gains hooks stops being an exception the day it gains them.
- *
- *  This copy is on borrowed time. It exists because the renderer contract has
- *  no such field yet, and the day `src/types/electron.d.ts` carries one, delete
- *  the list and read it. Until then the two can drift, and the way that shows
- *  is the rail promising a message waits for you while the bus has queued it. */
-const NO_TURN_SIGNAL = new Set(['amp', 'codex', 'grok', 'opencode', 'pi']);
-
-export function reportsTurnEnds(provider: string | undefined): boolean {
-  return !NO_TURN_SIGNAL.has(provider ?? 'claude');
-}
-
 export type RowKind =
   | 'say'      // an agent wrote to another agent, or to all
   | 'you'      // your own line: the only boxed row
