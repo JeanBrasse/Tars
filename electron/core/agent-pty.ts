@@ -18,6 +18,16 @@ import { API_PORT } from '../constants';
  * provider's own deletions, on the one line that actually starts the process.
  * A third spawn site would have to go through this to exist.
  *
+ * The claim this comment used to make, that a third spawn site would have to
+ * come through here to exist, was wrong: switching an agent to the local
+ * provider recreated its pty with a direct pty.spawn and predated all of this,
+ * which is how it kept its own environment and lost the API address. It comes
+ * through here now. What deliberately does not are the shells that run no
+ * agent: the quick terminal, the skill and plugin runners, and the npx
+ * installer. They carry no CLAUDE_AGENT_ID, so a hook fired from one of them
+ * has no agent to name and is refused. Anything that spawns an agent belongs
+ * here.
+ *
  * Its own module rather than a function in pty-manager, because five suites
  * stub pty-manager out wholesale to keep node-pty away from them. Putting the
  * spawn in there would have replaced their `pty.spawn` assertions with a stub

@@ -39,6 +39,7 @@ import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth, sessionModel } from '../services/agent-truth';
+import { spawnAgentPty } from '../core/agent-pty';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -591,8 +592,16 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         CLAUDE_PROVIDER: 'local',
       };
 
-      const newPty = pty.spawn('/bin/bash', ['-l'], {
-        name: 'xterm-256color',
+      // Through spawnAgentPty like the other two. This is an agent's pty: it
+      // carries CLAUDE_AGENT_ID, and its hooks post to /api/hooks/*, which is
+      // one of the four routes that need no token. Spawned directly it had no
+      // CLAUDE_MGR_API_URL, so those posts fell back to 31415 and a sandbox
+      // agent switched to local wrote its status into the live Tars, under a
+      // real fleet id. Exactly the damage the same variable fixed elsewhere.
+      const newPty = spawnAgentPty({
+        binaryName: getProvider('claude').binaryName,
+        shell: '/bin/bash',
+        args: ['-l'],
         cols: 120,
         rows: 30,
         cwd,
