@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, disposeTerminalSafely, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, stopWheelTyping, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
 import type { PanelType } from './AgentDialogTypes';
 
@@ -78,6 +78,7 @@ export function useQuickTerminal({
 
       try {
         term.open(quickTerminalRef.current);
+        stopWheelTyping(term);
         if (cancelled) { disposeTerminalSafely(term); return; }
 
         quickXtermRef.current = term;

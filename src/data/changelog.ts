@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 39,
+    version: '1.7.2',
+    date: '2026-09-16',
+    updates: [
+      'Scrolling a terminal no longer types into the agent. When a CLI fills the terminal, as Claude Code does, the terminal turned every line of wheel travel into a press of the up or down arrow and sent it to the CLI as if you had typed it. At Claude Code\'s prompt those arrows walk back through the messages you already sent, so scrolling up to reread the conversation filled the box with an old message, one Enter away from going out again. A mouse wheel and a trackpad did it alike, and a few notches of the wheel were dozens of arrow presses. The wheel now sends nothing to the program in that case, in every terminal in Tars: the Dashboard panels, the agent window, the quick terminal, the tray, the project shell and the install windows. A terminal that keeps its history still scrolls it with the wheel, and the arrow keys on your keyboard work as before',
+    ],
+  },
+  {
     id: 38,
     version: '1.7.1',
     date: '2026-09-16',

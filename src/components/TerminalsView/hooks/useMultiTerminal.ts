@@ -7,7 +7,7 @@ import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler, disposeTerminalSafely, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, stopWheelTyping, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -168,6 +168,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       const fitAddon = new modules.FitAddon();
       term.loadAddon(fitAddon);
       term.open(container);
+      stopWheelTyping(term);
 
       const entry: TerminalEntry = {
         terminal: term,

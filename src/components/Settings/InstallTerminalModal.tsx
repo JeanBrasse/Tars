@@ -8,7 +8,7 @@ import {
   TERMINAL_SURFACE_CLASS,
   useTerminalTheme,
 } from '@/lib/terminal-theme';
-import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';
 
 interface InstallTerminalModalProps {
   show: boolean;
@@ -46,6 +46,7 @@ export const InstallTerminalModal = ({ show, command, onClose, onComplete }: Ins
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalRef.current!);
+      stopWheelTyping(term);
       fitAddon.fit();
 
       xtermRef.current = term;

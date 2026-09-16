@@ -5,7 +5,7 @@ import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';
 
 interface TerminalProps {
   ptyId?: string;
@@ -38,6 +38,7 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
     term.loadAddon(fitAddon);
 
     term.open(terminalRef.current);
+    stopWheelTyping(term);
     fitAddon.fit();
 
     xtermRef.current = term;

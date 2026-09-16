@@ -26,7 +26,7 @@ import { useClaude } from '@/hooks/useClaude';
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingPanel } from '@/components/ui';
 // Import xterm CSS
 import 'xterm/css/xterm.css';
@@ -238,6 +238,7 @@ export default function PluginsTab() {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalRef.current!);
+      stopWheelTyping(term);
       fitAddon.fit();
 
       xtermRef.current = term;
