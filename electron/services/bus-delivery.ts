@@ -49,6 +49,7 @@ export function fanOutDeliveries(message: BusMessage, room: BusRoom): BusDeliver
       messageId: message.id,
       roomId: message.roomId,
       threadId: message.threadId,
+      authorKind: message.authorKind,
       authorName: message.authorName,
       text: message.text,
     });
@@ -121,6 +122,7 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
       messageId: message.id,
       roomId: message.roomId,
       threadId: message.threadId,
+      authorKind: message.authorKind,
       authorName: message.authorName,
       text: message.text,
     });
