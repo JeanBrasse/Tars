@@ -7,7 +7,9 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
   echo '{"continue":true,"suppressOutput":true}'
   exit 0
 fi
-API_URL="http://127.0.0.1:31415"
+# The Tars that spawned this agent, not whoever happens to own 31415:
+# CLAUDE_MGR_API_URL is in the pty environment and follows DOROTHY_API_PORT.
+API_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}"
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 echo "========================================" >> "$LOG"
 echo "[$(date)] STOP hook — AGENT=$AGENT_ID" >> "$LOG"

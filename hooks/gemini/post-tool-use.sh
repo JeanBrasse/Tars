@@ -12,7 +12,9 @@ if [ -z "$TOOL_NAME" ]; then
   exit 0
 fi
 
-API_URL="http://127.0.0.1:31415/api/memory/remember"
+# The Tars that spawned this agent, not whoever happens to own 31415:
+# CLAUDE_MGR_API_URL is in the pty environment and follows DOROTHY_API_PORT.
+API_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}/api/memory/remember"
 
 AGENT_ID="${DOROTHY_AGENT_ID:-$SESSION_ID}"
 PROJECT_PATH="${DOROTHY_PROJECT_PATH:-$CWD}"

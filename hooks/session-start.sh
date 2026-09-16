@@ -13,7 +13,9 @@ SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
 echo "[$(date)] SESSION_START hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> /tmp/dorothy-hooks.log
 
 # API endpoint
-API_URL="http://127.0.0.1:31415"
+# The Tars that spawned this agent, not whoever happens to own 31415:
+# CLAUDE_MGR_API_URL is in the pty environment and follows DOROTHY_API_PORT.
+API_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}"
 
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"

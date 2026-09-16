@@ -17,7 +17,9 @@ if [ -z "$TOOL_NAME" ]; then
 fi
 
 # API endpoint
-BASE_URL="http://127.0.0.1:31415"
+# The Tars that spawned this agent, not whoever happens to own 31415:
+# CLAUDE_MGR_API_URL is in the pty environment and follows DOROTHY_API_PORT.
+BASE_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}"
 API_URL="$BASE_URL/api/memory/remember"
 
 # Get agent ID from environment or use session ID
