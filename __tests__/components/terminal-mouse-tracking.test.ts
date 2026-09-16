@@ -17,9 +17,12 @@ import { suppressMouseTracking, attachShiftEnterHandler, stripTerminalReplies } 
 
 type CsiId = { prefix?: string; final: string };
 type CsiHandler = (params: (number | number[])[]) => boolean | Promise<boolean>;
+type EscId = { intermediates?: string; final: string };
+type EscHandler = () => boolean | Promise<boolean>;
 
 function stubTerminal() {
   const csi: Array<{ id: CsiId; handler: CsiHandler }> = [];
+  const esc: Array<{ id: EscId; handler: EscHandler }> = [];
   let keyHandler: ((e: KeyboardEvent) => boolean) | null = null;
   const term = {
     parser: {
@@ -27,30 +30,45 @@ function stubTerminal() {
         csi.push({ id, handler });
         return { dispose: () => {} };
       },
+      registerEscHandler: (id: EscId, handler: EscHandler) => {
+        esc.push({ id, handler });
+        return { dispose: () => {} };
+      },
     },
     attachCustomKeyEventHandler: (h: (e: KeyboardEvent) => boolean) => { keyHandler = h; },
     hasSelection: () => true,
     getSelection: () => 'selected text',
   };
+  /** The one handler registered for this final byte, found by what it is registered for rather than by order. */
+  const csiFor = (final: string) => {
+    const found = csi.filter(h => h.id.prefix === '?' && h.id.final === final);
+    expect(found, `handlers for CSI ? ${final}`).toHaveLength(1);
+    return found[0].handler;
+  };
   return {
     term: term as unknown as Terminal,
     csi,
+    esc,
+    csiFor,
     key: (e: Partial<KeyboardEvent>) => keyHandler!({ type: 'keydown', ...e } as KeyboardEvent),
   };
 }
 
 describe('suppressMouseTracking', () => {
-  it('registers on DEC private mode set', () => {
-    const { term, csi } = stubTerminal();
+  it('registers on DEC private mode set and reset, and on RIS, and on nothing else', () => {
+    // Set is where the modes are refused. Reset and RIS are only watched, so the
+    // request passWheelToProgram reads is withdrawn when the program withdraws it.
+    const { term, csi, esc } = stubTerminal();
     suppressMouseTracking(term);
-    expect(csi).toHaveLength(1);
-    expect(csi[0].id).toEqual({ prefix: '?', final: 'h' });
+    expect(csi.map(h => h.id)).toEqual(expect.arrayContaining([{ prefix: '?', final: 'h' }, { prefix: '?', final: 'l' }]));
+    expect(csi).toHaveLength(2);
+    expect(esc.map(h => h.id)).toEqual([{ final: 'c' }]);
   });
 
   it('swallows the modes that kill scrollback and selection', () => {
-    const { term, csi } = stubTerminal();
+    const { term, csiFor } = stubTerminal();
     suppressMouseTracking(term);
-    const handled = csi[0].handler;
+    const handled = csiFor('h');
 
     // Every protocol and encoding Claude Code sets.
     for (const mode of [9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016]) {
@@ -61,9 +79,9 @@ describe('suppressMouseTracking', () => {
   });
 
   it('lets every unrelated private mode through', () => {
-    const { term, csi } = stubTerminal();
+    const { term, csiFor } = stubTerminal();
     suppressMouseTracking(term);
-    const handled = csi[0].handler;
+    const handled = csiFor('h');
 
     // Cursor visibility, alt screen, bracketed paste, focus reporting,
     // application cursor keys, wraparound.
@@ -73,6 +91,27 @@ describe('suppressMouseTracking', () => {
     // A mixed set keeps its unrelated mode rather than being dropped wholesale.
     expect(handled([1002, 25])).toBe(false);
     expect(handled([])).toBe(false);
+  });
+
+  it('lets every reset through to xterm, the mouse modes included', () => {
+    // Swallowing a reset would leave xterm holding a mode the program has
+    // turned off: leaving the alternate screen, among others.
+    const { term, csiFor } = stubTerminal();
+    suppressMouseTracking(term);
+    const reset = csiFor('l');
+
+    for (const mode of [9, 1000, 1002, 1003, 1006, 1016, 1, 25, 1049, 2004]) {
+      expect(reset([mode])).toBe(false);
+    }
+    expect(reset([1000, 1002, 1003, 1006])).toBe(false);
+    expect(reset([])).toBe(false);
+  });
+
+  it('lets RIS through to xterm', () => {
+    const { term, esc } = stubTerminal();
+    suppressMouseTracking(term);
+
+    expect(esc[0].handler()).toBe(false);
   });
 });
 
