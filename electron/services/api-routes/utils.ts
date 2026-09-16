@@ -7,7 +7,9 @@ import { RouteRequest } from './types';
 import { DATA_DIR_NAME } from '../../constants';
 
 /** Project path or id of the calling agent, injected as a header by the MCP
- *  client from its PTY environment. Absent for the UI and other local callers.
+ *  client from its PTY environment. Read only by the server's door, which
+ *  refuses an agent's token that comes with another agent's id: a header is a
+ *  claim, and no route takes an identity or a project from one.
  *
  *  Two names on purpose. The MCP client was renamed to send `X-Tars-Caller-*`
  *  while this reader still expected `x-dorothy-caller-project`; the bundles on
@@ -28,45 +30,33 @@ export function callerHeaderFrom(
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** The same reading, for the routes, which hold a request rather than headers.
- *  The server reads the id straight from the headers before routing, to check
- *  it against the token the call presents. */
-export function callerHeader(req: RouteRequest, suffix: 'project' | 'id'): string | undefined {
-  return callerHeaderFrom(req.raw?.headers, suffix);
-}
-
 /**
- * Which agent this call comes from.
+ * Which agent this call comes from: the one whose token it presented, and
+ * none otherwise.
  *
- * The one that presented its own token, when one did. The header only on the
- * shared token, which is the transition the server logs: a caller cannot hold
- * one agent's token and be taken for another, because the server refuses that
- * pair before any route runs.
+ * Never the header. On the shared token the header was believed for a while,
+ * and since every agent can read that token, any agent could name any other
+ * and be it. A call on the shared token has no agent behind it.
  *
  * One function for every route that asks, because two readings of who is
  * calling is how the bus's read door came to disagree with its write door.
  */
 export function callerId(req: RouteRequest): string | undefined {
-  return req.callerAgentId ?? callerHeader(req, 'id');
+  return req.callerAgentId;
 }
 
 /**
- * Which project this call belongs to.
+ * Which project this call belongs to: the project of the agent whose token it
+ * presented, read from the fleet, and none otherwise.
  *
- * The proven identity first: when the call carries an agent's own token, the
- * project is that agent's, read from the fleet, and the header is not
- * consulted at all. It is a claim, and a claim about a project is exactly what
- * the cross-project guard is supposed to be immune to.
- *
- * A disagreement here is not refused the way a disagreement about the id is.
- * An id cannot drift: it is minted with the agent and never changes. A project
- * can, whenever the agent is moved, and its running process keeps the
- * environment it was spawned with. So a header that no longer matches is stale
- * rather than forged, and the fleet is right where the environment is old.
+ * Never X-Tars-Caller-Project, with any token. It is a claim, and a claim about
+ * a project is exactly what the cross-project guard has to be immune to. It is
+ * not refused when it disagrees, the way a foreign id is: an agent that has
+ * been moved keeps the environment it was spawned with, so a stale project
+ * header is ordinary, and the fleet is right where the environment is old.
  */
 export function callerProject(req: RouteRequest): string | undefined {
-  const proven = req.callerAgentId ? agents.get(req.callerAgentId)?.projectPath : undefined;
-  return proven ?? callerHeader(req, 'project');
+  return req.callerAgentId ? agents.get(req.callerAgentId)?.projectPath : undefined;
 }
 
 /**

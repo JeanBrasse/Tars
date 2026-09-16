@@ -5,12 +5,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * Who an agent is on the local API: what its token says, not what it writes.
+ * Who an agent is on the local API: the agent its token was minted for, and
+ * nothing it writes.
  *
  * Every agent used to authenticate with ~/.dorothy/api-token, one secret for
- * the whole machine, and name itself in X-Tars-Caller-Id. The server believed
- * the name. So an agent could put a colleague's id in that header and read the
- * colleague's project room, or post in it, under the colleague's name.
+ * the whole machine that every agent can read, and name itself in
+ * X-Tars-Caller-Id. The server believed the name. So an agent could put a
+ * colleague's id in that header and read the colleague's project room, or
+ * post in it, under the colleague's name. An agent now calls with a token
+ * minted for its own process, and a call on the shared token is nobody,
+ * whatever headers come with it.
  *
  * These boot the real server on a port of their own and speak HTTP to it: the
  * real authentication block, the real bus and agent routes, tokens from the
@@ -45,7 +49,7 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
-import type { AgentStatus } from '../../../electron/types';
+import type { AgentStatus, BusMessage } from '../../../electron/types';
 
 // Imported once the constants above exist: the mock factory reads them, and a
 // static import would run it first. Held from here on, so that the modules the
@@ -53,19 +57,25 @@ import type { AgentStatus } from '../../../electron/types';
 let api: typeof import('../../../electron/services/api-server');
 let agents: typeof import('../../../electron/core/agent-manager')['agents'];
 let mintAgentToken: typeof import('../../../electron/core/agent-tokens')['mintAgentToken'];
+let busStore: typeof import('../../../electron/services/bus-store');
 
 const ALPHA = { id: 'agent-alpha', projectPath: '/projects/alpha' };
 const BETA = { id: 'agent-beta', projectPath: '/projects/beta' };
-/** Started before tokens existed: in the fleet, and holding none. */
-const GAMMA = { id: 'agent-gamma', projectPath: '/projects/gamma' };
 const ALPHA_ROOM = 'project:/projects/alpha';
 const BETA_ROOM = 'project:/projects/beta';
 const USURPATION = 'This call carries the token of one agent and the identity of another. '
   + 'An agent speaks as itself.';
+const REMEDY = 'An agent is known by the token Tars gives its process when it starts it, not by a name: '
+  + 'restart the agent from Tars.';
+/** callingAgent's refusal, which comes before any room is looked at. */
+const NO_AGENT = `This call has no agent identity, so it cannot be placed in a room. ${REMEDY}`;
+/** The cross-project guard's refusal of an MCP client it cannot scope. */
+const NO_SCOPE = `This agent has no identity, so its calls cannot be scoped to a project. ${REMEDY}`;
+/** A line of Noah's conversation with the super chat, which is what the global room serves. */
+const SUPER_CHAT_LINE = 'noah-private-line-7f3a';
 
 let alphaToken: string;
 let sharedToken: string;
-let warnings: string[];
 
 function putAgent(a: { id: string; projectPath: string }): void {
   agents.set(a.id, {
@@ -79,25 +89,39 @@ function putAgent(a: { id: string; projectPath: string }): void {
   } as AgentStatus);
 }
 
-function get(pathname: string, headers: Record<string, string>): Promise<{ status: number; body: Record<string, unknown> }> {
+function call(
+  method: 'GET' | 'POST',
+  pathname: string,
+  headers: Record<string, string>,
+  body?: Record<string, unknown>,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: PORT, path: pathname, method: 'GET', headers }, (res) => {
+    const payload = body ? JSON.stringify(body) : undefined;
+    const req = http.request({
+      host: '127.0.0.1',
+      port: PORT,
+      path: pathname,
+      method,
+      headers: payload ? { ...headers, 'content-type': 'application/json' } : headers,
+    }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data ? JSON.parse(data) : {} }));
     });
     req.on('error', reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
 
+const get = (pathname: string, headers: Record<string, string>) => call('GET', pathname, headers);
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
-const identityLines = () => warnings.filter(w => w.startsWith('[identity]'));
 
 beforeAll(async () => {
   api = await import('../../../electron/services/api-server');
   ({ agents } = await import('../../../electron/core/agent-manager'));
   ({ mintAgentToken } = await import('../../../electron/core/agent-tokens'));
+  busStore = await import('../../../electron/services/bus-store');
   api.startApiServer(
     null, { notificationsEnabled: false } as never, () => null, () => null, null, null,
     () => {}, () => {}, async () => 'pty', () => ({ notificationsEnabled: false } as never),
@@ -114,9 +138,22 @@ beforeAll(async () => {
     check();
   });
   sharedToken = api.getApiToken();
+  // What bus-handlers wires in the app: the global room reads the super chat.
+  busStore.setGlobalHistoryReader(() => [{
+    id: 'overseer-1',
+    roomId: busStore.GLOBAL_ROOM_ID,
+    threadId: busStore.GLOBAL_ROOM_ID,
+    authorKind: 'human',
+    authorId: 'human',
+    authorName: 'Noah',
+    text: SUPER_CHAT_LINE,
+    mentions: [],
+    createdAt: new Date().toISOString(),
+  } as BusMessage]);
 });
 
 afterAll(() => {
+  busStore.setGlobalHistoryReader(undefined);
   api.stopApiServer();
   fs.rmSync(tmp, { recursive: true, force: true });
 });
@@ -125,11 +162,8 @@ beforeEach(() => {
   agents.clear();
   putAgent(ALPHA);
   putAgent(BETA);
-  putAgent(GAMMA);
   alphaToken = mintAgentToken(ALPHA.id);
   mintAgentToken(BETA.id);
-  warnings = [];
-  vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warnings.push(args.map(String).join(' ')); });
 });
 
 afterEach(() => {
@@ -177,8 +211,8 @@ describe('an agent that holds its own token', () => {
   });
 });
 
-describe("an agent that holds its own token and names another", () => {
-  it("is refused, even for the room it would be let into as that agent", async () => {
+describe('an agent that holds its own token and names another', () => {
+  it('is refused, even for the room it would be let into as that agent', async () => {
     // The attack in full: alpha's token, beta's name, beta's room. As beta the
     // room would open. As alpha it is another project's room, so the
     // cross-project check would refuse it with a 403 of its own, which is why
@@ -190,7 +224,6 @@ describe("an agent that holds its own token and names another", () => {
     expect(status).toBe(403);
     expect(body.error).toBe(USURPATION);
     expect(body.room, 'beta\'s room came back to alpha').toBeUndefined();
-    expect(identityLines().join('\n')).toContain(`token belongs to agent ${ALPHA.id}, X-Tars-Caller-Id claimed ${BETA.id}`);
   });
 
   it('is refused on the agent routes too, since the check is at the door and not in the bus', async () => {
@@ -201,39 +234,70 @@ describe("an agent that holds its own token and names another", () => {
   });
 });
 
-describe('a caller still on the shared token', () => {
-  it('is believed on its header for now, and every such call is written down', async () => {
-    // The transition: an agent started before it could be given a token.
-    // Kept working so nothing breaks on the day this ships, and logged so the
-    // day nobody is left on this path can be read rather than guessed.
-    const { status, body } = await get('/api/bus/read', { ...bearer(sharedToken), 'x-tars-caller-id': GAMMA.id });
+describe('a call on the shared token', () => {
+  // Every agent can read ~/.dorothy/api-token. So whatever comes with it is
+  // what any agent could have written, and none of it can make the call an
+  // agent. Each test here is the header being believed again, played out.
 
-    expect(status, JSON.stringify(body)).toBe(200);
-    expect((body.room as { id: string }).id).toBe(`project:${GAMMA.projectPath}`);
-    expect(identityLines()).toEqual([
-      `[identity] /api/bus/read: agent ${GAMMA.id} still identifies itself with the shared token. `
-      + 'Restart it from Tars to give it one of its own.',
-    ]);
+  it("is nobody, whatever agent it names: it cannot read that agent's room", async () => {
+    // Beta's id and beta's project, and no room asked for, so the call would
+    // land in the caller's own room. Believed, that is beta's room with a 200,
+    // and no other check stands in the way: this dies on the status alone.
+    const { status, body } = await get('/api/bus/read', {
+      ...bearer(sharedToken), 'x-tars-caller-id': BETA.id, 'x-tars-caller-project': BETA.projectPath,
+    });
+
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(body.error).toBe(NO_AGENT);
+    expect(body.room, "beta's room came back to a caller that only named beta").toBeUndefined();
   });
 
-  it('is written down differently when it names an agent that holds a token of its own', async () => {
-    // Still believed: the fallback is the transition, and refusing here would
-    // break an agent whose MCP bundle is older than its token. But this is the
-    // line that can be somebody else, so it does not read like the harmless one.
-    const { status } = await get('/api/bus/read', { ...bearer(sharedToken), 'x-tars-caller-id': ALPHA.id });
+  it("cannot post in that agent's room under its name", async () => {
+    const { status, body } = await call('POST', '/api/bus/post', {
+      ...bearer(sharedToken), 'x-tars-caller-id': BETA.id,
+    }, { text: 'written by someone who is not beta' });
 
-    expect(status).toBe(200);
-    expect(identityLines()).toEqual([
-      `[identity] /api/bus/read: a call on the shared token claimed agent ${ALPHA.id}, which holds a token `
-      + `of its own. Either its MCP server predates per-agent tokens, or this call is not from ${ALPHA.id}.`,
-    ]);
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(body.error).toBe(NO_AGENT);
+    expect(busStore.getRoomSnapshot(BETA_ROOM)?.messages ?? []).toEqual([]);
   });
 
-  it('writes nothing down when it names no agent, which is the interface', async () => {
+  it('opens no global room even with no header at all, and hands back none of the super chat', async () => {
+    // Positive witness first: the room this asks for does serve the super chat,
+    // so a body without its line below is a refusal and not an empty room.
+    expect(JSON.stringify(busStore.getRoomSnapshot(busStore.GLOBAL_ROOM_ID))).toContain(SUPER_CHAT_LINE);
+
+    const { status, body } = await get('/api/bus/read?room=global', bearer(sharedToken));
+
+    expect(status).toBe(403);
+    // Refused for having no agent, before any room is looked at. Were a call
+    // with no agent behind it treated as the interface, it would get further:
+    // to resolveRoom's refusal of agents, a different message, or, with that
+    // gone too, to Noah's conversation.
+    expect(body.error).toBe(NO_AGENT);
+    expect(JSON.stringify(body)).not.toContain(SUPER_CHAT_LINE);
+  });
+
+  it('is not scoped by the project it names, so an MCP client on it cannot act on that project', async () => {
+    // What an agent's MCP server sends when its process has no token of its
+    // own. Believed, the project header scopes the call to beta's project and
+    // the guard lets it stop beta.
+    const { status, body } = await call('POST', `/api/agents/${BETA.id}/stop`, {
+      ...bearer(sharedToken),
+      'x-tars-client': 'mcp',
+      'x-tars-caller-id': BETA.id,
+      'x-tars-caller-project': BETA.projectPath,
+    }, {});
+
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(body.error).toBe(NO_SCOPE);
+  });
+
+  it('is still let in: having no agent behind it is not a refusal at the door', async () => {
+    // The super chat, the shell hooks and Hermes authenticate this way.
     const { status } = await get('/api/agents', bearer(sharedToken));
 
     expect(status).toBe(200);
-    expect(identityLines()).toEqual([]);
   });
 
   it('is refused with a token nobody minted', async () => {
@@ -244,54 +308,13 @@ describe('a caller still on the shared token', () => {
   });
 });
 
-describe('the transition journal', () => {
-  const journal = path.join(tmp, 'identity-transition.log');
+describe('an agent on its own token and the global room', () => {
+  it('is refused too, by the rule that keeps agents out of it', async () => {
+    const { status, body } = await get('/api/bus/read?room=global', bearer(alphaToken));
 
-  /**
-   * The journal's lines containing this text, once at least one has landed:
-   * the append is not awaited by the request. The file and the record of what
-   * was already written outlive each test, so every test names an agent of its
-   * own and nothing here can be satisfied by an earlier test's line.
-   */
-  async function journalLines(containing: string): Promise<string[]> {
-    const read = () => (fs.existsSync(journal) ? fs.readFileSync(journal, 'utf-8').split('\n') : [])
-      .filter(l => l.includes(containing));
-    for (let i = 0; i < 50 && read().length === 0; i++) await new Promise(r => setTimeout(r, 20));
-    return read();
-  }
-
-  it('is a file, because an app started from the Dock prints its console nowhere', async () => {
-    putAgent({ id: 'agent-journal-file', projectPath: '/projects/journal' });
-
-    await get('/api/agents', { ...bearer(sharedToken), 'x-tars-caller-id': 'agent-journal-file' });
-
-    const lines = await journalLines('/api/agents: agent agent-journal-file still identifies itself');
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z \[identity\] \/api\/agents: agent agent-journal-file /);
-    expect(fs.statSync(journal).mode & 0o777).toBe(0o600);
-  });
-
-  it('keeps an attempt to be another agent, which is the line that matters most', async () => {
-    await get('/api/agents', { ...bearer(alphaToken), 'x-tars-caller-id': 'agent-journal-victim' });
-
-    expect(await journalLines(`token belongs to agent ${ALPHA.id}, X-Tars-Caller-Id claimed agent-journal-victim`))
-      .toHaveLength(1);
-  });
-
-  it('writes one line per agent and route, however often the call repeats', async () => {
-    // A stale bundle polling /wait every few seconds would otherwise grow the
-    // file without bound. The console still gets every call.
-    putAgent({ id: 'agent-journal-repeat', projectPath: '/projects/journal' });
-    for (let i = 0; i < 5; i++) {
-      await get('/api/bus/read', { ...bearer(sharedToken), 'x-tars-caller-id': 'agent-journal-repeat' });
-    }
-    const needle = '/api/bus/read: agent agent-journal-repeat';
-    await journalLines(needle);
-    // Room for any duplicate append to land before counting.
-    await new Promise(r => setTimeout(r, 150));
-
-    expect(await journalLines(needle)).toHaveLength(1);
-    expect(identityLines().filter(l => l.includes(needle))).toHaveLength(5);
+    expect(status).toBe(403);
+    expect(body.error).toBe('The global room is the super chat, and is not open to agents.');
+    expect(JSON.stringify(body)).not.toContain(SUPER_CHAT_LINE);
   });
 });
 
@@ -301,13 +324,16 @@ describe('the MCP servers that call the API', () => {
   const KEYS = ['HOME', 'CLAUDE_MGR_API_URL', 'CLAUDE_MGR_API_TOKEN', 'CLAUDE_AGENT_ID', 'CLAUDE_PROJECT_PATH'];
 
   /**
-   * An agent's environment, as spawnAgentPty leaves it. HOME is a directory
-   * with no api-token in it: a client that ignored its own token and fell
-   * back to the file would have nothing to present, rather than presenting
-   * the real one of whoever runs the suite.
+   * An agent's environment, as spawnAgentPty leaves it, and nothing else of
+   * the environment the suite runs in: a suite run by an agent carries that
+   * agent's own CLAUDE_MGR_API_TOKEN. HOME defaults to a directory with no
+   * api-token in it, so a client that ignored its own token and fell back to
+   * the file would have nothing to present, rather than presenting the real
+   * one of whoever runs the suite.
    */
   function asAgent(env: Record<string, string>): void {
     saved = Object.fromEntries(KEYS.map(k => [k, process.env[k]]));
+    for (const k of KEYS) delete process.env[k];
     Object.assign(process.env, { HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${PORT}`, ...env });
   }
 
@@ -331,7 +357,6 @@ describe('the MCP servers that call the API', () => {
     const data = await apiRequest('/api/bus/read') as { room: { id: string } };
 
     expect(data.room.id).toBe(ALPHA_ROOM);
-    expect(identityLines(), 'the client fell back to the shared token').toEqual([]);
   });
 
   it('orchestrator: an agent that renames itself in its own environment is refused', async () => {
@@ -342,6 +367,18 @@ describe('the MCP servers that call the API', () => {
     await expect(apiRequest(`/api/bus/read?room=${encodeURIComponent(BETA_ROOM)}`)).rejects.toThrow(USURPATION);
   });
 
+  it('orchestrator: with no token of its own, the shared file and a colleague\'s name make it nobody', async () => {
+    // The other way to be beta: drop the token, and let the client fall back to
+    // the file every agent can read, with beta's id in the environment.
+    const sharedHome = fs.mkdtempSync(path.join(tmp, 'shared-home-'));
+    fs.mkdirSync(path.join(sharedHome, '.dorothy'));
+    fs.writeFileSync(path.join(sharedHome, '.dorothy', 'api-token'), sharedToken);
+    asAgent({ HOME: sharedHome, CLAUDE_AGENT_ID: BETA.id, CLAUDE_PROJECT_PATH: BETA.projectPath });
+    const { apiRequest } = await orchestratorClient();
+
+    await expect(apiRequest('/api/bus/read')).rejects.toThrow(NO_AGENT);
+  });
+
   it('memory: presents the agent\'s own token', async () => {
     asAgent({ CLAUDE_MGR_API_TOKEN: alphaToken, CLAUDE_AGENT_ID: ALPHA.id, CLAUDE_PROJECT_PATH: BETA.projectPath });
     vi.resetModules();
@@ -350,7 +387,7 @@ describe('the MCP servers that call the API', () => {
     const data = await apiRequest('/api/agents') as { scopedToProject: string };
 
     // Scoped by the token's agent, not by the project its environment names.
+    // A client that fell back to the file would find none in HOME and get a 401.
     expect(data.scopedToProject).toBe(ALPHA.projectPath);
-    expect(identityLines()).toEqual([]);
   });
 });

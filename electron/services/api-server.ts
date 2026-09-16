@@ -11,8 +11,7 @@ import { API_PORT, API_TOKEN_FILE } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
-import { agentForToken, hasAgentToken } from '../core/agent-tokens';
-import { noteIdentity } from './identity-journal';
+import { agentForToken } from '../core/agent-tokens';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -127,42 +126,41 @@ export type CallerResolution =
 /**
  * Who this call is from, decided by what it presents rather than what it says.
  *
- * Three outcomes, and the middle one is the whole point.
- *
- * - An **agent's own token**, minted at its spawn: the caller is that agent,
- *   and nothing it writes in a header can change that. If it also sends an
- *   X-Tars-Caller-Id naming somebody else, that is not a mistake any honest
- *   caller makes, since the id and the token come from the same environment,
- *   so the call is refused rather than quietly re-labelled. That refusal is
- *   the only place an attempt to be another agent is visible.
- * - The **shared token**, `~/.dorothy/api-token`: authorised, with no identity
- *   attached. The renderer and the shell hooks are here and always will be,
- *   and so is every agent whose bundled MCP server predates this change: their
- *   header is still honoured downstream, and every such call is logged so the
- *   day nobody is left on that path can be read rather than guessed. Removing
- *   the fallback means ignoring the header for these callers. It does not mean
- *   refusing the shared token, which is what the interface authenticates with.
+ * - An **agent's token**, minted when its process was started: the caller is
+ *   that agent, and nothing it writes in a header can change that. An
+ *   X-Tars-Caller-Id naming somebody else alongside it is not a mistake any
+ *   honest caller makes, since the id and the token come from the same
+ *   environment, so the call is refused rather than quietly re-labelled.
+ * - The **shared token**, `~/.dorothy/api-token`: authorised, and nobody. No
+ *   header is read with it, neither the id nor the project. Every agent can
+ *   read that file, so a name that comes with it proves nothing, and believing
+ *   the name was how any agent could be any other. Who presents it, measured:
+ *   the super chat dispatching to an agent, the shell hooks, Hermes calling
+ *   its webhook, a curl run by hand, and an MCP server whose process was
+ *   started without a token of its own. Not the renderer: it only ever calls
+ *   /api/local-file, which is exempt, and presents no token.
  * - Anything else: unauthorised, with the same flat message as before, which
  *   tells a prober nothing about which of the two it got wrong.
+ *
+ * Nobody is not the same as refused, and the difference is per route. The bus
+ * refuses a call with no agent behind it, before looking at any room, so the
+ * shared token opens no room, the global one included. The cross-project
+ * guard of the agent routes does not: it lets such a caller through unless it
+ * says it is an MCP client, which is a header too. So whoever reads the file
+ * can still drive every project's agents, as before this existed; refusing it
+ * there waits on the super chat, which dispatches that way, reaching the
+ * agents without it.
  */
-export function resolveCaller(
-  headers: http.IncomingHttpHeaders,
-  pathname: string,
-): CallerResolution {
+export function resolveCaller(headers: http.IncomingHttpHeaders): CallerResolution {
   const auth = headers.authorization;
   const presented = typeof auth === 'string' && auth.startsWith('Bearer ')
     ? auth.slice('Bearer '.length)
     : '';
-  const claimed = callerHeaderFrom(headers, 'id');
 
-  const provenAgentId = presented ? agentForToken(presented) : undefined;
-  if (provenAgentId) {
-    if (claimed && claimed !== provenAgentId) {
-      noteIdentity(
-        `refused|${provenAgentId}|${claimed}|${pathname}`,
-        `[identity] refused ${pathname}: token belongs to agent ${provenAgentId}, `
-        + `X-Tars-Caller-Id claimed ${claimed}`,
-      );
+  const agentId = presented ? agentForToken(presented) : undefined;
+  if (agentId) {
+    const claimed = callerHeaderFrom(headers, 'id');
+    if (claimed && claimed !== agentId) {
       return {
         ok: false,
         status: 403,
@@ -170,30 +168,10 @@ export function resolveCaller(
           + 'An agent speaks as itself.',
       };
     }
-    return { ok: true, agentId: provenAgentId };
+    return { ok: true, agentId };
   }
 
   if (apiToken && presented === apiToken) {
-    if (claimed) {
-      // The journal the transition is read from. Only a caller that names an
-      // agent lands here: the interface sends no such header and is silent.
-      //
-      // Two kinds of line, because only one of them can be a colleague's name
-      // in someone else's mouth. Any process that can read ~/.dorothy can still
-      // present the shared token and any id it likes until this fallback goes.
-      // An agent started before tokens existed has no token, and that is just
-      // old. An agent that holds one and does not present it either runs an
-      // MCP bundle that predates it, or is being claimed by something else.
-      const holdsOne = hasAgentToken(claimed);
-      noteIdentity(
-        `shared|${holdsOne ? 'claimed' : 'old'}|${claimed}|${pathname}`,
-        holdsOne
-          ? `[identity] ${pathname}: a call on the shared token claimed agent ${claimed}, which holds a token `
-            + `of its own. Either its MCP server predates per-agent tokens, or this call is not from ${claimed}.`
-          : `[identity] ${pathname}: agent ${claimed} still identifies itself with the shared token. `
-            + 'Restart it from Tars to give it one of its own.',
-      );
-    }
     return { ok: true };
   }
 
@@ -311,7 +289,7 @@ export function startApiServer(
     // to session ownership, which is stronger than anything a header could say.
     let caller: CallerResolution = { ok: true };
     if (!authExempt) {
-      caller = resolveCaller(req.headers, pathname);
+      caller = resolveCaller(req.headers);
       if (!caller.ok) {
         res.writeHead(caller.status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: caller.error }));

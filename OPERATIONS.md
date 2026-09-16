@@ -448,7 +448,6 @@ work.
 | `~/.dorothy/agents.backup.json` | same | last good copy, taken from content just parsed successfully |
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
-| `~/.dorothy/identity-transition.log` | `electron/services/identity-journal.ts` | calls still naming themselves on the shared token, and refused attempts to use one agent's token under another's name; one line per kind, agent and route per app run, mode `0600` |
 | `~/.dorothy/hermes-webhook-secret` | `electron/handlers/hermes-handlers.ts` (`readWebhookSecret`) | bearer for `POST /api/webhooks/hermes`; auto-provisioned with 32 random bytes at mode `0600` on first read |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | board |
@@ -534,11 +533,11 @@ Three layers, in order:
    reach `127.0.0.1`, and CORS hides the response but not the side effect. Shell hooks send no
    `Origin` at all, which is why they pass.
 2. **Bearer token.** `Authorization: Bearer <~/.dorothy/api-token>`, or the token an agent was
-   spawned with (`CLAUDE_MGR_API_TOKEN`), else `401`. Exempt paths: `/api/health`,
+   started with (`CLAUDE_MGR_API_TOKEN`), else `401`. Exempt paths: `/api/health`,
    `/api/local-file`, and anything under `/api/hooks/`. **Who is calling** is decided here too,
    by `resolveCaller`: an agent's own token names that agent, and an `X-Tars-Caller-Id` naming
-   anyone else alongside it is refused `403` before any route runs. On the shared token the
-   header is still believed, for the transition below.
+   anyone else alongside it is refused `403` before any route runs. The shared token names no
+   agent, and no header is read with it: every agent can read that file.
 3. **Body limit.** 4 MiB (`MAX_BODY_BYTES`) → `413`, enforced *before* routing so the exempt
    hook paths cannot exhaust main-process memory without a credential. `__proto__` and
    `constructor` are stripped from every parsed body.
@@ -573,7 +572,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET/POST/PUT/DELETE | `/api/vault/documents[/:id]` · `/api/vault/folders[/:id]` · `/api/vault/search` · `/:id/attach` |
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
-| POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names, or on the shared token the one named in `X-Tars-Caller-Id`) |
+| POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
 | POST | `/api/telegram/{send,send-photo,send-video,send-document}` · `/api/slack/send` |
 | POST | `/api/webhooks/hermes` |
 
@@ -607,46 +606,35 @@ stat -f '%Sp %N' ~/.dorothy/api-token      # expect -rw-------
 an orchestrator cannot pick another project's agent ID out of a global listing.
 `assertSameProject()` gates `start`, `dispatch`, `run-task`, `stop`, `message` and `DELETE`.
 
-The identity comes from the token the MCP client presents: `spawnAgentPty` mints one per agent
-process into `CLAUDE_MGR_API_TOKEN`, and the caller's project is that agent's `projectPath` in
-the fleet, whatever `X-Tars-Caller-Project` says. The headers (`CLAUDE_AGENT_ID`,
-`CLAUDE_PROJECT_PATH`) are only believed on the shared token.
+The identity comes from the token the MCP client presents, and from nothing else:
+`spawnAgentPty` mints one per agent terminal and `delegateOverAcp` one per delegated run, into
+`CLAUDE_MGR_API_TOKEN`, and the caller's project is that agent's `projectPath` in the fleet. The
+headers (`X-Tars-Caller-Id`, `X-Tars-Caller-Project`) scope nothing, on any token.
 
-**The transition.** An agent whose MCP bundle predates per-agent tokens still calls with the
-shared token and its headers, and still works. Every such call, and every refused attempt to
-present one agent's token under another's name, goes to `~/.dorothy/identity-transition.log`,
-one line per kind, agent and route for the life of the app. A line saying a call "claimed agent
-X, which holds a token of its own" is either a stale bundle or not X. When a restart on a
-current build adds no `still identifies itself` or `claimed agent` lines, nobody is left on the
-shared path and the fallback in `resolveCaller` can go:
+An MCP client whose process has no token of its own falls back to `~/.dorothy/api-token` and is
+refused on these routes:
 
-```bash
-grep -cE 'still identifies itself|claimed agent' ~/.dorothy/identity-transition.log
-grep 'refused' ~/.dorothy/identity-transition.log      # attempts to speak as another agent
+```
+403 This agent has no identity, so its calls cannot be scoped to a project.
+    An agent is known by the token Tars gives its process when it starts it, not by a name:
+    restart the agent from Tars.
 ```
 
-`mcp-kanban` is outside this: it never calls the API, it reads and writes the files directly.
+It happens to an agent started outside Tars, or to a CLI that does not pass its environment on
+to its MCP servers. Confirm the token reached the server process (names only, never print the
+values):
 
-> **Known defect: read this before debugging a delegation failure.** The server reads
-> `x-dorothy-caller-project` (`agent-routes.ts:337`). Both MCP clients send
-> `X-Tars-Caller-Project` (`mcp-orchestrator/src/utils/api.ts:53`, `mcp-memory/src/utils/api.ts:53`).
-> The names do not match, so `callerProject()` is always `undefined` for MCP callers, and the
-> `X-Tars-Client: mcp` branch fires unconditionally:
->
-> ```
-> 403 This agent has no identity, so its calls cannot be scoped to a project.
->     Restart the agent from Tars so it is spawned with CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH.
-> ```
->
-> Restarting the agent does not help: the env vars are already there. Confirm with:
->
-> ```bash
-> grep -rn "caller-project" electron/services/api-routes/agent-routes.ts
-> grep -rn "Caller-Project" mcp-orchestrator/src/utils/api.ts
-> ```
->
-> The unit test at `__tests__/electron/services/api-routes/agent-routes.test.ts:500` asserts the
-> server-side spelling, so the suite is green either way. The two must be made to agree.
+```bash
+ps -Eww -o command= -p <pid of the mcp-orchestrator bundle> | tr ' ' '\n' | grep -o '^CLAUDE_[A-Z_]*=' | sort -u
+```
+
+**What this guard is not.** A caller with no agent token and no `X-Tars-Client: mcp` header is
+not scoped at all: that is how the super chat dispatches to every project, and it is also what
+any process that reads `~/.dorothy/api-token` gets. `allowCrossProject: true` lets any agent
+through. The guard stops an orchestrator from acting on the wrong project by mistake; it does not
+stop an agent that means to.
+
+`mcp-kanban` is outside this: it never calls the API, it reads and writes the files directly.
 
 Genuine cross-project denials read differently and are recoverable:
 

@@ -27,25 +27,26 @@ import { broadcastPublication, fanOutDeliveries } from '../bus-delivery';
  */
 
 /**
- * The agent behind this call.
+ * The agent behind this call: the one whose token it presents, minted when
+ * that agent's process was started.
  *
- * From the token the call presents, which was minted for one agent at its
- * spawn, and only from the header when there is no such token: an agent whose
- * bundled MCP server predates per-agent tokens still names itself that way,
- * and the server logs each of those calls so the fallback can be removed on
- * evidence rather than on a guess.
+ * Refused when there is none, and refused here, before any room is looked at.
+ * That order is what keeps the shared token out of every room: it has no agent
+ * behind it, so it never reaches resolveRoom, and in particular never the
+ * global room, which is Noah's conversation with the super chat. A name in a
+ * header does not count, since any agent can read the shared token and write
+ * any name beside it.
  *
  * A call that presents a token and claims to be somebody else never reaches
- * here: resolveCaller refuses it at the door. So the two can only agree by the
- * time this runs, and the room this caller ends up in is the room of an agent
- * it has proved it is.
+ * here either: resolveCaller refuses it at the door.
  */
 function callingAgent(req: RouteRequest, sendJson: SendJson): { id: string; projectPath: string } | undefined {
   const callerId = resolveCallerId(req);
   if (!callerId) {
     sendJson({
       error: 'This call has no agent identity, so it cannot be placed in a room. '
-        + 'Restart the agent from Tars so it is spawned with CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH.',
+        + 'An agent is known by the token Tars gives its process when it starts it, not by a name: '
+        + 'restart the agent from Tars.',
     }, 403);
     return undefined;
   }

@@ -6,6 +6,7 @@ import { getProvider } from '../../providers';
 import type { AgentStatus, AppSettings } from '../../types';
 import * as fs from 'fs';
 import { recordUsage } from '../usage-ledger';
+import { mintRunToken } from '../../core/agent-tokens';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -29,10 +30,14 @@ export interface DelegationResult {
 /** Tools an orchestrator must not use itself, whatever CLI it runs. */
 const ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook'];
 
-function mcpServersFor(agent: AgentStatus): { name: string; command: string; args: string[]; env: { name: string; value: string }[] }[] {
+function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; command: string; args: string[]; env: { name: string; value: string }[] }[] {
+  // Handed over by name, since a CLI may start these servers with this list
+  // and nothing else. The token is what the API takes the caller from; the id
+  // alone would make every call from this run nobody's.
   const env = [
     { name: 'CLAUDE_AGENT_ID', value: agent.id },
     { name: 'CLAUDE_PROJECT_PATH', value: agent.projectPath },
+    { name: 'CLAUDE_MGR_API_TOKEN', value: apiToken },
   ];
 
   const servers: { name: string; command: string; args: string[]; env: typeof env }[] = [];
@@ -77,14 +82,21 @@ export async function delegateOverAcp(opts: {
   }
 
   const provider = getProvider(agent.provider ?? 'claude');
+  // This run's own token. spawnAgentPty, which gives a terminal its token, is
+  // not on this path, and without one the run's MCP servers would fall back to
+  // the shared token, on which a call has no agent behind it: no room on the
+  // bus, no delegation onward. Its own rather than the terminal's, so that
+  // neither can cut the other off, and revoked when the run is over.
+  const { token: apiToken, revoke } = mintRunToken(agent.id);
   const session = new AcpSession(launch, {
     cwd,
     env: {
       ...provider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills ?? [], appSettings),
       CLAUDE_AGENT_ID: agent.id,
       CLAUDE_PROJECT_PATH: agent.projectPath,
+      CLAUDE_MGR_API_TOKEN: apiToken,
     },
-    mcpServers: mcpServersFor(agent),
+    mcpServers: mcpServersFor(agent, apiToken),
     permissionMode: agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : 'normal',
     // An orchestrator delegates; it does not edit. Enforced here by the
@@ -138,6 +150,7 @@ export async function delegateOverAcp(opts: {
     };
   } finally {
     session.stop();
+    revoke();
   }
 }
 

@@ -382,8 +382,12 @@ function recordRequester(agent: AgentStatus, req: RouteRequest): void {
  * Cross-project guard: an orchestrator may only act on agents of its own
  * project. This is what stops an orchestrator from delegating to another
  * project's agents when the LLM picks a wrong ID from a global listing.
- * Callers without identity headers (UI, curl) are unrestricted, and a caller
- * can explicitly override with allowCrossProject: true.
+ * The project is the one of the agent whose token the call presents.
+ *
+ * A guard against mistakes, not a boundary. A caller with no agent token (the
+ * super chat, a curl by hand, but also anything that read the shared token)
+ * is unrestricted unless it says it is an MCP client, and any agent can pass
+ * allowCrossProject: true.
  */
 function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: SendJson): boolean {
   const caller = callerProject(req);
@@ -394,7 +398,8 @@ function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: Send
   if (!caller && req.raw?.headers?.['x-tars-client'] === 'mcp') {
     sendJson({
       error: 'This agent has no identity, so its calls cannot be scoped to a project. '
-        + 'Restart the agent from Tars so it is spawned with CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH.',
+        + 'An agent is known by the token Tars gives its process when it starts it, not by a name: '
+        + 'restart the agent from Tars.',
     }, 403);
     return false;
   }
