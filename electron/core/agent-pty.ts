@@ -1,5 +1,6 @@
 import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
+import { API_PORT } from '../constants';
 
 /**
  * Spawn the PTY an agent's CLI runs in.
@@ -41,6 +42,18 @@ export function spawnAgentPty(opts: {
     cwd: opts.cwd,
     env: {
       ...opts.env,
+      // Which Tars this CLI answers to: its hooks, its bundled MCP servers and
+      // anything else that calls back. It is set here, after the caller's env,
+      // for the reason this module exists. initAgentPty set it and
+      // spawnAgentSession never did, so every agent started through the API,
+      // which is /start, /dispatch, /message and delegation, ran with no port
+      // at all and fell back to 31415. A sandbox on 31499 therefore wrote its
+      // statuses into whichever Tars owned 31415, which is the live one.
+      //
+      // After opts.env on purpose: an agent spawned by an agent inherits the
+      // parent's value, and the app that spawns a CLI is the app that CLI must
+      // report to.
+      CLAUDE_MGR_API_URL: `http://127.0.0.1:${API_PORT}`,
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });

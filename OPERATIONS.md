@@ -126,10 +126,14 @@ rm -rf ~/Tars-sandbox
 
 Logs land in `~/Tars-sandbox/tars.log`.
 
-> **Caveat the script does not mention:** the shell hooks in `hooks/` hardcode
-> `http://127.0.0.1:31415`: all 14 occurrences. An agent spawned from the sandbox posts its
-> status, output and observations to your **production** instance. Treat sandbox agent status
-> as untrustworthy, and never debug the status lifecycle from the sandbox.
+> **The hooks follow the port.** Each of the 14 reads `CLAUDE_MGR_API_URL`, which Tars puts in
+> the pty environment from `DOROTHY_API_PORT`, and falls back to `http://127.0.0.1:31415` only
+> when nothing set it, which is the case for a `claude` you started yourself. A sandbox on 31499
+> therefore writes to the sandbox.
+>
+> Until 1.6.19 all 14 hardcoded `http://127.0.0.1:31415`, so an agent spawned from the sandbox
+> posted its status, output and observations into the **production** instance. If you are reading
+> an older build, treat sandbox agent status as untrustworthy.
 
 ### Lint
 
@@ -813,7 +817,7 @@ which jq curl
 | agents stuck `idle` while clearly working | `jq` not on the hook's PATH: every script `exit 0`s with `{"continue":true}` and posts nothing |
 | status posts ignored after a restart | `SessionStart` registration was lost; the stale-session guard drops later posts. Stop and re-dispatch the agent |
 | no memory injected at session start | `/api/memory/context` returned empty, or `$HOME/.dorothy/api-token` is unreadable; `/api/memory/*` is **not** auth-exempt |
-| sandbox/E2E agent status shows up in prod | hooks hardcode `31415`; see *Run a second Tars beside your live one* |
+| sandbox/E2E agent status shows up in prod | fixed in 1.6.19: the hooks follow `CLAUDE_MGR_API_URL`. On an older build they hardcoded `31415`; see *Run a second Tars beside your live one* |
 
 ---
 

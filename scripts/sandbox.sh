@@ -6,6 +6,9 @@
 #     ~/.claude (mémoire, MCP, hooks) et ~/Library/Application Support/Tars
 #     (localStorage, fenêtres) sont des copies de test, jamais les vrais.
 #   - API sur le port 31499              → aucun conflit avec la prod (31415).
+#   - Les hooks suivent CLAUDE_MGR_API_URL, que Tars injecte depuis
+#     DOROTHY_API_PORT : un agent du bac poste donc bien sur 31499. Ils
+#     codaient 31415 en dur, et la promesse ci-dessous etait fausse.
 #
 # La prod qui tourne n'est ni vue, ni touchée. Le bac à sable est PERSISTANT
 # entre les lancements (settings/agents de test conservés) :
