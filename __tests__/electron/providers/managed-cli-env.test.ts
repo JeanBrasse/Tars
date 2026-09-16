@@ -134,7 +134,7 @@ beforeEach(() => {
   // inherits the user's environment. It also means "Tars did not add this" and
   // "this is not present" are different statements, and every assertion below
   // is about the first. Tars has run its own agents with DISABLE_AUTOUPDATER=1
-  // since 1.6.19, so this suite was green in CI and red in any terminal Tars
+  // since 1.7.0, so this suite was green in CI and red in any terminal Tars
   // had started, including the one a Tars agent runs these tests in. A test
   // whose result depends on who launches it guards nothing.
   //

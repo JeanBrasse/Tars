@@ -42,7 +42,7 @@ vi.mock('electron-updater', () => ({
 vi.mock('electron', () => ({
   app: {
     getPath: () => tmpHome, getAppPath: () => process.cwd(), isPackaged: false,
-    getVersion: () => '1.6.19', getName: () => 'Tars', on: vi.fn(), whenReady: vi.fn(),
+    getVersion: () => '1.7.0', getName: () => 'Tars', on: vi.fn(), whenReady: vi.fn(),
   },
   BrowserWindow: vi.fn(),
   Notification: vi.fn(),

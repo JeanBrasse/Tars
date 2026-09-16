@@ -8,7 +8,7 @@ export interface Release {
 export const CHANGELOG: Release[] = [
   {
     id: 37,
-    version: '1.6.19',
+    version: '1.7.0',
     date: '2026-09-16',
     updates: [
       'Two ways an agent could reach past its own work are closed. One let any agent read your private conversation with the super chat, which is yours and was never part of what an agent is shown. The other let a message sent to an agent stop being a message: it could arrive at the terminal of that agent in a form that made it run something instead of read it, which is the one thing the note attached to every message exists to prevent, since that note tells the agent it is hearing a teammate and not you. Neither is possible now, and nothing changes in how you use Tars',
