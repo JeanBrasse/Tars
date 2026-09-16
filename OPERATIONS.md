@@ -807,7 +807,11 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   `agent.error` to that message verbatim, capped at 500 chars, which is also the body of the
   error notification. Measured with claude 2.1.268 and a HOME holding no credential:
   `error: authentication_failed`, `last_assistant_message: "Not logged in · Please run /login"`.
-  The next `UserPromptSubmit` clears `agent.error`.
+  The next `UserPromptSubmit` clears `agent.error`. About 60 s after the failure the CLI raises its
+  idle prompt, which `notification.sh` sends twice, as a notification and as `status: waiting`:
+  for an agent in `error` neither lands (`isStoppedOnAFailure` in `hooks-routes.ts`), so the
+  card keeps the failure and no "is waiting" alert contradicts it. A permission prompt is not
+  held back, since it only occurs inside a turn, and a turn has already left `error`.
 
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
