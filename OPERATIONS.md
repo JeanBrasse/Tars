@@ -329,14 +329,16 @@ mv src/app/_icon_backup.tsx src/app/icon.tsx
 git status src/app
 ```
 
-### Full signed build
+### Full build
 
 ```bash
 npm run electron:build
 ```
 
 `build:renderer` + `tsc` + all seven MCP bundles + `electron-builder --mac`
-(targets `dmg` and `zip`). Output: `release/`.
+(targets `dmg` and `zip`), then `scripts/prune-releases.mjs`. Output: `release/` of the checkout
+it runs in. To publish, do not stop here: `npm run release` runs this build itself, see
+*Cut a release*.
 
 electron-builder config lives inline in `package.json` under `"build"`:
 
@@ -374,10 +376,13 @@ shells that inherit `DYLD_*` from the environment.
 keychain profile named `Tars` when `APPLE_ID` is unset, otherwise
 `APPLE_ID`/`APPLE_APP_PASSWORD`/`APPLE_TEAM_ID`.
 
-> **It is not wired up.** There is no `afterSign` key in the `build` block of `package.json`,
-> so `electron-builder` never calls it. `npm run electron:build` today produces a signed but
-> **un-notarized** app; on another Mac Gatekeeper will refuse it. Either add
-> `"afterSign": "scripts/notarize.js"` to `build`, or notarize by hand:
+> **It is not wired up, and there is nothing to sign with.** There is no `afterSign` key in the
+> `build` block of `package.json`, so `electron-builder` never calls it, and this machine has no
+> Developer ID identity (`security find-identity -v -p codesigning` reports 0). So
+> `npm run electron:build` produces an app signed **ad hoc** (`codesign -dv` gives
+> `Signature=adhoc`, `TeamIdentifier=not set`), not a signed one: on another Mac Gatekeeper
+> warns on first open, which is what the footer of every release note says. With an identity,
+> either add `"afterSign": "scripts/notarize.js"` to `build`, or notarize by hand:
 
 ```bash
 xcrun notarytool submit release/Tars-1.5.0-arm64.dmg --keychain-profile Tars --wait
@@ -416,30 +421,77 @@ Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates ==
 
 ### Cut a release
 
+**`npm run release` is the only way a release is published.** Never `gh release create` by
+hand, never a script outside the repository, never a copy of the artifacts. On 16/09 all three
+happened: 1.7.0 and 1.7.1 were built in a worktree while the folder Noah opens stayed on 1.6.19,
+the artifacts were copied instead of moved, and one version's `latest-mac.yml` was written over
+another's.
+
+Before it, as always: the version bumped in `package.json`, its entry at the top of
+`src/data/changelog.ts`, merged into `main`, and the gate passed (`npm test`, both `tsc`, lint,
+the final e2e).
+
 ```bash
-# 1. bump
-npm version 1.5.1 --no-git-tag-version
-
-# 2. gate
-npm test
-npx tsc -p electron/tsconfig.json && npm run e2e
-npm run lint && npm run lint:design
-
-# 3. build
-npm run electron:build
-
-# 4. verify the artefacts
-ls -la release/
-codesign -dv --verbose=4 release/mac-arm64/Tars.app
-
-# 5. publish: the tag must be v<version> for the fallback comparison to work
-gh release create v1.5.1 release/*.dmg release/*.zip release/latest-mac.yml \
-  --repo JeanBrasse/Tars
+npm run release -- --dry-run   # the checks, the artifacts of this version if built, the notes; nothing else
+npm run release                # the release
 ```
 
+Between two releases, `release/` of the main checkout holds the last release's build, its
+`latest-mac.yml` included. The dry run says so and checks the artifacts only once `release/` holds
+a build of the version being released.
+
+`scripts/release.mjs` stops at the first thing that is not as it should be:
+
+1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean,
+   `v<version>` exists on GitHub neither as a release nor as a tag, the top entry of the
+   changelog is that version, and no newer version is published. A GitHub it cannot ask is a
+   refusal, not a pass;
+2. runs `npm run electron:build` in this checkout (a worktree is fine), without `CI`, `GH_TOKEN`
+   or `GITHUB_TOKEN`, so `electron-builder` never publishes anything by itself. **Not before**
+   checking what the build writes over: `latest-mac.yml`, `builder-debug.yml` and `mac-arm64` in
+   `release/` belong to the last build put there. They may go only if that build is an earlier
+   attempt at this same version, or an older version GitHub proves published with that very
+   `latest-mac.yml`. From a worktree, the kept folder must also be able to take the build at step
+   7: no file of this version in it, and the same proof for the build it holds, or the release
+   would be public before the move is refused. The dry run makes the same checks;
+3. checks the artifacts: `version` of `latest-mac.yml`, the size and sha512 (base64 of the whole
+   file) it gives the dmg and the zip, and `CFBundleShortVersionString` of the built app;
+4. writes the notes from that changelog entry, with the footer on the ad hoc signature, in the
+   form of `v1.7.1`. A long dash stops it;
+5. `gh release create v<version>` with the dmg, the zip and `latest-mac.yml`, on the exact commit
+   built (`--target`), as the latest release;
+6. reads back what GitHub serves: the tag on that commit, the `sha256` digest of every asset
+   against the local file, `latest-mac.yml` byte for byte, and `/releases/latest`;
+7. from a worktree, **moves** (never copies) the dmg, the zip, their blockmaps, `latest-mac.yml`,
+   `builder-debug.yml` and `mac-arm64` into the kept folder. It checks again what step 2 checked
+   before building: it overwrites no file of this version with other bytes, and replaces the
+   previous build's manifest and app only when GitHub proves that version published with that very
+   manifest;
+8. prunes the kept folder;
+9. prints the local path of the dmg and the URL of the release.
+
 `latest-mac.yml` must be in the release assets or `electron-updater` throws and every client
-silently drops to the GitHub-API fallback, which, per the mismatch above, is looking at the
-other repo.
+silently drops to the GitHub-API fallback.
+
+### Which builds are kept
+
+**The kept folder is `release/` of the main checkout**, `/Users/noah/tars/release/`, the one Noah
+opens. `scripts/prune-releases.mjs` finds it through git (the parent of
+`git rev-parse --git-common-dir`) from the main checkout or any worktree, and never uses
+`release/` of the current directory; tests name their folder with `--release-dir` or
+`TARS_RELEASE_DIR`.
+
+It keeps the **three newest versions** and deletes an older one **only when GitHub proves it
+published**: a release `v<version>` on the repository of `build.publish` carrying its dmg and
+its zip, with the size and, where GitHub gives one, the `sha256` digest of the local files. A
+version that is not published, or published with other files, is kept and named. When the proof
+cannot be had at all (gh missing, logged out, offline, an API error), nothing is deleted, the
+build still succeeds, and every version kept for that reason is named. It runs at the end of every
+`electron:build` and as step 8 of the release.
+
+Beside the versions, the folder holds the `latest-mac.yml`, `builder-debug.yml` and `mac-arm64`
+of the last release. Leave them: the next release checks them before building over them (step 2),
+and a manifest deleted by hand is one that nothing can compare any more.
 
 ---
 
@@ -1205,9 +1257,10 @@ only 234. The top-level `-not -path './node_modules/*'` is not enough: you must 
 find . -name '*.test.ts' -not -path '*/node_modules/*' -not -path './.worktrees/*' -not -path './.claude/*'
 ```
 
-Also gitignored and safe to delete: `.next/`, `out/`, `release/`, `electron/dist/`,
+Also gitignored and safe to delete: `.next/`, `out/`, `electron/dist/`,
 `mcp-*/dist`, `mcp-*/node_modules`, `e2e/report/`, `test-results/`, `design/exports/`,
-`*.tsbuildinfo`.
+`*.tsbuildinfo`. Not `release/` of the main checkout: it is the folder where builds are kept,
+and it may hold the only copy of a version never published (see *Which builds are kept*).
 
 `build/` is in `.gitignore` but `build/entitlements.mac.plist` is tracked: do not "clean" it.
 
