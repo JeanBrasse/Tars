@@ -2,8 +2,8 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CHAT_ROOMS, splitPageErrors } from './surfaces.mjs';
-import { seedSandbox } from './fixture.mjs';
+import { CHAT_ROOMS, recordPageErrors } from './surfaces.mjs';
+import { launchSandboxed, seedSandbox } from './fixture.mjs';
 
 /**
  * The Chat room, one frame per state, in a sandbox of its own.
@@ -32,12 +32,9 @@ type ChatSurface = { name: string; route: string; clickText?: string; shows: str
 test.beforeAll(async () => {
   sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-chat-'));
   seedSandbox(sandboxHome, { chatRooms: true });
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, sandboxHome, {
     timezoneId: 'UTC',
     env: {
-      ...process.env,
-      HOME: sandboxHome,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the other suites may still be holding 31498 and 31496.
@@ -85,11 +82,10 @@ for (const surface of CHAT_ROOMS as ChatSurface[]) {
     await page.waitForTimeout(900);
 
     // One rule for the whole suite: the known defects declared in surfaces.mjs
-    // are annotated, anything else fails. The check that none of those
-    // allowances has outlived its defect belongs to the sweep, which visits
-    // every surface; this file only has to agree about what is tolerated.
-    const { fatal, seen } = splitPageErrors(pageErrors.slice(errorsBefore));
-    for (const key of seen) test.info().annotations.push({ type: 'known-issue', description: key });
+    // are recorded, anything else fails. What a room records counts for
+    // e2e/known-errors.spec.ts exactly as the sweep's does: an error only a
+    // room trips is still an error that happens.
+    const fatal = recordPageErrors(test.info(), 'chat-rooms', surface.name, pageErrors.slice(errorsBefore));
     expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
 
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {

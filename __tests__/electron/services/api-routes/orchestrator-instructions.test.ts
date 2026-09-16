@@ -33,7 +33,8 @@ vi.mock('uuid', () => ({ v4: vi.fn(() => `pty-${++uuidCounter}`) }));
 // the lookup resolve against the real file that ships.
 vi.mock('electron', () => ({
   app: { getPath: () => '/Users/test', getAppPath: () => process.cwd() },
-  BrowserWindow: vi.fn(),
+  // The routes tell every open window when an agent changes; here there are none.
+  BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
 }));
 
 vi.mock('../../../../electron/core/agent-manager', () => ({

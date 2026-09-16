@@ -1,11 +1,12 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as https from 'https';
-import { app, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
-import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR } from '../constants';
+import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR, dataPath } from '../constants';
 import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
@@ -739,7 +740,7 @@ export function initTelegramBot() {
         // Resolve MCP config path if provider uses flag strategy
         let mcpConfigPath: string | undefined;
         if (cliProvider.getMcpConfigStrategy() === 'flag') {
-          const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+          const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
           if (fs.existsSync(possibleMcpPath)) {
             mcpConfigPath = possibleMcpPath;
           }
@@ -1252,7 +1253,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       // Resolve MCP config path
       let mcpConfigPath: string | undefined;
       if (cliProvider.getMcpConfigStrategy() === 'flag') {
-        const possibleMcpPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
         if (fs.existsSync(possibleMcpPath)) {
           mcpConfigPath = possibleMcpPath;
         }
@@ -1271,7 +1272,10 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       if (telegramInstructions) {
         const superAgentInstructions = getSuperAgentInstructions();
         const combined = [superAgentInstructions, telegramInstructions].filter(Boolean).join('\n\n');
-        const combinedPath = path.join(app.getPath('home'), '.dorothy', 'telegram-combined-prompt.md');
+        // In the data directory of this Tars, which follows HOME. Electron's
+        // home does not on macOS, so a sandboxed Tars wrote this into the
+        // real ~/.dorothy.
+        const combinedPath = dataPath('telegram-combined-prompt.md');
         try {
           fs.mkdirSync(path.dirname(combinedPath), { recursive: true });
           fs.writeFileSync(combinedPath, combined, 'utf-8');
