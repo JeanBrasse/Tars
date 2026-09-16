@@ -2,8 +2,11 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL } from './surfaces.mjs';
-import { seedSandbox } from './fixture.mjs';
+import { ALL, KNOWN_PAGE_ERRORS, splitPageErrors } from './surfaces.mjs';
+import { seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
+
+/** Which declared known defects this run actually ran into. */
+const sawKnownError = new Set<string>();
 
 /**
  * Visual + technical sweep of the real Electron app.
@@ -45,6 +48,28 @@ test.beforeAll(async () => {
   });
   page = await app.firstWindow();
   page.on('pageerror', err => pageErrors.push(String(err)));
+
+  // The one third party this sweep still reached. `/skills` says "live from
+  // skills.sh" and means it, so its baseline moved whenever that catalogue
+  // did: 3649 pixels one night, 3598 the next, with nothing here changed.
+  //
+  // Stubbed in the main process rather than in the page, because that is where
+  // the call is: in Electron the renderer asks over IPC precisely to avoid
+  // CORS, so `page.route` sees nothing and a stub written there passes while
+  // the real request goes out behind it. Measured, after writing that one
+  // first. Hermes is the other one and is handled in the seed, by pointing it
+  // at a port nothing serves.
+  await app.evaluate(async (_electron, html) => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: unknown, init: unknown) => {
+      const url = String((input as { url?: string })?.url ?? input);
+      if (url.includes('skills.sh')) {
+        return new Response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      return (realFetch as (a: unknown, b: unknown) => Promise<Response>)(input, init);
+    }) as typeof globalThis.fetch;
+  }, SKILLS_SH_PAGE);
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForLoadState('domcontentloaded');
 });
@@ -86,14 +111,14 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
 
     await page.waitForTimeout(surface.settle ?? 900);
 
-    const newErrors = pageErrors.slice(errorsBefore);
-    // Known pre-existing defect class: Next hydration mismatches (kanban, vault,
-    // brain). Reported as annotations — each page's redesign pass must clear its
-    // own — while any OTHER uncaught error still fails the surface.
-    const hydration = newErrors.filter(e => /Hydration|hydration/.test(e));
-    const fatal = newErrors.filter(e => !/Hydration|hydration/.test(e));
-    if (hydration.length > 0) {
-      test.info().annotations.push({ type: 'known-issue', description: `${hydration.length} hydration error(s) — fix with this surface's redesign pass` });
+    // Known pre-existing defects are annotated rather than failed. Each one is
+    // declared in surfaces.mjs, and the last test in this file fails when a
+    // declared one stops happening, so an allowance cannot outlive its defect.
+    // Any OTHER uncaught error still fails the surface.
+    const { fatal, seen } = splitPageErrors(pageErrors.slice(errorsBefore));
+    for (const key of seen) {
+      sawKnownError.add(key);
+      test.info().annotations.push({ type: 'known-issue', description: key });
     }
     expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
 
@@ -128,3 +153,20 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     });
   });
 }
+
+/**
+ * The allowance list, held to its own defects.
+ *
+ * Declared last so it runs after every surface above. A known-issue entry that
+ * nothing trips any more is an entry describing a defect somebody fixed, and
+ * leaving it in place is how the next real error of that shape gets waved
+ * through. Failing here is the reminder to delete the entry, and deleting it
+ * is what makes the suite green again.
+ */
+test('every tolerated page error still happens, or its entry is stale', () => {
+  const gone = KNOWN_PAGE_ERRORS.filter(k => !sawKnownError.has(k.key));
+  expect(
+    gone.map(k => `${k.key}: ${k.why}`),
+    'these are tolerated and no longer occur: remove them from KNOWN_PAGE_ERRORS',
+  ).toEqual([]);
+});

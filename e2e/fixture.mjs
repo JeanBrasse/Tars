@@ -100,6 +100,56 @@ const KANBAN = {
 const HISTORY_SESSION = '7c1e4f2a-9b3d-4e8f-a6c5-2d1b0f9e8a73';
 
 /**
+ * The port the sandbox's Hermes points at, and nothing listens on it.
+ *
+ * With no connection file the app falls back to `mode: 'local'` on Hermes's
+ * default port, so the "sandbox" reached whatever was running on the machine
+ * recording the baseline. On Noah's it was his real gateway, which answered
+ * `Unauthorized`; elsewhere the connection is refused and the page prints
+ * `socket hang up`. Same code, same seed, two different pictures, and the
+ * Kanban surface failed or passed on which of them the run happened to get.
+ *
+ * Pointing it at a port nothing serves makes the refusal the same everywhere
+ * and, more to the point, stops the sandbox from touching the machine at all.
+ * 9 is `discard`: assigned, never served, and refused immediately.
+ */
+const HERMES_DEAD_PORT = 9;
+
+/**
+ * The skills.sh listing, frozen, as that site serves it.
+ *
+ * `/skills` renders "live from skills.sh" and means it: the names, the order
+ * and the install counts all come off a third party at the moment of the run,
+ * so that baseline drifted whenever the catalogue did. Measured twice in one
+ * night: 3649 pixels, then 3598, with nothing in this repo having changed.
+ *
+ * Shaped as the page rather than as the parsed result on purpose. The main
+ * process fetches `https://skills.sh/` and scrapes `initialSkills` out of the
+ * HTML, so a stub that returned the finished list would skip the scraping and
+ * the formatting, which are the parts that can break. This goes in where the
+ * network does, and everything downstream of it is the real code.
+ */
+const SKILLS_ROWS = [
+  ['find-skills', 'vercel-labs/skills', 12_400],
+  ['grill-me', 'mattpocock/skills', 9_800],
+  ['frontend-design', 'vercel-labs/skills', 8_100],
+  ['improve-codebase-architecture', 'mattpocock/skills', 7_700],
+  ['agent-browser', 'vercel-labs/agent-browser', 6_200],
+  ['setup-matt-pocock-skills', 'mattpocock/skills', 5_900],
+  ['handoff', 'mattpocock/skills', 5_100],
+  ['good-react-best-practices', 'vercel-labs/skills', 4_700],
+  ['prototype', 'mattpocock/skills', 4_300],
+  ['web-design-guidelines', 'vercel-labs/skills', 3_800],
+  ['superpowers', 'obra/superpowers', 3_200],
+  ['remember', 'JeanBrasse/Tars', 940],
+];
+
+/** One line, because the scraper's regex does not cross a newline. */
+export const SKILLS_SH_PAGE = `<!doctype html><html><body><script>window.initialSkills = ${
+  JSON.stringify(SKILLS_ROWS.map(([name, source, installs]) => ({ source, name, installs })))
+}</script></body></html>`;
+
+/**
  * Three more projects, and the agents that make their rooms exist.
  *
  * A room is derived, not stored: `listRooms` builds one per project path any
@@ -307,6 +357,14 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
   fs.writeFileSync(
     path.join(dir, 'projects.json'),
     JSON.stringify([{ path: PROJECT, name: 'tars' }, { path: SECOND, name: '1212-capital' }], null, 2),
+  );
+
+  // Written for every sandbox, panel history and chat rooms included: whatever
+  // a suite photographs, none of it should depend on what happens to be
+  // listening on this machine.
+  fs.writeFileSync(
+    path.join(dir, 'hermes-connection.json'),
+    JSON.stringify({ mode: 'local', localPort: HERMES_DEAD_PORT, authMode: 'token' }, null, 2),
   );
 
   // The project directories have to exist: several handlers check before they

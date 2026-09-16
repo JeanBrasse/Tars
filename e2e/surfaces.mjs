@@ -92,6 +92,42 @@ export const OVERLAYS = [
 
 export const ALL = [...PAGES, ...SETTINGS_SECTIONS, ...OVERLAYS];
 
+/**
+ * Uncaught page errors the suite tolerates, each one reported and none of them
+ * allowed to be forgotten.
+ *
+ * An allowance that only ever permits is how a known defect becomes permanent:
+ * the day it is fixed, nothing says so and the entry stays for years. Both
+ * specs record which of these they actually saw, and `e2e/known-errors.spec.ts`
+ * fails when one of them stops happening. Removing the entry is then the way to
+ * make the suite green again, which is the only order that keeps this list
+ * honest.
+ */
+export const KNOWN_PAGE_ERRORS = [
+  {
+    key: 'hydration',
+    match: /Hydration|hydration/,
+    why: 'Next hydration mismatches, a class across this app; each page clears its own in its redesign pass',
+  },
+  {
+    key: 'overseer-model-options',
+    match: /overseer:modelOptions/,
+    why: 'the Chat page does not catch modelOptions failing, so an unreachable gateway becomes an uncaught rejection; reported 2026-09-16, hidden until then by a gateway that answered 401 rather than refusing',
+  },
+];
+
+/** Split page errors into what is known, what is not, and what was seen. */
+export function splitPageErrors(errors) {
+  const seen = new Set();
+  const fatal = [];
+  for (const error of errors) {
+    const known = KNOWN_PAGE_ERRORS.find(k => k.match.test(error));
+    if (known) seen.add(known.key);
+    else fatal.push(error);
+  }
+  return { fatal, seen };
+}
+
 // Panel history: two states of a Dashboard panel, reached through that panel's
 // own live | history switch. The inventory's "Dashboard · panel history" and
 // the no-transcript half of "Panel history · states". The skeleton half is a
