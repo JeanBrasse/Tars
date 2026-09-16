@@ -45,6 +45,10 @@ type Liveness = AgentTickItem['displayStatus'];
 function isStopped(agent: AgentStatus, liveness: Liveness | undefined): boolean {
   if (liveness === 'stopped') return true;
   if (liveness === 'working' || liveness === 'waiting' || liveness === 'ready') return false;
+  // Before any tick, a status that claims a turn is not contradicted: the tick
+  // itself calls running working and waiting waiting, whatever the pty. Without
+  // this the answer for the same record depended on whether a tick had arrived.
+  if (agent.status === 'running' || agent.status === 'waiting') return false;
   return !agent.ptyId;
 }
 
