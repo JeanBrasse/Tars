@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler, disposeTerminalSafely, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, stopWheelTyping, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -68,6 +68,7 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(container);
+      stopWheelTyping(term);
 
       if (cancelled) { disposeTerminalSafely(term); return; }
 

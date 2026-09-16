@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
-import { disposeTerminalSafely, stripTerminalReplies } from '@/lib/terminal';
+import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';
 import type { Skill } from '@/lib/skills-database';
 
 export interface SkillInstallState {
@@ -44,6 +44,7 @@ export function useSkillInstall(onRefreshSkills?: () => void): SkillInstallState
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalRef.current!);
+      stopWheelTyping(term);
       fitAddon.fit();
 
       xtermRef.current = term;
