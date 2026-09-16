@@ -268,7 +268,17 @@ function readClaudeSettings(): Record<string, unknown> {
 }
 
 /**
- * Write Claude Code's settings.json (preserving existing keys)
+ * Write Claude Code's settings.json: the whole file, from the object given.
+ *
+ * It preserves nothing by itself, whatever its name suggests. Preservation is
+ * the caller's, which reads the file first and hands back what it read with
+ * its one change applied. The promise cannot be moved in here either: merging
+ * with what is on disk would quietly undo `disableStatusLine`'s delete, since
+ * the key it just removed would come straight back from the file.
+ *
+ * So the rule lives with the callers, and there are only two: read, change one
+ * key, write. A third that writes without reading loses the other nine keys,
+ * and this comment used to tell it that it would not.
  */
 function writeClaudeSettings(settings: Record<string, unknown>): void {
   const dir = path.dirname(CLAUDE_SETTINGS_PATH);
@@ -298,8 +308,20 @@ export function enableStatusLine(): void {
  */
 export function disableStatusLine(): void {
   const settings = readClaudeSettings();
-  delete settings.statusLine;
-  writeClaudeSettings(settings);
+
+  // Only ours. `statusLine` is Claude Code's setting, not Tars's: a user can
+  // point it at their own script, and Claude Code can write it itself. Turning
+  // Tars's statusline off means stop using Tars's script, never delete
+  // whichever statusline happens to be configured. Deleting a key we did not
+  // write is how a setting disappears with nobody able to say what removed it.
+  const configured = settings.statusLine as { command?: unknown } | undefined;
+  const isOurs = !!configured
+    && typeof configured === 'object'
+    && configured.command === SCRIPT_PATH;
+  if (isOurs) {
+    delete settings.statusLine;
+    writeClaudeSettings(settings);
+  }
 
   removeScript();
 
