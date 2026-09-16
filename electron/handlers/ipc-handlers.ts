@@ -1005,6 +1005,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = undefined;
       agent.status = 'idle';
       agent.currentTask = undefined;
+      // The killed session is a tombstone, exactly as the API's stop makes
+      // it. Its hooks outlive the kill: SessionEnd posts `completed` under the
+      // session id this agent still recorded as its owner, so the post passed
+      // the stale check and put a stopped agent back to done. Only the owner
+      // field moves; the refusal of posts from any other session is untouched.
+      if (agent.currentSessionId) {
+        agent.lastKilledSessionId = agent.currentSessionId;
+      }
+      agent.currentSessionId = undefined;
       agent.lastActivity = new Date().toISOString();
       // Mark as manually stopped to prevent status detection from overriding
       (agent as AgentStatus & { _manuallyStoppedAt?: number })._manuallyStoppedAt = Date.now();
