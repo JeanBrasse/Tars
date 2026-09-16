@@ -267,13 +267,20 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
  * over at any time, so a command they type themselves stays theirs. Tars only
  * takes back what it started.
  *
- * Only for the binary that reads it. The fourteen providers that re-point the
- * claude binary get it; codex, gemini, grok, opencode and pi have their own
- * updaters and would silently ignore it.
+ * CLAUDE_CODE_DISABLE_MOUSE_CLICKS because a Tars terminal hands Claude Code
+ * the wheel and never a click, which stays local for selecting text. Measured
+ * with Claude Code 2.1.273 in fullscreen, same answers, same wheel reports: it
+ * asks for 1000 and 1006 instead of 1000, 1002, 1003 and 1006, scrolls line for
+ * line the same, and its hint reads "Jump to bottom: fn+↓ to scroll" instead of
+ * offering a click that does nothing here.
+ *
+ * Only for the binary that reads them. The fourteen providers that re-point the
+ * claude binary get them; codex, gemini, grok, opencode and pi have their own
+ * updaters and would silently ignore them.
  */
 export function managedCliEnv(binaryName: string): Record<string, string> {
   if (binaryName !== 'claude') return {};
-  return { DISABLE_AUTOUPDATER: '1' };
+  return { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };
 }
 
 export function safeEffort(effort: string | undefined): string | undefined {
