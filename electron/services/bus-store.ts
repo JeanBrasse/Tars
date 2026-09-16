@@ -131,6 +131,12 @@ export function loadBus(): void {
 }
 
 function saveBus(): void {
+  // Never write a journal that was never read. saveAgents has had this guard
+  // for the same reason: without it, importing this module in a test and
+  // touching anything writes ~/.dorothy/bus.json, the real one, with whatever
+  // empty state the import started from. A test that forgets to redirect
+  // BUS_FILE should lose its own data, not Noah's.
+  if (!loaded) return;
   try {
     state.savedAt = new Date().toISOString();
     writeAtomicSync(BUS_FILE, JSON.stringify(state, null, 2));
@@ -427,7 +433,12 @@ export function publishAgentMessage(input: {
     return { published: false, reason: 'not_a_member', detail: 'Only the agents of this room can post in it.' };
   }
 
-  const thread = openThreadOf(input.roomId);
+  // The latest anchor, open or not. Asking for the open one made the three
+  // refusals below unreachable: a thread that had just been stopped by hand
+  // answered `no_open_thread`, so an agent Noah had deliberately silenced was
+  // told no conversation had ever existed. Every other refusal here is true;
+  // that one lied, and the page renders these reasons to a human.
+  const thread = latestThreadOf(input.roomId);
   if (!thread) {
     return {
       published: false,
