@@ -3,6 +3,9 @@
 // par e2e/surfaces.spec.ts, photographiée, et comparée à sa référence.
 // `check-coverage.mjs` échoue si une page de l'inventaire manque ici.
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 /**
  * @typedef {Object} Surface
  * @property {string} name    identifiant stable (nom du screenshot)
@@ -97,11 +100,11 @@ export const ALL = [...PAGES, ...SETTINGS_SECTIONS, ...OVERLAYS];
  * allowed to be forgotten.
  *
  * An allowance that only ever permits is how a known defect becomes permanent:
- * the day it is fixed, nothing says so and the entry stays for years. Both
- * specs record which of these they actually saw, and `e2e/known-errors.spec.ts`
- * fails when one of them stops happening. Removing the entry is then the way to
- * make the suite green again, which is the only order that keeps this list
- * honest.
+ * the day it is fixed, nothing says so and the entry stays for years. Every
+ * spec in RECORDING_SUITES writes down which of these each of its surfaces
+ * actually saw, and `e2e/known-errors.spec.ts` fails when one of them stops
+ * happening. Removing the entry is then the way to make the suite green again,
+ * which is the only order that keeps this list honest.
  */
 export const KNOWN_PAGE_ERRORS = [
   {
@@ -126,6 +129,45 @@ export function splitPageErrors(errors) {
     else fatal.push(error);
   }
   return { fatal, seen };
+}
+
+/**
+ * The file this run's surfaces write to, in the directory e2e/global-setup.mjs
+ * made for it. Missing means the run did not start from playwright.config.ts,
+ * and recording nowhere would let the check skip every run without a word, so
+ * that throws rather than passes.
+ */
+function pageErrorRecordsFile() {
+  const dir = process.env.E2E_PAGE_ERRORS_DIR;
+  if (!dir || !fs.existsSync(dir)) {
+    throw new Error('E2E_PAGE_ERRORS_DIR is not set: run the suite through playwright.config.ts, whose global setup makes it');
+  }
+  return path.join(dir, 'records.jsonl');
+}
+
+/**
+ * Split one surface's page errors, write down the tolerated ones it saw, and
+ * return the ones nothing tolerates, which fail the surface.
+ *
+ * Written to disk rather than kept in the spec's module, because a module does
+ * not outlive its worker: after any failure Playwright runs the rest of the
+ * file in a new one, and a Set kept there forgot everything seen before it.
+ */
+export function recordPageErrors(testInfo, suite, surface, errors) {
+  if (!RECORDING_SUITES[suite]?.some(s => s.name === surface)) {
+    throw new Error(`${suite}: ${surface} is not in RECORDING_SUITES, so e2e/known-errors.spec.ts would never wait for it`);
+  }
+  const { fatal, seen } = splitPageErrors(errors);
+  fs.appendFileSync(pageErrorRecordsFile(), JSON.stringify({ suite, surface, seen: [...seen] }) + '\n');
+  for (const key of seen) testInfo.annotations.push({ type: 'known-issue', description: key });
+  return fatal;
+}
+
+/** Everything this run's surfaces have recorded so far. */
+export function readPageErrorRecords() {
+  const file = pageErrorRecordsFile();
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
 // Panel history: two states of a Dashboard panel, reached through that panel's
@@ -191,3 +233,15 @@ export const PANEL_HISTORY = [
     shows: 'Codex CLI does not write a transcript Tars can read.',
   },
 ];
+
+/**
+ * Every spec that tolerates KNOWN_PAGE_ERRORS, by the name it records under,
+ * with the surfaces it records. e2e/known-errors.spec.ts only judges a run in
+ * which each of these recorded, because an entry cannot be called stale on a
+ * page that never opened. A spec that starts tolerating errors adds itself here,
+ * or recordPageErrors refuses it.
+ */
+export const RECORDING_SUITES = {
+  surfaces: ALL,
+  'chat-rooms': CHAT_ROOMS,
+};
