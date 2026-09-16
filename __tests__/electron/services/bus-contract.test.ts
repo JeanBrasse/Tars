@@ -340,13 +340,13 @@ describe('replacement and Stop', () => {
     delivery.closeAndAnnounce(thread.id, 'thread_stopped', 'the thread was stopped');
 
     expect(store.deliveriesOf(message.id)[0]).toMatchObject({ state: 'dropped', reasonCode: 'thread_stopped' });
-    // Refused, which is what Stop has to mean. The reason it gives is
-    // `no_open_thread` and not `thread_stopped`: openThreadOf only ever returns
-    // a thread in state `open`, so the three refusals that name a closed one
-    // cannot be reached at all. Pinned as found and reported rather than
-    // repaired: an agent that posts after a deliberate Stop is told no thread
-    // was ever open here, which is not what happened to it.
-    expect(post('a', 'too late', ['busy'])).toMatchObject({ published: false, reason: 'no_open_thread' });
+    // Refused, and refused with what actually happened. This read
+    // `no_open_thread` when it was first written: openThreadOf only ever
+    // returned a thread in state `open`, so the three refusals that name a
+    // closed one could not be reached at all, and an agent posting after a
+    // deliberate Stop was told no thread had ever been open here. Pinned as
+    // found, reported, and repaired in 39e3ae8.
+    expect(post('a', 'too late', ['busy'])).toMatchObject({ published: false, reason: 'thread_stopped' });
   });
 
   it('keeps the queued delivery when nothing stopped the thread', () => {
@@ -511,9 +511,11 @@ describe('a change of members', () => {
     expect(result?.superseded?.id).toBe(thread.id);
     expect(store.getThread(thread.id)?.state).toBe('superseded');
     expect(result?.room.memberIds).toEqual(['a']);
-    // A new anchor is not invented: only a human message opens one.
+    // A new anchor is not invented: only a human message opens one. And the
+    // refusal names the supersession rather than claiming nothing was ever
+    // open, which is the other half of the repair in 39e3ae8.
     expect(store.openThreadOf(ROOM)).toBeUndefined();
-    expect(post('a', 'still here?', ['b'])).toMatchObject({ published: false, reason: 'no_open_thread' });
+    expect(post('a', 'still here?', ['b'])).toMatchObject({ published: false, reason: 'thread_superseded' });
   });
 
   it('leaves the anchor alone when the members are not touched', () => {
@@ -523,5 +525,131 @@ describe('a change of members', () => {
 
     expect(store.getThread(thread.id)?.state).toBe('open');
     expect(room().memberIds.sort()).toEqual(['a', 'b']);
+  });
+});
+
+/**
+ * The door out of `not_sent`, and what the review found behind it.
+ *
+ * `not_sent` is the one state nothing resolves on its own: the target has no
+ * end of turn, so no moment is ever safe and the queue refuses to guess one.
+ * A person decides instead, and releaseNotSent carries the decision out.
+ *
+ * It used to read the held list once at the start and record state only at the
+ * end, with a submit delay between every write. That is hundreds of
+ * milliseconds per message in which a second click read the same list and sent
+ * the same messages again, and interleaved its writes into the same terminal,
+ * which is the one thing that spacing exists to prevent. Repaired in 2a02787.
+ */
+describe('sending what was never sent', () => {
+  const HELD = ['first held thing', 'second held thing', 'third held thing'];
+
+  const roomMessages = () => store.getRoomSnapshot(ROOM, { limit: 200 })?.messages ?? [];
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+  /** Three messages held for a provider whose session never leaves `running`. */
+  function heldForCodex(): FakeTerminal {
+    const terminal = attachTerminal('pty-cx');
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-cx' });
+    for (const text of HELD) {
+      const { message } = human(text, ['cx']);
+      delivery.fanOutDeliveries(message, room());
+    }
+    expect(store.notSentFor('cx')).toHaveLength(3);
+    expect(terminal.written).toHaveLength(0);
+    return terminal;
+  }
+
+  it('writes each held message once when two clicks land together', async () => {
+    const terminal = heldForCodex();
+
+    const [first, second] = await Promise.all([
+      delivery.releaseNotSent('cx'),
+      delivery.releaseNotSent('cx'),
+    ]);
+
+    // One of them did the work and the other was told why, rather than queued
+    // behind it: a second click is a mistake to report, not more work to do.
+    expect(first.released).toHaveLength(3);
+    expect(second.released).toHaveLength(0);
+    expect(second.reason).toMatch(/already being sent/i);
+
+    // Once each into the terminal. This is where the duplicate would show, and
+    // where two releases running together would have torn each other's writes
+    // apart: the spacing between them only orders one call's own writes.
+    const typed = terminal.written.join('');
+    for (const text of HELD) expect(occurrences(typed, text)).toBe(1);
+
+    // Once each in the journal, and nothing left held.
+    expect(store.notSentFor('cx')).toHaveLength(0);
+    for (const text of HELD) {
+      const message = roomMessages().find(m => m.text === text)!;
+      const rows = store.deliveriesOf(message.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ targetAgentId: 'cx', state: 'delivered' });
+      // A released row keeps no trace of why it was held: delivered, beside a
+      // reason it can never be delivered to, is a row that contradicts itself.
+      expect(rows[0].reasonCode).toBeUndefined();
+    }
+
+    // And one line in the room saying it happened, not two.
+    expect(roomMessages().filter(m => m.systemKind === 'queue_released')).toHaveLength(1);
+  }, 20_000);
+
+  it('records each delivery as it is written, not all of them at the end', async () => {
+    heldForCodex();
+
+    const release = delivery.releaseNotSent('cx');
+    let settled = false;
+    void release.then(() => { settled = true; });
+
+    // Wait for something to have gone out, without waiting for the whole run.
+    const deadline = Date.now() + 5_000;
+    while (store.notSentFor('cx').length === 3 && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+
+    // Mid release: part has gone and part has not, and the journal says so.
+    // Recorded all at the end instead, a second window reading here would see
+    // three still held and offer to send every one of them again.
+    expect(settled).toBe(false);
+    expect(store.notSentFor('cx').length).toBeGreaterThan(0);
+    expect(store.notSentFor('cx').length).toBeLessThan(3);
+
+    await release;
+    expect(store.notSentFor('cx')).toHaveLength(0);
+  }, 20_000);
+
+  it('aims at the agent and not at a session, so a relaunched one still gets them', async () => {
+    heldForCodex();
+
+    // Killed and relaunched between the button being drawn and the click. The
+    // session barrier deliberately does not apply here, unlike every queued
+    // delivery: a person pressing send is aiming at the agent in front of
+    // them, not at a session id. Pinned because it is a decision, not an
+    // oversight, and a future barrier added here would look like a fix.
+    const relaunched = attachTerminal('pty-cx-2');
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running',
+               ptyId: 'pty-cx-2', currentSessionId: 'sess-cx-2' });
+
+    const result = await delivery.releaseNotSent('cx');
+
+    expect(result.released).toHaveLength(3);
+    const typed = relaunched.written.join('');
+    for (const text of HELD) expect(occurrences(typed, text)).toBe(1);
+  }, 20_000);
+
+  it('says why rather than pretending, when there is no terminal to write into', async () => {
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-gone' });
+    const { message } = human('held with nowhere to go', ['cx']);
+    delivery.fanOutDeliveries(message, room());
+
+    const result = await delivery.releaseNotSent('cx');
+
+    // Still held, and the caller is told. Reporting released with nothing
+    // written is the shape of silent failure this whole bus exists to remove.
+    expect(result.released).toHaveLength(0);
+    expect(result.reason).toMatch(/no live terminal/i);
+    expect(store.notSentFor('cx')).toHaveLength(1);
   });
 });
