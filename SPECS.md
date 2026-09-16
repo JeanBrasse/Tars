@@ -570,8 +570,8 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 
 | Route | Name | What it is | Frame |
 |---|---|---|---|
-| `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown | `Dashboard · dark` / `· light` |
-| `/agents` | Agents | Roster with per-project filter tabs, sort by created/status/activity/name, management card per agent | `Agents · dark` |
+| `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown. A pane in error shows the reason in its header | `Dashboard · dark` / `· light`, `Agent error · reason` |
+| `/agents` | Agents | Roster with per-project filter tabs, sort by created/status/activity/name, management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agent error · reason` |
 | `/projects` | Projects | Project registry (backed by `~/.dorothy/projects.json`), file browser, per-project agent view. 1153 lines | `Projects · dark` |
 | `/kanban` | Kanban | Two sources: the Hermes board (default, Hermes owns the task harness) and the local `kanban-tasks.json` board. Choice persisted in `localStorage` | `Kanban · dark` |
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
@@ -594,6 +594,8 @@ Every data surface must show five states: loading (nothing under 400 ms, then a 
 ### The tick
 
 `scheduleTick()` coalesces to one `agents:tick` broadcast per 500 ms carrying the whole roster: id, name, character, raw status, `displayStatus`, status line, current task, project name, last activity, provider. `displayStatus` derives `working | waiting | done | error` from status, and splits `idle` into `ready` (a PTY exists) or `stopped`. The tray badge lights when any agent is `waiting`.
+
+Every path that changes an agent announces it on both channels, the interface's IPC handlers, the hooks and the API's agent routes alike: `agent:status` for the transition, and a tick. They are not interchangeable. The Chat page's rail reloads the fleet on `agent:status`; the Agents page and the Dashboard redraw from the tick. The API routes announced nothing until 1.7.5, so an agent the super chat started, gave a task or stopped did not change on an open page until it was reloaded.
 
 ---
 

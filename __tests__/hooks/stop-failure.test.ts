@@ -341,6 +341,99 @@ describe('a failed turn left alone', () => {
   });
 });
 
+/**
+ * The same idle prompt, on the other channel it reaches: the desktop
+ * notification "X is waiting". The status guard above kept the card honest
+ * while this still told Noah, a minute after the failure, that the agent was
+ * waiting for his answer.
+ *
+ * The settings are the app's defaults on purpose. The suite's are empty, and
+ * with notifyOnWaiting unset this channel never fires at all, so an absence
+ * asserted there would be the setting's doing and not the guard's. The second
+ * test is the proof that it is live in this harness.
+ */
+describe('the waiting notification after a failed turn', () => {
+  function withTheAppDefaults(): void {
+    Object.assign(ctx.getAppSettings(), { notificationsEnabled: true, notifyOnWaiting: true, notifyOnError: true });
+  }
+
+  const waitingAlerts = () => vi.mocked(ctx.sendNotificationCallback).mock.calls
+    .filter(([title]) => String(title).endsWith(' is waiting'));
+
+  it('is not raised for an agent that stopped on a failure', async () => {
+    withTheAppDefaults();
+    const agent = putAgent();
+    post({ agent_id: 'a1', session_id: SESSION, status: 'running', event: 'UserPromptSubmit' });
+    await failTurn(MEASURED_STOP_FAILURE);
+    expect(agent.status).toBe('error');
+
+    const posts = await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT);
+    expect(posts.map(p => p.url)).toEqual(['/api/hooks/notification', '/api/hooks/status']);
+    const answers = posts.map(p => send(p.url, p.body));
+    // Accepted as the live session's: refused as stale, the notification would
+    // be missing for a reason that has nothing to do with the failure.
+    expect(answers[0]).toMatchObject({ success: true });
+    expect(answers[0]).not.toHaveProperty('stale');
+
+    expect(waitingAlerts()).toEqual([]);
+    // What this must not take away: the failure's own notification, the one
+    // that carries the CLI's sentence.
+    expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenCalledTimes(1);
+    expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenCalledWith(agent, 'error');
+    expect(agent.status).toBe('error');
+  });
+
+  it('is raised as usual again once a new turn has begun', async () => {
+    withTheAppDefaults();
+    const agent = putAgent();
+    await failTurn(MEASURED_STOP_FAILURE);
+    for (const p of await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT)) send(p.url, p.body);
+    expect(waitingAlerts()).toEqual([]);
+
+    // Noah logs in again in that terminal and sends the task.
+    for (const p of await runHook(PROMPT_HOOK, MEASURED_NEXT_PROMPT)) send(p.url, p.body);
+    expect(agent.status).toBe('running');
+
+    for (const p of await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT)) send(p.url, p.body);
+
+    // The body as the hook builds it: `echo | jq -Rs` keeps the newline echo
+    // adds. What this test is about is that the alert is raised, for this agent.
+    expect(waitingAlerts()).toEqual([
+      ['Tars-Backend is waiting', expect.stringContaining('Claude is waiting for your input'), 'a1', ctx.getAppSettings()],
+    ]);
+  });
+
+  /**
+   * The guard is for the idle prompt only, as hooks-routes.ts and OPERATIONS.md
+   * both say, and nothing held it to that: holding back every notification of
+   * an agent in error passed the whole file. A permission prompt comes from a
+   * turn in progress and waits on Noah's answer, so if one ever meets an agent
+   * still marked `error`, a turn whose start Tars missed, hiding it would leave
+   * that turn blocked with nobody told.
+   *
+   * Not a measured payload: the idle prompt's, with the type and the message a
+   * permission prompt carries, through the real hook.
+   */
+  it('still raises a permission prompt, which only a turn in progress can ask', async () => {
+    withTheAppDefaults();
+    const agent = putAgent();
+    await failTurn(MEASURED_STOP_FAILURE);
+    expect(agent.status).toBe('error');
+
+    const posts = await runHook(NOTIFICATION_HOOK, {
+      ...MEASURED_IDLE_PROMPT,
+      message: 'Claude needs your permission to use Bash',
+      notification_type: 'permission_prompt',
+    });
+    expect(posts.map(p => p.url)).toEqual(['/api/hooks/notification']);
+    for (const p of posts) send(p.url, p.body);
+
+    expect(vi.mocked(ctx.sendNotificationCallback).mock.calls).toEqual([
+      ['Tars-Backend needs permission', expect.stringContaining('Claude needs your permission to use Bash'), 'a1', ctx.getAppSettings()],
+    ]);
+  });
+});
+
 describe('the hook reaches every claude-family CLI', () => {
   it('is registered for StopFailure in the settings they all read', async () => {
     const home = fs.mkdtempSync(path.join(tmp, 'home-'));

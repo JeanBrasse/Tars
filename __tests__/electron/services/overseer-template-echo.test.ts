@@ -21,12 +21,15 @@ import * as path from 'path';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-overseer-echo-'));
 
 /** The dispatch port a real listener is stood up on below, so "no request was
- *  sent" is proved by a socket rather than by a spy. Not 31415: a running Tars
- *  must never be reachable from this test. */
-const DISPATCH_PORT = 31972;
+ *  sent" is proved by a socket rather than by a spy. The system picks it when
+ *  the listener starts: it was 31972, and every suite run at the same moment on
+ *  this machine fought over it and failed here as `1 failed | 35 skipped`. Read
+ *  when the overseer dispatches, which is after the listener is up. Never 31415,
+ *  which no system hands out: a running Tars must not be reachable from here. */
+let dispatchPort = 0;
 vi.mock('../../../electron/constants', () => ({
   DATA_DIR: tmp,
-  API_PORT: DISPATCH_PORT,
+  get API_PORT() { return dispatchPort; },
   dataPath: (f: string) => path.join(tmp, f),
 }));
 /** Mutable so a test can move an agent and make watchTick see a fleet change. */
@@ -123,7 +126,11 @@ beforeAll(async () => {
       res.end(JSON.stringify({ ok: true, mode: 'pty' }));
     });
   });
-  await new Promise<void>(r => dispatchServer.listen(DISPATCH_PORT, '127.0.0.1', r));
+  await new Promise<void>((resolve, reject) => {
+    dispatchServer.once('error', reject);
+    dispatchServer.listen(0, '127.0.0.1', () => resolve());
+  });
+  dispatchPort = (dispatchServer.address() as { port: number }).port;
 });
 
 afterAll(async () => {

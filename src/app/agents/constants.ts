@@ -18,6 +18,18 @@ export const STATUS_COLORS: Record<AgentStatus['status'], { text: string }> = {
 export const statusTone = (status: AgentStatus['status']): StatusTone =>
   status === 'completed' ? 'idle' : status;
 
+/**
+ * Why an agent is in error, in the words that put it there, or null.
+ *
+ * `error` holds the CLI's own sentence when a turn failed ("Not logged in ·
+ * Please run /login"), or Tars's when a task never started. It can outlive
+ * the error until the next turn clears it, so it is only a reason while the
+ * status still says error: shown on a working agent, it would describe a
+ * failure that is over. Frame: `Agent error · reason`.
+ */
+export const errorReason = (agent: Pick<AgentStatus, 'status' | 'error'>): string | null =>
+  agent.status === 'error' ? agent.error?.trim() || null : null;
+
 export const CHARACTER_FACES: Record<string, string> = {
   robot: '🤖',
   ninja: '🥷',

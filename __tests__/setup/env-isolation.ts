@@ -59,8 +59,8 @@ const PRODUCT_PREFIXES = ['CLAUDE', 'ANTHROPIC_', 'DOROTHY_', 'AMP_', 'OR_', 'DI
 const KEPT: Record<string, string> = {
   // Every test that resolves a binary, and node itself finding its own modules.
   PATH: 'the suite spawns real hooks and real CLIs; without it nothing resolves',
-  // Suites redirect it to a temp dir themselves; removing it outright leaves
-  // os.homedir() with nothing sane to answer.
+  // home-isolation.ts points it at a throwaway directory for every file;
+  // removing it outright leaves os.homedir() with nothing sane to answer.
   HOME: 'os.homedir() backs ~/.claude.json and ~/.dorothy paths under test',
   // buildFullPath and the pty env composition both read it.
   SHELL: 'the pty environment is composed from it, and hooks run under it',

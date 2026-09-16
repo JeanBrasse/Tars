@@ -3,6 +3,7 @@
 import { Button, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
+import { errorReason } from '@/app/agents/constants';
 
 /**
  * The right rail, 264 wide: who is in this room, then how the room runs.
@@ -46,11 +47,16 @@ function statusLabel(agent: RoomAgent): string {
  *  looking like it did. */
 function detail(agent: RoomAgent): string {
   if (!agent.hasEndOfTurn) return 'Tars sees its output, not its turns';
+  // Why it stopped before what it was asked. An agent whose turn failed still
+  // has its task set, and the task came first here, so the reason this rail
+  // was written to show only ever appeared for an agent that had no task.
+  const reason = errorReason(agent);
+  if (reason) return reason;
   if (agent.currentTask) return agent.currentTask;
   switch (agent.status) {
     case 'running': return 'working';
     case 'waiting': return 'waiting on you';
-    case 'error': return agent.error || 'stopped on an error';
+    case 'error': return 'stopped on an error';
     case 'completed': return 'finished its turn';
     default: return 'listening';
   }

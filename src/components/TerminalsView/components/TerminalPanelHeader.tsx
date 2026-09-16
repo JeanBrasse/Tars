@@ -5,6 +5,7 @@ import { GripVertical, ShieldOff, Bot, Shield, Gauge } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import { SegmentedControl, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
+import { errorReason } from '@/app/agents/constants';
 
 export type PanelView = 'live' | 'history';
 
@@ -54,6 +55,7 @@ export default function TerminalPanelHeader({
   // Local (Tasmania) agents carry their model under localModel instead.
   const model = agent.model || agent.localModel || '';
   const isLive = agent.status === 'running' || agent.status === 'waiting';
+  const reason = errorReason(agent);
 
   const showDragHandle = tabType === 'custom';
   // Neither kind of tab deletes anything from here any more. A custom tab
@@ -101,7 +103,16 @@ export default function TerminalPanelHeader({
       {/* Agent identity: status square, name, git branch */}
       <StatusSquare tone={statusTone(agent.status)} />
       <span className="text-[11.5px] font-semibold text-foreground truncate max-w-[140px]">{name}</span>
-      {branch && (
+      {reason ? (
+        // In error, why: the reason takes the branch's place and the room the
+        // marks below use, one red line cut where the header runs out, the
+        // whole sentence in the title. In the header and not over the
+        // terminal, so a failed turn neither resizes the pty nor covers the
+        // line the CLI printed. Frame: `Agent error · reason`.
+        <span className="flex-1 min-w-0 text-[11px] text-status-error truncate" title={reason}>
+          {reason}
+        </span>
+      ) : branch && (
         <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px]">
           {branch}
         </span>
@@ -114,32 +125,36 @@ export default function TerminalPanelHeader({
         </span>
       )}
 
-      {/* Permission mode indicator */}
-      {(agent.permissionMode === 'auto' || (!agent.permissionMode && agent.skipPermissions)) && (
-        <span title="Auto mode - runs autonomously">
-          <Bot className="w-3 h-3 text-warning" />
-        </span>
-      )}
-      {agent.permissionMode === 'bypass' && (
-        <span title="Bypass mode - all permissions skipped">
-          <ShieldOff className="w-3 h-3 text-danger" />
-        </span>
-      )}
-      {agent.permissionMode === 'normal' && (
-        <span title="Normal mode - asks for permissions">
-          <Shield className="w-3 h-3 text-primary" />
-        </span>
-      )}
+      {!reason && (
+        <>
+          {/* Permission mode indicator */}
+          {(agent.permissionMode === 'auto' || (!agent.permissionMode && agent.skipPermissions)) && (
+            <span title="Auto mode - runs autonomously">
+              <Bot className="w-3 h-3 text-warning" />
+            </span>
+          )}
+          {agent.permissionMode === 'bypass' && (
+            <span title="Bypass mode - all permissions skipped">
+              <ShieldOff className="w-3 h-3 text-danger" />
+            </span>
+          )}
+          {agent.permissionMode === 'normal' && (
+            <span title="Normal mode - asks for permissions">
+              <Shield className="w-3 h-3 text-primary" />
+            </span>
+          )}
 
-      {/* Effort indicator */}
-      {agent.effort === 'high' && (
-        <span title="High effort - extended thinking">
-          <Gauge className="w-3 h-3 text-primary" />
-        </span>
-      )}
+          {/* Effort indicator */}
+          {agent.effort === 'high' && (
+            <span title="High effort - extended thinking">
+              <Gauge className="w-3 h-3 text-primary" />
+            </span>
+          )}
 
-      {/* Spacer */}
-      <div className="flex-1" />
+          {/* Spacer */}
+          <div className="flex-1" />
+        </>
+      )}
 
       {/* Which CLI, then which model. The provider was only ever implied by the
           model string, so an agent left on its provider default showed nothing
