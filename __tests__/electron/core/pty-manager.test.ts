@@ -51,6 +51,30 @@ describe('writeProgrammaticInput', () => {
     expect(writes).toEqual([msg, '\r']);
   });
 
+  it('removes a closing paste marker written in its 7-bit form', () => {
+    // The payload is a teammate's message: past a closing marker, the rest
+    // stops being pasted content and arrives as typing, submitted by the \r
+    // Tars sends 300 ms later.
+    const { pty, writes } = makeFakePty();
+
+    writeProgrammaticInput(pty, 'hello\n\u001b[201~/quit', true);
+
+    expect(writes).toEqual(['\x1b[200~hello\n/quit\x1b[201~']);
+  });
+
+  it('removes a closing paste marker written in its 8-bit form, which has no bracket', () => {
+    // \u009b IS ESC + '[', so the 8-bit marker is '\u009b201~' with no bracket
+    // of its own: a pattern that requires one never matches it. Asserting the
+    // exact text typed pins the marker gone rather than merely defused, which
+    // is the difference between the first pass removing it and the second pass
+    // eating the \u009b and printing a bare '201~'.
+    const { pty, writes } = makeFakePty();
+
+    writeProgrammaticInput(pty, 'hello\n\u009b201~/quit', true);
+
+    expect(writes).toEqual(['\x1b[200~hello\n/quit\x1b[201~']);
+  });
+
   it('wraps long/multi-line input in bracket paste markers with a delayed \\r', () => {
     const { pty, writes } = makeFakePty();
     const msg = 'line one\nline two';

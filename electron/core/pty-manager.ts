@@ -67,11 +67,53 @@ export function killAllPty(): void {
  */
 export const PROGRAMMATIC_SUBMIT_DELAY_MS = 300;
 
+/**
+ * Text that cannot become control.
+ *
+ * Everything this module types into an agent's terminal is written by someone
+ * else: a teammate's bus message, a Telegram or Slack message, a dispatched
+ * task. The terminal reads control characters as keys, so text that carries
+ * them stops being text.
+ *
+ * Two ways in, and the second is why this strips more than the paste marker.
+ * A long or multi-line payload is wrapped in `\x1b[200~ … \x1b[201~`, and a
+ * payload containing the closing marker ends that paste early: everything
+ * after it arrives as ordinary typing, and the carriage return Tars sends 300
+ * ms later submits it. A short single-line payload is written with **no
+ * markers at all**, so there every control character is typed directly: a bare
+ * `\r` submits what came before it and makes the rest a second command, with
+ * no escape sequence needed.
+ *
+ * So: the paste markers go, then every C0 and C1 control except tab and
+ * newline, which are content inside a paste. What is left of any other escape
+ * sequence is its printable tail, which is inert.
+ *
+ * A marker has two spellings, and only one of them has a bracket. `\x1b[201~`
+ * is the 7-bit form; in the 8-bit form the single byte `\x9b` *is* ESC plus
+ * `[`, so the sequence is `\x9b201~` with no bracket to match. A pattern that
+ * requires one, `[\x1b\x9b]\[201~`, can therefore never match the 8-bit form:
+ * the second pass then eats the `\x9b` and prints the `201~`. Hence the
+ * alternation below rather than a character class, and do not fold it back.
+ *
+ * This lives here rather than in the callers because the callers are the
+ * problem: bus, Telegram, Slack and dispatch all pass text they did not write,
+ * and a fifth added tomorrow would have to remember. The guarantee belongs on
+ * the line that does the writing.
+ */
+function asTypedText(data: string): string {
+  return data
+    .replace(/(?:\u001b\[|\u009b)20[01]~/g, '')
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+}
+
 export function writeProgrammaticInput(
   ptyProcess: pty.IPty,
   data: string,
   bracketPaste = false,
 ): void {
+  // Sanitised once, for both shapes below: the short path has no paste to
+  // break out of, and is exactly the one where a lone carriage return works.
+  data = asTypedText(data);
   if (bracketPaste) {
     if (data.includes('\n') || data.length > 200) {
       // Bracket paste mode: \x1b[200~ ... \x1b[201~ tells the terminal
