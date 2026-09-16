@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -23,8 +24,23 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-identity-'));
-/** Far from 31415, the sandbox's 31499, the e2e's 31498 and the port-retry suite's 31961. */
-const PORT = 31967;
+/**
+ * A port nothing else holds, picked by the system before the server starts. It
+ * was 31967, fixed, and a suite run by another agent at the same moment could
+ * take it first. The system never hands out 31415, 31498 or 31499.
+ */
+let port = 0;
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port: picked } = probe.address() as net.AddressInfo;
+      probe.close(() => resolve(picked));
+    });
+  });
+}
 
 // Everything the server could write goes to the temp dir. saveBus() in
 // particular writes on every call, and unredirected it would write over the
@@ -33,7 +49,8 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
   return {
     ...actual,
-    API_PORT: PORT,
+    // Read when the server listens, after beforeAll has picked it.
+    get API_PORT() { return port; },
     DATA_DIR: tmp,
     dataPath: (...segments: string[]) => path.join(tmp, ...segments),
     AGENTS_FILE: path.join(tmp, 'agents.json'),
@@ -99,7 +116,7 @@ function call(
     const payload = body ? JSON.stringify(body) : undefined;
     const req = http.request({
       host: '127.0.0.1',
-      port: PORT,
+      port,
       path: pathname,
       method,
       headers: payload ? { ...headers, 'content-type': 'application/json' } : headers,
@@ -118,6 +135,7 @@ const get = (pathname: string, headers: Record<string, string>) => call('GET', p
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
 beforeAll(async () => {
+  port = await freePort();
   api = await import('../../../electron/services/api-server');
   ({ agents } = await import('../../../electron/core/agent-manager'));
   ({ mintAgentToken } = await import('../../../electron/core/agent-tokens'));
@@ -334,7 +352,7 @@ describe('the MCP servers that call the API', () => {
   function asAgent(env: Record<string, string>): void {
     saved = Object.fromEntries(KEYS.map(k => [k, process.env[k]]));
     for (const k of KEYS) delete process.env[k];
-    Object.assign(process.env, { HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${PORT}`, ...env });
+    Object.assign(process.env, { HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, ...env });
   }
 
   afterEach(() => {
