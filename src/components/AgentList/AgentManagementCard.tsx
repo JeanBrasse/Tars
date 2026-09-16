@@ -2,7 +2,7 @@
 
 import type { AgentStatus } from '@/types/electron';
 import { Button, MetaChip, StatusSquare } from '@/components/ui';
-import { STATUS_COLORS, PROVIDER_LABELS, statusTone } from '@/app/agents/constants';
+import { STATUS_COLORS, PROVIDER_LABELS, errorReason, statusTone } from '@/app/agents/constants';
 
 // Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
 // button each, sitting inside the card padding - the card has no footer band.
@@ -31,6 +31,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
 
   // Show the user's last prompt, not terminal output
   const lastPrompt = agent.currentTask || null;
+  const reason = errorReason(agent);
   const provider = agent.provider || 'claude';
   const model = provider === 'local' ? agent.localModel : agent.model;
 
@@ -51,9 +52,17 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           </span>
         </div>
 
-        {/* Row 2: one description line - the last prompt, or why there is none */}
+        {/* Row 2: one description line - the last prompt, or why there is none.
+            An agent in error shows why instead: the task is still set on an
+            agent whose turn failed, and the card said what it had been asked
+            and never what stopped it. One line, cut at the card's edge, the
+            whole sentence in the title. */}
         {agent.pathMissing ? (
           <p className="text-[11px] text-status-error truncate">Path not found</p>
+        ) : reason ? (
+          <p className="text-[11px] text-status-error truncate" title={reason}>
+            {reason}
+          </p>
         ) : lastPrompt ? (
           <p className="text-[11px] text-text-secondary truncate" title={lastPrompt}>
             {lastPrompt}

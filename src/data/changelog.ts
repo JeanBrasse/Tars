@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 38,
+    version: '1.7.1',
+    date: '2026-09-16',
+    updates: [
+      'An agent that stops on an error now says why on every page that shows the error. Since 1.7.0 an agent whose turn fails carries the assistant\'s own sentence, such as "Not logged in · Please run /login", but the card on the Agents page went on showing the task it had been given, and the panel on the Dashboard showed a red square and nothing else, so the answer was in Tars and on neither of the pages you were looking at. The card now shows the reason where the task was, and the panel shows it in its header where the branch sits: one line, cut where the space runs out, with the whole sentence when you hover it. The team list in a Chat room had the same gap in another form, since it printed the reason only for an agent with no task, which an agent whose task has just failed never is. And the two pages were not being given the sentence at all: the notice that an agent changed status carries the new status and not the reason, so a page left open showed the error with nothing beside it, or with the reason for the failure before. They now read the agent again the moment it enters error',
+    ],
+  },
+  {
     id: 37,
     version: '1.7.0',
     date: '2026-09-16',
