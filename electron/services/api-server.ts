@@ -10,6 +10,8 @@ import { AgentStatus, AppSettings } from '../types';
 import { API_PORT, API_TOKEN_FILE } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
+import { callerHeaderFrom } from './api-routes/utils';
+import { agentForToken } from '../core/agent-tokens';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -114,6 +116,66 @@ export function getApiToken(): string {
     return initApiToken();
   }
   return apiToken;
+}
+
+/** Authorised, and who by: an agent when its own token says so. */
+export type CallerResolution =
+  | { ok: true; agentId?: string }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Who this call is from, decided by what it presents rather than what it says.
+ *
+ * - An **agent's token**, minted when its process was started: the caller is
+ *   that agent, and nothing it writes in a header can change that. An
+ *   X-Tars-Caller-Id naming somebody else alongside it is not a mistake any
+ *   honest caller makes, since the id and the token come from the same
+ *   environment, so the call is refused rather than quietly re-labelled.
+ * - The **shared token**, `~/.dorothy/api-token`: authorised, and nobody. No
+ *   header is read with it, neither the id nor the project. Every agent can
+ *   read that file, so a name that comes with it proves nothing, and believing
+ *   the name was how any agent could be any other. Who presents it, measured:
+ *   the super chat dispatching to an agent, the shell hooks, Hermes calling
+ *   its webhook, a curl run by hand, and an MCP server whose process was
+ *   started without a token of its own. Not the renderer: it only ever calls
+ *   /api/local-file, which is exempt, and presents no token.
+ * - Anything else: unauthorised, with the same flat message as before, which
+ *   tells a prober nothing about which of the two it got wrong.
+ *
+ * Nobody is not the same as refused, and the difference is per route. The bus
+ * refuses a call with no agent behind it, before looking at any room, so the
+ * shared token opens no room, the global one included. The cross-project
+ * guard of the agent routes does not: it lets such a caller through unless it
+ * says it is an MCP client, which is a header too. So whoever reads the file
+ * can still drive every project's agents, as before this existed; refusing it
+ * there waits on the super chat, which dispatches that way, reaching the
+ * agents without it.
+ */
+export function resolveCaller(headers: http.IncomingHttpHeaders): CallerResolution {
+  const auth = headers.authorization;
+  const presented = typeof auth === 'string' && auth.startsWith('Bearer ')
+    ? auth.slice('Bearer '.length)
+    : '';
+
+  const agentId = presented ? agentForToken(presented) : undefined;
+  if (agentId) {
+    const claimed = callerHeaderFrom(headers, 'id');
+    if (claimed && claimed !== agentId) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'This call carries the token of one agent and the identity of another. '
+          + 'An agent speaks as itself.',
+      };
+    }
+    return { ok: true, agentId };
+  }
+
+  if (apiToken && presented === apiToken) {
+    return { ok: true };
+  }
+
+  return { ok: false, status: 401, error: 'Unauthorized' };
 }
 
 function createRouteApp(): RouteApp {
@@ -222,11 +284,15 @@ export function startApiServer(
       return;
     }
 
+    // Resolved once, before routing, so no route has to decide for itself who
+    // it is talking to. Exempt paths keep their own guards: the hooks answer
+    // to session ownership, which is stronger than anything a header could say.
+    let caller: CallerResolution = { ok: true };
     if (!authExempt) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || authHeader !== `Bearer ${apiToken}`) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized' }));
+      caller = resolveCaller(req.headers);
+      if (!caller.ok) {
+        res.writeHead(caller.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: caller.error }));
         return;
       }
     }
@@ -287,6 +353,7 @@ export function startApiServer(
           raw: req,
           res,
           params,
+          callerAgentId: caller.ok ? caller.agentId : undefined,
         };
         await route.handler(routeReq, sendJson, ctx);
         return;

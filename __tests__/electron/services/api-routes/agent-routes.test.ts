@@ -500,9 +500,18 @@ describe('agent-routes', () => {
   });
 
   describe('project scoping', () => {
+    /**
+     * A call from an agent of this project, as the server hands it to a route:
+     * callerAgentId is the agent its token was minted for. The agent is put in
+     * the fleet, since the project is read from there and from nothing the
+     * call says.
+     */
     function reqFromProject(project: string, overrides: Partial<RouteRequest> = {}): RouteRequest {
+      const callerId = `caller-of-${project}`;
+      agents.set(callerId, makeAgent({ id: callerId, projectPath: project }));
       return makeReq({
-        raw: { headers: { 'x-dorothy-caller-project': project }, on: () => {} } as any,
+        raw: { headers: {}, on: () => {} } as any,
+        callerAgentId: callerId,
         ...overrides,
       });
     }
@@ -520,7 +529,7 @@ describe('agent-routes', () => {
       await handler(reqFromProject('/proj/alpha', { url: new URL('http://localhost/api/agents') }), sendJson, ctx);
 
       const result = sendJson.mock.calls[0][0] as { agents: { id: string }[]; scopedToProject?: string };
-      expect(result.agents.map(a => a.id).sort()).toEqual(['a1', 'a3']);
+      expect(result.agents.map(a => a.id).sort()).toEqual(['a1', 'a3', 'caller-of-/proj/alpha']);
       expect(result.scopedToProject).toBe('/proj/alpha');
     });
 
@@ -535,8 +544,8 @@ describe('agent-routes', () => {
       const sendJson = vi.fn();
       await handler(reqFromProject('/proj/alpha', { url: new URL('http://localhost/api/agents?all=true') }), sendJson, ctx);
 
-      const result = sendJson.mock.calls[0][0] as { agents: unknown[] };
-      expect(result.agents).toHaveLength(2);
+      const result = sendJson.mock.calls[0][0] as { agents: { id: string }[] };
+      expect(result.agents.map(a => a.id).sort()).toEqual(['a1', 'a2', 'caller-of-/proj/alpha']);
     });
 
     it('rejects dispatch to an agent of another project with 403', async () => {
@@ -576,7 +585,10 @@ describe('agent-routes', () => {
       expect((sendJson.mock.calls[0][0] as { mode: string }).mode).toBe('start');
     });
 
-    it('callers without identity headers (UI) are unrestricted', async () => {
+    it('a caller with no agent token is not scoped: the super chat dispatches to every project this way', async () => {
+      // Not a boundary, and not meant as one: anything that reads the shared
+      // token gets the same. What this pins is only that the guard does not
+      // refuse the super chat until it has another way to reach the agents.
       const agent = makeAgent({ id: 'a1', projectPath: '/proj/beta', status: 'idle' });
       agents.set('a1', agent);
 
@@ -587,6 +599,30 @@ describe('agent-routes', () => {
       const sendJson = vi.fn();
       await handler(makeReq({ params: { id: 'a1' }, body: { prompt: 'go' } }), sendJson, ctx);
       expect(agent.status).toBe('running');
+    });
+
+    it('takes no project from a header: an MCP client with no agent token is refused, whatever project it names', async () => {
+      // The project it names is the target's own, so believing the header
+      // would let this through. Every agent can read the shared token and
+      // write this header, which is why it scopes nothing.
+      const agent = makeAgent({ id: 'a1', projectPath: '/proj/beta', status: 'idle' });
+      agents.set('a1', agent);
+
+      const app = makeRouteApp();
+      registerAgentRoutes(app, ctx);
+      const handler = findHandler(app, 'POST', 'start');
+
+      const sendJson = vi.fn();
+      await handler(makeReq({
+        params: { id: 'a1' },
+        body: { prompt: 'go' },
+        raw: { headers: { 'x-tars-client': 'mcp', 'x-tars-caller-project': '/proj/beta', 'x-dorothy-caller-project': '/proj/beta' }, on: () => {} } as any,
+      }), sendJson, ctx);
+
+      expect(sendJson.mock.calls[0][1]).toBe(403);
+      expect(String((sendJson.mock.calls[0][0] as { error: string }).error))
+        .toContain('This agent has no identity, so its calls cannot be scoped to a project.');
+      expect(agent.status).toBe('idle');
     });
   });
 

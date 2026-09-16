@@ -276,7 +276,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
 | `send_telegram` / `send_slack` | Reply to whichever channel the request came from |
 
-Auth: `Authorization: Bearer <~/.dorothy/api-token>`, plus `X-Tars-Client: mcp` and caller identity headers. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
+Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` when the process was started with one and `~/.dorothy/api-token` otherwise, plus `X-Tars-Client: mcp` and caller identity headers. The server takes the caller from the token alone: an id header naming another agent is refused, and on the shared token the call has no agent identity at all. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
 
 `delegate_task` in full:
 
@@ -340,7 +340,7 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 - `/dispatch` on the PTY path returns as soon as the bytes are written. There is no acknowledgement that the agent read the message, and none that it understood it as a task rather than as terminal noise. `mode: 'message'` means "typed into a live session", nothing more.
 - **Status is hook-driven, and only the `~/.claude` family fires hooks.** `codex`, `grok`, `opencode` and `pi` declare `supportsNativeHooks: false`; `gemini` declares `true` but has its own hook shape. For those CLIs the only status transition is the PTY-exit handler, 1.5 s after the process dies. `wait_for_agent` against them effectively waits for process exit or times out, and `lastCleanOutput` is never populated.
 - `/run-task` emits `agentStatusEmitter.emit('status', {…})`, while `/wait` listens on `` `status:${agentId}` ``. **An ACP run does not resolve a concurrent long-poll on the same agent.** In the normal `delegate_task` flow this is invisible, because ACP and the wait path are mutually exclusive; it bites anything that dispatches over ACP and waits separately.
-- The MCP source now sends `X-Tars-Caller-Project` / `X-Tars-Caller-Id`, while the server reads `x-dorothy-caller-project`. The *shipped* bundles (`mcp-*/dist/bundle.js`, which is what `extraResources` packages) still send `X-Dorothy-Caller-Project`, so scoping works today. **But rebuilding the MCP servers from source silently disables project scoping and trips the no-identity 403 on every guarded route.** One of the two names has to move.
+- Project scoping follows the caller's token, never the `X-Tars-Caller-Project` header. An agent process started without `CLAUDE_MGR_API_TOKEN` (outside Tars, or under a CLI that does not hand its environment to its MCP servers) has no identity: its guarded calls get the no-identity 403, and the bus refuses it.
 - The auto-continue in `delegate_task` fires once against any non-permission `waiting` state. If the agent was genuinely asking a question, it gets answered "yes, continue" without a human.
 - `/wait` long-poll and `apiRequest`'s 600 s ceiling are independent of the ACP 30-minute turn timeout. A task can outlive its watcher.
 
@@ -645,7 +645,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Control | Value |
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
-| Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600` |
+| Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory for each terminal spawn and each delegated run. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403. The shared token names no agent, and no header is read with it |
 | Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
@@ -655,7 +655,9 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### Residual risk
 
-- Any process running as the user can read `~/.dorothy/api-token` and drive every agent. This is the intended trust model for a single-user desktop app, but it is a flat one: the token is not scoped per agent.
+- Any process running as the user can read `~/.dorothy/api-token`, and every agent is such a process: its shell reads what the user can, a Claude agent has `~/.dorothy` in its `--add-dir`, and `venice` and `custom-openai` even put the token in its environment as `ANTHROPIC_API_KEY` for the OpenAI bridge. On that token a call has no agent identity, so the bus refuses it. **The agent routes do not**: a caller with no identity passes the cross-project guard unless it sends `X-Tars-Client: mcp`, so a process holding the file can drive every project's agents. The super chat dispatches that way, which is why it is not refused yet.
+- **An agent's own token is not secret from the other agents.** It lives in the environment of the agent's CLI and of its MCP servers, and `ps -Eww -p <pid>` prints the environment of those processes to any process of the same user. Only Apple's platform binaries, `/bin/zsh` among them, hide theirs, and neither `claude` nor `node` is one. An agent set on it can read a colleague's token and present it. Per-agent tokens end impersonation by naming, not impersonation by a process that reads the process table; only isolating agents from one another at the OS level would.
+- The super chat conversation is stored in clear in `~/.dorothy/overseer.json`. Keeping the global room closed on the API protects that path, not the conversation's confidentiality against an agent that reads the file.
 - `permissionMode: 'auto'` is the default for agents created over the API and maps to `--permission-mode auto` (only `bypass` emits `--dangerously-skip-permissions`), and `ensureProjectTrusted()` pre-accepts the workspace-trust dialog. An agent has the user's full filesystem authority inside its cwd and beyond.
 - API keys for the ten alt providers are stored in plaintext in `app-settings.json` and passed to the CLI as `ANTHROPIC_API_KEY` in the PTY environment.
 

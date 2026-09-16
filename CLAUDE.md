@@ -33,7 +33,7 @@
 | `electron/handlers/ipc-handlers.ts` | 2581 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
 | `electron/providers/index.ts` | Registry of the 19 providers. Unknown ids (and `local`) fall back to Claude |
-| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health` and `/api/hooks/*` are exempt from auth |
+| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health` and `/api/hooks/*` are exempt from auth. `resolveCaller` decides who is calling from the token presented: an agent's own token (`electron/core/agent-tokens.ts`) names that agent, and a different `X-Tars-Caller-Id` alongside it is a 403. The shared token names no agent, and no header is read with it |
 | `electron/services/api-routes/agent-routes.ts` | `spawnAgentSession()`, the **single** path for API-driven sessions, plus `/start`, `/dispatch`, `/message`, `/delegate`, `/bootstrap`, `/health`, and the cross-project guard |
 | `electron/services/api-routes/hooks-routes.ts` | The session-ownership contract: SessionStart registers via the `source` field; posts from any other session, or from the `lastKilledSessionId` tombstone, are rejected as `stale` |
 | `electron/services/acp/` | `client.ts`, `delegate.ts`, `registry.ts`. Delegation that returns: stop reason, tools used, tokens, cost |
@@ -78,11 +78,12 @@ APPLE_TEAM_ID
 Injected by Tars **into** the processes it spawns, never set them yourself:
 
 ```
-CLAUDE_AGENT_ID       # PTY + MCP child env; the MCP client sends it as X-Tars-Caller-Id
+CLAUDE_AGENT_ID       # PTY + MCP child env; the MCP client sends it as X-Tars-Caller-Id, a claim the server checks against the token
 CLAUDE_AGENT_NAME     # used by mcp-vault as the document author
-CLAUDE_PROJECT_PATH   # scopes /api/agents and the cross-project guard
+CLAUDE_PROJECT_PATH   # sent as X-Tars-Caller-Project, which scopes nothing: the project is the token's agent's, from the fleet
 CLAUDE_SKILLS         # comma-separated skill list for the session
 CLAUDE_MGR_API_URL    # read by mcp-orchestrator; defaults to http://127.0.0.1:31415
+CLAUDE_MGR_API_TOKEN  # minted per terminal by spawnAgentPty and per ACP run by delegateOverAcp, in memory only; mcp-orchestrator, mcp-memory and mcp-vault present it instead of ~/.dorothy/api-token
 ANTHROPIC_BASE_URL    # every alt provider runs the claude binary with these two rewritten
 ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL

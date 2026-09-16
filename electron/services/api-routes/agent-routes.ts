@@ -20,7 +20,7 @@ import { emitAgentStatus } from '../agent-events';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { withSessionTruth, sessionModel } from '../agent-truth';
-import { callerHeader, callerProject } from './utils';
+import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -381,8 +381,8 @@ function projectAgent(agent: AgentStatus) {
   return { ...rest, outputChunks: output.length };
 }
 
-// callerHeader and callerProject live in ./utils: the bus routes read the same
-// headers, and one copy of a header name is one thing to change.
+// callerId and callerProject live in ./utils: the bus routes ask the same two
+// questions, and one answer to each is one thing to change.
 
 /**
  * Remember which agent asked for this work, so services/agent-watch.ts can
@@ -400,7 +400,7 @@ function projectAgent(agent: AgentStatus) {
  * inherit the link from the last delegation.
  */
 function recordRequester(agent: AgentStatus, req: RouteRequest): void {
-  const callerId = callerHeader(req, 'id');
+  const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
   // Bound to the session this work is about to run in. When the route ends up
   // spawning a fresh one, spawnAgentSession re-stamps it with the new ptyId
@@ -417,8 +417,12 @@ function recordRequester(agent: AgentStatus, req: RouteRequest): void {
  * Cross-project guard: an orchestrator may only act on agents of its own
  * project. This is what stops an orchestrator from delegating to another
  * project's agents when the LLM picks a wrong ID from a global listing.
- * Callers without identity headers (UI, curl) are unrestricted, and a caller
- * can explicitly override with allowCrossProject: true.
+ * The project is the one of the agent whose token the call presents.
+ *
+ * A guard against mistakes, not a boundary. A caller with no agent token (the
+ * super chat, a curl by hand, but also anything that read the shared token)
+ * is unrestricted unless it says it is an MCP client, and any agent can pass
+ * allowCrossProject: true.
  */
 function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: SendJson): boolean {
   const caller = callerProject(req);
@@ -429,7 +433,8 @@ function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: Send
   if (!caller && req.raw?.headers?.['x-tars-client'] === 'mcp') {
     sendJson({
       error: 'This agent has no identity, so its calls cannot be scoped to a project. '
-        + 'Restart the agent from Tars so it is spawned with CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH.',
+        + 'An agent is known by the token Tars gives its process when it starts it, not by a name: '
+        + 'restart the agent from Tars.',
     }, 403);
     return false;
   }
