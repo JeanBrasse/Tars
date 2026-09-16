@@ -264,5 +264,8 @@ realClaude('the real claude binary', () => {
     const after = execFileSync('/bin/bash', ['-c', `${line(' --')} 2>&1 || true`], { encoding: 'utf-8' });
     expect(after).not.toMatch(/Input must be provided/i);
     expect(claude.buildInteractiveCommand(fullParams(PLAIN, false))).toContain(' -- ');
-  });
+    // The repaired line reaches the model, so this one takes seconds rather
+    // than the default five. Without the timeout the run fails on the clock
+    // instead of on the behaviour, which reads like the fix broke.
+  }, 180_000);
 });
