@@ -43,28 +43,28 @@ afterEach(() => {
 });
 
 describe('computeTranscriptUsage', () => {
-  it('sums tokens per model from the transcripts', () => {
+  it('sums tokens per model from the transcripts', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
 
-    const { modelUsage } = computeTranscriptUsage(home);
+    const { modelUsage } = (await computeTranscriptUsage(home));
 
     expect(modelUsage['claude-opus-5'].inputTokens).toBe(2000);
     expect(modelUsage['claude-opus-5'].outputTokens).toBe(1000);
     expect(modelUsage['claude-opus-5'].cacheReadInputTokens).toBe(4000);
   });
 
-  it('counts a resumed message once, not once per transcript', () => {
+  it('counts a resumed message once, not once per transcript', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
     writeTranscript('b-resumed.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_9', 'req_9')]);
 
-    const { modelUsage } = computeTranscriptUsage(home);
+    const { modelUsage } = (await computeTranscriptUsage(home));
 
     expect(modelUsage['claude-opus-5'].inputTokens).toBe(2000);
   });
 
-  it('prices 1h cache writes above 5m ones', () => {
+  it('prices 1h cache writes above 5m ones', async () => {
     writeTranscript('hour.jsonl', [assistant('msg_1', 'req_1')]);
-    const hourly = computeTranscriptUsage(home).modelUsage['claude-opus-5'].costUSD;
+    const hourly = (await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].costUSD;
 
     clearTranscriptUsageCache();
     fs.rmSync(path.join(home, '.claude', 'projects', 'demo'), { recursive: true });
@@ -73,20 +73,20 @@ describe('computeTranscriptUsage', () => {
         cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 4000 },
       }),
     ]);
-    const fiveMin = computeTranscriptUsage(home).modelUsage['claude-opus-5'].costUSD;
+    const fiveMin = (await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].costUSD;
 
     expect(hourly).toBeGreaterThan(fiveMin);
     // Opus 5: 4000 tokens at $10/MTok vs $6.25/MTok
     expect(hourly - fiveMin).toBeCloseTo((4000 / 1e6) * (10 - 6.25), 6);
   });
 
-  it('ignores synthetic messages and rolls tokens up per day', () => {
+  it('ignores synthetic messages and rolls tokens up per day', async () => {
     writeTranscript('a.jsonl', [
       assistant('msg_1', 'req_1'),
       { ...assistant('msg_2', 'req_2'), message: { id: 'msg_2', model: '<synthetic>', usage: { input_tokens: 99 } } },
     ]);
 
-    const usage = computeTranscriptUsage(home);
+    const usage = (await computeTranscriptUsage(home));
 
     expect(Object.keys(usage.modelUsage)).toEqual(['claude-opus-5']);
     expect(usage.dailyModelTokens).toHaveLength(1);
@@ -95,7 +95,7 @@ describe('computeTranscriptUsage', () => {
     expect(usage.lastComputedDate).toBe('2026-08-20');
   });
 
-  it('prices each day from that day\'s own tokens, cache reads included', () => {
+  it('prices each day from that day\'s own tokens, cache reads included', async () => {
     // Two days with identical input+output but wildly different cache reads.
     // The page used to rebuild a day from input+output times an all-time
     // blended rate, which made these two days cost exactly the same.
@@ -117,7 +117,7 @@ describe('computeTranscriptUsage', () => {
     };
     writeTranscript('a.jsonl', [cheap, dear]);
 
-    const days = computeTranscriptUsage(home).dailyModelTokens;
+    const days = (await computeTranscriptUsage(home)).dailyModelTokens;
     const byDate = Object.fromEntries(days.map(d => [d.date, d]));
 
     // Same tokensByModel on both days - that is exactly why the old estimate
@@ -134,10 +134,10 @@ describe('computeTranscriptUsage', () => {
 
     // And the days still add up to the all-time total.
     const total = days.reduce((sum, d) => sum + d.costUSD, 0);
-    expect(total).toBeCloseTo(computeTranscriptUsage(home).modelUsage['claude-opus-5'].costUSD, 6);
+    expect(total).toBeCloseTo((await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].costUSD, 6);
   });
 
-  it('tops up a message written as several lines instead of keeping the first', () => {
+  it('tops up a message written as several lines instead of keeping the first', async () => {
     // Claude Code writes one line per content block; the earlier lines carry a
     // partial output_tokens and the last line carries the real one.
     writeTranscript('a.jsonl', [
@@ -146,7 +146,7 @@ describe('computeTranscriptUsage', () => {
       assistant('msg_1', 'req_1', { output_tokens: 500 }),
     ]);
 
-    const usage = computeTranscriptUsage(home);
+    const usage = (await computeTranscriptUsage(home));
 
     // 500, not 1 (first-wins) and not 502 (no dedupe at all).
     expect(usage.modelUsage['claude-opus-5'].outputTokens).toBe(500);
@@ -170,57 +170,57 @@ describe('the per-file cache', () => {
    */
 
   /** Force the 60s result memo to expire without clearing the per-file map. */
-  function expireResultMemo() {
+  async function expireResultMemo() {
     const real = Date.now;
     const at = real();
     Date.now = () => at + 61_000;
     try {
-      return computeTranscriptUsage(home);
+      return (await computeTranscriptUsage(home));
     } finally {
       Date.now = real;
     }
   }
 
-  it('re-reads a transcript that has grown', () => {
+  it('re-reads a transcript that has grown', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
-    expect(computeTranscriptUsage(home).modelUsage['claude-opus-5'].inputTokens).toBe(1000);
+    expect((await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].inputTokens).toBe(1000);
 
     // A live session appends. Size changes, so the cache key changes.
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
-    expect(expireResultMemo().modelUsage['claude-opus-5'].inputTokens).toBe(2000);
+    expect((await expireResultMemo()).modelUsage['claude-opus-5'].inputTokens).toBe(2000);
   });
 
-  it('stops counting a transcript that has been deleted', () => {
+  it('stops counting a transcript that has been deleted', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
     writeTranscript('b.jsonl', [assistant('msg_2', 'req_2')]);
-    expect(computeTranscriptUsage(home).modelUsage['claude-opus-5'].inputTokens).toBe(2000);
+    expect((await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].inputTokens).toBe(2000);
 
     fs.unlinkSync(path.join(home, '.claude', 'projects', 'demo', 'b.jsonl'));
-    expect(expireResultMemo().modelUsage['claude-opus-5'].inputTokens).toBe(1000);
+    expect((await expireResultMemo()).modelUsage['claude-opus-5'].inputTokens).toBe(1000);
   });
 
-  it('still deduplicates across files when the second read is cached', () => {
+  it('still deduplicates across files when the second read is cached', async () => {
     // A resumed session replays its earlier messages into a new transcript, so
     // the same message id lands in two files. Caching per file must not turn
     // that back into double counting on the second pass.
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
     writeTranscript('b.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_9', 'req_9')]);
 
-    const first = computeTranscriptUsage(home).modelUsage['claude-opus-5'].inputTokens;
-    const second = expireResultMemo().modelUsage['claude-opus-5'].inputTokens;
+    const first = (await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].inputTokens;
+    const second = (await expireResultMemo()).modelUsage['claude-opus-5'].inputTokens;
 
     expect(first).toBe(2000);
     expect(second).toBe(2000);
   });
 
-  it('gives the same answer warm as it does cold', () => {
+  it('gives the same answer warm as it does cold', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
     writeTranscript('b.jsonl', [assistant('msg_3', 'req_3')]);
 
-    const cold = computeTranscriptUsage(home);
-    const warm = expireResultMemo();
+    const cold = (await computeTranscriptUsage(home));
+    const warm = (await expireResultMemo());
     clearTranscriptUsageCache();
-    const coldAgain = computeTranscriptUsage(home);
+    const coldAgain = (await computeTranscriptUsage(home));
 
     expect(warm).toEqual(cold);
     expect(coldAgain).toEqual(cold);
@@ -228,7 +228,7 @@ describe('the per-file cache', () => {
 
   /* ── Messages per day ─────────────────────────────────────────────────── */
 
-  it('counts a reply once even though it is written as several lines', () => {
+  it('counts a reply once even though it is written as several lines', async () => {
     // One API response, three content blocks, same message id: the token
     // totals top up across them, but it is one message. Counting lines here
     // roughly doubles every day on the chart.
@@ -238,26 +238,26 @@ describe('the per-file cache', () => {
       assistant('msg_1', 'req_1', { output_tokens: 500 }),
     ]);
 
-    const { dailyModelTokens } = computeTranscriptUsage(home);
+    const { dailyModelTokens } = (await computeTranscriptUsage(home));
 
     expect(dailyModelTokens).toHaveLength(1);
     expect(dailyModelTokens[0].messagesByModel['claude-opus-5']).toBe(1);
   });
 
-  it('counts distinct replies separately', () => {
+  it('counts distinct replies separately', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), assistant('msg_2', 'req_2')]);
 
-    const { dailyModelTokens } = computeTranscriptUsage(home);
+    const { dailyModelTokens } = (await computeTranscriptUsage(home));
 
     expect(dailyModelTokens[0].messagesByModel['claude-opus-5']).toBe(2);
   });
 
-  it('keeps the count per model, so a day of two models splits', () => {
+  it('keeps the count per model, so a day of two models splits', async () => {
     const other = { ...assistant('msg_9', 'req_9') };
     other.message = { ...other.message, model: 'claude-sonnet-5' };
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1'), other]);
 
-    const { dailyModelTokens } = computeTranscriptUsage(home);
+    const { dailyModelTokens } = (await computeTranscriptUsage(home));
 
     expect(dailyModelTokens[0].messagesByModel).toEqual({
       'claude-opus-5': 1,
@@ -265,21 +265,21 @@ describe('the per-file cache', () => {
     });
   });
 
-  it('does not count a replayed message twice across transcripts', () => {
+  it('does not count a replayed message twice across transcripts', async () => {
     // A resumed session replays its earlier messages into a new file under the
     // same ids, which is why the dedup is global rather than per file.
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
     writeTranscript('b.jsonl', [assistant('msg_1', 'req_1')]);
 
-    const { dailyModelTokens } = computeTranscriptUsage(home);
+    const { dailyModelTokens } = (await computeTranscriptUsage(home));
 
     expect(dailyModelTokens[0].messagesByModel['claude-opus-5']).toBe(1);
   });
 
-  it('still reports the day cost alongside the count', () => {
+  it('still reports the day cost alongside the count', async () => {
     writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
 
-    const { dailyModelTokens } = computeTranscriptUsage(home);
+    const { dailyModelTokens } = (await computeTranscriptUsage(home));
 
     // costUSD was briefly dropped from the interface while the count was
     // added, and nothing failed: the literal is built inside a .map(), so
