@@ -12,8 +12,8 @@ import HermesBoard from '@/components/KanbanBoard/HermesBoard';
  *
  * The local board is NOT dead code and was deliberately left in place: its store
  * (~/.dorothy/kanban-tasks.json) is shared by non-UI consumers - the bundled
- * mcp-kanban MCP server, the /api/kanban/complete hook route, and the
- * kanban-automation service that assigns and spawns agents. Only the on-screen
+ * mcp-kanban MCP server, and the kanban-automation service that matches or
+ * creates an agent when a task reaches the planned column. Only the on-screen
  * choice was removed; the data, the IPC handlers and the local board component
  * are untouched.
  */

@@ -119,6 +119,8 @@ import {
   ensureAgentInstructions,
   migrateFromClaudeManager,
 } from './utils';
+import { spawnAgentPty } from './core/agent-pty';
+import { getProvider } from './providers';
 
 // ============== App Settings Management ==============
 
@@ -476,7 +478,6 @@ app.whenReady().then(async () => {
     createAgent: async (config) => {
       // Create agent directly - similar to agent:create handler
       const { v4: uuidv4 } = await import('uuid');
-      const pty = await import('node-pty');
 
       const id = uuidv4();
       const shell = process.env.SHELL || '/bin/zsh';
@@ -488,8 +489,15 @@ app.whenReady().then(async () => {
 
       const allSkills = [...new Set(config.skills)];
 
-      const ptyProcess = pty.spawn(shell, ['-l'], {
-        name: 'xterm-256color',
+      // Through spawnAgentPty, like every other agent pty. This is the kanban
+      // automation creating an agent by itself, and the comment above says it
+      // duplicates the agent:create handler: it duplicated the defect too,
+      // setting CLAUDE_AGENT_ID with no API address beside it, so an agent a
+      // sandbox created from a board posted its hooks into the live Tars.
+      const ptyProcess = spawnAgentPty({
+        binaryName: getProvider('claude').binaryName,
+        shell,
+        args: ['-l'],
         cols: 120,
         rows: 30,
         cwd,

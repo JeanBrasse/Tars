@@ -33,7 +33,7 @@
 | `electron/handlers/ipc-handlers.ts` | 2581 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
 | `electron/providers/index.ts` | Registry of the 19 providers. Unknown ids (and `local`) fall back to Claude |
-| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health`, `/api/hooks/*` and `/api/kanban/complete` are exempt from auth |
+| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health` and `/api/hooks/*` are exempt from auth |
 | `electron/services/api-routes/agent-routes.ts` | `spawnAgentSession()`, the **single** path for API-driven sessions, plus `/start`, `/dispatch`, `/message`, `/delegate`, `/bootstrap`, `/health`, and the cross-project guard |
 | `electron/services/api-routes/hooks-routes.ts` | The session-ownership contract: SessionStart registers via the `source` field; posts from any other session, or from the `lastKilledSessionId` tombstone, are rejected as `stale` |
 | `electron/services/acp/` | `client.ts`, `delegate.ts`, `registry.ts`. Delegation that returns: stop reason, tools used, tokens, cost |
@@ -109,7 +109,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 - **Spawn rule**: `spawnAgentSession()` in `electron/services/api-routes/agent-routes.ts` is the only place an API-driven session is started: the skills prefix, MCP config, model flag, `--disallowed-tools`, workspace trust, identity header and `--add-dir ~/.dorothy` all live there. Underneath it, `initAgentPty()` in `electron/core/agent-manager.ts` is the one function that spawns a PTY; `main.ts`, `ipc-handlers.ts` and the Telegram/Slack bots already call it directly. Route new work through one of those two. Do not add a third way in
 - **Session rule**: status, output and task-completed posts are authoritative only from `agent.currentSessionId`. Anything from another session, or matching `lastKilledSessionId`, is `stale` and must be dropped. Never clear `currentSessionId` on idle
 - **Shell rule**: no `exec`/`execSync` with an interpolated string. `execFile` with an argv array, as in `git-review.ts`. Paths derived from user input go through the guards in `electron/utils/worktree-path.ts`
-- **Auth rule**: exactly four routes are exempt from the bearer token: `/api/local-file`, `/api/health`, `/api/hooks/*` and `/api/kanban/complete`. Anything you add under `/api/` is authenticated
+- **Auth rule**: exactly three routes are exempt from the bearer token: `/api/local-file`, `/api/health` and `/api/hooks/*`. Anything you add under `/api/` is authenticated. It was four until `/api/kanban/complete` was removed: unauthenticated, uncalled, and it deleted agents
 
 ### QA Agent
 - **Owns**: `__tests__/`, `e2e/`, `vitest.config.mts`, `playwright.config.ts`

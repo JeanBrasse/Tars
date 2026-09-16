@@ -7,7 +7,9 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 MESSAGE=$(echo "$INPUT" | jq -r '.message // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 
-API_URL="http://127.0.0.1:31415"
+# The Tars that spawned this agent, not whoever happens to own 31415:
+# CLAUDE_MGR_API_URL is in the pty environment and follows DOROTHY_API_PORT.
+API_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}"
 
 AGENT_ID="${DOROTHY_AGENT_ID:-$SESSION_ID}"
 PROJECT_PATH="${DOROTHY_PROJECT_PATH:-$CWD}"
