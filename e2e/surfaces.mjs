@@ -214,7 +214,7 @@ export const CHAT_ROOMS = [
     // which is the point of the frame: the room is readable and the box tells
     // you why nothing will move.
     name: 'chat-room-all-stopped', route: '/chat', clickText: 'atlas',
-    placeholder: 'Every agent here is stopped. What you write waits until you start one.',
+    placeholder: 'Every agent here is stopped. Nothing moves until you start one.',
     shows: 'Three paragraphs assume the reader already has an account. I have marked them.',
   },
   {
