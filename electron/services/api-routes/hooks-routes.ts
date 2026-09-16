@@ -31,10 +31,45 @@ import { emitAgentStatus } from '../agent-events';
  * session the user had already moved on from could still tell them their agent
  * needed permission. That is one of the ways the app appeared to ask twice.
  */
+/**
+ * A session id Tars can act on: present, and not the empty string.
+ *
+ * The nine hooks build this field with `jq -r '.session_id // empty'`, which
+ * yields "" when the field is missing and also when jq is not installed, and
+ * no hook checks that jq exists. "" is falsy, so every guard written as
+ * `if (!sessionId)` or `sessionId &&` answered "this is not stale" in exactly
+ * the case it existed to catch. The measured consequence: the Stop hook of a
+ * killed pty posts idle with an empty id, and puts the live session to sleep.
+ * Worse, a SessionStart carrying "" was accepted, `currentSessionId` was set
+ * to "" and saved to disk, so ownership was erased for good and any session
+ * could drive that agent afterwards.
+ *
+ * Empty is therefore an invalid id here, never a benign absence. It also heals
+ * an agent whose id was already emptied on disk: that reads as unowned, and
+ * the next real session adopts it.
+ */
+function usableSessionId(sessionId?: string): string | undefined {
+  const trimmed = sessionId?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** The id of a session that was killed. Checked on its own before
+ *  registration, where the full staleness test cannot run: a SessionStart
+ *  legitimately carries an id that is not the current one, since claiming
+ *  ownership is what it is for. */
+function isTombstonedSession(agent: AgentStatus, sessionId?: string): boolean {
+  const id = usableSessionId(sessionId);
+  return !!id && id === usableSessionId(agent.lastKilledSessionId);
+}
+
 function isStaleSessionPost(agent: AgentStatus, sessionId?: string): boolean {
-  if (!sessionId) return false;
-  if (sessionId === agent.lastKilledSessionId) return true;
-  return !!agent.currentSessionId && sessionId !== agent.currentSessionId;
+  const id = usableSessionId(sessionId);
+  const owner = usableSessionId(agent.currentSessionId);
+  // A post that carries no usable id cannot show it is the owner. Refused
+  // wherever there is an owner to protect; an agent nobody owns is left alone.
+  if (!id) return !!owner;
+  if (isTombstonedSession(agent, id)) return true;
+  return !!owner && id !== owner;
 }
 
 export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
@@ -53,10 +88,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
     if (agent) {
-      const staleOutput =
-        (agent.currentSessionId && session_id && session_id !== agent.currentSessionId) ||
-        (session_id && session_id === agent.lastKilledSessionId);
-      if (staleOutput) {
+      if (isStaleSessionPost(agent, session_id)) {
         // Stale session: don't let a killed PTY's Stop hook overwrite the
         // live task's output.
         console.log(`[hooks] Ignored stale output post for ${agent.id} (session ${session_id}, current ${agent.currentSessionId ?? 'none'})`);
@@ -90,6 +122,18 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    // Refused loudly, and before anything can be written down. This is the
+    // route that sets ownership, drives status, and makes Tars type into a
+    // terminal, and an empty id is how a post with nothing to prove reached
+    // all three. The predicates below would refuse it too, but as `stale`,
+    // which reads as "another session spoke"; this is a malformed post, and
+    // saying so names the actual cause: every hook Tars ships sends a real id,
+    // so one that cannot is telling us jq is missing on that machine.
+    if (!usableSessionId(session_id)) {
+      sendJson({ error: 'session_id is required and must not be empty' }, 400);
+      return;
+    }
+
     const agent: AgentStatus | undefined = findAgentByIdOrSession(agent_id, session_id);
     if (!agent) {
       sendJson({ success: false, message: 'Agent not found' });
@@ -99,7 +143,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // Tombstone guard: hooks of a killed PTY's session (separate processes
     // that survive the kill) may arrive during the window where the new
     // session hasn't registered yet. Never let them register or flip status.
-    if (session_id && session_id === agent.lastKilledSessionId) {
+    if (isTombstonedSession(agent, session_id)) {
       console.log(`[hooks] Ignored post from killed session ${session_id} for ${agent.id} (status=${status})`);
       sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
       return;
@@ -123,14 +167,27 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     // Stale-session guard: only the registered session may drive status.
-    if (agent.currentSessionId && session_id && session_id !== agent.currentSessionId) {
+    //
+    // Naming no session at all is refused here too, and that is the point of
+    // this guard rather than a detail of it. A status change emits
+    // fleet-change, agent-watch answers it with flush(), and flush writes a
+    // note into the agent's pty. flush also refuses a requester that is
+    // `running`, so posting `idle` for a busy agent is precisely how an
+    // outsider could make Tars write into a turn in progress, which it
+    // otherwise refuses on principle. The old condition required a session id
+    // to be present before comparing it, so omitting the field skipped the
+    // comparison: the guard cancelled itself exactly when the caller gave it
+    // nothing to check. Every hook Tars ships sends one.
+    if (isStaleSessionPost(agent, session_id)) {
       console.log(`[hooks] Ignored stale status post for ${agent.id}: ${status} from session ${session_id} (current: ${agent.currentSessionId})`);
       sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
       return;
     }
     // Registration fallback: if SessionStart never reached us (API briefly
     // down at boot), adopt the first non-tombstoned session that reports in.
-    if (!agent.currentSessionId && session_id) {
+    // An agent whose id was emptied on disk by the old bug reads as unowned
+    // here, so the next real session adopts it and the damage heals itself.
+    if (!usableSessionId(agent.currentSessionId)) {
       agent.currentSessionId = session_id;
       agent.resumableSessionId = session_id;
     }
@@ -195,11 +252,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    // Same stale-session + tombstone guards as /api/hooks/status.
-    const staleCompleted =
-      (agent.currentSessionId && session_id && session_id !== agent.currentSessionId) ||
-      (session_id && session_id === agent.lastKilledSessionId);
-    if (staleCompleted) {
+    // The same decision as everywhere else, taken in one place.
+    if (isStaleSessionPost(agent, session_id)) {
       console.log(`[hooks] Ignored stale task-completed for ${agent.id} from session ${session_id}`);
       sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
       return;
@@ -290,19 +344,28 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
-    if (agent && isStaleSessionPost(agent, session_id)) {
+    // An unknown agent_id used to skip the guard below, because the guard was
+    // conditioned on the agent existing: the alert still went to the desktop,
+    // carrying the caller's own `message`, under the name "Claude". Same shape
+    // as the missing session id above, a guard that lapses when the value it
+    // checks is absent.
+    if (!agent) {
+      sendJson({ success: false, message: 'Agent not found' });
+      return;
+    }
+    if (isStaleSessionPost(agent, session_id)) {
       console.log(`[hooks] Ignored ${type} notification from session ${session_id} for ${agent.id} (current: ${agent.currentSessionId ?? 'none'})`);
       sendJson({ success: false, stale: true });
       return;
     }
-    const agentName = agent?.name || 'Claude';
+    const agentName = agent.name || 'Claude';
 
     if (type === 'permission_prompt') {
       if (ctx.getAppSettings().notifyOnWaiting) {
         ctx.sendNotificationCallback(
           `${agentName} needs permission`,
           message || 'Claude needs your permission to proceed',
-          agent?.id,
+          agent.id,
           ctx.getAppSettings()
         );
       }
@@ -311,7 +374,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
         ctx.sendNotificationCallback(
           `${agentName} is waiting`,
           message || 'Claude is waiting for your input',
-          agent?.id,
+          agent.id,
           ctx.getAppSettings()
         );
       }
