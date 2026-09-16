@@ -516,11 +516,29 @@ export function deliveriesOf(messageId: string): BusDelivery[] {
   return state.deliveries.filter(d => d.messageId === messageId);
 }
 
-/** A queued message actually reached a terminal. The only place a delivery
- *  becomes `delivered`, so the interface can never show that on a guess. */
+export function getMessage(messageId: string): BusMessage | undefined {
+  return state.messages.find(m => m.id === messageId);
+}
+
+/** What is being held for an agent, oldest first: the order a human releasing
+ *  a queue expects to see it arrive in. */
+export function notSentFor(targetAgentId: string): BusDelivery[] {
+  loadBus();
+  return state.deliveries
+    .filter(d => d.targetAgentId === targetAgentId && d.state === 'not_sent')
+    .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+}
+
+/** A message actually reached a terminal. The only place a delivery becomes
+ *  `delivered`, so the interface can never show that on a guess.
+ *
+ *  `not_sent` is accepted as well as `queued`: a held message released by hand
+ *  reaches the terminal the same way, and it would be a poor answer to write
+ *  it in and go on calling it not sent. */
 export function markDelivered(targetAgentId: string, messageId: string): BusDelivery | undefined {
   const delivery = state.deliveries.find(
-    d => d.messageId === messageId && d.targetAgentId === targetAgentId && d.state === 'queued',
+    d => d.messageId === messageId && d.targetAgentId === targetAgentId
+      && (d.state === 'queued' || d.state === 'not_sent'),
   );
   if (!delivery) return undefined;
   delivery.state = 'delivered';

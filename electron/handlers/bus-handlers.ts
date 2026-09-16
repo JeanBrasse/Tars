@@ -3,7 +3,14 @@ import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { getOverseerHistory } from '../services/overseer';
 import { setBusDeliveredHook, setBusDroppedHook } from '../services/agent-watch';
-import { announceDropped, announceSystem, broadcastPublication, closeAndAnnounce, fanOutDeliveries } from '../services/bus-delivery';
+import {
+  announceDropped,
+  announceSystem,
+  broadcastPublication,
+  closeAndAnnounce,
+  fanOutDeliveries,
+  releaseNotSent,
+} from '../services/bus-delivery';
 import {
   appendMessage,
   closeThread,
@@ -135,6 +142,21 @@ export function registerBusHandlers(): void {
     } catch (err) {
       console.error('[bus] stopThread failed:', err);
       return { success: false, error: err instanceof Error ? err.message : 'Failed to stop thread' };
+    }
+  });
+
+  // The way out of `not_sent`. A human decision, aimed at an agent Tars cannot
+  // read the state of, so it is theirs to make and theirs alone: nothing here
+  // is triggered by time, by silence, or by anything the agent did.
+  ipcMain.handle('bus:releaseNotSent', async (_event, agentId: string) => {
+    try {
+      if (!agents.has(agentId)) return { success: false, error: 'Agent not found' };
+      const { released, reason } = await releaseNotSent(agentId);
+      if (reason) return { success: false, error: reason, deliveries: [] };
+      return { success: true, deliveries: released };
+    } catch (err) {
+      console.error('[bus] releaseNotSent failed:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Failed to release' };
     }
   });
 

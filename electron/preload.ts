@@ -754,6 +754,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('bus:stopThread', threadId),
     setMembers: (roomId: string, memberIds: string[]) =>
       ipcRenderer.invoke('bus:setMembers', roomId, memberIds),
+    releaseNotSent: (agentId: string) =>
+      ipcRenderer.invoke('bus:releaseNotSent', agentId),
 
     // Pushed from the main process, so the Chat page never polls.
     onMessage: (callback: (message: unknown) => void) => {

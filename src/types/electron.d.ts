@@ -1300,6 +1300,7 @@ export interface ElectronAPI {
     ) => Promise<{
       success: boolean;
       room?: BusRoom;
+      members?: BusMember[];
       threads?: BusThread[];
       messages?: BusMessage[];
       deliveries?: BusDelivery[];
@@ -1317,6 +1318,14 @@ export interface ElectronAPI {
       roomId: string,
       memberIds: string[],
     ) => Promise<{ success: boolean; room?: BusRoom; error?: string }>;
+    /** Send what is held for an agent that has no end of turn, oldest first.
+     *  A human decision: it writes into a session whose state Tars does not
+     *  know, which is why nothing does it automatically. */
+    releaseNotSent: (agentId: string) => Promise<{
+      success: boolean;
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
     onMessage: (callback: (message: BusMessage) => void) => () => void;
     onDelivery: (callback: (delivery: BusDelivery) => void) => () => void;
     onThread: (callback: (thread: BusThread) => void) => () => void;

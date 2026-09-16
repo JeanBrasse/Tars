@@ -1,7 +1,17 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
-import { queueBusMessage } from './agent-watch';
-import { appendSystemMessage, cancelQueuedDeliveries, getThread, hasEndOfTurn, markDropped, recordDelivery } from './bus-store';
+import { queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
+import {
+  appendSystemMessage,
+  cancelQueuedDeliveries,
+  getMessage,
+  getThread,
+  hasEndOfTurn,
+  markDelivered,
+  markDropped,
+  notSentFor,
+  recordDelivery,
+} from './bus-store';
 import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusSystemKind, BusThread } from '../types';
 
 /**
@@ -82,6 +92,59 @@ export function broadcastPublication(message: BusMessage, thread: BusThread, del
   broadcastToAllWindows('bus:message', message);
   broadcastToAllWindows('bus:thread', thread);
   for (const delivery of deliveries) broadcastToAllWindows('bus:delivery', delivery);
+}
+
+/**
+ * Send what was never sent, because a human said to.
+ *
+ * `not_sent` is the state with no way out on its own: the target has no end of
+ * turn, so nothing will ever be a safe moment and the queue refuses to guess
+ * one. That refusal does not move. What moves is that a person can now decide,
+ * and this is what their decision does: the held messages go in, oldest first,
+ * into a session whose state Tars does not know. Specifying a state the
+ * interface can show but never resolve is the silent failure this bus exists
+ * to remove, so it gets a door.
+ */
+export async function releaseNotSent(agentId: string): Promise<{ released: BusDelivery[]; reason?: string }> {
+  const held = notSentFor(agentId);
+  if (!held.length) return { released: [] };
+
+  const queued: QueuedBusMessage[] = [];
+  for (const delivery of held) {
+    const message = getMessage(delivery.messageId);
+    if (!message) continue;
+    queued.push({
+      messageId: message.id,
+      roomId: message.roomId,
+      threadId: message.threadId,
+      authorName: message.authorName,
+      text: message.text,
+    });
+  }
+  if (!queued.length) return { released: [] };
+
+  const written = await releaseBusMessagesNow(agentId, queued);
+  if (!written.length) {
+    return { released: [], reason: 'That agent has no live terminal to write into.' };
+  }
+
+  const released: BusDelivery[] = [];
+  for (const messageId of written) {
+    const delivery = markDelivered(agentId, messageId);
+    if (!delivery) continue;
+    released.push(delivery);
+    broadcastToAllWindows('bus:delivery', delivery);
+  }
+
+  // Said in the room, on the anchor the last one belongs to: a human action
+  // that writes into a terminal should leave a trace where the conversation is.
+  const last = queued.find(q => q.messageId === written[written.length - 1]);
+  if (last) {
+    const name = agents.get(agentId)?.name || agentId;
+    announceSystem(last.roomId, last.threadId, 'queue_released',
+      `You sent ${written.length} held message${written.length > 1 ? 's' : ''} to ${name}.`);
+  }
+  return { released };
 }
 
 /**
