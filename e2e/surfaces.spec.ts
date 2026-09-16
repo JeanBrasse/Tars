@@ -2,11 +2,8 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL, KNOWN_PAGE_ERRORS, splitPageErrors } from './surfaces.mjs';
+import { ALL, recordPageErrors } from './surfaces.mjs';
 import { seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
-
-/** Which declared known defects this run actually ran into. */
-const sawKnownError = new Set<string>();
 
 /**
  * Visual + technical sweep of the real Electron app.
@@ -111,15 +108,12 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
 
     await page.waitForTimeout(surface.settle ?? 900);
 
-    // Known pre-existing defects are annotated rather than failed. Each one is
-    // declared in surfaces.mjs, and the last test in this file fails when a
+    // Known pre-existing defects are recorded rather than failed. Each one is
+    // declared in surfaces.mjs, and e2e/known-errors.spec.ts fails when a
     // declared one stops happening, so an allowance cannot outlive its defect.
-    // Any OTHER uncaught error still fails the surface.
-    const { fatal, seen } = splitPageErrors(pageErrors.slice(errorsBefore));
-    for (const key of seen) {
-      sawKnownError.add(key);
-      test.info().annotations.push({ type: 'known-issue', description: key });
-    }
+    // Recorded before the screenshot, so a surface that fails on its picture
+    // still counts for what it saw. Any OTHER uncaught error fails the surface.
+    const fatal = recordPageErrors(test.info(), 'surfaces', surface.name, pageErrors.slice(errorsBefore));
     expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
 
     // Mask the terminal bodies. The dashboard screenshots real PTY output, which
@@ -153,20 +147,3 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     });
   });
 }
-
-/**
- * The allowance list, held to its own defects.
- *
- * Declared last so it runs after every surface above. A known-issue entry that
- * nothing trips any more is an entry describing a defect somebody fixed, and
- * leaving it in place is how the next real error of that shape gets waved
- * through. Failing here is the reminder to delete the entry, and deleting it
- * is what makes the suite green again.
- */
-test('every tolerated page error still happens, or its entry is stale', () => {
-  const gone = KNOWN_PAGE_ERRORS.filter(k => !sawKnownError.has(k.key));
-  expect(
-    gone.map(k => `${k.key}: ${k.why}`),
-    'these are tolerated and no longer occur: remove them from KNOWN_PAGE_ERRORS',
-  ).toEqual([]);
-});
