@@ -70,6 +70,23 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
             value={appSettings.defaultProvider || 'claude'}
             onChange={(v) => onSaveAppSettings({ defaultProvider: v })}
             options={PROVIDER_REGISTRY
+              // Why these two and not the others: the answer is that nobody
+              // knows, and the list is kept rather than guessed at. It arrived
+              // in eac841a (2026-04-12) as "Remove OpenCode/Pi from provider
+              // picker (CLI-only tools)", and that reason does not pick them
+              // out: `requiresCli` is true for eight providers here, and amp
+              // has the same single "default" model row as opencode without
+              // being excluded. Nothing in the main process separates them
+              // either, neither `supportsNativeHooks` (false for five) nor the
+              // one-shot builders (both implement them).
+              //
+              // It matters less than it looks, and that is the real finding:
+              // `defaultProvider` is written here and read nowhere. Not in
+              // electron/, not in mcp-*/, not in hooks/. A programmatic spawn
+              // takes `agent.provider` and falls back to a hardcoded 'claude'
+              // (ipc-handlers.ts:437 and :554), so this control changes
+              // nothing and the row's description above it is not true today.
+              // Wiring it or removing it is a decision, not a cleanup.
               .filter(p => p.id !== 'opencode' && p.id !== 'pi')
               .map(({ id, label, requiresCli }) => {
                 const notAvailable = installedProviders[id] !== true;
