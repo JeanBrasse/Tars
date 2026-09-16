@@ -3,17 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, stripCursorSequences, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
-
-// Clean xterm query/focus escape sequences out of user input before forwarding.
-function cleanInput(data: string): string {
-  return data
-    .replace(/\x1b\[\?[\d;]*c/g, '')
-    .replace(/\x1b\[\d+;\d+R/g, '')
-    .replace(/\x1b\[(?:I|O)/g, '')
-    .replace(/\d+;\d+c/g, '');
-}
 
 interface UseAgentDialogTerminalOptions {
   open: boolean;
@@ -129,9 +120,10 @@ export function useAgentDialogTerminal({
           }
         });
 
+        // The terminal's own replies to queries from the CLI arrive here like a
+        // keystroke and must never be forwarded. See stripTerminalReplies.
         term.onData(async (data) => {
-          if (/^(\x1b\[\?[\d;]*c|\d+;\d+c)+$/.test(data)) return;
-          const cleaned = cleanInput(data);
+          const cleaned = stripTerminalReplies(data);
           if (!cleaned) return;
           const id = agentIdRef.current;
           if (id && window.electronAPI?.agent?.sendInput) {

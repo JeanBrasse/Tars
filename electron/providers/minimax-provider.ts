@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk , safeEffort, orchestratorToolFlags } from './cli-provider';
+import { readAppSettingsFromDisk , safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 const MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic'; // Anthropic-compatible endpoint
@@ -84,14 +84,12 @@ export class MiniMaxProvider implements CLIProvider {
 
     command += ` --add-dir '${DATA_DIR}'`;
 
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}.] ${params.prompt}`;
     }
 
-    if (finalPrompt) {
-      command += ` '${finalPrompt.replace(/'/g, "'\\''")}'`;
-    }
+    command += promptOperand(finalPrompt);
 
     return command;
   }

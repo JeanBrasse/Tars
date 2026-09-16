@@ -105,6 +105,21 @@ export interface AgentStatus {
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */
   lastKilledSessionId?: string;
+  /**
+   * When the current session last began a turn, from the UserPromptSubmit hook.
+   *
+   * Distinct from `currentSessionId`, which only says that a session registered.
+   * A session that never received its task registers in exactly the same way,
+   * which is what made a lost dispatch look like an agent at work.
+   */
+  lastTurnStartedAt?: string;
+  /**
+   * A task handed to a session that has not started a turn yet, cleared the
+   * moment one starts. If none does within the bound, the task is typed into
+   * the live session once and the agent is marked failed if that fails too.
+   * Runtime state: reset on load, like ptyId.
+   */
+  pendingDelivery?: { ptyId: string; task: string; dispatchedAt: string; retried?: boolean; checkArmed?: boolean };
   /** Why the agent is 'waiting': 'permission' = blocking permission dialog
    *  (auto-continue must NOT type into it), 'idle' = waiting for next prompt. */
   waitingReason?: string;

@@ -19,6 +19,7 @@ import type { AppSettings, AgentStatus } from './types';
 
 // Constants
 import { APP_SETTINGS_FILE, API_TOKEN_FILE } from './constants';
+import { promptOperand } from './providers/cli-provider';
 
 // Core modules
 import {
@@ -595,22 +596,21 @@ app.whenReady().then(async () => {
         command += ' --verbose';
       }
 
-      // Build final prompt with skills
-      let finalPrompt = prompt;
-      if (agent.skills && agent.skills.length > 0) {
+      // Build final prompt with skills, and no operand at all without a task.
+      let finalPrompt = prompt?.trim() ? prompt : '';
+      if (finalPrompt && agent.skills && agent.skills.length > 0) {
         const skillsList = agent.skills.join(', ');
         finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${prompt}`;
       }
 
-      const escapedPrompt = finalPrompt.replace(/'/g, "'\\''");
-      command += ` '${escapedPrompt}'`;
+      command += promptOperand(finalPrompt);
 
       // Update status
       agent.status = 'running';
       agent.currentTask = prompt.slice(0, 100);
       agent.lastActivity = new Date().toISOString();
       // Started by the Kanban automation, which carries a task like any other.
-      armTaskStartWatch(agent, agent.ptyId);
+      armTaskStartWatch(agent, agent.ptyId, finalPrompt);
 
       const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
       const fullCommand = `cd '${workingPath}' && ${command}`;

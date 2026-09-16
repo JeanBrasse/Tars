@@ -4,6 +4,8 @@ import { EventEmitter } from 'events';
 vi.mock('../../../../electron/core/agent-manager', () => ({
   agents: new Map(),
   saveAgents: vi.fn(),
+  noteSessionRegistered: vi.fn(),
+  noteTurnStarted: vi.fn(),
 }));
 
 vi.mock('electron', () => ({

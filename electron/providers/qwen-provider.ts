@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort, orchestratorToolFlags } from './cli-provider';
+import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'; // claude appends /v1/messages
@@ -49,11 +49,11 @@ export class QwenProvider implements CLIProvider {
     command += orchestratorToolFlags(params.orchestratorMode);
     if (safeEffort(params.effort) && params.effort !== 'medium') command += ` --effort ${safeEffort(params.effort)}`;
     command += ` --add-dir '${DATA_DIR}'`;
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills: ${params.skills.join(', ')}.] ${params.prompt}`;
     }
-    if (finalPrompt) command += ` '${finalPrompt.replace(/'/g, "'\\''")}'`;
+    command += promptOperand(finalPrompt);
     return command;
   }
 
