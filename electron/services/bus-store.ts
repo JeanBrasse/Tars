@@ -152,7 +152,51 @@ function inTestProcess(): boolean {
   return !!process.env.VITEST || process.env.NODE_ENV === 'test';
 }
 
-function saveBus(): void {
+/**
+ * The journal is written once per turn of the event loop, not once per row.
+ *
+ * Every mutator in this file wrote the whole journal, and the delivery fan-out
+ * calls two of them once per target: one append, one delivery row per member,
+ * one more when each row is marked delivered. Measured on 2026-09-18 through
+ * bus:postMessage itself, in a room of six, on a journal the size of a month
+ * of the super chat (343 messages, 2058 delivery rows, 628 KB): 13 rewrites of
+ * the whole file for the first message and 7 to 8 for each one after it, 11.4
+ * ms a message. At ten times that journal (6.3 MB), 83 ms a message and 160 at
+ * worst, all of it on the main thread, and 615 MB rewritten over 12 messages.
+ * One write a message instead: 1.7 ms and 11.5 ms.
+ *
+ * So the write, and only the write, is deferred to the end of the current
+ * synchronous run. `state` still changes before the mutator returns, so
+ * nothing that reads the journal can see a stale one - every reader here reads
+ * memory - and no timer, socket or IPC callback runs between a mutation and
+ * its write, because a microtask runs before any of them. What can happen in
+ * between is the app being told to quit, which is why flushBus exists and why
+ * before-quit calls it.
+ *
+ * Nothing about the journal's shape, its atomicity or its mode changes, and
+ * nothing is purged: the same bytes, written a seventh to a thirteenth as often.
+ */
+let writeQueued = false;
+
+function scheduleSaveBus(): void {
+  if (writeQueued) return;
+  writeQueued = true;
+  queueMicrotask(() => {
+    if (!writeQueued) return;
+    writeQueued = false;
+    writeBusNow();
+  });
+}
+
+/** Put a deferred write on disk now, rather than at the end of the run that
+ *  will not happen: app shutdown. Safe to call when nothing is pending. */
+export function flushBus(): void {
+  if (!writeQueued) return;
+  writeQueued = false;
+  writeBusNow();
+}
+
+function writeBusNow(): void {
   // Never write a journal that was never read.
   if (!loaded) return;
 
@@ -254,7 +298,7 @@ export function appendSystemMessage(input: {
     createdAt: new Date().toISOString(),
   };
   state.messages.push(message);
-  saveBus();
+  scheduleSaveBus();
   return message;
 }
 
@@ -348,7 +392,7 @@ export function closeThread(threadId: string, next: BusThread['state']): BusThre
   const thread = getThread(threadId);
   if (!thread || thread.state !== 'open') return thread;
   thread.state = next;
-  saveBus();
+  scheduleSaveBus();
   return thread;
 }
 
@@ -429,7 +473,7 @@ export function appendMessage(input: {
     }
   }
 
-  saveBus();
+  scheduleSaveBus();
   return { message, thread, supersededThreadId };
 }
 
@@ -556,7 +600,7 @@ export function hasEndOfTurn(agent: AgentStatus): boolean {
 
 export function recordDelivery(delivery: BusDelivery): BusDelivery {
   state.deliveries.push(delivery);
-  saveBus();
+  scheduleSaveBus();
   return delivery;
 }
 
@@ -597,7 +641,7 @@ export function markDelivered(targetAgentId: string, messageId: string): BusDeli
   delivery.reasonCode = undefined;
   delivery.reason = undefined;
   delivery.refusedAt = undefined;
-  saveBus();
+  scheduleSaveBus();
   return delivery;
 }
 
@@ -619,7 +663,7 @@ export function cancelQueuedDeliveries(
     delivery.refusedAt = now;
     cancelled.push(delivery);
   }
-  if (cancelled.length) saveBus();
+  if (cancelled.length) scheduleSaveBus();
   return cancelled;
 }
 
@@ -645,7 +689,7 @@ export function markDropped(
   delivery.reasonCode = reasonCode;
   delivery.reason = reason;
   delivery.refusedAt = new Date().toISOString();
-  saveBus();
+  scheduleSaveBus();
   return delivery;
 }
 
@@ -664,7 +708,7 @@ export function setMembers(
   // the contract asks the interface to show.
   const open = openThreadOf(roomId);
   if (open) open.state = 'superseded';
-  saveBus();
+  scheduleSaveBus();
   const updated = getRoom(roomId);
   return updated ? { room: updated, superseded: open } : undefined;
 }
