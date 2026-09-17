@@ -23,12 +23,18 @@ export const metadata: Metadata = {
   },
 };
 
+// No `themeColor` here. It wrote `<meta name="theme-color" content="#121212">`
+// into every page, and nothing in Tars reads it: measured, `did-change-theme-color`
+// is the one way that value reaches the app, the event fires (a control that
+// changed the tag was reported as #FF0000), and the main process has no listener
+// for it, in any of its 115 compiled files. The window's colour comes from
+// `electron/core/window-manager.ts`, which opens it `backgroundColor: '#121212'`,
+// and `titleBarOverlay`, the only chrome a page could colour, is never used.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#121212",
   viewportFit: "cover",
 };
 

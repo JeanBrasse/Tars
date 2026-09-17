@@ -17,7 +17,7 @@ import type { AgentStatus } from '@/types/electron';
 import { STATUS_COLORS, CHARACTER_FACES } from '@/app/agents/constants';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { BrandSpinner } from '@/components/ui';
-import { providerBadgeClass } from '@/components/ui/providerBadge';
+import { providerBadgeClass } from '@/components/ui/ProviderBadge';
 
 interface AgentDetailPanelProps {
   agent: AgentStatus;

@@ -18,7 +18,7 @@ import {
   StatusBadge,
   StatusSquare,
 } from '@/components/ui';
-import { providerBadgeClass } from '@/components/ui/providerBadge';
+import { providerBadgeClass } from '@/components/ui/ProviderBadge';
 
 type Tab = 'projects' | 'agents' | 'backends';
 

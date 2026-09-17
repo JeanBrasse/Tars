@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentProvider } from '@/types/electron';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
-import { ProviderIconRenderer } from '@/components/ProviderBadge';
+import { ProviderIconRenderer } from '@/components/ui/ProviderBadge';
 import { Dropdown, PanelCaption } from '@/components/ui';
 import type { DropdownOption } from '@/components/ui';
 
