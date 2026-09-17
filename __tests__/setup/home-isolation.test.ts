@@ -35,6 +35,7 @@ type HomeGuard = {
   accountHome: string;
   throwawayHome: string;
   protectedRoots: string[];
+  allowedRoots: string[];
   violations: { op: string; path: string }[];
   protect(root: string): void;
   unprotect(root: string): void;
@@ -44,6 +45,41 @@ const guard = (globalThis as Record<symbol, unknown>)[Symbol.for('tars.test.home
 
 function project(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'tars-home-isolation-project-'));
+}
+
+/**
+ * A scratch directory inside the repository as the guard resolves it: links
+ * followed, the way canonical() in home-isolation.ts follows them.
+ *
+ * Under coverage/, which git ignores and which belongs to the checkout itself.
+ * It was node_modules, and a worktree often links node_modules to the checkout
+ * above it: resolved, the write landed in that other checkout, under the
+ * account home and outside this repository, and the guard refused it, rightly.
+ * Measured on 2026-09-17: two failures on main in such a worktree, the second
+ * only the first one's refusal left on record. The folder is made for the test
+ * when it is missing, and taken away with it once it is empty again.
+ */
+function inRepository(body: (scratch: string) => void): void {
+  const repository = fs.realpathSync.native(process.cwd());
+  const ignored = path.join(repository, 'coverage');
+  const made = !fs.existsSync(ignored);
+  if (made) fs.mkdirSync(ignored);
+  try {
+    expect(
+      fs.realpathSync.native(ignored).startsWith(repository + path.sep),
+      `${ignored} resolves outside the repository, so a write there says nothing about writing into it`,
+    ).toBe(true);
+    const scratch = fs.mkdtempSync(path.join(ignored, '.tars-home-isolation-'));
+    try {
+      body(scratch);
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  } finally {
+    // Not empty means something else wrote there in the meantime, which is
+    // not this test's to delete.
+    if (made && fs.readdirSync(ignored).length === 0) fs.rmdirSync(ignored);
+  }
 }
 
 describe('the suite runs in a HOME of its own', () => {
@@ -59,6 +95,13 @@ describe('the suite runs in a HOME of its own', () => {
   it('protects the home the run started in, and the account home', () => {
     expect(guard.protectedRoots).toContain(fs.realpathSync.native(guard.originalHome as string));
     if (guard.accountHome) expect(guard.protectedRoots).toContain(fs.realpathSync.native(guard.accountHome));
+    // And lets nothing under them through but the repository and the throwaway
+    // HOME. The tests here never write into the real home, so a guard that let
+    // that home through would pass all of them: this is what fails instead.
+    expect(guard.allowedRoots).toEqual([
+      fs.realpathSync.native(process.cwd()),
+      fs.realpathSync.native(guard.throwawayHome),
+    ]);
   });
 
   it('sends the trust write that leaked into ~/.claude.json to the throwaway HOME', () => {
@@ -71,24 +114,13 @@ describe('the suite runs in a HOME of its own', () => {
   });
 
   it('still lets a test write into the repository, which sits under the same home', () => {
-    // Under node_modules, which git ignores, so a run that dies halfway leaves
-    // nothing to commit. A worktree resolves its packages from the checkout
-    // above it and may have no node_modules of its own, which made this fail
-    // there on ENOENT before the guard was even asked: the folder is made for
-    // the test then, and taken away with it once it is empty again.
-    const modules = path.join(process.cwd(), 'node_modules');
-    const made = !fs.existsSync(modules);
-    if (made) fs.mkdirSync(modules);
     try {
-      const scratch = fs.mkdtempSync(path.join(modules, '.tars-home-isolation-'));
-      fs.writeFileSync(path.join(scratch, 'ok'), 'ok');
-      fs.rmSync(scratch, { recursive: true, force: true });
+      inRepository(scratch => fs.writeFileSync(path.join(scratch, 'ok'), 'ok'));
     } finally {
-      // Not empty means something else wrote there in the meantime, which is
-      // not this test's to delete.
-      if (made && fs.readdirSync(modules).length === 0) fs.rmdirSync(modules);
+      // Taken here, pass or fail: a refusal left on record would fail the next
+      // test that reads the record, and one cause would read as two.
+      expect(guard.violations.splice(0)).toEqual([]);
     }
-    expect(guard.violations).toEqual([]);
   });
 });
 
@@ -125,6 +157,37 @@ describe('a write into a protected home', () => {
     expect(guard.violations.splice(0).map(v => [v.op, v.path])).toEqual([
       ['fs.writeFileSync', path.join(fs.realpathSync.native(protectedHome), `.claude.json.tars-${process.pid}.tmp`)],
     ]);
+  });
+
+  it('is refused through a link that leaves the repository, the way a worktree links node_modules', () => {
+    // What the repository test above used to stumble on, held as a refusal: a
+    // path that starts inside the repository and resolves into a protected home
+    // is that home, not the repository.
+    let refused: Array<[string, string]> = [];
+    try {
+      inRepository(scratch => {
+        const link = path.join(scratch, 'linked');
+        fs.symlinkSync(protectedHome, link);
+        let thrown: unknown;
+        try {
+          fs.writeFileSync(path.join(link, 'through-the-link'), 'x');
+        } catch (error) {
+          thrown = error;
+        } finally {
+          // Taking the link away resolves through it too, and the guard refuses
+          // that as a write into the home it points at. So the home stops being
+          // protected before the scratch folder goes; afterEach finds it done.
+          guard.unprotect(protectedHome);
+        }
+        expect((thrown as NodeJS.ErrnoException | undefined)?.code).toBe('E_TARS_HOME_GUARD');
+      });
+    } finally {
+      refused = guard.violations.splice(0).map(v => [v.op, v.path]);
+    }
+    expect(refused).toEqual([
+      ['fs.writeFileSync', path.join(fs.realpathSync.native(protectedHome), 'through-the-link')],
+    ]);
+    expect(fs.readdirSync(protectedHome)).toEqual(['existing']);
   });
 
   it('is refused through every way node:fs writes, while reading stays allowed', async () => {
