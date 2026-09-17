@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.7.5',
     date: '2026-09-18',
     updates: [
-      'In the Chat, the model selector says when it cannot list models. With the Hermes gateway unreachable it looked like any other control; it is now greyed out, and pointing at it says the gateway did not list its models. When the gateway answers, nothing changes',
+      'In the Chat, the model selector says when it cannot list models. With the Hermes gateway unreachable it looked like a control you could use; it is now greyed out, and pointing at it says the gateway did not list its models. When the gateway answers, nothing changes',
     ],
   },
   {
