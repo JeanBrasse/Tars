@@ -3,8 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const API_PORT = 31415;
-const API_HOST = "127.0.0.1";
+// The Tars that spawned this agent, read as mcp-orchestrator and mcp-memory
+// read it. It was 127.0.0.1:31415 whatever the environment said, so the agents
+// of a sandbox (31499) or of the e2e suite (31498) sent their documents to the
+// Tars running on this machine.
+const API_URL = new URL(process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415");
 const API_TOKEN_FILE = path.join(os.homedir(), ".dorothy", "api-token");
 
 // This agent's own token, minted by Tars when it spawned the process and
@@ -39,8 +42,8 @@ export async function apiRequest(
     }
 
     const options: http.RequestOptions = {
-      hostname: API_HOST,
-      port: API_PORT,
+      hostname: API_URL.hostname,
+      port: Number(API_URL.port) || 80,
       path: path_,
       method,
       headers,

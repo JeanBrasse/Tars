@@ -14,6 +14,7 @@ import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
 import { carriedByTrim } from '../utils/terminal-modes';
+import { updateSharedJsonSync } from '../utils/shared-file';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
@@ -33,6 +34,10 @@ export const agents: Map<string, AgentStatus> = new Map();
  *
  * Writing the flag ourselves before we spawn the claude process makes the
  * trust dialog never appear. Safe to call repeatedly and idempotent.
+ *
+ * Every live Claude Code reads and rewrites this file, so it is changed through
+ * updateSharedJsonSync: never in place, never when the flag is already there,
+ * with its 0600 mode kept. See that function for the risk that remains.
  */
 export function ensureProjectTrusted(projectPath: string): void {
   if (!projectPath) return;
@@ -45,35 +50,32 @@ export function ensureProjectTrusted(projectPath: string): void {
     }>;
     [key: string]: unknown;
   };
-  let config: ClaudeConfig = {};
+
   try {
-    if (fs.existsSync(claudeJsonPath)) {
-      const raw = fs.readFileSync(claudeJsonPath, 'utf-8');
-      if (raw.trim()) {
-        config = JSON.parse(raw) as ClaudeConfig;
-      }
+    const outcome = updateSharedJsonSync<ClaudeConfig>(claudeJsonPath, config => {
+      const existing = config?.projects?.[projectPath] ?? {};
+      if (existing.hasTrustDialogAccepted === true) return undefined;
+      return {
+        ...config,
+        projects: {
+          ...config?.projects,
+          [projectPath]: {
+            ...existing,
+            hasTrustDialogAccepted: true,
+            projectOnboardingSeenCount: existing.projectOnboardingSeenCount ?? 1,
+          },
+        },
+      };
+    });
+    if (outcome === 'written') {
+      console.log(`ensureProjectTrusted: marked ${projectPath} trusted in ~/.claude.json`);
+    } else if (outcome === 'unreadable') {
+      console.warn(`ensureProjectTrusted: ${claudeJsonPath} is not valid JSON, left untouched`);
+    } else if (outcome === 'busy') {
+      console.warn(`ensureProjectTrusted: ${claudeJsonPath} kept changing, trust for ${projectPath} not written`);
     }
   } catch (err) {
-    console.warn(`ensureProjectTrusted: failed to read ${claudeJsonPath}:`, err);
-    // If the file exists but is unreadable/corrupt, don't overwrite it.
-    if (fs.existsSync(claudeJsonPath)) return;
-  }
-
-  if (!config.projects) config.projects = {};
-  const existing = config.projects[projectPath] ?? {};
-  if (existing.hasTrustDialogAccepted === true) return;
-
-  config.projects[projectPath] = {
-    ...existing,
-    hasTrustDialogAccepted: true,
-    projectOnboardingSeenCount: existing.projectOnboardingSeenCount ?? 1,
-  };
-
-  try {
-    fs.writeFileSync(claudeJsonPath, JSON.stringify(config, null, 2));
-    console.log(`ensureProjectTrusted: marked ${projectPath} trusted in ~/.claude.json`);
-  } catch (err) {
-    console.warn(`ensureProjectTrusted: failed to write ${claudeJsonPath}:`, err);
+    console.warn(`ensureProjectTrusted: failed to update ${claudeJsonPath}:`, err);
   }
 }
 

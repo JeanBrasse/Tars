@@ -28,10 +28,12 @@ if [ -z "$NOTIFICATION_TYPE" ]; then
   exit 0
 fi
 
-# Forward notification to our API
+# Forward notification to our API. printf and not echo, as on-stop.sh does:
+# echo ends the text with a newline and jq -Rs keeps it, so every title and
+# message reached Tars with a "\n" the CLI never wrote.
 curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" \
   -H "Content-Type: application/json" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"type\": \"$NOTIFICATION_TYPE\", \"title\": $(echo "$TITLE" | jq -Rs .), \"message\": $(echo "$MESSAGE" | jq -Rs .)}" \
+  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"type\": \"$NOTIFICATION_TYPE\", \"title\": $(printf '%s' "$TITLE" | jq -Rs .), \"message\": $(printf '%s' "$MESSAGE" | jq -Rs .)}" \
   > /dev/null 2>&1
 
 # Permission prompts are handled by the dedicated PermissionRequest hook.

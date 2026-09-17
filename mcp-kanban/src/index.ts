@@ -9,59 +9,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import { randomUUID } from "crypto";
 
-// Data file path
-const DATA_DIR = path.join(os.homedir(), ".dorothy");
-const KANBAN_FILE = path.join(DATA_DIR, "kanban-tasks.json");
+import { DATA_DIR, loadTasks, saveTasks, type KanbanTask } from "./store.js";
+
 const AGENTS_FILE = path.join(DATA_DIR, "agents.json");
-
-// Types
-type KanbanColumn = "backlog" | "planned" | "ongoing" | "done";
-
-interface KanbanTask {
-  id: string;
-  title: string;
-  description: string;
-  column: KanbanColumn;
-  projectId: string;
-  projectPath: string;
-  assignedAgentId: string | null;
-  requiredSkills: string[];
-  priority: "low" | "medium" | "high";
-  progress: number;
-  createdAt: string;
-  updatedAt: string;
-  order: number;
-  labels: string[];
-  completionSummary?: string;
-}
-
-// Helper functions
-function ensureDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-function loadTasks(): KanbanTask[] {
-  ensureDir();
-  if (!fs.existsSync(KANBAN_FILE)) {
-    return [];
-  }
-  try {
-    const data = fs.readFileSync(KANBAN_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-function saveTasks(tasks: KanbanTask[]): void {
-  ensureDir();
-  fs.writeFileSync(KANBAN_FILE, JSON.stringify(tasks, null, 2));
-}
 
 /** Resolve agent ID to human-readable name from agents.json */
 function getAgentName(agentId: string | null): string | null {

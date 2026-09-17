@@ -5,6 +5,8 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import type { AppSettings } from '../types';
 import { getAllProviders } from '../providers';
+import { updateSharedJsonSync } from '../utils/shared-file';
+import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 /**
  * MCP Orchestrator Service
@@ -250,50 +252,54 @@ export function setupMemoryBackends(appSettings?: AppSettings): void {
     },
   ];
 
+  // Every live Claude Code reads and rewrites this file, so it is changed as
+  // ensureProjectTrusted changes it, through updateSharedJsonSync: never in
+  // place, with its 0600 mode kept, and never over a config it cannot parse.
+  // The change is worked out again if Claude Code writes the file meanwhile,
+  // so what it says is only logged once it is written.
   const configPath = path.join(os.homedir(), '.claude.json');
-  let cfg: { mcpServers?: Record<string, { type?: string; url?: string; headers?: Record<string, string> }> };
+  type McpServers = Record<string, { type?: string; url?: string; headers?: Record<string, string> }>;
+  let notes: string[] = [];
   try {
-    cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf-8')) : {};
+    const outcome = updateSharedJsonSync<{ mcpServers?: McpServers; [key: string]: unknown }>(configPath, current => {
+      notes = [];
+      const cfg = current ?? {};
+      if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object') cfg.mcpServers = {};
+
+      let changed = false;
+      for (const b of backends) {
+        const cur = cfg.mcpServers[b.name];
+        // Built in a fixed order, because the comparison below is a string
+        // compare of the serialised object: the same headers in another order
+        // would read as a change and rewrite the config on every start.
+        const headerPairs: Record<string, string> = {};
+        if (b.bearerToken) headerPairs.Authorization = `Bearer ${b.bearerToken}`;
+        if (b.extraHeaders) Object.assign(headerPairs, b.extraHeaders);
+        const desiredHeaders = Object.keys(headerPairs).length > 0 ? headerPairs : undefined;
+
+        if (b.enabled) {
+          const matches = cur
+            && cur.type === 'http'
+            && cur.url === b.url
+            && JSON.stringify(cur.headers ?? null) === JSON.stringify(desiredHeaders ?? null);
+          if (matches) continue;
+          cfg.mcpServers[b.name] = { type: 'http', url: b.url, ...(desiredHeaders ? { headers: desiredHeaders } : {}) };
+          changed = true;
+          notes.push(`[memory] registered ${b.name} MCP backend (${b.url})`);
+        } else if (cur && b.url && cur.url === b.url) {
+          delete cfg.mcpServers[b.name];
+          changed = true;
+          notes.push(`[memory] removed ${b.name} MCP backend`);
+        }
+      }
+
+      return changed ? cfg : undefined;
+    });
+    if (outcome === 'written') for (const note of notes) console.log(note);
+    if (outcome === 'unreadable') console.error('[memory] cannot read ~/.claude.json, leaving MCP backends untouched');
+    if (outcome === 'busy') console.error('[memory] ~/.claude.json kept changing, MCP backends not written');
   } catch (err) {
-    // Never clobber a config we couldn't parse.
-    console.error('[memory] cannot read ~/.claude.json, leaving MCP backends untouched:', err);
-    return;
-  }
-  if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object') cfg.mcpServers = {};
-
-  let changed = false;
-  for (const b of backends) {
-    const cur = cfg.mcpServers[b.name];
-    // Built in a fixed order, because the comparison below is a string compare
-    // of the serialised object: the same headers in another order would read as
-    // a change and rewrite the config on every start.
-    const headerPairs: Record<string, string> = {};
-    if (b.bearerToken) headerPairs.Authorization = `Bearer ${b.bearerToken}`;
-    if (b.extraHeaders) Object.assign(headerPairs, b.extraHeaders);
-    const desiredHeaders = Object.keys(headerPairs).length > 0 ? headerPairs : undefined;
-
-    if (b.enabled) {
-      const matches = cur
-        && cur.type === 'http'
-        && cur.url === b.url
-        && JSON.stringify(cur.headers ?? null) === JSON.stringify(desiredHeaders ?? null);
-      if (matches) continue;
-      cfg.mcpServers[b.name] = { type: 'http', url: b.url, ...(desiredHeaders ? { headers: desiredHeaders } : {}) };
-      changed = true;
-      console.log(`[memory] registered ${b.name} MCP backend (${b.url})`);
-    } else if (cur && b.url && cur.url === b.url) {
-      delete cfg.mcpServers[b.name];
-      changed = true;
-      console.log(`[memory] removed ${b.name} MCP backend`);
-    }
-  }
-
-  if (changed) {
-    try {
-      fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
-    } catch (err) {
-      console.error('[memory] failed to write ~/.claude.json:', err);
-    }
+    console.error('[memory] failed to write ~/.claude.json:', err);
   }
 }
 
@@ -392,32 +398,10 @@ export function setupOrchestratorSetupHandler(): void {
       } catch (addErr) {
         console.error('Failed to add MCP server via claude mcp add -s user:', addErr);
 
-        // Fallback: write to mcp.json
-        const claudeDir = path.join(os.homedir(), '.claude');
-        const mcpConfigPath = path.join(claudeDir, 'mcp.json');
-
-        if (!fs.existsSync(claudeDir)) {
-          fs.mkdirSync(claudeDir, { recursive: true });
-        }
-
-        let mcpConfig: { mcpServers?: Record<string, unknown> } = { mcpServers: {} };
-        if (fs.existsSync(mcpConfigPath)) {
-          try {
-            mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-            if (!mcpConfig.mcpServers) {
-              mcpConfig.mcpServers = {};
-            }
-          } catch {
-            mcpConfig = { mcpServers: {} };
-          }
-        }
-
-        mcpConfig.mcpServers!['claude-mgr-orchestrator'] = {
-          command: 'node',
-          args: [orchestratorPath]
-        };
-
-        fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+        // Fallback: write to mcp.json, through addMcpServerToJson, which fails
+        // on a file that is not JSON rather than replacing it.
+        const mcpConfigPath = path.join(os.homedir(), '.claude', 'mcp.json');
+        addMcpServerToJson(mcpConfigPath, 'claude-mgr-orchestrator', { command: 'node', args: [orchestratorPath] });
         console.log('MCP orchestrator configured via mcp.json fallback');
         return { success: true, path: mcpConfigPath, method: 'mcp-json-fallback' };
       }
@@ -443,17 +427,10 @@ export function setupOrchestratorRemoveHandler(): void {
       }
 
       // Also clean up mcp.json fallback if it exists
-      const mcpConfigPath = path.join(os.homedir(), '.claude', 'mcp.json');
-      if (fs.existsSync(mcpConfigPath)) {
-        try {
-          const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-          if (mcpConfig?.mcpServers?.['claude-mgr-orchestrator']) {
-            delete mcpConfig.mcpServers['claude-mgr-orchestrator'];
-            fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
-          }
-        } catch {
-          // Ignore parse errors
-        }
+      try {
+        removeMcpServerFromJson(path.join(os.homedir(), '.claude', 'mcp.json'), 'claude-mgr-orchestrator');
+      } catch (err) {
+        console.warn('claude-mgr-orchestrator not removed from mcp.json:', err);
       }
 
       return { success: true };

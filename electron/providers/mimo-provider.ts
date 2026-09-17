@@ -12,6 +12,7 @@ import type {
 } from './cli-provider';
 import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'; // claude appends /v1/messages
 
@@ -95,18 +96,11 @@ export class MiMoProvider implements CLIProvider {
   async configureHooks(_hooksDir: string): Promise<void> {}
 
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
-    const p = path.join(this.configDir, 'mcp.json');
-    if (!fs.existsSync(this.configDir)) fs.mkdirSync(this.configDir, { recursive: true });
-    let c: { mcpServers?: Record<string, unknown> } = { mcpServers: {} };
-    if (fs.existsSync(p)) { try { c = JSON.parse(fs.readFileSync(p, 'utf-8')); if (!c.mcpServers) c.mcpServers = {}; } catch { c = { mcpServers: {} }; } }
-    c.mcpServers![name] = { command, args };
-    fs.writeFileSync(p, JSON.stringify(c, null, 2));
+    addMcpServerToJson(path.join(this.configDir, 'mcp.json'), name, { command, args });
   }
 
   async removeMcpServer(name: string): Promise<void> {
-    const p = path.join(this.configDir, 'mcp.json');
-    if (!fs.existsSync(p)) return;
-    try { const c = JSON.parse(fs.readFileSync(p, 'utf-8')); if (c?.mcpServers?.[name]) { delete c.mcpServers[name]; fs.writeFileSync(p, JSON.stringify(c, null, 2)); } } catch { /* ignore */ }
+    removeMcpServerFromJson(path.join(this.configDir, 'mcp.json'), name);
   }
 
   isMcpServerRegistered(name: string, expectedServerPath: string): boolean {
