@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 42,
+    version: '1.7.5',
+    date: '2026-09-18',
+    updates: [
+      'In the Chat, the model selector says when it cannot list models. With the Hermes gateway unreachable it looked like any other control; it is now greyed out, and pointing at it says the gateway did not list its models. When the gateway answers, nothing changes',
+    ],
+  },
+  {
     id: 41,
     version: '1.7.4',
     date: '2026-09-17',
