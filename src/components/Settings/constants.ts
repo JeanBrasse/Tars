@@ -167,7 +167,9 @@ export const DEFAULT_APP_SETTINGS = {
   obsidianVaultPaths: [] as string[],
   terminalFontSize: 11,
   terminalTheme: 'dark' as const,
-  statusLineEnabled: false,
+  // statusLineEnabled is absent on purpose, as in the main process defaults:
+  // unset means the switch was never touched. A false here reads as a choice
+  // the moment anything sends these settings back whole.
   hermesGatewayUrl: '',
   hermesGatewayToken: '',
   memoryGbrainEnabled: false,
