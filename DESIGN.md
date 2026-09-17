@@ -320,8 +320,10 @@ taller than the word beside it) so `ui/Button` and `ui/Field` both hard-code
 ## Components
 
 Everything that defines raw appearance is meant to live in `src/components/ui/`.
-That is the rule `scripts/design-lint.sh` protects: it greps `src/` for banned
-styling and excludes exactly two paths, `src/components/ui/` and `app/icon.tsx`.
+That is the rule `scripts/design-lint.sh` protects: it greps the `.ts`, `.tsx`
+and `.css` files under `src/` for banned styling and excludes two paths,
+`src/components/ui/` and `src/app/icon.tsx`. The hex rule excludes one more,
+`src/app/globals.css`, where the colours are named.
 
 The migration behind the rule is barely started. Two files in the whole tree
 import a primitive: `src/app/crons/page.tsx` (`LoadingState`) and
@@ -468,6 +470,10 @@ progress.
   avatars under 12px, and it has not held: the agent card's status pill
   (`AgentCard.tsx:118`), the sidebar's 20px badge counters and the New-agent step
   circles are all round today. Each is a bug, not a precedent.
+- **Don't write a hex colour out.** Lint fails on `#` followed by 3, 4, 6 or 8
+  hex digits anywhere but `src/app/globals.css`, where the tokens are defined,
+  and `src/components/ui/`. The tree has 22 of them left, 20 in
+  `src/lib/terminal-theme.ts`, which hands xterm its palette.
 - **Don't use a raw Tailwind palette colour.** Lint fails on
   `(text|bg|border)-(red|green|blue|amber|purple|cyan|yellow|orange|zinc|slate|gray)-[0-9]`.
   Use the tokens. Tailwind's `cyan-*` scale is remapped to the tangerine ramp in

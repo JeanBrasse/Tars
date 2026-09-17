@@ -21,6 +21,12 @@ sources=(--include='*.ts' --include='*.tsx' --include='*.css')
 exempt='^src/components/ui/'        # the shared primitives: the one place raw appearance is defined
 exempt+='|^src/app/icon\.tsx:'      # drawn by next/og into an image, where no stylesheet or token reaches
 
+# Two more for the hex rule alone, since a colour has to be written out
+# somewhere, and a number is not always a colour.
+hex_exempt="$exempt"
+hex_exempt+='|^src/app/globals\.css:'                            # the token system: where every hex the app uses is named once
+hex_exempt+='|^src/[^:]*\.tsx?:[0-9]+:[[:space:]]*(//|\*([[:space:]]|$))'  # a comment paints nothing, and "React #418" is an error number
+
 # What every rule reads. A rule that reads nothing finds nothing, and finding
 # nothing is a pass. Measured on macOS: once --include is given, grep answers a
 # src/ that does not exist with 1 and no message, exactly as it answers a clean
@@ -39,13 +45,13 @@ fi
 echo "$files files read under src/"
 
 check() {
-  local label="$1" pattern="$2"
+  local label="$1" pattern="$2" skip="${3:-$exempt}"
   local hits status
   hits=$(grep -rnaE "${sources[@]}" -e "$pattern" src)
   status=$?
   # Lines found, minus the exempt paths: the filter answers in the same three ways.
   if [ "$status" -eq 0 ]; then
-    hits=$(printf '%s\n' "$hits" | grep -avE "$exempt")
+    hits=$(printf '%s\n' "$hits" | grep -avE "$skip")
     status=$?
   fi
   case "$status" in
@@ -71,5 +77,9 @@ check "no drop shadows"                "shadow-(sm|md|lg|xl|2xl)"
 check "no gradients"                   "bg-gradient"
 check "no decorative ping"             "animate-ping"
 check "no raw tailwind palette"        "(text|bg|border)-(red|green|blue|amber|purple|cyan|yellow|orange|zinc|slate|gray)-[0-9]"
+# Three, four, six or eight hex digits standing on their own: #fff, #1a1a1aff,
+# and the same inside a class, a style or a stylesheet. Not &#8226;, which is an
+# HTML entity, and not #12345, which is no colour at all.
+check "no hardcoded hex colour"        "(^|[^&[:alnum:]_])#([[:xdigit:]]{3}|[[:xdigit:]]{4}|[[:xdigit:]]{6}|[[:xdigit:]]{8})([^[:alnum:]_]|$)" "$hex_exempt"
 
 exit $fail

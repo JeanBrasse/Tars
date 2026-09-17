@@ -53,7 +53,7 @@
 | `design/chat-design.pen` | The same 75 frames (the first 74 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 86 in all. A fork, not a companion, and the newer of the two. Draw a Chat room frame here and anything else in `tars-redesign.pen`, until the two are reconciled with Pen closed |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
-| `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
+| `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
 
@@ -212,7 +212,7 @@ npx tsc --noEmit                         # renderer + shared
 npx tsc -p electron/tsconfig.json        # main process (also emits electron/dist, needed by e2e)
 npm test                                 # vitest, __tests__/**/*.test.ts
 npm run lint                             # eslint
-npm run lint:design                      # radius / shadows / gradients / raw palette
+npm run lint:design                      # radius / shadows / gradients / raw palette / hex
 npm run e2e:guard                        # every inventory page is covered by the manifest
 npm run e2e                              # Playwright drives the real Electron app, 35 surfaces
 ```

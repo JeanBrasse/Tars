@@ -37,6 +37,7 @@ const EVERYTHING_BANNED = [
   "export const gradient = 'bg-gradient-to-r';",
   "export const ping = 'animate-ping';",
   "export const palette = 'bg-red-500';",
+  "export const hex = '#1a1a1a';",
 ].join('\n') + '\n';
 
 const RULES = [
@@ -45,6 +46,7 @@ const RULES = [
   'no gradients',
   'no decorative ping',
   'no raw tailwind palette',
+  'no hardcoded hex colour',
 ];
 
 /**
@@ -123,6 +125,10 @@ describe.concurrent('what the lint reads', () => {
     ['no raw tailwind palette', 'tsx', planted.tsx.line('text-slate-400')],
     ['no raw tailwind palette', 'ts', planted.ts.line('bg-green-500/15')],
     ['no raw tailwind palette', 'css', planted.css.line('border-red-600')],
+    ['no hardcoded hex colour', 'tsx', "export const Planted = () => <div style={{ color: '#fff' }} />;"],
+    ['no hardcoded hex colour', 'tsx', planted.tsx.line('bg-[#1a1a1a]')],
+    ['no hardcoded hex colour', 'ts', "export const planted = { background: '#F3F1EE', text: '#1E1E1E' };"],
+    ['no hardcoded hex colour', 'css', '.planted { border: 1px solid #121212; }'],
   ] as const)('turns "%s" red when it is planted in a .%s file', async ([rule, kind, line], { expect }) => {
     const root = cleanTree();
     write(root, planted[kind].file, `// planted\n${line}\n`);
@@ -144,6 +150,53 @@ describe.concurrent('what the lint reads', () => {
 
     expect(run.output).toContain('✗ no gradients\n    src/lib/notes.ts:1:');
     expect(run.status).toBe(1);
+  });
+
+  it('leaves the token system its hex values, and nothing else', async ({ expect }) => {
+    // globals.css is where each colour is written out once and given a name.
+    // The witness that this exempts a file and not the rule: the same line, in
+    // the stylesheet next to it, is a violation.
+    const root = cleanTree();
+    write(root, 'src/app/globals.css', ':root { --bg: #121212; --text: #F5F4F2; }\n');
+
+    expect((await lint(root)).status).toBe(0);
+
+    write(root, 'src/app/theme.css', ':root { --bg: #121212; }\n');
+    const run = await lint(root);
+
+    expect(run.output).toContain('✗ no hardcoded hex colour\n    src/app/theme.css:1:');
+    expect(run.status).toBe(1);
+  });
+
+  it('reads no colour in a comment, and every colour in the code beside it', async ({ expect }) => {
+    // "(React #418)" is an error number, and a hex in a comment paints nothing.
+    const root = cleanTree();
+    write(root, 'src/components/Notes.tsx', [
+      '// hydration failed (React #418), and the client re-rendered',
+      '/**',
+      ' * @see #1a1a1a, the old card colour',
+      ' */',
+      'export const Notes = () => <div className="bg-card" />;',
+    ].join('\n') + '\n');
+
+    expect((await lint(root)).status).toBe(0);
+
+    write(root, 'src/components/Notes.tsx', "export const Notes = () => <div style={{ color: '#1a1a1a' }} />;\n");
+    const run = await lint(root);
+
+    expect(run.output).toContain('✗ no hardcoded hex colour\n    src/components/Notes.tsx:1:');
+    expect(run.status).toBe(1);
+  });
+
+  it('reads an HTML entity and a number of no colour length as what they are', async ({ expect }) => {
+    const root = cleanTree();
+    write(root, 'src/components/Entities.tsx', [
+      'export const Bullet = () => <span>&#8226;</span>;',
+      "export const five = '#12345';",
+      "export const seven = '#1234567';",
+    ].join('\n') + '\n');
+
+    expect((await lint(root)).status).toBe(0);
   });
 
   it('reads a file that holds a NUL byte as text, and shows the line', async ({ expect }) => {

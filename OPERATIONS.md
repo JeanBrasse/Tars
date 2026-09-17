@@ -262,7 +262,7 @@ bash scripts/design-lint.sh
 ```
 
 Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
-`src/app/icon.tsx`, for five banned patterns. Exits 1 on any hit:
+`src/app/icon.tsx`, for six banned patterns. Exits 1 on any hit:
 
 | check | pattern |
 |---|---|
@@ -271,6 +271,7 @@ Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components
 | no gradients | `bg-gradient` |
 | no decorative ping | `animate-ping` |
 | no raw tailwind palette | `(text\|bg\|border)-(red\|green\|blue\|amber\|purple\|cyan\|yellow\|orange\|zinc\|slate\|gray)-[0-9]` |
+| no hardcoded hex colour | `#` and 3, 4, 6 or 8 hex digits, standing on their own |
 
 The rule it enforces: `src/components/ui/` is the only place allowed to define raw appearance.
 
@@ -279,8 +280,13 @@ it cannot open, a pattern it cannot parse, or no file read at all. It prints how
 read first. That count is the check for a missing `src/`: grep on macOS answers one that does
 not exist with the same silent 1 as a tree with nothing to report.
 
-Red since the `.ts` files are read: 13 lines of raw palette in
-`src/components/KanbanBoard/constants.ts` and `src/lib/providers.ts`.
+The hex rule excludes two more places, each because writing a colour out is their job:
+`src/app/globals.css`, where every colour the app uses is named once, and comment lines in
+`.ts` and `.tsx`, where `#418` is an error number rather than a colour.
+
+Red on this tree: 13 lines of raw palette in `src/components/KanbanBoard/constants.ts` and
+`src/lib/providers.ts`, which the `.tsx`-only scan never read, and 22 hardcoded hex colours
+in `src/lib/terminal-theme.ts` (20), `src/app/layout.tsx` and `src/components/ProviderBadge.tsx`.
 
 ### CI
 
