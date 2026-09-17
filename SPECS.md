@@ -589,7 +589,7 @@ Settings groups: **General** (Preferences, Terminal, Notifications, System) · *
 
 14 overlays are inventoried separately: New agent (4 steps), Deploy team, the four template dialogs, three kanban dialogs, Start prompt, Agent terminal, Plugin install, Install terminal.
 
-Every data surface must show five states: loading (nothing under 400 ms, then a skeleton in the real shape of the content, then a named slow operation), empty, error, needs-sign-in, permission-denied.
+Every data surface must show five states: loading (nothing under 400 ms, then the mark filling over a line naming what loads, then a named slow operation), empty, error, needs-sign-in, permission-denied.
 
 ### The tick
 

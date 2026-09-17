@@ -177,7 +177,7 @@ re-exported to Tailwind through `@theme inline`.
 |---|---|---|---|---|
 | `bg` | `#121212` | `#FAF9F7` | `--background`, `--bg-primary` | The page behind everything |
 | `surface` | `#1A1A1A` | `#FFFFFF` | `--card`, `--popover`, `--bg-secondary` | Cards, sidebar, panels, menus |
-| `surface-raised` | `#222222` | `#F3F1EE` | `--secondary`, `--muted`, `--bg-tertiary` (and `--input`, dark only, light `--input` is `#FFFFFF`) | Field fills, chips, skeleton bars |
+| `surface-raised` | `#222222` | `#F3F1EE` | `--secondary`, `--muted`, `--bg-tertiary` (and `--input`, dark only, light `--input` is `#FFFFFF`) | Field fills, chips |
 | `surface-elevated` | `#262626` | `#FFFFFF` | `--bg-elevated` | The one step above a card |
 | `term-bg` | `#0F0F0F` | `#F3F1EE` | `--term-bg` | Nominally the terminal canvas: nothing reads it; xterm carries its own literals |
 | `border` | `#2A2A2A` | `#DAD6CE` | `--border`, `--border-primary` | Every hairline |
@@ -419,11 +419,18 @@ Three stages, because a spinner that shows for 200ms is a flash and one that
 spins for eight seconds says nothing:
 
 1. **Under 400ms: nothing.** No spinner, no flash.
-2. **400ms-3s: a skeleton in the real shape of the content.** `surface-raised`
-   bars inside real bordered rows, so the layout does not jump when data lands.
-3. **Past 3s: name what is slow.** `SquarePulse`, one line saying what is being
-   waited on (`Still reading the Hermes gateway…`), the endpoint and elapsed
-   seconds in 10.5px mono, and a Cancel button.
+2. **400ms-3s: the mark filling.** `BrandSpinner`, the 4×4 grid whose squares
+   light one by one, 30px, over one line saying what is loading. Grey skeleton
+   rows are gone: in a centring container they collapsed into a column of small
+   grey squares that did not read as Tars. A wait inside a row takes the mark at
+   26px, where the row's control would sit.
+3. **Past 3s: name what is slow.** The mark at 24px, one line saying what is
+   being waited on (`Still reading the Hermes gateway…`), the endpoint and
+   elapsed seconds in 10.5px mono, and a Cancel button.
+
+Every wait goes through this: `LoadingState` for the ladder, `LoadingPanel` for
+a panel given over to waiting at once. None is a bare `Loading…` line, and no
+list says it is empty before its first read has answered. Frame: `Loading states`.
 
 The launch sequence uses the same vocabulary: the 4×4 `SquareGrid` fills through
 three steps (reading your projects, detecting providers, connecting to Hermes),
