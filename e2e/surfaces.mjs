@@ -233,15 +233,23 @@ export const VOLATILE = {
     selector: 'div.space-y-2:has(ul li)',
     why: 'every changelog entry, which is new text on this page at every release; the page frame stays compared',
   },
-  'usage-chart-ticks': {
+  'usage-chart-window': {
     surfaces: ['usage'],
-    selector: 'text=/^\\d{1,2}$/',
-    why: 'the day of the month under each bar of the three charts, counted back from the day of the run',
-  },
-  'usage-chart-first-day': {
-    surfaces: ['usage'],
-    selector: 'text=/^[a-z]{3} \\d{1,2}$/',
-    why: 'the first day of the window under each chart, which is fourteen days before the run',
+    // The rows, not the labels inside them. Masking each day label covered the
+    // right text and left its edges: a mask takes the box of what it covers,
+    // and a label's box follows its text. Measured on 2026-09-18, the day
+    // after these references were recorded: the sixth day of the window went
+    // from one digit to two, its box from 4 to 8 pixels wide, and `usage`
+    // failed by 28 pixels with nothing in the app changed. A row's box is the
+    // panel's width whatever the day says, so it holds.
+    //
+    // What this stops comparing, and it is not nothing: the three plot areas.
+    // In this sandbox they hold no usage at all, so the bars sit at their 2%
+    // floor with the accent on the latest one, and that is all that is lost
+    // today. The day the seed carries usage, the honest move is a fixed clock
+    // for this surface rather than a wider mask, and one re-record.
+    selector: 'div[class*="items-stretch"][class*="gap-1"], div[class*="items-center"][class*="justify-between"][class*="mt-1.5"]',
+    why: 'the fourteen day window under each chart, counted back from the day of the run, and the bars it labels',
   },
   'marketplace-plugin-count': {
     surfaces: ['extensions-plugins'],
