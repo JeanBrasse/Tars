@@ -72,7 +72,13 @@ export function WatchControls({
   }, [effort]);
 
   const loadOptions = useCallback(async () => {
-    const r = await window.electronAPI?.overseer?.modelOptions();
+    // The call reaches the gateway, so an unreachable one rejects rather than
+    // answering `{ success: false }`. Unhandled, that rejection was an error on
+    // the console of every Chat page whose gateway is down; the picker is
+    // simply not offered, which is what `optionsError` already says. The
+    // `effort()` call above has had its own catch since it was written.
+    const r = await window.electronAPI?.overseer?.modelOptions()
+      .catch((error: unknown) => ({ success: false as const, error: error instanceof Error ? error.message : String(error) }));
     if (!r) return;
     if (r.success) {
       setProviders(r.providers);

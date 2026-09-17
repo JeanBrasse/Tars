@@ -45,7 +45,6 @@ export interface ProviderDef {
    * Full Tailwind class string for a small badge (bg + text).
    * Used wherever a coloured pill badge shows the provider name.
    */
-  badgeClass: string;
   /**
    * True for providers that ship as a CLI binary and can be "not installed".
    * Checked via cliPaths.detect() for claude/codex/gemini; others default to available.
@@ -61,7 +60,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Claude',
     icon: { type: 'image', src: '/claude-ai-icon.webp' },
     accent: 'blue-500',
-    badgeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
     requiresCli: true,
     models: [
       { id: 'default', name: 'Default', description: 'Recommended' },
@@ -79,7 +77,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Codex',
     icon: { type: 'image', src: '/chatgpt-icon.webp' },
     accent: 'accent-green',
-    badgeClass: 'bg-green-500/15 text-green-600 dark:text-green-400',
     requiresCli: true,
     models: [
       { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', description: 'Recommended' },
@@ -94,7 +91,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Gemini',
     icon: { type: 'svg-gemini' },
     accent: 'purple-500',
-    badgeClass: 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
     requiresCli: true,
     models: [
       { id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: 'Most capable' },
@@ -109,7 +105,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Grok',
     icon: { type: 'svg-grok' },
     accent: 'foreground',
-    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
     requiresCli: true,
     models: [
       { id: 'grok-composer-2.5-fast', name: 'Grok Composer 2.5 Fast', description: 'Recommended (default)' },
@@ -122,7 +117,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'OpenCode',
     icon: { type: 'text', content: 'OC' },
     accent: 'teal-500',
-    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
     requiresCli: true,
     models: [
       { id: 'default', name: 'Default', description: 'Use configured default' },
@@ -137,7 +131,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     // colour of its own; the four that have one keep it.
     icon: { type: 'text', content: 'AMP' },
     accent: 'teal-500',
-    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
     requiresCli: true,
     // Amp takes no model flag: it picks its own mix of open and frontier
     // models per request, so there is one row here and it says so.
@@ -151,7 +144,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Pi',
     icon: { type: 'cpu' },
     accent: 'teal-500',
-    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
     requiresCli: true,
     models: [
       { id: 'default', name: 'Default', description: 'Use configured model' },
@@ -167,7 +159,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'OpenRouter',
     icon: { type: 'svg-openrouter' },
     accent: 'amber-500',
-    badgeClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
     models: [
       { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', description: 'Reasoning' },
       { id: 'moonshotai/kimi-k2', name: 'Kimi K2', description: 'Agentic' },
@@ -183,7 +174,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'DeepSeek',
     icon: { type: 'svg-deepseek' },
     accent: 'sky-500',
-    badgeClass: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
     models: [
       { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', description: 'Reasoning' },
       { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', description: 'Flagship chat' },
@@ -196,7 +186,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Moonshot',
     icon: { type: 'svg-moonshot' },
     accent: 'violet-500',
-    badgeClass: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
     models: [
       { id: 'moonshotai/kimi-k2', name: 'Kimi K2', description: 'Agentic flagship' },
       { id: 'moonshotai/moonlight-16k', name: 'Moonlight 16K', description: 'Fast' },
@@ -209,7 +198,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'MiMo',
     icon: { type: 'svg-mimo' },
     accent: 'orange-500',
-    badgeClass: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
     models: [
       { id: 'xiaomi/mimo-v2-pro', name: 'MiMo V2 Pro', description: 'Flagship' },
       { id: 'xiaomi/mimo-v2-flash', name: 'MiMo V2 Flash', description: 'Fast' },
@@ -222,7 +210,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Qwen',
     icon: { type: 'svg-qwen' },
     accent: 'blue-500',
-    badgeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
     models: [
       { id: 'qwen/qwq-32b', name: 'QwQ 32B', description: 'Reasoning' },
       { id: 'qwen/qwen3-235b-a22b', name: 'Qwen3 235B', description: 'Flagship' },
@@ -236,7 +223,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Zai',
     icon: { type: 'svg-zai' },
     accent: 'indigo-500',
-    badgeClass: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
     models: [
       { id: 'zhipuai/glm-4.6', name: 'GLM-4.6', description: 'Flagship' },
       { id: 'zhipuai/glm-4.5', name: 'GLM-4.5', description: 'Stable' },
@@ -251,7 +237,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'MiniMax',
     icon: { type: 'svg-minimax' },
     accent: 'rose-500',
-    badgeClass: 'bg-rose-500/15 text-rose-600 dark:text-rose-400',
     models: [
       { id: 'minimax/minimax-m2', name: 'MiniMax M2', description: 'Agentic flagship' },
       { id: 'minimax/minimax-m1', name: 'MiniMax M1', description: 'Long-context reasoning' },
@@ -264,7 +249,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'NVIDIA NIM',
     icon: { type: 'svg-nvidia' },
     accent: 'green-500',
-    badgeClass: 'bg-green-500/15 text-green-600 dark:text-green-400',
     models: [
       { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1', name: 'Nemotron Ultra 253B', description: 'Flagship reasoning' },
       { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B', description: 'Balanced' },
@@ -278,7 +262,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Nous Portal',
     icon: { type: 'svg-nous' },
     accent: 'teal-500',
-    badgeClass: 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
     models: [
       { id: 'nous/hermes-3-llama-3.1-405b', name: 'Hermes 3 405B', description: 'Flagship agentic' },
       { id: 'nous/hermes-3-llama-3.1-70b', name: 'Hermes 3 70B', description: 'Balanced' },
@@ -291,7 +274,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Ollama',
     icon: { type: 'svg-ollama' },
     accent: 'foreground',
-    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
     // Not a CLI binary, but "not installed" is exactly the right word for
     // "the local server isn't answering" - see computeProviderAvailability.
     requiresCli: true,
@@ -308,7 +290,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Venice AI',
     icon: { type: 'svg-venice' },
     accent: 'pink-500',
-    badgeClass: 'bg-pink-500/15 text-pink-600 dark:text-pink-400',
     models: [
       { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', description: 'Meta, balanced' },
       { id: 'venice-uncensored-1-2', name: 'Venice Uncensored', description: 'Unfiltered' },
@@ -324,7 +305,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Ollama Cloud',
     icon: { type: 'svg-ollama' },
     accent: 'foreground',
-    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
     // Curated floor; models:list prefers the live models.dev 'ollama-cloud'
     // catalogue entry, see model-catalog.ts.
     models: [
@@ -342,7 +322,6 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     label: 'Custom (OpenAI)',
     icon: { type: 'text', content: 'API' },
     accent: 'foreground',
-    badgeClass: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-300',
     // No catalogue, no curated floor: a private endpoint has exactly one
     // model, whatever was typed into Settings. This placeholder id is never
     // actually reachable - computeProviderAvailability below keeps the

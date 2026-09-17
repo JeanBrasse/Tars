@@ -6,7 +6,6 @@ import { AlertCircle } from 'lucide-react';
 import { useMemory, formatBytes, timeAgo } from '@/hooks/useMemory';
 import type { ProjectMemory, MemoryFile, HermesMcpServer, HermesMemoryProvider } from '@/types/electron';
 import AgentKnowledgeGraph from '@/components/Memory/AgentKnowledgeGraph';
-import { getProviderDef } from '@/lib/providers';
 import {
   BrandSpinner,
   Button,
@@ -19,6 +18,7 @@ import {
   StatusBadge,
   StatusSquare,
 } from '@/components/ui';
+import { providerBadgeClass } from '@/components/ui/ProviderBadge';
 
 type Tab = 'projects' | 'agents' | 'backends';
 
@@ -114,7 +114,7 @@ function ProjectRow({
           <span className="text-xs font-medium truncate">{project.projectName}</span>
           {project.provider && project.provider !== 'claude' && (
             <span className={`text-[9px] px-1 py-0.5 font-medium uppercase tracking-wider shrink-0 ${
-              getProviderDef(project.provider)?.badgeClass ?? 'bg-secondary text-muted-foreground'
+              providerBadgeClass(project.provider, 'bg-secondary text-muted-foreground')
             }`}>
               {project.provider}
             </span>

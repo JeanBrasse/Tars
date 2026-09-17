@@ -15,9 +15,9 @@ import {
 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import { STATUS_COLORS, CHARACTER_FACES } from '@/app/agents/constants';
-import { getProviderDef } from '@/lib/providers';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { BrandSpinner } from '@/components/ui';
+import { providerBadgeClass } from '@/components/ui/ProviderBadge';
 
 interface AgentDetailPanelProps {
   agent: AgentStatus;
@@ -62,7 +62,7 @@ export function AgentDetailPanel({
               <h3 className="font-semibold">{agent.name || agent.projectPath.split('/').pop()}</h3>
               {agent.provider && agent.provider !== 'claude' && agent.provider !== 'local' && (
                 <span className={`text-[10px] px-1.5 py-0.5 font-medium uppercase tracking-wider ${
-                  getProviderDef(agent.provider)?.badgeClass ?? 'bg-bg-tertiary text-text-muted'
+                  providerBadgeClass(agent.provider, 'bg-bg-tertiary text-text-muted')
                 }`}>
                   {agent.provider}
                 </span>

@@ -34,69 +34,67 @@ interface TerminalTokens {
   success: string;
   warning: string;
   danger: string;
-  statusIdle: string;
   textMuted: string;
   textSecondary: string;
 }
 
 /**
- * Mirrors `globals.css`. Used on the server, before hydration, and whenever a
- * theme other than the one currently mounted is requested (the computed values
- * on `documentElement` only ever describe the live theme).
+ * The tokens for one theme, read from the stylesheet.
+ *
+ * Custom properties inherit, so an element inside `<html class="dark">` sees
+ * the dark values whatever class it carries. `globals.css` therefore names the
+ * light values on `.light` as well as on `:root`, and this reads them off a
+ * probe element carrying the class of the theme asked for. That is what lets
+ * the terminal follow its own setting (Settings > Terminal) while the app
+ * wears the other theme, without a second copy of the palette here: this file
+ * used to mirror ten colours per theme, and two of them had already drifted
+ * from the tokens (`--status-idle`, both themes).
+ *
+ * Read once per theme: the stylesheet does not change while the app runs.
  */
-const FALLBACK_TOKENS: Record<TerminalMode, TerminalTokens> = {
-  light: {
-    termBg: '#F3F1EE',
-    foreground: '#1E1E1E',
-    card: '#FFFFFF',
-    primary: '#C77012',
-    success: '#1A7F37',
-    warning: '#9A6700',
-    danger: '#CF222E',
-    statusIdle: '#9B9B9B',
-    textMuted: '#6B6B6B',
-    textSecondary: '#4A4A4A',
-  },
-  dark: {
-    termBg: '#0F0F0F',
-    foreground: '#F5F4F2',
-    card: '#1A1A1A',
-    primary: '#FF9E42',
-    success: '#4CC38A',
-    warning: '#E8C547',
-    danger: '#E5534B',
-    statusIdle: '#727272',
-    textMuted: '#898989',
-    textSecondary: '#9B9B9B',
-  },
-};
+const cache = new Map<TerminalMode, TerminalTokens>();
+
+function readTokens(mode: TerminalMode): TerminalTokens | null {
+  if (typeof document === 'undefined' || !document.body) return null;
+  const cached = cache.get(mode);
+  if (cached) return cached;
+
+  const source = getTerminalMode() === mode ? document.documentElement : probeFor(mode);
+  const style = getComputedStyle(source);
+  const read = (name: string) => style.getPropertyValue(name).trim();
+  const tokens: TerminalTokens = {
+    termBg: read('--term-bg'),
+    foreground: read('--foreground'),
+    card: read('--card'),
+    primary: read('--primary'),
+    success: read('--success'),
+    warning: read('--warning'),
+    danger: read('--danger'),
+    textMuted: read('--text-muted'),
+    textSecondary: read('--text-secondary'),
+  };
+  if (source !== document.documentElement) source.remove();
+
+  // A stylesheet that has not landed yet answers with empty strings. Nothing is
+  // cached then, so the next call reads again rather than freezing the miss.
+  if (Object.values(tokens).some(value => !value)) return null;
+  cache.set(mode, tokens);
+  return tokens;
+}
+
+/** An element that wears the theme asked for, off-screen and for one read. */
+function probeFor(mode: TerminalMode): HTMLElement {
+  const probe = document.createElement('div');
+  probe.className = mode;
+  probe.style.display = 'none';
+  document.body.appendChild(probe);
+  return probe;
+}
 
 /** The theme the document is wearing right now. */
 export function getTerminalMode(): TerminalMode {
   if (typeof document === 'undefined') return 'dark';
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-}
-
-function readTokens(mode: TerminalMode): TerminalTokens {
-  const fallback = FALLBACK_TOKENS[mode];
-  // Computed values only describe the mounted theme; anything else is a guess.
-  if (typeof document === 'undefined' || getTerminalMode() !== mode) return fallback;
-
-  const style = getComputedStyle(document.documentElement);
-  const read = (name: string, or: string) => style.getPropertyValue(name).trim() || or;
-
-  return {
-    termBg: read('--term-bg', fallback.termBg),
-    foreground: read('--foreground', fallback.foreground),
-    card: read('--card', fallback.card),
-    primary: read('--primary', fallback.primary),
-    success: read('--success', fallback.success),
-    warning: read('--warning', fallback.warning),
-    danger: read('--danger', fallback.danger),
-    statusIdle: read('--status-idle', fallback.statusIdle),
-    textMuted: read('--text-muted', fallback.textMuted),
-    textSecondary: read('--text-secondary', fallback.textSecondary),
-  };
 }
 
 /** Append an 8-bit alpha to a 6-digit hex; leave any other notation alone. */
@@ -111,6 +109,9 @@ function withAlpha(color: string, alpha: string): string {
  */
 export function createXtermTheme(mode: TerminalMode = getTerminalMode()): ITheme {
   const t = readTokens(mode);
+  // No document, or a stylesheet that has not landed: nothing paints a terminal
+  // there, and xterm's own defaults stand in until the theme can be read.
+  if (!t) return {};
   const isDark = mode === 'dark';
 
   return {
