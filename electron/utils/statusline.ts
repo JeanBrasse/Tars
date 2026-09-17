@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { DATA_DIR_SHELL, dataPath } from '../constants';
+import { updateSharedJsonSync } from './shared-file';
 
 const STATUSLINE_SCRIPT = `#!/usr/bin/env bash
 # Dev Bar statusline for Claude Code
@@ -268,24 +269,30 @@ function readClaudeSettings(): Record<string, unknown> {
 }
 
 /**
- * Write Claude Code's settings.json: the whole file, from the object given.
+ * Change Claude Code's settings.json. `change` gets what the file holds now and
+ * returns it changed, or undefined to leave it as it is.
  *
- * It preserves nothing by itself, whatever its name suggests. Preservation is
- * the caller's, which reads the file first and hands back what it read with
- * its one change applied. The promise cannot be moved in here either: merging
- * with what is on disk would quietly undo `disableStatusLine`'s delete, since
- * the key it just removed would come straight back from the file.
+ * Through updateSharedJsonSync, because every claude binary reads this file
+ * when it starts and Claude Code writes it too, and this runs at every launch
+ * while the status line is on. It was rewritten in place each time, whether
+ * anything changed or not, and a file that did not parse was read as `{}`, so
+ * turning the status line on wrote `statusLine` alone over every other
+ * setting. Now it is written beside itself and renamed over, with its mode
+ * kept, not at all when nothing changes, and never over a file that is not
+ * JSON.
  *
- * So the rule lives with the callers, and there are only two: read, change one
- * key, write. A third that writes without reading loses the other nine keys,
- * and this comment used to tell it that it would not.
+ * `change` returns the whole file, not a patch to merge: merging with what is
+ * on disk would quietly undo `disableStatusLine`'s delete, since the key it
+ * just removed would come straight back from the file.
  */
-function writeClaudeSettings(settings: Record<string, unknown>): void {
-  const dir = path.dirname(CLAUDE_SETTINGS_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+function updateClaudeSettings(change: (settings: Record<string, unknown>) => Record<string, unknown> | undefined): void {
+  const outcome = updateSharedJsonSync<Record<string, unknown>>(
+    CLAUDE_SETTINGS_PATH,
+    current => change(current ?? {}),
+    { createMode: 0o644 },
+  );
+  if (outcome === 'unreadable') console.warn(`[statusline] ${CLAUDE_SETTINGS_PATH} is not valid JSON, left untouched`);
+  if (outcome === 'busy') console.warn(`[statusline] ${CLAUDE_SETTINGS_PATH} kept changing, left as Claude Code wrote it`);
 }
 
 /**
@@ -294,34 +301,36 @@ function writeClaudeSettings(settings: Record<string, unknown>): void {
 export function enableStatusLine(): void {
   installScript();
 
-  const settings = readClaudeSettings();
-  settings.statusLine = {
-    type: 'command',
-    command: SCRIPT_PATH,
-    padding: 1,
-  };
-  writeClaudeSettings(settings);
+  updateClaudeSettings(settings => ({
+    ...settings,
+    statusLine: {
+      type: 'command',
+      command: SCRIPT_PATH,
+      padding: 1,
+    },
+  }));
 }
 
 /**
  * Disable the statusline: remove config from Claude settings.json + remove script
  */
 export function disableStatusLine(): void {
-  const settings = readClaudeSettings();
-
-  // Only ours. `statusLine` is Claude Code's setting, not Tars's: a user can
-  // point it at their own script, and Claude Code can write it itself. Turning
-  // Tars's statusline off means stop using Tars's script, never delete
-  // whichever statusline happens to be configured. Deleting a key we did not
-  // write is how a setting disappears with nobody able to say what removed it.
-  const configured = settings.statusLine as { command?: unknown } | undefined;
-  const isOurs = !!configured
-    && typeof configured === 'object'
-    && configured.command === SCRIPT_PATH;
-  if (isOurs) {
-    delete settings.statusLine;
-    writeClaudeSettings(settings);
-  }
+  updateClaudeSettings(settings => {
+    // Only ours. `statusLine` is Claude Code's setting, not Tars's: a user can
+    // point it at their own script, and Claude Code can write it itself.
+    // Turning Tars's statusline off means stop using Tars's script, never
+    // delete whichever statusline happens to be configured. Deleting a key we
+    // did not write is how a setting disappears with nobody able to say what
+    // removed it.
+    const configured = settings.statusLine as { command?: unknown } | undefined;
+    const isOurs = !!configured
+      && typeof configured === 'object'
+      && configured.command === SCRIPT_PATH;
+    if (!isOurs) return undefined;
+    const withoutOurs = { ...settings };
+    delete withoutOurs.statusLine;
+    return withoutOurs;
+  });
 
   removeScript();
 

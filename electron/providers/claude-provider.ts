@@ -14,6 +14,7 @@ import type {
 import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR } from '../constants';
 import { updateSharedJsonSync } from '../utils/shared-file';
+import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 export class ClaudeProvider implements CLIProvider {
   readonly id = 'claude' as const;
@@ -279,17 +280,9 @@ export class ClaudeProvider implements CLIProvider {
       // Fallback: write to mcp.json
     }
 
-    // Every Claude session Tars starts reads this file through --mcp-config, so
-    // it is changed through updateSharedJsonSync, as ~/.claude.json is. A file
-    // that is not JSON is left as it is: it was replaced by this one server,
-    // and every other server in it was lost.
-    const mcpConfigPath = path.join(this.configDir, 'mcp.json');
-    const outcome = updateSharedJsonSync<{ mcpServers?: Record<string, unknown> }>(mcpConfigPath, mcpConfig => ({
-      ...mcpConfig,
-      mcpServers: { ...mcpConfig?.mcpServers, [name]: { command, args } },
-    }));
-    if (outcome === 'unreadable') throw new Error(`${mcpConfigPath} is not valid JSON: left untouched, ${name} not registered`);
-    if (outcome === 'busy') throw new Error(`${mcpConfigPath} kept changing: ${name} not registered`);
+    // Through addMcpServerToJson, which every writer of this file shares: it
+    // fails on a file that is not JSON rather than replacing it.
+    addMcpServerToJson(path.join(this.configDir, 'mcp.json'), name, { command, args });
     console.log(`[claude] Registered MCP server ${name} via mcp.json fallback`);
   }
 
@@ -308,20 +301,11 @@ export class ClaudeProvider implements CLIProvider {
       // Ignore if doesn't exist
     }
 
-    // Also clean mcp.json, through updateSharedJsonSync for the reason
-    // registerMcpServer gives. Nothing is written when the server is not there.
-    const mcpConfigPath = path.join(this.configDir, 'mcp.json');
+    // Also clean mcp.json. Nothing is written when the server is not there.
     try {
-      const outcome = updateSharedJsonSync<{ mcpServers?: Record<string, unknown> }>(mcpConfigPath, mcpConfig => {
-        if (!mcpConfig?.mcpServers?.[name]) return undefined;
-        const mcpServers = { ...mcpConfig.mcpServers };
-        delete mcpServers[name];
-        return { ...mcpConfig, mcpServers };
-      });
-      if (outcome === 'unreadable') console.warn(`[claude] ${mcpConfigPath} is not valid JSON: ${name} left in it`);
-      if (outcome === 'busy') console.warn(`[claude] ${mcpConfigPath} kept changing: ${name} left in it`);
+      removeMcpServerFromJson(path.join(this.configDir, 'mcp.json'), name);
     } catch (err) {
-      console.warn(`[claude] Failed to remove ${name} from ${mcpConfigPath}:`, err);
+      console.warn(`[claude] ${name} not removed from mcp.json:`, err);
     }
   }
 

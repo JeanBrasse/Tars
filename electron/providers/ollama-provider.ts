@@ -12,6 +12,7 @@ import type {
 } from './cli-provider';
 import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 export const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
 
@@ -160,23 +161,11 @@ export class OllamaProvider implements CLIProvider {
   async configureHooks(_hooksDir: string): Promise<void> {}
 
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
-    const mcpConfigPath = path.join(this.configDir, 'mcp.json');
-    if (!fs.existsSync(this.configDir)) fs.mkdirSync(this.configDir, { recursive: true });
-    let mcpConfig: { mcpServers?: Record<string, unknown> } = { mcpServers: {} };
-    if (fs.existsSync(mcpConfigPath)) {
-      try { mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8')); if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {}; } catch { mcpConfig = { mcpServers: {} }; }
-    }
-    mcpConfig.mcpServers![name] = { command, args };
-    fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+    addMcpServerToJson(path.join(this.configDir, 'mcp.json'), name, { command, args });
   }
 
   async removeMcpServer(name: string): Promise<void> {
-    const mcpConfigPath = path.join(this.configDir, 'mcp.json');
-    if (!fs.existsSync(mcpConfigPath)) return;
-    try {
-      const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-      if (mcpConfig?.mcpServers?.[name]) { delete mcpConfig.mcpServers[name]; fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2)); }
-    } catch { /* ignore */ }
+    removeMcpServerFromJson(path.join(this.configDir, 'mcp.json'), name);
   }
 
   isMcpServerRegistered(name: string, expectedServerPath: string): boolean {

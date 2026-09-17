@@ -2231,6 +2231,23 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     return textFileRoots().some(root => resolved === root || resolved.startsWith(root + path.sep));
   };
 
+  /**
+   * Claude's own JSON files, which fs:write-text-file never writes although
+   * `~/.claude` is one of its roots. It writes the text it is given, in place,
+   * and every claude binary reads these as it starts: a half-written or
+   * mistyped settings.json or mcp.json stops Claude Code. Tars changes them
+   * through updateSharedJsonSync, and the one caller, the Brain page, edits
+   * CLAUDE.md files. Compared through links, which the write would follow.
+   */
+  const isClaudeJsonFile = (target: string) => {
+    const real = (file: string) => (fs.existsSync(file) ? fs.realpathSync(file) : file);
+    return [
+      path.join(os.homedir(), '.claude.json'),
+      path.join(os.homedir(), '.claude', 'settings.json'),
+      path.join(os.homedir(), '.claude', 'mcp.json'),
+    ].some(file => real(file) === real(target));
+  };
+
   ipcMain.handle('fs:read-text-file', async (_event, filePath: string) => {
     try {
       const target = path.resolve(String(filePath || '').replace(/^~/, os.homedir()));
@@ -2246,6 +2263,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     try {
       const target = path.resolve(String(params?.filePath || '').replace(/^~/, os.homedir()));
       if (!isAllowedTextFile(target)) return { success: false, error: 'Path outside allowed roots' };
+      if (isClaudeJsonFile(target)) return { success: false, error: `${path.basename(target)} is Claude Code's own file and is not written as text` };
       fs.writeFileSync(target, String(params?.content ?? ''), 'utf-8');
       return { success: true };
     } catch (err) {
