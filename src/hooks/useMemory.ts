@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import type { ProjectMemory, MemoryFile } from '@/types/electron';
+import { useDesktopApi } from './useDesktopApi';
 
 export const isElectron = (): boolean =>
   typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -17,6 +18,9 @@ export interface MemoryState {
 }
 
 export function useMemory() {
+  // Read through the hook so the page renders the same tree during the
+  // pre-render and the hydration pass: see useDesktopApi.
+  const hasMemoryApi = useDesktopApi(api => api.memory);
   const [projects, setProjects] = useState<ProjectMemory[]>([]);
   const [agentCountByPath, setAgentCountByPath] = useState<Map<string, number>>(new Map());
   const [selectedProject, setSelectedProject] = useState<ProjectMemory | null>(null);
@@ -178,7 +182,7 @@ export function useMemory() {
     totalFiles,
     totalSize,
     projectsWithMemory,
-    isElectron: isElectron(),
+    isElectron: hasMemoryApi,
     selectProject,
     selectFile,
     saveFile,

@@ -38,10 +38,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${sans.variable} ${mono.variable} ${serif.variable}`} style={{ colorScheme: 'dark' }}>
+    // The script below rewrites this element's class and color-scheme before
+    // React hydrates, so for a reader who chose light the DOM never matches
+    // what this file renders. That is the point, not a mistake: without
+    // suppressHydrationWarning React reported it on every page, and on the
+    // pages where hydration failed for another reason it rebuilt the tree and
+    // re-created the script, which is where the "Encountered a script tag"
+    // error came from. Only this element's own attributes are excused.
+    <html
+      lang="en"
+      className={`dark ${sans.variable} ${mono.variable} ${serif.variable}`}
+      style={{ colorScheme: 'dark' }}
+      suppressHydrationWarning
+    >
       <head>
         {/* Applies the stored theme before the first paint: without this the
-            light palette renders for one frame on every cold load (white flash). */}
+            light palette renders for one frame on every cold load (white flash).
+            It stays an inline tag in the document: `next/script` with
+            `beforeInteractive` renders a `<script>` through React just the same
+            and defers the code to Next's own runtime, which runs after the
+            first paint (measured: see the report for lot 2). */}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var dark=localStorage.getItem('tars-theme')!=='light';var e=document.documentElement;e.classList.toggle('dark',dark);e.style.colorScheme=dark?'dark':'light';}catch(_){}})();`,

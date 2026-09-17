@@ -3,11 +3,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { KanbanTask, KanbanColumn, KanbanTaskCreate, KanbanTaskUpdate, KanbanMoveResult } from '@/types/kanban';
 import { isElectron } from './useElectron';
+import { useDesktopApi } from './useDesktopApi';
 
 /**
  * Hook for Kanban board management via Electron IPC
  */
 export function useElectronKanban() {
+  // Read through the hook so the board renders the same tree during the
+  // pre-render and the hydration pass: see useDesktopApi.
+  const hasKanbanApi = useDesktopApi(api => api.kanban);
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +143,7 @@ export function useElectronKanban() {
     tasks,
     isLoading,
     error,
-    isElectron: isElectron(),
+    isElectron: hasKanbanApi,
     createTask,
     updateTask,
     moveTask,
