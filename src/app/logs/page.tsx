@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
-import { PageHeader, Panel, PanelCaption, BrandSpinner } from '@/components/ui';
+import { PageHeader, Panel, PanelCaption, BrandSpinner, LoadingState } from '@/components/ui';
 import { SquareGrid } from '@/components/Splash';
 import type { FleetEntry, LogLine } from '@/types/electron';
 
@@ -24,6 +24,9 @@ const STATUS_TONE: Record<string, string> = {
 export default function LogsPage() {
   const [query, setQuery] = useState('');
   const [fleet, setFleet] = useState<FleetEntry[]>([]);
+  // False until the first fleet read answers: before that, no agent is known
+  // to have produced nothing.
+  const [fleetLoaded, setFleetLoaded] = useState(false);
   const [results, setResults] = useState<LogLine[] | null>(null);
   const [scanned, setScanned] = useState(0);
   const [truncated, setTruncated] = useState(false);
@@ -36,8 +39,12 @@ export default function LogsPage() {
   const searchSeq = useRef(0);
 
   const loadFleet = useCallback(async () => {
-    const res = await window.electronAPI?.logs?.fleet();
-    setFleet(res?.agents ?? []);
+    try {
+      const res = await window.electronAPI?.logs?.fleet();
+      setFleet(res?.agents ?? []);
+    } finally {
+      setFleetLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -129,7 +136,7 @@ export default function LogsPage() {
         {/* Fleet */}
         <Panel fill className="w-[250px] shrink-0">
           <PanelCaption>
-            {fleet.length} agent{fleet.length === 1 ? '' : 's'}
+            {fleetLoaded ? `${fleet.length} agent${fleet.length === 1 ? '' : 's'}` : 'agents'}
           </PanelCaption>
           <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-2">
             {sortedFleet.map((a, i) => (
@@ -166,7 +173,9 @@ export default function LogsPage() {
               </button>
               </div>
             ))}
-            {fleet.length === 0 && (
+            {!fleetLoaded ? (
+              <LoadingState loading what="Still reading your agents' output…" detail="listing every agent's terminal" />
+            ) : fleet.length === 0 && (
               <p className="text-xs text-muted-foreground">No agent has produced output yet.</p>
             )}
           </div>

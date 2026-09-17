@@ -6,16 +6,16 @@ import { useEffect, useState } from 'react';
  * Loading, in three stages.
  *
  * A spinner that appears for 200ms is a flash, and one that spins for eight
- * seconds says nothing about what is slow. So: nothing at all under 400ms, a
- * skeleton in the shape of the content that is coming, and past three seconds
- * a line naming the operation with a way out.
+ * seconds says nothing about what is slow. So: nothing at all under 400ms, the
+ * mark filling over a line naming what is coming, and past three seconds the
+ * same line with how long it has taken and a way out.
  */
 
-const SKELETON_AFTER_MS = 400;
+const MARK_AFTER_MS = 400;
 const EXPLAIN_AFTER_MS = 3000;
 
-export function useLoadingStage(loading: boolean): 'idle' | 'quiet' | 'skeleton' | 'explain' {
-  const [elapsed, setElapsed] = useState<'quiet' | 'skeleton' | 'explain'>('quiet');
+export function useLoadingStage(loading: boolean): 'idle' | 'quiet' | 'mark' | 'explain' {
+  const [elapsed, setElapsed] = useState<'quiet' | 'mark' | 'explain'>('quiet');
 
   useEffect(() => {
     if (!loading) {
@@ -23,32 +23,15 @@ export function useLoadingStage(loading: boolean): 'idle' | 'quiet' | 'skeleton'
       const reset = setTimeout(() => setElapsed('quiet'), 0);
       return () => clearTimeout(reset);
     }
-    const toSkeleton = setTimeout(() => setElapsed('skeleton'), SKELETON_AFTER_MS);
+    const toMark = setTimeout(() => setElapsed('mark'), MARK_AFTER_MS);
     const toExplain = setTimeout(() => setElapsed('explain'), EXPLAIN_AFTER_MS);
     return () => {
-      clearTimeout(toSkeleton);
+      clearTimeout(toMark);
       clearTimeout(toExplain);
     };
   }, [loading]);
 
   return loading ? elapsed : 'idle';
-}
-
-/** Rows shaped like the list that is loading, so the layout does not jump. */
-export function SkeletonRows({ rows = 4, className = '' }: { rows?: number; className?: string }) {
-  return (
-    <div className={`space-y-1.5 ${className}`} aria-hidden>
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 border border-border bg-card px-3.5 py-3">
-          <span className="w-1.5 h-1.5 bg-secondary shrink-0" />
-          <div className="flex-1 space-y-1.5">
-            <div className="h-2 bg-secondary" style={{ width: `${52 - i * 6}%` }} />
-            <div className="h-1.5 bg-secondary" style={{ width: `${30 - i * 3}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 /**
@@ -66,7 +49,7 @@ export function SkeletonRows({ rows = 4, className = '' }: { rows?: number; clas
  * distinct. It used to be `(col + row) mod 4`, which gives only four delays
  * and lights a whole diagonal at a time. Unlit cells rest at 0.16 rather than
  * disappearing, which is what keeps the silhouette readable.
- * Frame: `Loading · brand mark`.
+ * Frame: `Loading states`.
  */
 /** How long one square waits before the next lights. Sixteen of them makes a
  *  fill just under two seconds, then it clears and starts again. */
@@ -133,8 +116,8 @@ export function BrandSpinner({
 
 /**
  * A whole panel given over to waiting: the mark, centred, over one line saying
- * what is being waited on. For the case where there is no content shape to put
- * a skeleton in, such as a terminal grid or a canvas.
+ * what is being waited on. Shown at once; `LoadingState` puts the same panel
+ * in the middle of its ladder.
  */
 export function LoadingPanel({
   what,
@@ -195,29 +178,26 @@ export function SlowOperation({
 }
 
 /**
- * The whole ladder in one component, for the common case.
+ * The whole ladder in one component, for every page and panel that waits.
  *
- * `variant` picks what the middle stage looks like. Skeleton rows are right
- * when a list is coming and wrong everywhere else: on a settings form they are
- * grey bars in the shape of nothing, and the page was the only one in the app
- * that did not show the mark while it waited. `mark` is the same ladder with
- * the animated mark in the middle instead.
+ * The middle stage is the mark, whatever is loading. It used to default to
+ * skeleton rows, grey bars in the shape of a list, and only the settings page
+ * had been switched to the mark: the agents, projects, schedules, review,
+ * usage and skills pages waited in grey while every other wait in the app
+ * showed the mark filling. Noah noticed. There is no second look to pick now.
+ * Frame: `Loading states`.
  */
 export function LoadingState({
   loading,
-  rows,
   what,
   detail,
   onCancel,
-  variant = 'skeleton',
   children,
 }: {
   loading: boolean;
-  rows?: number;
   what: string;
   detail?: string;
   onCancel?: () => void;
-  variant?: 'skeleton' | 'mark';
   children?: React.ReactNode;
 }) {
   const stage = useLoadingStage(loading);
@@ -225,13 +205,5 @@ export function LoadingState({
   if (!loading) return <>{children}</>;
   if (stage === 'quiet') return null;
   if (stage === 'explain') return <SlowOperation what={what} detail={detail} onCancel={onCancel} />;
-  if (variant === 'mark') {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-10">
-        <BrandSpinner size={30} label={what} />
-        <p className="text-xs text-muted-foreground">{what}</p>
-      </div>
-    );
-  }
-  return <SkeletonRows rows={rows} />;
+  return <LoadingPanel what={what} className="py-10" />;
 }

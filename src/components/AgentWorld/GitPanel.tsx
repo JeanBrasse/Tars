@@ -190,9 +190,11 @@ export default function GitPanel({ projectPath, className = '', hideHeader = fal
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-warning" />
             <span className="text-sm font-medium text-text-primary">Git</span>
-            <span className="px-2 py-0.5 text-xs bg-warning/20 text-warning rounded-full">
-              {gitData.branch || 'loading...'}
-            </span>
+            {gitData.branch && (
+              <span className="px-2 py-0.5 text-xs bg-warning/20 text-warning rounded-full">
+                {gitData.branch}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button

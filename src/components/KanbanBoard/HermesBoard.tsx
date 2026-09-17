@@ -345,7 +345,7 @@ export default function HermesBoard({ subtitle }: { subtitle?: string } = {}) {
           footerLeft={<Button variant="danger" onClick={deleteTask} disabled={busy || detailLoading}>Delete</Button>}
           footerRight={<Button variant="secondary" onClick={closeTask}>Close</Button>}
         >
-          {detailLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+          {detailLoading && <LoadingPanel what="Reading the task" size={26} className="py-6" />}
           {detailError && <p className="text-[11px] text-danger">{detailError}</p>}
           {detail && (
             <div className="space-y-4">

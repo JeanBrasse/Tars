@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Input, PanelCaption, PasswordInput, StatusBadge } from '@/components/ui';
+import { BrandSpinner, Button, Input, PanelCaption, PasswordInput, StatusBadge } from '@/components/ui';
 import { SettingsRow } from './SettingsRow';
 
 interface McpServer {
@@ -182,7 +182,10 @@ export function McpSection() {
         </div>
       )}
 
-      {loading && servers.length === 0 && <SettingsRow label="Loading servers…" />}
+      {/* A wait inside a row: the mark at row size, where a control would sit. */}
+      {loading && servers.length === 0 && (
+        <SettingsRow label="Reading your MCP servers" control={<BrandSpinner size={26} label="Reading your MCP servers" />} />
+      )}
 
       {!loading && servers.length === 0 && (
         <SettingsRow

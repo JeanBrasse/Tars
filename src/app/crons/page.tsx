@@ -208,7 +208,6 @@ export default function CronsPage() {
         {loading && jobs.length === 0 && (
           <LoadingState
             loading
-            rows={4}
             what="Still reading the Hermes gateway…"
             detail="waiting on /api/cron/jobs"
           />
