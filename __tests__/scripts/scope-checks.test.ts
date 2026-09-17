@@ -185,6 +185,28 @@ describe('the classification itself', () => {
   });
 });
 
+describe('the screenshot references', () => {
+  /**
+   * The roadmap had it that the skip was decided "without knowing anything
+   * about e2e/__screenshots__". Measured on 17/09 against origin/main
+   * (2f734fb), it is not so: every change to a reference runs the suite,
+   * because ALWAYS_RUNS has held `e2e/` since this file was written. These keep
+   * it that way. A reference that changed is the suite's own expectation, and
+   * only a run says whether the app still meets it.
+   */
+  it.each([
+    ['a re-recorded reference', ['e2e/__screenshots__/agents.png']],
+    ['a reference beside changes that cannot reach the renderer', ['__tests__/a.test.ts', 'hooks/on-stop.sh', 'e2e/__screenshots__/dashboard.png']],
+    ['a new folder of references', ['e2e/__screenshots__/rooms/']],
+  ])('runs the suite for %s', (_name, files) => {
+    const decision = decide(files as string[]);
+    const reference = (files as string[]).find(file => file.startsWith('e2e/__screenshots__/'));
+
+    expect(decision.runE2E).toBe(true);
+    expect(decision.forcing).toContainEqual({ file: reference, why: 'the suite itself' });
+  });
+});
+
 /**
  * The command itself, as `npm run e2e:auto` runs it, in real git checkouts of a
  * local origin. A fake npx comes first on the PATH: it writes down that the
@@ -198,6 +220,7 @@ const git = async (cwd: string, ...args: string[]) => (await run('git', args, { 
 
 /** The eight bytes every PNG starts with, and a header chunk: binary, with NULs, as a reference is. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+const PNG_RERECORDED = Buffer.concat([PNG, Buffer.from([0, 0, 0x05, 0xa0])]);
 
 function write(dir: string, file: string, content: string | Buffer) {
   fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
@@ -360,6 +383,38 @@ describe.concurrent('the base a branch is compared against', () => {
     const run = await e2eAuto(repo.dir);
 
     expect(run.output).toContain('could not list the changes');
+    expect(run.suite).toBe('playwright test');
+  });
+});
+
+describe.concurrent('a reference change, as git reports it', () => {
+  it.for([
+    ['re-recorded and committed', async (dir: string) => {
+      write(dir, 'e2e/__screenshots__/agents.png', PNG_RERECORDED);
+      await commitAll(dir, 're-record');
+    }],
+    ['deleted and committed', async (dir: string) => {
+      await git(dir, 'rm', '-q', 'e2e/__screenshots__/agents.png');
+      await git(dir, 'commit', '-q', '-m', 'drop');
+    }],
+    ['re-recorded and not committed', async (dir: string) => {
+      write(dir, 'e2e/__screenshots__/agents.png', PNG_RERECORDED);
+    }],
+    ['recorded for a new surface, untracked', async (dir: string) => {
+      write(dir, 'e2e/__screenshots__/rooms/new-room.png', PNG);
+    }],
+    ['moved out of e2e/ and staged', async (dir: string) => {
+      fs.mkdirSync(path.join(dir, '__tests__', 'fixtures'), { recursive: true });
+      await git(dir, 'mv', 'e2e/__screenshots__/agents.png', '__tests__/fixtures/agents.png');
+    }],
+  ] as const)('runs the suite for a reference %s', async ([, change], { expect }) => {
+    const repo = await cloneBehindOrigin('fresh');
+    await change(repo.dir);
+
+    const run = await e2eAuto(repo.dir);
+
+    expect(run.output).toContain(`Base: ${repo.fresh.slice(0, 12)}`);
+    expect(run.output).toMatch(/e2e\/__screenshots__\/\S+: the suite itself/);
     expect(run.suite).toBe('playwright test');
   });
 });
