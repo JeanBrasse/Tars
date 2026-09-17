@@ -110,17 +110,70 @@ export function decide(files) {
   };
 }
 
-/** Everything this branch changed, committed or not. */
+/** Where the trunk every branch merges into is fetched from. */
+const REMOTE = 'origin';
+const TRUNK = 'main';
+/** A fetch that works takes a second or two; one that hangs must still end in a run. */
+const FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * What git printed. A git call that fails throws, with what git said about it:
+ * it is never read as an empty answer, which is what used to turn a base git
+ * could not find into "nothing was committed on this branch".
+ */
+async function git(args, options = {}) {
+  const { stdout } = await run('git', args, { cwd: process.cwd(), ...options });
+  return stdout;
+}
+
+/** Why a git call failed, in one line. */
+function gitSaid(err) {
+  if (err.killed) return `no answer within ${FETCH_TIMEOUT_MS / 1000} s`;
+  return String(err.stderr || err.message).trim().split('\n')[0];
+}
+
+/**
+ * The commit this branch is compared against, or why there is none.
+ *
+ * The trunk as origin holds it now, fetched first. The base used to be the
+ * local `main`, which is only as recent as its last pull. Measured on 17/09,
+ * local main at d03aa41 and origin/main at 2f734fb: a branch with no change at
+ * all counted 180 changed files and ran the suite. A stale base does worse than
+ * waste the three minutes. A branch that undoes a renderer change the stale
+ * base never had looks unchanged against it, and its suite was skipped. And a
+ * base git cannot find (no local `main`, a mistyped SCOPE_BASE) read as an
+ * empty diff, so only the uncommitted files were classified, and skipped too.
+ *
+ * Hence the rule: a base that cannot be fetched or found rules nothing out.
+ * SCOPE_BASE still names another base, taken as it is and not fetched.
+ */
+async function resolveBase() {
+  const explicit = process.env.SCOPE_BASE;
+  if (!explicit) {
+    try {
+      // The refspec is spelled out so origin/main moves whatever this clone's
+      // fetch configuration says, and a fetch that wants a password fails at
+      // once instead of waiting at a prompt nobody may be there to answer.
+      await git(['fetch', '--quiet', REMOTE, `+refs/heads/${TRUNK}:refs/remotes/${REMOTE}/${TRUNK}`], {
+        timeout: FETCH_TIMEOUT_MS,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+    } catch (err) {
+      return { problem: `could not fetch ${REMOTE}/${TRUNK}: ${gitSaid(err)}. A base that cannot be refreshed may be stale` };
+    }
+  }
+  const ref = explicit || `refs/remotes/${REMOTE}/${TRUNK}`;
+  try {
+    const sha = (await git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])).trim();
+    return { sha, name: explicit ? `SCOPE_BASE=${explicit}, not fetched` : `${REMOTE}/${TRUNK}, fetched just now` };
+  } catch (err) {
+    return { problem: `${explicit ? `SCOPE_BASE=${explicit}` : `${REMOTE}/${TRUNK}`} is not a commit git can find: ${gitSaid(err)}` };
+  }
+}
+
+/** Everything this branch changed, committed or not. Throws when git cannot say. */
 async function changedFiles(base) {
   const out = [];
-  const git = async (args) => {
-    try {
-      const { stdout } = await run('git', args, { cwd: process.cwd() });
-      return stdout;
-    } catch {
-      return '';
-    }
-  };
 
   // Committed on this branch, against the trunk it will merge into.
   //
@@ -146,11 +199,23 @@ async function changedFiles(base) {
 }
 
 async function main() {
-  const base = process.env.SCOPE_BASE || 'main';
-  const files = await changedFiles(base);
+  const base = await resolveBase();
+  if (base.problem) {
+    console.log(`[scope] ${base.problem}.`);
+    return runEverything();
+  }
+  console.log(`[scope] Base: ${base.sha.slice(0, 12)} (${base.name})`);
+
+  let files;
+  try {
+    files = await changedFiles(base.sha);
+  } catch (err) {
+    console.log(`[scope] could not list the changes against ${base.sha.slice(0, 12)}: ${gitSaid(err)}.`);
+    return runEverything();
+  }
   const decision = decide(files);
 
-  console.log(`[scope] ${files.length} changed file(s) against ${base}`);
+  console.log(`[scope] ${files.length} changed file(s) against ${base.sha.slice(0, 12)}`);
 
   if (!decision.runE2E) {
     // Said out loud, at length, and naming every file. A run that quietly
@@ -172,6 +237,16 @@ async function main() {
     console.log(`[scope]   and ${decision.forcing.length - 12} more`);
   }
 
+  return runSuite();
+}
+
+/** Nothing to compare against, so nothing is ruled out. The line above it says why. */
+function runEverything() {
+  console.log('[scope] Nothing can be ruled out: running the whole end to end suite.');
+  return runSuite();
+}
+
+function runSuite() {
   const child = execFile('npx', ['playwright', 'test'], { cwd: process.cwd() });
   child.stdout?.pipe(process.stdout);
   child.stderr?.pipe(process.stderr);
@@ -180,8 +255,9 @@ async function main() {
 
 // Only when run as a command, so the decision above can be imported and tested.
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  main().then(code => process.exit(code)).catch(err => {
+  main().then(code => process.exit(code)).catch(async err => {
+    // Runs the suite it announces. It used to announce it and exit 1 with nothing run.
     console.error('[scope] could not decide, running everything:', err);
-    process.exit(1);
+    process.exit(await runSuite());
   });
 }

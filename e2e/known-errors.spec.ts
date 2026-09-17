@@ -1,5 +1,17 @@
 import { test, expect } from '@playwright/test';
-import { KNOWN_PAGE_ERRORS, RECORDING_SUITES, readPageErrorRecords } from './surfaces.mjs';
+import { KNOWN_PAGE_ERRORS, RECORDING_SUITES, VOLATILE, readPageErrorRecords } from './surfaces.mjs';
+
+/**
+ * The surfaces of this run that recorded nothing, which is what stops either
+ * check below from calling anything stale: an entry cannot be judged on a page
+ * that never opened, and a filtered run opens almost none of them.
+ */
+function surfacesThatDidNotRecord(records: Array<{ suite: string; surface: string }>): string[] {
+  const recorded = new Set(records.map(r => `${r.suite}: ${r.surface}`));
+  return Object.entries(RECORDING_SUITES)
+    .flatMap(([suite, surfaces]: [string, Array<{ name: string }>]) => surfaces.map(s => `${suite}: ${s.name}`))
+    .filter(key => !recorded.has(key));
+}
 
 /**
  * The allowance list, held to its own defects.
@@ -38,17 +50,46 @@ test('every tolerated page error still happens, or its entry is stale', () => {
   // cannot say that anything stopped. A surface that fails afterwards, on its
   // screenshot, has recorded.
   if (gone.length > 0) {
-    const recorded = new Set(records.map(r => `${r.suite}: ${r.surface}`));
-    const expected = Object.entries(RECORDING_SUITES)
-      .flatMap(([suite, surfaces]) => surfaces.map(s => `${suite}: ${s.name}`));
-    const missing = expected.filter(key => !recorded.has(key));
+    const missing = surfacesThatDidNotRecord(records);
     if (missing.length > 0) {
-      test.skip(true, `not judged: ${gone.map(k => k.key).join(', ')} not seen, but ${missing.length} of ${expected.length} surfaces recorded nothing in this run, the first being ${missing[0]}`);
+      test.skip(true, `not judged: ${gone.map(k => k.key).join(', ')} not seen, but ${missing.length} surfaces recorded nothing in this run, the first being ${missing[0]}`);
     }
   }
 
   expect(
     gone.map(k => `${k.key}: ${k.why}`),
     'these are tolerated and no longer occur: remove them from KNOWN_PAGE_ERRORS',
+  ).toEqual([]);
+});
+
+/**
+ * The masks, held to the same rule as the allowances.
+ *
+ * A mask is a locator, and a locator stops matching the day a class or a
+ * sentence changes. Nothing then covers the clock or the version number it was
+ * written for, which is the good case: the surface reddens and somebody looks.
+ * The bad case is a mask that covered a defect rather than a clock, or one
+ * whose content has gone: it hides nothing, it says nothing, and it stays in
+ * the list forever. So a full run in which a declared mask matched nothing on
+ * any of its surfaces fails here, and deleting the entry is what makes it green.
+ *
+ * An entry marked `sometimes` is for content only some runs show, and is not
+ * judged: it says so where it is declared, and why.
+ */
+test('every volatile mask still matches something, or its entry is dead', () => {
+  const records = readPageErrorRecords();
+  const used = new Set(records.flatMap(r => r.masks ?? []));
+  const dead = Object.entries(VOLATILE).filter(([key, entry]) => !used.has(key) && !entry.sometimes);
+
+  if (dead.length > 0) {
+    const missing = surfacesThatDidNotRecord(records);
+    if (missing.length > 0) {
+      test.skip(true, `not judged: ${dead.map(([key]) => key).join(', ')} matched nothing, but ${missing.length} surfaces recorded nothing in this run, the first being ${missing[0]}`);
+    }
+  }
+
+  expect(
+    dead.map(([key, entry]) => `${key}: ${entry.why} (surfaces: ${entry.surfaces === 'all' ? 'all' : entry.surfaces.join(', ')})`),
+    'these masks matched nothing anywhere in this run: remove them from VOLATILE, or fix the locator',
   ).toEqual([]);
 });

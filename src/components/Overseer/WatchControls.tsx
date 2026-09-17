@@ -72,7 +72,18 @@ export function WatchControls({
   }, [effort]);
 
   const loadOptions = useCallback(async () => {
-    const r = await window.electronAPI?.overseer?.modelOptions();
+    // The call reaches the gateway, so an unreachable one rejects rather than
+    // answering `{ success: false }`. Unhandled, that rejection was an error on
+    // the console of every Chat page whose gateway is down. The `effort()` call
+    // above has had its own catch since it was written.
+    //
+    // What the catch puts in `error` is read by a human, on the control it
+    // disables: the gateway's own sentence when it answered one ("Sign in to
+    // Hermes to list its models", "Hermes is not configured"), and this line
+    // when the call never got through. The technical text of the failure is
+    // already on screen, in the banner's detail above the thread.
+    const r = await window.electronAPI?.overseer?.modelOptions()
+      .catch(() => ({ success: false as const, error: 'The gateway did not list its models.' }));
     if (!r) return;
     if (r.success) {
       setProviders(r.providers);
@@ -101,22 +112,24 @@ export function WatchControls({
 
   return (
     <>
-      {/* When the gateway cannot be asked which models it has, the picker is
-          simply not offered. The page already carries a banner saying why, and
-          repeating it here as a bordered box beside the send button put an
-          error message where a control belongs. */}
-      {optionsError ? null : (
-        <ModelEffortPicker
-          providers={providers}
-          provider={effectiveProvider}
-          model={effectiveModel}
-          effort={effort}
-          effortOptions={effortOptions}
-          onProvider={handleProvider}
-          onModel={model => onChange({ model })}
-          onEffort={handleEffort}
-        />
-      )}
+      {/* When the gateway cannot be asked which models it has, the control
+          stays where it is, greyed, and says why on hover. Hiding it took a
+          control off the row without a word, which is the one thing a disabled
+          control in this app never does; and writing the reason as a bordered
+          box beside the send button put an error message where a control
+          belongs. The banner above already carries the gateway's state and the
+          failure's own text, so this line is short and says something else. */}
+      <ModelEffortPicker
+        providers={providers}
+        provider={effectiveProvider}
+        model={effectiveModel}
+        effort={effort}
+        effortOptions={effortOptions}
+        onProvider={handleProvider}
+        onModel={model => onChange({ model })}
+        onEffort={handleEffort}
+        disabledReason={optionsError ?? undefined}
+      />
       <Dropdown
         size="sm"
         mono

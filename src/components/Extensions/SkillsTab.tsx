@@ -16,7 +16,7 @@ import { useElectronSkills } from '@/hooks/useElectron';
 import { SKILLS_DATABASE, fetchSkillsPaginated, type Skill } from '@/lib/skills-database';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import TerminalDialog from '@/components/TerminalDialog';
-import ProviderBadge from '@/components/ProviderBadge';
+import ProviderBadge from '@/components/ui/ProviderBadge';
 import { BrandSpinner, Button, DialogShell, ErrorState, Input, Label, LoadingPanel, LoadingState } from '@/components/ui';
 
 /** Providers with a local CLI binary that have their own skill directory */

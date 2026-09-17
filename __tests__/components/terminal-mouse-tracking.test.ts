@@ -401,7 +401,7 @@ describe('every terminal that forwards input goes through the one filter', () =>
     try {
       fs.writeFileSync(
         path.join(dir, 'Planted.tsx'),
-        `const marker = '   ';\nterm.onData((data) => { send(data); });\n`,
+        `const marker = '\x00\x00\x00';\nterm.onData((data) => { send(data); });\n`,
       );
       const planted = forwarders(dir);
 

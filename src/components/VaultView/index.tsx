@@ -12,6 +12,7 @@ import DocumentList from './components/DocumentList';
 import DocumentViewer from './components/DocumentViewer';
 import DocumentEditor from './components/DocumentEditor';
 import { VaultEmptyState } from './shared';
+import { useDesktopApi } from '@/hooks/useDesktopApi';
 
 function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI?.vault;
@@ -42,6 +43,10 @@ function saveReadDocs(ids: Set<string>) {
 }
 
 export default function VaultView({ embedded, subtitle }: { embedded?: boolean; subtitle?: string } = {}) {
+  // False for the pre-render and for the hydration pass, true right after, so
+  // the page renders the same tree in both: see useDesktopApi.
+  const hasVaultApi = useDesktopApi(api => api.vault);
+
   // Data state
   const [documents, setDocuments] = useState<VaultDocumentElectron[]>([]);
   const [allDocuments, setAllDocuments] = useState<VaultDocumentElectron[]>([]);
@@ -336,7 +341,7 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
   };
 
   // Non-electron fallback
-  if (!isElectron()) {
+  if (!hasVaultApi) {
     return (
       <VaultEmptyState
         icon={Archive}

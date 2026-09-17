@@ -116,6 +116,17 @@ const HISTORY_SESSION = '7c1e4f2a-9b3d-4e8f-a6c5-2d1b0f9e8a73';
 const HERMES_DEAD_PORT = 9;
 
 /**
+ * Where the sandbox looks for Ollama, and nothing listens there either.
+ *
+ * `ollama:test` falls back to `http://localhost:11434` when no base URL is set,
+ * and the Settings page asks it: 88 connection attempts to that port left the
+ * machine during a full run, measured on 2026-09-17. Whoever runs Ollama on
+ * this machine answered them, which is somebody else's server in a picture that
+ * is meant to be a sandbox. Same port as Hermes, for the same reason.
+ */
+const OLLAMA_DEAD_URL = `http://127.0.0.1:${HERMES_DEAD_PORT}`;
+
+/**
  * The skills.sh listing, frozen, as that site serves it.
  *
  * `/skills` renders "live from skills.sh" and means it: the names, the order
@@ -145,9 +156,84 @@ const SKILLS_ROWS = [
 ];
 
 /** One line, because the scraper's regex does not cross a newline. */
-export const SKILLS_SH_PAGE = `<!doctype html><html><body><script>window.initialSkills = ${
+const SKILLS_SH_PAGE = `<!doctype html><html><body><script>window.initialSkills = ${
   JSON.stringify(SKILLS_ROWS.map(([name, source, installs]) => ({ source, name, installs })))
 }</script></body></html>`;
+
+/**
+ * The skills.sh listing, answered from here instead of from the network.
+ *
+ * Stubbed in the main process rather than in the page, because that is where
+ * the call is: in Electron the renderer asks over IPC precisely to avoid CORS,
+ * so `page.route` sees nothing and a stub written there passes while the real
+ * request goes out behind it. Measured, after writing that one first.
+ *
+ * Every suite that opens a page reaching skills.sh calls this. The sweep did
+ * and no-horizontal-scroll.spec.ts did not, so it kept fetching the real
+ * catalogue: two requests per run, seen leaving the machine by lsof on
+ * 2026-09-17. Hermes is the other third party and is handled in the seed, by
+ * pointing it at a port nothing serves.
+ */
+export async function stubSkillsSh(app) {
+  await app.evaluate(async (_electron, html) => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input?.url ?? input);
+      if (url.includes('skills.sh')) {
+        return new Response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      return realFetch(input, init);
+    });
+  }, SKILLS_SH_PAGE);
+}
+
+/**
+ * The sidebar's unread-release dot, in the one state the design draws.
+ *
+ * It is shown when the latest release id is above what localStorage remembers,
+ * and the What's New page writes that number as it opens. So every surface
+ * visited before What's New carried the dot and every surface after it did not,
+ * which made a picture depend on the order of the run: the references of
+ * `settings-ai-providers` and `settings-cli-paths` were recorded one at a time,
+ * with a filter, and carried a dot a full run does not show. Worse, one failing
+ * surface used to take the next thirty with it: Playwright stops the worker
+ * after a failure, the app relaunches into a new sandbox with an empty profile,
+ * the dot comes back, and every surface after that differs by the 264 pixels it
+ * costs. Measured on 2026-09-17, 33 failures where 5 were real.
+ *
+ * Marked as seen before anything is photographed, so the dot is in no
+ * reference: the frames in design/tars-redesign.pen draw that sidebar entry
+ * without it (`Agents · dark`, `Settings · Git`, and the rest).
+ */
+export async function markWhatsNewSeen(page, key, lastSeen) {
+  await page.addInitScript(([storageKey, value]) => {
+    try {
+      localStorage.setItem(storageKey, value);
+    } catch {
+      // A profile with storage blocked shows the dot; the surface then fails
+      // on it, which is the right way round.
+    }
+  }, [key, lastSeen]);
+}
+
+/**
+ * Everything the page says went wrong, in one list.
+ *
+ * `pageerror` is an uncaught exception, and until 2026-09-17 that was all three
+ * screenshot specs listened to. A page that logs an error without throwing one
+ * was invisible to them: React logs the `<script>` in the root layout and every
+ * hydration mismatch that way, and the sweep reported none of it. What is
+ * tolerated is declared in KNOWN_PAGE_ERRORS, the same list for both kinds.
+ */
+export function listenForErrors(page, sink) {
+  page.on('pageerror', error => sink.push(String(error)));
+  page.on('console', message => {
+    if (message.type() !== 'error') return;
+    const at = message.location();
+    const where = at?.url ? ` [${at.url}:${at.lineNumber}]` : '';
+    sink.push(`console.error: ${message.text()}${where}`);
+  });
+}
 
 /**
  * Three more projects, and the agents that make their rooms exist.
@@ -354,18 +440,35 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
   }
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents, null, 2));
   fs.writeFileSync(path.join(dir, 'kanban-tasks.json'), JSON.stringify(KANBAN, null, 2));
-  fs.writeFileSync(
-    path.join(dir, 'projects.json'),
-    JSON.stringify([{ path: PROJECT, name: 'tars' }, { path: SECOND, name: '1212-capital' }], null, 2),
-  );
+
+  // Paths, as the app keeps them. It reads this file with
+  // `parsed.filter(p => typeof p === 'string')` and writes back a plain array
+  // of paths (readCustomProjects and writeCustomProjects, ipc-handlers.ts, and
+  // listKnownProjectRoots in window-manager.ts reads it the same way), so the
+  // `{ path, name }` objects seeded here until 2026-09-17 were dropped as they
+  // were read: the Projects page said "No projects yet" in every run of the
+  // suite, and the pickers on the other surfaces had nothing to offer either.
+  const projects = [PROJECT, SECOND];
+  if (chatRooms) projects.push(chatPaths.atlas, chatPaths.mercury, chatPaths.orion);
+  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify(projects, null, 2));
 
   // Written for every sandbox, panel history and chat rooms included: whatever
   // a suite photographs, none of it should depend on what happens to be
-  // listening on this machine.
+  // listening on this machine. loadAppSettings spreads this file over its
+  // defaults, so naming two keys leaves every other default alone.
   fs.writeFileSync(
     path.join(dir, 'hermes-connection.json'),
     JSON.stringify({ mode: 'local', localPort: HERMES_DEAD_PORT, authMode: 'token' }, null, 2),
   );
+  fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
+    ollamaBaseUrl: OLLAMA_DEAD_URL,
+    // Nothing starts in the chat rooms and panel history sandboxes, so the
+    // statuses on screen are the ones seeded above: `all stopped` is a room
+    // whose agents are idle, and autostart would run every one of them as a
+    // real CLI and make that frame impossible. The sweep leaves it on, since a
+    // Dashboard with no CLI running in it photographs nothing of what it is.
+    ...(chatRooms || panelHistory ? { autoStartAgentsOnLaunch: false } : {}),
+  }, null, 2));
 
   // The project directories have to exist: several handlers check before they
   // will show a project at all, and loadAgents marks an agent `pathMissing` -
@@ -379,23 +482,10 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
 
   if (chatRooms) {
     for (const p of [chatPaths.atlas, chatPaths.mercury, chatPaths.orion]) fs.mkdirSync(p, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'projects.json'),
-      JSON.stringify([
-        { path: PROJECT, name: 'tars' }, { path: SECOND, name: '1212-capital' },
-        { path: chatPaths.atlas, name: 'atlas' }, { path: chatPaths.mercury, name: 'mercury' },
-        { path: chatPaths.orion, name: 'orion' },
-      ], null, 2),
-    );
     fs.writeFileSync(path.join(dir, 'bus.json'), JSON.stringify(chatJournal(chatPaths), null, 2));
-    // Nothing starts, so the statuses on screen are the ones seeded above:
-    // `all stopped` is a room whose agents are idle, and autostart would run
-    // every one of them as a real CLI and make that frame impossible.
-    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }, null, 2));
   }
 
   if (panelHistory) {
-    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }, null, 2));
     // Claude Code's directory name for the project: every `/` and `.` becomes `-`.
     const transcripts = path.join(home, '.claude', 'projects', PROJECT.replace(/[/.]/g, '-'));
     fs.mkdirSync(transcripts, { recursive: true });

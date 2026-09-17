@@ -11,6 +11,7 @@ import { RoomView } from '@/components/Chat/RoomView';
 import { TeamRail } from '@/components/Chat/TeamRail';
 import { useBusRoom, useBusRooms } from '@/hooks/useBus';
 import { useRoomAgents } from '@/hooks/useRoomAgents';
+import { useDesktopApi } from '@/hooks/useDesktopApi';
 import { MessageCard } from '@/components/Overseer/MessageCard';
 import { EchoRun } from '@/components/Overseer/EchoRun';
 import { groupThread } from '@/components/Overseer/echo-runs';
@@ -246,7 +247,8 @@ export default function ChatPage() {
   const threadRef = useRef<HTMLDivElement>(null);
   const autoScroll = useRef(true);
 
-  const hasApi = typeof window !== 'undefined' && !!window.electronAPI?.overseer;
+  // False for the pre-render and for the hydration pass, true right after: see useDesktopApi.
+  const hasApi = useDesktopApi(api => api.overseer);
 
   const loadHistory = useCallback(async () => {
     const r = await window.electronAPI?.overseer?.history();

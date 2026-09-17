@@ -2,8 +2,9 @@ import { test, expect, _electron as electron, ElectronApplication, Locator, Page
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PANEL_HISTORY } from './surfaces.mjs';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { PANEL_HISTORY, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
+import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
 
 /**
  * A Dashboard panel switched to its history view, in a sandbox where nothing
@@ -51,7 +52,8 @@ test.beforeAll(async () => {
     },
   });
   page = await app.firstWindow();
-  page.on('pageerror', err => pageErrors.push(String(err)));
+  listenForErrors(page, pageErrors);
+  await markWhatsNewSeen(page, WHATS_NEW_STORAGE_KEY, String(LATEST_RELEASE.id));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForLoadState('domcontentloaded');
 });
@@ -145,14 +147,21 @@ for (const surface of PANEL_HISTORY as PanelSurface[]) {
     await expect(header.locator('xpath=..').getByText(surface.shows, { exact: true })).toBeVisible();
     await page.waitForTimeout(900);
 
-    expect(pageErrors.slice(errorsBefore), `uncaught page errors on ${surface.name}`).toEqual([]);
+    // The same rule as the sweep, and the same list: these two surfaces
+    // tolerated nothing at all until 2026-09-17, and the Dashboard they
+    // photograph prints the hydration mismatch every other page does. Soft, so
+    // the picture is still compared.
+    const { masks, used } = await volatileMasks(page, surface.name, ['terminal-bodies']);
+    const fatal = recordPageErrors(test.info(), 'panel-history', surface.name, pageErrors.slice(errorsBefore), used);
+    expect.soft(fatal, `errors on ${surface.name}`).toEqual([]);
 
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      // The main sweep's tolerance, for the reasons written next to it in
-      // surfaces.spec.ts.
-      maxDiffPixelRatio: 0.002,
+      // The sweep's tolerance, for the reasons written beside it in
+      // surfaces.mjs, and its masks apart from the terminal bodies, which this
+      // spec masks itself: only the panels still on `live`.
+      ...SCREENSHOT_TOLERANCE,
       animations: 'disabled',
-      mask: await liveTerminalMasks(),
+      mask: [...await liveTerminalMasks(), ...masks],
     });
   });
 }

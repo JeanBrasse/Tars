@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
-import { ProviderIconRenderer } from '@/components/ProviderBadge';
+import { ProviderIconRenderer } from '@/components/ui/ProviderBadge';
 
 /**
  * Budget and limits, per provider.

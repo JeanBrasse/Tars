@@ -1,0 +1,18 @@
+/*
+ * Applied to the page for the screenshot only, by SCREENSHOT_TOLERANCE in
+ * e2e/surfaces.mjs, and removed afterwards. Playwright takes a `stylePath`.
+ *
+ * The suite drives `next dev`, so every surface carries Next's dev indicator in
+ * the bottom left corner, and that indicator counts the errors of the page it
+ * sits on: it reads `3 Issues` on Chat, `2 Issues` on Brain and a plain mark
+ * where nothing went wrong. So a reference moved whenever a defect was fixed or
+ * added, in a corner that is no part of the app, and masking it by locator was
+ * not enough either: the badge is 36 pixels wide collapsed and 124 wide once it
+ * has a count, so the mask itself changed size. Hidden, the picture is the app.
+ *
+ * Measured on 2026-09-17: injecting a console.error into one page moved that
+ * page's picture by 3,531 pixels, all of them in this badge.
+ */
+nextjs-portal {
+  display: none !important;
+}

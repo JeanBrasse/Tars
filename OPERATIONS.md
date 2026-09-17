@@ -261,8 +261,8 @@ that number is non-zero.
 bash scripts/design-lint.sh
 ```
 
-Greps `src/**/*.tsx`, excluding `src/components/ui/` and `app/icon.tsx`, for five banned
-patterns. Exits 1 on any hit:
+Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
+`src/app/icon.tsx`, for six banned patterns. Exits 1 on any hit:
 
 | check | pattern |
 |---|---|
@@ -271,9 +271,26 @@ patterns. Exits 1 on any hit:
 | no gradients | `bg-gradient` |
 | no decorative ping | `animate-ping` |
 | no raw tailwind palette | `(text\|bg\|border)-(red\|green\|blue\|amber\|purple\|cyan\|yellow\|orange\|zinc\|slate\|gray)-[0-9]` |
+| no hardcoded hex colour | `#` and 3, 4, 6 or 8 hex digits, standing on their own |
 
 The rule it enforces: `src/components/ui/` is the only place allowed to define raw appearance.
-Currently green on all five.
+
+It also exits 1 when grep could not search, instead of reading that as a clean tree: a file
+it cannot open, a pattern it cannot parse, or no file read at all. It prints how many files it
+read first. That count is the check for a missing `src/`: grep on macOS answers one that does
+not exist with the same silent 1 as a tree with nothing to report.
+
+The hex rule excludes two more places, each because writing a colour out is their job:
+`src/app/globals.css`, where every colour the app uses is named once, and comment lines in
+`.ts` and `.tsx`, where `#418` is an error number rather than a colour.
+
+Green on this tree, on all six checks, with 221 files read. The wider scan landed red: 13 lines
+of raw palette in `src/components/KanbanBoard/constants.ts` and `src/lib/providers.ts`, which the
+`.tsx`-only scan never read, and 22 hardcoded hex colours in `src/lib/terminal-theme.ts` (20),
+`src/app/layout.tsx` and `src/components/ProviderBadge.tsx`. All 35 were resolved in the same
+lot: the Kanban table was dead code, the provider colours and marks moved into
+`src/components/ui/`, the terminal theme reads the tokens, and the `theme-color` tag was
+removed after measuring that nothing in the app listens for it.
 
 ### CI
 
@@ -281,6 +298,11 @@ Currently green on all five.
 Node 20, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
+
+**And it has never run.** Measured on 2026-09-17: the workflow is listed as active, and
+`gh api repos/JeanBrasse/Tars/actions/runs` answers `total_count: 0`, PR #105 included. Actions
+stay off on a fork until somebody enables them in the repository's Actions tab. Until that click,
+every check is one you ran yourself, on your own machine, and nothing is checked on Linux.
 
 ---
 

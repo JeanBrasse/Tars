@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, XCircle, X, Link2 } from 'lucide-react';
 import { isElectron } from '@/hooks/useElectron';
-import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ProviderBadge';
+import ProviderBadge, { PROVIDER_CONFIG } from '@/components/ui/ProviderBadge';
 import { BrandSpinner, Button } from '@/components/ui';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';

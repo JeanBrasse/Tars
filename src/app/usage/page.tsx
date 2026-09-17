@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useClaude } from '@/hooks/useClaude';
 import { getProviderDef } from '@/lib/providers';
 import { localDayKey } from '@/lib/usage-dates';
-import { ProviderIconRenderer } from '@/components/ProviderBadge';
+import { ProviderIconRenderer } from '@/components/ui/ProviderBadge';
 import { BudgetAndLimits } from '@/components/Usage/BudgetAndLimits';
 import { ErrorState, LoadingState, PageHeader, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';

@@ -1,4 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { decide } from '../../scripts/scope-checks.mjs';
 
 /**
@@ -177,5 +182,239 @@ describe('the classification itself', () => {
     expect(runs(['README.md'])).toBe(false);
     // A markdown file inside the renderer is content the app can display.
     expect(runs(['src/content/guide.md'])).toBe(true);
+  });
+});
+
+describe('the screenshot references', () => {
+  /**
+   * The roadmap had it that the skip was decided "without knowing anything
+   * about e2e/__screenshots__". Measured on 17/09 against origin/main
+   * (2f734fb), it is not so: every change to a reference runs the suite,
+   * because ALWAYS_RUNS has held `e2e/` since this file was written. These keep
+   * it that way. A reference that changed is the suite's own expectation, and
+   * only a run says whether the app still meets it.
+   */
+  it.each([
+    ['a re-recorded reference', ['e2e/__screenshots__/agents.png']],
+    ['a reference beside changes that cannot reach the renderer', ['__tests__/a.test.ts', 'hooks/on-stop.sh', 'e2e/__screenshots__/dashboard.png']],
+    ['a new folder of references', ['e2e/__screenshots__/rooms/']],
+  ])('runs the suite for %s', (_name, files) => {
+    const decision = decide(files as string[]);
+    const reference = (files as string[]).find(file => file.startsWith('e2e/__screenshots__/'));
+
+    expect(decision.runE2E).toBe(true);
+    expect(decision.forcing).toContainEqual({ file: reference, why: 'the suite itself' });
+  });
+});
+
+/**
+ * The command itself, as `npm run e2e:auto` runs it, in real git checkouts of a
+ * local origin. A fake npx comes first on the PATH: it writes down that the
+ * suite was started, and starts nothing. The tests run side by side, since each
+ * spends its time waiting on git.
+ */
+const SCRIPT = path.join(__dirname, '../../scripts/scope-checks.mjs');
+const run = promisify(execFile);
+const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+const git = async (cwd: string, ...args: string[]) => (await run('git', args, { cwd, env: gitEnv })).stdout.trim();
+
+/** The eight bytes every PNG starts with, and a header chunk: binary, with NULs, as a reference is. */
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+const PNG_RERECORDED = Buffer.concat([PNG, Buffer.from([0, 0, 0x05, 0xa0])]);
+
+function write(dir: string, file: string, content: string | Buffer) {
+  fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+  fs.writeFileSync(path.join(dir, file), content);
+}
+
+async function commitAll(dir: string, message: string) {
+  await git(dir, 'add', '-A');
+  await git(dir, 'commit', '-q', '-m', message);
+}
+
+const made: string[] = [];
+
+/** `npm run e2e:auto` in `cwd`. `suite` is how npx was called, or null if the suite was never started. */
+async function e2eAuto(cwd: string, env: Record<string, string> = {}) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-scope-npx-'));
+  made.push(bin);
+  const calls = path.join(bin, 'calls');
+  fs.writeFileSync(path.join(bin, 'npx'), `#!/bin/sh\necho "$*" >> "${calls}"\n`, { mode: 0o755 });
+  const childEnv: NodeJS.ProcessEnv = { ...gitEnv, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
+  delete childEnv.SCOPE_BASE;
+  const { stdout, stderr } = await run(process.execPath, [SCRIPT], { cwd, env: { ...childEnv, ...env } });
+  return {
+    output: `${stdout}${stderr}`,
+    suite: fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').trim() : null,
+  };
+}
+
+/**
+ * An origin whose main moved on after `clone` was made: the clone's main and
+ * origin/main both still point at `stale`, while origin's main is at `fresh`,
+ * one renderer change later, pushed by a teammate. The clone also has a branch
+ * `fresh` at that commit, got from the teammate and not from origin, which is
+ * what `gh pr checkout` or a pull from anywhere but origin leaves behind: a
+ * branch holding the newer main while main and origin/main do not.
+ *
+ * Built once and never written again: each test works in a copy of the clone.
+ */
+let upstream: { teammate: string; clone: string; stale: string; fresh: string };
+
+beforeAll(async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-scope-origin-'));
+  made.push(root);
+  const origin = path.join(root, 'origin.git');
+  await git(root, 'init', '-q', '--bare', '-b', 'main', origin);
+  const teammate = path.join(root, 'teammate');
+  await git(root, 'init', '-q', '-b', 'main', teammate);
+  write(teammate, 'src/components/Card.tsx', 'export const width = 1;\n');
+  write(teammate, '__tests__/card.test.ts', '// the first test\n');
+  write(teammate, 'e2e/__screenshots__/agents.png', PNG);
+  await commitAll(teammate, 'the main the clone was made from');
+  await git(teammate, 'remote', 'add', 'origin', origin);
+  await git(teammate, 'push', '-q', '-u', 'origin', 'main');
+  const clone = path.join(root, 'clone');
+  await git(root, 'clone', '-q', origin, clone);
+  write(teammate, 'src/components/Card.tsx', 'export const width = 2;\n');
+  await commitAll(teammate, 'a renderer change merged since');
+  await git(teammate, 'push', '-q', 'origin', 'main');
+  await git(clone, 'fetch', '-q', teammate, '+refs/heads/main:refs/heads/fresh');
+  upstream = { teammate, clone, stale: await git(clone, 'rev-parse', 'HEAD'), fresh: await git(teammate, 'rev-parse', 'HEAD') };
+  expect(await git(clone, 'rev-parse', 'main', 'origin/main', 'fresh')).toBe(`${upstream.stale}\n${upstream.stale}\n${upstream.fresh}`);
+});
+
+afterAll(() => {
+  for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** A copy of the clone, on a new branch `feature` cut from `from`, for one test to change as it likes. */
+async function cloneBehindOrigin(from: 'main' | 'fresh') {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-scope-'));
+  made.push(root);
+  const dir = path.join(root, 'clone');
+  fs.cpSync(upstream.clone, dir, { recursive: true });
+  await git(dir, 'checkout', '-q', '-b', 'feature', from);
+  return { ...upstream, root, dir };
+}
+
+describe.concurrent('the base a branch is compared against', () => {
+  it('fetches origin/main before comparing, and names the commit it compared against', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('fresh');
+    write(repo.dir, '__tests__/feature.test.ts', '// a test, and nothing else\n');
+    await commitAll(repo.dir, 'a test');
+
+    const run = await e2eAuto(repo.dir);
+
+    // Against the stale main, the renderer change merged since counted as this
+    // branch's own: two files, and the suite ran for a change to a test.
+    expect(run.output).toContain(`Base: ${repo.fresh.slice(0, 12)} (origin/main, fetched just now)`);
+    expect(run.output).toContain(`1 changed file(s) against ${repo.fresh.slice(0, 12)}`);
+    expect(run.suite).toBeNull();
+    expect(await git(repo.dir, 'rev-parse', 'origin/main')).toBe(repo.fresh);
+  });
+
+  it('runs the suite for a branch that undoes a renderer change its stale base never had', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('fresh');
+    write(repo.dir, 'src/components/Card.tsx', 'export const width = 1;\n');
+    write(repo.dir, '__tests__/feature.test.ts', '// and a test\n');
+    await commitAll(repo.dir, 'put the old width back');
+
+    const run = await e2eAuto(repo.dir);
+
+    // Against the stale main, Card.tsx is what it was, the test is all that is
+    // left, and the suite was skipped over a change to the renderer.
+    expect(run.output).toContain('src/components/Card.tsx: can reach the renderer');
+    expect(run.suite).toBe('playwright test');
+  });
+
+  it('runs the whole suite, and says why, when origin cannot be fetched', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('main');
+    write(repo.dir, '__tests__/feature.test.ts', '// a test, and nothing else\n');
+    await commitAll(repo.dir, 'a test');
+    await git(repo.dir, 'remote', 'set-url', 'origin', path.join(repo.root, 'gone.git'));
+
+    const run = await e2eAuto(repo.dir);
+
+    // Against the main this clone holds, only a test changed, and the suite was
+    // skipped on a base nobody could say was current.
+    expect(run.output).toContain('could not fetch origin/main');
+    expect(run.output).toContain('Nothing can be ruled out: running the whole end to end suite.');
+    expect(run.suite).toBe('playwright test');
+  });
+
+  it('takes SCOPE_BASE as it is, without fetching', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('main');
+    write(repo.dir, '__tests__/feature.test.ts', '// a test, and nothing else\n');
+    await commitAll(repo.dir, 'a test');
+    await git(repo.dir, 'remote', 'set-url', 'origin', path.join(repo.root, 'gone.git'));
+
+    const run = await e2eAuto(repo.dir, { SCOPE_BASE: 'main' });
+
+    expect(run.output).toContain(`Base: ${repo.stale.slice(0, 12)} (SCOPE_BASE=main, not fetched)`);
+    expect(run.output).not.toContain('could not fetch');
+    expect(run.suite).toBeNull();
+  });
+
+  it('runs the whole suite when SCOPE_BASE names no commit', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('main');
+    write(repo.dir, 'src/components/Card.tsx', 'export const width = 3;\n');
+    await commitAll(repo.dir, 'a renderer change');
+    write(repo.dir, '__tests__/feature.test.ts', '// a test, not committed yet\n');
+
+    const run = await e2eAuto(repo.dir, { SCOPE_BASE: 'mian' });
+
+    // A base git could not find read as "nothing committed": the uncommitted
+    // test was all that got classified, and the renderer change was skipped.
+    expect(run.output).toContain('SCOPE_BASE=mian is not a commit git can find');
+    expect(run.suite).toBe('playwright test');
+  });
+
+  it('runs the whole suite when git cannot compare the branch with its base', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('main');
+    // An origin that is another project: its main shares no commit with this branch.
+    const other = path.join(repo.root, 'other');
+    await git(repo.root, 'init', '-q', '-b', 'main', other);
+    write(other, 'README.md', 'another project\n');
+    await commitAll(other, 'unrelated');
+    await git(repo.dir, 'remote', 'set-url', 'origin', other);
+    write(repo.dir, '__tests__/feature.test.ts', '// a test, not committed yet\n');
+
+    const run = await e2eAuto(repo.dir);
+
+    expect(run.output).toContain('could not list the changes');
+    expect(run.suite).toBe('playwright test');
+  });
+});
+
+describe.concurrent('a reference change, as git reports it', () => {
+  it.for([
+    ['re-recorded and committed', async (dir: string) => {
+      write(dir, 'e2e/__screenshots__/agents.png', PNG_RERECORDED);
+      await commitAll(dir, 're-record');
+    }],
+    ['deleted and committed', async (dir: string) => {
+      await git(dir, 'rm', '-q', 'e2e/__screenshots__/agents.png');
+      await git(dir, 'commit', '-q', '-m', 'drop');
+    }],
+    ['re-recorded and not committed', async (dir: string) => {
+      write(dir, 'e2e/__screenshots__/agents.png', PNG_RERECORDED);
+    }],
+    ['recorded for a new surface, untracked', async (dir: string) => {
+      write(dir, 'e2e/__screenshots__/rooms/new-room.png', PNG);
+    }],
+    ['moved out of e2e/ and staged', async (dir: string) => {
+      fs.mkdirSync(path.join(dir, '__tests__', 'fixtures'), { recursive: true });
+      await git(dir, 'mv', 'e2e/__screenshots__/agents.png', '__tests__/fixtures/agents.png');
+    }],
+  ] as const)('runs the suite for a reference %s', async ([, change], { expect }) => {
+    const repo = await cloneBehindOrigin('fresh');
+    await change(repo.dir);
+
+    const run = await e2eAuto(repo.dir);
+
+    expect(run.output).toContain(`Base: ${repo.fresh.slice(0, 12)}`);
+    expect(run.output).toMatch(/e2e\/__screenshots__\/\S+: the suite itself/);
+    expect(run.suite).toBe('playwright test');
   });
 });

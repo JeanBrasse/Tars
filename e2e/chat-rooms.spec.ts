@@ -2,8 +2,9 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CHAT_ROOMS, recordPageErrors } from './surfaces.mjs';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { CHAT_ROOMS, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
+import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
 
 /**
  * The Chat room, one frame per state, in a sandbox of its own.
@@ -46,7 +47,8 @@ test.beforeAll(async () => {
     },
   });
   page = await app.firstWindow();
-  page.on('pageerror', err => pageErrors.push(String(err)));
+  listenForErrors(page, pageErrors);
+  await markWhatsNewSeen(page, WHATS_NEW_STORAGE_KEY, String(LATEST_RELEASE.id));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForLoadState('domcontentloaded');
 });
@@ -84,15 +86,17 @@ for (const surface of CHAT_ROOMS as ChatSurface[]) {
     // One rule for the whole suite: the known defects declared in surfaces.mjs
     // are recorded, anything else fails. What a room records counts for
     // e2e/known-errors.spec.ts exactly as the sweep's does: an error only a
-    // room trips is still an error that happens.
-    const fatal = recordPageErrors(test.info(), 'chat-rooms', surface.name, pageErrors.slice(errorsBefore));
-    expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
+    // room trips is still an error that happens. Soft, so the picture is still
+    // compared, as in the sweep.
+    const { masks, used } = await volatileMasks(page, surface.name);
+    const fatal = recordPageErrors(test.info(), 'chat-rooms', surface.name, pageErrors.slice(errorsBefore), used);
+    expect.soft(fatal, `errors on ${surface.name}`).toEqual([]);
 
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      // The main sweep's tolerance, for the reasons written beside it there.
-      maxDiffPixelRatio: 0.002,
+      // The sweep's tolerance and the sweep's masks, from surfaces.mjs.
+      ...SCREENSHOT_TOLERANCE,
       animations: 'disabled',
-      mask: [page.locator('.xterm-screen'), page.locator('[data-volatile]')],
+      mask: masks,
     });
   });
 }
