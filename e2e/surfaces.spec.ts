@@ -2,8 +2,9 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL, recordPageErrors } from './surfaces.mjs';
-import { launchSandboxed, seedSandbox, SKILLS_SH_PAGE } from './fixture.mjs';
+import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
+import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, stubSkillsSh } from './fixture.mjs';
 
 /**
  * Visual + technical sweep of the real Electron app.
@@ -42,28 +43,9 @@ test.beforeAll(async () => {
     },
   });
   page = await app.firstWindow();
-  page.on('pageerror', err => pageErrors.push(String(err)));
-
-  // The one third party this sweep still reached. `/skills` says "live from
-  // skills.sh" and means it, so its baseline moved whenever that catalogue
-  // did: 3649 pixels one night, 3598 the next, with nothing here changed.
-  //
-  // Stubbed in the main process rather than in the page, because that is where
-  // the call is: in Electron the renderer asks over IPC precisely to avoid
-  // CORS, so `page.route` sees nothing and a stub written there passes while
-  // the real request goes out behind it. Measured, after writing that one
-  // first. Hermes is the other one and is handled in the seed, by pointing it
-  // at a port nothing serves.
-  await app.evaluate(async (_electron, html) => {
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: unknown, init: unknown) => {
-      const url = String((input as { url?: string })?.url ?? input);
-      if (url.includes('skills.sh')) {
-        return new Response(html, { status: 200, headers: { 'content-type': 'text/html' } });
-      }
-      return (realFetch as (a: unknown, b: unknown) => Promise<Response>)(input, init);
-    }) as typeof globalThis.fetch;
-  }, SKILLS_SH_PAGE);
+  listenForErrors(page, pageErrors);
+  await markWhatsNewSeen(page, WHATS_NEW_STORAGE_KEY, String(LATEST_RELEASE.id));
+  await stubSkillsSh(app);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForLoadState('domcontentloaded');
@@ -74,7 +56,7 @@ test.afterAll(async () => {
   fs.rmSync(sandboxHome, { recursive: true, force: true });
 });
 
-for (const surface of ALL as Array<{ name: string; route: string; clickText?: string; clickText2?: string; settle?: number }>) {
+for (const surface of ALL as Array<{ name: string; route: string; clickText?: string; clickText2?: string; clickRole?: 'radio'; settle?: number }>) {
   test(`surface: ${surface.name}`, async () => {
     const errorsBefore = pageErrors.length;
 
@@ -87,9 +69,13 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
       ? page.getByTestId('settings-nav')
       : page;
 
-    for (const clickText of [surface.clickText, surface.clickText2]) {
+    for (const [index, clickText] of [surface.clickText, surface.clickText2].entries()) {
       if (!clickText) continue;
-      const target = scope.getByText(clickText, { exact: true }).first();
+      // By role when the surface says so: a tab and a sidebar entry can carry
+      // the same word, and the sidebar is the one the DOM offers first.
+      const target = index === 0 && surface.clickRole
+        ? scope.getByRole(surface.clickRole, { name: clickText, exact: true })
+        : scope.getByText(clickText, { exact: true }).first();
       await target.waitFor({ state: 'visible', timeout: 8000 });
       await target.click();
       await page.waitForTimeout(400);
@@ -110,38 +96,24 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // declared in surfaces.mjs, and e2e/known-errors.spec.ts fails when a
     // declared one stops happening, so an allowance cannot outlive its defect.
     // Recorded before the screenshot, so a surface that fails on its picture
-    // still counts for what it saw. Any OTHER uncaught error fails the surface.
-    const fatal = recordPageErrors(test.info(), 'surfaces', surface.name, pageErrors.slice(errorsBefore));
-    expect(fatal, `uncaught page errors on ${surface.name}`).toEqual([]);
+    // still counts for what it saw. Any OTHER error fails the surface.
+    const { masks, used } = await volatileMasks(page, surface.name);
+    const fatal = recordPageErrors(test.info(), 'surfaces', surface.name, pageErrors.slice(errorsBefore), used);
+    // Soft, so the picture below is still taken and compared: a surface that
+    // logs an error is exactly the one whose look is worth seeing, and a hard
+    // failure here left no screenshot and no diff to look at. The test fails
+    // all the same, at its end.
+    expect.soft(fatal, `errors on ${surface.name}`).toEqual([]);
 
-    // Mask the terminal bodies. The dashboard screenshots real PTY output, which
-    // carries the sandbox's randomly named temp directory and the clock, so the
-    // baseline could never match twice: every run reported a diff, and a diff
-    // that is always there tells you nothing about the run that actually broke
-    // something. The panel headers, the grid and the chrome are still compared.
-    // Chosen from measurements, not taste.
-    //
-    // It was 0.005, which is 6,480 pixels on a 1440x900 page and more than a
-    // whole row of content costs: an added memory source and a rewritten
-    // subtitle both drifted in under it, so several baselines went stale while
-    // every run reported green. 0.001 caught those but was under the residual
-    // per-run jitter, measured at 1,404 pixels on Chat and 1,788 on Agents:
-    // wall clocks, live statuses and counters that keep moving in a sandbox
-    // running a real app. An added row measures 3,000 to 5,000.
-    //
-    // 0.002 is 2,592 pixels: above the jitter, below a row.
-    //
-    // Known limit: a single small control is right at that line. Moving
-    // Kanban's "New task" button into the header changed about 2,600 pixels and
-    // passed against the old baseline, so a change that small can slip. Widen
-    // the mask or narrow this further only with a measurement, not a guess.
+    // Everything that moves on its own is masked by locator rather than
+    // tolerated by the number below: which locators, and why each one, is in
+    // VOLATILE in surfaces.mjs, and a locator that stops matching fails the run
+    // in e2e/known-errors.spec.ts. The tolerance is the same in every spec and
+    // is measured, not chosen: see SCREENSHOT_TOLERANCE.
     await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      maxDiffPixelRatio: 0.002,
+      ...SCREENSHOT_TOLERANCE,
       animations: 'disabled',
-      // Terminal bodies, and anything that counts up while an agent runs:
-      // both change between two frames of the same page, so comparing them
-      // means the baseline can never match twice and a green run says nothing.
-      mask: [page.locator('.xterm-screen'), page.locator('[data-volatile]')],
+      mask: masks,
     });
   });
 }
