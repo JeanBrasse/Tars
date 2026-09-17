@@ -39,7 +39,7 @@ import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth, sessionModel } from '../services/agent-truth';
-import { spawnAgentPty } from '../core/agent-pty';
+import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -541,6 +541,21 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // respawns with the correct working directory.
     killStalePty(agent);
 
+    // A CLI still running in the PTY gets nothing typed into it. The status
+    // cannot say so: a turn that fails leaves claude alive at its prompt, and
+    // an agent done or idle keeps its session open, so a start from any of
+    // those states typed `cd '...' && claude ...` into claude's own input, and
+    // the local provider below would have killed the session outright. The
+    // terminal says what runs in it; after /exit only the shell is left, and
+    // the start goes ahead.
+    if (agent.ptyId && cliRunningIn(ptyProcesses.get(agent.ptyId))) {
+      return {
+        success: false,
+        cliRunning: true,
+        error: `${agent.name || id} is still running a CLI in its terminal. Nothing was typed into it: stop the agent first, or give it the task in its terminal.`,
+      };
+    }
+
     // Initialize PTY if agent was restored from disk and doesn't have one
     let ptyJustCreated = false;
     if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
@@ -809,7 +824,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = ptyId;
     }
 
-    return agent;
+    return { ...agent, cliRunning: cliRunningIn(ptyProcesses.get(agent.ptyId)) };
   });
 
   // Get all agents
@@ -821,7 +836,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // The branch and the model come from the working tree and the transcript
     // when they disagree with the record: the session is what happened, the
     // record is a note Tars made earlier. See services/agent-truth.ts.
-    return Array.from(agents.values()).map(agent => withSessionTruth({ ...agent, output: [] }));
+    return Array.from(agents.values()).map(agent => withSessionTruth({
+      ...agent,
+      output: [],
+      cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
+    }));
   });
 
   // Update an agent (supports all editable fields)
