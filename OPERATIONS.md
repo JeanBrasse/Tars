@@ -295,6 +295,11 @@ Node 20, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint,
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
+**And it has never run.** Measured on 2026-09-17: the workflow is listed as active, and
+`gh api repos/JeanBrasse/Tars/actions/runs` answers `total_count: 0`, PR #105 included. Actions
+stay off on a fork until somebody enables them in the repository's Actions tab. Until that click,
+every check is one you ran yourself, on your own machine, and nothing is checked on Linux.
+
 ---
 
 ## Build and release
