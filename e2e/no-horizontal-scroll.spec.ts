@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ALL } from './surfaces.mjs';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, stubSkillsSh } from './fixture.mjs';
 
 /**
  * The page must never scroll sideways, with every dropdown open or shut.
@@ -56,6 +56,9 @@ test.beforeAll(async () => {
       DOROTHY_E2E: '1',
     },
   });
+  // This sweep opens /skills like the screenshot one, and reached the real
+  // catalogue every run because the stub lived in that spec rather than here.
+  await stubSkillsSh(app);
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForLoadState('domcontentloaded');
@@ -66,7 +69,7 @@ test.afterAll(async () => {
   fs.rmSync(sandboxHome, { recursive: true, force: true });
 });
 
-for (const surface of ALL as Array<{ name: string; route: string; clickText?: string; clickText2?: string; settle?: number }>) {
+for (const surface of ALL as Array<{ name: string; route: string; clickText?: string; clickText2?: string; clickRole?: 'radio'; settle?: number }>) {
   test(`no sideways scroll: ${surface.name}`, async () => {
     await page.goto(DEV_URL + surface.route, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(600);
@@ -74,9 +77,12 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // Same click-through as the screenshot sweep: most pickers live behind an
     // overlay or a settings section, so a plain page load reaches almost none.
     const scope = surface.name.startsWith('settings-') ? page.getByTestId('settings-nav') : page;
-    for (const clickText of [surface.clickText, surface.clickText2]) {
+    for (const [index, clickText] of [surface.clickText, surface.clickText2].entries()) {
       if (!clickText) continue;
-      const target = scope.getByText(clickText, { exact: true }).first();
+      // By role when the surface says so, as in the screenshot sweep.
+      const target = index === 0 && surface.clickRole
+        ? scope.getByRole(surface.clickRole, { name: clickText, exact: true })
+        : scope.getByText(clickText, { exact: true }).first();
       await target.waitFor({ state: 'visible', timeout: 8000 });
       await target.click();
       await page.waitForTimeout(400);

@@ -36,5 +36,9 @@ export default defineConfig({
     url: 'http://localhost:3100',
     reuseExistingServer: true,
     timeout: 120_000,
+    // Next dev phones home twice per run (telemetry.nextjs.org, seen leaving
+    // the machine by lsof on 2026-09-17). This is merged over process.env by
+    // the runner, so nothing else about the environment changes.
+    env: { NEXT_TELEMETRY_DISABLED: '1' },
   },
 });
