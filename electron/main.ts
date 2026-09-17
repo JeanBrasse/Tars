@@ -96,6 +96,7 @@ import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-hand
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
 import { registerKanbanHandlers } from './handlers/kanban-handlers';
 import { registerBusHandlers } from './handlers/bus-handlers';
+import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
@@ -717,6 +718,9 @@ app.on('before-quit', () => {
   stopAgentAutosave();
   stopOverseerWatch();
   saveAgents();
+  // The bus journal writes once per turn of the event loop rather than once
+  // per row; a turn that ends in a quit is the one that never gets there.
+  flushBus();
   killAllPty();
   closeVaultDb();
   stopOpenAIBridgeServer();
