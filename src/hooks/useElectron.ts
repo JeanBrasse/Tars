@@ -43,7 +43,8 @@ export function useElectronAgents() {
             prevAgent.status !== agent.status ||
             prevAgent.currentTask !== agent.currentTask ||
             prevAgent.lastActivity !== agent.lastActivity ||
-            prevAgent.error !== agent.error
+            prevAgent.error !== agent.error ||
+            prevAgent.cliRunning !== agent.cliRunning
           );
         });
         return hasChanged ? list : prev;
@@ -208,16 +209,20 @@ export function useElectronAgents() {
         return;
       }
       setAgents(prev => {
-        // Check if any status or currentTask changed
+        // Check if any status, currentTask or running CLI changed. A CLI starts
+        // and exits without the status moving (/exit, or claude left at its
+        // prompt by a failed turn), and the panel's start/stop follows it.
+        const changed = (a: AgentStatus, t: (typeof tickAgents)[number]) =>
+          a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning;
         const hasChange = tickAgents.some(t => {
           const existing = prev.find(a => a.id === t.id);
-          return existing && (existing.status !== t.status || existing.currentTask !== t.currentTask);
+          return existing && changed(existing, t);
         });
         if (!hasChange) return prev;
         return prev.map(a => {
           const tick = tickAgents.find(t => t.id === a.id);
-          if (tick && (a.status !== tick.status || a.currentTask !== tick.currentTask)) {
-            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity };
+          if (tick && changed(a, tick)) {
+            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning };
           }
           return a;
         });

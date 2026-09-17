@@ -131002,6 +131002,33 @@
                               "fontWeight": "normal"
                             },
                             {
+                              "type": "frame",
+                              "id": "IIrtj",
+                              "name": "a stop",
+                              "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "padding": [
+                                4,
+                                8
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ntmzA",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "stop",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
                               "type": "text",
                               "id": "EeABE",
                               "name": "more",
@@ -131145,7 +131172,7 @@
                               "id": "ridg4",
                               "name": "reason",
                               "fill": "$status-error",
-                              "content": "Not logged in · Pleas…",
+                              "content": "Not logged…",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-ui",
                               "fontSize": 11,
@@ -131231,6 +131258,33 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10.5,
                               "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "SmSzt",
+                              "name": "a stop",
+                              "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "padding": [
+                                4,
+                                8
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "M1y0sh",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "stop",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -131328,6 +131382,122 @@
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
                   "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "n6CoY",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "the button follows the terminal · stop while claude runs, start once the shell is alone",
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "h6Cjl",
+                  "name": "pane header after exit",
+                  "width": "fill_container",
+                  "fill": "#1A1A1A",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    8,
+                    11
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "sThZU",
+                      "name": "l",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "D7w9Fz",
+                          "name": "d",
+                          "fill": "$status-idle",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "t0559",
+                          "name": "n",
+                          "fill": "#F5F4F2",
+                          "content": "Audit Engineer",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "uIScs",
+                      "name": "r",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Rqm8w",
+                          "name": "m",
+                          "fill": "#727272",
+                          "content": "opus-5",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "URb2H",
+                          "name": "a start",
+                          "height": 26,
+                          "stroke": "$border-strong",
+                          "strokeWidth": 1,
+                          "padding": [
+                            4,
+                            8
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "pgtZ9",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "start",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "wWu2L",
+                          "name": "more",
+                          "fill": "#727272",
+                          "content": "···",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
                 }
               ]
             }

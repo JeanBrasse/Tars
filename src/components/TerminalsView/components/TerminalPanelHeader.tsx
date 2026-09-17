@@ -54,7 +54,12 @@ export default function TerminalPanelHeader({
   const branch = agent.branchName || '';
   // Local (Tasmania) agents carry their model under localModel instead.
   const model = agent.model || agent.localModel || '';
-  const isLive = agent.status === 'running' || agent.status === 'waiting';
+  // Whether a CLI runs in this terminal, read from the terminal itself by the
+  // main process. The status cannot tell: a failed turn leaves claude at its
+  // prompt in error, and an agent at rest or done keeps its session, so the
+  // button offered start and a click typed `cd '...' && claude ...` into the
+  // running claude. Frame: `Agent error · reason`.
+  const isLive = agent.cliRunning === true;
   const reason = errorReason(agent);
 
   const showDragHandle = tabType === 'custom';
