@@ -32,6 +32,7 @@ export function ModelEffortPicker({
   onProvider,
   onModel,
   onEffort,
+  disabledReason,
 }: {
   providers: OverseerModelProvider[];
   provider: string;
@@ -41,6 +42,9 @@ export function ModelEffortPicker({
   onProvider: (id: string) => void;
   onModel: (id: string) => void;
   onEffort: (value: string) => void;
+  /** Why there is nothing to choose from. Set, the control stays where it is,
+   *  greyed and saying so, rather than leaving the row. */
+  disabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -70,14 +74,17 @@ export function ModelEffortPicker({
     ? models.filter(m => m.toLowerCase().includes(query.trim().toLowerCase()))
     : models;
 
+  const off = !!disabledReason;
+
   return (
     <div ref={root} className="relative shrink-0">
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        disabled={off}
+        onClick={() => { if (!off) setOpen(o => !o); }}
         aria-label="Overseer model and reasoning effort"
-        title="Sets the model and the reasoning effort your Hermes gateway runs at, for everything that uses it, not only this chat"
-        className="inline-flex items-center gap-1.5 h-[26px] max-w-[240px] px-2 rounded border border-border bg-secondary"
+        title={disabledReason ?? 'Sets the model and the reasoning effort your Hermes gateway runs at, for everything that uses it, not only this chat'}
+        className="inline-flex items-center gap-1.5 h-[26px] max-w-[240px] px-2 rounded border border-border bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
       >
         <span className="text-[11px] text-muted-foreground truncate">{model || 'model'}</span>
         {effort && <span className="text-[11px] text-text-muted shrink-0">{effort}</span>}
@@ -86,7 +93,7 @@ export function ModelEffortPicker({
         />
       </button>
 
-      {open && (
+      {open && !off && (
         <div className="absolute z-[90] bottom-full mb-1 left-0 w-[248px] bg-card border border-border">
           {providers.length > 1 && (
             <div className="border-b border-border">
