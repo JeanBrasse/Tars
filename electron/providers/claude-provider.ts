@@ -13,6 +13,7 @@ import type {
 } from './cli-provider';
 import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
 import { DATA_DIR } from '../constants';
+import { updateSharedJsonSync } from '../utils/shared-file';
 
 export class ClaudeProvider implements CLIProvider {
   readonly id = 'claude' as const;
@@ -190,26 +191,8 @@ export class ClaudeProvider implements CLIProvider {
   async configureHooks(hooksDir: string): Promise<void> {
     const settingsPath = path.join(this.configDir, 'settings.json');
 
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
-    }
-
-    let settings: {
-      hooks?: Record<string, Array<{ matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> }>>;
-      [key: string]: unknown;
-    } = {};
-
-    if (fs.existsSync(settingsPath)) {
-      try {
-        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      } catch {
-        settings = {};
-      }
-    }
-
-    if (!settings.hooks) {
-      settings.hooks = {};
-    }
+    type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
+    type Settings = { hooks?: Record<string, HookEntry[]>; [key: string]: unknown };
 
     const hookFiles = [
       { type: 'PostToolUse', file: 'post-tool-use.sh', matcher: '*' },
@@ -225,41 +208,56 @@ export class ClaudeProvider implements CLIProvider {
       { type: 'UserPromptSubmit', file: 'user-prompt-submit.sh', matcher: undefined },
     ];
 
-    let updated = false;
+    // Every claude binary reads this file when it starts, and Claude Code
+    // writes it too, so it is changed through updateSharedJsonSync: never in
+    // place, with its mode kept, and not written when every hook is already
+    // there. A file that is not JSON is left as it is. It was replaced by the
+    // hooks alone, which took every other setting in it.
+    const outcome = updateSharedJsonSync<Settings>(settingsPath, current => {
+      const settings: Settings = current ?? {};
+      if (!settings.hooks) {
+        settings.hooks = {};
+      }
 
-    type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
+      let updated = false;
 
-    for (const { type, file, matcher } of hookFiles) {
-      const commandPath = path.join(hooksDir, file);
-      if (!fs.existsSync(commandPath)) continue;
+      for (const { type, file, matcher } of hookFiles) {
+        const commandPath = path.join(hooksDir, file);
+        if (!fs.existsSync(commandPath)) continue;
 
-      const existing: HookEntry[] = settings.hooks![type] || [];
-      const entryIndex = existing.findIndex((h: HookEntry) =>
-        h.hooks?.some((hh: { command?: string }) => hh.command?.includes(file))
-      );
+        const existing: HookEntry[] = settings.hooks[type] || [];
+        const entryIndex = existing.findIndex((h: HookEntry) =>
+          h.hooks?.some((hh: { command?: string }) => hh.command?.includes(file))
+        );
 
-      if (entryIndex >= 0) {
-        const entry: HookEntry = existing[entryIndex];
-        const hookIndex = entry.hooks.findIndex((hh: { command?: string }) => hh.command?.includes(file));
-        if (hookIndex >= 0 && entry.hooks[hookIndex].command !== commandPath) {
-          entry.hooks[hookIndex].command = commandPath;
+        if (entryIndex >= 0) {
+          const entry: HookEntry = existing[entryIndex];
+          const hookIndex = entry.hooks.findIndex((hh: { command?: string }) => hh.command?.includes(file));
+          if (hookIndex >= 0 && entry.hooks[hookIndex].command !== commandPath) {
+            entry.hooks[hookIndex].command = commandPath;
+            updated = true;
+          }
+        } else {
+          const hookConfig: { matcher?: string; hooks: Array<{ type: string; command: string; timeout: number }> } = {
+            hooks: [{ type: 'command', command: commandPath, timeout: 30 }]
+          };
+          if (matcher) hookConfig.matcher = matcher;
+          settings.hooks[type] = [...existing, hookConfig];
           updated = true;
         }
-      } else {
-        const hookConfig: { matcher?: string; hooks: Array<{ type: string; command: string; timeout: number }> } = {
-          hooks: [{ type: 'command', command: commandPath, timeout: 30 }]
-        };
-        if (matcher) hookConfig.matcher = matcher;
-        settings.hooks![type] = [...existing, hookConfig];
-        updated = true;
       }
-    }
 
-    if (updated) {
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      return updated ? settings : undefined;
+    }, { createMode: 0o644 });
+
+    if (outcome === 'written') {
       console.log('Claude hooks configured/updated in', settingsPath);
-    } else {
+    } else if (outcome === 'unchanged') {
       console.log('Claude hooks already configured');
+    } else if (outcome === 'unreadable') {
+      console.warn(`Claude hooks not configured: ${settingsPath} is not valid JSON, left untouched`);
+    } else {
+      console.warn(`Claude hooks not configured: ${settingsPath} kept changing`);
     }
   }
 
@@ -281,23 +279,17 @@ export class ClaudeProvider implements CLIProvider {
       // Fallback: write to mcp.json
     }
 
+    // Every Claude session Tars starts reads this file through --mcp-config, so
+    // it is changed through updateSharedJsonSync, as ~/.claude.json is. A file
+    // that is not JSON is left as it is: it was replaced by this one server,
+    // and every other server in it was lost.
     const mcpConfigPath = path.join(this.configDir, 'mcp.json');
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
-    }
-
-    let mcpConfig: { mcpServers?: Record<string, unknown> } = { mcpServers: {} };
-    if (fs.existsSync(mcpConfigPath)) {
-      try {
-        mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-        if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
-      } catch {
-        mcpConfig = { mcpServers: {} };
-      }
-    }
-
-    mcpConfig.mcpServers![name] = { command, args };
-    fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+    const outcome = updateSharedJsonSync<{ mcpServers?: Record<string, unknown> }>(mcpConfigPath, mcpConfig => ({
+      ...mcpConfig,
+      mcpServers: { ...mcpConfig?.mcpServers, [name]: { command, args } },
+    }));
+    if (outcome === 'unreadable') throw new Error(`${mcpConfigPath} is not valid JSON: left untouched, ${name} not registered`);
+    if (outcome === 'busy') throw new Error(`${mcpConfigPath} kept changing: ${name} not registered`);
     console.log(`[claude] Registered MCP server ${name} via mcp.json fallback`);
   }
 
@@ -316,18 +308,20 @@ export class ClaudeProvider implements CLIProvider {
       // Ignore if doesn't exist
     }
 
-    // Also clean mcp.json
+    // Also clean mcp.json, through updateSharedJsonSync for the reason
+    // registerMcpServer gives. Nothing is written when the server is not there.
     const mcpConfigPath = path.join(this.configDir, 'mcp.json');
-    if (fs.existsSync(mcpConfigPath)) {
-      try {
-        const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-        if (mcpConfig?.mcpServers?.[name]) {
-          delete mcpConfig.mcpServers[name];
-          fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
-        }
-      } catch {
-        // Ignore parse errors
-      }
+    try {
+      const outcome = updateSharedJsonSync<{ mcpServers?: Record<string, unknown> }>(mcpConfigPath, mcpConfig => {
+        if (!mcpConfig?.mcpServers?.[name]) return undefined;
+        const mcpServers = { ...mcpConfig.mcpServers };
+        delete mcpServers[name];
+        return { ...mcpConfig, mcpServers };
+      });
+      if (outcome === 'unreadable') console.warn(`[claude] ${mcpConfigPath} is not valid JSON: ${name} left in it`);
+      if (outcome === 'busy') console.warn(`[claude] ${mcpConfigPath} kept changing: ${name} left in it`);
+    } catch (err) {
+      console.warn(`[claude] Failed to remove ${name} from ${mcpConfigPath}:`, err);
     }
   }
 

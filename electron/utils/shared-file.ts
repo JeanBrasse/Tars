@@ -16,10 +16,11 @@ const ATTEMPTS = 3;
 
 /**
  * Changing a JSON file that other programs read and write while Tars runs:
- * `~/.claude.json`, which every live Claude Code reads and rewrites, and
- * Claude's `settings.json`.
+ * `~/.claude.json`, which every live Claude Code reads and rewrites, Claude's
+ * `settings.json`, and `~/.claude/mcp.json`, which every Claude session Tars
+ * starts reads through `--mcp-config`.
  *
- * Both were rewritten in place. A reader that opened the file during the
+ * All three were rewritten in place. A reader that opened the file during the
  * write got a truncated JSON document, and Claude Code opens `~/.claude.json`
  * at every start. So the file is written whole beside itself and renamed over,
  * as writeAtomicSync does, with three things that helper does not do and these
@@ -62,10 +63,15 @@ export function updateSharedJsonSync<T>(
       }
     }
 
+    // Serialized before the update runs, because it may change `current` in
+    // place. Compared afterwards, a change made that way read as no change:
+    // measured, a server added to `mcpServers` in place came back `unchanged`
+    // and the file kept only the servers it had.
+    const unchanged = current === undefined ? undefined : JSON.stringify(current, null, 2);
     const next = update(current);
     if (next === undefined) return 'unchanged';
     const contents = JSON.stringify(next, null, 2);
-    if (current !== undefined && contents === JSON.stringify(current, null, 2)) return 'unchanged';
+    if (contents === unchanged) return 'unchanged';
 
     // The file's own mode, given at creation: the umask can only narrow it.
     const mode = before !== undefined ? fs.statSync(target).mode & 0o777 : createMode;

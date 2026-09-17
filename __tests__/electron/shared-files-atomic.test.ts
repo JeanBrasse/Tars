@@ -8,9 +8,10 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
  * The files Tars shares with other programs are never seen half-written.
  *
  * `~/.claude.json` is read and rewritten by every live Claude Code, Claude's
- * `settings.json` is read by every claude binary, and `kanban-tasks.json` is
+ * `settings.json` is read by every claude binary, `~/.claude/mcp.json` by every
+ * Claude session Tars starts, through --mcp-config, and `kanban-tasks.json` is
  * written whole by Tars and by mcp-kanban from every agent that uses the board.
- * All three were rewritten in place, so a reader that opened one mid-write got
+ * All four were rewritten in place, so a reader that opened one mid-write got
  * a truncated JSON document; both kanban writers read that as an empty board,
  * and their next save wrote it.
  *
@@ -38,12 +39,31 @@ vi.mock('electron', () => ({
   dialog: { showOpenDialog: vi.fn() },
 }));
 
+// The claude binary never runs here. `claude mcp add` and `claude mcp remove`
+// fail, as they do when the CLI is missing, so the provider takes its mcp.json
+// path, which is the one under test.
+const { claudeRuns } = vi.hoisted(() => ({ claudeRuns: [] as string[][] }));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    execFileSync: (file: string, ...rest: unknown[]) => {
+      if (file === 'claude') {
+        claudeRuns.push(rest[0] as string[]);
+        throw new Error('claude: command not found');
+      }
+      return (actual.execFileSync as (...args: unknown[]) => unknown)(file, ...rest);
+    },
+  };
+});
+
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 const handlers = new Map<string, Handler>();
 
 import { ensureProjectTrusted } from '../../electron/core/agent-manager';
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../electron/handlers/ipc-handlers';
 import { registerKanbanHandlers, type KanbanHandlerDependencies } from '../../electron/handlers/kanban-handlers';
+import { ClaudeProvider } from '../../electron/providers/claude-provider';
 import { KANBAN_FILE } from '../../electron/constants';
 import * as mcpKanban from '../../mcp-kanban/src/store';
 
@@ -272,6 +292,221 @@ describe("Claude's settings.json, through settings:save", () => {
       save({ env: { A: '1' }, permissions: { allow: ['Bash(git:*)'], deny: [] } }));
 
     expect(writes).toEqual([]);
+  });
+});
+
+describe("Claude's settings.json, through the hooks Tars installs at every launch", () => {
+  const HOOKS_DIR = path.join(__dirname, '../../hooks');
+  /** Settings someone keeps: their own keys, and no hooks yet. */
+  const settingsNow = { env: { A: '1' }, permissions: { allow: ['Bash(git:*)'], deny: [] }, statusLine: { type: 'command', command: 'statusline.sh' } };
+  const configureHooks = () => new ClaudeProvider().configureHooks(HOOKS_DIR);
+  const stopHook = () => (readAsJson(claudeSettings()) as { hooks?: { Stop?: Array<{ hooks: Array<{ command: string }> }> } }).hooks?.Stop?.[0]?.hooks?.[0]?.command;
+
+  beforeEach(() => {
+    fs.mkdirSync(path.dirname(claudeSettings()), { recursive: true });
+    fs.writeFileSync(claudeSettings(), JSON.stringify(settingsNow, null, 2));
+  });
+
+  it('adds the hooks beside the settings already there', async () => {
+    await configureHooks();
+
+    expect(readAsJson(claudeSettings())).toMatchObject(settingsNow);
+    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+  });
+
+  it('leaves the previous file whole when the write dies halfway', async () => {
+    const undo = cutWrites(path.dirname(claudeSettings()), () => {}, { die: true });
+    try {
+      await expect(configureHooks()).rejects.toThrow('the process died here');
+    } finally {
+      undo();
+    }
+
+    expect(readAsJson(claudeSettings())).toEqual(settingsNow);
+    expect(leftovers(path.dirname(claudeSettings()))).toEqual([]);
+  });
+
+  it('never shows a reader a partial file while it writes', async () => {
+    const seenMidway: unknown[] = [];
+    const undo = cutWrites(path.dirname(claudeSettings()), () => seenMidway.push(readAsJson(claudeSettings())));
+    try {
+      await configureHooks();
+    } finally {
+      undo();
+    }
+
+    expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
+    for (const seen of seenMidway) expect(seen).toEqual(settingsNow);
+    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+  });
+
+  it('writes nothing when every hook is already there', async () => {
+    await configureHooks();
+
+    const writes = await writesUnder(path.dirname(claudeSettings()), () => configureHooks());
+
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps the file's own mode", async () => {
+    fs.chmodSync(claudeSettings(), 0o600);
+
+    await configureHooks();
+
+    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+    expect(fs.statSync(claudeSettings()).mode & 0o777).toBe(0o600);
+  });
+
+  it('keeps a change Claude made between the read and the rename', async () => {
+    let claudeWrote = false;
+    const undo = cutWrites(path.dirname(claudeSettings()), file => {
+      if (claudeWrote || file === claudeSettings() || file === fs.realpathSync(claudeSettings())) return;
+      claudeWrote = true;
+      // Claude Code saving a setting while Tars prepares its file.
+      const current = JSON.parse(fs.readFileSync(claudeSettings(), 'utf-8'));
+      fs.writeFileSync(`${claudeSettings()}.claude`, JSON.stringify({ ...current, model: 'opus' }, null, 2));
+      fs.renameSync(`${claudeSettings()}.claude`, claudeSettings());
+    });
+    try {
+      await configureHooks();
+    } finally {
+      undo();
+    }
+
+    expect(claudeWrote).toBe(true);
+    expect(readAsJson(claudeSettings())).toMatchObject({ ...settingsNow, model: 'opus' });
+    expect(stopHook()).toBe(path.join(HOOKS_DIR, 'on-stop.sh'));
+  });
+
+  it('leaves a file that is not JSON exactly as it is, instead of the hooks alone', async () => {
+    // What a reader gets from a file Claude Code is halfway through writing.
+    fs.writeFileSync(claudeSettings(), '{"env": {"A": "1"}, "permissions": ');
+
+    await configureHooks();
+
+    expect(fs.readFileSync(claudeSettings(), 'utf-8')).toBe('{"env": {"A": "1"}, "permissions": ');
+  });
+});
+
+describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has failed', () => {
+  const mcpJson = () => path.join(home(), '.claude', 'mcp.json');
+  /** A server someone added by hand, with its token, beside one of Tars's. */
+  const servers = {
+    mcpServers: {
+      github: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_TOKEN: 'ghp_example' } },
+      tasmania: { command: 'node', args: ['/work/tasmania/dist/index.js'] },
+    },
+  };
+  const gws = { command: '/opt/homebrew/bin/gws', args: ['mcp', '-s', 'drive'] };
+  const register = () => new ClaudeProvider().registerMcpServer('google-workspace', gws.command, gws.args);
+  const remove = () => new ClaudeProvider().removeMcpServer('tasmania');
+
+  beforeEach(() => {
+    claudeRuns.length = 0;
+    fs.mkdirSync(path.dirname(mcpJson()), { recursive: true });
+    fs.writeFileSync(mcpJson(), JSON.stringify(servers, null, 2));
+  });
+
+  it('registers beside the servers already there', async () => {
+    await register();
+
+    expect(claudeRuns).toEqual([['mcp', 'add', '-s', 'user', 'google-workspace', gws.command, ...gws.args]]);
+    expect(readAsJson(mcpJson())).toEqual({ mcpServers: { ...servers.mcpServers, 'google-workspace': gws } });
+  });
+
+  it('leaves the previous file whole when a registration dies halfway', async () => {
+    const undo = cutWrites(path.dirname(mcpJson()), () => {}, { die: true });
+    try {
+      await expect(register()).rejects.toThrow('the process died here');
+    } finally {
+      undo();
+    }
+
+    expect(readAsJson(mcpJson())).toEqual(servers);
+    expect(leftovers(path.dirname(mcpJson()))).toEqual([]);
+  });
+
+  it('never shows a session starting a partial file while it registers', async () => {
+    const seenMidway: unknown[] = [];
+    const undo = cutWrites(path.dirname(mcpJson()), () => seenMidway.push(readAsJson(mcpJson())));
+    try {
+      await register();
+    } finally {
+      undo();
+    }
+
+    expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
+    for (const seen of seenMidway) expect(seen).toEqual(servers);
+    expect(readAsJson(mcpJson())).toMatchObject({ mcpServers: { 'google-workspace': gws } });
+  });
+
+  it('writes nothing when the server is registered as asked already', async () => {
+    await register();
+
+    const writes = await writesUnder(path.dirname(mcpJson()), () => register());
+
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps the file's own mode, and creates a new one readable by its owner only", async () => {
+    fs.chmodSync(mcpJson(), 0o644);
+    await register();
+    expect(fs.statSync(mcpJson()).mode & 0o777).toBe(0o644);
+
+    // It can carry a server's token, as the one above does.
+    fs.rmSync(mcpJson());
+    await register();
+    expect(fs.statSync(mcpJson()).mode & 0o777).toBe(0o600);
+  });
+
+  it('refuses to register into a file that is not JSON, and leaves it as it is', async () => {
+    fs.writeFileSync(mcpJson(), '{"mcpServers": {"github": ');
+
+    await expect(register()).rejects.toThrow('not valid JSON');
+
+    expect(fs.readFileSync(mcpJson(), 'utf-8')).toBe('{"mcpServers": {"github": ');
+  });
+
+  it('removes a server and keeps the others', async () => {
+    await remove();
+
+    expect(claudeRuns).toEqual([['mcp', 'remove', '-s', 'user', 'tasmania']]);
+    expect(readAsJson(mcpJson())).toEqual({ mcpServers: { github: servers.mcpServers.github } });
+  });
+
+  it('leaves the previous file whole when a removal dies halfway', async () => {
+    const undo = cutWrites(path.dirname(mcpJson()), () => {}, { die: true });
+    try {
+      await remove();
+    } finally {
+      undo();
+    }
+
+    expect(readAsJson(mcpJson())).toEqual(servers);
+    expect(leftovers(path.dirname(mcpJson()))).toEqual([]);
+  });
+
+  it('never shows a session starting a partial file while it removes', async () => {
+    const seenMidway: unknown[] = [];
+    const undo = cutWrites(path.dirname(mcpJson()), () => seenMidway.push(readAsJson(mcpJson())));
+    try {
+      await remove();
+    } finally {
+      undo();
+    }
+
+    expect(seenMidway.length, 'the write was not cut into, so this proves nothing').toBeGreaterThan(0);
+    for (const seen of seenMidway) expect(seen).toEqual(servers);
+    expect(readAsJson(mcpJson())).toEqual({ mcpServers: { github: servers.mcpServers.github } });
+  });
+
+  it('creates nothing when there is no file to remove from', async () => {
+    fs.rmSync(mcpJson());
+
+    const writes = await writesUnder(path.dirname(mcpJson()), () => remove());
+
+    expect(writes).toEqual([]);
+    expect(fs.existsSync(mcpJson())).toBe(false);
   });
 });
 
