@@ -218,7 +218,7 @@ export default function SkillsTab() {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <LoadingState loading rows={5} what="Still loading skills…" detail="reading every provider skill directory" />
+        <LoadingState loading what="Still loading skills…" detail="reading every provider skill directory" />
       </div>
     );
   }

@@ -724,11 +724,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeVault: (vaultPath: string) => ipcRenderer.invoke('obsidian:removeVault', vaultPath),
   },
 
-  // API
-  api: {
-    getToken: () => ipcRenderer.invoke('api:getToken') as Promise<string>,
-  },
-
   // Tray menu events
   tray: {
     onFocusAgent: (callback: (agentId: string) => void) => {

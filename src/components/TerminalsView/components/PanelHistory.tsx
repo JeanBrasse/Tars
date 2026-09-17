@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useMemo } from 'react';
-import { Button } from '@/components/ui';
+import { Button, LoadingState } from '@/components/ui';
 import type { TranscriptMessage } from '@/types/electron';
 import { usePanelTranscript } from '../hooks/usePanelTranscript';
 
@@ -127,22 +127,6 @@ function toRows(messages: TranscriptMessage[]): Row[] {
   return rows;
 }
 
-function Skeleton() {
-  // The real shape of a row, so nothing jumps when the messages land.
-  const widths = ['62%', '84%', '48%', '71%', '38%', '79%'];
-  return (
-    <div className="space-y-4 px-3 py-3" aria-hidden>
-      {widths.map((w, i) => (
-        <div key={i} className="flex items-center gap-2.5">
-          <span className="h-2 w-8 bg-secondary shrink-0" />
-          <span className="h-2 w-9 bg-secondary shrink-0" />
-          <span className="h-2 bg-secondary" style={{ width: w }} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Centered({ title, body }: { title: string; body: string }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-2.5 px-10 py-6 text-center">
@@ -193,7 +177,12 @@ export default function PanelHistory({ agentId, agentName }: { agentId: string; 
       ) : error ? (
         <Centered title="The transcript could not be read" body={error} />
       ) : loading && !messages.length ? (
-        <Skeleton />
+        // The mark over the panel, like every other wait in the app, and
+        // nothing at all for a transcript read in under 400 ms.
+        // Frame: `Panel history · states`.
+        <div className="flex-1 min-h-0 flex items-center justify-center">
+          <LoadingState loading what="Reading the transcript" detail="the session file Claude Code keeps on disk" />
+        </div>
       ) : !rows.length ? (
         <Centered
           title="Nothing said yet"

@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 // Tars-managed MCP servers, hidden from the Custom MCP UI
 const DOROTHY_MANAGED_MCPS = new Set([
@@ -88,33 +89,6 @@ interface McpConfigFile {
   [key: string]: unknown;
 }
 
-function writeClaudeMcp(action: 'update' | 'delete', server?: McpServer, deleteName?: string): void {
-  const configPath = getConfigPath('claude');
-  let data: McpConfigFile = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
-      data = {};
-    }
-  }
-  const servers = (data.mcpServers ??= {});
-
-  if (action === 'update' && server) {
-    servers[server.name] = {
-      command: server.command,
-      args: server.args,
-      ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
-    };
-  } else if (action === 'delete' && deleteName) {
-    delete servers[deleteName];
-  }
-
-  const dir = path.dirname(configPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(data, null, 2));
-}
-
 // ── Gemini: JSON { mcpServers: { name: { command, args } }, ...other } ──
 
 function readGeminiMcp(): McpServer[] {
@@ -168,7 +142,7 @@ function writeGeminiMcp(action: 'update' | 'delete', server?: McpServer, deleteN
 }
 
 // ── Generic JSON MCP: { mcpServers: { name: { command, args, env } } }
-// Used by OpenCode, Pi, Qwen Code (same format as Claude)
+// Claude's format, also used by OpenCode, Pi and Qwen Code
 
 function readJsonMcp(provider: string): McpServer[] {
   const configPath = getConfigPath(provider);
@@ -194,30 +168,20 @@ function readJsonMcp(provider: string): McpServer[] {
 }
 
 function writeJsonMcp(provider: string, action: 'update' | 'delete', server?: McpServer, deleteName?: string): void {
+  // For Claude and every provider that runs its binary this is
+  // ~/.claude/mcp.json, which every session Tars starts reads. The file was
+  // rewritten in place, and one that did not parse was read as empty, so a
+  // save replaced every other server. Now through the writer they all share.
   const configPath = getConfigPath(provider);
-  let data: McpConfigFile = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
-      data = {};
-    }
-  }
-  const servers = (data.mcpServers ??= {});
-
   if (action === 'update' && server) {
-    servers[server.name] = {
+    addMcpServerToJson(configPath, server.name, {
       command: server.command,
       args: server.args,
       ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
-    };
+    });
   } else if (action === 'delete' && deleteName) {
-    delete servers[deleteName];
+    removeMcpServerFromJson(configPath, deleteName);
   }
-
-  const dir = path.dirname(configPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(data, null, 2));
 }
 
 // ── Codex: TOML [mcp_servers.name] sections ─────────────────────────
@@ -363,7 +327,7 @@ function listServers(provider: string): McpServer[] {
 
 function updateServer(provider: string, server: McpServer): void {
   switch (provider) {
-    case 'claude': writeClaudeMcp('update', server); break;
+    case 'claude': writeJsonMcp('claude', 'update', server); break;
     case 'codex': writeCodexMcp('update', server); break;
     case 'gemini': writeGeminiMcp('update', server); break;
     case 'grok': writeCodexMcp('update', server, undefined, 'grok'); break;
@@ -376,13 +340,13 @@ function updateServer(provider: string, server: McpServer): void {
     case 'ollama':
     case 'venice':
     case 'ollama-cloud':
-    case 'custom-openai': writeClaudeMcp('update', server); break;
+    case 'custom-openai': writeJsonMcp('claude', 'update', server); break;
   }
 }
 
 function deleteServer(provider: string, name: string): void {
   switch (provider) {
-    case 'claude': writeClaudeMcp('delete', undefined, name); break;
+    case 'claude': writeJsonMcp('claude', 'delete', undefined, name); break;
     case 'codex': writeCodexMcp('delete', undefined, name); break;
     case 'gemini': writeGeminiMcp('delete', undefined, name); break;
     case 'grok': writeCodexMcp('delete', undefined, name, 'grok'); break;
@@ -395,7 +359,7 @@ function deleteServer(provider: string, name: string): void {
     case 'ollama':
     case 'venice':
     case 'ollama-cloud':
-    case 'custom-openai': writeClaudeMcp('delete', undefined, name); break;
+    case 'custom-openai': writeJsonMcp('claude', 'delete', undefined, name); break;
   }
 }
 

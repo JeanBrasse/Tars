@@ -97,6 +97,10 @@ export interface AgentTickItem {
   projectName: string;
   lastActivity: string;
   provider: string;
+  /** A CLI runs in the agent's terminal, whatever its status says: a turn that
+   *  failed leaves claude alive, and done or idle agents keep their session.
+   *  Always set on agents:tick; optional for items the renderer builds itself. */
+  cliRunning?: boolean;
 }
 
 export interface AgentEvent {
@@ -247,6 +251,8 @@ export interface AgentStatus {
   lastActivity: string;
   error?: string;
   ptyId?: string;
+  /** Set by agent:list and agent:get: a CLI runs in the agent's terminal. */
+  cliRunning?: boolean;
   character?: AgentCharacter;
   name?: string;
   statusLine?: string;    // ANSI-stripped last meaningful output line
@@ -707,7 +713,8 @@ export interface ElectronAPI {
       orchestratorMode?: boolean;
       cliPath?: string | null;
     }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;
-    start: (params: { id: string; prompt: string; options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string } }) => Promise<{ success: boolean }>;
+    /** `{ success: false, cliRunning: true }` when a CLI still runs in the agent's terminal: nothing was typed. */
+    start: (params: { id: string; prompt: string; options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string } }) => Promise<{ success: boolean; cliRunning?: boolean; error?: string }>;
     get: (id: string) => Promise<AgentStatus | null>;
     list: () => Promise<AgentStatus[]>;
     stop: (id: string) => Promise<{ success: boolean }>;
@@ -1590,11 +1597,6 @@ export interface ElectronAPI {
     writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
     createFile: (memoryDir: string, fileName: string, content?: string) => Promise<{ success: boolean; file?: MemoryFile; error?: string }>;
     deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
-  };
-
-  // API
-  api?: {
-    getToken: () => Promise<string>;
   };
 
   // Tray menu events

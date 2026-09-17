@@ -422,7 +422,7 @@ export default function ProjectsPage() {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <LoadingState loading rows={5} what="Still loading your projects…" detail="scanning the project directories" />
+        <LoadingState loading what="Still loading your projects…" detail="scanning the project directories" />
       </div>
     );
   }

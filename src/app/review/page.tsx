@@ -52,6 +52,8 @@ function PatchView({ patch }: { patch: string }) {
 
 export default function ReviewPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Until the agent list answers, no working tree is known to be missing.
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<ReviewDiff | null>(null);
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -86,7 +88,8 @@ export default function ReviewPage() {
       );
       setWorkspaces(list);
       setSelected(current => current ?? list[0]?.key ?? null);
-    }).catch(() => setWorkspaces([]));
+    }).catch(() => setWorkspaces([]))
+      .finally(() => setWorkspacesLoaded(true));
   }, []);
 
   const load = useCallback(async (repoPath: string) => {
@@ -137,7 +140,11 @@ export default function ReviewPage() {
         }
       />
 
-      {workspaces.length === 0 ? (
+      {!workspacesLoaded ? (
+        <div className="flex flex-1 items-center justify-center">
+          <LoadingState loading what="Still finding your agents' working trees…" detail="reading the agent list" />
+        </div>
+      ) : workspaces.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center">
           <FileDiff className="w-6 h-6 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No agent has a working tree yet.</p>
@@ -191,7 +198,6 @@ export default function ReviewPage() {
           <Panel fill className="w-[300px] shrink-0">
             <LoadingState
               loading={loading}
-              rows={5}
               what="Still reading the working tree…"
               detail="git diff against the base branch"
             />

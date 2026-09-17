@@ -185,6 +185,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
+  const [fileLoading, setFileLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -228,7 +229,8 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
 
     const cleanPath = filePath.replace(/\r/g, '').trim();
     setSelectedFile(cleanPath);
-    setFileContent('Loading...');
+    setFileContent('');
+    setFileLoading(true);
 
     try {
       const result = await window.electronAPI.fs?.readTextFile(cleanPath);
@@ -240,6 +242,8 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
       }
     } catch (err) {
       setFileContent('Error loading file');
+    } finally {
+      setFileLoading(false);
     }
   }, []);
 
@@ -496,7 +500,7 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
                 </div>
               </div>
               <div className="flex-1 overflow-auto bg-term-bg">
-                {fileContent === 'Loading...' ? (
+                {fileLoading ? (
                   <div className="flex items-center justify-center h-full">
                     <BrandSpinner size={30} label="Loading file" />
                   </div>

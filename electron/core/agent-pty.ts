@@ -1,7 +1,14 @@
+import * as path from 'path';
 import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
 import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
+
+/** The shell each agent PTY was started with, as it was given to node-pty. */
+const shellOf = new WeakMap<pty.IPty, string>();
+
+/** node-pty's own program, which takes the terminal and then executes the shell. */
+const NODE_PTY_HELPER = 'spawn-helper';
 
 /**
  * Spawn the PTY an agent's CLI runs in.
@@ -57,7 +64,7 @@ export function spawnAgentPty(opts: {
   // token: the quick terminal, the skill and plugin runners, the installer.
   const agentId = opts.env.CLAUDE_AGENT_ID;
 
-  return pty.spawn(opts.shell, opts.args, {
+  const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
     cols: opts.cols,
     rows: opts.rows,
@@ -89,4 +96,54 @@ export function spawnAgentPty(opts: {
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
+  shellOf.set(spawned, opts.shell);
+  return spawned;
+}
+
+/**
+ * Whether a program runs in an agent's PTY rather than the shell Tars types
+ * commands into.
+ *
+ * Read from the terminal itself, not from the agent's status: a CLI outlives
+ * the statuses that say it stopped. A turn that fails leaves claude at its
+ * prompt, and an agent marked done or idle keeps its session open, so the
+ * status said "not running" while a start typed `cd '...' && claude ...` into
+ * a live claude.
+ *
+ * node-pty names the leader of the terminal's foreground process group
+ * (tcgetpgrp, then its p_comm). Measured with the real node-pty and Claude Code
+ * 2.1.273 in `/bin/bash -l`: `bash` at the prompt; `2.1.273` while claude runs,
+ * at its prompt and during a turn, because the native binary is named after its
+ * version, which is why this compares against the shell and never against a
+ * CLI's name; `bash` again within 300 ms of `/exit`; `sleep` for a plain
+ * command, which counts too, since typing into it is just as wrong. Between the
+ * fork and the exec of a command, about 200 ms, the new group's leader is still
+ * named bash and this reads false.
+ *
+ * Until the shell holds its terminal, node-pty gives it two other names, and
+ * only the process name was compared. First the file it was asked to spawn, as
+ * given, `/bin/bash`: node-pty returns it whenever it finds kernel_task leading
+ * the foreground. Then `spawn-helper`, node-pty's own program, which opens the
+ * terminal and executes the shell. Measured with the real spawnAgentPty and
+ * node-pty 1.1.0 under Electron's node, five spawns: `/bin/bash` for 3 to
+ * 127 ms, `spawn-helper` for up to 7 ms, then `bash`. agent:get creates a
+ * terminal and reads this at once, and said a CLI ran in a shell that had not
+ * started. After a command exits the name is briefly undefined, until the
+ * shell takes the terminal back.
+ */
+export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
+  if (!ptyProcess) return false;
+  const shell = shellOf.get(ptyProcess);
+  if (!shell) return false;
+  let foreground: string | undefined;
+  try {
+    foreground = ptyProcess.process;
+  } catch {
+    // The terminal is gone: nothing runs in it.
+    return false;
+  }
+  return !!foreground
+    && foreground !== path.basename(shell)
+    && foreground !== shell
+    && foreground !== NODE_PTY_HELPER;
 }

@@ -4,10 +4,16 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { attachShiftEnterHandler, disposeTerminalSafely, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermTheme, getTerminalFontFamily, useTerminalTheme } from '@/lib/terminal-theme';
+// The main process's own trim logic for agent.output, imported rather than
+// copied: it has no dependency outside itself.
+import { carriedByTrim } from '../../../electron/utils/terminal-modes';
 import type { PanelType } from './AgentDialogTypes';
 
 // Module-level map: persist PTY sessions across dialog open/close
 export const persistentTerminals = new Map<string, { ptyId: string; outputBuffer: string[] }>();
+
+/** Output events a quick shell keeps for its replay when the window reopens. */
+const QUICK_OUTPUT_EVENTS = 1000;
 
 interface UseQuickTerminalOptions {
   agentId: string | undefined;
@@ -177,8 +183,15 @@ export function useQuickTerminal({
       const existing = persistentTerminals.get(agentId);
       if (!existing || event.id !== existing.ptyId) return;
 
+      // Bounded like agent.output, and trimmed the same way: what is dropped
+      // leaves behind the modes it set, so a reopened shell replays into the
+      // alternate screen, the mouse request and the bracketed paste the
+      // program asked for, not into a terminal that has forgotten them.
       existing.outputBuffer.push(event.data);
-      if (existing.outputBuffer.length > 1000) existing.outputBuffer.shift();
+      if (existing.outputBuffer.length > QUICK_OUTPUT_EVENTS) {
+        const carried = carriedByTrim(existing.outputBuffer.splice(0, existing.outputBuffer.length - QUICK_OUTPUT_EVENTS));
+        if (carried) existing.outputBuffer.unshift(carried);
+      }
       quickXtermRef.current?.write(event.data);
     });
   }, [agentId]);

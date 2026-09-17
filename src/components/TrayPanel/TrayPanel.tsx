@@ -3,11 +3,14 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { AgentTickItem } from '@/types/electron';
 import { Brand } from '@/components/Brand';
-import { Button } from '@/components/ui';
+import { Button, LoadingState } from '@/components/ui';
 import TrayAgentItem from './TrayAgentItem';
 
 export default function TrayPanel() {
   const [agents, setAgents] = useState<AgentTickItem[]>([]);
+  // "No agents configured" is an answer, so it waits for one: the first list
+  // or the first tick, whichever comes first.
+  const [loaded, setLoaded] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,7 +20,10 @@ export default function TrayPanel() {
 
   // Initial load from agent.list(), then tick takes over
   const fetchAgents = useCallback(async () => {
-    if (!window.electronAPI?.agent?.list) return;
+    if (!window.electronAPI?.agent?.list) {
+      setLoaded(true);
+      return;
+    }
     try {
       const list = await window.electronAPI.agent.list();
       const mapped: AgentTickItem[] = list.map(a => ({
@@ -35,6 +41,8 @@ export default function TrayPanel() {
       setAgents(mapped);
     } catch (err) {
       console.error('Failed to fetch agents:', err);
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -49,6 +57,7 @@ export default function TrayPanel() {
 
     const unsub = api.agent.onTick((tickAgents) => {
       setAgents(tickAgents);
+      setLoaded(true);
     });
 
     return () => unsub();
@@ -89,7 +98,9 @@ export default function TrayPanel() {
 
       {/* Agent list */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {sortedAgents.length === 0 ? (
+        {!loaded ? (
+          <LoadingState loading what="Still reading your agents…" />
+        ) : sortedAgents.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
             No agents configured
           </div>

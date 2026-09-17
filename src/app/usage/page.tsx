@@ -622,7 +622,7 @@ export default function UsagePage() {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <LoadingState loading rows={4} what="Still adding up what you spent…" detail="parsing session transcripts" />
+        <LoadingState loading what="Still adding up what you spent…" detail="parsing session transcripts" />
       </div>
     );
   }
