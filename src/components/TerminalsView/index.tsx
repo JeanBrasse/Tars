@@ -215,7 +215,7 @@ export default function TerminalsView() {
   // it: a field the panel reads and the key leaves out is a field that can
   // change without the panel ever hearing of it.
   const filteredAgentsKey = useMemo(
-    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}`).join('\u0000'),
+    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}`).join('\u0000'),
     [computedFilteredAgents]
   );
   const filteredAgents = useMemo(

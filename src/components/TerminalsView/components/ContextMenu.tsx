@@ -34,7 +34,8 @@ export default function ContextMenu({
   if (!state.open || !state.agentId || !agent) return null;
 
   const agentId = state.agentId;
-  const isRunning = agent.status === 'running' || agent.status === 'waiting';
+  // A CLI in the terminal, as the panel header's start/stop reads it.
+  const isRunning = agent.cliRunning === true;
 
   const items = [
     {
