@@ -261,8 +261,8 @@ that number is non-zero.
 bash scripts/design-lint.sh
 ```
 
-Greps `src/**/*.tsx`, excluding `src/components/ui/` and `app/icon.tsx`, for five banned
-patterns. Exits 1 on any hit:
+Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
+`src/app/icon.tsx`, for five banned patterns. Exits 1 on any hit:
 
 | check | pattern |
 |---|---|
@@ -273,7 +273,14 @@ patterns. Exits 1 on any hit:
 | no raw tailwind palette | `(text\|bg\|border)-(red\|green\|blue\|amber\|purple\|cyan\|yellow\|orange\|zinc\|slate\|gray)-[0-9]` |
 
 The rule it enforces: `src/components/ui/` is the only place allowed to define raw appearance.
-Currently green on all five.
+
+It also exits 1 when grep could not search, instead of reading that as a clean tree: a file
+it cannot open, a pattern it cannot parse, or no file read at all. It prints how many files it
+read first. That count is the check for a missing `src/`: grep on macOS answers one that does
+not exist with the same silent 1 as a tree with nothing to report.
+
+Red since the `.ts` files are read: 13 lines of raw palette in
+`src/components/KanbanBoard/constants.ts` and `src/lib/providers.ts`.
 
 ### CI
 
