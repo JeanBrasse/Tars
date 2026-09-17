@@ -58,6 +58,10 @@ export interface AgentStatus {
   /** CWD the active PTY was spawned with. Used to detect stale PTYs when
    *  the agent's worktreePath changes after the PTY was started. Not persisted. */
   ptyCwd?: string;
+  /** True while a program, the CLI above all, runs in the agent's PTY rather
+   *  than its shell (cliRunningIn in core/agent-pty.ts). Never stored: set on
+   *  the copies sent to the renderer by agent:list, agent:get and agents:tick. */
+  cliRunning?: boolean;
   character?: AgentCharacter;
   name?: string;
   pathMissing?: boolean;

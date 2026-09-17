@@ -3,6 +3,7 @@ import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from './broadcast';
 import { extractStatusLine } from './ansi';
 import { ptyProcesses } from '../core/pty-manager';
+import { cliRunningIn } from '../core/agent-pty';
 import type { AgentStatus } from '../types';
 
 export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
@@ -18,6 +19,8 @@ export interface AgentTickItem {
   projectName: string;
   lastActivity: string;
   provider: string;
+  /** A CLI runs in the agent's PTY, whatever its status says. See cliRunningIn. */
+  cliRunning: boolean;
 }
 
 let tickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -56,6 +59,11 @@ function deriveDisplayStatus(a: AgentStatus): DisplayStatus {
   return 'stopped';
 }
 
+/** Whether a CLI runs in this agent's PTY, if it has one. */
+function agentCliRunning(a: AgentStatus): boolean {
+  return cliRunningIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined);
+}
+
 function buildTickPayload(): AgentTickItem[] {
   return Array.from(agents.values())
     .map(a => ({
@@ -69,6 +77,7 @@ function buildTickPayload(): AgentTickItem[] {
       projectName: a.projectPath ? path.basename(a.projectPath) : '',
       lastActivity: a.lastActivity,
       provider: a.provider || 'claude',
+      cliRunning: agentCliRunning(a),
     }))
     .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
 }
