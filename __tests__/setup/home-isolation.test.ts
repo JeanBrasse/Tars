@@ -120,8 +120,10 @@ describe('a write into a protected home', () => {
     expect(fs.existsSync(path.join(protectedHome, '.claude.json'))).toBe(false);
     // Consumed here, because the setup file fails the whole file on any record
     // left at its end: that is what catches a swallowed refusal.
+    // The file is written beside itself first and renamed over (shared-file.ts),
+    // so the refused write is that temp file's.
     expect(guard.violations.splice(0).map(v => [v.op, v.path])).toEqual([
-      ['fs.writeFileSync', path.join(fs.realpathSync.native(protectedHome), '.claude.json')],
+      ['fs.writeFileSync', path.join(fs.realpathSync.native(protectedHome), `.claude.json.tars-${process.pid}.tmp`)],
     ]);
   });
 

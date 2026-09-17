@@ -4,6 +4,7 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { KANBAN_FILE, DATA_DIR } from '../constants';
 import { generateTaskFromPrompt } from '../utils/kanban-generate';
+import { writeAtomicSync } from '../utils/secret-file';
 
 // ============================================
 // Kanban Board IPC handlers
@@ -95,9 +96,16 @@ function loadTasks(): KanbanTask[] {
   }
 }
 
+/**
+ * mcp-kanban writes this file too, whole, from every agent that uses the board.
+ * Both sides read a file they cannot parse as an empty board, and the next save
+ * wrote that: a save that met the other writer's half-written file emptied the
+ * board. So both write a temp file and rename it, and neither can see the
+ * other's file half-written. Two saves that overlap still keep only the last.
+ */
 function saveTasks(tasks: KanbanTask[]): void {
   ensureDir();
-  fs.writeFileSync(KANBAN_FILE, JSON.stringify(tasks, null, 2));
+  writeAtomicSync(KANBAN_FILE, JSON.stringify(tasks, null, 2));
 }
 
 function emitTaskEvent(eventName: string, task: KanbanTask): void {

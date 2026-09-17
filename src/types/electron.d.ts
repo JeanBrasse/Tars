@@ -1599,11 +1599,6 @@ export interface ElectronAPI {
     deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   };
 
-  // API
-  api?: {
-    getToken: () => Promise<string>;
-  };
-
   // Tray menu events
   tray?: {
     onFocusAgent: (callback: (agentId: string) => void) => () => void;

@@ -397,14 +397,15 @@ xcrun notarytool store-credentials Tars \
   --apple-id <apple-id> --team-id <team-id> --password <app-specific-password>
 ```
 
-### The update feed and the repo mismatch
+### The two update paths
 
-Two independent code paths check for updates, and **they point at different repositories**:
+Two independent code paths check for updates. **Both point at `JeanBrasse/Tars`**, and each
+reads its own setting, so they agree only as long as both are kept in step:
 
 | path | target | source |
 |---|---|---|
 | `electron-updater` (`latest-mac.yml`) | `JeanBrasse/Tars` | `package.json` → `build.publish` |
-| GitHub-API fallback | `JeanBrasse/Dorothy` | `electron/constants/index.ts` → `GITHUB_REPO` |
+| GitHub-API fallback | `JeanBrasse/Tars` | `electron/constants/index.ts` → `GITHUB_REPO` |
 
 `electron/services/update-checker.ts` sets `autoDownload = false` and
 `autoInstallOnAppQuit = true`, calls `autoUpdater.checkForUpdates()`, and **only** on throw
@@ -412,8 +413,8 @@ falls back to `GET https://api.github.com/repos/${GITHUB_REPO}/releases/latest`:
 `tag_name` minus a leading `v` against `app.getVersion()` component by component, then picking
 the first `.dmg` or `.zip` asset.
 
-So: a release published to one repo is invisible to the other path. Before cutting a release,
-decide which repo is real and make both agree. The comment on `GITHUB_REPO` explains why it is
+A release published to a repository that one of the two does not name is invisible to that
+path, so a change to either setting changes the other with it. The comment on `GITHUB_REPO` explains why it is
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 

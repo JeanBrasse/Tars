@@ -40,6 +40,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth, sessionModel } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
+import { updateSharedJsonSync } from '../utils/shared-file';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -138,17 +139,7 @@ export function registerIpcHandlers(deps: IpcHandlerDependencies): void {
   registerObsidianHandlers({ getAppSettings: deps.getAppSettings, setAppSettings: deps.setAppSettings, saveAppSettings: deps.saveAppSettings });
   registerGwsHandlers({ getAppSettings: deps.getAppSettings, setAppSettings: deps.setAppSettings, saveAppSettings: deps.saveAppSettings });
   registerMcpConfigHandlers();
-  registerApiTokenHandler();
   registerTrayHandlers(deps);
-}
-
-// ============== API Token IPC Handler ==============
-
-function registerApiTokenHandler(): void {
-  ipcMain.handle('api:getToken', async () => {
-    const { getApiToken } = await import('../services/api-server');
-    return getApiToken();
-  });
 }
 
 // ============== Tray Panel IPC Handlers ==============
@@ -1625,57 +1616,57 @@ function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
     permissions?: { allow: string[]; deny: string[] };
   }) => {
     try {
-      // Read existing settings first
-      let existingSettings = {};
-      if (fs.existsSync(SETTINGS_PATH)) {
-        existingSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-      }
+      // Every claude binary reads this file, and Claude Code writes it too, so
+      // it is changed through updateSharedJsonSync: never in place, with its
+      // mode kept, and not written at all when the save changes nothing.
+      const outcome = updateSharedJsonSync<Record<string, unknown>>(SETTINGS_PATH, existingSettings => {
+        // The renderer sends its entire snapshot of this file, taken once when
+        // the Settings page mounted and never refreshed (useSettings.ts fetches
+        // on mount only). The window is created early in startup and Tars writes
+        // the CLI hooks later in it, so a Settings page opened in between holds
+        // `hooks: {}` and goes on holding it. A save made minutes later wrote
+        // that empty block over the real one: measured at eight hooks before and
+        // none after, taking `permissions`, `enabledPlugins` and
+        // `includeCoAuthoredBy` with it. It is one file for all fourteen
+        // providers that run the claude binary, and nothing would have restored
+        // a status hook until the next launch of Tars.
+        //
+        // The guard belongs here rather than in the page because it has to hold
+        // for whatever a renderer sends. The other half, sending only the delta,
+        // is the page's, and it already does exactly that for the app's own
+        // settings, with a comment in handleSaveAppSettings explaining why.
+        const existing = existingSettings ?? {};
+        const newSettings: Record<string, unknown> = { ...existing, ...settings };
 
-      // The renderer sends its entire snapshot of this file, taken once when
-      // the Settings page mounted and never refreshed (useSettings.ts fetches
-      // on mount only). The window is created early in startup and Tars writes
-      // the CLI hooks later in it, so a Settings page opened in between holds
-      // `hooks: {}` and goes on holding it. A save made minutes later wrote
-      // that empty block over the real one: measured at eight hooks before and
-      // none after, taking `permissions`, `enabledPlugins` and
-      // `includeCoAuthoredBy` with it. It is one file for all fourteen
-      // providers that run the claude binary, and nothing would have restored
-      // a status hook until the next launch of Tars.
-      //
-      // The guard belongs here rather than in the page because it has to hold
-      // for whatever a renderer sends. The other half, sending only the delta,
-      // is the page's, and it already does exactly that for the app's own
-      // settings, with a comment in handleSaveAppSettings explaining why.
-      const existing = existingSettings as Record<string, unknown>;
-      const newSettings: Record<string, unknown> = { ...existing, ...settings };
+        // Nothing that reaches this handler edits these two. The Settings page
+        // has no control for either: hooks are Tars's own and plugins are the
+        // CLI's, and both simply ride along in the snapshot. They can be lost
+        // here, never meant, so the file keeps what it has.
+        for (const key of ['hooks', 'enabledPlugins'] as const) {
+          if (key in existing) newSettings[key] = existing[key];
+        }
 
-      // Nothing that reaches this handler edits these two. The Settings page
-      // has no control for either: hooks are Tars's own and plugins are the
-      // CLI's, and both simply ride along in the snapshot. They can be lost
-      // here, never meant, so the file keeps what it has.
-      for (const key of ['hooks', 'enabledPlugins'] as const) {
-        if (key in existing) newSettings[key] = existing[key];
-      }
+        // These two the page does edit, so an incoming value is taken as meant.
+        // Unless it carries nothing at all while the file holds something, which
+        // is the shape of a stale snapshot rather than of someone clearing a
+        // field by hand.
+        if (carriesNothing(settings.env) && !carriesNothing(existing.env)) {
+          newSettings.env = existing.env;
+        }
+        if (permissionsCarryNothing(settings.permissions) && !permissionsCarryNothing(existing.permissions)) {
+          newSettings.permissions = existing.permissions;
+        }
 
-      // These two the page does edit, so an incoming value is taken as meant.
-      // Unless it carries nothing at all while the file holds something, which
-      // is the shape of a stale snapshot rather than of someone clearing a
-      // field by hand.
-      if (carriesNothing(settings.env) && !carriesNothing(existing.env)) {
-        newSettings.env = existing.env;
-      }
-      if (permissionsCarryNothing(settings.permissions) && !permissionsCarryNothing(existing.permissions)) {
-        newSettings.permissions = existing.permissions;
-      }
+        // `includeCoAuthoredBy` is left as sent, deliberately. It is a boolean
+        // the page does edit, and a stale `false` is indistinguishable from a
+        // deliberate one: there is no empty value to recognise. That one closes
+        // when the page sends a delta instead of a snapshot, which is the half
+        // that belongs to the Settings page.
+        return newSettings;
+      }, { createMode: 0o644 });
 
-      // `includeCoAuthoredBy` is left as sent, deliberately. It is a boolean
-      // the page does edit, and a stale `false` is indistinguishable from a
-      // deliberate one: there is no empty value to recognise. That one closes
-      // when the page sends a delta instead of a snapshot, which is the half
-      // that belongs to the Settings page.
-
-      // Write back
-      fs.writeFileSync(SETTINGS_PATH, JSON.stringify(newSettings, null, 2));
+      if (outcome === 'unreadable') return { success: false, error: `${SETTINGS_PATH} is not valid JSON: left untouched` };
+      if (outcome === 'busy') return { success: false, error: `${SETTINGS_PATH} kept changing while saving: nothing written` };
       return { success: true };
     } catch (err) {
       console.error('Failed to save settings:', err);
