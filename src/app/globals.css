@@ -18,7 +18,15 @@
 
    ============================================ */
 
-:root {
+/* `.light` names the same values as `:root` so a theme the document is not
+   wearing can still be read off an element: custom properties inherit, so a
+   probe inside `<html class="dark">` sees dark values unless a rule says
+   otherwise. `lib/terminal-theme.ts` reads the palette this way, which is how
+   the xterm theme can follow the terminal setting while the app wears the
+   other theme, with no second copy of the colours in TypeScript. Nothing in
+   the app carries `.light`, so this adds no rule to any element on screen. */
+:root,
+.light {
   /* Surfaces */
   --background: #FAF9F7;
   --foreground: #1E1E1E;
