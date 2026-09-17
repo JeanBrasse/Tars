@@ -280,19 +280,23 @@ export async function volatileMasks(page, surface, skip = []) {
  * actually saw, and `e2e/known-errors.spec.ts` fails when one of them stops
  * happening. Removing the entry is then the way to make the suite green again,
  * which is the only order that keeps this list honest.
+ *
+ * Empty since 2026-09-18, and the two entries it held are the reason the rule
+ * is written that way. `hydration` covered a class of mismatch that four pages
+ * had, and the pages have it no longer: they decided at render whether the
+ * preload bridge existed, so the pre-render and the first client render were
+ * not the same page, and `useDesktopApi` answers the same thing in both now.
+ * `overseer-model-options` covered an uncaught rejection from an unreachable
+ * gateway, and that call is caught. Measured on the tree that fixed them: a
+ * full run, every surface recording, and the main process probe reporting
+ * **0 console errors of any kind**, against 48 on the tree before.
+ *
+ * The next allowance goes here with its `key`, its `match` and a `why` that
+ * says which defect it covers and when it was reported.
+ *
+ * @type {Array<{ key: string, match: RegExp, why: string }>}
  */
-export const KNOWN_PAGE_ERRORS = [
-  {
-    key: 'hydration',
-    match: /Hydration|hydration/,
-    why: 'Next hydration mismatches, a class across this app; each page clears its own in its redesign pass',
-  },
-  {
-    key: 'overseer-model-options',
-    match: /overseer:modelOptions/,
-    why: 'the Chat page does not catch modelOptions failing, so an unreachable gateway becomes an uncaught rejection; reported 2026-09-16, hidden until then by a gateway that answered 401 rather than refusing',
-  },
-];
+export const KNOWN_PAGE_ERRORS = [];
 
 /** Split page errors into what is known, what is not, and what was seen. */
 export function splitPageErrors(errors) {
