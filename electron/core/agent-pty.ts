@@ -4,8 +4,11 @@ import { managedCliEnv } from '../providers/cli-provider';
 import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 
-/** The shell each agent PTY was started with, by name, as the process table shows it. */
+/** The shell each agent PTY was started with, as it was given to node-pty. */
 const shellOf = new WeakMap<pty.IPty, string>();
+
+/** node-pty's own program, which takes the terminal and then executes the shell. */
+const NODE_PTY_HELPER = 'spawn-helper';
 
 /**
  * Spawn the PTY an agent's CLI runs in.
@@ -93,7 +96,7 @@ export function spawnAgentPty(opts: {
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
-  shellOf.set(spawned, path.basename(opts.shell));
+  shellOf.set(spawned, opts.shell);
   return spawned;
 }
 
@@ -116,6 +119,17 @@ export function spawnAgentPty(opts: {
  * command, which counts too, since typing into it is just as wrong. Between the
  * fork and the exec of a command, about 200 ms, the new group's leader is still
  * named bash and this reads false.
+ *
+ * Until the shell holds its terminal, node-pty gives it two other names, and
+ * only the process name was compared. First the file it was asked to spawn, as
+ * given, `/bin/bash`: node-pty returns it whenever it finds kernel_task leading
+ * the foreground. Then `spawn-helper`, node-pty's own program, which opens the
+ * terminal and executes the shell. Measured with the real spawnAgentPty and
+ * node-pty 1.1.0 under Electron's node, five spawns: `/bin/bash` for 3 to
+ * 127 ms, `spawn-helper` for up to 7 ms, then `bash`. agent:get creates a
+ * terminal and reads this at once, and said a CLI ran in a shell that had not
+ * started. After a command exits the name is briefly undefined, until the
+ * shell takes the terminal back.
  */
 export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   if (!ptyProcess) return false;
@@ -128,5 +142,8 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
     // The terminal is gone: nothing runs in it.
     return false;
   }
-  return !!foreground && foreground !== shell;
+  return !!foreground
+    && foreground !== path.basename(shell)
+    && foreground !== shell
+    && foreground !== NODE_PTY_HELPER;
 }

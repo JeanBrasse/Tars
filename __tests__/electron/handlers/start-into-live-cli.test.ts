@@ -40,10 +40,12 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, homedir: () => tmpHome, default: { ...actual, homedir: () => tmpHome } };
 });
 vi.mock('node-pty', () => ({
-  spawn: vi.fn((): FakePty => ({
+  spawn: vi.fn((file: string): FakePty => ({
     pid: 4242,
-    // What a login shell's terminal reports before anything is typed.
-    process: 'bash',
+    // What node-pty reports first: the file it was asked to spawn, until a
+    // group holds the terminal. Measured under Electron's node: `/bin/bash`
+    // for 3 to 127 ms, then `spawn-helper`, then `bash` at the prompt.
+    process: file,
     write: vi.fn(),
     kill: vi.fn(),
     resize: vi.fn(),
@@ -80,7 +82,7 @@ const handlers = new Map<string, Handler>();
 const broadcasts: Array<{ channel: string; payload: unknown }> = [];
 
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../../electron/handlers/ipc-handlers';
-import { agents } from '../../../electron/core/agent-manager';
+import { agents, initAgentPty } from '../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { scheduleTick } from '../../../electron/utils/agents-tick';
@@ -88,13 +90,14 @@ import type { AgentStatus, AppSettings } from '../../../electron/types';
 
 const project = path.join(tmpHome, 'project');
 
-function deps(): IpcHandlerDependencies {
+function deps(overrides: Record<string, unknown> = {}): IpcHandlerDependencies {
   const fixed: Record<string, unknown> = {
     agents,
     ptyProcesses,
     saveAgents: vi.fn(),
     getAppSettings: () => ({} as AppSettings),
     initAgentPty: vi.fn(async () => { throw new Error('the terminal exists: nothing should be spawned'); }),
+    ...overrides,
   };
   return new Proxy(fixed, {
     get(target, key: string) {
@@ -208,5 +211,47 @@ describe('start with only the shell left, after /exit', () => {
 
     terminal.process = 'bash';
     expect(await tickFor(agent.id)).toMatchObject({ cliRunning: false });
+  });
+});
+
+/**
+ * Before the shell holds its terminal, node-pty names it twice more: the file
+ * it was asked to spawn, as given, then its own `spawn-helper`. Both were read
+ * as a CLI, because only `bash` was compared. agent:get creates the terminal of
+ * an agent that has none, after a stop, and read it within the same call: the
+ * Frontend measured `/bin/bash` at 3 ms and `bash` only at 24 ms.
+ */
+describe('a terminal whose shell is still starting', () => {
+  it.each(['/bin/bash', 'spawn-helper'])('reads %s as the shell: start types, and nothing says a CLI runs', async (name) => {
+    const { agent, terminal } = agentWithTerminal('completed');
+    terminal.process = name;
+
+    expect(await tickFor(agent.id)).toMatchObject({ cliRunning: false });
+    const listed = (await handlers.get('agent:list')!({})) as AgentStatus[];
+    expect(listed.find(a => a.id === agent.id)).toMatchObject({ cliRunning: false });
+    expect(await handlers.get('agent:get')!({}, agent.id)).toMatchObject({ cliRunning: false });
+
+    const result = await start(agent.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(result).toMatchObject({ success: true });
+    expect(terminal.write.mock.calls.map(call => String(call[0])).join('')).toContain(`cd '${project}' && `);
+  });
+
+  it('agent:get creates the terminal of a stopped agent and says no CLI runs in it', async () => {
+    handlers.clear();
+    registerIpcHandlers(deps({ initAgentPty: (agent: AgentStatus) => initAgentPty(agent, null, vi.fn(), vi.fn()) }));
+    const agent = {
+      id: 'agent-stopped', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), ptyId: 'pty-killed-by-stop',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+
+    const got = await handlers.get('agent:get')!({}, agent.id) as AgentStatus;
+
+    const terminal = ptyProcesses.get(got.ptyId!) as unknown as FakePty;
+    expect(got.ptyId).not.toBe('pty-killed-by-stop');
+    // The terminal as node-pty hands it over, before the shell has started.
+    expect(terminal.process).toBe('/bin/bash');
+    expect(got).toMatchObject({ cliRunning: false });
   });
 });
