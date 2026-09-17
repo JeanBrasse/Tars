@@ -325,13 +325,13 @@ and `.css` files under `src/` for banned styling and excludes two paths,
 `src/components/ui/` and `src/app/icon.tsx`. The hex rule excludes one more,
 `src/app/globals.css`, where the colours are named.
 
-The migration behind the rule is barely started. Two files in the whole tree
-import a primitive: `src/app/crons/page.tsx` (`LoadingState`) and
-`src/components/NewChatModal/MembersTable.tsx` (`Dropdown`). `Button`,
-`Label`/`Input`/`Select`/`Textarea`, `PageHeader`, `StatusBadge` and `StatusDot`
-have no consumers at all, and the `Toggle` primitive still lives at
-`src/components/Settings/Toggle.tsx`, outside `ui/`. Read this section as the
-target, not as an inventory of what the screens do today.
+The migration behind the rule has moved since this paragraph said two files
+imported a primitive. Measured on 2026-09-18: 83 files outside `ui/` import from
+it, `Button` in 52 of them, `BrandSpinner` in 19, `Dropdown` in 17, `PageHeader`
+in 12, and `MetaChip`, `LoadingState` and `StatusBadge` in the rest. The
+`Toggle` primitive still lives at `src/components/Settings/Toggle.tsx`, outside
+`ui/`. Read this section as the target it still is, not as an inventory of what
+every screen does today.
 
 ### Buttons: `ui/Button`
 Four variants, two sizes, nothing else. `primary` is an accent fill with
@@ -472,8 +472,10 @@ progress.
   circles are all round today. Each is a bug, not a precedent.
 - **Don't write a hex colour out.** Lint fails on `#` followed by 3, 4, 6 or 8
   hex digits anywhere but `src/app/globals.css`, where the tokens are defined,
-  and `src/components/ui/`. The tree has 22 of them left, 20 in
-  `src/lib/terminal-theme.ts`, which hands xterm its palette.
+  and `src/components/ui/`. The tree has none left: `src/lib/terminal-theme.ts`
+  reads xterm's palette off the tokens through a probe element, and the vendor
+  marks, whose white glyph is knocked out of a coloured square, live in
+  `src/components/ui/ProviderBadge.tsx`.
 - **Don't use a raw Tailwind palette colour.** Lint fails on
   `(text|bg|border)-(red|green|blue|amber|purple|cyan|yellow|orange|zinc|slate|gray)-[0-9]`.
   Use the tokens. Tailwind's `cyan-*` scale is remapped to the tangerine ramp in

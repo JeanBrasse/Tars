@@ -284,9 +284,13 @@ The hex rule excludes two more places, each because writing a colour out is thei
 `src/app/globals.css`, where every colour the app uses is named once, and comment lines in
 `.ts` and `.tsx`, where `#418` is an error number rather than a colour.
 
-Red on this tree: 13 lines of raw palette in `src/components/KanbanBoard/constants.ts` and
-`src/lib/providers.ts`, which the `.tsx`-only scan never read, and 22 hardcoded hex colours
-in `src/lib/terminal-theme.ts` (20), `src/app/layout.tsx` and `src/components/ProviderBadge.tsx`.
+Green on this tree, on all six checks, with 221 files read. The wider scan landed red: 13 lines
+of raw palette in `src/components/KanbanBoard/constants.ts` and `src/lib/providers.ts`, which the
+`.tsx`-only scan never read, and 22 hardcoded hex colours in `src/lib/terminal-theme.ts` (20),
+`src/app/layout.tsx` and `src/components/ProviderBadge.tsx`. All 35 were resolved in the same
+lot: the Kanban table was dead code, the provider colours and marks moved into
+`src/components/ui/`, the terminal theme reads the tokens, and the `theme-color` tag was
+removed after measuring that nothing in the app listens for it.
 
 ### CI
 
