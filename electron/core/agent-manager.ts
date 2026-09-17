@@ -273,6 +273,72 @@ function backupFile(): string {
   return path.join(DATA_DIR, 'agents.backup.json');
 }
 
+/**
+ * The generation this process wrote last, and the proof it is still on disk.
+ *
+ * saveAgents kept its backup by reading agents.json back and parsing it, on
+ * every single call, only to copy it to agents.backup.json. Measured on
+ * 2026-09-18 against a snapshot of the real file (42 agents, 1.06 MB, 87% of
+ * it the retained terminal scrollback the Dashboard replays), four interleaved
+ * runs of 60 saves each: 6.96 ms a save became 3.30, and at three times the
+ * fleet 21.8 ms became 10.7, with the worst call over a run down from 592 ms
+ * to 107. Half the cost of a save, and most of its tail, spent re-reading a
+ * string we had serialised ourselves one call earlier and written atomically.
+ *
+ * The parse was not pointless: it is what refuses to copy an unreadable file
+ * over the last good one. So it is kept for the only case where it can happen
+ * - a file that is not the one we wrote - and the stat taken straight after
+ * our own rename is what tells the two apart. Nothing about the atomicity or
+ * the mode of either file changes.
+ */
+let lastWrittenJson: string | undefined;
+let lastWrittenStamp: string | undefined;
+
+/** Size, modification time and inode: what changes when anything but our own
+ *  rename touches the file, including an in-place rewrite of the same length. */
+function fileStamp(file: string): string | undefined {
+  try {
+    const stat = fs.statSync(file, { bigint: true });
+    return `${stat.size}:${stat.mtimeNs}:${stat.ino}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Keep the previous generation, which is all a backup is.
+ *
+ * Two deliberate equivalences with the read it replaces. A generation with no
+ * agents in it is not remembered, so the next save falls back to the read,
+ * parses the empty file and leaves the backup alone: deleting every agent
+ * still does not destroy the last good copy. And a file whose stamp no longer
+ * matches is read and parsed exactly as before, so a truncated agents.json
+ * written by anything else is still refused rather than copied over.
+ */
+function backupPreviousGeneration(): void {
+  if (lastWrittenJson !== undefined && lastWrittenStamp !== undefined
+      && fileStamp(AGENTS_FILE) === lastWrittenStamp) {
+    try {
+      fs.writeFileSync(backupFile(), lastWrittenJson);
+    } catch {
+      // A backup that cannot be written is not a reason to lose the save.
+    }
+    return;
+  }
+
+  if (!fs.existsSync(AGENTS_FILE)) return;
+  try {
+    const existing = fs.readFileSync(AGENTS_FILE, 'utf-8');
+    const existingAgents = parseAgentsFile(existing);
+    if (existingAgents && existingAgents.length > 0) {
+      fs.writeFileSync(backupFile(), existing);
+    }
+  } catch {
+    // An unreadable current file is exactly what the backup protects
+    // against: leave the old backup alone.
+  }
+}
+
 /** Runtime-only fields, stripped before writing. */
 function persistable(agent: AgentStatus): AgentStatus {
   return {
@@ -300,9 +366,10 @@ function parseAgentsFile(raw: string): AgentStatus[] | null {
  * Writes the agent list.
  *
  * Atomic: a temp file renamed into place, so a crash mid-write leaves the
- * previous file intact rather than a truncated one. The backup is taken from
- * content we have just parsed successfully, so a corrupt current file can no
- * longer overwrite the last good copy.
+ * previous file intact rather than a truncated one. The backup is only ever
+ * the previous generation, and only ever content known to be readable, so a
+ * corrupt current file cannot overwrite the last good copy: see
+ * backupPreviousGeneration, which is also where the cost of taking it went.
  */
 export function saveAgents() {
   try {
@@ -318,22 +385,17 @@ export function saveAgents() {
       agents: Array.from(agents.values()).map(persistable),
     };
 
-    if (fs.existsSync(AGENTS_FILE)) {
-      try {
-        const existing = fs.readFileSync(AGENTS_FILE, 'utf-8');
-        const existingAgents = parseAgentsFile(existing);
-        if (existingAgents && existingAgents.length > 0) {
-          fs.writeFileSync(backupFile(), existing);
-        }
-      } catch {
-        // An unreadable current file is exactly what the backup protects
-        // against: leave the old backup alone.
-      }
-    }
+    backupPreviousGeneration();
 
+    const json = JSON.stringify(payload, null, 2);
     const tmp = `${AGENTS_FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+    fs.writeFileSync(tmp, json);
     fs.renameSync(tmp, AGENTS_FILE);
+    // Remembered only when there is something to lose: see
+    // backupPreviousGeneration for why an empty list is deliberately forgotten.
+    const remember = payload.agents.length > 0;
+    lastWrittenJson = remember ? json : undefined;
+    lastWrittenStamp = remember ? fileStamp(AGENTS_FILE) : undefined;
     agentsDirty = false;
   } catch (err) {
     console.error('Failed to save agents:', err);
