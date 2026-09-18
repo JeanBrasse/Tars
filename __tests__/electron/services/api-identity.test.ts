@@ -86,8 +86,10 @@ const REMEDY = 'An agent is known by the token Tars gives its process when it st
   + 'restart the agent from Tars.';
 /** callingAgent's refusal, which comes before any room is looked at. */
 const NO_AGENT = `This call has no agent identity, so it cannot be placed in a room. ${REMEDY}`;
-/** The cross-project guard's refusal of an MCP client it cannot scope. */
-const NO_SCOPE = `This agent has no identity, so its calls cannot be scoped to a project. ${REMEDY}`;
+/** The refusal, on every route that drives an agent, of a caller that is nobody. */
+const NO_IDENTITY_TO_DRIVE =
+  'Driving an agent takes an identity of your own, and this call has none: it presents the '
+  + `shared token, which every agent can read and which therefore names nobody. ${REMEDY}`;
 /** A line of Noah's conversation with the super chat, which is what the global room serves. */
 const SUPER_CHAT_LINE = 'noah-private-line-7f3a';
 
@@ -308,14 +310,42 @@ describe('a call on the shared token', () => {
     }, {});
 
     expect(status, JSON.stringify(body)).toBe(403);
-    expect(body.error).toBe(NO_SCOPE);
+    expect(body.error).toBe(NO_IDENTITY_TO_DRIVE);
+  });
+
+  it('drives nothing when it leaves the client header out, which is how it used to drive everything', async () => {
+    // Measured on b17db0f, the whole hole in one line: drop x-tars-client and
+    // the guard had nothing left to refuse. This answered 200 and beta stopped.
+    const stop = await call('POST', `/api/agents/${BETA.id}/stop`, bearer(sharedToken), {});
+    expect(stop.status, JSON.stringify(stop.body)).toBe(403);
+    expect(stop.body.error).toBe(NO_IDENTITY_TO_DRIVE);
+
+    // The one that took an agent out of the fleet, and the one that gave it work.
+    const removed = await call('DELETE', `/api/agents/${BETA.id}`, bearer(sharedToken));
+    expect(removed.status, JSON.stringify(removed.body)).toBe(403);
+    expect(agents.has(BETA.id), 'the fleet lost an agent to a caller that is nobody').toBe(true);
+
+    const dispatched = await call('POST', `/api/agents/${BETA.id}/dispatch`, bearer(sharedToken), { message: 'go' });
+    expect(dispatched.status, JSON.stringify(dispatched.body)).toBe(403);
+
+    // Refused, and enrolled nobody: with the return after the refusal gone,
+    // the call still got its 403 while the agent joined the fleet anyway, and
+    // this read only the status (the QA's gate of lot 4, on 24f1889).
+    const fleet = agents.size;
+    const created = await call('POST', '/api/agents', bearer(sharedToken), { projectPath: '/projects/gamma' });
+    expect(created.status, JSON.stringify(created.body)).toBe(403);
+    expect(agents.size, 'a caller that is nobody enrolled an agent').toBe(fleet);
   });
 
   it('is still let in: having no agent behind it is not a refusal at the door', async () => {
-    // The super chat, the shell hooks and Hermes authenticate this way.
+    // The shell hooks authenticate this way, and read: session-start.sh asks
+    // for an agent's bootstrap with it at the start of every fresh session.
     const { status } = await get('/api/agents', bearer(sharedToken));
-
     expect(status).toBe(200);
+
+    const bootstrap = await get(`/api/agents/${ALPHA.id}/bootstrap`, bearer(sharedToken));
+    expect(bootstrap.status, JSON.stringify(bootstrap.body)).toBe(200);
+    expect(String(bootstrap.body.context)).toContain(ALPHA.id);
   });
 
   it('is refused with a token nobody minted', async () => {

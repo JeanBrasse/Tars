@@ -183,12 +183,14 @@ describe('what must not be traded for that', () => {
 
   it('is flushed by the quit handler itself', () => {
     // The wiring, not a copy of it: the body of the before-quit handler in
-    // main.ts has to be what calls flushBus, or a quit mid-turn loses the
-    // message and every test above still passes.
+    // main.ts has to be what flushes the journal, or a quit mid-turn loses the
+    // message and every test above still passes. It hands the step to
+    // runShutdownSteps, which catches each one; shutdown-order.test.ts is what
+    // holds it to running first.
     const main = fs.readFileSync(path.join(process.cwd(), 'electron/main.ts'), 'utf-8');
     const handler = main.slice(main.indexOf("app.on('before-quit'"));
     const body = handler.slice(0, handler.indexOf('\n});'));
-    expect(body).toContain('flushBus()');
+    expect(body).toContain("['flushBus', flushBus]");
   });
 
   it('writes nothing more after a flush, rather than twice', () => {

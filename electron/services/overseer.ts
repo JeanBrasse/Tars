@@ -3,12 +3,13 @@ import * as http from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { agents } from '../core/agent-manager';
 import { AgentStatus } from '../types';
-import { dataPath, API_PORT } from '../constants';
-import { writeAtomicSync } from '../utils/secret-file';
+import { privatePath, API_PORT, OVERSEER_FILE, OVERSEER_LEGACY_FILE } from '../constants';
+import { writeSecretFileSync, describeSecretFileError } from '../utils/secret-file';
 import { stripAnsi } from '../utils/ansi';
 import { repoSummary } from './git-review';
 import { usableHermesConnection } from './hermes-config';
 import { agentStatusEmitter } from './agent-events';
+import { internalToken } from '../core/agent-tokens';
 import { recordRunEvents, summariseRuns, type RunEvent } from './overseer-runs';
 import { AUTO_ACTION_RULES, findAutoRule } from './overseer-auto';
 import {
@@ -73,11 +74,16 @@ import { HermesConnection } from '../types/hermes';
  */
 
 // ── Persistence ─────────────────────────────────────────────────────────
-// Conversation + job id live in ~/.dorothy/overseer.json, written the way
-// projects.json is: a plain state file, atomic, no secret-mode chmod (it
-// holds no credential - the Hermes token itself stays in hermes-connection.json).
+// Conversation + job id live in ~/.tars-private/overseer.json, written
+// atomically at 0600.
+//
+// They lived in ~/.dorothy/overseer.json, which is the directory every agent
+// is started with (`--add-dir ~/.dorothy`), at 0644: 146 KB and 344 messages
+// of Noah's own conversation, reachable with an `ls` and a `cat`, no API call
+// and no token. The file moves out on the first start that finds it, and
+// nothing in the private directory is ever handed to a CLI. See PRIVATE_DIR
+// for what that does and does not close.
 
-const OVERSEER_FILE = dataPath('overseer.json');
 const OVERSEER_JOB_NAME = 'tars-overseer';
 
 export interface OverseerAction {
@@ -203,10 +209,76 @@ function defaultState(): OverseerState {
   return { jobId: null, messages: [], previousSnapshot: null, longRunningReported: [], paused: false, settings: defaultSettings() };
 }
 
-function loadState(): OverseerState {
+/**
+ * Move the conversation out of the directory the agents are handed, once per
+ * run of the app, before anything reads or writes it.
+ *
+ * It is Noah's data, so the order is: write the new file and read it back
+ * whole, and only then let go of the old one. A migration that cannot finish
+ * leaves the old file exactly as it was, and stateFile() below goes on reading
+ * it, so the worst case is the state before this existed rather than an empty
+ * chat.
+ *
+ * Both files at once means one of two things, and neither may lose a message:
+ * a migration interrupted between the copy and the delete, or an older build
+ * run afterwards, which would have started a fresh file in the old place and
+ * written into it. The new file wins either way - adopting the older build's
+ * file would hide the whole history behind the few lines it holds - and the
+ * old one is moved into the private directory rather than deleted, so its
+ * bytes survive out of the agents' way.
+ */
+let migrationAttempted = false;
+
+export function migrateOverseerOutOfAgentReach(): void {
+  migrateOutOfAgentReach();
+}
+
+function migrateOutOfAgentReach(): void {
+  if (migrationAttempted) return;
+  migrationAttempted = true;
   try {
-    if (!fs.existsSync(OVERSEER_FILE)) return defaultState();
-    const raw = JSON.parse(fs.readFileSync(OVERSEER_FILE, 'utf-8'));
+    if (!fs.existsSync(OVERSEER_LEGACY_FILE)) return;
+
+    if (fs.existsSync(OVERSEER_FILE)) {
+      const aside = privatePath(`overseer.superseded-${Date.now()}.json`);
+      fs.mkdirSync(privatePath(), { recursive: true, mode: 0o700 });
+      fs.renameSync(OVERSEER_LEGACY_FILE, aside);
+      console.log(`[overseer] an older conversation file was still in the data directory; kept at ${aside}`);
+      return;
+    }
+
+    const raw = fs.readFileSync(OVERSEER_LEGACY_FILE, 'utf-8');
+    // A file that does not parse is not the state, and copying it would only
+    // move the problem. Left where it is for loadState to fail over.
+    JSON.parse(raw);
+    // Makes the private directory too, at 0700, as every save does.
+    writeSecretFileSync(OVERSEER_FILE, raw);
+    if (fs.readFileSync(OVERSEER_FILE, 'utf-8') !== raw) {
+      // Never delete against a copy that did not land. The half-written file
+      // goes, the original stays, and the next start tries again.
+      fs.rmSync(OVERSEER_FILE, { force: true });
+      console.error('[overseer] the conversation did not copy across; left where it was');
+      return;
+    }
+    fs.unlinkSync(OVERSEER_LEGACY_FILE);
+    console.log('[overseer] conversation moved out of the directory the agents are handed');
+  } catch (err) {
+    console.error(`[overseer] could not move the conversation out of the data directory: ${describeSecretFileError(err)}`);
+  }
+}
+
+/** The private file, or the old one when the migration could not be made. */
+function stateFile(): string {
+  if (fs.existsSync(OVERSEER_FILE)) return OVERSEER_FILE;
+  return fs.existsSync(OVERSEER_LEGACY_FILE) ? OVERSEER_LEGACY_FILE : OVERSEER_FILE;
+}
+
+function loadState(): OverseerState {
+  migrateOutOfAgentReach();
+  try {
+    const file = stateFile();
+    if (!fs.existsSync(file)) return defaultState();
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
     // Spreading `raw` over the defaults is a shallow merge, so a state file
     // written before settings existed - or one holding only some of them -
     // would otherwise arrive with `settings` undefined and crash the callers.
@@ -216,16 +288,29 @@ function loadState(): OverseerState {
       settings: { ...defaultSettings(), ...(raw?.settings ?? {}) },
     };
   } catch (err) {
-    console.error('[overseer] could not read overseer.json, starting fresh:', err);
+    // Never `err` itself: Node quotes the input in a JSON.parse message, and
+    // the input here is Noah's conversation.
+    console.error(`[overseer] could not read the conversation (${describeSecretFileError(err)}), starting fresh`);
     return defaultState();
   }
 }
 
 function saveState(state: OverseerState): void {
+  migrateOutOfAgentReach();
+  const body = JSON.stringify(state, null, 2);
   try {
-    writeAtomicSync(OVERSEER_FILE, JSON.stringify(state, null, 2));
+    writeSecretFileSync(OVERSEER_FILE, body);
   } catch (err) {
-    console.error('[overseer] could not persist overseer.json:', err);
+    // The private directory could not be written. Losing what Noah just said
+    // would be the worse failure, so it goes back to the old place and says
+    // so; the next start finds it there and migrates it again.
+    console.error(`[overseer] could not write the private conversation file (${describeSecretFileError(err)}); falling back to the data directory`);
+    try {
+      writeSecretFileSync(OVERSEER_LEGACY_FILE, body);
+      migrationAttempted = false;
+    } catch (fallbackErr) {
+      console.error(`[overseer] could not persist the conversation at all: ${describeSecretFileError(fallbackErr)}`);
+    }
   }
 }
 
@@ -812,14 +897,6 @@ export function resolveTarget(agentId: string): { ok: true; target: ResolvedTarg
   };
 }
 
-function readApiToken(): string {
-  try {
-    return fs.readFileSync(dataPath('api-token'), 'utf-8').trim();
-  } catch {
-    return '';
-  }
-}
-
 /**
  * POST to the local API's /dispatch route rather than writing to the PTY
  * directly. That route is what performDispatch() in agent-routes.ts already
@@ -827,10 +904,18 @@ function readApiToken(): string {
  * none is live) - the one path an API-driven session is started, per the
  * backend spawn rule. Going through it here means sendToAgent gets that
  * behavior for free instead of a second copy of it.
+ *
+ * It presents Tars's own pass, not `~/.dorothy/api-token`. The shared file is
+ * readable by every agent, so while the super chat authenticated with it the
+ * routes that drive an agent could not refuse it: refusing the file would have
+ * taken Noah's chat down with whoever else had read it. The pass is minted in
+ * memory and written nowhere, so the refusal costs the super chat nothing. A
+ * dedicated file elsewhere would only have moved the credential: any path
+ * under $HOME is readable by the same agents.
  */
 function postLocalDispatch(agentId: string, message: string): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
-    const token = readApiToken();
+    const token = internalToken();
     const payload = JSON.stringify({ message });
     const req = http.request({
       host: '127.0.0.1',

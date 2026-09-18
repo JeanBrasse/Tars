@@ -62,9 +62,10 @@ function findHandler(app: RouteApp, method: string, pathname: string): RouteHand
 async function call(handler: RouteHandler, req: Partial<RouteRequest>): Promise<{ data: unknown; status: number }> {
   let result: { data: unknown; status: number } = { data: undefined, status: 0 };
   const sendJson: SendJson = (data, status = 200) => { result = { data, status }; };
-  // The webhook reads its bearer from req.raw.headers; no secret file exists
-  // in the sandboxed HOME, so any value passes the (skipped) comparison.
-  const withRaw = { raw: { headers: {} }, ...req } as RouteRequest;
+  // The webhook opens to Hermes alone, which the server's door decides from
+  // the secret: a call here stands for one the door has already let through.
+  // api-who-may-drive-an-agent.test.ts holds the door and the refusals.
+  const withRaw = { raw: { headers: {} }, hermes: true, ...req } as RouteRequest;
   await handler(withRaw, sendJson, {} as RouteContext);
   return result;
 }

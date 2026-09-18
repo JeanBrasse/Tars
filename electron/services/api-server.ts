@@ -11,7 +11,8 @@ import { API_PORT, API_TOKEN_FILE } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
-import { agentForToken } from '../core/agent-tokens';
+import { agentForToken, isInternalToken } from '../core/agent-tokens';
+import { isWebhookSecret } from './hermes-webhook-secret';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -118,10 +119,15 @@ export function getApiToken(): string {
   return apiToken;
 }
 
-/** Authorised, and who by: an agent when its own token says so. */
+/** Authorised, and who by: an agent when its own token says so, Tars itself
+ *  when it is the main process calling its own API, Hermes when it presents
+ *  the webhook secret on the webhook. */
 export type CallerResolution =
-  | { ok: true; agentId?: string }
+  | { ok: true; agentId?: string; internal?: boolean; hermes?: boolean }
   | { ok: false; status: number; error: string };
+
+/** The one route published off this machine, and the only one the webhook secret opens. */
+const HERMES_WEBHOOK_PATH = '/api/webhooks/hermes';
 
 /**
  * Who this call is from, decided by what it presents rather than what it says.
@@ -134,28 +140,45 @@ export type CallerResolution =
  * - The **shared token**, `~/.dorothy/api-token`: authorised, and nobody. No
  *   header is read with it, neither the id nor the project. Every agent can
  *   read that file, so a name that comes with it proves nothing, and believing
- *   the name was how any agent could be any other. Who presents it, measured:
- *   the super chat dispatching to an agent, the shell hooks, Hermes calling
- *   its webhook, a curl run by hand, and an MCP server whose process was
- *   started without a token of its own. Not the renderer: it only ever calls
- *   /api/local-file, which is exempt, and presents no token.
+ *   the name was how any agent could be any other. Who presents it: the shell
+ *   hooks, a curl run by hand, and an MCP server whose process was started
+ *   without a token of its own. The super chat and Hermes did too, measured
+ *   before 1.7.6; each holds a credential of its own now. Not the renderer: it
+ *   only ever calls /api/local-file, which is exempt, and presents no token.
+ * - **Tars's own pass**, minted in this process's memory and written nowhere:
+ *   the caller is the main process itself, which is no agent either but is not
+ *   refused where an agent is required. The super chat holds it; nothing else
+ *   can, since it never reaches a file or a child's environment.
+ * - The **Hermes webhook secret**, `~/.tars-private/hermes-webhook-secret`:
+ *   Hermes, on `/api/webhooks/hermes` and nowhere else. It is the only
+ *   credential Tars publishes off the machine. Read here, at the door, because
+ *   the door used to know only the other secrets, and Hermes presenting the
+ *   one Tars minted for it was refused 401 before the route it was aimed at
+ *   could run (measured on b17db0f). On any other path it is nothing, and the
+ *   401 below.
  * - Anything else: unauthorised, with the same flat message as before, which
  *   tells a prober nothing about which of the two it got wrong.
  *
  * Nobody is not the same as refused, and the difference is per route. The bus
- * refuses a call with no agent behind it, before looking at any room, so the
- * shared token opens no room, the global one included. The cross-project
- * guard of the agent routes does not: it lets such a caller through unless it
- * says it is an MCP client, which is a header too. So whoever reads the file
- * can still drive every project's agents, as before this existed; refusing it
- * there waits on the super chat, which dispatches that way, reaching the
- * agents without it.
+ * refuses a call with no agent behind it before looking at any room, and since
+ * this lot the routes that drive an agent do the same: the shared token opens
+ * no room and starts, stops, messages and deletes nothing. Nor does it reach
+ * the webhook, which is Hermes's alone; it used to, as a fallback, and that
+ * was the whole fleet. It still reads: `session-start.sh` fetches an agent's
+ * bootstrap with it, so the listing and the per-agent reads stay open to it.
  */
-export function resolveCaller(headers: http.IncomingHttpHeaders): CallerResolution {
+export function resolveCaller(
+  headers: http.IncomingHttpHeaders,
+  pathname: string,
+): CallerResolution {
   const auth = headers.authorization;
   const presented = typeof auth === 'string' && auth.startsWith('Bearer ')
     ? auth.slice('Bearer '.length)
     : '';
+
+  if (pathname === HERMES_WEBHOOK_PATH && isWebhookSecret(presented)) {
+    return { ok: true, hermes: true };
+  }
 
   const agentId = presented ? agentForToken(presented) : undefined;
   if (agentId) {
@@ -169,6 +192,10 @@ export function resolveCaller(headers: http.IncomingHttpHeaders): CallerResoluti
       };
     }
     return { ok: true, agentId };
+  }
+
+  if (presented && isInternalToken(presented)) {
+    return { ok: true, internal: true };
   }
 
   if (apiToken && presented === apiToken) {
@@ -289,7 +316,7 @@ export function startApiServer(
     // to session ownership, which is stronger than anything a header could say.
     let caller: CallerResolution = { ok: true };
     if (!authExempt) {
-      caller = resolveCaller(req.headers);
+      caller = resolveCaller(req.headers, pathname);
       if (!caller.ok) {
         res.writeHead(caller.status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: caller.error }));
@@ -354,6 +381,8 @@ export function startApiServer(
           res,
           params,
           callerAgentId: caller.ok ? caller.agentId : undefined,
+          internal: caller.ok ? caller.internal === true : false,
+          hermes: caller.ok ? caller.hermes === true : false,
         };
         await route.handler(routeReq, sendJson, ctx);
         return;

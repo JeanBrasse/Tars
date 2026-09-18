@@ -150,7 +150,7 @@ afterEach(async () => {
 });
 
 /** Calls a route the way the server does, and returns what it answered. */
-async function call(method: string, url: string, body: Record<string, unknown> = {}) {
+async function call(method: string, url: string, body: Record<string, unknown> = {}, caller?: string) {
   const pathname = url.split('?')[0];
   for (const route of routes.routes) {
     if (route.method !== method) continue;
@@ -160,6 +160,10 @@ async function call(method: string, url: string, body: Record<string, unknown> =
     const req = {
       method, pathname, url: new URL(`http://localhost${url}`), body,
       raw: { headers: {}, on: () => {} }, res: {}, params: m[1] ? { id: m[1] } : {},
+      // The caller the server resolves from the bearer token. The routes that
+      // drive an agent refuse one that is nobody; here the agent in the path
+      // stands in for an agent of its own project, which is the ordinary case.
+      callerAgentId: caller ?? m[1],
     } as unknown as RouteRequest;
     await route.handler(req, (data, status = 200) => { answers.push({ data, status }); }, ctx);
     return answers.at(-1);
@@ -200,7 +204,10 @@ async function cardOf(id: string): Promise<AgentTickItem | undefined> {
 
 describe('an agent changed over the API', () => {
   it('shows when it is created', async () => {
-    const answer = await call('POST', '/api/agents', { projectPath: project, name: 'Fresh' });
+    // Creation has no agent in its path, so the caller is named: the route
+    // refuses one that is nobody, the way every route that drives an agent does.
+    const creator = putAgent({ id: 'creator' });
+    const answer = await call('POST', '/api/agents', { projectPath: project, name: 'Fresh' }, creator.id);
     const id = (answer!.data as { agent: AgentStatus }).agent.id;
 
     expect(railHeard(id)).toEqual(['idle']);

@@ -470,7 +470,7 @@ Bounded: appended per turn, trimmed to the last 12 000 lines once it passes 20 0
 
 ## §7 Persistence
 
-Everything the app owns lives under `~/.dorothy` (`DATA_DIR`). `~/.claude-manager` is migrated in on first run and then deleted.
+Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its agents are not handed, which lives under `~/.tars-private` (`PRIVATE_DIR`, table below). `~/.claude-manager` is migrated in on first run and then deleted.
 
 | Path | Shape | Written by | Durability |
 |---|---|---|---|
@@ -479,7 +479,6 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`). `~/.claude-manage
 | `agents.json.corrupt` | verbatim copy | `loadAgents()` | kept for inspection instead of silently replaced |
 | `app-settings.json` | `AppSettings` | `saveAppSettingsToFile()` | plain `writeFileSync`, non-atomic |
 | `api-token` | 64 hex chars | `initApiToken()` | mode `0600`, regenerated if shorter than 32 chars |
-| `hermes-webhook-secret` | opaque string | Hermes handlers | the one credential published over the tailnet |
 | `hermes-connection.json` | `HermesConnection` | `writeHermesConnection()` | non-atomic |
 | `projects.json` | `string[]` | `writeCustomProjects()` | also the allowlist for `local-file://` |
 | `templates.json` / `templates.backup.json` | `{ user: AgentTemplate[], overrides }` | template handlers | backup pair |
@@ -496,6 +495,13 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`). `~/.claude-manage
 | `telegram-downloads/` | media from Telegram | Telegram bot | |
 | `CLAUDE.md` | Tars's own agent instructions | `ensureTarsClaudeMd()` | mounted read-write into every agent via `--add-dir` |
 | `statusline.sh` | generated bash | `enableStatusLine()` | mode `0755` |
+
+Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes `0700`:
+
+| Path | Shape | Written by | Durability |
+|---|---|---|---|
+| `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
+| `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
 
 Files Tars writes **outside** its own directory:
 
@@ -556,7 +562,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 
 `POST /api/webhooks/hermes` lets a Hermes cron job or automation blueprint drive a Tars agent.
 
-- Auth: `~/.dorothy/hermes-webhook-secret` if present, with the master API token still accepted so an existing setup keeps running. This route is the one thing published over the tailnet, so it carries its own secret.
+- Auth: `~/.tars-private/hermes-webhook-secret`, and nothing else. This route is the one thing published over the tailnet, so it carries its own secret. Since 1.7.6 the door knows that secret, on this pathname and no other, and the route opens to it alone: not the shared token, which it used to accept as a fallback, not an agent's own token, not Tars's pass, and nobody at all while no secret is configured. Before 1.7.6 the secret itself was refused with a flat 401 at the door, and with no secret file the route skipped its own check, so whatever the door let in, an agent's token included, dispatched to any agent of any project.
 - Body: `agent_id` **or** `agent_name` (case-insensitive exact match, narrowed by `project_path`; ambiguity → 409 listing the matches), `message`, optional `model` / `permission_mode` / `dry_run`.
 - `dry_run: true` proves auth and agent resolution without dispatching.
 - Otherwise it calls the same `performDispatch()` as `/api/agents/:id/dispatch`, so semantics are identical.
@@ -645,7 +651,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Control | Value |
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
-| Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory for each terminal spawn and each delegated run. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403. The shared token names no agent, and no header is read with it |
+| Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory for each terminal spawn and each delegated run, or Tars's own pass, minted in memory and written nowhere, which the super chat presents on the loopback, or on `/api/webhooks/hermes` alone the webhook secret. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403. The shared token names no agent, no header is read with it, and it drives no agent, the webhook included |
 | Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
@@ -655,9 +661,10 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### Residual risk
 
-- Any process running as the user can read `~/.dorothy/api-token`, and every agent is such a process: its shell reads what the user can, a Claude agent has `~/.dorothy` in its `--add-dir`, and `venice` and `custom-openai` even put the token in its environment as `ANTHROPIC_API_KEY` for the OpenAI bridge. On that token a call has no agent identity, so the bus refuses it. **The agent routes do not**: a caller with no identity passes the cross-project guard unless it sends `X-Tars-Client: mcp`, so a process holding the file can drive every project's agents. The super chat dispatches that way, which is why it is not refused yet.
-- **An agent's own token is not secret from the other agents.** It lives in the environment of the agent's CLI and of its MCP servers, and `ps -Eww -p <pid>` prints the environment of those processes to any process of the same user. Only Apple's platform binaries, `/bin/zsh` among them, hide theirs, and neither `claude` nor `node` is one. An agent set on it can read a colleague's token and present it. Per-agent tokens end impersonation by naming, not impersonation by a process that reads the process table; only isolating agents from one another at the OS level would.
-- The super chat conversation is stored in clear in `~/.dorothy/overseer.json`. Keeping the global room closed on the API protects that path, not the conversation's confidentiality against an agent that reads the file.
+- Any process running as the user can read `~/.dorothy/api-token`, and every agent is such a process: its shell reads what the user can, a Claude agent has `~/.dorothy` in its `--add-dir`, and `venice` and `custom-openai` even put the token in its environment as `ANTHROPIC_API_KEY` for the OpenAI bridge. On that token a call has no agent identity, so the bus refuses it, and since 1.7.6 so do the routes that drive an agent: start, dispatch, run-task, stop, message, delete and create all need a caller with an identity of its own. It still **reads**: the listing, an agent's status, its output and its bootstrap are open to it, because `session-start.sh` fetches the bootstrap with it at the start of every session. A process holding the file can enumerate the fleet and read any agent's terminal, and no longer drive one.
+- **An agent's own token is not secret from the other agents.** It lives in the environment of the agent's CLI and of its MCP servers, and `ps -Eww -p <pid>` prints the environment of those processes to any process of the same user. Only Apple's platform binaries, `/bin/zsh` among them, hide theirs, and neither `claude` nor `node` is one. An agent set on it can read a colleague's token and present it. Per-agent tokens end impersonation by naming, not impersonation by a process that reads the process table; only isolating agents from one another at the OS level would. A sandbox does not: measured under a deny-by-default `sandbox-exec` profile, a process still reads another's environment through `sysctl KERN_PROCARGS2`, and no rule in the profile language stopped it. `SECURITY.md` §3 has the four parades that were weighed and why none was written.
+- The super chat conversation is stored in clear, and since 1.7.6 outside the directory the agents are handed: `~/.tars-private/overseer.json`, mode `0600`, migrated from `~/.dorothy/overseer.json` at startup. That takes it off the listing an agent gets for free and out of the reach of anything walking `~/.dorothy`; an agent that goes looking for the new path still reads it, because it runs as the user. Keeping the global room closed on the API protects the API path, not the file. The Telegram send routes, the Telegram MCP server and the vault's attach route refuse the private directory, which stops a one-call send or copy, not an agent with a shell.
+- The Hermes webhook secret opens a route that dispatches to any agent of any project, by id or by name. It lives beside the conversation, in `~/.tars-private`, and is exactly as reachable: out of the directory an agent is handed, not out of the reach of an agent that goes looking. It was in `~/.dorothy` until 1.7.6 and moves with its value unchanged, so an agent that read it before still has it until it is rotated.
 - `permissionMode: 'auto'` is the default for agents created over the API and maps to `--permission-mode auto` (only `bypass` emits `--dangerously-skip-permissions`), and `ensureProjectTrusted()` pre-accepts the workspace-trust dialog. An agent has the user's full filesystem authority inside its cwd and beyond.
 - API keys for the ten alt providers are stored in plaintext in `app-settings.json` and passed to the CLI as `ANTHROPIC_API_KEY` in the PTY environment.
 

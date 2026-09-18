@@ -4,7 +4,7 @@
 - **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and thirteen API-key providers) work on your projects at once, are delegated to, report back, and are billed
 - **Repo**: https://github.com/JeanBrasse/Tars, a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
 - **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `JeanBrasse/Tars`
-- **Docs**: all four exist and are current. `DESIGN.md` (tokens + components) before touching a pixel, `SPECS.md` (what it is), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). This line used to say only DESIGN.md had been written; the other three were added on 2026-08-23 and the README links to all of them
+- **Docs**: all four exist and are current. `DESIGN.md` (tokens + components) before touching a pixel, `SPECS.md` (what it is), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). This line used to say only DESIGN.md had been written; the other three were added on 2026-08-23 and the README links to all of them. A fifth, `SECURITY.md`, was added on 2026-09-18: what is a boundary, what only looks like one, and the measurements behind each
 
 ## Stack
 
@@ -15,7 +15,7 @@
 - **Local API**: a plain `node:http` server on **31415**, bearer-token authenticated, so the CLIs' hooks and the bundled MCP servers can call back into the app
 - **MCP**: seven servers in `mcp-*/`, each bundled to `dist/bundle.js` and shipped in `extraResources`: orchestrator, memory, telegram, kanban, vault, socialdata, x
 - **Delegation**: two transports: keystrokes written into the PTY (`/dispatch`), and the Agent Client Protocol (`electron/services/acp/`), which actually returns a result
-- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations
+- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat and the Hermes webhook secret. `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI
 - **Tests**: `vitest` (unit, `__tests__/`), `@playwright/test` driving the real Electron app (`e2e/`)
 - **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` still declares a `>=20` floor and CI runs 20. Develop on 22
 
@@ -25,7 +25,7 @@
 |---|---|
 | `electron/main.ts` | Entry point. Wires window, agent state, IPC, Telegram/Slack bots, the HTTP API, the tray, the MCP orchestrator, and the model catalogue |
 | `electron/preload.ts` | The only bridge to the renderer: `contextBridge.exposeInMainWorld('electronAPI', …)`. Every new IPC channel is declared here first |
-| `electron/constants/index.ts` | `DATA_DIR` = `~/.dorothy`, `API_PORT` = 31415, the file paths for agents/settings/kanban/vault/token, `GITHUB_REPO`, the MIME map used by the `app://` handler |
+| `electron/constants/index.ts` | `DATA_DIR` = `~/.dorothy`, `PRIVATE_DIR` = `~/.tars-private` (what agents are not handed), `API_PORT` = 31415, the file paths for agents/settings/kanban/vault/token, `GITHUB_REPO`, the MIME map used by the `app://` handler |
 | `electron/types/index.ts` | `AgentStatus`, `AppSettings`, `CLIPaths`, `AgentProvider`, `AgentPermissionMode`, `AgentEffort`. A new setting or provider starts here |
 | `electron/core/agent-manager.ts` | The agent `Map`, persistence to `agents.json`, `initAgentPty`, `ensureProjectTrusted` (pre-writes `hasTrustDialogAccepted` in `~/.claude.json`), `killStalePty` |
 | `electron/core/pty-manager.ts` | Four PTY maps (agent / quick / skill / plugin), `killAllPty`, and `writeProgrammaticInput`: the bracket-paste + delayed `\r` dance Claude Code's TUI requires |
@@ -33,7 +33,7 @@
 | `electron/handlers/ipc-handlers.ts` | 2581 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
 | `electron/providers/index.ts` | Registry of the 19 providers. Unknown ids (and `local`) fall back to Claude |
-| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health` and `/api/hooks/*` are exempt from auth. `resolveCaller` decides who is calling from the token presented: an agent's own token (`electron/core/agent-tokens.ts`) names that agent, and a different `X-Tars-Caller-Id` alongside it is a 403. The shared token names no agent, and no header is read with it |
+| `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file`, `/api/health` and `/api/hooks/*` are exempt from auth. `resolveCaller` decides who is calling from the token presented: an agent's own token (`electron/core/agent-tokens.ts`) names that agent, and a different `X-Tars-Caller-Id` alongside it is a 403. The shared token names no agent, no header is read with it, and it drives no agent: the routes that start, stop, message, dispatch to, delete or create one need a caller with an identity. Tars's own pass, minted in memory and written nowhere, is what the super chat presents on the loopback; the Hermes webhook secret (`~/.tars-private/hermes-webhook-secret`) opens its own route and no other, and that route opens to nothing else. `SECURITY.md` says what each of these is and is not |
 | `electron/services/api-routes/agent-routes.ts` | `spawnAgentSession()`, the **single** path for API-driven sessions, plus `/start`, `/dispatch`, `/message`, `/delegate`, `/bootstrap`, `/health`, and the cross-project guard |
 | `electron/services/api-routes/hooks-routes.ts` | The session-ownership contract: SessionStart registers via the `source` field; posts from any other session, or from the `lastKilledSessionId` tombstone, are rejected as `stale` |
 | `electron/services/acp/` | `client.ts`, `delegate.ts`, `registry.ts`. Delegation that returns: stop reason, tools used, tokens, cost |

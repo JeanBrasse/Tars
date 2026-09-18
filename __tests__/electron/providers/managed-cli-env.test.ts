@@ -269,6 +269,10 @@ describe('the API path, which is every delegation and dispatch', () => {
       raw: { headers: {} },
       res: {},
       params: { id: a.id },
+      // Resolved by the server from the bearer token: the routes that drive an
+      // agent refuse a caller that is nobody. An agent of the same project is
+      // what the MCP tools present.
+      callerAgentId: a.id,
     } as unknown as RouteRequest;
 
     await route!.handler(req, (payload: unknown) => { answer = payload; });

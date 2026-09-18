@@ -73,8 +73,18 @@ function makeAgent(overrides: Partial<AgentStatus> = {}): AgentStatus {
   };
 }
 
+/**
+ * A request the way the server hands one to a route, with the caller the
+ * server resolved from the bearer token.
+ *
+ * `callerAgentId` defaults to the agent in the path: the routes that drive an
+ * agent refuse a caller that is nobody, and an agent driving one of its own
+ * project is the ordinary case. A test that wants the refusal passes
+ * `callerAgentId: undefined` explicitly - `makeReq({ callerAgentId: undefined })`
+ * does not restore the default, because the key is present.
+ */
 function makeReq(overrides: Partial<RouteRequest> = {}): RouteRequest {
-  return {
+  const base = {
     method: 'GET',
     pathname: '',
     url: new URL('http://localhost/'),
@@ -82,8 +92,10 @@ function makeReq(overrides: Partial<RouteRequest> = {}): RouteRequest {
     raw: {} as any,
     res: {} as any,
     params: {},
-    ...overrides,
   };
+  const req = { ...base, ...overrides } as RouteRequest;
+  if (!('callerAgentId' in overrides)) req.callerAgentId = req.params.id;
+  return req;
 }
 
 let ctx: RouteContext;
@@ -197,29 +209,40 @@ describe('agent-routes', () => {
   });
 
   describe('POST /api/agents', () => {
+    /** The caller of a create: an agent of the fleet, since this route has no
+     *  agent in its path to stand in for one. */
+    function creator(): string {
+      agents.set('creator', makeAgent({ id: 'creator' }));
+      return 'creator';
+    }
+
     it('creates a new agent', async () => {
+      const callerAgentId = creator();
       const app = makeRouteApp();
       registerAgentRoutes(app, ctx);
       const handler = app.routes.find(r => r.method === 'POST' && r.pattern === '/api/agents')!.handler;
 
       const sendJson = vi.fn();
-      await handler(makeReq({ body: { projectPath: '/my/project', name: 'Test Agent' } }), sendJson, ctx);
+      // In the creator's own project: another one takes allowCrossProject,
+      // as on every route that drives an agent.
+      await handler(makeReq({ callerAgentId, body: { projectPath: '/test/project', name: 'Test Agent' } }), sendJson, ctx);
 
       expect(sendJson).toHaveBeenCalledTimes(1);
       const result = sendJson.mock.calls[0][0];
       expect(result.agent.name).toBe('Test Agent');
       expect(result.agent.status).toBe('idle');
-      expect(agents.size).toBe(1);
+      expect(agents.size).toBe(2);
       expect(saveAgents).toHaveBeenCalled();
     });
 
     it('returns 400 without projectPath', async () => {
+      const callerAgentId = creator();
       const app = makeRouteApp();
       registerAgentRoutes(app, ctx);
       const handler = app.routes.find(r => r.method === 'POST' && r.pattern === '/api/agents')!.handler;
 
       const sendJson = vi.fn();
-      await handler(makeReq({ body: {} }), sendJson, ctx);
+      await handler(makeReq({ callerAgentId, body: {} }), sendJson, ctx);
       expect(sendJson).toHaveBeenCalledWith({ error: 'projectPath is required' }, 400);
     });
   });
@@ -585,10 +608,11 @@ describe('agent-routes', () => {
       expect((sendJson.mock.calls[0][0] as { mode: string }).mode).toBe('start');
     });
 
-    it('a caller with no agent token is not scoped: the super chat dispatches to every project this way', async () => {
-      // Not a boundary, and not meant as one: anything that reads the shared
-      // token gets the same. What this pins is only that the guard does not
-      // refuse the super chat until it has another way to reach the agents.
+    it('a caller that is nobody starts nothing, with no header to give it away', async () => {
+      // The hole, measured on b17db0f: the shared token with no x-tars-client
+      // header started, stopped and deleted an agent of any project and got a
+      // 200. The guard only refused a caller that volunteered that header,
+      // which is a claim the caller writes about itself.
       const agent = makeAgent({ id: 'a1', projectPath: '/proj/beta', status: 'idle' });
       agents.set('a1', agent);
 
@@ -597,11 +621,15 @@ describe('agent-routes', () => {
       const handler = findHandler(app, 'POST', 'start');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ params: { id: 'a1' }, body: { prompt: 'go' } }), sendJson, ctx);
-      expect(agent.status).toBe('running');
+      await handler(makeReq({ callerAgentId: undefined, params: { id: 'a1' }, body: { prompt: 'go' } }), sendJson, ctx);
+
+      expect(sendJson.mock.calls[0][1]).toBe(403);
+      expect(String((sendJson.mock.calls[0][0] as { error: string }).error))
+        .toContain('Driving an agent takes an identity of your own');
+      expect(agent.status).toBe('idle');
     });
 
-    it('takes no project from a header: an MCP client with no agent token is refused, whatever project it names', async () => {
+    it('takes no project from a header: a caller that is nobody is refused whatever project it names', async () => {
       // The project it names is the target's own, so believing the header
       // would let this through. Every agent can read the shared token and
       // write this header, which is why it scopes nothing.
@@ -614,6 +642,7 @@ describe('agent-routes', () => {
 
       const sendJson = vi.fn();
       await handler(makeReq({
+        callerAgentId: undefined,
         params: { id: 'a1' },
         body: { prompt: 'go' },
         raw: { headers: { 'x-tars-client': 'mcp', 'x-tars-caller-project': '/proj/beta', 'x-dorothy-caller-project': '/proj/beta' }, on: () => {} } as any,
@@ -621,7 +650,26 @@ describe('agent-routes', () => {
 
       expect(sendJson.mock.calls[0][1]).toBe(403);
       expect(String((sendJson.mock.calls[0][0] as { error: string }).error))
-        .toContain('This agent has no identity, so its calls cannot be scoped to a project.');
+        .toContain('Driving an agent takes an identity of your own');
+      expect(agent.status).toBe('idle');
+    });
+
+    it('refuses a caller whose id no longer belongs to any agent of the fleet', async () => {
+      // A removed agent whose process is still alive keeps its token until the
+      // app restarts. Resolving its project would give undefined, which is how
+      // the old guard read "unrestricted".
+      const agent = makeAgent({ id: 'a1', projectPath: '/proj/beta', status: 'idle' });
+      agents.set('a1', agent);
+
+      const app = makeRouteApp();
+      registerAgentRoutes(app, ctx);
+      const handler = findHandler(app, 'POST', 'start');
+
+      const sendJson = vi.fn();
+      await handler(makeReq({ callerAgentId: 'removed-agent', params: { id: 'a1' }, body: { prompt: 'go' } }), sendJson, ctx);
+
+      expect(sendJson.mock.calls[0][1]).toBe(404);
+      expect(sendJson.mock.calls[0][0]).toEqual({ error: 'The calling agent is not one Tars knows about.' });
       expect(agent.status).toBe('idle');
     });
   });

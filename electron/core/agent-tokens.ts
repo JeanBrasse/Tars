@@ -78,3 +78,40 @@ export function mintRunToken(agentId: string): { token: string; revoke: () => vo
 export function agentForToken(token: string): string | undefined {
   return agentByToken.get(token);
 }
+
+/**
+ * Tars's own pass on its own API, for the parts of the main process that reach
+ * it over the loopback.
+ *
+ * One caller: the super chat. It posts to /api/agents/:id/dispatch rather than
+ * writing to a terminal by hand, so that a message from Noah takes exactly the
+ * path a delegation takes. It authenticated with `~/.dorothy/api-token`, and
+ * that is precisely why that token could not be refused on the routes that
+ * drive an agent: every agent can read the file (`--add-dir ~/.dorothy`, and
+ * its Bash reads it whatever the flag says), so refusing the file would have
+ * taken the super chat down with whoever else had read it.
+ *
+ * Minted here rather than in a file, because a file is what made the shared
+ * token shared. It exists in this process's memory, is never written to disk,
+ * never enters the environment of a child, and is not the shared token: an
+ * agent that reads `~/.dorothy` or the process table of its colleagues finds
+ * nothing that opens these routes. Lazily, and once per run of the app: the
+ * super chat outlives no restart, and neither does an agent's token.
+ *
+ * What it is not. A process able to read the memory of the Electron main
+ * process, or to attach a debugger to it, has this the way it has everything
+ * else Tars holds. On a machine where every agent runs as the user, that is
+ * the floor for all of this; see the sandbox note. It removes a credential
+ * from the filesystem, it does not put one out of reach.
+ */
+let internal: string | null = null;
+
+export function internalToken(): string {
+  if (!internal) internal = crypto.randomBytes(32).toString('hex');
+  return internal;
+}
+
+/** True for Tars's own pass, and only when one has been minted. */
+export function isInternalToken(token: string): boolean {
+  return !!internal && token === internal;
+}

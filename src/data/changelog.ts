@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 43,
+    version: '1.7.6',
+    date: '2026-09-18',
+    updates: [
+      'A Hermes job that gives your agents work through Tars\'s webhook now needs the webhook secret shown in Settings > Hermes. Up to 1.7.5, Tars turned that secret away before the webhook ever ran, so the jobs that worked were sending the key from ~/.dorothy/api-token, which every agent can read, and that key now gets a 403 there. Put the secret from Settings > Hermes in the job\'s Authorization header; if Settings already showed you one, it has not changed.',
+      'An assistant session that Tars did not start as an agent can no longer start, stop, message, give work to, create or remove agents. The Tars tools are installed for every Claude Code session on the machine, so one you open in your own terminal, in a quick terminal or from a schedule sees them, but it can only present the key in ~/.dorothy/api-token, which every agent can read and which therefore says nothing about who is asking: it now gets a refusal. It can still list agents and read their output. Agents Tars starts, and the Chat, work as before.',
+    ],
+  },
+  {
     id: 42,
     version: '1.7.5',
     date: '2026-09-18',

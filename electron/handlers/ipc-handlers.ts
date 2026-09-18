@@ -2282,7 +2282,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * turned it into a general file reader (neither `path.isAbsolute` nor
    * `!rel.includes('..')` says anything about where the base points).
    * DATA_DIR is deliberately not a root here: it holds api-token and
-   * hermes-webhook-secret, and no caller of this channel reads from it.
+   * app-settings.json, and no caller of this channel reads from it.
    */
   const projectFileRoots = async (): Promise<string[]> => {
     const roots = [

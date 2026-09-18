@@ -30,11 +30,26 @@ export interface RouteRequest {
   /**
    * The agent this call comes from: the one its bearer token was minted for,
    * resolved once by the server before any route sees the request. Undefined
-   * on the shared token, whoever presents it: the super chat, the shell hooks,
-   * Hermes, or a process that read the file. Never set from a header: the
-   * header is the claim this field exists to check.
+   * on the shared token, whoever presents it: the shell hooks, or a process
+   * that read the file. Never set from a header: the header is the
+   * claim this field exists to check.
    */
   callerAgentId?: string;
+  /**
+   * True when the caller is Tars itself: the main process reaching its own
+   * API over the loopback with the pass minted in `core/agent-tokens.ts`,
+   * which is never written to disk and never given to a child. No agent, so
+   * nothing is scoped to it, but the routes that refuse a caller with no
+   * identity let it through. Never set from a header.
+   */
+  internal?: boolean;
+  /**
+   * True when the caller is Hermes: the call presents the webhook secret, on
+   * the webhook's own path, the only one where the server takes it for
+   * anything. The webhook opens to this and to nothing else. Never set from a
+   * header.
+   */
+  hermes?: boolean;
 }
 
 export type SendJson = (data: unknown, status?: number) => void;
