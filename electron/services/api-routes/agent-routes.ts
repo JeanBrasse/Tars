@@ -414,37 +414,79 @@ function recordRequester(agent: AgentStatus, req: RouteRequest): void {
 }
 
 /**
- * Cross-project guard: an orchestrator may only act on agents of its own
- * project. This is what stops an orchestrator from delegating to another
- * project's agents when the LLM picks a wrong ID from a global listing.
- * The project is the one of the agent whose token the call presents.
+ * Refused to a caller that is nobody, on every route that drives an agent.
  *
- * A guard against mistakes, not a boundary. A caller with no agent token (the
- * super chat, a curl by hand, but also anything that read the shared token)
- * is unrestricted unless it says it is an MCP client, and any agent can pass
- * allowCrossProject: true.
+ * What it replaces, measured on b17db0f: a call on `~/.dorothy/api-token` with
+ * no `x-tars-client` header stopped, started, messaged, dispatched to and
+ * DELETEd an agent of any project, and got a 200. The guard only ever refused
+ * a caller that volunteered `x-tars-client: mcp`, which is a header the caller
+ * writes about itself: an agent that read the shared file and left that header
+ * out had the whole fleet. Honouring it was the theatre; it is gone.
+ *
+ * Every agent can read that file (`--add-dir ~/.dorothy`, and on this machine
+ * 37 of 42 agents run with `--dangerously-skip-permissions`, so its Bash reads
+ * it whatever the flag says), so a call that presents it names nobody. This is
+ * the same door the bus has had since the shared token stopped opening rooms.
+ *
+ * What still passes without an agent behind it: the reads. `session-start.sh`
+ * fetches `/api/agents/:id/bootstrap` with the shared token, so requiring an
+ * identity there would leave every fresh session without its own name.
  */
-function assertSameProject(req: RouteRequest, agent: AgentStatus, sendJson: SendJson): boolean {
-  const caller = callerProject(req);
+const NO_IDENTITY_TO_DRIVE =
+  'Driving an agent takes an identity of your own, and this call has none: it presents the '
+  + 'shared token, which every agent can read and which therefore names nobody. '
+  + 'An agent is known by the token Tars gives its process when it starts it, not by a name: '
+  + 'restart the agent from Tars.';
 
-  // An agent's MCP always announces itself. If it does so without an identity
-  // its calls cannot be scoped, and defaulting to "allow" would let it drive
-  // every project's agents - which is the confusion this guard exists to stop.
-  if (!caller && req.raw?.headers?.['x-tars-client'] === 'mcp') {
-    sendJson({
-      error: 'This agent has no identity, so its calls cannot be scoped to a project. '
-        + 'An agent is known by the token Tars gives its process when it starts it, not by a name: '
-        + 'restart the agent from Tars.',
-    }, 403);
-    return false;
+/** Who is driving: an agent of the fleet, or Tars itself. */
+type Driver = { kind: 'agent'; agent: AgentStatus } | { kind: 'tars' };
+
+function resolveDriver(req: RouteRequest, sendJson: SendJson): Driver | undefined {
+  // Tars itself is not an agent and never will be. This is the super chat
+  // reaching the route over the loopback so that a message from Noah takes the
+  // same path a delegation takes, holding a pass that exists only in this
+  // process's memory. Nothing scopes it: Noah's chat drives every project,
+  // which is what it is for.
+  if (req.internal) return { kind: 'tars' };
+
+  const callerId = resolveCallerId(req);
+  if (!callerId) {
+    sendJson({ error: NO_IDENTITY_TO_DRIVE }, 403);
+    return undefined;
   }
+  const caller = agents.get(callerId);
+  if (!caller) {
+    // An agent removed from the fleet keeps its token until its process ends.
+    // Reading its project would give undefined, which is how the old guard
+    // read "unrestricted".
+    sendJson({ error: 'The calling agent is not one Tars knows about.' }, 404);
+    return undefined;
+  }
+  return { kind: 'agent', agent: caller };
+}
 
-  if (!caller || agent.projectPath === caller) return true;
+/**
+ * Cross-project guard: an agent may only act on agents of its own project.
+ * This is what stops an orchestrator from delegating to another project's
+ * agents when the LLM picks a wrong ID from a global listing. The project is
+ * the one of the agent whose token the call presents, never a header.
+ *
+ * Between agents it is still a guard against mistakes rather than a boundary:
+ * any agent can pass allowCrossProject: true. What changed is that there is no
+ * longer a way round it by having no identity at all.
+ */
+function assertMayDriveAgent(req: RouteRequest, agent: AgentStatus, sendJson: SendJson): boolean {
+  const driver = resolveDriver(req, sendJson);
+  if (!driver) return false;
+  if (driver.kind === 'tars') return true;
+
+  const caller = driver.agent;
+  if (agent.projectPath === caller.projectPath) return true;
   if ((req.body as { allowCrossProject?: boolean } | undefined)?.allowCrossProject === true) return true;
   // DELETE requests have no parsed body. Accept the override as a query param.
   if (req.url.searchParams.get('allowCrossProject') === 'true') return true;
   sendJson({
-    error: `Cross-project access denied: agent "${agent.name || agent.id}" belongs to project ${agent.projectPath}, but you are the orchestrator of ${caller}. Use list_agents to see YOUR project's agents, or pass allowCrossProject: true if this is intentional.`,
+    error: `Cross-project access denied: agent "${agent.name || agent.id}" belongs to project ${agent.projectPath}, but you are the orchestrator of ${caller.projectPath}. Use list_agents to see YOUR project's agents, or pass allowCrossProject: true if this is intentional.`,
   }, 403);
   return false;
 }
@@ -729,6 +771,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
   // POST /api/agents
   app_.post('/api/agents', (req, sendJson) => {
+    // Adding to the fleet is driving it: a caller that is nobody enrolled an
+    // agent in any project it named, and that agent is then started, given
+    // tasks and billed. Only the MCP calls this route, always as an agent.
+    if (!resolveDriver(req, sendJson)) return;
+
     const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, orchestratorMode, provider, model, effort, cliPath } = req.body as {
       projectPath: string;
       name?: string;
@@ -801,7 +848,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     recordRequester(agent, req);
 
-    if (!assertSameProject(req, agent, sendJson)) return;
+    if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { prompt, model, permissionMode: bodyPermissionMode, printMode } = req.body as {
       prompt: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; printMode?: boolean;
@@ -830,7 +877,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     recordRequester(agent, req);
 
-    if (!assertSameProject(req, agent, sendJson)) return;
+    if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message, model, permissionMode } = req.body as {
       message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass';
@@ -858,7 +905,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Agent not found' }, 404);
       return;
     }
-    if (!assertSameProject(req, agent, sendJson)) return;
+    if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { task, timeoutSeconds } = req.body as { task?: string; timeoutSeconds?: number };
     if (!task?.trim()) {
@@ -907,7 +954,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    if (!assertSameProject(req, agent, sendJson)) return;
+    if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
@@ -946,7 +993,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     recordRequester(agent, req);
 
-    if (!assertSameProject(req, agent, sendJson)) return;
+    if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message } = req.body as { message: string };
     if (!message) {
@@ -1005,7 +1052,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    if (!assertSameProject(req, agent, sendJson)) return;
+    if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);

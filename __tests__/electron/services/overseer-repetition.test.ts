@@ -24,6 +24,11 @@ vi.mock('../../../electron/constants', () => ({
   DATA_DIR: tmp,
   API_PORT: 31973,
   dataPath: (f: string) => path.join(tmp, f),
+  // The conversation lives outside the directory the agents are handed.
+  // Both paths, because the module migrates from the old one to the new.
+  privatePath: (...segments: string[]) => path.join(tmp, 'private', ...segments),
+  OVERSEER_FILE: path.join(tmp, 'private', 'overseer.json'),
+  OVERSEER_LEGACY_FILE: path.join(tmp, 'overseer.json'),
 }));
 const agents = new Map<string, Record<string, unknown>>();
 vi.mock('../../../electron/core/agent-manager', () => ({ agents }));
@@ -63,7 +68,10 @@ vi.mock('../../../electron/services/hermes-client', () => ({
   setHermesModel: async () => ({ success: true }),
 }));
 
-const OVERSEER_FILE = path.join(tmp, 'overseer.json');
+const OVERSEER_FILE = path.join(tmp, 'private', 'overseer.json');
+// The module writes there through writeSecretFileSync, which creates the
+// directory; a test that seeds the file by hand has to exist first.
+fs.mkdirSync(path.dirname(OVERSEER_FILE), { recursive: true });
 const FIXTURE = path.join(__dirname, '../../fixtures/overseer-repetition.json');
 let overseer: typeof import('../../../electron/services/overseer');
 

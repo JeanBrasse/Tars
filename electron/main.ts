@@ -52,6 +52,7 @@ import {
   writeProgrammaticInput,
 } from './core/pty-manager';
 
+import { runShutdownSteps } from './core/shutdown';
 import { initTray, destroyTray } from './core/tray-manager';
 import { broadcastToAllWindows } from './utils/broadcast';
 import { extractStatusLine } from './utils/ansi';
@@ -103,7 +104,7 @@ import { registerTeamTemplateHandlers } from './handlers/team-template-handlers'
 import { registerHermesHandlers } from './handlers/hermes-handlers';
 import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
-import { startOverseerWatch, stopOverseerWatch } from './services/overseer';
+import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { startAgentWatch } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
@@ -364,6 +365,12 @@ app.whenReady().then(async () => {
   for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
     ensureSecretFileMode(secret);
   }
+
+  // Take Noah's conversation with the super chat out of ~/.dorothy, which is
+  // the directory every agent is handed. Here rather than on the first read of
+  // it: a run in which the Chat is never opened would otherwise leave the file
+  // sitting there for its whole length.
+  migrateOverseerOutOfAgentReach();
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
@@ -714,16 +721,19 @@ app.on('activate', () => {
 // Save agents and kill all PTY processes before quitting
 app.on('before-quit', () => {
   console.log('App quitting, saving agents and killing all PTY processes...');
-  destroyTray();
-  stopAgentAutosave();
-  stopOverseerWatch();
-  saveAgents();
+  // Each step guarded, and the two that write to disk first: see shutdown.ts.
   // The bus journal writes once per turn of the event loop rather than once
-  // per row; a turn that ends in a quit is the one that never gets there.
-  flushBus();
-  killAllPty();
-  closeVaultDb();
-  stopOpenAIBridgeServer();
+  // per row, so a turn that ends in a quit is the one that never gets there.
+  runShutdownSteps([
+    ['flushBus', flushBus],
+    ['saveAgents', saveAgents],
+    ['destroyTray', destroyTray],
+    ['stopAgentAutosave', stopAgentAutosave],
+    ['stopOverseerWatch', stopOverseerWatch],
+    ['killAllPty', killAllPty],
+    ['closeVaultDb', closeVaultDb],
+    ['stopOpenAIBridgeServer', stopOpenAIBridgeServer],
+  ]);
 });
 
 /**

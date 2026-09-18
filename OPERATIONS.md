@@ -550,6 +550,12 @@ work.
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
 
+One file lives outside that directory, on purpose:
+
+| Path | Written by | Contents |
+|---|---|---|
+| `~/.tars-private/overseer.json` | `electron/services/overseer.ts` | Noah's conversation with the super chat, plus the standing job id and the Chat's settings. Mode `0600`, in a `0700` directory. `~/.dorothy` is handed to every agent through `--add-dir`; this directory is handed to nothing, and no path under it is ever passed to a CLI. Moved out of `~/.dorothy/overseer.json` at the first startup that finds it there: the copy is read back before the old file is deleted, an old file that will not parse is left exactly where it is and still read, and when both exist the private one wins and the old one is moved into the private directory rather than deleted |
+
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
 *Hooks*. Memory files it reads live in `~/.claude/projects/<encoded-path>/memory/`, where the
 project path is encoded as a folder name (slashes → dashes).

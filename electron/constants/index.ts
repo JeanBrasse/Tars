@@ -33,6 +33,33 @@ export const DATA_DIR = path.join(os.homedir(), DATA_DIR_NAME);
 export const dataPath = (...segments: string[]) => path.join(DATA_DIR, ...segments);
 
 /**
+ * What the app owns that its agents are not handed.
+ *
+ * Every agent is started with `--add-dir ~/.dorothy`: the directory holds the
+ * Tars CLAUDE.md they are meant to read and the vault they are meant to write,
+ * so it is handed over deliberately. Noah's own conversation with the super
+ * chat was in it too, in clear, and reading it took no API call and no token -
+ * an `ls` of the directory the agent was given, and a `cat`.
+ *
+ * So there is a second directory, and the difference between the two is the
+ * whole of its documentation: `.dorothy` is what agents work in, this is what
+ * they have no business in. Nothing here is ever passed to a CLI.
+ *
+ * What it is not. `--add-dir` sets tool permissions, not an access boundary,
+ * and on this machine 37 of 42 agents run with `--dangerously-skip-permissions`
+ * anyway: an agent that goes looking still reads any file its user can read,
+ * here as anywhere else in $HOME. What moving the file out does is take it out
+ * of the directory an agent is pointed at, off the listing it gets for free,
+ * and out of reach of anything that walks `~/.dorothy` on purpose. Closing the
+ * rest takes a sandbox, not a path.
+ */
+export const PRIVATE_DIR_NAME = '.tars-private';
+export const PRIVATE_DIR = path.join(os.homedir(), PRIVATE_DIR_NAME);
+
+/** Join a path inside the private directory. */
+export const privatePath = (...segments: string[]) => path.join(PRIVATE_DIR, ...segments);
+
+/**
  * The data directory as it must appear inside a generated shell script.
  *
  * Uses $HOME rather than the resolved path so a script written on one machine
@@ -51,6 +78,11 @@ export const API_TOKEN_FILE = path.join(DATA_DIR, 'api-token');
 /** The agent bus journal: rooms, threads, messages and deliveries. One file,
  *  written the way agents.json is (temp file then rename), no new service. */
 export const BUS_FILE = path.join(DATA_DIR, 'bus.json');
+/** Noah's conversation with the super chat: the private directory, not the
+ *  one the agents are handed. OVERSEER_LEGACY_FILE is where it used to be,
+ *  read and migrated away from at startup. */
+export const OVERSEER_FILE = path.join(PRIVATE_DIR, 'overseer.json');
+export const OVERSEER_LEGACY_FILE = path.join(DATA_DIR, 'overseer.json');
 
 // Updates come from the fork. Pointing this at the upstream repo offered an
 // upstream build as an update to a fork install, which would overwrite it.

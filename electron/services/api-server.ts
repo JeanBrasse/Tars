@@ -7,11 +7,11 @@ import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
-import { API_PORT, API_TOKEN_FILE } from '../constants';
+import { API_PORT, API_TOKEN_FILE, dataPath } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
-import { agentForToken } from '../core/agent-tokens';
+import { agentForToken, isInternalToken } from '../core/agent-tokens';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -118,10 +118,35 @@ export function getApiToken(): string {
   return apiToken;
 }
 
-/** Authorised, and who by: an agent when its own token says so. */
+/** Authorised, and who by: an agent when its own token says so, Tars itself
+ *  when it is the main process calling its own API. */
 export type CallerResolution =
-  | { ok: true; agentId?: string }
+  | { ok: true; agentId?: string; internal?: boolean }
   | { ok: false; status: number; error: string };
+
+/**
+ * The one route that is published off this machine, and the only credential
+ * that opens it.
+ *
+ * It is read here, at the door, rather than only in the route: the door used
+ * to know two secrets, an agent's and the shared one, so Hermes presenting the
+ * secret Tars itself minted for it was refused 401 before the route it was
+ * aimed at ever ran. Measured on b17db0f: POST /api/webhooks/hermes with the
+ * value Settings hands Hermes answered `{"error":"Unauthorized"}`. Scoped to
+ * that pathname, so the secret opens the webhook and nothing else; the route
+ * keeps its own check, which is what still refuses an agent's token there.
+ */
+function webhookSecretMatches(presented: string): boolean {
+  if (!presented) return false;
+  try {
+    const file = dataPath('hermes-webhook-secret');
+    if (!fs.existsSync(file)) return false;
+    const expected = fs.readFileSync(file, 'utf-8').trim();
+    return !!expected && presented === expected;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Who this call is from, decided by what it presents rather than what it says.
@@ -139,19 +164,28 @@ export type CallerResolution =
  *   its webhook, a curl run by hand, and an MCP server whose process was
  *   started without a token of its own. Not the renderer: it only ever calls
  *   /api/local-file, which is exempt, and presents no token.
+ * - **Tars's own pass**, minted in this process's memory and written nowhere:
+ *   the caller is the main process itself, which is no agent either but is not
+ *   refused where an agent is required. The super chat holds it; nothing else
+ *   can, since it never reaches a file or a child's environment.
+ * - The **Hermes webhook secret**, `~/.dorothy/hermes-webhook-secret`:
+ *   authorised for `/api/webhooks/hermes` and nowhere else, and nobody. It is
+ *   the only credential Tars publishes off the machine, and it was refused
+ *   here before the route that expects it could run.
  * - Anything else: unauthorised, with the same flat message as before, which
  *   tells a prober nothing about which of the two it got wrong.
  *
  * Nobody is not the same as refused, and the difference is per route. The bus
- * refuses a call with no agent behind it, before looking at any room, so the
- * shared token opens no room, the global one included. The cross-project
- * guard of the agent routes does not: it lets such a caller through unless it
- * says it is an MCP client, which is a header too. So whoever reads the file
- * can still drive every project's agents, as before this existed; refusing it
- * there waits on the super chat, which dispatches that way, reaching the
- * agents without it.
+ * refuses a call with no agent behind it before looking at any room, and since
+ * this lot the routes that drive an agent do the same: the shared token opens
+ * no room and starts, stops, messages and deletes nothing. It still reads:
+ * `session-start.sh` fetches an agent's bootstrap with it, so the listing and
+ * the per-agent reads stay open to it.
  */
-export function resolveCaller(headers: http.IncomingHttpHeaders): CallerResolution {
+export function resolveCaller(
+  headers: http.IncomingHttpHeaders,
+  pathname: string,
+): CallerResolution {
   const auth = headers.authorization;
   const presented = typeof auth === 'string' && auth.startsWith('Bearer ')
     ? auth.slice('Bearer '.length)
@@ -171,7 +205,15 @@ export function resolveCaller(headers: http.IncomingHttpHeaders): CallerResoluti
     return { ok: true, agentId };
   }
 
+  if (presented && isInternalToken(presented)) {
+    return { ok: true, internal: true };
+  }
+
   if (apiToken && presented === apiToken) {
+    return { ok: true };
+  }
+
+  if (pathname === '/api/webhooks/hermes' && webhookSecretMatches(presented)) {
     return { ok: true };
   }
 
@@ -289,7 +331,7 @@ export function startApiServer(
     // to session ownership, which is stronger than anything a header could say.
     let caller: CallerResolution = { ok: true };
     if (!authExempt) {
-      caller = resolveCaller(req.headers);
+      caller = resolveCaller(req.headers, pathname);
       if (!caller.ok) {
         res.writeHead(caller.status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: caller.error }));
@@ -354,6 +396,7 @@ export function startApiServer(
           res,
           params,
           callerAgentId: caller.ok ? caller.agentId : undefined,
+          internal: caller.ok ? caller.internal === true : false,
         };
         await route.handler(routeReq, sendJson, ctx);
         return;
