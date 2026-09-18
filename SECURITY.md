@@ -140,8 +140,62 @@ denied, the loopback API reachable, `api.anthropic.com` reachable, `git`,
 
 ### The profile that does it
 
-A deny-by-default profile, about forty lines. What it took to get there, none of
-it obvious:
+This is the one the run above was made under, with `PROJECT` the agent's
+working directory and `AGENTHOME` its HOME. It is not a proposal to adopt as
+written: it is what it took to get a working agent, so that the cost is
+visible.
+
+```scheme
+(version 1)
+(deny default)
+
+; --- what any program needs to start at all -------------------------------
+(allow process-exec process-fork)
+(allow file-map-executable)
+(allow file-read-metadata)
+(allow signal (target self))
+(allow sysctl-read)
+(allow mach-lookup)
+(allow ipc-posix-shm)
+(allow file-ioctl)
+
+; --- the system, read only -------------------------------------------------
+(allow file-read* (literal "/")
+                  (subpath "/usr") (subpath "/bin") (subpath "/sbin")
+                  (subpath "/System") (subpath "/Library") (subpath "/opt")
+                  (subpath "/private/etc") (subpath "/private/var/db")
+                  (subpath "/private/var/select") (subpath "/dev")
+                  (subpath "/Applications"))
+(allow file-write-data (literal "/dev/null") (literal "/dev/tty") (literal "/dev/dtracehelper"))
+
+; --- the toolchain, wherever the user installed it -------------------------
+; On this machine node, npm and claude itself all live under $HOME, so a
+; profile that allows only /usr and /opt starts nothing.
+(allow file-read* (subpath "/Users/noah/.nvm")
+                  (subpath "/Users/noah/.local/bin")
+                  (subpath "/Users/noah/.local/share/claude")
+                  (subpath "/Users/noah/.config/git")
+                  (literal "/Users/noah/.gitconfig")
+                  (literal "/Users/noah/.gitignore_global")
+                  (literal "/Users/noah/.npmrc"))
+
+; --- the credential store -------------------------------------------------
+; Measured: without this the CLI answers "Not logged in · Please run /login".
+; The OAuth token lives in the login keychain, so a profile that walls off the
+; user's Library walls off the agent's own account with it.
+(allow file-read* file-write* (subpath "/Users/noah/Library/Keychains"))
+
+; --- the agent's own world, read and write ---------------------------------
+(allow file-read* file-write* (subpath "PROJECT"))
+(allow file-read* file-write* (subpath "AGENTHOME"))
+(allow file-read* file-write* (subpath "/private/tmp") (subpath "/private/var/folders"))
+
+; --- the network: the model, and Tars on the loopback ----------------------
+(allow network-outbound)
+(allow network-bind (local ip "localhost:*"))
+```
+
+What it took to get there, none of it obvious:
 
 - `(deny default)` plus a list of allowed subpaths **is not enough for `/bin/sh`
   to run**: it also reads the root directory, so `(literal "/")` is required.
