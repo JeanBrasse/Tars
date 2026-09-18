@@ -357,6 +357,14 @@ async function downloadTelegramFile(fileId: string, fileName: string): Promise<s
 
   return new Promise((resolve, reject) => {
     const fileStream = fs.createWriteStream(localPath);
+    // A write stream reports a file it cannot create or write, a full disk or
+    // a folder it may not write in, with 'error'. Nothing listened, and an
+    // 'error' nobody hears is thrown: in the main process, the "Uncaught
+    // Exception" window, while the chat waited for an answer that never came.
+    fileStream.on('error', (err) => {
+      fs.unlink(localPath, () => {});
+      reject(err);
+    });
     https.get(fileUrl, (response) => {
       if (response.statusCode !== 200) {
         reject(new Error(`Failed to download file: HTTP ${response.statusCode}`));

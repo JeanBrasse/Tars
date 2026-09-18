@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 44,
+    version: '1.7.7',
+    date: '2026-09-18',
+    updates: [
+      'With Tars opened from the Dock, delegating a task to an agent no longer opens the "A JavaScript error occurred in the main process" window that said "spawn npx ENOENT". Opened that way, Tars has only the system\'s short PATH, where npx is not, and the delegation started npx with it: the error went unheard up to that window, and the delegation waited 90 seconds before the task was typed into the agent\'s terminal instead. Tars now looks for npx in the folders it already searches when it opens an agent\'s terminal: those set in Settings > CLI Paths first, then ~/.nvm, /usr/local/bin, /opt/homebrew/bin and ~/.local/bin. When the command is in none of them, no window opens and the task goes to the agent\'s terminal at once.',
+      'Three rarer cases could open the same window and no longer do: an agent that stops reading in the middle of a delegated task (its run ends at once and Tars stops it), a photo sent to the Telegram bot that Tars cannot save (the chat is told the download failed), and a vault attachment Tars may not open (Tars answers with an error).',
+    ],
+  },
+  {
     id: 43,
     version: '1.7.6',
     date: '2026-09-18',

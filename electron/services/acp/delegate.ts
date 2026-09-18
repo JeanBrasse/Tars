@@ -7,6 +7,8 @@ import type { AgentStatus, AppSettings } from '../../types';
 import * as fs from 'fs';
 import { recordUsage } from '../usage-ledger';
 import { mintRunToken } from '../../core/agent-tokens';
+import { buildFullPath } from '../../utils/path-builder';
+import { cliPathDirs } from '../../utils/cli-path-dirs';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -91,6 +93,12 @@ export async function delegateOverAcp(opts: {
   const session = new AcpSession(launch, {
     cwd,
     env: {
+      // The PATH every other launch of the main process gets, the folders set
+      // in Settings > CLI Paths first. Without it the launch had the app's own,
+      // and an app opened from the Dock has launchd's, where npx is not: the
+      // "spawn npx ENOENT" of 2026-09-18. The agent inherits it too, which is
+      // how npx finds node and the agent finds its MCP servers' node.
+      PATH: buildFullPath(cliPathDirs(appSettings.cliPaths)),
       ...provider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills ?? [], appSettings),
       CLAUDE_AGENT_ID: agent.id,
       CLAUDE_PROJECT_PATH: agent.projectPath,
