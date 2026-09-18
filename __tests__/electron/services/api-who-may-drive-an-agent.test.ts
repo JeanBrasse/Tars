@@ -6,7 +6,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * Who may start, stop, message, dispatch to, delete and create an agent.
+ * Who may start, stop, message, dispatch to, run a task on, delete and create
+ * an agent.
  *
  * Measured on b17db0f, before this file existed: a call presenting
  * `~/.dorothy/api-token` and no `x-tars-client` header stopped, started,
@@ -72,8 +73,16 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 });
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+// /run-task hands its task to the CLI over ACP. The transport is replaced, as
+// node-pty is: what is asked here is whether the route lets a call through,
+// and a call it let through is one that reached this.
+vi.mock('../../../electron/services/acp/delegate', () => ({
+  canDelegateOverAcp: () => true,
+  delegateOverAcp: vi.fn(async () => ({ ok: true, transport: 'acp', text: 'done', toolCalls: [] })),
+}));
 
 import type { AgentStatus } from '../../../electron/types';
+import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 
 let api: typeof import('../../../electron/services/api-server');
 let agents: typeof import('../../../electron/core/agent-manager')['agents'];
@@ -167,6 +176,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  vi.mocked(delegateOverAcp).mockClear();
   agents.clear();
   ptyProcesses.clear();
   putAgent(ALPHA);
@@ -416,6 +426,29 @@ describe('a call that is refused changes nothing', () => {
     });
   }
 
+  for (const [route] of ROUTES) {
+    it(`/${route} called with nothing to do leaves the link as it was`, async () => {
+      // Turned away for its body rather than its caller: an agent of the same
+      // project, which the guard lets through, sends no task. The link is
+      // recorded once the call is let through and well formed. Moved above
+      // the 400 on /dispatch, it handed the result of the work to a caller
+      // that had asked for none, and no test noticed: the QA's gate of this
+      // lot, measured on 24f1889.
+      const worker = putAgent({ id: 'agent-alpha-worker', projectPath: ALPHA.projectPath });
+      const terminal = liveTerminal(worker);
+      const owed = { agentId: ALPHA.id, ptyId: worker.ptyId! };
+      worker.requestedBy = { ...owed };
+      putAgent({ id: 'agent-alpha-2', projectPath: ALPHA.projectPath });
+      const sameProject = tokens.mintAgentToken('agent-alpha-2');
+
+      const res = await call('POST', `/api/agents/${worker.id}/${route}`, bearer(sameProject), {});
+
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(worker.requestedBy, 'a call with nothing to do rewrote who is owed the result').toEqual(owed);
+      expect(terminal.written).toEqual([]);
+    });
+  }
+
   it('while a call that is let through still records who asked', async () => {
     // The witness that the link is recorded at all: without it, a route that
     // had stopped recording would pass every test above.
@@ -485,5 +518,43 @@ describe('an agent keeps exactly the rights it had', () => {
 
     expect(status, JSON.stringify(body)).toBe(200);
     expect(agents.get((body.agent as { id: string }).id)?.projectPath).toBe(BETA.projectPath);
+  });
+});
+
+describe('/run-task, the delegation that answers with what the agent did', () => {
+  // It gives an agent work as surely as /dispatch does, over ACP rather than
+  // the terminal, and no test asked who may call it: the QA's gate of this lot
+  // took its guard out and the whole suite stayed green (24f1889).
+  it('is refused to the shared token and to an agent of another project, and runs nothing', async () => {
+    const beta = agents.get(BETA.id)!;
+
+    for (const [who, token, refusal] of [
+      ['the shared token', sharedToken, NO_IDENTITY],
+      ['an agent of another project', alphaToken, 'Cross-project access denied'],
+    ] as const) {
+      const { status, body } = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(token), { task: 'take this over' });
+      expect(status, `${who}: ${JSON.stringify(body)}`).toBe(403);
+      expect(String(body.error), who).toContain(refusal);
+    }
+
+    expect(vi.mocked(delegateOverAcp), 'a refused caller had a task run').not.toHaveBeenCalled();
+    expect(beta.status, 'a refused caller set the agent running').toBe('idle');
+    expect(beta.currentTask).toBeUndefined();
+  });
+
+  it('runs the task for an agent of the same project', async () => {
+    // The witness: the route is reachable and runs what it is handed, so the
+    // refusals above are the guard's and not, say, a 409 for a CLI with no ACP
+    // mode.
+    putAgent({ id: 'agent-beta-2', projectPath: BETA.projectPath });
+    const sameProject = tokens.mintAgentToken('agent-beta-2');
+
+    const { status, body } = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.text).toBe('done');
+    expect(vi.mocked(delegateOverAcp)).toHaveBeenCalledWith(expect.objectContaining({
+      agent: agents.get(BETA.id), task: 'take this over',
+    }));
   });
 });

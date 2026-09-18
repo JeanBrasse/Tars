@@ -22,6 +22,22 @@ vi.mock('../../../electron/constants', () => ({
   HERMES_WEBHOOK_SECRET_FILE: SECRET_FILE,
   HERMES_WEBHOOK_SECRET_LEGACY_FILE: LEGACY_FILE,
 }));
+/** Set for one write: the next copy into the private directory lands cut
+ *  short, the shape of a full disk or a filesystem that says yes and does not.
+ *  A spy is no use here, because each start re-imports the module it would be
+ *  set on. */
+let truncateNextPrivateWrite = false;
+vi.mock('../../../electron/utils/secret-file', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../electron/utils/secret-file')>();
+  return {
+    ...actual,
+    writeSecretFileSync: (file: string, contents: string) => {
+      const cut = truncateNextPrivateWrite && file === SECRET_FILE;
+      if (cut) truncateNextPrivateWrite = false;
+      return actual.writeSecretFileSync(file, cut ? contents.slice(0, 40) : contents);
+    },
+  };
+});
 
 type SecretModule = typeof import('../../../electron/services/hermes-webhook-secret');
 
@@ -43,6 +59,7 @@ function filesHolding(dir: string, value: string): string[] {
 }
 
 beforeEach(() => {
+  truncateNextPrivateWrite = false;
   fs.rmSync(dataDir, { recursive: true, force: true });
   fs.mkdirSync(dataDir, { recursive: true });
   fs.rmSync(privateDir, { recursive: true, force: true });
@@ -114,6 +131,33 @@ describe('an install that has it in ~/.dorothy', () => {
     expect(isWebhookSecret(HELD_BY_HERMES)).toBe(false);
     expect(fs.readFileSync(LEGACY_FILE, 'utf-8'), 'the only copy was lost').toBe(HELD_BY_HERMES);
     fs.rmSync(privateDir, { force: true });
+  });
+
+  it('never deletes the copy Hermes holds against a private one that did not land', async () => {
+    // Copied, read back, and only then deleted. Here the write says it
+    // succeeded and put down something else. Without the read-back the old
+    // file went, and the webhook opened to the first 40 characters of the
+    // secret while refusing Hermes the whole of it; no test noticed the
+    // read-back gone (the QA's gate of this lot, on 24f1889).
+    fs.writeFileSync(LEGACY_FILE, HELD_BY_HERMES, { mode: 0o600 });
+    truncateNextPrivateWrite = true;
+    const { migrateWebhookSecretOutOfAgentReach } = await load();
+
+    migrateWebhookSecretOutOfAgentReach();
+
+    expect(fs.readFileSync(LEGACY_FILE, 'utf-8'), 'the secret was deleted against a half copy').toBe(HELD_BY_HERMES);
+    expect(fs.existsSync(SECRET_FILE), 'a half secret was left in the private directory').toBe(false);
+  });
+
+  it('gets it across on the next attempt, with the value Hermes holds', async () => {
+    fs.writeFileSync(LEGACY_FILE, HELD_BY_HERMES, { mode: 0o600 });
+    truncateNextPrivateWrite = true;
+    (await load()).migrateWebhookSecretOutOfAgentReach();
+
+    const { isWebhookSecret } = await load();
+
+    expect(isWebhookSecret(HELD_BY_HERMES), 'Hermes was locked out').toBe(true);
+    expect(fs.existsSync(LEGACY_FILE), 'still in the directory every agent is handed').toBe(false);
   });
 
   it('is moved from main.ts when the app starts, not when something first asks for it', () => {

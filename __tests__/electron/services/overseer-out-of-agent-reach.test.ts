@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { format } from 'util';
 
 /**
  * Noah's conversation with the super chat leaves the directory the agents are
@@ -200,6 +201,74 @@ describe('a migration that could not be made', () => {
     expect(textsOf(second)).toEqual(NOAH_SAID);
     expect(fs.existsSync(PRIVATE)).toBe(true);
     expect(fs.existsSync(LEGACY)).toBe(false);
+  });
+});
+
+describe('a save the private directory cannot take', () => {
+  // Found by the QA's gate of this lot (24f1889): the fallback write could be
+  // deleted, and the read that takes the file out again could lose its
+  // migration, with every test in this file still green.
+
+  it('goes back to the old place rather than lose what Noah just set', async () => {
+    // The private directory cannot be created: a file already holds the name.
+    fs.writeFileSync(PRIVATE_DIR, 'not a directory');
+    const overseer = await start();
+
+    overseer.setOverseerSettings({ watchIntervalMs: 120000 });
+
+    const next = await start();
+    expect(next.getOverseerSettings().watchIntervalMs, 'the setting was lost with the write').toBe(120000);
+    expect(fs.statSync(LEGACY).mode & 0o777).toBe(0o600);
+  });
+
+  it('is taken out of the agents\' directory by the next read, once the private one can be written', async () => {
+    // After a save that fell back, the next read or write of this run tries
+    // the move again, rather than leave the conversation in ~/.dorothy until
+    // the next start. A read that skipped the move left it there until
+    // something happened to write.
+    fs.writeFileSync(PRIVATE_DIR, 'not a directory');
+    const overseer = await start();
+    overseer.setOverseerSettings({ watchIntervalMs: 120000 });
+    expect(fs.existsSync(LEGACY), 'the save that fell back wrote nothing').toBe(true);
+    // Whatever held the private directory's name is gone.
+    fs.rmSync(PRIVATE_DIR, { force: true });
+
+    const settings = overseer.getOverseerSettings();
+
+    expect(settings.watchIntervalMs).toBe(120000);
+    expect(fs.existsSync(LEGACY), 'a read left the conversation in the directory every agent is handed').toBe(false);
+    expect(JSON.parse(fs.readFileSync(PRIVATE, 'utf-8')).settings.watchIntervalMs).toBe(120000);
+  });
+});
+
+describe('a conversation file that does not parse', () => {
+  it('starts fresh without quoting a word of it into the log', async () => {
+    // Node's JSON.parse quotes the start of its input in its message, and the
+    // input here is Noah's conversation: logging the error itself, rather
+    // than what kind it is, put his words in a log that is not 0600. The QA's
+    // gate of this lot made that change with every test green (24f1889). The
+    // witness first: these bytes are quoted by the parser, so a log line that
+    // carried the error would carry them.
+    const said = 'Noah told the chat: ship it';
+    let parserSays = '';
+    try { JSON.parse(said); } catch (err) { parserSays = String(err); }
+    expect(parserSays, 'the parser does not quote this input, so nothing below could fail').toContain('Noah told');
+
+    fs.mkdirSync(PRIVATE_DIR, { recursive: true });
+    fs.writeFileSync(PRIVATE, said);
+    const logged: string[] = [];
+    const spies = (['error', 'warn', 'log', 'info'] as const).map(level =>
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => { logged.push(format(...args)); }));
+    let history: string[] | undefined;
+    try {
+      history = textsOf(await start());
+    } finally {
+      spies.forEach(spy => spy.mockRestore());
+    }
+
+    expect(history).toEqual([]);
+    expect(logged.some(line => line.includes('could not read the conversation')), 'the read never failed').toBe(true);
+    expect(logged.filter(line => line.includes('Noah told'))).toEqual([]);
   });
 });
 

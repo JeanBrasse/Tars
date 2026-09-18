@@ -328,8 +328,13 @@ describe('a call on the shared token', () => {
     const dispatched = await call('POST', `/api/agents/${BETA.id}/dispatch`, bearer(sharedToken), { message: 'go' });
     expect(dispatched.status, JSON.stringify(dispatched.body)).toBe(403);
 
+    // Refused, and enrolled nobody: with the return after the refusal gone,
+    // the call still got its 403 while the agent joined the fleet anyway, and
+    // this read only the status (the QA's gate of lot 4, on 24f1889).
+    const fleet = agents.size;
     const created = await call('POST', '/api/agents', bearer(sharedToken), { projectPath: '/projects/gamma' });
     expect(created.status, JSON.stringify(created.body)).toBe(403);
+    expect(agents.size, 'a caller that is nobody enrolled an agent').toBe(fleet);
   });
 
   it('is still let in: having no agent behind it is not a refusal at the door', async () => {

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * What Tars keeps out of the agents' directory cannot be sent to Telegram
@@ -22,15 +24,53 @@ import * as path from 'node:path';
  * that a refusal came from the guard and not from something after it.
  */
 
-const tools = vi.hoisted(() => new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>());
+type Handler = (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+const tools = new Map<string, Handler>();
 
-vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-  McpServer: class {
-    tool(name: string, _description: string, _schema: unknown, handler: never) { tools.set(name, handler); }
-    async connect() {}
-  },
-}));
-vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({ StdioServerTransport: class {} }));
+/** The SDK the server gets: a McpServer that keeps the handlers, and a transport that connects to nothing. */
+const FAKE_SDK: Record<string, () => unknown> = {
+  '@modelcontextprotocol/sdk/server/mcp.js': () => ({
+    McpServer: class {
+      tool(name: string, _description: string, _schema: unknown, handler: Handler) { tools.set(name, handler); }
+      async connect() {}
+    },
+  }),
+  '@modelcontextprotocol/sdk/server/stdio.js': () => ({ StdioServerTransport: class {} }),
+};
+
+const SERVER_DIR = path.join(__dirname, '..', '..', 'mcp-telegram');
+
+/**
+ * The file the server's own import of `specifier` lands on, or the bare name
+ * when nothing there provides it.
+ *
+ * vitest keys a mock by the file an import resolves to, and resolves each
+ * import from the file that makes it. The root does not depend on the SDK, so
+ * a `vi.mock('@modelcontextprotocol/sdk/...')` written in this file is keyed by
+ * the bare name, and it met the server's import only where the server finds no
+ * SDK either: a worktree, whose mcp-telegram has no node_modules. In the main
+ * checkout the server's import lands in mcp-telegram/node_modules, the mock
+ * missed it, and the real SDK took the three tools, and the worker's stdin
+ * with them. Measured on 24f1889: green in the worktree the test was written
+ * in, "was never registered" three times in the main checkout.
+ *
+ * Node's own ESM resolver, run from the server's directory, says where that
+ * import lands, `import` condition and all. When it finds nothing, vitest
+ * keys the server's unresolved import by the bare name, which is what is
+ * returned then. A wrong answer cannot pass for a right one: the mock misses,
+ * and the tests below find no tool registered.
+ */
+function whereTheServerFinds(specifier: string): string {
+  try {
+    const url = execFileSync(process.execPath, [
+      '--input-type=module', '--eval', 'process.stdout.write(import.meta.resolve(process.env.SPECIFIER))',
+    ], { cwd: SERVER_DIR, env: { ...process.env, SPECIFIER: specifier }, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return fileURLToPath(url);
+  } catch {
+    return specifier;
+  }
+}
+
 // Nothing here may reach Telegram, whatever a guard lets through.
 vi.mock('https', () => {
   const refuse = () => { throw new Error('a test reached the network'); };
@@ -83,6 +123,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
     fs.writeFileSync(path.join(tmpHome, '.dorothy', 'app-settings.json'), JSON.stringify({
       telegramBotToken: 'not-a-real-bot', telegramChatId: '1',
     }));
+    for (const [specifier, fake] of Object.entries(FAKE_SDK)) vi.doMock(whereTheServerFinds(specifier), fake);
     await import('../../mcp-telegram/src/index');
   });
 

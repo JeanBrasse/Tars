@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { z } from 'zod';
 
 /**
  * create_agent can ask for an agent in another project, and only when told to.
@@ -22,12 +21,36 @@ vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
 
 let mockApiRequest: ReturnType<typeof vi.fn>;
 
+/**
+ * One field of a tool's schema, in whichever zod built it.
+ *
+ * That is not the same zod everywhere, which is why this file imports none.
+ * The schema is built by the zod the orchestrator resolves: its own 3.25 where
+ * mcp-orchestrator/node_modules is installed, as in the main checkout, and the
+ * root's 4.4 where it is not, as in a worktree. Wrapped in the root's
+ * `z.object`, the fields held only in the second: measured on 24f1889, both
+ * tests below failed in the main checkout with "Invalid element at key
+ * projectPath: expected a Zod schema", and passed in the worktree they were
+ * written in. So each field is checked by its own `parse`, the code's zod by
+ * construction, and a key the shape does not declare is dropped the way the
+ * SDK's object schema drops it. The SDK does the same thing its own way: it
+ * builds that object with the zod the shape was made with.
+ */
+type FieldSchema = { parse(value: unknown): unknown };
+
 function makeFakeServer() {
   const tools = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
   return {
     tools,
-    tool(name: string, _desc: string, schema: z.ZodRawShape, handler: (args: Record<string, unknown>) => Promise<unknown>) {
-      tools.set(name, args => handler(z.object(schema).parse(args)));
+    tool(name: string, _desc: string, shape: Record<string, FieldSchema>, handler: (args: Record<string, unknown>) => Promise<unknown>) {
+      tools.set(name, args => {
+        const parsed: Record<string, unknown> = {};
+        for (const [key, field] of Object.entries(shape)) {
+          const value = field.parse(args[key]);
+          if (value !== undefined) parsed[key] = value;
+        }
+        return handler(parsed);
+      });
     },
   };
 }
