@@ -25,25 +25,82 @@ import { agentStatusEmitter } from './agent-events';
  * response: a server cannot wake a client that is not asking it anything.
  */
 
-/** A child in one of these has news worth carrying to whoever asked for it.
- *  `waiting` is included on purpose: an agent blocked on a question is as
- *  much a reason to come back as one that finished. `idle` is not: it is the
- *  resting state and every agent passes through it for ordinary reasons. */
-const NOTIFY_ON: AgentStatus['status'][] = ['completed', 'error', 'waiting'];
-
-/** Of those, the ones that end the delegation rather than pause it. A blocked
- *  agent is still working on what it was asked for and may go on to finish it;
- *  one that has completed or failed is done, and the link is spent. */
-const ENDS_DELEGATION: AgentStatus['status'][] = ['completed', 'error'];
+/**
+ * What an agent has to say to whoever handed it work. Three kinds, and
+ * nothing else is news:
+ *
+ * - `outcome`: it completed, or it failed.
+ * - `wait`: it stopped in the middle of the work to wait on an answer. A
+ *   permission prompt, or a `waiting` with no reason from a CLI that posts
+ *   nothing more precise. Blocked on a question is as much a reason to come
+ *   back as finished, and the work is not over, so the link stays.
+ * - `ended`: it is back at rest, `idle` or `waiting` because idle, and a turn
+ *   has begun since the work was handed to it. That is the work done.
+ *
+ * A `waiting` because idle is not news of its own. It is Claude Code's idle
+ * prompt, a minute after the agent stopped at its prompt, and while `idle` was
+ * not news it was the only thing that told an orchestrator a delegated turn
+ * had ended: a minute late, and also each time the agent came back to rest for
+ * any other reason. Noah's note of 2026-09-18 was one of those. A failed ACP
+ * start put 1212-Backend back to the `waiting` it had left, and the
+ * orchestrator of a delegation finished 85 minutes earlier was told it "is now
+ * waiting". The rest is now news once, as the end of the work handed over,
+ * whichever post brings it: the Stop hook's `idle`, or for a turn that ended
+ * without a Stop, the idle prompt.
+ */
+type News = {
+  kind: 'outcome' | 'wait' | 'ended';
+  status: AgentStatus['status'];
+  reason?: string;
+  /** The work this is about, so that news overtaken by new work is not handed over. */
+  handedAt?: string;
+};
 
 /** How much one recipient can be holding, across both kinds. Reached only by
  *  an orchestrator that dispatched a crowd, or a room that talked past an
  *  agent that stayed busy throughout. */
 const MAX_PENDING_CHILDREN = 20;
 
-/** Last status each agent was seen in, so a transition can be told from a
+/** Last state each agent was seen in, so a transition can be told from a
  *  repeat: the fleet emitter fires on every post, not only on a change. */
-const lastSeen = new Map<string, AgentStatus['status']>();
+const lastSeen = new Map<string, string>();
+
+/**
+ * The state a transition is told apart by. The status alone repeats across
+ * turns, because the routes that hand an agent work set `running` and emit
+ * nothing: an agent dispatched from `waiting` is next seen `waiting` again,
+ * for a permission prompt this time, and the prompt was read as no change and
+ * never reached the orchestrator. The reason and the turn tell them apart.
+ */
+function stateOf(agent: AgentStatus): string {
+  return [agent.status, agent.waitingReason ?? '', agent.lastTurnStartedAt ?? ''].join('|');
+}
+
+function isAtRest(agent: AgentStatus): boolean {
+  return agent.status === 'idle' || (agent.status === 'waiting' && agent.waitingReason === 'idle');
+}
+
+/** A turn has begun since the latest work was handed to this agent. */
+function ranHandedWork(agent: AgentStatus): boolean {
+  const turn = agent.lastTurnStartedAt ? Date.parse(agent.lastTurnStartedAt) : NaN;
+  if (!Number.isFinite(turn)) return false;
+  const handed = agent.workHandedAt ? Date.parse(agent.workHandedAt) : NaN;
+  return !Number.isFinite(handed) || turn >= handed;
+}
+
+function newsOf(agent: AgentStatus): News | undefined {
+  const handedAt = agent.workHandedAt;
+  if (agent.status === 'completed' || agent.status === 'error') {
+    return { kind: 'outcome', status: agent.status, handedAt };
+  }
+  if (isAtRest(agent)) {
+    return ranHandedWork(agent) ? { kind: 'ended', status: agent.status, handedAt } : undefined;
+  }
+  if (agent.status === 'waiting') {
+    return { kind: 'wait', status: agent.status, reason: agent.waitingReason, handedAt };
+  }
+  return undefined;
+}
 
 /** A bus message waiting for its target to be free. Carries where it came
  *  from, because provenance is data the recipient reads, not an instruction. */
@@ -74,7 +131,7 @@ export type QueuedBusMessage = {
  * one's post would be exactly the stale delivery the session rule rejects.
  */
 type Pending = {
-  children: Map<string, AgentStatus['status']>;
+  children: Map<string, News>;
   bus: QueuedBusMessage[];
   ptyId: string;
   sessionId?: string;
@@ -146,10 +203,10 @@ function onFleetChange(agentId: string): void {
   }
 
   const before = lastSeen.get(agentId);
-  lastSeen.set(agentId, agent.status);
-  if (before !== agent.status && NOTIFY_ON.includes(agent.status)) {
-    queueForRequester(agent);
-  }
+  const now = stateOf(agent);
+  lastSeen.set(agentId, now);
+  const news = before !== now ? newsOf(agent) : undefined;
+  if (news) queueForRequester(agent, news);
 
   // Whatever else this transition was, it may be the one that freed this
   // agent to be interrupted. This is why nothing here polls or sleeps: the
@@ -165,7 +222,7 @@ function heldFor(recipient: AgentStatus): Pending {
   // Replaced since the last thing was queued: what was held belonged to the
   // session that is gone.
   return {
-    children: new Map<string, AgentStatus['status']>(),
+    children: new Map<string, News>(),
     bus: [],
     ptyId: recipient.ptyId ?? '',
     sessionId: recipient.currentSessionId,
@@ -176,7 +233,7 @@ function holding(held: Pending): number {
   return held.children.size + held.bus.length;
 }
 
-function queueForRequester(child: AgentStatus): void {
+function queueForRequester(child: AgentStatus, news: News): void {
   const link = child.requestedBy;
   // Self-dispatch would be a message an agent sends itself on every task.
   if (!link || link.agentId === child.id) return;
@@ -184,6 +241,16 @@ function queueForRequester(child: AgentStatus): void {
   // any other route got a new ptyId, so this one is not about the work it is
   // finishing now, and nobody is owed a word about it.
   if (link.ptyId !== child.ptyId) return;
+
+  // Spent, once the work it was recorded for is actually over, whether or not
+  // the requester can still be reached. This is what stops a hand start from
+  // inheriting it: an agent relaunched from the interface keeps its live
+  // session and therefore its ptyId, so the binding above cannot tell that
+  // start apart on its own, but by then the link that a dispatch left behind
+  // has already been used up and is gone. A turn that ended normally used to
+  // leave it in place, so every later rest of that agent, typed in by Noah or
+  // put back by a failed ACP start, went on reporting to that orchestrator.
+  if (news.kind !== 'wait') child.requestedBy = undefined;
 
   const requester = agents.get(link.agentId);
   if (!requester || !requester.ptyId) return;
@@ -194,17 +261,28 @@ function queueForRequester(child: AgentStatus): void {
     console.warn(`[agent-watch] ${link.agentId} already holds ${MAX_PENDING_CHILDREN} pending items, dropping ${child.id}`);
     return;
   }
-  held.children.set(child.id, child.status);
+  held.children.set(child.id, news);
   pending.set(link.agentId, held);
 
-  // Spent, once the work it was recorded for is actually over. This is what
-  // stops a hand start from inheriting it: an agent relaunched from the
-  // interface keeps its live session and therefore its ptyId, so the binding
-  // above cannot tell that start apart on its own, but by then the link that
-  // a dispatch left behind has already been used up and is gone.
-  if (ENDS_DELEGATION.includes(child.status)) child.requestedBy = undefined;
-
   flush(link.agentId);
+}
+
+/**
+ * Is what was held for a busy requester still true now that it can be told?
+ *
+ * A note waits for as long as its requester works, and the requester may use
+ * that time to hand the same agent more work. The QA was announced as "now
+ * waiting" to an orchestrator that had just given it its next task, while it
+ * worked on it (2026-09-16, 23:30). Work handed since overtakes what was held
+ * about the work before it, and a wait that is over is not a wait.
+ */
+function stillNews(childId: string, news: News): boolean {
+  const child = agents.get(childId);
+  // Gone since: what it did is still what it did.
+  if (!child) return true;
+  if (child.workHandedAt !== news.handedAt) return false;
+  if (news.kind === 'wait') return child.status === 'waiting' && child.waitingReason === news.reason;
+  return true;
 }
 
 /**
@@ -299,6 +377,14 @@ function flush(requesterId: string): void {
     return;
   }
 
+  for (const [childId, news] of held.children) {
+    if (!stillNews(childId, news)) held.children.delete(childId);
+  }
+  if (holding(held) === 0) {
+    pending.delete(requesterId);
+    return;
+  }
+
   // Delegation results first, because that note is what an orchestrator is
   // waiting on; a bus message goes out on the next pass of the same window.
   let delivered: { kind: 'children' } | { kind: 'bus'; message: QueuedBusMessage };
@@ -374,13 +460,22 @@ function envelopeValue(value: string): string {
     Array.from({ length: found.length }, (_, i) => `\\u${found.charCodeAt(i).toString(16).padStart(4, '0')}`).join(''));
 }
 
-function composeNote(finished: Map<string, AgentStatus['status']>): string {
-  const lines = Array.from(finished.entries()).map(([id, status]) => {
+/** What the note says happened. A permission prompt is named as one: it was
+ *  worded like a finished turn, so an orchestrator could not tell a question
+ *  from a result. */
+function describeNews(news: News): string {
+  if (news.kind === 'ended') return 'has finished its turn';
+  if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';
+  return `is now ${news.status}`;
+}
+
+function composeNote(finished: Map<string, News>): string {
+  const lines = Array.from(finished.entries()).map(([id, news]) => {
     const agent = agents.get(id);
     const name = agent?.name || id;
     // Raw until the room note made "This is Noah, not a teammate." a sentence
     // Tars really writes: a name with a line break in it could append one here.
-    return `- ${envelopeValue(name)} (${envelopeValue(id)}) is now ${status}`;
+    return `- ${envelopeValue(name)} (${envelopeValue(id)}) ${describeNews(news)}`;
   });
 
   if (lines.length === 1) {

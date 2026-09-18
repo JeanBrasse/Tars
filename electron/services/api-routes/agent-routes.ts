@@ -303,6 +303,7 @@ async function spawnAgentSession(
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
   agent.status = 'running';
+  agent.workHandedAt = new Date().toISOString();
   agent.currentTask = prompt;
   agent.output = [];
   agent.lastCleanOutput = undefined;  // Clear stale output from previous task
@@ -579,6 +580,7 @@ async function performDispatchLocked(
     writeProgrammaticInput(livePty, opts.message, true);
     agent.status = 'running';
     agent.waitingReason = undefined;
+    agent.workHandedAt = new Date().toISOString();
     // This message starts a new piece of work in the same session; the
     // previous task's captured output must not be mistaken for its result.
     agent.lastCleanOutput = undefined;
@@ -945,7 +947,9 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     const wasStatus = agent.status;
+    const handedAt = new Date().toISOString();
     agent.status = 'running';
+    agent.workHandedAt = handedAt;
     agent.currentTask = task.slice(0, 100);
     agent.lastActivity = new Date().toISOString();
     // Per-agent channel, not a bare 'status': /wait subscribes with
@@ -962,12 +966,20 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
     });
 
-    agent.status = result.ok ? 'idle' : wasStatus === 'running' ? 'idle' : wasStatus;
-    agent.lastActivity = new Date().toISOString();
-    if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
-    saveAgents();
-    emitAgentStatus(agent.id);
-    announceAgent(agent);
+    // Only while this run is still the latest work the agent was handed. The
+    // MCP client can stop waiting on this route before a slow ACP start gives
+    // up, and it then types the task into the terminal instead. The turn that
+    // starts there owns the status: writing back the one this run began from
+    // put a working agent to `waiting`, which /wait answers at once, and which
+    // delegate_task reads as a question and answers by typing into the turn.
+    if (agent.workHandedAt === handedAt) {
+      agent.status = result.ok ? 'idle' : wasStatus === 'running' ? 'idle' : wasStatus;
+      agent.lastActivity = new Date().toISOString();
+      if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
+      saveAgents();
+      emitAgentStatus(agent.id);
+      announceAgent(agent);
+    }
 
     sendJson(result, result.ok ? 200 : 502);
   });
@@ -1059,6 +1071,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         writeProgrammaticInput(ptyProcess, message, true);
         agent.status = 'running';
         agent.waitingReason = undefined;
+        agent.workHandedAt = new Date().toISOString();
         agent.lastActivity = new Date().toISOString();
         saveAgents();
         announceAgent(agent);
