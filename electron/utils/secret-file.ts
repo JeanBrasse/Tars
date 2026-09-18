@@ -20,8 +20,17 @@ import * as path from 'path';
  * The write is atomic as well: a crash between truncate and write used to
  * leave an empty settings file, and the app would silently fall back to
  * defaults - every key gone.
+ *
+ * A directory this has to create is made 0700, readable by its owner alone.
+ * It is how `~/.tars-private` comes into being on an install that never had
+ * anything to migrate there: made with the default mode, it was 0755, open to
+ * a listing by every account on the machine, while the migration, the only
+ * other place that made it, made it 0700. A directory that already exists is
+ * left as it is: `~/.dorothy` is the agents' directory, and not this
+ * function's to narrow.
  */
 export function writeSecretFileSync(filePath: string, contents: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   writeAtomicSync(filePath, contents, 0o600);
 
   // renameSync preserves the temp file's mode, but be explicit: if the target
@@ -41,11 +50,22 @@ export function writeSecretFileSync(filePath: string, contents: string): void {
  * leave a half-file that the next parse rejects. agents.json already had this
  * treatment; projects.json did not, and losing it silently empties the user's
  * project list.
+ *
+ * The temp name is fixed, so it is created, never opened. Whatever holds that
+ * name is removed first, which takes a link away without touching what it
+ * points at, and the file is then made with 'wx', O_CREAT with O_EXCL, which
+ * fails rather than follow anything put there in between, a symbolic link or a
+ * hard one. Opened the ordinary way, a symbolic link planted at the temp name
+ * sent the contents into the file it named, and a hard link truncated that
+ * file in place; the rename then made the link the secret file itself. Found
+ * by the audit of lot 4. A leftover temp file from a write that died goes the
+ * same way; it used to be written over.
  */
 export function writeAtomicSync(filePath: string, contents: string, mode?: number): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, contents, mode !== undefined ? { mode } : undefined);
+  fs.rmSync(tmp, { force: true });
+  fs.writeFileSync(tmp, contents, { flag: 'wx', mode: mode ?? 0o666 });
   fs.renameSync(tmp, filePath);
 }
 

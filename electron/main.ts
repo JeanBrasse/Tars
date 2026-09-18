@@ -105,6 +105,7 @@ import { registerHermesHandlers } from './handlers/hermes-handlers';
 import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
+import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
@@ -371,6 +372,9 @@ app.whenReady().then(async () => {
   // it: a run in which the Chat is never opened would otherwise leave the file
   // sitting there for its whole length.
   migrateOverseerOutOfAgentReach();
+  // And the Hermes webhook secret, for the same reason: through the webhook it
+  // gives any agent of any project work, and ~/.dorothy is one `cat` away.
+  migrateWebhookSecretOutOfAgentReach();
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();

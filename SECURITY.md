@@ -6,7 +6,9 @@ defence is not one: a lid that reads like a boundary is worse than an open door
 nobody mistook for closed.
 
 Everything here was measured on Noah's machine, macOS 26.6.1 (Darwin 25.6.0),
-on `main` at `b17db0f`, between the 17th and the 18th of September 2026.
+on `main` at `b17db0f`, between the 17th and the 18th of September 2026, except
+where a passage names `bad8c97`: the first version of the 1.7.6 work, which an
+audit read on the 18th and found holes in.
 
 ---
 
@@ -38,14 +40,15 @@ them apart.
 Since the identity work of 1.7.x an agent is named by the token Tars minted for
 its process, never by a header. Since 1.7.6 the routes that **drive** an agent
 (start, dispatch, run-task, stop, message, delete, and create) refuse a caller
-that is nobody:
+that is nobody, and the Hermes webhook, which drives one too, opens to Hermes
+alone:
 
 | Credential | Who it is | What it opens |
 |---|---|---|
-| An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents; another project's only with `allowCrossProject` |
-| Tars's own pass (minted in memory, written nowhere) | the main process | everything: it is Noah's super chat, which drives every project by design |
-| `~/.dorothy/hermes-webhook-secret` | nobody | `POST /api/webhooks/hermes`, and nothing else |
-| `~/.dorothy/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent |
+| An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents, and a new agent in its own project; another project's only with `allowCrossProject`. Not the webhook |
+| Tars's own pass (minted in memory, written nowhere) | the main process | every agent of every project: it is Noah's super chat, which drives every project by design. Not the webhook |
+| `~/.tars-private/hermes-webhook-secret` | Hermes | `POST /api/webhooks/hermes` and nothing else, and through it any agent of any project, named by id or by name |
+| `~/.dorothy/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent, and does not open the webhook |
 
 Measured before the change, on `b17db0f`: a call presenting the shared token
 with **no** `x-tars-client` header stopped, started, dispatched to and DELETEd
@@ -54,6 +57,20 @@ an agent of any project and got a `200`. The guard refused only a caller that
 itself. Every agent can read that token file, so the fleet was open to any of
 them; it could not simply be refused, because the super chat authenticated the
 same way. It no longer does.
+
+Measured again on `bad8c97`, the first version of that change, by the audit that
+read it: the webhook still let the shared token drive the fleet. It took the
+master token as a fallback, "so an existing setup keeps running"; with no secret
+file it skipped its own check altogether, so an agent's own token went through
+too; and it hands its target to `performDispatch`, which checks nothing, after
+resolving it by name across every project. The shared token with a secret
+configured, and the shared token or an agent's token with none, each got a
+`200` and had the message typed into the agent it named, the agent's token into
+another project's. The route now opens to the webhook secret and to nothing
+else, and no secret configured means no way in. The same audit found creation
+held to an identity but not to a project, while the table above already said
+its own project: an agent created one in any project it named, with a `200`.
+Creation now follows the rule the other routes follow.
 
 **What this is.** A guard against mistakes, and against a *casual* reader of the
 token file. It is not isolation: see §3.
@@ -65,6 +82,17 @@ the start of every session. So a process holding that file can still enumerate
 the fleet and read any agent's terminal output. Closing that means giving the
 hooks an identity of their own, which is a change to every CLI's hook config,
 not to a route.
+
+**What the webhook secret is.** The reach of Noah's own chat, handed to Hermes,
+so it lives where Noah's conversation lives, in `~/.tars-private`, and not in
+`~/.dorothy`, where it was minted until 1.7.6. It moves at the first start that
+finds it there, value unchanged, so a Hermes job that holds it keeps working.
+That takes it out of the directory every agent is pointed at. It does not take
+it out of an agent's reach: an agent that goes looking reads `~/.tars-private`
+like any other file of Noah's (§1, §5), and with the secret drives any agent of
+any project through the webhook. And an agent that read it before the move
+still has it. Rotating it is deleting `~/.tars-private/hermes-webhook-secret`,
+opening Settings > Hermes, which mints a new one, and giving Hermes that.
 
 ---
 
@@ -258,7 +286,7 @@ the first path nobody thought to list.
 | Path | Holds | Reachable by an agent |
 |---|---|---|
 | `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal | Yes, deliberately: it is in every agent's `--add-dir` |
-| `~/.tars-private/` | Noah's conversation with the super chat | Not handed to any agent, and never passed to a CLI. `0600`, in a `0700` directory |
+| `~/.tars-private/` | Noah's conversation with the super chat, and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700` |
 
 `~/.tars-private/overseer.json` used to be `~/.dorothy/overseer.json`: 148,654
 bytes, 344 messages, mode `0644`, in the directory every agent is pointed at.
@@ -268,3 +296,22 @@ Moving it is worth exactly what it is worth, and no more: it leaves the
 directory an agent is handed and the listing it gets for free, and the `0600`
 closes it to the other accounts on the machine. An agent that goes looking for
 `~/.tars-private` still reads it, because §1. Closing that is §4, or nothing.
+
+The move first took it off a list, which the audit of `bad8c97` caught on the
+app's Telegram send routes, and which held for the agents' Telegram MCP server
+too: both refuse `~/.dorothy` by name, and refused nothing under
+`~/.tars-private`, so the conversation could be sent from where it had landed
+with one call. Both refuse the private directory now. The vault's attach route
+was a third way, measured on the same branch: it copies the file its caller
+names into `~/.dorothy/vault/attachments`, where `/api/local-file` serves it
+with no token, and it took a file from `~/.tars-private` on the shared token.
+It refuses the private directory now too. It still copies any other file its
+caller names, `~/.ssh` included; that is older than 1.7.6, and closing it means
+deciding what an agent may attach. Each of these is a refusal of the one-call
+route, not a wall: an agent with a shell copies the file somewhere else first,
+because §1.
+
+Made on a new install by the first save, the directory came out `0755`, since
+only the migration asked for `0700`. Whichever write makes it now, the
+migration or the first save of the conversation or of the webhook secret, makes
+it `0700`. A directory that already exists at another mode is left as it is.

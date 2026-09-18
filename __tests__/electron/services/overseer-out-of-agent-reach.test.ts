@@ -270,6 +270,24 @@ describe('nothing to migrate', () => {
     expect(fs.statSync(PRIVATE).mode & 0o777).toBe(0o600);
   });
 
+  it('creates the private directory at 0700 on an install that had nothing to migrate', async () => {
+    // Found by the audit of lot 4: only the migration made the directory 0700,
+    // and it has nothing to do on a new install, so the first save made it
+    // with the default mode, 0755 here. The witness first: a directory made
+    // the ordinary way in this run is open to the other accounts.
+    const probe = path.join(tmp, 'probe');
+    fs.mkdirSync(probe);
+    const ordinary = fs.statSync(probe).mode & 0o077;
+    fs.rmdirSync(probe);
+    expect(ordinary, 'this umask would hide the defect').not.toBe(0);
+
+    const overseer = await start();
+    overseer.setOverseerSettings({ watchIntervalMs: 120000 });
+
+    expect(fs.existsSync(LEGACY), 'there was something to migrate after all').toBe(false);
+    expect(fs.statSync(PRIVATE_DIR).mode & 0o777).toBe(0o700);
+  });
+
   it('does not migrate a second time in the same run, and reads the private file when both exist', async () => {
     const overseer = await start();
     overseer.setOverseerSettings({ watchIntervalMs: 120000 });

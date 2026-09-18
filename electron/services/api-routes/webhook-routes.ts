@@ -1,17 +1,28 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { agents } from '../../core/agent-manager';
 import { performDispatch } from './agent-routes';
 import { RouteApp, RouteContext } from './types';
-import { dataPath } from '../../constants';
+
+const HERMES_ONLY =
+  'This route is Hermes\'s, and only the webhook secret Settings hands Hermes opens it. '
+  + 'An agent gives another work through /api/agents/:id/dispatch.';
 
 /**
  * Incoming webhooks: lets an external scheduler (the user's Hermes instance)
  * drive Tars agents. Tars deliberately has no scheduler of its own:
  * Hermes cron jobs / automation blueprints call this endpoint instead.
  *
- * Auth: the standard API bearer token (~/.dorothy/api-token), NOT exempt.
+ * Auth: the webhook secret, `~/.tars-private/hermes-webhook-secret`, and
+ * nothing else. The server's door takes that secret for Hermes on this path
+ * and on no other; this route opens to Hermes alone. Not the shared token,
+ * which it used to take as a fallback "so an existing setup keeps running":
+ * every agent reads that token, and this route dispatches to any agent of any
+ * project, by name. Not an agent's own token, which has /dispatch, inside its
+ * own project. And not nothing: with no secret configured the check here was
+ * skipped, so whatever the door let in went through. Measured on bad8c97: the
+ * shared token with a secret configured, and the shared token or an agent's
+ * token with none, each got a 200 and had the message typed into the agent it
+ * named, the agent's token into another project's.
+ *
  * Reachability from a VPS: run `tailscale serve 31415` on this machine (or an
  * equivalent tunnel) so Hermes can reach the localhost-bound API.
  *
@@ -30,24 +41,9 @@ import { dataPath } from '../../constants';
  */
 export function registerWebhookRoutes(app: RouteApp, ctx: RouteContext): void {
   app.post('/api/webhooks/hermes', async (req, sendJson) => {
-    // This route is the one thing published over the tailnet, so it carries
-    // its own secret rather than the master API token.
-    const provided = String(req.raw.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    let expected = '';
-    try {
-      const secretFile = dataPath('hermes-webhook-secret');
-      if (fs.existsSync(secretFile)) expected = fs.readFileSync(secretFile, 'utf-8').trim();
-    } catch { /* fall through */ }
-    if (expected && provided !== expected) {
-      const apiToken = (() => {
-        try { return fs.readFileSync(dataPath('api-token'), 'utf-8').trim(); }
-        catch { return ''; }
-      })();
-      // The master token still works so an existing setup keeps running.
-      if (!apiToken || provided !== apiToken) {
-        sendJson({ error: 'Unauthorized' }, 401);
-        return;
-      }
+    if (!req.hermes) {
+      sendJson({ error: HERMES_ONLY }, 403);
+      return;
     }
 
     const body = req.body as {

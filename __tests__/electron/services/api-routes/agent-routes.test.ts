@@ -223,7 +223,9 @@ describe('agent-routes', () => {
       const handler = app.routes.find(r => r.method === 'POST' && r.pattern === '/api/agents')!.handler;
 
       const sendJson = vi.fn();
-      await handler(makeReq({ callerAgentId, body: { projectPath: '/my/project', name: 'Test Agent' } }), sendJson, ctx);
+      // In the creator's own project: another one takes allowCrossProject,
+      // as on every route that drives an agent.
+      await handler(makeReq({ callerAgentId, body: { projectPath: '/test/project', name: 'Test Agent' } }), sendJson, ctx);
 
       expect(sendJson).toHaveBeenCalledTimes(1);
       const result = sendJson.mock.calls[0][0];

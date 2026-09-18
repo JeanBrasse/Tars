@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { VAULT_DIR, MIME_TYPES } from '../../constants';
+import { VAULT_DIR, MIME_TYPES, PRIVATE_DIR } from '../../constants';
 import { getVaultDb, ftsSearch } from '../vault-db';
 import { RouteApp, RouteContext } from './types';
 
@@ -235,6 +235,16 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
 
       if (!file_path || !fs.existsSync(file_path)) {
         sendJson({ error: 'File not found' }, 400);
+        return;
+      }
+      // Nothing from the private directory. The copy lands in the vault, under
+      // ~/.dorothy, the directory every agent is handed, and /api/local-file
+      // serves it without a token: one vault_attach_file call put Noah's
+      // conversation, or the webhook secret, back where the move had taken it
+      // from. Measured while closing the Telegram side of the same gap.
+      const resolved = path.resolve(file_path);
+      if (resolved === PRIVATE_DIR || resolved.startsWith(PRIVATE_DIR + path.sep)) {
+        sendJson({ error: 'Access denied: path not allowed' }, 403);
         return;
       }
 

@@ -355,7 +355,7 @@ export function registerAgentTools(server: McpServer): void {
   // Tool: Create agent
   server.tool(
     "create_agent",
-    "Create a new agent. Defaults to YOUR project when projectPath is omitted. The agent will be in 'idle' state until started. By default, agents run with --dangerously-skip-permissions for autonomous operation.",
+    "Create a new agent. Defaults to YOUR project when projectPath is omitted; another project is refused unless allowCrossProject is true. The agent will be in 'idle' state until started. By default, agents run with --dangerously-skip-permissions for autonomous operation.",
     {
       projectPath: z.string().optional().describe("Absolute path to the project directory (defaults to your own project)"),
       name: z.string().optional().describe("Name for the agent (e.g., 'Backend Worker', 'Test Runner')"),
@@ -370,8 +370,9 @@ export function registerAgentTools(server: McpServer): void {
         .default(true)
         .describe("If true (default), agent runs with --dangerously-skip-permissions flag for autonomous operation"),
       secondaryProjectPath: z.string().optional().describe("Secondary project path to add as context (--add-dir)"),
+      allowCrossProject: z.boolean().optional().describe("Explicitly allow creating the agent in ANOTHER project than yours (normally rejected)"),
     },
-    async ({ projectPath, name, skills, character, skipPermissions = true, secondaryProjectPath }) => {
+    async ({ projectPath, name, skills, character, skipPermissions = true, secondaryProjectPath, allowCrossProject }) => {
       try {
         const resolvedProjectPath = projectPath || getCallerIdentity().projectPath;
         if (!resolvedProjectPath) {
@@ -387,6 +388,7 @@ export function registerAgentTools(server: McpServer): void {
           character,
           skipPermissions,
           secondaryProjectPath,
+          allowCrossProject,
         })) as { agent: { id: string; name: string } };
         return {
           content: [

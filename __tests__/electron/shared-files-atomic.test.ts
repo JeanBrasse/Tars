@@ -102,6 +102,11 @@ function cutWrites(dir: string, midway: (file: string) => void, { die = false } 
       original.call(nodeFs, file, data.slice(0, Math.floor(data.length / 2)), options);
       midway(file);
       if (die) throw new Error('the process died here');
+      // The rest of that same write. Its file exists now, so a write that
+      // creates exclusively ('wx', as writeAtomicSync does since lot 4) goes on
+      // into it, as one write would, instead of failing to create it twice.
+      const rest = options && typeof options === 'object' && options.flag === 'wx' ? { ...options, flag: 'w' } : options;
+      return original.call(nodeFs, file, data, rest);
     }
     return original.call(nodeFs, file, data, options);
   } as typeof fs.writeFileSync;

@@ -4,7 +4,7 @@ import * as http from 'http';
 import { agents } from '../../core/agent-manager';
 import { AgentStatus } from '../../types';
 import { RouteRequest } from './types';
-import { DATA_DIR_NAME } from '../../constants';
+import { DATA_DIR_NAME, PRIVATE_DIR_NAME } from '../../constants';
 
 /** Project path or id of the calling agent, injected as a header by the MCP
  *  client from its PTY environment. Read only by the server's door, which
@@ -78,10 +78,16 @@ export function isSafeTelegramPath(filePath: string): boolean {
     path.join(home, '.claude'),
     path.join(home, '.env'),
     // Our own store. It holds app-settings.json - every provider API key, the
-    // Hermes gateway token, the memory-backend credentials - plus api-token
-    // and hermes-webhook-secret. Blocking ~/.ssh while leaving this open was
-    // guarding the front door and not the safe.
+    // Hermes gateway token, the memory-backend credentials - plus api-token.
+    // Blocking ~/.ssh while leaving this open was guarding the front door and
+    // not the safe.
     path.join(home, DATA_DIR_NAME),
+    // And what Tars keeps out of the agents' reach: Noah's conversation with
+    // the super chat and the Hermes webhook secret. Both left the store above
+    // so that no agent would be handed them, and the move took them off this
+    // list with it: the conversation could be sent from where it had landed.
+    // Found by the audit of lot 4.
+    path.join(home, PRIVATE_DIR_NAME),
     path.join(home, '.config'),
     path.join(home, '.kube'),
     path.join(home, '.docker'),

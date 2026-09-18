@@ -21,13 +21,23 @@ import * as path from 'node:path';
  * now knows about; an agent holds the token Tars minted for its process; and
  * the shared token drives nothing.
  *
+ * The audit of this lot found the shared token still driving the whole fleet
+ * through the webhook, measured on bad8c97: the route took the master token as
+ * a fallback, skipped its own check entirely when no secret file existed, and
+ * then dispatched to any agent it could name. The webhook is Hermes's alone
+ * now, and its secret left the directory the agents are handed.
+ *
  * Both real callers are exercised through their own code here: `sendToAgent`
  * from the overseer module makes its real loopback request, and the webhook
- * route is reached over HTTP with the file `readWebhookSecret` writes. The
+ * route is reached over HTTP with the file `provisionWebhookSecret` writes. The
  * server, the routes and the token registry are the real ones.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-drive-'));
+/** The private directory, outside the data directory as the real one is. */
+const privateTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-drive-private-'));
+const HERMES_SECRET = path.join(privateTmp, 'hermes-webhook-secret');
+const HERMES_SECRET_LEGACY = path.join(tmp, 'hermes-webhook-secret');
 let port = 0;
 
 function freePort(): Promise<number> {
@@ -56,6 +66,8 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
     VAULT_DB_FILE: path.join(tmp, 'vault.db'),
     API_TOKEN_FILE: path.join(tmp, 'api-token'),
     BUS_FILE: path.join(tmp, 'bus.json'),
+    HERMES_WEBHOOK_SECRET_FILE: HERMES_SECRET,
+    HERMES_WEBHOOK_SECRET_LEGACY_FILE: HERMES_SECRET_LEGACY,
   };
 });
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
@@ -79,6 +91,7 @@ const NO_IDENTITY =
 
 let sharedToken = '';
 let alphaToken = '';
+let betaToken = '';
 
 /** A terminal that records what was typed into it, the way a live claude is one. */
 function liveTerminal(agent: AgentStatus): { written: string[] } {
@@ -150,6 +163,7 @@ beforeAll(async () => {
 afterAll(() => {
   api.stopApiServer();
   fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(privateTmp, { recursive: true, force: true });
 });
 
 beforeEach(() => {
@@ -158,7 +172,9 @@ beforeEach(() => {
   putAgent(ALPHA);
   putAgent(BETA);
   alphaToken = tokens.mintAgentToken(ALPHA.id);
-  tokens.mintAgentToken(BETA.id);
+  betaToken = tokens.mintAgentToken(BETA.id);
+  fs.rmSync(HERMES_SECRET, { force: true });
+  fs.rmSync(HERMES_SECRET_LEGACY, { force: true });
 });
 
 describe('the super chat, which is Noah driving every project', () => {
@@ -245,11 +261,11 @@ describe('the super chat, which is Noah driving every project', () => {
 });
 
 describe('Hermes, the one caller published off this machine', () => {
-  /** The file `readWebhookSecret()` provisions in ~/.dorothy, and hands to Hermes. */
+  const SECRET = 'f'.repeat(64);
+  /** The file `provisionWebhookSecret()` leaves in the private directory, and Settings hands to Hermes. */
   function provisionWebhookSecret(): string {
-    const secret = 'f'.repeat(64);
-    fs.writeFileSync(path.join(tmp, 'hermes-webhook-secret'), secret, { mode: 0o600 });
-    return secret;
+    fs.writeFileSync(HERMES_SECRET, SECRET, { mode: 0o600 });
+    return SECRET;
   }
 
   it('dispatches with the secret Settings hands it, which the door used to refuse', async () => {
@@ -286,16 +302,130 @@ describe('Hermes, the one caller published off this machine', () => {
     expect(body.error).toBe('Unauthorized');
   });
 
-  it('refuses an agent that aims its own token at the webhook', async () => {
-    // The route's own check, which the door reaching it does not replace: this
-    // is the one route that takes an agent id from the body without scoping.
+  it('is not opened by the shared token, which drove any agent of any project through it', async () => {
+    // Measured on bad8c97: 200, and the message typed into an agent of a
+    // project the caller has nothing to do with. The route took the master
+    // token as a fallback for "an existing setup", and every agent reads it.
     provisionWebhookSecret();
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
 
-    const { status, body } = await call('POST', '/api/webhooks/hermes', bearer(alphaToken), {
+    const { status, body } = await call('POST', '/api/webhooks/hermes', bearer(sharedToken), {
+      agent_id: BETA.id, message: 'the shared token speaking',
+    });
+
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(terminal.written, 'the shared token typed into an agent through the webhook').toEqual([]);
+  });
+
+  it('is not opened by an agent\'s own token, nor by Tars\'s pass', async () => {
+    // The route's own check, which the door reaching it does not replace: this
+    // is the one route that takes an agent id from the body without scoping,
+    // because the one caller it is for is Noah's scheduler.
+    provisionWebhookSecret();
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+
+    for (const [who, token] of [['an agent', alphaToken], ['the super chat', tokens.internalToken()]] as const) {
+      const { status, body } = await call('POST', '/api/webhooks/hermes', bearer(token), {
+        agent_id: BETA.id, message: `sent by ${who}`,
+      });
+      expect(status, `${who}: ${JSON.stringify(body)}`).toBe(403);
+    }
+    expect(terminal.written).toEqual([]);
+  });
+
+  it('with no secret configured, opens to nobody at all', async () => {
+    // Measured on bad8c97: with no secret file the route skipped its own check
+    // entirely, so whatever the door let in went through, an agent's token
+    // aimed at another project included. An absent secret is a shut door.
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+
+    for (const [who, token] of [['the shared token', sharedToken], ['an agent', alphaToken], ['a guess', SECRET]] as const) {
+      const { status, body } = await call('POST', '/api/webhooks/hermes', bearer(token), {
+        agent_id: BETA.id, message: `sent with ${who}`,
+      });
+      expect([401, 403], `${who}: ${status} ${JSON.stringify(body)}`).toContain(status);
+    }
+    expect(terminal.written, 'an agent was driven through a webhook that has no secret').toEqual([]);
+  });
+
+  it('takes a secret still in ~/.dorothy out of it, and Hermes keeps the one it holds', async () => {
+    // Where every install before this one keeps it: the directory every agent
+    // is handed, one `cat` away. A Hermes job holds that value, so it moves
+    // as it is.
+    fs.writeFileSync(HERMES_SECRET_LEGACY, SECRET, { mode: 0o600 });
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+
+    const shared = await call('POST', '/api/webhooks/hermes', bearer(sharedToken), { agent_id: BETA.id, message: 'fallback' });
+    const hermes = await call('POST', '/api/webhooks/hermes', bearer(SECRET), { agent_id: BETA.id, message: 'the cron fired' });
+
+    expect(shared.status, 'the master token is still a way in').toBe(403);
+    expect(hermes.status, JSON.stringify(hermes.body)).toBe(200);
+    expect(terminal.written.join('')).toContain('the cron fired');
+    expect(terminal.written.join('')).not.toContain('fallback');
+    expect(fs.existsSync(HERMES_SECRET_LEGACY), 'the secret is still in the directory every agent is handed').toBe(false);
+    expect(fs.readFileSync(HERMES_SECRET, 'utf-8')).toBe(SECRET);
+    expect(fs.statSync(HERMES_SECRET).mode & 0o777).toBe(0o600);
+  });
+
+  it('once moved, a secret an older build left in ~/.dorothy opens nothing, and goes', async () => {
+    // An older build run after the move mints a fresh one where it always did.
+    provisionWebhookSecret();
+    const older = 'e'.repeat(64);
+    fs.writeFileSync(HERMES_SECRET_LEGACY, older, { mode: 0o600 });
+
+    const { status } = await call('POST', '/api/webhooks/hermes', bearer(older), {
       agent_id: BETA.id, message: 'go', dry_run: true,
     });
 
-    expect(status, JSON.stringify(body)).toBe(401);
+    expect(status).toBe(401);
+    expect(fs.existsSync(HERMES_SECRET_LEGACY), 'a secret was left in the directory every agent is handed').toBe(false);
+    expect(fs.readFileSync(HERMES_SECRET, 'utf-8'), 'the older build\'s secret replaced the one Hermes holds').toBe(SECRET);
+  });
+});
+
+describe('a call that is refused changes nothing', () => {
+  // Measured on bad8c97: /start, /dispatch and /message recorded who asked
+  // before asking whether they could. The shared token, refused, still cleared
+  // the link that tells an orchestrator its delegated work is done, and an
+  // agent of another project, refused, put its own name there: the result was
+  // then announced to the caller that had been turned away, and never to the
+  // orchestrator that had asked for it.
+  const ROUTES = [
+    ['start', { prompt: 'take this over' }],
+    ['dispatch', { message: 'take this over' }],
+    ['message', { message: 'take this over' }],
+  ] as const;
+
+  for (const [route, body] of ROUTES) {
+    it(`/${route} leaves the orchestrator that delegated still owed its answer`, async () => {
+      const worker = putAgent({ id: 'agent-alpha-worker', projectPath: ALPHA.projectPath });
+      const terminal = liveTerminal(worker);
+      const owed = { agentId: ALPHA.id, ptyId: worker.ptyId! };
+      worker.requestedBy = { ...owed };
+
+      for (const [who, token] of [['the shared token', sharedToken], ['an agent of another project', betaToken]] as const) {
+        const res = await call('POST', `/api/agents/${worker.id}/${route}`, bearer(token), body);
+        expect(res.status, `${who}: ${JSON.stringify(res.body)}`).toBe(403);
+        expect(worker.requestedBy, `${who} was refused and still rewrote who is owed the result`).toEqual(owed);
+      }
+      expect(terminal.written).toEqual([]);
+    });
+  }
+
+  it('while a call that is let through still records who asked', async () => {
+    // The witness that the link is recorded at all: without it, a route that
+    // had stopped recording would pass every test above.
+    const worker = putAgent({ id: 'agent-alpha-worker', projectPath: ALPHA.projectPath });
+    liveTerminal(worker);
+
+    const { status, body } = await call('POST', `/api/agents/${worker.id}/dispatch`, bearer(alphaToken), { message: 'your turn' });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(worker.requestedBy).toEqual({ agentId: ALPHA.id, ptyId: worker.ptyId });
   });
 });
 
@@ -334,5 +464,26 @@ describe('an agent keeps exactly the rights it had', () => {
 
     expect(status, JSON.stringify(body)).toBe(200);
     expect((body.agent as { name: string }).name).toBe('fresh');
+  });
+
+  it('is refused an agent in another project, as on every route that drives one', async () => {
+    // Measured on bad8c97: 200, and a new agent in a project the caller does
+    // not belong to, while SECURITY.md said its own project's agents only.
+    const before = agents.size;
+
+    const { status, body } = await call('POST', '/api/agents', bearer(alphaToken), { projectPath: BETA.projectPath, name: 'stray' });
+
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(String(body.error)).toContain('Cross-project access denied');
+    expect(agents.size, 'the agent was enrolled anyway').toBe(before);
+  });
+
+  it('still creates one there when it says so', async () => {
+    const { status, body } = await call('POST', '/api/agents', bearer(alphaToken), {
+      projectPath: BETA.projectPath, name: 'deliberate', allowCrossProject: true,
+    });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(agents.get((body.agent as { id: string }).id)?.projectPath).toBe(BETA.projectPath);
   });
 });

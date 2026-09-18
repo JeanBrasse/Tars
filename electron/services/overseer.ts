@@ -251,7 +251,7 @@ function migrateOutOfAgentReach(): void {
     // A file that does not parse is not the state, and copying it would only
     // move the problem. Left where it is for loadState to fail over.
     JSON.parse(raw);
-    fs.mkdirSync(privatePath(), { recursive: true, mode: 0o700 });
+    // Makes the private directory too, at 0700, as every save does.
     writeSecretFileSync(OVERSEER_FILE, raw);
     if (fs.readFileSync(OVERSEER_FILE, 'utf-8') !== raw) {
       // Never delete against a copy that did not land. The half-written file

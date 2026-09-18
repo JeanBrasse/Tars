@@ -532,7 +532,6 @@ work.
 | `~/.dorothy/agents.backup.json` | same | last good copy, taken from content just parsed successfully |
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
-| `~/.dorothy/hermes-webhook-secret` | `electron/handlers/hermes-handlers.ts` (`readWebhookSecret`) | bearer for `POST /api/webhooks/hermes`; auto-provisioned with 32 random bytes at mode `0600` on first read |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | board |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
@@ -550,11 +549,14 @@ work.
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
 
-One file lives outside that directory, on purpose:
+Two files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
+every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
+to a CLI, and Tars makes it `0700` whichever write creates it:
 
 | Path | Written by | Contents |
 |---|---|---|
-| `~/.tars-private/overseer.json` | `electron/services/overseer.ts` | Noah's conversation with the super chat, plus the standing job id and the Chat's settings. Mode `0600`, in a `0700` directory. `~/.dorothy` is handed to every agent through `--add-dir`; this directory is handed to nothing, and no path under it is ever passed to a CLI. Moved out of `~/.dorothy/overseer.json` at the first startup that finds it there: the copy is read back before the old file is deleted, an old file that will not parse is left exactly where it is and still read, and when both exist the private one wins and the old one is moved into the private directory rather than deleted |
+| `~/.tars-private/overseer.json` | `electron/services/overseer.ts` | Noah's conversation with the super chat, plus the standing job id and the Chat's settings. Mode `0600`. Moved out of `~/.dorothy/overseer.json` at the first startup that finds it there: the copy is read back before the old file is deleted, an old file that will not parse is left exactly where it is and still read, and when both exist the private one wins and the old one is moved into the private directory rather than deleted |
+| `~/.tars-private/hermes-webhook-secret` | `electron/services/hermes-webhook-secret.ts` (`provisionWebhookSecret`) | the bearer for `POST /api/webhooks/hermes` and the only credential that opens it: 32 random bytes hex, mode `0600`, minted the first time Settings > Hermes asks for it. Moved out of `~/.dorothy/hermes-webhook-secret` at the first startup that finds it there, value unchanged, so Hermes keeps working; read back before the old file is deleted, and while it cannot be moved the webhook opens to nobody. An old file found beside the private one opens nothing and is deleted |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
 *Hooks*. Memory files it reads live in `~/.claude/projects/<encoded-path>/memory/`, where the
@@ -1054,15 +1056,15 @@ searchable body is the FTS index behind `/api/sessions/search`.
 `POST /api/webhooks/hermes` lets the gateway drive a Tars agent.
 
 ```bash
-# the secret is auto-provisioned (32 random bytes, mode 0600) on first read, no minting needed
-cat ~/.dorothy/hermes-webhook-secret
+# the secret is auto-provisioned (32 random bytes, mode 0600) when Settings > Hermes first shows it
+cat ~/.tars-private/hermes-webhook-secret
 
 # make the localhost-bound API reachable from the VPS
 tailscale serve 31415
 
 # validate auth + agent resolution without dispatching
 curl -s -X POST https://<this-machine>.<tailnet>.ts.net/api/webhooks/hermes \
-  -H "Authorization: Bearer $(cat ~/.dorothy/hermes-webhook-secret)" \
+  -H "Authorization: Bearer $(cat ~/.tars-private/hermes-webhook-secret)" \
   -H 'Content-Type: application/json' \
   -d '{"agent_name":"Backend","project_path":"$PWD","message":"ping","dry_run":true}' | jq
 ```
@@ -1071,10 +1073,16 @@ Body: `agent_id` **or** `agent_name` (case-insensitive exact match, narrowed by
 `project_path` when the same role exists on several projects), plus `message` (required),
 `model`, `permission_mode` (`normal|auto|bypass`), `dry_run`.
 
-Auth: the webhook secret if the file exists, **or** the master `~/.dorothy/api-token`: the
-master token is accepted so an existing setup keeps working. If the secret file is absent, only
-the master token works. This is the one route published over the tailnet, which is why it
-carries its own credential.
+Auth: the webhook secret, and nothing else. The master `~/.dorothy/api-token` used to be
+accepted as a fallback; since 1.7.6 it gets a `403`, as do an agent's own token and Tars's pass,
+and with no secret file nothing opens the route at all. Before 1.7.6 a missing secret file
+skipped the route's check entirely. This is the one route published over the tailnet, which is
+why it carries its own credential. A Hermes job set up with the master token needs the secret
+from Settings > Hermes instead.
+
+Rotating the secret: delete `~/.tars-private/hermes-webhook-secret`, open Settings > Hermes, which
+mints a new one, and give Hermes that. Worth doing once after upgrading to 1.7.6: until then the
+secret sat in `~/.dorothy`, which every agent can read.
 
 Response mirrors `/dispatch` (`{success, mode, agent}`); poll `GET /api/agents/:id` for the
 result afterwards.
