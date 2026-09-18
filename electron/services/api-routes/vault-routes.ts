@@ -294,12 +294,30 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
       const ext = path.extname(resolved).toLowerCase();
       const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
       const stat = fs.statSync(resolved);
-      req.res.writeHead(200, {
-        'Content-Type': mimeType,
-        'Content-Length': stat.size,
-        'Cache-Control': 'public, max-age=3600',
+      // The guard above lets the attachments folder itself through, and a
+      // folder read as a file is EISDIR.
+      if (!stat.isFile()) {
+        sendJson({ error: 'File not found' }, 404);
+        return;
+      }
+      const stream = fs.createReadStream(resolved);
+      // A read stream reports a file it cannot open or read with 'error', and
+      // an 'error' nobody listens to is thrown: in the main process, the
+      // "Uncaught Exception" window, from the one route that takes no token.
+      // The headers wait for the file to open, so a file that will not open
+      // gets an answer rather than a 200 cut short.
+      stream.on('error', () => {
+        if (req.res.headersSent) req.res.destroy();
+        else sendJson({ error: 'Could not read the file' }, 500);
       });
-      fs.createReadStream(resolved).pipe(req.res);
+      stream.on('open', () => {
+        req.res.writeHead(200, {
+          'Content-Type': mimeType,
+          'Content-Length': stat.size,
+          'Cache-Control': 'public, max-age=3600',
+        });
+        stream.pipe(req.res);
+      });
     } catch (err) {
       sendJson({ error: String(err) }, 500);
     }

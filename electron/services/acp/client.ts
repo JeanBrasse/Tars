@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 
 /**
  * An Agent Client Protocol session against one agent process.
@@ -62,6 +63,37 @@ interface Pending {
 
 const INITIALIZE_TIMEOUT = 90_000;
 const DEFAULT_TURN_TIMEOUT = 30 * 60_000;
+/** How much of what an agent writes to stderr is kept, to say why it stopped. */
+const STDERR_TAIL = 4_000;
+
+/**
+ * What a launch that failed means, in words the agent that delegated can act
+ * on. ENOENT alone is ambiguous: spawn reports a working directory that is
+ * gone with the same code as a command that is nowhere on PATH, and names the
+ * command either way.
+ */
+function launchFailure(err: NodeJS.ErrnoException, command: string, cwd: string, searched: string | undefined): Error {
+  if (err.code === 'ENOENT' && !fs.existsSync(cwd)) {
+    return new Error(`could not start the agent: its working directory ${cwd} does not exist`);
+  }
+  if (err.code === 'ENOENT') {
+    const install = command === 'npx' ? 'npx comes with Node.js: install Node.js' : 'Install it';
+    return new Error(`could not start the agent: ${command} was not found. Tars looked in ${searched || 'an empty PATH'}. ${install}, or set where it lives in Settings > CLI Paths.`);
+  }
+  return new Error(`could not start the agent: ${command}: ${err.message}`);
+}
+
+/**
+ * The last lines an agent wrote to stderr, without stack frames or the update
+ * notice npx prints after the agent it ran has died: why it stopped, in its
+ * own words.
+ */
+function lastWords(stderr: string): string {
+  const lines = stderr.split('\n').map(line => line.trim())
+    .filter(line => line && !line.startsWith('at ') && !line.startsWith('npm notice'));
+  const words = lines.slice(-2).join('; ').slice(-400);
+  return words ? `: ${words}` : '';
+}
 
 export class AcpSession extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -70,6 +102,7 @@ export class AcpSession extends EventEmitter {
   private pending = new Map<number, Pending>();
   private sessionId: string | null = null;
   private closed = false;
+  private stderrTail = '';
 
   /** Text and tool calls for the turn currently in flight. */
   private turnText: string[] = [];
@@ -86,26 +119,37 @@ export class AcpSession extends EventEmitter {
 
   /** Spawns the agent, negotiates the protocol and opens a session. */
   async start(): Promise<{ sessionId: string; agentName?: string; capabilities?: unknown }> {
-    this.child = spawn(this.launch.command, this.launch.args, {
+    const env = { ...process.env, ...this.options.env };
+    const child = spawn(this.launch.command, this.launch.args, {
       cwd: this.options.cwd,
-      env: { ...process.env, ...this.options.env },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    this.child = child;
 
-    this.child.stdout.on('data', chunk => this.onStdout(chunk.toString()));
-    this.child.stderr.on('data', chunk => this.emit('stderr', chunk.toString()));
-    this.child.on('exit', code => {
-      this.closed = true;
-      for (const [, p] of this.pending) {
-        clearTimeout(p.timer);
-        p.reject(new Error(`agent exited (code ${code})`));
-      }
-      this.pending.clear();
+    child.stdout.on('data', chunk => this.onStdout(chunk.toString()));
+    child.stderr.on('data', chunk => {
+      const text = chunk.toString();
+      this.stderrTail = (this.stderrTail + text).slice(-STDERR_TAIL);
+      this.emit('stderr', text);
+    });
+    child.on('exit', code => {
+      this.fail(new Error(`agent exited (code ${code})${lastWords(this.stderrTail)}`));
       this.emit('exit', code);
     });
-    this.child.on('error', err => {
-      this.closed = true;
-      this.emit('error', err);
+    // A launch that fails, the command nowhere on PATH or the folder gone, is
+    // reported here and only here: no 'exit' follows it. It used to be emitted
+    // again on this session, where nothing listened, and an 'error' nobody
+    // hears is thrown: in the main process, the "Uncaught Exception" window
+    // Noah saw on 2026-09-18, while the initialize below waited out its 90
+    // seconds. It fails what is waiting instead, that initialize first.
+    child.on('error', err => this.fail(launchFailure(err, this.launch.command, this.options.cwd, env.PATH)));
+    // The same class on the way in: writing to an agent that has stopped
+    // reading raises EPIPE on its stdin. Nothing can reach it any more, so the
+    // session is over, and the agent is stopped rather than left behind.
+    child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+      this.fail(new Error(`the agent stopped reading its input (${err.code ?? err.message})`));
+      child.kill();
     });
 
     const init = await this.request('initialize', {
@@ -212,6 +256,16 @@ export class AcpSession extends EventEmitter {
 
   get isRunning(): boolean {
     return !!this.child && !this.closed;
+  }
+
+  /** Ends the session: nothing more is written, and every call still waiting fails with `err`. */
+  private fail(err: Error): void {
+    this.closed = true;
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(err);
+    }
+    this.pending.clear();
   }
 
   /* ── wire ─────────────────────────────────────────────── */
