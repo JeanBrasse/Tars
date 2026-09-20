@@ -408,6 +408,21 @@ function projectAgent(agent: AgentStatus) {
  * announced to the caller that had been turned away and never to the
  * orchestrator that had asked for it. Found by the audit of lot 4.
  */
+/**
+ * Why a message is not in the terminal yet, in words a caller can pass on.
+ *
+ * One string, because two routes say it and a second copy would drift.
+ */
+const HELD_REASON = 'Somebody is typing in that terminal, or has left something in it. '
+  + 'The message goes in as soon as that field is free.';
+
+/** Who a message into an agent's terminal is from, as the panel names them. */
+function senderName(agent: AgentStatus, req: RouteRequest): string {
+  const callerId = resolveCallerId(req);
+  if (!callerId || callerId === agent.id) return 'Tars';
+  return agents.get(callerId)?.name || callerId;
+}
+
 function recordRequester(agent: AgentStatus, req: RouteRequest): void {
   const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
@@ -547,7 +562,7 @@ async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<
  */
 export async function performDispatch(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass' },
+  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string },
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
@@ -556,7 +571,7 @@ export async function performDispatch(
 
 async function performDispatchLocked(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass' },
+  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string },
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
@@ -578,7 +593,10 @@ async function performDispatchLocked(
   }
   if (livePty && (agent.status === 'running' || agent.status === 'waiting')) {
     // Live claude session mid-task or at a prompt: type the message into it.
-    writeProgrammaticInput(livePty, opts.message, true);
+    const outcome = writeProgrammaticInput(livePty, opts.message, true, {
+      agentId: agent.id,
+      from: opts.from ?? 'Tars',
+    });
     agent.status = 'running';
     agent.waitingReason = undefined;
     agent.workHandedAt = new Date().toISOString();
@@ -588,7 +606,16 @@ async function performDispatchLocked(
     agent.lastActivity = new Date().toISOString();
     saveAgents();
     announceAgent(agent);
-    sendJson({ success: true, mode: 'message', previousStatus, agent: { id: agent.id, name: agent.name, status: agent.status } });
+    // `held` is not `written`. The message is queued for that terminal and
+    // goes in when the field frees, but answering a caller "sent" while
+    // nothing has been typed tells it something it cannot check: the QA
+    // measured a 200 with mode `message` and status `running` on a terminal
+    // that had received nothing thirty seconds later.
+    sendJson({
+      success: true, mode: 'message', previousStatus,
+      ...(outcome === 'held' ? { held: true, heldReason: HELD_REASON } : {}),
+      agent: { id: agent.id, name: agent.name, status: agent.status },
+    });
     return;
   }
 
@@ -926,7 +953,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     recordRequester(agent, req);
 
-    await performDispatch(agent, { message, model, permissionMode }, ctx, sendJson);
+    await performDispatch(agent, { message, model, permissionMode, from: senderName(agent, req) }, ctx, sendJson);
   });
 
   /**
@@ -1079,14 +1106,17 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        writeProgrammaticInput(ptyProcess, message, true);
+        const outcome = writeProgrammaticInput(ptyProcess, message, true, {
+          agentId: agent.id,
+          from: senderName(agent, req),
+        });
         agent.status = 'running';
         agent.waitingReason = undefined;
         agent.workHandedAt = new Date().toISOString();
         agent.lastActivity = new Date().toISOString();
         saveAgents();
         announceAgent(agent);
-        sendJson({ success: true });
+        sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: HELD_REASON } : {}) });
         return;
       }
       sendJson({ error: 'Failed to send message - PTY not available' }, 500);

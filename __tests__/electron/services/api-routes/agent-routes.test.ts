@@ -37,6 +37,7 @@ vi.mock('../../../../electron/core/agent-manager', () => ({
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
+  rememberTerminalOwner: vi.fn(),
 }));
 
 vi.mock('../../../../electron/utils/path-builder', () => ({
@@ -369,7 +370,7 @@ describe('agent-routes', () => {
       const sendJson = vi.fn();
       await handler(makeReq({ params: { id: 'a1' }, body: { message: 'next step' } }), sendJson, ctx);
 
-      expect(writeProgrammaticInput).toHaveBeenCalledWith(mockPty, 'next step', true);
+      expect(writeProgrammaticInput).toHaveBeenCalledWith(mockPty, 'next step', true, expect.objectContaining({ agentId: expect.any(String) }));
       // The previous task's output must not be mistaken for this task's result.
       expect(agent.lastCleanOutput).toBeUndefined();
       expect(sendJson).toHaveBeenCalledWith({
@@ -688,7 +689,7 @@ describe('agent-routes', () => {
       const sendJson = vi.fn();
       await handler(makeReq({ params: { id: 'a1' }, body: { message: 'hello' } }), sendJson, ctx);
 
-      expect(writeProgrammaticInput).toHaveBeenCalledWith(mockPty, 'hello', true);
+      expect(writeProgrammaticInput).toHaveBeenCalledWith(mockPty, 'hello', true, expect.objectContaining({ agentId: expect.any(String) }));
       expect(sendJson).toHaveBeenCalledWith({ success: true });
     });
 

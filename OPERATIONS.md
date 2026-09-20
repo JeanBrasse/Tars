@@ -937,6 +937,49 @@ turn inside that minute, none brought one. Three rules follow from it.
   A note held for a busy orchestrator is dropped if the agent was handed new work since, or if
   the wait it described is over.
 
+### A message that has to wait for what you are typing (1.7.8)
+
+Tars types notes, room messages and dispatched tasks straight into a CLI's input field. If you
+are half way through a sentence in that same field, the two used to be submitted together: your
+unfinished text went out with the message. Never mix and never block, so:
+
+- **While you are typing**, the message waits. Five seconds of quiet ends the wait, re-armed by
+  every key, so it lasts as long as the typing does (`TYPING_PAUSE_MS`, `pty-manager.ts`).
+- **At the first pause**, Tars empties the field, writes the message, submits it, and types your
+  draft back exactly as it was, caret included, without sending it. Keys you type during that
+  window are held and replayed in order.
+- **If it cannot promise to give your draft back**, it writes nothing at all. Your field is
+  never touched by something it does not understand.
+
+What it understands is rebuilt from the keys the interface relays (`input-draft.ts`): of the 166
+key encodings xterm sends from a Mac keyboard it follows 112 and gives up on 54, among them the
+history arrows, Tab, a lone Esc, the word and line kills, the function keys, a paste that folds
+into `[Pasted text #N]`, and Right or End at the very end of the text, where they can accept an
+inline suggestion instead of moving.
+
+**A wait always ends.** Sending what is in the field ends it, and so does Ctrl+C. An Enter on a
+field Tars has lost track of is taken as "whatever was in it, it emptied", and the
+`UserPromptSubmit` hook confirms it 33 to 57 ms later. Before 1.7.8 only Ctrl+C did, and a
+message could sit behind a stale draft through a whole turn.
+
+**Where to see one.** The agent's panel says who is waiting; `agent:message-waiting` pushes each
+change and `electronAPI.agent.messagesWaiting()` answers for a panel that opened later. In the
+log, one line when a message starts waiting and one when it goes out:
+
+```bash
+grep 'is waiting for a terminal' ~/Library/Logs/tars/main.log   # or the terminal Tars was started from
+grep 'is going out now'          ~/Library/Logs/tars/main.log
+```
+
+`POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the
+message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
+
+| Symptom | Cause |
+|---|---|
+| a task "sent" that the CLI never received | the terminal is holding a draft. The panel names it; clear the field with Ctrl+C or send it |
+| the panel says a message is waiting and nothing is in the field | a key Tars does not follow left it unsure. Ctrl+C settles it |
+| a message waiting for an agent nobody is typing into | the pause is per terminal: check that the right one is named in `messagesWaiting()` |
+
 A note is also skipped while the orchestrator is sitting in `GET /api/agents/:id/wait` on that
 same agent: the long poll's answer already says it, and typing it in again costs the
 orchestrator a whole turn to read what it has been handed. Every other way it is told, from

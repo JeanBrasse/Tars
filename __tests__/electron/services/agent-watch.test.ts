@@ -536,6 +536,36 @@ describe('an orchestrator already holding all it can', () => {
   });
 });
 
+describe('a terminal that is holding all it can', () => {
+  it('keeps the room message here rather than losing it between the two queues', () => {
+    vi.useFakeTimers();
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch', currentSessionId: 's1' });
+    const pty = ptyManager.ptyProcesses.get('pty-orch')!;
+
+    // A draft nothing but its owner can end, and the terminal's own queue
+    // filled to its cap behind it.
+    ptyManager.writeHumanInput(pty, '\t');
+    for (let i = 0; i < 20; i++) ptyManager.writeProgrammaticInput(pty, `filler ${i}`, true);
+    expect(ptyManager.writeProgrammaticInput(pty, 'one too many', true)).toBe('refused');
+
+    watch.queueBusMessage('orch', {
+      messageId: 'm-refused', roomId: 'r', threadId: 't',
+      authorKind: 'human', authorName: 'Noah', text: 'relance la QA',
+    });
+    watch.deliverBusMessages('orch');
+
+    // The field frees, the twenty drain, and this one is still owed.
+    ptyManager.writeHumanInput(pty, '\x03');
+    vi.advanceTimersByTime(ptyManager.TYPING_PAUSE_MS + 20 * 1000);
+    move('orch', 'idle');
+    vi.advanceTimersByTime(5000);
+
+    expect(received(terminal), 'the message was dropped when the terminal refused it').toContain('relance la QA');
+    ptyManager.resetTerminalInput(pty);
+  });
+});
+
 describe('the link a dispatch left behind', () => {
   it('is written to disk when it is spent, not only when it is recorded', async () => {
     // saveAgents refuses to write before a load, which is what the app does

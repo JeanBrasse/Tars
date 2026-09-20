@@ -134,7 +134,7 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
   // hundreds of milliseconds each: anything that reads the journal in between
   // should see what has already gone out, not the state this call started from.
   const released: BusDelivery[] = [];
-  const { written, refused } = await releaseBusMessagesNow(agentId, queued, messageId => {
+  const { written, held: waiting, refused } = await releaseBusMessagesNow(agentId, queued, messageId => {
     const delivery = markDelivered(agentId, messageId);
     if (!delivery) return;
     released.push(delivery);
@@ -144,7 +144,21 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
   if (refused === 'already_releasing') {
     return { released: [], reason: 'These messages are already being sent. Wait for that to finish.' };
   }
-  if (refused === 'no_terminal' || !written.length) {
+  if (refused === 'no_terminal') {
+    return { released: [], reason: 'That agent has no live terminal to write into.' };
+  }
+  // Taken, but not in yet: somebody is typing in that terminal, or has left
+  // something in it that Tars cannot put back. Saying "no terminal" here, or
+  // saying nothing, is the wrong answer to a person who just pressed send and
+  // is owed one.
+  if (!written.length && waiting?.length) {
+    return {
+      released: [],
+      reason: `${waiting.length} message${waiting.length > 1 ? 's are' : ' is'} waiting for that terminal: `
+        + 'somebody is typing in it. They go in as soon as that field is free.',
+    };
+  }
+  if (!written.length) {
     return { released: [], reason: 'That agent has no live terminal to write into.' };
   }
 

@@ -37,6 +37,7 @@ vi.mock('../../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: 
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
+  rememberTerminalOwner: vi.fn(),
 }));
 vi.mock('../../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 

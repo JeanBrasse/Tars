@@ -137,6 +137,24 @@ describe('the draft model gives up rather than guess', () => {
     const lost = feedDraft(type('salut'), '\t');
     expect(feedDraft(lost, 'encore').state).toBe('unknown');
   });
+
+  it('is not given up for ever: Enter says the field emptied, whatever was in it', () => {
+    // Without this the only way out was Ctrl+C, so a message held behind an
+    // unknown field waited through a whole submission and a whole turn.
+    const lost = feedDraft(type('salut'), '\t');
+    const afterEnter = feedDraft(lost, '\r');
+    expect(afterEnter).toEqual({ text: '', cursor: 0, state: 'pending' });
+    // And it is followed again from there, so the keys typed between the
+    // Enter and the hook are not lost.
+    expect(feedDraft(afterEnter, 'la suite').text).toBe('la suite');
+    expect(confirmSubmitted(feedDraft(afterEnter, 'la suite')))
+      .toEqual({ text: 'la suite', cursor: 8, state: 'known' });
+  });
+
+  it('takes the hook as proof on its own, for a submission no Enter of ours explains', () => {
+    const lost = feedDraft(type('salut'), '\t');
+    expect(confirmSubmitted(lost)).toEqual({ text: '', cursor: 0, state: 'known' });
+  });
 });
 
 describe('the keys that empty a field and put it back', () => {

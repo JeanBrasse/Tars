@@ -53,6 +53,7 @@ vi.mock('../../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: 
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
+  rememberTerminalOwner: vi.fn(),
   noteSubmitted: vi.fn(),
   PROGRAMMATIC_SUBMIT_DELAY_MS: 300,
 }));

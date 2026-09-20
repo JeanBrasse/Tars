@@ -456,15 +456,15 @@ function flush(requesterId: string): void {
   // a queue is the same lie whether the queue is here or one layer down.
   if (held.children.size > 0) {
     const names = [...held.children.keys()].map(id => agents.get(id)?.name ?? id);
-    const taken = writeProgrammaticInput(ptyProcess, composeNote(held.children), true, {
+    const outcome = writeProgrammaticInput(ptyProcess, composeNote(held.children), true, {
       agentId: requesterId,
       from: names.join(', '),
     });
-    if (!taken) return;
+    if (outcome === 'refused') return;
     held.children.clear();
   } else {
     const message = held.bus[0];
-    const taken = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
+    const outcome = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
       agentId: requesterId,
       from: message.authorName,
       onWritten: () => {
@@ -477,8 +477,9 @@ function flush(requesterId: string): void {
     });
     // Refused means the terminal is holding all it can. What was not taken
     // stays here, under this queue's own cap, rather than disappearing
-    // between the two.
-    if (!taken) return;
+    // between the two. `held` is taken: it sits in the terminal's own queue
+    // and `onWritten` marks the journal when it lands.
+    if (outcome === 'refused') return;
     held.bus.shift();
   }
 
@@ -622,7 +623,7 @@ export async function releaseBusMessagesNow(
   agentId: string,
   messages: QueuedBusMessage[],
   onWritten?: (messageId: string) => void,
-): Promise<{ written: string[]; refused?: 'no_terminal' | 'already_releasing' }> {
+): Promise<{ written: string[]; held?: string[]; refused?: 'no_terminal' | 'already_releasing' }> {
   // One release at a time per agent. Without this, two callers read the same
   // held list, write the same messages twice, and interleave while doing it.
   if (releasing.has(agentId)) return { written: [], refused: 'already_releasing' };
@@ -642,8 +643,9 @@ export async function releaseBusMessagesNow(
   releasing.add(agentId);
   try {
     const written: string[] = [];
+    const waiting: string[] = [];
     for (const message of messages) {
-      const taken = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
+      const outcome = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
         agentId,
         from: message.authorName,
         // Reported as it lands, not when it was handed over: a human pressed
@@ -651,11 +653,16 @@ export async function releaseBusMessagesNow(
         // waits for them rather than being written across it.
         onWritten: () => onWritten?.(message.messageId),
       });
-      if (!taken) break;
-      written.push(message.messageId);
+      if (outcome === 'refused') break;
+      // Two different things, and they used to be one. `written` said a
+      // message had reached the terminal, and telling a human "sent" about
+      // something sitting behind their own half-written sentence is telling
+      // them something they cannot check.
+      if (outcome === 'held') waiting.push(message.messageId);
+      else written.push(message.messageId);
       await new Promise(resolve => setTimeout(resolve, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
     }
-    return { written };
+    return { written, held: waiting };
   } finally {
     releasing.delete(agentId);
   }

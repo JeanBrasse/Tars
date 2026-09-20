@@ -37,7 +37,15 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
-  writeProgrammaticInput: vi.fn(),
+  // As the real one does when the field is free: the caller is told the
+  // moment the text is in the terminal, which is what arms the check that
+  // the task actually became a turn.
+  writeProgrammaticInput: vi.fn((_pty: unknown, _data: string, _bracket?: boolean,
+    origin?: { onWritten?: () => void }) => {
+    origin?.onWritten?.();
+    return 'written';
+  }),
+  rememberTerminalOwner: vi.fn(),
   noteSubmitted: vi.fn(),
 }));
 vi.mock('../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
@@ -181,6 +189,21 @@ describe('a session that registered but never began a turn', () => {
     expect(agent.error).toMatch(/never|task/i);
     // /wait and the orchestrator hang off this one.
     expect(emitted).toContain('a1');
+  });
+
+  it('does not accuse a session of never taking a task that was never typed in', async () => {
+    // Since 1.7.8 the writer holds a message rather than typing it across
+    // somebody's half written sentence, and answers `held`. Counting that as
+    // delivered would put the agent in error for a task it was never shown.
+    // Once: the one write the redelivery makes. Left in place it would
+    // follow this test into the next one.
+    vi.mocked(writeProgrammaticInput).mockImplementationOnce(() => 'held');
+    const agent = liveAgent();
+
+    await afterRegistration(PAST_EVERYTHING);
+
+    expect(retyped(), 'the task was typed in once and then held').toHaveLength(1);
+    expect(agent.status, 'accused of never taking a task that is still waiting for its terminal').not.toBe('error');
   });
 });
 
