@@ -90,6 +90,42 @@ function isStoppedOnAFailure(agent: AgentStatus): boolean {
   return agent.status === 'error';
 }
 
+/**
+ * How long after an agent stops at its prompt Claude Code raises the idle
+ * prompt. Measured on 2026-09-18 in the hooks' own logs, a month of every
+ * agent on this machine: 1,390 of the 1,393 idle prompts that followed a Stop
+ * came 60 seconds after it, to the second, and of the 345 Stops followed by a
+ * new turn within that minute, none brought one.
+ */
+const IDLE_PROMPT_DELAY_MS = 60_000;
+
+/**
+ * Is this idle prompt about a rest the agent has already left?
+ *
+ * The prompt says the agent has sat at its prompt for a minute. If a route
+ * handed it work, or a turn began, within that minute, the rest is over: the
+ * prompt was raised before the work and reached Tars after it. /run-task,
+ * delegate_task's first attempt, is how: it sets `running` and leaves the
+ * terminal alone, so the claude in it goes on counting the minute since its
+ * last Stop. Taken, the prompt put the working agent back to `waiting`, told
+ * Noah on the desktop that it waited on him, and told the orchestrator it was
+ * waiting. /dispatch cannot do this: an agent still `idle` gets a new session,
+ * and the posts of the old one are a tombstone's.
+ *
+ * An older `running` is another matter, and there the prompt is right. A turn
+ * that ends with no Stop hook, interrupted from the terminal or a prompt that
+ * never became a model turn, leaves `running` behind with nothing else to end
+ * it. Measured the same way: 18 idle prompts in a month came 61 seconds or
+ * more after a prompt whose turn sent no Stop, and each was the only sign that
+ * the turn was over. So the rule is the minute, not the status.
+ */
+function isStaleIdlePrompt(agent: AgentStatus, now = Date.now()): boolean {
+  if (agent.status !== 'running') return false;
+  return [agent.workHandedAt, agent.lastTurnStartedAt]
+    .map(at => (at ? now - Date.parse(at) : NaN))
+    .some(age => age < IDLE_PROMPT_DELAY_MS);
+}
+
 /** Long enough for any message the CLI writes in place of an answer, and short
  *  enough for the notification and the card that show it. */
 const TURN_FAILURE_TEXT_MAX = 500;
@@ -249,11 +285,18 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
     const oldStatus = agent.status;
 
+    // Only the idle prompt: a permission prompt is the wait that matters, and
+    // it comes in the middle of a turn by definition.
+    const staleIdlePrompt = status === 'waiting' && waiting_reason === 'idle' && isStaleIdlePrompt(agent);
+    if (staleIdlePrompt) {
+      console.log(`[hooks] Ignored an idle prompt for ${agent.id}: it was handed work, or began a turn, less than a minute ago`);
+    }
+
     if (status === 'running' && agent.status !== 'running') {
       agent.status = 'running';
       agent.waitingReason = undefined;
       if (current_task) agent.currentTask = current_task;
-    } else if (status === 'waiting' && agent.status !== 'waiting' && !isStoppedOnAFailure(agent)) {
+    } else if (status === 'waiting' && agent.status !== 'waiting' && !isStoppedOnAFailure(agent) && !staleIdlePrompt) {
       // An agent whose turn failed stays in error until a new turn starts.
       // Claude Code sends idle_prompt about sixty seconds after StopFailure,
       // as a `waiting` post, and without this guard it replaced the error:
@@ -450,6 +493,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // really does wait on Noah.
       if (isStoppedOnAFailure(agent)) {
         sendJson({ success: true, suppressed: 'the agent stopped on a failure and is not waiting' });
+        return;
+      }
+      // Nor while it works on something handed to it after the prompt was
+      // raised: the same question the status post asks, answered once.
+      if (isStaleIdlePrompt(agent)) {
+        sendJson({ success: true, suppressed: 'the agent was handed work after this idle prompt was raised' });
         return;
       }
       if (ctx.getAppSettings().notifyOnWaiting) {

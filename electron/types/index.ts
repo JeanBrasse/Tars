@@ -117,6 +117,17 @@ export interface AgentStatus {
    * which is what made a lost dispatch look like an agent at work.
    */
   lastTurnStartedAt?: string;
+  /**
+   * When a route last handed this agent work: typed a task into its live
+   * session, spawned a session with one, or ran one over ACP.
+   *
+   * `running` alone cannot say how new it is, and two readers need that. The
+   * idle prompt says the agent has sat at its prompt for a minute, and one
+   * raised before this moment is about a rest the agent has left
+   * (hooks-routes). And coming back to rest is the end of this work only once
+   * a turn has begun after it (agent-watch).
+   */
+  workHandedAt?: string;
   /** When a session last claimed this agent through the SessionStart hook.
    *  The task-start watch reads this to ask "has a session registered since I
    *  armed", which it used to ask by emptying `currentSessionId` and seeing

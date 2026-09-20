@@ -333,6 +333,11 @@ describe('a failed turn left alone', () => {
     expect(agent.error).toBeUndefined();
     expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenLastCalledWith(agent, 'running');
 
+    // That turn ends as turns do, with the Stop hook's idle. The idle prompt
+    // comes a minute after it: one straight after the turn began would be
+    // about the rest before that turn, and is dropped for that reason.
+    post({ agent_id: 'a1', session_id: SESSION, status: 'idle' });
+
     // The same idle prompt, now that the agent is out of error, is a wait
     // like any other: the guard holds the error, not every waiting post.
     for (const p of await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT)) send(p.url, p.body);
@@ -393,6 +398,8 @@ describe('the waiting notification after a failed turn', () => {
     // Noah logs in again in that terminal and sends the task.
     for (const p of await runHook(PROMPT_HOOK, MEASURED_NEXT_PROMPT)) send(p.url, p.body);
     expect(agent.status).toBe('running');
+    // The turn ends with its Stop, and the idle prompt comes a minute later.
+    post({ agent_id: 'a1', session_id: SESSION, status: 'idle' });
 
     for (const p of await runHook(NOTIFICATION_HOOK, MEASURED_IDLE_PROMPT)) send(p.url, p.body);
 
