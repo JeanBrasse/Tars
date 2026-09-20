@@ -17,6 +17,10 @@ import * as path from 'path';
  * itself, which is a native device, and it records what it was given.
  */
 
+// The writer tells the window when a message has to wait for a human draft,
+// and there is no window here.
+vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-agent-watch-'));
 vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
@@ -416,5 +420,61 @@ describe('a delegation note, whatever the agent it names is called', () => {
     expect(raw, "the name or the id broke or hid part of Tars's line").toEqual([]);
     expect(text.startsWith('[Tars] "Worker\\n\\u2028')).toBe(true);
     expect(text).toContain('("w\\u2028")');
+  });
+});
+
+describe('an orchestrator whose human is in the middle of a sentence', () => {
+  it('does not put the delegation note into what he was writing', () => {
+    vi.useFakeTimers();
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+
+    const pty = ptyManager.ptyProcesses.get('pty-orch')!;
+    for (const ch of 'je pense quil faut') ptyManager.writeHumanInput(pty, ch);
+    terminal.written.length = 0;
+
+    move('qa', 'completed');
+
+    // Nothing at all while he is still typing: the note is held, not written
+    // across a half-written word, and not dropped either.
+    expect(terminal.written).toEqual([]);
+    vi.advanceTimersByTime(ptyManager.TYPING_PAUSE_MS);
+    expect(received(terminal)).toContain('QA-Tars');
+    // And what he had typed is back in the field, unsent.
+    expect(ptyManager.draftOf(pty).text).toBe('je pense quil faut');
+    ptyManager.resetTerminalInput(pty);
+  });
+
+  it('does not tell the room a message was delivered while it is still waiting', () => {
+    vi.useFakeTimers();
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch', currentSessionId: 's1' });
+    const delivered: string[] = [];
+    watch.setBusDeliveredHook((_target, messageId) => { delivered.push(messageId); });
+
+    const pty = ptyManager.ptyProcesses.get('pty-orch')!;
+    // A draft the model cannot promise to put back: Tab completes with
+    // something Tars never saw.
+    ptyManager.writeHumanInput(pty, 'j');
+    ptyManager.writeHumanInput(pty, '\t');
+    terminal.written.length = 0;
+
+    watch.queueBusMessage('orch', {
+      messageId: 'm1', roomId: 'r', threadId: 't',
+      authorKind: 'human', authorName: 'Noah', text: 'tu peux relancer la QA',
+    });
+    watch.deliverBusMessages('orch');
+    vi.advanceTimersByTime(ptyManager.TYPING_PAUSE_MS * 10);
+
+    expect(terminal.written).toEqual([]);
+    expect(delivered).toEqual([]);
+
+    // He clears it himself, and only then does the journal say delivered.
+    ptyManager.writeHumanInput(pty, '\x03');
+    vi.advanceTimersByTime(ptyManager.TYPING_PAUSE_MS + 1000);
+    expect(received(terminal)).toContain('tu peux relancer la QA');
+    expect(delivered).toEqual(['m1']);
+    ptyManager.resetTerminalInput(pty);
   });
 });

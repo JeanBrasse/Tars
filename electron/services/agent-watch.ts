@@ -387,26 +387,41 @@ function flush(requesterId: string): void {
 
   // Delegation results first, because that note is what an orchestrator is
   // waiting on; a bus message goes out on the next pass of the same window.
-  let delivered: { kind: 'children' } | { kind: 'bus'; message: QueuedBusMessage };
+  //
+  // The write may not happen now: a note does not go into a field somebody is
+  // typing in, and there it is held by the writer until that field is free.
+  // So `onWritten` is what marks a room message delivered, not the return of
+  // the call. A journal that says `delivered` for a message still sitting in
+  // a queue is the same lie whether the queue is here or one layer down.
   if (held.children.size > 0) {
-    writeProgrammaticInput(ptyProcess, composeNote(held.children), true);
+    const names = [...held.children.keys()].map(id => agents.get(id)?.name ?? id);
+    const taken = writeProgrammaticInput(ptyProcess, composeNote(held.children), true, {
+      agentId: requesterId,
+      from: names.join(', '),
+    });
+    if (!taken) return;
     held.children.clear();
-    delivered = { kind: 'children' };
   } else {
-    const message = held.bus.shift()!;
-    writeProgrammaticInput(ptyProcess, composeBusNote(message), true);
-    delivered = { kind: 'bus', message };
+    const message = held.bus[0];
+    const taken = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
+      agentId: requesterId,
+      from: message.authorName,
+      onWritten: () => {
+        try {
+          onBusDelivered?.(requesterId, message.messageId);
+        } catch (err) {
+          console.error('[agent-watch] bus delivery hook failed:', err);
+        }
+      },
+    });
+    // Refused means the terminal is holding all it can. What was not taken
+    // stays here, under this queue's own cap, rather than disappearing
+    // between the two.
+    if (!taken) return;
+    held.bus.shift();
   }
 
   if (holding(held) === 0) pending.delete(requesterId);
-
-  if (delivered.kind === 'bus') {
-    try {
-      onBusDelivered?.(requesterId, delivered.message.messageId);
-    } catch (err) {
-      console.error('[agent-watch] bus delivery hook failed:', err);
-    }
-  }
 
   // Held slightly past the submit keystroke, so anything that finishes in the
   // meantime waits for a line of its own instead of joining this one.
@@ -567,11 +582,16 @@ export async function releaseBusMessagesNow(
   try {
     const written: string[] = [];
     for (const message of messages) {
-      writeProgrammaticInput(ptyProcess, composeBusNote(message), true);
+      const taken = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
+        agentId,
+        from: message.authorName,
+        // Reported as it lands, not when it was handed over: a human pressed
+        // send, and if their own unfinished draft is in the way the message
+        // waits for them rather than being written across it.
+        onWritten: () => onWritten?.(message.messageId),
+      });
+      if (!taken) break;
       written.push(message.messageId);
-      // Reported as it lands, not at the end: a caller that records state per
-      // message leaves nothing ambiguous if this throws halfway.
-      onWritten?.(message.messageId);
       await new Promise(resolve => setTimeout(resolve, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
     }
     return { written };

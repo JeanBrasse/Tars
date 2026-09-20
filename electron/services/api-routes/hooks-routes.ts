@@ -1,5 +1,6 @@
 import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
 import { findAgentByIdOrSession } from './utils';
+import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
 import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
@@ -281,6 +282,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // already set that status at spawn, so the hook names the event instead.
     if (event === 'UserPromptSubmit') {
       noteTurnStarted(agent);
+      // And the one post that proves a field emptied. An Enter on a line
+      // beginning with `/` may run a command or open a dialog, and the keys
+      // alone cannot tell which, so the draft model hedges until something
+      // settles it. This is that something.
+      const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      if (ptyProcess) noteSubmitted(ptyProcess);
     }
 
     const oldStatus = agent.status;
