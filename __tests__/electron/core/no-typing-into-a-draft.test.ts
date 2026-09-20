@@ -37,6 +37,7 @@ import {
   PROGRAMMATIC_SUBMIT_DELAY_MS,
   TYPING_PAUSE_MS,
   draftOf,
+  messagesWaiting,
   resetTerminalInput,
   writeHumanInput,
   writeProgrammaticInput,
@@ -224,6 +225,26 @@ describe('a draft Tars cannot promise to give back', () => {
       channel: 'agent:message-waiting',
       payload: { agentId: 'orch', waiting: 1, from: ['Tars-QA'] },
     });
+  });
+
+  it('is still there to be read by a panel that opens after the wait began', () => {
+    types(terminal.pty, 'je pense');
+    writeHumanInput(terminal.pty, '\t');
+    writeProgrammaticInput(terminal.pty, NOTE, true, { agentId: 'orch', from: 'Tars-QA' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    // An event is only heard by a window that was already listening. This is
+    // the same state, for one that was not.
+    expect(messagesWaiting()).toEqual([{ agentId: 'orch', waiting: 1, from: ['Tars-QA'] }]);
+
+    writeProgrammaticInput(terminal.pty, 'et encore un', true, { agentId: 'orch', from: 'Tars-Frontend' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+    expect(messagesWaiting()).toEqual([{ agentId: 'orch', waiting: 2, from: ['Tars-QA', 'Tars-Frontend'] }]);
+
+    // And an agent holding nothing is absent, rather than listed as zero.
+    writeHumanInput(terminal.pty, '\x03');
+    vi.advanceTimersByTime(TYPING_PAUSE_MS * 3);
+    expect(messagesWaiting()).toEqual([]);
   });
 
   it('delivers, and takes the notice down, the moment the draft is cleared', () => {

@@ -914,6 +914,40 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   card keeps the failure and no "is waiting" alert contradicts it. A permission prompt is not
   held back, since it only occurs inside a turn, and a turn has already left `error`.
 
+### The idle prompt, and what an orchestrator is told (1.7.8)
+
+That 60 s is measured: of the 1,393 idle prompts that followed a `Stop` in a month of this
+machine's hook logs, 1,390 came exactly 60 s after it, and of the 345 `Stop`s followed by a new
+turn inside that minute, none brought one. Three rules follow from it.
+
+- **An idle prompt inside the minute is about a rest that is over.** `isStaleIdlePrompt`
+  (`hooks-routes.ts`) drops a `waiting` on an agent that is `running` when `workHandedAt` or
+  `lastTurnStartedAt` is less than 60 s old: the prompt was raised before the work and arrived
+  after it. `/run-task` is how it happens, since it sets `running` and leaves the terminal
+  alone, so the CLI keeps counting from its own last `Stop`. Neither the desktop alert nor the
+  note to the orchestrator is sent. After that minute the prompt is taken, and it should be: 18
+  turns that month ended with no `Stop` hook at all, and the idle prompt was the only sign.
+- **The end of delegated work is announced at the `Stop`, not a minute later.** Coming back to
+  rest, `idle` or the idle `waiting`, is news once, and only when a turn has begun since the work
+  was handed over (`workHandedAt` against `lastTurnStartedAt`). Before 1.7.8 only the idle prompt
+  ever said a delegated turn had ended, so every notice was a minute late.
+- **Sitting still is not news.** An agent that comes back to rest for any other reason, typed in
+  by hand or put back by a failed ACP start, reports nothing: the link a dispatch left is spent
+  at the end of the work it was recorded for, and a spent link is written to disk with it.
+  A note held for a busy orchestrator is dropped if the agent was handed new work since, or if
+  the wait it described is over.
+
+A note is also skipped while the orchestrator is sitting in `GET /api/agents/:id/wait` on that
+same agent: the long poll's answer already says it, and typing it in again costs the
+orchestrator a whole turn to read what it has been handed. Every other way it is told, from
+`send_message` to Telegram, Slack and the webhook, has no poll behind it and still gets the note.
+
+| Symptom | Where to look |
+|---|---|
+| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `/tmp/dorothy-hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
+| the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
+
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
 in `ps`.

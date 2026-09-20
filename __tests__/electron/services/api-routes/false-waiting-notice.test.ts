@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { EventEmitter } from 'node:events';
 
 /**
  * An orchestrator told "is now waiting" about an agent that had just started.
@@ -74,6 +73,7 @@ import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
 import { delegateOverAcp } from '../../../../electron/services/acp/delegate';
 import { startAgentWatch, stopAgentWatch } from '../../../../electron/services/agent-watch';
+import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 
@@ -125,7 +125,10 @@ beforeEach(() => {
     handleStatusChangeNotificationCallback: vi.fn(),
     sendNotificationCallback: vi.fn(),
     initAgentPtyCallback: vi.fn(async () => 'unused'),
-    agentStatusEmitter: new EventEmitter(),
+    // The real one, as api-server.ts hands it over: `emitAgentStatus` fires on
+    // that module's emitter, so a fresh EventEmitter here would leave the
+    // /wait long poll listening to something nothing ever emits on.
+    agentStatusEmitter,
   } as RouteContext;
   registerAgentRoutes(routes, ctx);
   registerHooksRoutes(routes, ctx);
@@ -600,5 +603,90 @@ describe('an orchestrator that cannot be reached when the work ends', () => {
     await pause(500);
 
     expect(typedInto(next), 'a new session of the orchestrator was told about a turn nobody delegated').toEqual([]);
+  });
+});
+
+/**
+ * The note, and the long poll, saying the same thing twice.
+ *
+ * `delegate_task` falls back to `/dispatch` plus `GET /wait` whenever ACP
+ * cannot start, which on Noah's machine is every time. The orchestrator is
+ * then sitting in that poll when the turn ends, so it is told twice: the poll
+ * answers, and 375 ms later the note is typed into its terminal, which costs
+ * it a whole turn to read something it already has. The QA measured 35 s of
+ * one on 2026-09-20.
+ *
+ * Only that case. The note is the only signal on every other path, so it stays
+ * for all of them.
+ */
+describe('an orchestrator already waiting on this agent', () => {
+  /** Opens the long poll without waiting for it, and keeps what it answers. */
+  function openWait(childId: string, caller: string) {
+    const answers: Array<Record<string, unknown>> = [];
+    const route = routes.routes.find(r => r.method === 'GET' && String(r.pattern).includes('wait'))!;
+    const req = {
+      method: 'GET', pathname: `/api/agents/${childId}/wait`,
+      url: new URL(`http://localhost/api/agents/${childId}/wait`),
+      body: {}, raw: { headers: {}, on: () => {} }, res: {}, params: { id: childId },
+      callerAgentId: caller,
+    } as unknown as RouteRequest;
+    void route.handler(req, (data) => { answers.push(data as Record<string, unknown>); }, ctx);
+    return answers;
+  }
+
+  beforeEach(() => {
+    backend().requestedBy = { agentId: 'orch', ptyId: 'pty-be' };
+  });
+
+  it('is told once, by the poll it is sitting in, and not again in its terminal', async () => {
+    await turnStarts('run the suite');
+    const answers = openWait('be', 'orch');
+    expect(answers, 'the poll answered before the turn ended').toEqual([]);
+
+    await turnEnds('the suite is green');
+    await pause(500);
+
+    expect(answers.at(-1)?.status, 'the poll did not answer').toBe('idle');
+    expect(toldOrchestrator(), 'told again in its terminal, which costs it a turn').toEqual([]);
+  });
+
+  it('is told in its terminal when it is not waiting on that agent', async () => {
+    await turnStarts('run the suite');
+    await turnEnds('the suite is green');
+    await pause(500);
+
+    expect(toldOrchestrator().join('')).toContain('1212-Backend');
+  });
+
+  it('is told in its terminal when the poll it is sitting in is about someone else', async () => {
+    liveTerminal('pty-fe');
+    putAgent({ id: 'fe', name: 'Frontend', status: 'running', ptyId: 'pty-fe', currentSessionId: 'sess-fe' });
+    await turnStarts('run the suite');
+    openWait('fe', 'orch');
+
+    await turnEnds('the suite is green');
+    await pause(500);
+
+    expect(toldOrchestrator().join('')).toContain('1212-Backend');
+  });
+
+  it('is told in its terminal again once its poll has gone', async () => {
+    await turnStarts('run the suite');
+    const answers = openWait('be', 'orch');
+    await turnEnds('the suite is green');
+    await pause(500);
+    expect(answers).toHaveLength(1);
+    expect(toldOrchestrator()).toEqual([]);
+
+    // A second turn, dispatched like the first, with nobody polling this
+    // time: the note is the only way the orchestrator hears about it. The
+    // link is recorded again because the first one was spent when the first
+    // turn ended, which is what a second dispatch does.
+    backend().requestedBy = { agentId: 'orch', ptyId: 'pty-be' };
+    await turnStarts('and again');
+    await turnEnds('still green');
+    await pause(500);
+
+    expect(toldOrchestrator().join(''), 'the poll that answered went on silencing the next turn').toContain('1212-Backend');
   });
 });

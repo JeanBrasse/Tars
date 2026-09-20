@@ -750,6 +750,10 @@ export interface ElectronAPI {
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
     onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
+    /** What is waiting right now, for a panel that opened after the wait
+     *  began: the event below only reaches a window already listening. An
+     *  agent absent from the list is holding nothing. */
+    messagesWaiting?: () => Promise<{ success: boolean; waiting: AgentMessageWaiting[] }>;
     /** A message that cannot go into this agent's terminal yet, because
      *  somebody is typing in it or has left something in it that Tars cannot
      *  put back as it was. Pushed on every change, `waiting: 0` when it is

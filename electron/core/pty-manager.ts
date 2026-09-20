@@ -201,6 +201,7 @@ function inputOf(ptyProcess: pty.IPty): TerminalInput {
 export function resetTerminalInput(ptyProcess: pty.IPty): void {
   const state = inputs.get(ptyProcess);
   if (state?.timer) clearTimeout(state.timer);
+  if (state?.agentId) waitingByAgent.delete(state.agentId);
   inputs.delete(ptyProcess);
 }
 
@@ -243,6 +244,21 @@ export function noteSubmitted(ptyProcess: pty.IPty): void {
 }
 
 /**
+ * What is waiting for a field, per agent, as the panel needs to draw it.
+ *
+ * Kept here as well as pushed, because a push is only heard by a panel that
+ * was already open. A Dashboard opened after the message started waiting knew
+ * nothing about it, and a notice nobody can see is what this whole mechanism
+ * exists to avoid. `messagesWaiting()` is the same state the event carries.
+ */
+const waitingByAgent = new Map<string, AgentMessageWaiting>();
+
+/** Every agent whose terminal is holding a message it cannot write yet. */
+export function messagesWaiting(): AgentMessageWaiting[] {
+  return [...waitingByAgent.values()];
+}
+
+/**
  * Tell the panel what this terminal is holding, when that changes.
  *
  * A message that waits for a draft waits for a person, and a person cannot
@@ -263,6 +279,11 @@ function announce(state: TerminalInput): void {
   const line = JSON.stringify(payload);
   if (line === state.announced) return;
   state.announced = line;
+  // Absent rather than zero in the list: the event says `waiting: 0` so a
+  // panel already drawing the notice knows to take it down, and the list is
+  // what is waiting, which is nothing.
+  if (payload.waiting === 0) waitingByAgent.delete(agentId);
+  else waitingByAgent.set(agentId, payload);
   broadcastToAllWindows('agent:message-waiting', payload);
 }
 

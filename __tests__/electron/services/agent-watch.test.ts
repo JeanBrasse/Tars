@@ -478,3 +478,133 @@ describe('an orchestrator whose human is in the middle of a sentence', () => {
     ptyManager.resetTerminalInput(pty);
   });
 });
+
+describe('an orchestrator already holding all it can', () => {
+  /** Fills the room queue to the cap, which is what a busy orchestrator in a
+   *  talkative room ends up holding. */
+  function fillTheRoom(recipientId: string, howMany: number): void {
+    for (let i = 0; i < howMany; i++) {
+      watch.queueBusMessage(recipientId, {
+        messageId: `m${i}`, roomId: 'r', threadId: 't',
+        authorKind: 'agent', authorName: 'Teammate', text: `message ${i}`,
+      });
+    }
+  }
+
+  it('still hears that its agent finished, however full its room queue is', () => {
+    const terminal = attachTerminal('pty-orch');
+    // Busy, so nothing drains: this is the state the cap is reached in.
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+    fillTheRoom('orch', 25);
+    expect(terminal.written, 'a busy orchestrator is written to at all').toEqual([]);
+
+    move('qa', 'completed');
+    // It goes free, and reads what was held for it.
+    move('orch', 'idle');
+
+    expect(received(terminal)).toContain('QA-Tars');
+    expect(received(terminal)).toContain('completed');
+  });
+
+  it('does not spend the link on an end of turn it then throws away', () => {
+    attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+    fillTheRoom('orch', 25);
+
+    move('qa', 'completed');
+
+    // Spent means delivered, or the requester is gone. Spent and dropped is
+    // the end of a turn nobody will ever hear about, which is the whole of
+    // what #113 closed, reached from the other side.
+    const held = agentManager.agents.get('qa')!;
+    expect(held.requestedBy, 'the link was spent on a note that was thrown away').toBeUndefined();
+  });
+
+  it('refuses room messages past the cap, which the journal records', () => {
+    attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'running', ptyId: 'pty-orch' });
+
+    const taken = Array.from({ length: 25 }, (_, i) => watch.queueBusMessage('orch', {
+      messageId: `m${i}`, roomId: 'r', threadId: 't',
+      authorKind: 'agent', authorName: 'Teammate', text: `message ${i}`,
+    }));
+
+    expect(taken.filter(Boolean)).toHaveLength(20);
+    expect(taken.slice(20).every(t => t === false), 'a room queue with no end to it').toBe(true);
+  });
+});
+
+describe('the link a dispatch left behind', () => {
+  it('is written to disk when it is spent, not only when it is recorded', async () => {
+    // saveAgents refuses to write before a load, which is what the app does
+    // at boot. The file may hold a previous case's fleet; this one is ours.
+    agentManager.loadAgents();
+    agentManager.agents.clear();
+    attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+    // The four routes that record a link save it; this is the file they wrote.
+    agentManager.saveAgents();
+    const before = JSON.parse(fs.readFileSync(path.join(tmp, 'agents.json'), 'utf8'));
+    expect(before.agents.find((a: { id: string }) => a.id === 'qa').requestedBy).toBeTruthy();
+
+    move('qa', 'completed');
+
+    const after = JSON.parse(fs.readFileSync(path.join(tmp, 'agents.json'), 'utf8'));
+    expect(
+      after.agents.find((a: { id: string }) => a.id === 'qa').requestedBy,
+      'the file still says work is owed to an orchestrator that has been told',
+    ).toBeUndefined();
+  });
+
+  it('is inert if it did survive a restart, because it names a terminal that is gone', () => {
+    // Why the file being wrong was not also the app being wrong. A link names
+    // the session it was recorded in; loadAgents drops every ptyId, and the
+    // next start mints a fresh uuid, so a link read back from disk can never
+    // match again. This is the binding the whole thing rests on, and nothing
+    // else was checking it.
+    fs.writeFileSync(path.join(tmp, 'agents.json'), JSON.stringify({
+      version: 1, savedAt: new Date().toISOString(),
+      agents: [
+        { id: 'orch', name: 'Orchestrator', status: 'idle', projectPath: '/tars', skills: [] },
+        {
+          id: 'qa', name: 'QA-Tars', status: 'running', projectPath: '/tars', skills: [],
+          // Spent before the restart, but never written as spent.
+          ptyId: 'pty-qa-old', requestedBy: { agentId: 'orch', ptyId: 'pty-qa-old' },
+        },
+      ],
+    }, null, 2));
+
+    agentManager.loadAgents();
+    expect(agentManager.agents.get('qa')?.requestedBy, 'the stale link did not survive the load').toBeTruthy();
+    expect(agentManager.agents.get('qa')?.ptyId, 'loadAgents kept a terminal that is gone').toBeUndefined();
+
+    // Started again from the interface, which mints a new terminal id.
+    const terminal = attachTerminal('pty-orch');
+    agentManager.agents.get('orch')!.ptyId = 'pty-orch';
+    agentManager.agents.get('qa')!.ptyId = 'pty-qa-new';
+
+    move('qa', 'completed');
+
+    expect(terminal.written, 'a link from a previous run reported work nobody asked for').toEqual([]);
+  });
+
+  it('is kept while the agent is only pausing on a question', () => {
+    agentManager.loadAgents();
+    agentManager.agents.clear();
+    attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'qa', name: 'QA-Tars', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+    agentManager.saveAgents();
+
+    move('qa', 'waiting');
+
+    const after = JSON.parse(fs.readFileSync(path.join(tmp, 'agents.json'), 'utf8'));
+    expect(
+      after.agents.find((a: { id: string }) => a.id === 'qa').requestedBy,
+      'the work is not over, so the link is not spent',
+    ).toBeTruthy();
+  });
+});

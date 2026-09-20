@@ -19,6 +19,7 @@ import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
+import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth, sessionModel } from '../agent-truth';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
@@ -625,8 +626,17 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const agentId = req.params.id;
     let resolved = false;
 
+    // Said out loud, so the delegation note is not typed into the terminal of
+    // an orchestrator that is sitting right here waiting for this exact
+    // answer. Only while this poll is open, and only about this agent.
+    const waiter = resolveCallerId(req);
+    const releaseWait = waiter && waiter !== agentId
+      ? noteWaitingOn(agentId, waiter)
+      : () => {};
+
     const cleanup = () => {
       clearTimeout(timeout);
+      releaseWait();
       ctx.agentStatusEmitter.off(`status:${agentId}`, onStatusChange);
     };
 
@@ -649,6 +659,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
+        releaseWait();
         ctx.agentStatusEmitter.off(`status:${agentId}`, onStatusChange);
         const a = agents.get(agentId);
         sendJson({
