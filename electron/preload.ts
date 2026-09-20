@@ -136,6 +136,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agents:tick', listener);
       return () => ipcRenderer.removeListener('agents:tick', listener);
     },
+    /**
+     * A message that cannot go into this agent's terminal yet.
+     *
+     * Pushed whenever that changes, including the moment it stops being true,
+     * where `waiting` is 0. It is the alternative to writing a note across
+     * what somebody is half way through typing: the note waits, and the panel
+     * says so, because the two things that end the wait, sending the draft or
+     * clearing it, can only be done by the person at that keyboard.
+     */
+    onMessageWaiting: (callback: (waiting: { agentId: string; waiting: number; from: string[] }) => void) => {
+      const listener = (_: unknown, data: unknown) => callback(data as Parameters<typeof callback>[0]);
+      ipcRenderer.on('agent:message-waiting', listener);
+      return () => ipcRenderer.removeListener('agent:message-waiting', listener);
+    },
   },
 
   // Skills management

@@ -252,7 +252,11 @@ describe('an agent changed over the API', () => {
     expect((await cardOf('a1'))?.displayStatus).toBe('done');
     // Clearing the terminal before the in-process emit made agent-watch drop
     // this note: it matches the link against the child's ptyId.
-    expect(writeProgrammaticInput).toHaveBeenCalledWith(orchestratorPty, expect.stringContaining('a1'), true);
+    // The fourth argument names the terminal and who the note is from, so a
+    // note that has to wait for a human draft can be shown as waiting.
+    expect(writeProgrammaticInput).toHaveBeenCalledWith(
+      orchestratorPty, expect.stringContaining('a1'), true, expect.objectContaining({ agentId: 'orch' }),
+    );
   });
 
   it('shows as stopped when it is stopped, and its dying terminal writes no error onto it', async () => {

@@ -103,6 +103,23 @@ export interface AgentTickItem {
   cliRunning?: boolean;
 }
 
+/**
+ * A message that is waiting for an agent's input field to be free.
+ *
+ * Mirror of `AgentMessageWaiting` in electron/types/index.ts. Never mixing a
+ * note into somebody's half-written prompt means sometimes making the note
+ * wait, and a wait nobody can see is worse than either: only the person at
+ * that keyboard can end it, by sending their draft or clearing it.
+ */
+export interface AgentMessageWaiting {
+  /** The agent whose terminal is holding them. */
+  agentId: string;
+  /** How many messages are waiting. 0 means the wait is over. */
+  waiting: number;
+  /** Who they are from, each named once, oldest first. */
+  from: string[];
+}
+
 export interface AgentEvent {
   type: string;
   agentId: string;
@@ -733,6 +750,11 @@ export interface ElectronAPI {
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
     onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
+    /** A message that cannot go into this agent's terminal yet, because
+     *  somebody is typing in it or has left something in it that Tars cannot
+     *  put back as it was. Pushed on every change, `waiting: 0` when it is
+     *  over. Mirror of `agent:message-waiting` in electron/preload.ts. */
+    onMessageWaiting?: (callback: (waiting: AgentMessageWaiting) => void) => () => void;
   };
 
   // Skills management

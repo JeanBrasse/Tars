@@ -478,3 +478,24 @@ export interface BusRoomSnapshot {
   messages: BusMessage[];
   deliveries: BusDelivery[];
 }
+
+/**
+ * A message that cannot go into an agent's terminal yet, and why.
+ *
+ * Pushed on `agent:message-waiting` whenever that changes for a terminal,
+ * including the moment it stops being true, where `waiting` is 0 and the
+ * panel takes the notice down.
+ *
+ * It exists because the alternative to mixing a message into what somebody is
+ * typing is making it wait, and a wait nobody can see is worse than either:
+ * the two things that end it, sending the draft or clearing it, can only be
+ * done by the person at that keyboard, and only if they are told.
+ */
+export interface AgentMessageWaiting {
+  /** The agent whose terminal is holding them. */
+  agentId: string;
+  /** How many messages are waiting. 0 means the wait is over. */
+  waiting: number;
+  /** Who they are from, each named once, oldest first. */
+  from: string[];
+}

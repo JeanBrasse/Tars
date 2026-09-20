@@ -22,7 +22,7 @@ import { decodeProjectPath } from '../utils/decode-project-path';
 import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
-import { writeProgrammaticInput } from '../core/pty-manager';
+import { writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -1127,7 +1127,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
         try {
-          ptyProcess.write(input);
+          // Not ptyProcess.write: this is the only place a person's keys
+          // reach an agent, so it is the only place the field can be known,
+          // and the only place a key can be held out of a write of Tars's
+          // own. See writeHumanInput.
+          writeHumanInput(ptyProcess, input);
           return { success: true };
         } catch (err) {
           console.error('Failed to write to PTY:', err);
