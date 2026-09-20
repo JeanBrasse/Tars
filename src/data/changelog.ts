@@ -7,6 +7,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 45,
+    version: '1.7.8',
+    date: '2026-09-21',
+    updates: [
+      'An orchestrator is told when an agent it handed work to has finished, at the moment it finishes, and is no longer told that a working agent is waiting. Claude Code reports an agent idle one minute after every rest, and until now that report was the only thing that ever told an orchestrator a delegated turn was over: one minute late, and again every later time that agent came back to rest for any other reason. One orchestrator was told an agent "is now waiting" at the very moment it had handed it new work, through the link of a delegation that had ended ninety minutes earlier. Tars now announces the end of the work it handed over, once, when it happens, names a permission prompt as the question it is instead of wording it like a result, and says nothing at all when an agent simply sits still. An agent given work a moment ago stays working on the Dashboard, on the Agents page and in the menu bar badge, with no desktop notice claiming it is waiting for you. And when the orchestrator is already waiting on that agent through wait_for_agent or delegate_task, it is told once, by the answer it was waiting for, instead of reading the same thing again in its terminal a moment later',
+      'A message from an agent no longer goes out with the sentence you were in the middle of writing. Typing in an agent\'s terminal while a message arrived for it submitted both as one prompt, and keys typed in the fraction of a second before the submit keystroke landed inside the message. While you are typing, a message now waits; at your first pause Tars empties the field, sends the message on a line of its own, and types back what you had written exactly as it was, same characters, same caret, several lines included, and leaves it unsent. Keys you type while that happens are kept and put in afterwards, in order. When Tars cannot promise to give a draft back, which is what happens after a key it cannot follow such as recalling history, Tab completion, deleting by word, or a paste long enough to be folded away, it writes nothing at all rather than write across it: the message goes in as soon as you send what you were writing, or clear the field with Ctrl+C. A tool that sends a message into a terminal that is busy that way is told the message is waiting, and why, instead of being told it was sent',
+      'In the Chat, a held message says delivered when it reaches the agent\'s terminal, not when Tars picks it up. One released into a terminal that still holds something you were typing stays queued in the conversation until it is really written, so a row that says delivered means the agent has it',
+    ],
+  },
+  {
     id: 44,
     version: '1.7.7',
     date: '2026-09-18',

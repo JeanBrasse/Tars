@@ -747,6 +747,29 @@ describe('sending what was never sent', () => {
     for (const text of HELD) expect(occurrences(typed, text)).toBe(1);
   }, 20_000);
 
+  it('does not say sent for messages waiting behind what somebody is typing', async () => {
+    const terminal = heldForCodex();
+    // A key the draft model cannot follow: the field is now something Tars
+    // will not write across.
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-cx')!, '\t');
+
+    const result = await delivery.releaseNotSent('cx');
+
+    // Taken, not written. Telling a person who just pressed send that three
+    // messages went out, while they sit behind that person's own half
+    // written sentence, is telling them something they cannot check.
+    expect(result.released).toHaveLength(0);
+    expect(result.reason, 'the release reported nothing at all').toMatch(/waiting for that terminal/i);
+    expect(terminal.written.join('')).not.toContain(HELD[0]);
+    expect(store.notSentFor('cx')).toHaveLength(3);
+
+    // And they go in by themselves once the field is free.
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-cx')!, '\x03');
+    await new Promise(resolve => setTimeout(resolve, ptyManager.TYPING_PAUSE_MS + 3000));
+    for (const text of HELD) expect(terminal.written.join('')).toContain(text);
+    ptyManager.resetTerminalInput(ptyManager.ptyProcesses.get('pty-cx')!);
+  }, 30_000);
+
   it('says why rather than pretending, when there is no terminal to write into', async () => {
     putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-gone' });
     const { message } = human('held with nowhere to go', ['cx']);

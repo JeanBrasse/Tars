@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { AgentStatus, BusMessageAuthorKind } from '../types';
-import { agents } from '../core/agent-manager';
+import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
 import { agentStatusEmitter } from './agent-events';
 
@@ -56,10 +56,23 @@ type News = {
   handedAt?: string;
 };
 
-/** How much one recipient can be holding, across both kinds. Reached only by
- *  an orchestrator that dispatched a crowd, or a room that talked past an
- *  agent that stayed busy throughout. */
-const MAX_PENDING_CHILDREN = 20;
+/**
+ * How many room messages one recipient can be holding.
+ *
+ * Room messages only. It counted the children too, and an end of turn arriving
+ * at the cap was thrown away: the same loss #113 had just closed, reached from
+ * the other side. A busy orchestrator in a talkative room is all it takes, and
+ * a chat backlog is a strange reason to lose the one signal that says
+ * delegated work is finished.
+ *
+ * There is nothing for a cap to bound on the children side. `children` is a
+ * Map keyed by the child's id, so a child that reports twice replaces itself
+ * and the map cannot grow past the fleet: 42 agents on this machine today, 11
+ * in the largest project. A room is the unbounded one, because every message
+ * said is another entry, and a message refused here is recorded as a refused
+ * delivery in the journal, which is visible. A dropped end of turn is not.
+ */
+const MAX_PENDING_MESSAGES = 20;
 
 /** Last state each agent was seen in, so a transition can be told from a
  *  repeat: the fleet emitter fires on every post, not only on a change. */
@@ -250,21 +263,69 @@ function queueForRequester(child: AgentStatus, news: News): void {
   // has already been used up and is gone. A turn that ended normally used to
   // leave it in place, so every later rest of that agent, typed in by Noah or
   // put back by a failed ACP start, went on reporting to that orchestrator.
-  if (news.kind !== 'wait') child.requestedBy = undefined;
+  //
+  // Written to disk here, and nowhere else: the four routes that record a link
+  // save it, nothing saved it being spent, and 26 of the 42 agents on this
+  // machine carried one that had already been used. The file said work was
+  // owed for agents that owed nothing.
+  if (news.kind !== 'wait') {
+    child.requestedBy = undefined;
+    saveAgents();
+  }
 
   const requester = agents.get(link.agentId);
   if (!requester || !requester.ptyId) return;
 
-  const held = heldFor(requester);
+  // Already asked, and about to be answered. /wait is the long poll an
+  // orchestrator sits in while its agent works, and the transition that ends
+  // the work answers it. Typing the same thing into its terminal afterwards
+  // costs it a whole turn to read what it has already been handed: measured
+  // by the QA at 375 ms after the poll answered, for a 35 second turn.
+  //
+  // Only the poll on THIS agent, and only while it is open. Every other way
+  // an orchestrator is told, from send_message to the Telegram bot, has no
+  // poll behind it and still needs the note.
+  if (isWaitingOn(link.agentId, child.id)) return;
 
-  if (!held.children.has(child.id) && holding(held) >= MAX_PENDING_CHILDREN) {
-    console.warn(`[agent-watch] ${link.agentId} already holds ${MAX_PENDING_CHILDREN} pending items, dropping ${child.id}`);
-    return;
-  }
+  const held = heldFor(requester);
   held.children.set(child.id, news);
   pending.set(link.agentId, held);
 
   flush(link.agentId);
+}
+
+/**
+ * Orchestrators sitting in a /wait on one of their agents.
+ *
+ * Keyed by the agent being watched, holding whoever is watching it. The route
+ * registers on the way in and releases on the way out, and the release is
+ * deferred by a microtask on purpose: `emitAgentStatus` fires `status:<id>`,
+ * which answers the poll, and then `fleet-change`, which brings us here, both
+ * inside one synchronous call. Releasing straight away would take the entry
+ * out before the only reader of it ever looked.
+ */
+const waitingOn = new Map<string, Set<string>>();
+
+/** Register a long poll. Returns the release, to be called when it answers. */
+export function noteWaitingOn(watchedAgentId: string, waiterAgentId: string): () => void {
+  const waiters = waitingOn.get(watchedAgentId) ?? new Set<string>();
+  waiters.add(waiterAgentId);
+  waitingOn.set(watchedAgentId, waiters);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    queueMicrotask(() => {
+      const live = waitingOn.get(watchedAgentId);
+      if (!live) return;
+      live.delete(waiterAgentId);
+      if (live.size === 0) waitingOn.delete(watchedAgentId);
+    });
+  };
+}
+
+function isWaitingOn(waiterAgentId: string, watchedAgentId: string): boolean {
+  return waitingOn.get(watchedAgentId)?.has(waiterAgentId) ?? false;
 }
 
 /**
@@ -304,8 +365,8 @@ export function queueBusMessage(targetAgentId: string, message: QueuedBusMessage
   if (!target || !target.ptyId) return false;
 
   const held = heldFor(target);
-  if (holding(held) >= MAX_PENDING_CHILDREN) {
-    console.warn(`[agent-watch] ${targetAgentId} already holds ${MAX_PENDING_CHILDREN} pending items, dropping bus message ${message.messageId}`);
+  if (held.bus.length >= MAX_PENDING_MESSAGES) {
+    console.warn(`[agent-watch] ${targetAgentId} already holds ${MAX_PENDING_MESSAGES} room messages, refusing ${message.messageId}`);
     return false;
   }
   // Said twice is said twice: unlike a child's status, a second message does
@@ -395,15 +456,15 @@ function flush(requesterId: string): void {
   // a queue is the same lie whether the queue is here or one layer down.
   if (held.children.size > 0) {
     const names = [...held.children.keys()].map(id => agents.get(id)?.name ?? id);
-    const taken = writeProgrammaticInput(ptyProcess, composeNote(held.children), true, {
+    const outcome = writeProgrammaticInput(ptyProcess, composeNote(held.children), true, {
       agentId: requesterId,
       from: names.join(', '),
     });
-    if (!taken) return;
+    if (outcome === 'refused') return;
     held.children.clear();
   } else {
     const message = held.bus[0];
-    const taken = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
+    const outcome = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
       agentId: requesterId,
       from: message.authorName,
       onWritten: () => {
@@ -416,8 +477,9 @@ function flush(requesterId: string): void {
     });
     // Refused means the terminal is holding all it can. What was not taken
     // stays here, under this queue's own cap, rather than disappearing
-    // between the two.
-    if (!taken) return;
+    // between the two. `held` is taken: it sits in the terminal's own queue
+    // and `onWritten` marks the journal when it lands.
+    if (outcome === 'refused') return;
     held.bus.shift();
   }
 
@@ -561,7 +623,7 @@ export async function releaseBusMessagesNow(
   agentId: string,
   messages: QueuedBusMessage[],
   onWritten?: (messageId: string) => void,
-): Promise<{ written: string[]; refused?: 'no_terminal' | 'already_releasing' }> {
+): Promise<{ written: string[]; held?: string[]; refused?: 'no_terminal' | 'already_releasing' }> {
   // One release at a time per agent. Without this, two callers read the same
   // held list, write the same messages twice, and interleave while doing it.
   if (releasing.has(agentId)) return { written: [], refused: 'already_releasing' };
@@ -581,8 +643,9 @@ export async function releaseBusMessagesNow(
   releasing.add(agentId);
   try {
     const written: string[] = [];
+    const waiting: string[] = [];
     for (const message of messages) {
-      const taken = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
+      const outcome = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
         agentId,
         from: message.authorName,
         // Reported as it lands, not when it was handed over: a human pressed
@@ -590,11 +653,16 @@ export async function releaseBusMessagesNow(
         // waits for them rather than being written across it.
         onWritten: () => onWritten?.(message.messageId),
       });
-      if (!taken) break;
-      written.push(message.messageId);
+      if (outcome === 'refused') break;
+      // Two different things, and they used to be one. `written` said a
+      // message had reached the terminal, and telling a human "sent" about
+      // something sitting behind their own half-written sentence is telling
+      // them something they cannot check.
+      if (outcome === 'held') waiting.push(message.messageId);
+      else written.push(message.messageId);
       await new Promise(resolve => setTimeout(resolve, PROGRAMMATIC_SUBMIT_DELAY_MS + 50));
     }
-    return { written };
+    return { written, held: waiting };
   } finally {
     releasing.delete(agentId);
   }
@@ -605,6 +673,7 @@ export async function releaseBusMessagesNow(
 export function resetAgentWatch(): void {
   lastSeen.clear();
   pending.clear();
+  waitingOn.clear();
   releasing.clear();
   for (const timer of delivering.values()) clearTimeout(timer);
   delivering.clear();

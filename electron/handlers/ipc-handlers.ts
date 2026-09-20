@@ -22,7 +22,7 @@ import { decodeProjectPath } from '../utils/decode-project-path';
 import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
-import { writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
+import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -1141,6 +1141,16 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
     return { success: false, error: 'PTY not found' };
   });
+
+  /**
+   * Which agents are holding a message they cannot write into their terminal.
+   *
+   * The same state `agent:message-waiting` pushes, for a panel that opened
+   * after the wait began: a push is only heard by a window that was already
+   * listening, and a notice nobody sees is the thing this exists to prevent.
+   * An agent absent from the list is holding nothing.
+   */
+  ipcMain.handle('agent:messagesWaiting', async () => ({ success: true, waiting: messagesWaiting() }));
 
   // Resize agent PTY
   ipcMain.handle('agent:resize', async (_event, { id, cols, rows }: { id: string; cols: number; rows: number }) => {

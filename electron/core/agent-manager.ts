@@ -765,9 +765,24 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
       pending.retried = true;
       live.lastActivity = new Date().toISOString();
       saveAgents();
-      writeProgrammaticInput(ptyProcess, pending.task, true);
-      pending.checkArmed = true;
-      scheduleDeliveryCheck(agentId, ptyId);
+      const outcome = writeProgrammaticInput(ptyProcess, pending.task, true, {
+        agentId: live.id,
+        from: 'Tars',
+        // Armed when the task is actually typed in, not when it was handed
+        // over. A write waiting behind somebody's half-written sentence would
+        // otherwise be counted as delivered, and the agent accused a minute
+        // later of never having taken a task that had not been typed yet.
+        onWritten: () => {
+          pending.checkArmed = true;
+          scheduleDeliveryCheck(agentId, ptyId);
+        },
+      });
+      if (outcome === 'held') {
+        console.warn(
+          `[agent] the task for ${live.name || live.id} is waiting for the draft in its terminal; `
+          + 'it goes in when that field is free',
+        );
+      }
       return;
     }
 

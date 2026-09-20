@@ -24,6 +24,7 @@ vi.mock('../../../../electron/core/agent-manager', () => ({
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
+  rememberTerminalOwner: vi.fn(),
 }));
 
 vi.mock('electron', () => ({

@@ -158,10 +158,15 @@ export interface WriteOrigin {
   onWritten?: () => void;
 }
 
+/** What became of a message handed to a terminal. */
+export type WriteOutcome = 'written' | 'held' | 'refused';
+
 /** A message that has not been written into its terminal yet. */
 interface Waiting {
   data: string;
   origin?: WriteOrigin;
+  /** When it was first found to be waiting, and said so. */
+  heldSince?: number;
 }
 
 /**
@@ -188,6 +193,23 @@ interface TerminalInput {
 
 const inputs = new WeakMap<pty.IPty, TerminalInput>();
 
+/**
+ * Which agent a terminal belongs to.
+ *
+ * `announce` had nothing to go on but what a caller passed it, and only
+ * agent-watch passed anything: a message held for /dispatch, /message,
+ * Telegram, Slack or a redelivery pushed no event, appeared in no list and
+ * left no line. A wait nobody can see is the one thing this whole mechanism
+ * exists to prevent, so the terminal itself now says whose it is, once, where
+ * it is spawned.
+ */
+const terminalOwner = new WeakMap<pty.IPty, string>();
+
+/** Called by the one function that spawns an agent's terminal. */
+export function rememberTerminalOwner(ptyProcess: pty.IPty, agentId: string): void {
+  terminalOwner.set(ptyProcess, agentId);
+}
+
 function inputOf(ptyProcess: pty.IPty): TerminalInput {
   let state = inputs.get(ptyProcess);
   if (!state) {
@@ -201,6 +223,7 @@ function inputOf(ptyProcess: pty.IPty): TerminalInput {
 export function resetTerminalInput(ptyProcess: pty.IPty): void {
   const state = inputs.get(ptyProcess);
   if (state?.timer) clearTimeout(state.timer);
+  if (state?.agentId) waitingByAgent.delete(state.agentId);
   inputs.delete(ptyProcess);
 }
 
@@ -243,6 +266,21 @@ export function noteSubmitted(ptyProcess: pty.IPty): void {
 }
 
 /**
+ * What is waiting for a field, per agent, as the panel needs to draw it.
+ *
+ * Kept here as well as pushed, because a push is only heard by a panel that
+ * was already open. A Dashboard opened after the message started waiting knew
+ * nothing about it, and a notice nobody can see is what this whole mechanism
+ * exists to avoid. `messagesWaiting()` is the same state the event carries.
+ */
+const waitingByAgent = new Map<string, AgentMessageWaiting>();
+
+/** Every agent whose terminal is holding a message it cannot write yet. */
+export function messagesWaiting(): AgentMessageWaiting[] {
+  return [...waitingByAgent.values()];
+}
+
+/**
  * Tell the panel what this terminal is holding, when that changes.
  *
  * A message that waits for a draft waits for a person, and a person cannot
@@ -250,20 +288,44 @@ export function noteSubmitted(ptyProcess: pty.IPty): void {
  * names who is waiting, and the two things that end the wait are the two
  * things only that person can do, send the draft or clear it.
  */
-function announce(state: TerminalInput): void {
+function announce(ptyProcess: pty.IPty, state: TerminalInput): void {
   const named = state.queue.filter(item => item.origin);
-  const agentId = named[0]?.origin?.agentId ?? state.agentId;
+  const agentId = named[0]?.origin?.agentId ?? state.agentId ?? terminalOwner.get(ptyProcess);
   if (!agentId) return;
   state.agentId = agentId;
   const payload: AgentMessageWaiting = {
     agentId,
-    waiting: named.length,
+    // Everything held, named or not: a message whose caller said nothing
+    // about itself is still a message waiting, and used not to be counted.
+    waiting: state.queue.length,
     from: [...new Set(named.map(item => item.origin!.from))],
   };
   const line = JSON.stringify(payload);
   if (line === state.announced) return;
   state.announced = line;
+  // Absent rather than zero in the list: the event says `waiting: 0` so a
+  // panel already drawing the notice knows to take it down, and the list is
+  // what is waiting, which is nothing.
+  if (payload.waiting === 0) waitingByAgent.delete(agentId);
+  else waitingByAgent.set(agentId, payload);
   broadcastToAllWindows('agent:message-waiting', payload);
+}
+
+/**
+ * Say, once, that a message is waiting and why.
+ *
+ * Once per message rather than once per attempt: the pause re-arms on every
+ * key, so a line per attempt would be a line per keystroke. The pair with the
+ * line `pump` writes when it finally goes out is what makes a wait readable
+ * afterwards in a log, which is the only place an old one can be read at all.
+ */
+function noteHeld(state: TerminalInput, why: string): void {
+  const next = state.queue[0];
+  if (!next || next.heldSince !== undefined) return;
+  next.heldSince = Date.now();
+  const from = next.origin?.from ? ` from ${next.origin.from}` : '';
+  const who = next.origin?.agentId ? ` for ${next.origin.agentId}` : '';
+  console.log(`[pty] a message${from}${who} is waiting for a terminal: ${why}`);
 }
 
 /** Milliseconds until this terminal is out of use, or 0 if it already is. */
@@ -288,17 +350,22 @@ function pump(ptyProcess: pty.IPty): void {
 
   const left = pauseLeft(state);
   if (left > 0) {
-    announce(state);
+    noteHeld(state, 'somebody is typing in it');
+    announce(ptyProcess, state);
     state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, left);
     return;
   }
   if (state.draft.state !== 'known') {
-    announce(state);
+    noteHeld(state, 'it holds a draft Tars cannot put back as it was');
+    announce(ptyProcess, state);
     return;
   }
 
   const next = state.queue.shift()!;
-  announce(state);
+  if (next.heldSince !== undefined) {
+    console.log(`[pty] a message held ${Math.round((Date.now() - next.heldSince) / 1000)}s for a draft is going out now`);
+  }
+  announce(ptyProcess, state);
   takeField(ptyProcess, state, next);
 }
 
@@ -373,7 +440,7 @@ function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
     state.held = null;
     state.queue = [];
     if (state.timer) { clearTimeout(state.timer); state.timer = undefined; }
-    announce(state);
+    announce(ptyProcess, state);
   }
 }
 
@@ -400,9 +467,11 @@ function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
  * wrapped in bracket paste markers so the terminal treats it as one paste
  * rather than line-by-line input.
  *
- * Returns false, and writes nothing, only when the terminal is already
- * holding as much as it can: the caller keeps what it has rather than
- * letting it evaporate here.
+ * Says which of three things happened, because a caller that answers an HTTP
+ * request with "sent" when nothing was written is telling somebody a lie they
+ * cannot check: `written` means it is in the terminal, `held` means it is
+ * queued behind a human draft and will go in when that field frees, and
+ * `refused` means nothing was taken and the caller still owns it.
  *
  * DO NOT use this for raw keystroke passthrough from xterm.js UI terminals:
  * that is `writeHumanInput`, which is also what keeps the field known.
@@ -412,7 +481,7 @@ export function writeProgrammaticInput(
   data: string,
   bracketPaste = false,
   origin?: WriteOrigin,
-): boolean {
+): WriteOutcome {
   // Sanitised once, for both shapes below: the short path has no paste to
   // break out of, and is exactly the one where a lone carriage return works.
   data = asTypedText(data);
@@ -422,17 +491,20 @@ export function writeProgrammaticInput(
     // the draft model was measured against, and the shell is replaced by the
     // command a moment later, so there would be nothing to give back.
     ptyProcess.write(data + '\r');
-    return true;
+    return 'written';
   }
   const state = inputOf(ptyProcess);
   if (state.queue.length >= MAX_WAITING_MESSAGES) {
     console.warn(`[pty] a terminal already holds ${MAX_WAITING_MESSAGES} messages it cannot write, refusing another`);
-    announce(state);
-    return false;
+    announce(ptyProcess, state);
+    return 'refused';
   }
-  state.queue.push({ data, origin });
+  const item: Waiting = { data, origin };
+  state.queue.push(item);
   pump(ptyProcess);
-  return true;
+  // The pump runs synchronously as far as the write, so the item has left the
+  // queue exactly when it went into the terminal.
+  return state.queue.includes(item) ? 'held' : 'written';
 }
 
 export function writeToPty(ptyId: string, data: string, isQuick = false): boolean {

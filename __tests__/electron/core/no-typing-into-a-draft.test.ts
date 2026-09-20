@@ -24,7 +24,15 @@ import type { IPty } from 'node-pty';
  * they really have.
  */
 
-vi.mock('node-pty', () => ({ spawn: vi.fn() }));
+const spawned: Array<{ write: (d: string) => void; written: string[] }> = [];
+vi.mock('node-pty', () => ({
+  spawn: vi.fn(() => {
+    const written: string[] = [];
+    const fake = { written, write: (d: string) => { written.push(d); }, onData: () => {}, onExit: () => {}, kill: () => {} };
+    spawned.push(fake);
+    return fake;
+  }),
+}));
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
 
 const broadcasts: Array<{ channel: string; payload: unknown }> = [];
@@ -35,8 +43,11 @@ vi.mock('../../../electron/utils/broadcast', () => ({
 import { emptyDraft, feedDraft } from '../../../electron/core/input-draft';
 import {
   PROGRAMMATIC_SUBMIT_DELAY_MS,
+  noteSubmitted,
+  rememberTerminalOwner,
   TYPING_PAUSE_MS,
   draftOf,
+  messagesWaiting,
   resetTerminalInput,
   writeHumanInput,
   writeProgrammaticInput,
@@ -100,7 +111,7 @@ afterEach(() => {
 
 describe('a terminal nobody is typing in', () => {
   it('takes the message at once, exactly as it always did', () => {
-    expect(writeProgrammaticInput(terminal.pty, NOTE, true)).toBe(true);
+    expect(writeProgrammaticInput(terminal.pty, NOTE, true)).toBe('written');
     expect(terminal.written).toEqual([NOTE]);
     vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS);
     expect(terminal.written).toEqual([NOTE, '\r']);
@@ -226,6 +237,26 @@ describe('a draft Tars cannot promise to give back', () => {
     });
   });
 
+  it('is still there to be read by a panel that opens after the wait began', () => {
+    types(terminal.pty, 'je pense');
+    writeHumanInput(terminal.pty, '\t');
+    writeProgrammaticInput(terminal.pty, NOTE, true, { agentId: 'orch', from: 'Tars-QA' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    // An event is only heard by a window that was already listening. This is
+    // the same state, for one that was not.
+    expect(messagesWaiting()).toEqual([{ agentId: 'orch', waiting: 1, from: ['Tars-QA'] }]);
+
+    writeProgrammaticInput(terminal.pty, 'et encore un', true, { agentId: 'orch', from: 'Tars-Frontend' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+    expect(messagesWaiting()).toEqual([{ agentId: 'orch', waiting: 2, from: ['Tars-QA', 'Tars-Frontend'] }]);
+
+    // And an agent holding nothing is absent, rather than listed as zero.
+    writeHumanInput(terminal.pty, '\x03');
+    vi.advanceTimersByTime(TYPING_PAUSE_MS * 3);
+    expect(messagesWaiting()).toEqual([]);
+  });
+
   it('delivers, and takes the notice down, the moment the draft is cleared', () => {
     types(terminal.pty, 'je pense');
     writeHumanInput(terminal.pty, '\t');
@@ -245,9 +276,120 @@ describe('a draft Tars cannot promise to give back', () => {
   it('stops taking messages once it is holding all it can, rather than growing without end', () => {
     writeHumanInput(terminal.pty, '\t');
     for (let i = 0; i < 20; i++) {
-      expect(writeProgrammaticInput(terminal.pty, `${NOTE} ${i}`, true)).toBe(true);
+      expect(writeProgrammaticInput(terminal.pty, `${NOTE} ${i}`, true)).toBe('held');
     }
-    expect(writeProgrammaticInput(terminal.pty, NOTE, true)).toBe(false);
+    expect(writeProgrammaticInput(terminal.pty, NOTE, true)).toBe('refused');
+  });
+});
+
+describe('a wait that ends by itself', () => {
+  it('ends when the person sends what was in the field, with no Ctrl+C needed', () => {
+    types(terminal.pty, 'je pense');
+    // Tab: the field is now something Tars cannot vouch for.
+    writeHumanInput(terminal.pty, '\t');
+    writeProgrammaticInput(terminal.pty, NOTE, true, { agentId: 'orch', from: 'Tars-QA' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS * 3);
+    terminal.written.length = 0;
+
+    // He finishes his sentence and sends it himself.
+    types(terminal.pty, ' quand meme');
+    writeHumanInput(terminal.pty, '\r');
+    // The hook that follows every submission says the field emptied.
+    noteSubmitted(terminal.pty);
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    expect(terminal.typed).toContain(NOTE);
+    expect(messagesWaiting()).toEqual([]);
+  });
+
+  it('survived a whole submission and a whole turn before, and only Ctrl+C got out of it', () => {
+    // The shape the QA measured, as the counter-case: without the two changes
+    // above, everything below leaves the message exactly where it was.
+    types(terminal.pty, 'je pense');
+    writeHumanInput(terminal.pty, '\t');
+    writeProgrammaticInput(terminal.pty, NOTE, true, { agentId: 'orch', from: 'Tars-QA' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+    writeHumanInput(terminal.pty, '\r');
+    noteSubmitted(terminal.pty);
+    // A turn of the agent goes by, and another submission after it.
+    vi.advanceTimersByTime(60_000);
+    types(terminal.pty, 'autre chose');
+    writeHumanInput(terminal.pty, '\r');
+    noteSubmitted(terminal.pty);
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    expect(draftOf(terminal.pty).state).toBe('known');
+    expect(terminal.typed).toContain(NOTE);
+  });
+});
+
+describe('a message whose caller said nothing about itself', () => {
+  it('is named from the terminal itself, which says whose it is at the spawn', async () => {
+    // Not from a call to rememberTerminalOwner in a test: from the one
+    // function that spawns an agent's terminal, which is where a caller that
+    // has to remember is a caller that will not.
+    const { spawnAgentPty } = await import('../../../electron/core/agent-pty');
+    const real = spawnAgentPty({
+      binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: '/tmp', cols: 80, rows: 24,
+      env: { CLAUDE_AGENT_ID: 'worker-9' },
+    });
+
+    writeHumanInput(real, '\t');
+    writeProgrammaticInput(real, 'do the thing', true);
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    expect(messagesWaiting()).toEqual([{ agentId: 'worker-9', waiting: 1, from: [] }]);
+    resetTerminalInput(real);
+  });
+
+  it('is still announced, under the agent whose terminal it is', () => {
+    // /dispatch, /message, Telegram, Slack and the redelivery passed no
+    // origin, so `announce` had no agent to name and said nothing at all:
+    // no event, nothing in the list, no line.
+    rememberTerminalOwner(terminal.pty, 'worker-7');
+    types(terminal.pty, 'je pense');
+    writeHumanInput(terminal.pty, '\t');
+
+    writeProgrammaticInput(terminal.pty, 'do the thing', true);
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    expect(messagesWaiting()).toEqual([{ agentId: 'worker-7', waiting: 1, from: [] }]);
+    expect(broadcasts).toContainEqual({
+      channel: 'agent:message-waiting',
+      payload: { agentId: 'worker-7', waiting: 1, from: [] },
+    });
+  });
+
+  it('leaves a line saying it is waiting, and another when it goes out', () => {
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation(m => { lines.push(String(m)); });
+    try {
+      rememberTerminalOwner(terminal.pty, 'worker-7');
+      types(terminal.pty, 'je pense');
+      writeProgrammaticInput(terminal.pty, 'do the thing', true);
+      vi.advanceTimersByTime(1000);
+      expect(lines.filter(l => l.includes('is waiting for a terminal'))).toHaveLength(1);
+
+      vi.advanceTimersByTime(TYPING_PAUSE_MS);
+      settle();
+      expect(lines.filter(l => l.includes('is going out now'))).toHaveLength(1);
+      // Once per message, not once per attempt: the pause re-arms on every key.
+      expect(lines.filter(l => l.includes('is waiting for a terminal'))).toHaveLength(1);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('counts what is held even when nobody named its sender', () => {
+    rememberTerminalOwner(terminal.pty, 'worker-7');
+    types(terminal.pty, 'je pense');
+    writeHumanInput(terminal.pty, '\t');
+
+    writeProgrammaticInput(terminal.pty, 'one', true);
+    writeProgrammaticInput(terminal.pty, 'two', true, { agentId: 'worker-7', from: 'Tars-QA' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    expect(messagesWaiting()).toEqual([{ agentId: 'worker-7', waiting: 2, from: ['Tars-QA'] }]);
   });
 });
 

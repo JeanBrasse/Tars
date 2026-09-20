@@ -73,6 +73,7 @@ vi.mock('../../../../electron/utils/broadcast', () => ({
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
+  rememberTerminalOwner: vi.fn(),
   PROGRAMMATIC_SUBMIT_DELAY_MS: 300,
 }));
 vi.mock('../../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
@@ -284,7 +285,7 @@ describe('an agent changed over the API', () => {
     const answer = await call('POST', '/api/agents/a1/dispatch', { message: 'carry on' });
 
     expect((answer!.data as { mode: string }).mode).toBe('message');
-    expect(writeProgrammaticInput).toHaveBeenCalledWith(terminal, 'carry on', true);
+    expect(writeProgrammaticInput).toHaveBeenCalledWith(terminal, 'carry on', true, expect.objectContaining({ agentId: expect.any(String) }));
     expect(railHeard('a1')).toEqual(['running']);
     expect((await cardOf('a1'))?.displayStatus).toBe('working');
   });
@@ -295,7 +296,7 @@ describe('an agent changed over the API', () => {
 
     await call('POST', '/api/agents/a1/message', { message: 'one more thing' });
 
-    expect(writeProgrammaticInput).toHaveBeenCalledWith(terminal, 'one more thing', true);
+    expect(writeProgrammaticInput).toHaveBeenCalledWith(terminal, 'one more thing', true, expect.objectContaining({ agentId: expect.any(String) }));
     expect(railHeard('a1')).toEqual(['running']);
     expect((await cardOf('a1'))?.displayStatus).toBe('working');
   });

@@ -9,6 +9,7 @@ import { recordUsage } from '../usage-ledger';
 import { mintRunToken } from '../../core/agent-tokens';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
+import { API_PORT } from '../../constants';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -29,6 +30,12 @@ export interface DelegationResult {
   error?: string;
 }
 
+/** This Tars, for the child to call back on. The constant, not the live
+ *  socket: the server retries the same port and never moves to another. */
+function apiUrl(): string {
+  return `http://127.0.0.1:${API_PORT}`;
+}
+
 /** Tools an orchestrator must not use itself, whatever CLI it runs. */
 const ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook'];
 
@@ -40,6 +47,9 @@ function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; co
     { name: 'CLAUDE_AGENT_ID', value: agent.id },
     { name: 'CLAUDE_PROJECT_PATH', value: agent.projectPath },
     { name: 'CLAUDE_MGR_API_TOKEN', value: apiToken },
+    // Which Tars to call back. These servers get the list below and nothing
+    // else, and mcp-orchestrator falls back to 31415 without it.
+    { name: 'CLAUDE_MGR_API_URL', value: apiUrl() },
   ];
 
   const servers: { name: string; command: string; args: string[]; env: typeof env }[] = [];
@@ -103,6 +113,13 @@ export async function delegateOverAcp(opts: {
       CLAUDE_AGENT_ID: agent.id,
       CLAUDE_PROJECT_PATH: agent.projectPath,
       CLAUDE_MGR_API_TOKEN: apiToken,
+      // Which Tars this run answers to, as spawnAgentPty gives every terminal
+      // (agent-pty.ts). It was missing here, so the hooks of an ACP run posted
+      // to 31415 whatever port this Tars was on: three posts from a sandbox on
+      // 31493 reached the live app and were refused as `Agent not found`.
+      // Nothing was written, but the port stopped being the boundary it is
+      // everywhere else.
+      CLAUDE_MGR_API_URL: apiUrl(),
     },
     mcpServers: mcpServersFor(agent, apiToken),
     permissionMode: agent.permissionMode === 'bypass' ? 'bypass'

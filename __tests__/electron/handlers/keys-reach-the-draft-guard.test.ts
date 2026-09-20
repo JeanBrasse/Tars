@@ -94,6 +94,22 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('what a panel can read when it opens', () => {
+  it('is handed the messages already waiting, through the same channel as the rest', async () => {
+    await typeIntoTheAgent('je pense');
+    await handlers.get('agent:input')!({}, { id: 'orch', input: '\t' });
+    writeProgrammaticInput(terminal as never, 'the suite is green', true, { agentId: 'orch', from: 'Tars-QA' });
+    vi.advanceTimersByTime(TYPING_PAUSE_MS);
+
+    const answer = await handlers.get('agent:messagesWaiting')!({}) as {
+      success: boolean; waiting: Array<{ agentId: string; waiting: number; from: string[] }>;
+    };
+
+    expect(answer.success).toBe(true);
+    expect(answer.waiting).toEqual([{ agentId: 'orch', waiting: 1, from: ['Tars-QA'] }]);
+  });
+});
+
 describe('what the renderer types on agent:input', () => {
   it('reaches the terminal, unchanged and in order', async () => {
     await typeIntoTheAgent('salut');

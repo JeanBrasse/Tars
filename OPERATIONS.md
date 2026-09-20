@@ -914,6 +914,83 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   card keeps the failure and no "is waiting" alert contradicts it. A permission prompt is not
   held back, since it only occurs inside a turn, and a turn has already left `error`.
 
+### The idle prompt, and what an orchestrator is told (1.7.8)
+
+That 60 s is measured: of the 1,393 idle prompts that followed a `Stop` in a month of this
+machine's hook logs, 1,390 came exactly 60 s after it, and of the 345 `Stop`s followed by a new
+turn inside that minute, none brought one. Three rules follow from it.
+
+- **An idle prompt inside the minute is about a rest that is over.** `isStaleIdlePrompt`
+  (`hooks-routes.ts`) drops a `waiting` on an agent that is `running` when `workHandedAt` or
+  `lastTurnStartedAt` is less than 60 s old: the prompt was raised before the work and arrived
+  after it. `/run-task` is how it happens, since it sets `running` and leaves the terminal
+  alone, so the CLI keeps counting from its own last `Stop`. Neither the desktop alert nor the
+  note to the orchestrator is sent. After that minute the prompt is taken, and it should be: 18
+  turns that month ended with no `Stop` hook at all, and the idle prompt was the only sign.
+- **The end of delegated work is announced at the `Stop`, not a minute later.** Coming back to
+  rest, `idle` or the idle `waiting`, is news once, and only when a turn has begun since the work
+  was handed over (`workHandedAt` against `lastTurnStartedAt`). Before 1.7.8 only the idle prompt
+  ever said a delegated turn had ended, so every notice was a minute late.
+- **Sitting still is not news.** An agent that comes back to rest for any other reason, typed in
+  by hand or put back by a failed ACP start, reports nothing: the link a dispatch left is spent
+  at the end of the work it was recorded for, and a spent link is written to disk with it.
+  A note held for a busy orchestrator is dropped if the agent was handed new work since, or if
+  the wait it described is over.
+
+### A message that has to wait for what you are typing (1.7.8)
+
+Tars types notes, room messages and dispatched tasks straight into a CLI's input field. If you
+are half way through a sentence in that same field, the two used to be submitted together: your
+unfinished text went out with the message. Never mix and never block, so:
+
+- **While you are typing**, the message waits. Five seconds of quiet ends the wait, re-armed by
+  every key, so it lasts as long as the typing does (`TYPING_PAUSE_MS`, `pty-manager.ts`).
+- **At the first pause**, Tars empties the field, writes the message, submits it, and types your
+  draft back exactly as it was, caret included, without sending it. Keys you type during that
+  window are held and replayed in order.
+- **If it cannot promise to give your draft back**, it writes nothing at all. Your field is
+  never touched by something it does not understand.
+
+What it understands is rebuilt from the keys the interface relays (`input-draft.ts`): of the 166
+key encodings xterm sends from a Mac keyboard it follows 112 and gives up on 54, among them the
+history arrows, Tab, a lone Esc, the word and line kills, the function keys, a paste that folds
+into `[Pasted text #N]`, and Right or End at the very end of the text, where they can accept an
+inline suggestion instead of moving.
+
+**A wait always ends.** Sending what is in the field ends it, and so does Ctrl+C. An Enter on a
+field Tars has lost track of is taken as "whatever was in it, it emptied", and the
+`UserPromptSubmit` hook confirms it 33 to 57 ms later. Before 1.7.8 only Ctrl+C did, and a
+message could sit behind a stale draft through a whole turn.
+
+**Where to see one.** The agent's panel says who is waiting; `agent:message-waiting` pushes each
+change and `electronAPI.agent.messagesWaiting()` answers for a panel that opened later. In the
+log, one line when a message starts waiting and one when it goes out:
+
+```bash
+grep 'is waiting for a terminal' ~/Library/Logs/tars/main.log   # or the terminal Tars was started from
+grep 'is going out now'          ~/Library/Logs/tars/main.log
+```
+
+`POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the
+message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
+
+| Symptom | Cause |
+|---|---|
+| a task "sent" that the CLI never received | the terminal is holding a draft. The panel names it; clear the field with Ctrl+C or send it |
+| the panel says a message is waiting and nothing is in the field | a key Tars does not follow left it unsure. Ctrl+C settles it |
+| a message waiting for an agent nobody is typing into | the pause is per terminal: check that the right one is named in `messagesWaiting()` |
+
+A note is also skipped while the orchestrator is sitting in `GET /api/agents/:id/wait` on that
+same agent: the long poll's answer already says it, and typing it in again costs the
+orchestrator a whole turn to read what it has been handed. Every other way it is told, from
+`send_message` to Telegram, Slack and the webhook, has no poll behind it and still gets the note.
+
+| Symptom | Where to look |
+|---|---|
+| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `/tmp/dorothy-hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
+| the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
+
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
 in `ps`.

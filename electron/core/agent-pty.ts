@@ -3,6 +3,7 @@ import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
 import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
+import { rememberTerminalOwner } from './pty-manager';
 
 /** The shell each agent PTY was started with, as it was given to node-pty. */
 const shellOf = new WeakMap<pty.IPty, string>();
@@ -97,6 +98,11 @@ export function spawnAgentPty(opts: {
     } as { [key: string]: string },
   });
   shellOf.set(spawned, opts.shell);
+  // Whose terminal this is, so a message that has to wait for a draft in it
+  // can name the agent whose panel should say so. Here because this is the
+  // one function that spawns an agent's terminal, and a caller that has to
+  // remember is a caller that will not.
+  if (agentId) rememberTerminalOwner(spawned, agentId);
   return spawned;
 }
 

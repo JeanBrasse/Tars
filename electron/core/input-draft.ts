@@ -26,6 +26,9 @@
  * - Up and Down recall history on the first and last line, Tab completes, a
  *   lone Esc arms "Esc again to clear" or, on an empty field, the rewind
  *   dialog: none of them can be followed from the keys alone.
+ * - The UserPromptSubmit hook runs 33 to 57 ms after the Enter that submits
+ *   (five submissions, median 41), which is what makes it usable as proof
+ *   that a field emptied.
  */
 
 /** Pastes longer than this are folded into a placeholder. 800 stayed inline, 900 folded. */
@@ -182,6 +185,14 @@ function apply(d: Draft, t: Token): Draft {
   if (t.k === 'ignore') return d;
   // Ctrl+C empties the field whatever was in it.
   if (t.k === 'clear') return emptyDraft();
+  // Enter is the other key that says something about a field this has lost
+  // track of: whatever was in it, a submission empties it. Not `known`,
+  // because nothing here can tell a submission from a dialog answering
+  // itself, but followable again from empty, and the UserPromptSubmit hook
+  // settles which it was. Without this an `unknown` field stayed unknown for
+  // ever and only Ctrl+C ever got out of it, so a message held behind one
+  // waited through a whole submission and a whole turn of the agent.
+  if (t.k === 'enter' && d.state === 'unknown') return { text: '', cursor: 0, state: 'pending' };
   if (d.state === 'unknown') return d;
 
   switch (t.k) {
@@ -228,9 +239,24 @@ export function feedDraft(d: Draft, data: string): Draft {
   return tokenize(data).reduce(apply, d);
 }
 
-/** A submission was seen (UserPromptSubmit): an Enter the model could not vouch for did empty the field. */
+/**
+ * A submission was seen (UserPromptSubmit): the field did empty.
+ *
+ * `pending` is the ordinary case, an Enter this could not vouch for, and the
+ * keys typed since it have been followed on top of an empty field, so the flag
+ * is all that changes.
+ *
+ * `unknown` is the backstop, for a submission that reached the CLI without an
+ * Enter passing through `agent:input`. There the keys typed since were not
+ * followed, so this claims an empty field it has not watched. The exposure is
+ * the gap between the Enter and the hook, measured on Claude Code 2.1.273 over
+ * five submissions at 33, 39, 41, 41 and 57 ms: under one character of fast
+ * typing. Weighed against the alternative, which was a field nothing but
+ * Ctrl+C could ever free, and a message that waited for ever behind it.
+ */
 export function confirmSubmitted(d: Draft): Draft {
-  return d.state === 'pending' ? { ...d, state: 'known' } : d;
+  if (d.state === 'pending') return { ...d, state: 'known' };
+  return d.state === 'unknown' ? emptyDraft() : d;
 }
 
 /**

@@ -145,6 +145,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * says so, because the two things that end the wait, sending the draft or
      * clearing it, can only be done by the person at that keyboard.
      */
+    /**
+     * What is waiting right now, for a panel that has just opened.
+     *
+     * The event below is only heard by a window already listening, so a
+     * Dashboard opened after a message started waiting knew nothing about it.
+     * An agent absent from this list is holding nothing.
+     */
+    messagesWaiting: () =>
+      ipcRenderer.invoke('agent:messagesWaiting'),
     onMessageWaiting: (callback: (waiting: { agentId: string; waiting: number; from: string[] }) => void) => {
       const listener = (_: unknown, data: unknown) => callback(data as Parameters<typeof callback>[0]);
       ipcRenderer.on('agent:message-waiting', listener);

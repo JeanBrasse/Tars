@@ -41,6 +41,7 @@ vi.mock('../../../../electron/utils/broadcast', () => ({
 vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
+  rememberTerminalOwner: vi.fn(),
 }));
 
 /** Every IPC broadcast the main process made, which is what the windows see. */
