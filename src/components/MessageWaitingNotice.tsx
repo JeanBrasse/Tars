@@ -3,11 +3,22 @@
 import { StatusSquare } from '@/components/ui';
 import type { AgentMessageWaiting } from '@/types/electron';
 
-/** Longest sender name drawn before it is cut. Nothing sensible is longer. */
+/** Longest sender name drawn before it is cut, in code points. Nothing sensible is longer. */
 const MAX_NAME = 40;
 
-/** The control characters a CLI can put in a name, none of which belong on a line. */
-const CONTROL = /\p{Cc}+/gu;
+/**
+ * What a name may not carry onto this line.
+ *
+ * The same class `envelopeValue` escapes in `electron/services/agent-watch.ts`,
+ * and for the same reason: what a reader can take for a line break, and what
+ * shows as nothing or rearranges what is shown. The QA measured a name holding
+ * U+202E, a right-to-left override, turning the whole sentence around on
+ * screen: "A message from QA.C+lrtC htiw dleif eht raelc ro ,gnipyt era uoy
+ * tahw dneS". That is not an injection, it is defacement, and this line is the
+ * one place a name is next to Tars's own words. `\p{Cc}` alone, which is what
+ * this covered, does not touch any of it.
+ */
+const HIDDEN_OR_LINE_BREAKING = /[\p{Zl}\p{Zp}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu;
 
 /**
  * A sender's name, made safe to put on one line.
@@ -15,12 +26,19 @@ const CONTROL = /\p{Cc}+/gu;
  * `from` is free text: it arrives on `/api/agents/:id/message` from whatever
  * called it. React escapes it as a text node, which is why it is never built
  * into markup here, and the two things left to do are the ones escaping does
- * not: flatten the control characters a CLI can emit, and cap the length so
- * one long name cannot push the rest of the sentence out of the line.
+ * not: flatten what hides or rearranges, and cap the length so one long name
+ * cannot push the rest of the sentence out of the line.
+ *
+ * A space rather than nothing, so a zero-width character between two words
+ * leaves a mark instead of silently making one name look like another; a run
+ * of them collapses to a single space. The cap counts code points, because
+ * cutting UTF-16 units splits a surrogate pair and leaves a lone half, which
+ * draws as one replacement character.
  */
 function clean(name: string): string {
-  const flat = name.replace(CONTROL, ' ').trim();
-  return flat.length > MAX_NAME ? flat.slice(0, MAX_NAME - 1) + '…' : flat;
+  const flat = name.replace(HIDDEN_OR_LINE_BREAKING, ' ').trim();
+  const points = [...flat];
+  return points.length > MAX_NAME ? points.slice(0, MAX_NAME - 1).join('') + '…' : flat;
 }
 
 function senders(from: string[]): string {
