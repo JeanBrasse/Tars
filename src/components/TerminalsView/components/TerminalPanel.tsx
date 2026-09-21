@@ -3,6 +3,8 @@
 import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
+import MessageWaitingNotice from '@/components/MessageWaitingNotice';
+import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import TerminalPanelHeader from './TerminalPanelHeader';
 import type { PanelView } from './TerminalPanelHeader';
 import PanelHistory from './PanelHistory';
@@ -94,6 +96,12 @@ function TerminalPanel({
   // a panel opens on it every time.
   const [view, setView] = useState<PanelView>('live');
 
+  // A message this terminal is holding because somebody is typing in it. Read
+  // here rather than passed down the grid: the store is one subscription for
+  // the window, and each panel reading its own agent out of it means a wait on
+  // one terminal re-renders that panel and leaves the other nineteen alone.
+  const waiting = useMessageWaiting(agent.id);
+
   const handleClick = useCallback(() => {
     onFocus(agent.id);
   }, [agent.id, onFocus]);
@@ -131,6 +139,12 @@ function TerminalPanel({
         onRemove={handleRemove}
         onContextMenu={handleContextMenu}
       />
+
+      {/* A message is waiting for this terminal's input field, and only the
+          person at that keyboard can let it in. Under the header rather than
+          in it: the header has about fifty pixels to spare on a board panel,
+          and a notice cut to fifty pixels is the one nobody reads. */}
+      <MessageWaitingNotice waiting={waiting} />
 
       {/* Terminal body.
           History is drawn over the terminal, never instead of it: the xterm
