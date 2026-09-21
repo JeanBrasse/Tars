@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { BrandSpinner, DialogShell, SegmentedControl } from '@/components/ui';
+import MessageWaitingNotice from '@/components/MessageWaitingNotice';
+import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import 'xterm/css/xterm.css';
 
@@ -74,6 +76,9 @@ export default function AgentTerminalDialog({
     [agent?.name, agent?.character],
   );
   const hasSecondaryProject = !!agent?.secondaryProjectPath;
+  // A message this window's terminal is holding, for the same reason a board
+  // panel holds one: somebody is typing in the field it would go into.
+  const messageWaiting = useMessageWaiting(agent?.id);
   const availableProjects = useMemo(
     () => (agent ? projects.filter(p => p.path !== agent.projectPath && p.path !== agent.worktreePath) : projects),
     [projects, agent?.projectPath, agent?.worktreePath], // eslint-disable-line react-hooks/exhaustive-deps
@@ -250,28 +255,33 @@ export default function AgentTerminalDialog({
         </div>
 
         <div className="flex-1 min-h-0 flex overflow-hidden">
-          {/* Main terminal area */}
-          <div className="flex-1 min-w-0 relative">
-            <div
-              ref={terminalRef}
-              className={`absolute inset-0 p-2 ${TERMINAL_SURFACE_CLASS}`}
-              style={{ cursor: 'text' }}
-              onClick={() => xtermRef.current?.focus()}
-            />
-            {!terminalReady && (
-              <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
-                <BrandSpinner size={30} label="Loading terminal" />
-              </div>
-            )}
-            {/* Scroll-to-bottom button - appears when user has scrolled up */}
-            {terminalReady && !isAtBottom && (
-              <button
-                onClick={scrollToBottom}
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 h-[26px] px-2.5 border border-border bg-card font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors z-10"
-              >
-                scroll to bottom
-              </button>
-            )}
+          {/* Main terminal area. The notice sits over the terminal column and
+              not across the rail: it is about this field, and the window's own
+              header rows are not the panel header the board uses. */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <MessageWaitingNotice waiting={messageWaiting} />
+            <div className="flex-1 min-h-0 relative">
+              <div
+                ref={terminalRef}
+                className={`absolute inset-0 p-2 ${TERMINAL_SURFACE_CLASS}`}
+                style={{ cursor: 'text' }}
+                onClick={() => xtermRef.current?.focus()}
+              />
+              {!terminalReady && (
+                <div className={`absolute inset-0 flex items-center justify-center ${TERMINAL_SURFACE_CLASS}`}>
+                  <BrandSpinner size={30} label="Loading terminal" />
+                </div>
+              )}
+              {/* Scroll-to-bottom button - appears when user has scrolled up */}
+              {terminalReady && !isAtBottom && (
+                <button
+                  onClick={scrollToBottom}
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 h-[26px] px-2.5 border border-border bg-card font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors z-10"
+                >
+                  scroll to bottom
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Right rail - permanent */}

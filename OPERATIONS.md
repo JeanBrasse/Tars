@@ -967,8 +967,11 @@ change and `electronAPI.agent.messagesWaiting()` answers for a panel that opened
 log, one line when a message starts waiting and one when it goes out:
 
 ```bash
-grep 'is waiting for a terminal' ~/Library/Logs/tars/main.log   # or the terminal Tars was started from
-grep 'is going out now'          ~/Library/Logs/tars/main.log
+# The main process logs to the terminal Tars was started from. Nothing writes a
+# log file today: app.getPath('logs') is never used, and ~/Library/Logs/tars does
+# not exist. Started from the Dock, these lines are only in the Console app.
+grep 'is waiting for a terminal'   # in that terminal's output
+grep 'is going out now'
 ```
 
 `POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the

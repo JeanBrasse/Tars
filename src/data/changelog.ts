@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 46,
+    version: '1.7.9',
+    date: '2026-09-21',
+    updates: [
+      'A terminal says when a message is waiting for its field. Since 1.7.8 a message meant for an agent waits rather than being typed across a half-written prompt, and when Tars cannot promise to put your draft back exactly as it was, it writes nothing at all. Only the person at that keyboard can end that wait, so the panel now says so: a line under the panel header on the Dashboard, and at the top of the terminal in the agent window, naming who is waiting and how many, and the two things that end it. It appears the moment a message starts waiting, in every window, including one you open afterwards, and it goes as soon as you send what you were writing or clear the field with Ctrl+C',
+    ],
+  },
+  {
     id: 45,
     version: '1.7.8',
     date: '2026-09-21',
