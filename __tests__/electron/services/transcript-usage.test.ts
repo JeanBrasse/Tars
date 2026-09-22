@@ -288,3 +288,107 @@ describe('the per-file cache', () => {
     expect(dailyModelTokens[0].costUSD).toBeGreaterThan(0);
   });
 });
+
+describe('cost per model per day', () => {
+  /**
+   * The Usage page windows every figure by day now, per model as well as in
+   * total: BY PROVIDER splits a period's cost by model. `costUSD` is not split,
+   * and pricing `breakdownByModel` again in the renderer cannot be right,
+   * because it keeps cache writes as one number while a 1h write costs 2x base
+   * and a 5m one 1.25x. Measured on the author's history: re-pricing every
+   * write at the 5m rate came out $656.84 (6.5%) under. So main hands over
+   * each day's cost per model, and these are the two sums it has to satisfy.
+   *
+   * Prices below are the compiled-in floor this suite runs on (no catalogue in
+   * the throwaway HOME). Opus: $5 in, $25 out, $0.50 cache read, $6.25 per 5m
+   * write, $10 per 1h write. Sonnet: $3, $15, $0.30, $3.75, $6.
+   */
+  const OPUS = 'claude-opus-5';
+  const SONNET = 'claude-sonnet-5';
+
+  function turn(
+    id: string,
+    model: string,
+    timestamp: string | undefined,
+    usage: Record<string, unknown>,
+  ) {
+    return {
+      type: 'assistant',
+      requestId: `req_${id}`,
+      ...(timestamp ? { timestamp } : {}),
+      message: { id, model, usage },
+    };
+  }
+
+  const writes = (h1: number, m5: number) => ({
+    cache_creation_input_tokens: h1 + m5,
+    cache_creation: { ephemeral_1h_input_tokens: h1, ephemeral_5m_input_tokens: m5 },
+  });
+
+  const DAY_A = '2026-08-20T12:00:00.000Z';
+  const DAY_B = '2026-08-21T12:00:00.000Z';
+
+  function seed() {
+    writeTranscript('a.jsonl', [
+      // One reply in two lines: the first carries a partial output count, the
+      // second the whole one, and the dedup tops the first up.
+      turn('m1', OPUS, DAY_A, { input_tokens: 1000, output_tokens: 10, cache_read_input_tokens: 2000, ...writes(3000, 1000) }),
+      turn('m1', OPUS, DAY_A, { input_tokens: 1000, output_tokens: 400, cache_read_input_tokens: 2000, ...writes(3000, 1000) }),
+      turn('m2', SONNET, DAY_A, { input_tokens: 2000, output_tokens: 100, ...writes(8000, 0) }),
+      turn('m3', OPUS, DAY_B, { input_tokens: 500, output_tokens: 50, cache_read_input_tokens: 1_000_000 }),
+      // No timestamp: counted in the model's total, and on no day.
+      turn('m5', OPUS, undefined, { input_tokens: 1_000_000, output_tokens: 0 }),
+    ]);
+    // A resumed session replays m3 into a new transcript under the same id.
+    writeTranscript('b-resumed.jsonl', [
+      turn('m3', OPUS, DAY_B, { input_tokens: 500, output_tokens: 50, cache_read_input_tokens: 1_000_000 }),
+      turn('m4', SONNET, DAY_B, { input_tokens: 100, output_tokens: 10, ...writes(0, 2000) }),
+    ]);
+  }
+
+  /** What each turn costs, priced by hand. */
+  const M1 = 1000 * 5e-6 + 400 * 25e-6 + 2000 * 0.5e-6 + 1000 * 6.25e-6 + 3000 * 10e-6; // 0.05225
+  const M2 = 2000 * 3e-6 + 100 * 15e-6 + 8000 * 6e-6; // 0.0555
+  const M3 = 500 * 5e-6 + 50 * 25e-6 + 1_000_000 * 0.5e-6; // 0.50375
+  const M4 = 100 * 3e-6 + 10 * 15e-6 + 2000 * 3.75e-6; // 0.00795
+  const M5 = 1_000_000 * 5e-6; // 5, undated
+
+  it('gives each day its cost per model, 1h and 5m writes priced apart', async () => {
+    seed();
+    const { dailyModelTokens } = await computeTranscriptUsage(home);
+    const byDate = Object.fromEntries(dailyModelTokens.map(d => [d.date, d]));
+
+    expect(Object.keys(byDate)).toEqual(['2026-08-20', '2026-08-21']);
+    expect(Object.keys(byDate['2026-08-20'].costByModel).sort()).toEqual([OPUS, SONNET]);
+    expect(byDate['2026-08-20'].costByModel[OPUS]).toBeCloseTo(M1, 12);
+    expect(byDate['2026-08-20'].costByModel[SONNET]).toBeCloseTo(M2, 12);
+    expect(byDate['2026-08-21'].costByModel[OPUS]).toBeCloseTo(M3, 12);
+    expect(byDate['2026-08-21'].costByModel[SONNET]).toBeCloseTo(M4, 12);
+  });
+
+  it('adds up to the day\'s cost over its models', async () => {
+    seed();
+    const { dailyModelTokens } = await computeTranscriptUsage(home);
+
+    expect(dailyModelTokens.length).toBeGreaterThan(0);
+    for (const day of dailyModelTokens) {
+      const sum = Object.values(day.costByModel).reduce((s, c) => s + c, 0);
+      expect(sum, day.date).toBeCloseTo(day.costUSD, 12);
+      // The same models as the tokens: a model that spent is a model that ran.
+      expect(Object.keys(day.costByModel).sort(), day.date).toEqual(Object.keys(day.breakdownByModel).sort());
+    }
+  });
+
+  it('adds up to each model\'s total over the days, less what carries no date', async () => {
+    seed();
+    const { modelUsage, dailyModelTokens } = await computeTranscriptUsage(home);
+    const overDays = (model: string) =>
+      dailyModelTokens.reduce((s, d) => s + (d.costByModel[model] ?? 0), 0);
+
+    expect(modelUsage[OPUS].costUSD).toBeCloseTo(M1 + M3 + M5, 12);
+    expect(modelUsage[SONNET].costUSD).toBeCloseTo(M2 + M4, 12);
+    expect(overDays(SONNET)).toBeCloseTo(modelUsage[SONNET].costUSD, 12);
+    // The undated turn is the whole of the difference, and nothing else is.
+    expect(overDays(OPUS)).toBeCloseTo(modelUsage[OPUS].costUSD - M5, 12);
+  });
+});
