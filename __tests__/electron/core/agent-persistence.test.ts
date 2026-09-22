@@ -307,6 +307,26 @@ describe('the role on load', () => {
   });
 });
 
+describe('the role on load, as the runbook reads it', () => {
+  // Added at the QA gate of #123. OPERATIONS.md tells whoever finds an
+  // orchestrator turned worker to look for this line in the main process log.
+  it('names the agent that lost the role, and its project, in one line', () => {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify({ version: 3, agents: [
+      agent('first', { name: 'Tars-Orchestrator', role: 'orchestrator', projectPath: '/p/tars' }),
+      agent('second', { name: 'Lead', role: 'orchestrator', projectPath: '/p/tars' }),
+    ] }));
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { lines.push(args.map(String).join(' ')); });
+
+    manager.loadAgents();
+    warn.mockRestore();
+
+    expect(lines.filter(line => line.startsWith('[role]'))).toEqual([
+      '[role] Lead is a worker now: /p/tars had another orchestrator, and a project has one',
+    ]);
+  });
+});
+
 describe('appendAgentOutput', () => {
   it('keeps the buffer bounded under a flood', () => {
     const a = agent('noisy') as never as { output: string[] };

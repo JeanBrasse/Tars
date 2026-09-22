@@ -385,3 +385,34 @@ describe('the permission mode', () => {
     expect(typed).toContain(TOOL_BLOCK);
   });
 });
+
+describe('two promotions at once', () => {
+  // Added at the QA gate of #123. Two saves close together: the toggle
+  // switched on for one agent and at once for another of the same project, or
+  // two windows saving at the same moment. The role ends with one agent; so
+  // must the flags every running CLI was started with.
+  const cliUp = () => { for (const terminal of spawned) terminal.process = '2.1.280'; };
+
+  it('end with one orchestrator in the project, and every CLI on the flags of its role', async () => {
+    const { agent: current } = running('current', { role: 'orchestrator', orchestratorMode: true });
+    const { agent: first } = running('first', {});
+    const { agent: second } = running('second', {});
+
+    const results = await Promise.all([update({ id: 'first', role: 'orchestrator' }), update({ id: 'second', orchestratorMode: true })]);
+    for (let i = 0; i < 40; i++) {
+      cliUp();
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    expect(results.map(result => result.success)).toEqual([true, true]);
+    const orchestrators = [...agents.values()].filter(a => a.projectPath === project && a.role === 'orchestrator').map(a => a.id);
+    expect(orchestrators).toEqual(['second']);
+    for (const agent of [current, first, second]) expect(agent.orchestratorMode, agent.id).toBe(agent.role === 'orchestrator');
+    expect(launchedAs(second)).toContain(TOOL_BLOCK);
+    expect(launchedAs(second)).toContain(instructions());
+    for (const agent of [current, first]) {
+      expect(launchedAs(agent), agent.id).not.toContain('--disallowed-tools');
+      expect(launchedAs(agent), agent.id).not.toContain('--append-system-prompt-file');
+    }
+  });
+});

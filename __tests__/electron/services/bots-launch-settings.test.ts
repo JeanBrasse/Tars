@@ -189,6 +189,42 @@ describe('the role, on the launches the bots make', () => {
   });
 });
 
+describe("the super agent's cold start, from a message", () => {
+  // Added at the QA gate of #123. The two launches of the orchestrator that a
+  // message makes when it is not running: the role picks it, and nothing read
+  // the flags it was started with. A Telegram message starts it in bypass,
+  // since nobody is there to answer a permission question; a Slack message
+  // starts it on its own mode (SPECS §4, The orchestrator role). Both with the
+  // instructions and without the editing tools.
+  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+  const promptFile = (typed: string) => /--append-system-prompt-file '([^']+)'/.exec(typed)?.[1];
+
+  it('from Telegram: the instructions, no editing tools, and bypass', async () => {
+    agent({ id: 'agent-s', name: 'Lead', role: 'orchestrator', permissionMode: 'auto' });
+
+    const typed = await typedAfter(() => sendToSuperAgent('42', 'what is everyone doing'));
+
+    expect(typed).toContain(TOOL_BLOCK);
+    expect(typed).toContain(' --dangerously-skip-permissions');
+    expect(typed).not.toContain('--permission-mode');
+    const file = promptFile(typed);
+    expect(file, typed).toBeDefined();
+    // Telegram's own instructions are appended to the orchestration ones, in a file of its data folder.
+    expect(fs.readFileSync(file!, 'utf-8')).toContain(fs.readFileSync(getSuperAgentInstructionsPath(), 'utf-8'));
+  });
+
+  it('from Slack: the instructions, no editing tools, and its own permission mode', async () => {
+    agent({ id: 'agent-s', name: 'Lead', role: 'orchestrator', permissionMode: 'auto' });
+
+    const typed = await typedAfter(() => sendToSuperAgentFromSlack('C1', 'what is everyone doing', async () => undefined, settings));
+
+    expect(typed).toContain(TOOL_BLOCK);
+    expect(typed).toContain(' --permission-mode auto');
+    expect(typed).not.toContain('--dangerously-skip-permissions');
+    expect(promptFile(typed)).toBe(getSuperAgentInstructionsPath());
+  });
+});
+
 describe('Slack', () => {
   it("`start <agent> <task>` runs on the agent's model and effort", async () => {
     agent({});
