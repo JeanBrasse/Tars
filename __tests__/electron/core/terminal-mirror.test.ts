@@ -177,8 +177,8 @@ function visibleText(term: Term): string[] {
  * What a panel shows, in full: the text always, every cell's attributes when
  * asked. The cursor is compared too, with one known difference: a cursor
  * parked past the last column (xterm's pending wrap) comes back on the last
- * column, since no cursor move can reach past it. Measured on nine
- * recordings: 6 chunks in 3457, the content identical.
+ * column, since no cursor move can reach past it. Measured on twelve
+ * recordings: 2 chunks in 4269, the content identical.
  */
 function expectSameScreen(live: Term, panel: Term, where: string, attributes = true) {
   expect(panel.buffer.active.type, `${where}: active screen`).toBe(live.buffer.active.type);
