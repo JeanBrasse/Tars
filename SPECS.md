@@ -440,9 +440,21 @@ cost = input/1e6·p.input + output/1e6·p.output
      + write5m/1e6·p.cache5m + write1h/1e6·p.cache1h
 ```
 
-`web_search_requests` from `usage.server_tool_use` is counted but not priced. Daily buckets key on `timestamp.slice(0,10)`.
+`web_search_requests` from `usage.server_tool_use` is counted but not priced. Daily buckets key on the **local** calendar day of `timestamp` (`localDateKey`), not on its first ten characters, which are the UTC day: a turn at 02:30 in Tbilisi belongs to that day, not to the one before.
 
-`getClaudeStats()` merges: `stats-cache.json` → `statsig_user_metadata.json` → local-file computation; if none of them produced a non-empty `modelUsage`, transcript usage is spliced in.
+**Per day.** Each entry of `dailyModelTokens` is one local day:
+
+| Field | Per model, that day |
+|---|---|
+| `tokensByModel` | input + output |
+| `breakdownByModel` | `{ input, output, cacheRead, cacheWrite }`, cache writes as one number |
+| `messagesByModel` | distinct replies, counted off the dedup key |
+| `costUSD` | (not per model) the day priced from its own tokens, cache included |
+| `costByModel` | the same cost split by model: each turn's own price, 1h and 5m writes apart, added to the model that answered |
+
+Two sums hold by construction and are tested (`transcript-usage.test.ts`, `handlers/usage-per-day.test.ts`): over a day's models, `costByModel` adds up to that day's `costUSD`; over the days, `costByModel[m]` adds up to `modelUsage[m].costUSD`, less the turns that carry no timestamp and so belong to no day. Measured on Noah's history on 2026-09-22 (25 days, $10,227.39, no undated turn): the first held to 5e-12 USD on every day, the second to 5e-11 USD on every model. `costByModel` cannot be rebuilt downstream from `breakdownByModel`, which does not say which writes were 1h: pricing them all at the 5m rate came out $656.84 (6.5 %) under on the same history.
+
+`getClaudeStats()` reads `stats-cache.json`, else `statsig_user_metadata.json`, else computes from local files, and then scans the transcripts in every case. When the scan finds usage, its `modelUsage`, `dailyModelTokens` and `lastComputedDate` replace the cache's, and what only the cache counts (`totalSessions`, `totalMessages`, `dailyActivity`, `hourCounts`, `longestSession`, `firstSessionDate`) is kept. A `stats-cache.json` used to be reason enough to skip the scan, which left those machines with each day's input+output tokens and nothing else: no cost, no cache, no replies, and only as recent as the last `/stats`. The scan they pay now is the one every other machine pays: on 1.2 GB of transcripts, 4.3 to 6.3 s the first time, in slices, then 73 to 167 ms a minute. Days the cache holds from before the oldest transcript are no longer shown; they carried tokens only.
 
 ### Source B: the usage ledger (every provider)
 
@@ -460,11 +472,24 @@ interface UsageEntry {
 
 When the agent did not report a cost, `recordUsage` prices the turn itself from `priceFor(model, provider)`, using the same `cache_read ?? input*0.1` / `cache_write ?? input*1.25` fallbacks. `ProviderTotals.measured` is meant to record whether at least one entry carried a cost from the agent rather than from the catalogue, but `providerTotals()` initialises it to `false` and nothing ever sets it.
 
-Bounded: appended per turn, trimmed to the last 12 000 lines once it passes 20 000. `providerTotals(sinceDays)` and `dailyCost(sinceDays = 30)` back the `usage:by-provider` IPC channel.
+Bounded: appended per turn, trimmed to the last 12 000 lines once it passes 20 000. A line with no `provider` or no parseable `ts` is dropped by every reader alike. `usageByProvider(sinceDays)` answers the `usage:by-provider` IPC channel from one read of the file:
+
+| Field | What it holds |
+|---|---|
+| `providers` | `providerTotals(sinceDays)`: per provider, over the last `sinceDays` 24-hour periods back from now, or the whole file |
+| `dailyCost` | cost per local day, every provider merged, over `sinceDays ?? 30` |
+| `daily` | every turn in the file per local day, provider and model: `{ date, provider, model, inputTokens, outputTokens, cachedReadTokens, cachedWriteTokens, costUSD, turns }`, whatever `sinceDays` says. Per provider it adds up to `providerTotals()` |
+| `oldest` | the first local day still in the file, which a trim moves later than the first turn ever recorded; `null` when the file is empty |
+
+A `claude` row is a turn the transcripts count as well: the Claude ACP adapter runs the claude binary, which persists its session under `~/.claude/projects`, so adding the two double-counts it. Codex, Gemini, Grok and opencode rows exist nowhere else.
 
 ### The statusline
 
 `electron/utils/statusline.ts` writes `~/.dorothy/statusline.sh` and points `statusLine` in `~/.claude/settings.json` at it. It renders context %, branch, session duration, lines changed and token throughput inside the Claude TUI, and caches quota data in `~/.dorothy/rate-limits.json`. Disabling it removes the script, the settings key and the cached quota so the Usage page stops showing a stale figure.
+
+It also keeps `~/.dorothy/token-stats.json`, one entry per Claude session: `{ in, out, cost, model, extra, date, provider }`. `in`, `out` and `cost` are the session's running totals as Claude Code reports them, `date` is the local day of its last render, and `extra` says whether a quota stood above 100 % at that render. Anything in the file that is not one JSON object starts again from `{}`: until 2026-09-22 an empty file made jq print nothing, and that nothing was moved back over the file at every render, so it stayed empty for good.
+
+For the Usage page the file is a label on part of the transcripts' spend, never more spend. Every session in it ran inside the claude binary, which writes a transcript, so its `cost` is already counted there, and adding `extraCost` to transcript or ledger cost counts it twice. It cannot be cut by day either: a session's whole running cost sits under its last day, and `extra` marks all of it once a quota passes 100 %.
 
 ---
 
@@ -491,6 +516,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `model-catalog.json` + `.meta.json` | models.dev payload + `{ etag, fetchedAt }` | `writeCache()` | "a cache we cannot write is a slower app, not a broken one" |
 | `acp-registry.json` | `{ fetchedAt, agents }` | `writeCache()` | same |
 | `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
+| `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock; anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
 | `telegram-downloads/` | media from Telegram | Telegram bot | |
 | `CLAUDE.md` | Tars's own agent instructions | `ensureTarsClaudeMd()` | mounted read-write into every agent via `--add-dir` |

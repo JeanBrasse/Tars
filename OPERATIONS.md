@@ -548,6 +548,7 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
+| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session, rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Two files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
 every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
@@ -1281,6 +1282,16 @@ Two independent sources feed the Usage page:
    transcripts is always there. 1 h cache writes are kept apart from 5 m ones because they
    price at 2× base rather than 1.25×.
 
+Both reach the page per local day, so that one window can cut every figure: the transcripts
+through `claude:getData` (`stats.dailyModelTokens[i]`, with the day's `costUSD` and its split
+`costByModel`), the ledger through `usage:by-provider` (`daily` for every turn in the file, and
+`oldest` for the first day it still holds). A ledger row whose provider is `claude` is in the
+transcripts too: the Claude ACP adapter runs the claude binary, which writes one.
+
+`~/.dorothy/token-stats.json`, which the status line writes, is not a third source. Every
+session in it ran in the claude binary and is in the transcripts already, so its `extraCost`
+says how much of that spend went over quota; it is never added to it.
+
 Prices come from **models.dev** (`https://models.dev/api.json`, mirror
 `raw.githubusercontent.com/anomalyco/models.dev/dev/models.json`), USD per million tokens,
 cached to `~/.dorothy/model-catalog.json` with a 6 h TTL and conditional GET. Three tiers in
@@ -1292,6 +1303,7 @@ jq -s 'length' ~/.dorothy/usage-ledger.jsonl                 # turns recorded
 jq -r '.provider' ~/.dorothy/usage-ledger.jsonl | sort | uniq -c
 jq '.meta // {}' ~/.dorothy/model-catalog.meta.json
 jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the catalogue
+wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # status line sessions
 ```
 
 | Symptom | Cause |
@@ -1299,6 +1311,7 @@ jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the 
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
+| "extra usage" never shows | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 
 ---
 
