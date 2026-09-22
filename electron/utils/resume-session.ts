@@ -36,24 +36,28 @@ export function transcriptPath(projectPath: string, sessionId: string, homeDir =
  * session id, or a transcript that is no longer on disk.
  */
 export function resolveResumeSessionId(
-  agent: { resumableSessionId?: string; projectPath?: string; worktreePath?: string },
+  agent: { resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string },
   homeDir = os.homedir(),
 ): string | null {
-  const sessionId = agent.resumableSessionId?.trim();
-  if (!sessionId) return null;
-  // A UUID and nothing else. This value reaches a command line, and the shape
-  // check is what keeps it from being anything but an id.
-  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(sessionId)) return null;
+  // The session itself, or, while a fork has no transcript of its own yet, the
+  // session it continues: the conversation is that one's, untouched.
+  for (const candidate of [agent.resumableSessionId, agent.forkedFromSessionId]) {
+    const sessionId = candidate?.trim();
+    if (!sessionId) continue;
+    // A UUID and nothing else. This value reaches a command line, and the
+    // shape check is what keeps it from being anything but an id.
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(sessionId)) continue;
 
-  // An agent with its own worktree ran there, so that is where its transcript
-  // was written. Both are checked because an agent can be moved onto a
-  // worktree after the session that is being resumed.
-  const roots = [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p);
-  for (const root of roots) {
-    try {
-      if (fs.existsSync(transcriptPath(root, sessionId, homeDir))) return sessionId;
-    } catch {
-      // An unreadable home directory is not a reason to fail the start.
+    // An agent with its own worktree ran there, so that is where its transcript
+    // was written. Both are checked because an agent can be moved onto a
+    // worktree after the session that is being resumed.
+    const roots = [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p);
+    for (const root of roots) {
+      try {
+        if (fs.existsSync(transcriptPath(root, sessionId, homeDir))) return sessionId;
+      } catch {
+        // An unreadable home directory is not a reason to fail the start.
+      }
     }
   }
   return null;
