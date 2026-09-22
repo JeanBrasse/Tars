@@ -31,7 +31,7 @@ import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory
 import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
-import { providerTotals as ledgerProviderTotals, dailyCost as ledgerDailyCost } from '../services/usage-ledger';
+import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
@@ -1789,12 +1789,12 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   ipcMain.handle('logs:fleet', async () => ({ agents: fleetSummary() }));
 
-  // Per-provider spend. Claude's own transcripts cover its family; the ledger
-  // is what makes every other CLI countable at all.
-  ipcMain.handle('usage:by-provider', async (_event, { sinceDays }: { sinceDays?: number } = {}) => ({
-    providers: ledgerProviderTotals(sinceDays),
-    dailyCost: ledgerDailyCost(sinceDays ?? 30),
-  }));
+  // Spend from Tars's own ledger, and only from it: one row per ACP turn, any
+  // provider. Claude's transcripts reach the page through claude:getData.
+  // `daily` and `oldest` cover the whole file whatever sinceDays says, so the
+  // page can cut the same window from them as from the transcripts' days.
+  ipcMain.handle('usage:by-provider', async (_event, { sinceDays }: { sinceDays?: number } = {}) =>
+    ledgerUsageByProvider(sinceDays));
 
   ipcMain.handle('review:repo', async (_event, { repoPath }: { repoPath: string }) => {
     try {

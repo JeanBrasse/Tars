@@ -855,9 +855,16 @@ export interface ElectronAPI {
     getVersion: () => Promise<{ version: string }>;
   };
 
-  /** Per-provider spend, merged from transcripts and reported turns. */
+  /**
+   * Spend from Tars's own ledger, ~/.dorothy/usage-ledger.jsonl, and nothing
+   * else: one record per ACP turn, any provider. The Claude transcripts are not
+   * in it; they come through `claude.getData`. A `claude` row here is a turn
+   * the transcripts count as well, since the Claude ACP adapter runs the claude
+   * binary, which writes its own transcript.
+   */
   usage?: {
     byProvider: (sinceDays?: number) => Promise<{
+      /** Per provider, over the last `sinceDays` 24-hour periods back from now, or all of the file. */
       providers: Array<{
         provider: string;
         inputTokens: number;
@@ -867,7 +874,24 @@ export interface ElectronAPI {
         models: string[];
         measured: boolean;
       }>;
+      /** Cost per local day, every provider merged, over `sinceDays` (default 30). */
       dailyCost: Record<string, number>;
+      /** Every turn the file holds, per local day, provider and model, whatever `sinceDays` says. */
+      daily: Array<{
+        /** Local `YYYY-MM-DD`, the same key as the transcripts' days. */
+        date: string;
+        provider: string;
+        model: string | null;
+        inputTokens: number;
+        outputTokens: number;
+        cachedReadTokens: number;
+        cachedWriteTokens: number;
+        /** As recorded: the agent's own figure, or the catalogue's at record time. */
+        costUSD: number;
+        turns: number;
+      }>;
+      /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
+      oldest: string | null;
     }>;
   };
 

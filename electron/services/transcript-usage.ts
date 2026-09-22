@@ -60,6 +60,13 @@ export interface TranscriptUsage {
      *  distinct ids rather than lines: counting lines roughly doubles it. */
     messagesByModel: Record<string, number>;
     costUSD: number;
+    /** The same cost split by the model that answered: each turn's own price,
+     *  1h and 5m cache writes apart, added to its model. Summed over models it
+     *  is `costUSD`; summed over days it is `modelUsage[model].costUSD`, less
+     *  the turns that carry no timestamp and so belong to no day. It has to be
+     *  split here: `breakdownByModel` keeps cache writes as one number, so
+     *  pricing it again downstream cannot tell a 2x write from a 1.25x one. */
+    costByModel: Record<string, number>;
   }>;
   /** Most recent day with real activity */
   lastComputedDate: string | null;
@@ -446,6 +453,7 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
   type Split = { input: number; output: number; cacheRead: number; cacheWrite: number };
   const dailyBreakdown = new Map<string, Record<string, Split>>();
   const dailyCost = new Map<string, number>();
+  const dailyCostByModel = new Map<string, Record<string, number>>();
   /** How many replies came back each day, per model. Counted off the same
    *  dedup key as the tokens: one API response is written as several lines
    *  sharing a message id, so counting turns would roughly double every day. */
@@ -519,6 +527,9 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
         // included, rather than left to be reconstructed downstream from
         // input+output alone.
         dailyCost.set(turn.date, (dailyCost.get(turn.date) ?? 0) + cost);
+        const costs = dailyCostByModel.get(turn.date) ?? Object.create(null);
+        costs[turn.model] = (costs[turn.model] || 0) + cost;
+        dailyCostByModel.set(turn.date, costs);
 
         if (isNewMessage) {
           const count = dailyMessages.get(turn.date) ?? Object.create(null);
@@ -547,6 +558,7 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
         breakdownByModel: { ...(dailyBreakdown.get(date) ?? {}) },
         messagesByModel: { ...(dailyMessages.get(date) ?? {}) },
         costUSD: dailyCost.get(date) ?? 0,
+        costByModel: { ...(dailyCostByModel.get(date) ?? {}) },
       }))
       .sort((a, b) => a.date.localeCompare(b.date)),
     lastComputedDate,

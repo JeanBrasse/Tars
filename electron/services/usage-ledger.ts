@@ -70,17 +70,34 @@ export function recordUsage(entry: Omit<UsageEntry, 'ts'>): void {
   }
 }
 
-export function readLedger(sinceDays?: number): UsageEntry[] {
+/**
+ * `YYYY-MM-DD` of an entry's `ts` in the machine's own timezone, or null.
+ *
+ * `ts` is `Date.toISOString()`, i.e. UTC. Slicing its first ten characters
+ * keys a turn by its UTC calendar day, which disagrees with the local day
+ * transcript-usage.ts and the Usage page key by: a turn at 02:30 local in
+ * Tbilisi (22:30 UTC the day before) landed under yesterday's date.
+ */
+function localDay(ts: string): string | null {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Every turn in the file. A line that is not one is dropped here, once. */
+function readAll(): UsageEntry[] {
   try {
     if (!fs.existsSync(LEDGER_FILE)) return [];
-    const cutoff = sinceDays
-      ? new Date(Date.now() - sinceDays * 86_400_000).toISOString()
-      : null;
-
     return fs.readFileSync(LEDGER_FILE, 'utf-8').trimEnd().split('\n').flatMap(line => {
       try {
         const entry = JSON.parse(line) as UsageEntry;
-        if (cutoff && entry.ts < cutoff) return [];
+        // A line with no provider or no usable date belongs to no row and to
+        // no day. Dropped for every reader alike, so that every sum below is
+        // over the same turns: counted by the totals and missing from the
+        // days, it made the two disagree about what the file holds.
+        if (typeof entry?.provider !== 'string' || typeof entry.ts !== 'string') return [];
+        if (localDay(entry.ts) === null) return [];
         return [entry];
       } catch {
         return [];
@@ -91,11 +108,21 @@ export function readLedger(sinceDays?: number): UsageEntry[] {
   }
 }
 
-/** Totals per provider, from the ledger alone. */
-export function providerTotals(sinceDays?: number): ProviderTotals[] {
+/** The entries of the last `sinceDays` 24-hour periods back from now, or all of them. */
+function within(entries: UsageEntry[], sinceDays?: number): UsageEntry[] {
+  if (!sinceDays) return entries;
+  const cutoff = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
+  return entries.filter(entry => entry.ts >= cutoff);
+}
+
+export function readLedger(sinceDays?: number): UsageEntry[] {
+  return within(readAll(), sinceDays);
+}
+
+function totalsOf(entries: UsageEntry[]): ProviderTotals[] {
   const byProvider = new Map<string, ProviderTotals>();
 
-  for (const entry of readLedger(sinceDays)) {
+  for (const entry of entries) {
     const totals = byProvider.get(entry.provider) ?? {
       provider: entry.provider,
       inputTokens: 0,
@@ -116,25 +143,105 @@ export function providerTotals(sinceDays?: number): ProviderTotals[] {
   return Array.from(byProvider.values()).sort((a, b) => b.costUSD - a.costUSD);
 }
 
-/**
- * Daily cost from the ledger, for charting alongside the transcript data.
- *
- * `entry.ts` is `Date.toISOString()`, i.e. UTC. Slicing its first ten
- * characters keys a turn by its UTC calendar day, which disagrees with the
- * local day transcript-usage.ts and the Usage page key by - the same bug
- * class fixed there: a turn at 02:30 local in Tbilisi (22:30 UTC the day
- * before) landed under yesterday's date.
- */
-export function dailyCost(sinceDays = 30): Record<string, number> {
+/** Totals per provider, from the ledger alone. */
+export function providerTotals(sinceDays?: number): ProviderTotals[] {
+  return totalsOf(readLedger(sinceDays));
+}
+
+function dailyCostOf(entries: UsageEntry[]): Record<string, number> {
   const out: Record<string, number> = {};
-  const pad = (n: number) => String(n).padStart(2, '0');
-  for (const entry of readLedger(sinceDays)) {
-    const d = new Date(entry.ts);
-    if (Number.isNaN(d.getTime())) continue;
-    const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  for (const entry of entries) {
+    const day = localDay(entry.ts);
+    if (!day) continue;
     out[day] = (out[day] || 0) + (entry.costUSD || 0);
   }
   return out;
+}
+
+/** Daily cost from the ledger, every provider merged, keyed by local day. */
+export function dailyCost(sinceDays = 30): Record<string, number> {
+  return dailyCostOf(readLedger(sinceDays));
+}
+
+/** What the ledger holds for one local day, provider and model. */
+export interface LedgerDay {
+  /** Local `YYYY-MM-DD`: the key the transcripts' days use too. */
+  date: string;
+  provider: string;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cachedReadTokens: number;
+  cachedWriteTokens: number;
+  /** As recorded: the agent's own figure, or the catalogue's at record time. */
+  costUSD: number;
+  turns: number;
+}
+
+function daysOf(entries: UsageEntry[]): { daily: LedgerDay[]; oldest: string | null } {
+  const rows = new Map<string, LedgerDay>();
+  let oldest: string | null = null;
+  for (const entry of entries) {
+    const date = localDay(entry.ts);
+    if (!date) continue;
+    const model = entry.model ?? null;
+    const key = JSON.stringify([date, entry.provider, model]);
+    const row = rows.get(key) ?? {
+      date,
+      provider: entry.provider,
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedReadTokens: 0,
+      cachedWriteTokens: 0,
+      costUSD: 0,
+      turns: 0,
+    };
+    row.inputTokens += entry.inputTokens || 0;
+    row.outputTokens += entry.outputTokens || 0;
+    row.cachedReadTokens += entry.cachedReadTokens || 0;
+    row.cachedWriteTokens += entry.cachedWriteTokens || 0;
+    row.costUSD += entry.costUSD || 0;
+    row.turns += 1;
+    rows.set(key, row);
+    if (!oldest || date < oldest) oldest = date;
+  }
+  const daily = Array.from(rows.values()).sort((a, b) =>
+    a.date.localeCompare(b.date)
+    || a.provider.localeCompare(b.provider)
+    || (a.model ?? '').localeCompare(b.model ?? ''));
+  return { daily, oldest };
+}
+
+/**
+ * The whole answer of the `usage:by-provider` channel, from one read.
+ *
+ * `providers` and `dailyCost` are windowed as they always were. `daily` and
+ * `oldest` are not: they cover every turn in the file, whatever `sinceDays`
+ * says. The Usage page applies one window to every figure it prints, and a
+ * window of days cannot be cut from `providers`, a rolling count of 24-hour
+ * periods back from now, or from `dailyCost`, which stops at thirty days.
+ *
+ * `oldest` is the first local day still in the file. It is trimmed to its last
+ * 12 000 lines past 20 000, so after a trim that is later than the first turn
+ * ever recorded, and a window starting before it is only partly covered.
+ *
+ * One read rather than one per field, on the main thread: at its cap the file
+ * is about 4 MB, and three reads of it took 247 ms where this takes 136, what
+ * the two reads before `daily` existed took (medians of 25 interleaved runs).
+ */
+export function usageByProvider(sinceDays?: number): {
+  providers: ProviderTotals[];
+  dailyCost: Record<string, number>;
+  daily: LedgerDay[];
+  oldest: string | null;
+} {
+  const all = readAll();
+  return {
+    providers: totalsOf(within(all, sinceDays)),
+    dailyCost: dailyCostOf(within(all, sinceDays ?? 30)),
+    ...daysOf(all),
+  };
 }
 
 /** Test seam. */

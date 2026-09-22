@@ -77,18 +77,18 @@ if [ -n "$SESSION_ID" ]; then
     # Ensure lock is released on exit
     trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 
-    # Read existing file or start fresh
-    if [ -f "$TOKEN_STATS_FILE" ]; then
-      EXISTING=$(cat "$TOKEN_STATS_FILE" 2>/dev/null || echo '{}')
-    else
-      EXISTING='{}'
-    fi
+    # The file as text, parsed inside jq, so that anything which is not one
+    # JSON object starts again from {}. It used to be piped straight into jq:
+    # an empty file gave jq no input at all, jq printed nothing and exited 0,
+    # and that nothing was moved back over the file, which then stayed empty
+    # for good. A file that did not parse was never replaced either.
+    EXISTING=$(cat "$TOKEN_STATS_FILE" 2>/dev/null || true)
 
     # Update session entry via temp file for atomic write
     T_DATE=$(date +%Y-%m-%d)
     T_PROVIDER="\${CLAUDE_PROVIDER:-claude}"
     TMP_FILE="\${TOKEN_STATS_FILE}.tmp.$$"
-    echo "$EXISTING" | jq -c \
+    printf '%s' "$EXISTING" | jq -c -R -s \
       --arg sid "$SESSION_ID" \
       --argjson tin "$T_IN" \
       --argjson tout "$T_OUT" \
@@ -97,7 +97,8 @@ if [ -n "$SESSION_ID" ]; then
       --argjson extra "$IS_EXTRA" \
       --arg date "$T_DATE" \
       --arg provider "$T_PROVIDER" \
-      '.[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider}' \
+      '(try fromjson catch {}) | (if type == "object" then . else {} end)
+       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider}' \
       > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$TOKEN_STATS_FILE" 2>/dev/null || rm -f "$TMP_FILE"
 
     # Release lock

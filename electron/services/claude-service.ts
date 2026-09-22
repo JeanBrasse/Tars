@@ -101,29 +101,30 @@ export async function getClaudeStats(): Promise<ClaudeStats | null> {
         : computeStatsFromLocalFiles();
     }
 
-    // Neither cache file exists on most accounts, and the local-file fallback
-    // has no token counts at all, so the Usage page was pricing zero tokens.
-    // The transcripts do carry the usage blocks: read them.
-    const hasTokens =
-      base && Object.keys((base.modelUsage as Record<string, unknown>) || {}).length > 0;
-    let unreadable = 0;
-    if (!hasTokens) {
-      const usage = await computeTranscriptUsage();
-      unreadable = usage.unreadable ?? 0;
-      if (Object.keys(usage.modelUsage).length > 0) {
-        const merged = {
-          ...(base || {}),
-          modelUsage: usage.modelUsage,
-          dailyModelTokens: usage.dailyModelTokens,
-          lastComputedDate: usage.lastComputedDate ?? (base?.lastComputedDate as string | undefined),
-          // Carried to all three callers, the page and /stats on either bot,
-          // so a figure built from fewer transcripts than exist can say so
-          // rather than read as a smaller bill.
-          unreadable: usage.unreadable ?? 0,
-        } as ClaudeStats;
-        statsMemo = { at: Date.now(), value: merged };
-        return merged;
-      }
+    // The transcripts are read whatever the cache files hold. Neither exists on
+    // most accounts, and the local-file fallback has no token counts at all.
+    // Where stats-cache.json does exist, it carries each day's input+output
+    // tokens and nothing else: no cost, no cache reads or writes, no replies,
+    // and only as of the last /stats run. It used to be enough to skip the
+    // scan, which left a page that windows its figures by day able to window
+    // one of them. When the transcripts hold usage, their tokens, days and
+    // costs replace the cache's; the cache still supplies what the transcripts
+    // do not count, such as sessions, messages and hours.
+    const usage = await computeTranscriptUsage();
+    const unreadable = usage.unreadable ?? 0;
+    if (Object.keys(usage.modelUsage).length > 0) {
+      const merged = {
+        ...(base || {}),
+        modelUsage: usage.modelUsage,
+        dailyModelTokens: usage.dailyModelTokens,
+        lastComputedDate: usage.lastComputedDate ?? (base?.lastComputedDate as string | undefined),
+        // Carried to all three callers, the page and /stats on either bot,
+        // so a figure built from fewer transcripts than exist can say so
+        // rather than read as a smaller bill.
+        unreadable,
+      } as ClaudeStats;
+      statsMemo = { at: Date.now(), value: merged };
+      return merged;
     }
 
     // And it survives the branch not being taken, which is the case that
