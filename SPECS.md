@@ -491,6 +491,18 @@ It also keeps `~/.dorothy/token-stats.json`, one entry per Claude session: `{ in
 
 For the Usage page the file is a label on part of the transcripts' spend, never more spend. Every session in it ran inside the claude binary, which writes a transcript, so its `cost` is already counted there, and adding `extraCost` to transcript or ledger cost counts it twice. It cannot be cut by day either: a session's whole running cost sits under its last day, and `extra` marks all of it once a quota passes 100 %.
 
+### On the page
+
+`src/app/usage/page.tsx` reads both sources per day and cuts them with one window, `usageWindow()` in `src/lib/usage-window.ts`: the last 14 days, the last 12 Sunday-to-Saturday weeks, or the last 12 calendar months, the last bar being the day, week or month that holds today. Every tile, provider row and bar is a sum over that window, so the total cost is the sum of the cost bars and of the provider rows, and the latest tile is today, this week or this month.
+
+- **Cost**: `costByModel` from the transcripts, plus the ledger's `daily` rows of every provider but `claude`. Nothing from `token-stats.json`: its over-quota spend is printed under the total as a part of it (`of which ~$X over quota`), summed over the window's days.
+- **Tokens**: in is input, cache reads and cache writes, out is output, for the tiles, the provider rows, the tokens chart and its card.
+- **Messages**: replies, which only the transcripts count.
+- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so.
+- **Where the records start**: the earliest transcript day or the ledger's `oldest`, whichever comes first. When the window starts before it, the header prints `records start <date>` beside the timeframe.
+
+A day of the legacy `stats-cache.json` shape, which the main process returns only when there is no transcript at all, carries no price and no cache, and adds nothing to these figures.
+
 ---
 
 ## §7 Persistence
@@ -609,7 +621,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
-| `/usage` | Usage | Cost and tokens: transcript-derived Claude figures merged with the cross-provider ledger, daily cost, token and message charts, per-model and per-provider tables, catalogue freshness. 1035 lines, the largest page | `Usage · dark` / `· light` / `· daily messages` |
+| `/usage` | Usage | Cost and tokens over one timeframe chosen in the header (14 days, 12 weeks, 12 months): four tiles, the provider rows, and cost, token and message charts on the same bars. Budget rows stay month to date and rate windows live. See §6, On the page | `Usage · dark` (14 days) / `· light` (12 months) / `· daily messages` |
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
