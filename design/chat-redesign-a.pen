@@ -8661,7 +8661,7 @@
                   "id": "ciiyS",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "backend is mid-turn: the card says the message will queue before you send it.",
+                  "content": "backend is mid-turn: the message will queue, and the strip offers to send it now instead.",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -8683,7 +8683,7 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "N4HF8h",
+                  "id": "RgYBP",
                   "name": "notice",
                   "width": "fill_container",
                   "height": 36,
@@ -8701,7 +8701,7 @@
                   "children": [
                     {
                       "type": "rectangle",
-                      "id": "S8QCW",
+                      "id": "AN2Gl",
                       "name": "status",
                       "fill": "$status-running",
                       "width": 8,
@@ -8709,14 +8709,49 @@
                     },
                     {
                       "type": "text",
-                      "id": "rz1dI",
+                      "id": "IqudB",
                       "name": "words",
                       "fill": "$text-secondary",
-                      "content": "backend is working. This message will wait in its queue and reach it when its turn ends.",
+                      "content": "backend is working, so this message will wait in its queue until the turn ends. Send now interrupts that turn.",
                       "lineHeight": 1.4,
                       "fontFamily": "$font-ui",
                       "fontSize": 12,
                       "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "E7giPI",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "aRtQ5",
+                      "name": "button send now",
+                      "height": 26,
+                      "fill": "$surface",
+                      "cornerRadius": "$radius",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "JyUQ1",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "send now",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
                     }
                   ]
                 },
@@ -8873,11 +8908,310 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "An agent that never reports the end of its turn gets the same strip in its own words: docs never says when its turn ends, so this message is held until you send it on from the top of the room.",
+              "content": "An agent that never reports the end of its turn gets the same strip in its own words, and no send now: docs never says when its turn ends, so this message is held until you send it on.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 12,
               "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "VAtG2",
+          "name": "state SEND NOW, CONFIRMING",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "frame",
+              "id": "x7dPn",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Znn3t",
+                  "name": "cap",
+                  "fill": "$text-muted",
+                  "content": "SEND NOW, CONFIRMING",
+                  "lineHeight": 1.6,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "text",
+                  "id": "o4Vzn",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "Send now stops the agent mid-turn, so it asks once, in the strip, before it does.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "wXaBT",
+              "name": "Composer",
+              "clip": true,
+              "width": "fill_container",
+              "fill": "$surface",
+              "cornerRadius": "$radius",
+              "stroke": "$border-strong",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aJSYZ",
+                  "name": "notice",
+                  "width": "fill_container",
+                  "height": 36,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "jLrvP",
+                      "name": "status",
+                      "fill": "$status-running",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "LTshl",
+                      "name": "words",
+                      "fill": "$text-primary",
+                      "content": "Interrupt backend's turn and send this now? What it is doing stops where it is.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kJK1r",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "NNHyk",
+                      "name": "button cancel",
+                      "height": 26,
+                      "cornerRadius": "$radius",
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "IVWYx",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "cancel",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "wglyk",
+                      "name": "button interrupt and send",
+                      "height": 26,
+                      "cornerRadius": "$radius",
+                      "stroke": "$status-error",
+                      "strokeWidth": 1,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "lO5ih",
+                          "name": "label",
+                          "fill": "$status-error",
+                          "content": "interrupt and send",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "j6t6N",
+                  "name": "body",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "E3bie",
+                      "name": "field",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "padding": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "mI1K5",
+                          "name": "text",
+                          "fill": "$text-primary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "When the drain lands, tell frontend so it can wire the queued row.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "i7LQB",
+                      "name": "row",
+                      "width": "fill_container",
+                      "height": 32,
+                      "gap": 4,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "vXPza",
+                          "name": "attach",
+                          "width": 32,
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "uYNLu",
+                              "name": "plus",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "AIdIh",
+                          "name": "picker backend",
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "gap": 6,
+                          "padding": [
+                            0,
+                            8
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "g3bNb",
+                              "name": "status",
+                              "fill": "$status-running",
+                              "width": 8,
+                              "height": 8
+                            },
+                            {
+                              "type": "text",
+                              "id": "ct0cV",
+                              "name": "label",
+                              "fill": "$text-primary",
+                              "content": "backend",
+                              "lineHeight": 1.2,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "sjXqz",
+                              "name": "chevron-down",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "nRfde",
+                          "name": "sp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "SOhgZ",
+                          "name": "send",
+                          "width": 32,
+                          "height": 32,
+                          "fill": "$accent",
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "eKyop",
+                              "name": "arrow-up",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "arrow-up",
+                              "library": "lucide",
+                              "fill": "$on-accent"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -9159,6 +9493,19 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "text",
+              "id": "k3cgo3",
+              "name": "one stopped",
+              "fill": "$text-muted",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "With one stopped agent picked, the same strip names it and offers start: audit is stopped. Nothing you write reaches it until it starts.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 12,
+              "fontWeight": "normal"
             }
           ]
         },
@@ -9592,6 +9939,41 @@
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
                   "content": "an image in the field, or drop files anywhere on the thread: they join the message being written.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ry9Eg",
+              "name": "key Send now",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QVFro",
+                  "name": "k",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": 64,
+                  "content": "Send now",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "TZNV4",
+                  "name": "v",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "a button in the strip, never a key: it interrupts a turn, so it asks once first. Enter always queues.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -17975,7 +18357,7 @@
                   "id": "ZlfWP",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "backend is mid-turn: the card says the message will queue before you send it.",
+                  "content": "backend is mid-turn: the message will queue, and the strip offers to send it now instead.",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -17997,7 +18379,7 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "H2Aa9",
+                  "id": "vdDcY",
                   "name": "notice",
                   "width": "fill_container",
                   "height": 36,
@@ -18015,7 +18397,7 @@
                   "children": [
                     {
                       "type": "rectangle",
-                      "id": "iXNGz",
+                      "id": "NGP3H",
                       "name": "status",
                       "fill": "$status-running",
                       "width": 8,
@@ -18023,14 +18405,49 @@
                     },
                     {
                       "type": "text",
-                      "id": "dlF5F",
+                      "id": "h6R5N",
                       "name": "words",
                       "fill": "$text-secondary",
-                      "content": "backend is working. This message will wait in its queue and reach it when its turn ends.",
+                      "content": "backend is working, so this message will wait in its queue until the turn ends. Send now interrupts that turn.",
                       "lineHeight": 1.4,
                       "fontFamily": "$font-ui",
                       "fontSize": 12,
                       "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "phRin",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ARVB3",
+                      "name": "button send now",
+                      "height": 26,
+                      "fill": "$surface",
+                      "cornerRadius": "$radius",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "zQIE2",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "send now",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
                     }
                   ]
                 },
@@ -18187,11 +18604,310 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "An agent that never reports the end of its turn gets the same strip in its own words: docs never says when its turn ends, so this message is held until you send it on from the top of the room.",
+              "content": "An agent that never reports the end of its turn gets the same strip in its own words, and no send now: docs never says when its turn ends, so this message is held until you send it on.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 12,
               "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bzBBy",
+          "name": "state SEND NOW, CONFIRMING",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "frame",
+              "id": "MBawh",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Puv8J",
+                  "name": "cap",
+                  "fill": "$text-muted",
+                  "content": "SEND NOW, CONFIRMING",
+                  "lineHeight": 1.6,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "text",
+                  "id": "Xg2Q2",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "Send now stops the agent mid-turn, so it asks once, in the strip, before it does.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "GKczr",
+              "name": "Composer",
+              "clip": true,
+              "width": "fill_container",
+              "fill": "$surface",
+              "cornerRadius": "$radius",
+              "stroke": "$border-strong",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "KJqqa",
+                  "name": "notice",
+                  "width": "fill_container",
+                  "height": 36,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "E1VSJF",
+                      "name": "status",
+                      "fill": "$status-running",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "S6uwj",
+                      "name": "words",
+                      "fill": "$text-primary",
+                      "content": "Interrupt backend's turn and send this now? What it is doing stops where it is.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "PxlIy",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kbKej",
+                      "name": "button cancel",
+                      "height": 26,
+                      "cornerRadius": "$radius",
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "R4znxW",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "cancel",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "UYrrl",
+                      "name": "button interrupt and send",
+                      "height": 26,
+                      "cornerRadius": "$radius",
+                      "stroke": "$status-error",
+                      "strokeWidth": 1,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "X0elf",
+                          "name": "label",
+                          "fill": "$status-error",
+                          "content": "interrupt and send",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "c46mTu",
+                  "name": "body",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "KqkVL",
+                      "name": "field",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "padding": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "jSWJK",
+                          "name": "text",
+                          "fill": "$text-primary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "When the drain lands, tell frontend so it can wire the queued row.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "R4frK",
+                      "name": "row",
+                      "width": "fill_container",
+                      "height": 32,
+                      "gap": 4,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Vc0bj",
+                          "name": "attach",
+                          "width": 32,
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "le0FY",
+                              "name": "plus",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "zIH91",
+                          "name": "picker backend",
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "gap": 6,
+                          "padding": [
+                            0,
+                            8
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "fQu7c",
+                              "name": "status",
+                              "fill": "$status-running",
+                              "width": 8,
+                              "height": 8
+                            },
+                            {
+                              "type": "text",
+                              "id": "oQu46",
+                              "name": "label",
+                              "fill": "$text-primary",
+                              "content": "backend",
+                              "lineHeight": 1.2,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "otfgs",
+                              "name": "chevron-down",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "x2go71",
+                          "name": "sp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "HMQi3",
+                          "name": "send",
+                          "width": 32,
+                          "height": 32,
+                          "fill": "$accent",
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "d3bTxB",
+                              "name": "arrow-up",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "arrow-up",
+                              "library": "lucide",
+                              "fill": "$on-accent"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -18473,6 +19189,19 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "text",
+              "id": "gPJeW",
+              "name": "one stopped",
+              "fill": "$text-muted",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "With one stopped agent picked, the same strip names it and offers start: audit is stopped. Nothing you write reaches it until it starts.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 12,
+              "fontWeight": "normal"
             }
           ]
         },
@@ -18906,6 +19635,41 @@
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
                   "content": "an image in the field, or drop files anywhere on the thread: they join the message being written.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "WnIFz",
+              "name": "key Send now",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "RvHxP",
+                  "name": "k",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": 64,
+                  "content": "Send now",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "VLPeg",
+                  "name": "v",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "a button in the strip, never a key: it interrupts a turn, so it asks once first. Enter always queues.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
