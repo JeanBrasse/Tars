@@ -285,6 +285,11 @@ export interface AgentStatus {
   role?: 'orchestrator' | 'worker';
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
+  /** Set by agent:list: the model the agent's last session answered on, read
+   *  from its transcript. It differs from `model` after a `/model` typed into
+   *  the terminal, which lasts for that session only. `model` is what the next
+   *  launch uses. */
+  sessionModel?: string;
   localModel?: string;        // Tasmania model name when provider is 'local'
   savedPrompt?: string;       // Saved task/prompt for re-launching the agent
   obsidianVaultPaths?: string[]; // Obsidian vault paths to mount via --add-dir (read-only)

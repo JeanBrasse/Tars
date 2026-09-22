@@ -107,6 +107,28 @@ describe('resuming happens once per run', () => {
   });
 });
 
+describe('a fork that has not written its transcript yet', () => {
+  const FORK = '3b0f2a6f-15ee-487d-9e1a-728c0c122f53';
+
+  it('resumes the session it continues', () => {
+    // Claude Code writes a forked session's transcript at its first turn.
+    writeTranscript(PROJECT, SESSION);
+    expect(resolveResumeSessionId({ resumableSessionId: FORK, forkedFromSessionId: SESSION, projectPath: PROJECT }, home))
+      .toBe(SESSION);
+  });
+
+  it('resumes the fork itself once it has one', () => {
+    writeTranscript(PROJECT, SESSION);
+    writeTranscript(PROJECT, FORK);
+    expect(resolveResumeSessionId({ resumableSessionId: FORK, forkedFromSessionId: SESSION, projectPath: PROJECT }, home))
+      .toBe(FORK);
+  });
+
+  it('holds the fallback to the same shape check', () => {
+    expect(resolveResumeSessionId({ forkedFromSessionId: "x'; touch /tmp/owned; '", projectPath: PROJECT }, home)).toBeNull();
+  });
+});
+
 describe('the wiring holds', () => {
   const read = (p: string) => fs.readFileSync(p, 'utf-8');
 
@@ -134,11 +156,15 @@ describe('the wiring holds', () => {
       'electron/services/telegram-bot.ts',
       'electron/services/api-routes/agent-routes.ts',
     ];
+    // Counted as calls rather than as one spelling of the argument: agent:start
+    // resolves the id a line above its builder, because a restart names the
+    // session to continue instead (start-launch-settings.test.ts checks that
+    // the id then reaches the command line, for both).
     for (const file of callers) {
       const src = read(file);
       const builds = src.split('buildInteractiveCommand({').length - 1;
-      const passes = src.split('resumeSessionId: consumeResumeSessionId(').length - 1;
-      expect(passes, `${file} builds ${builds} commands but passes the resume id ${passes} times`).toBe(builds);
+      const passes = src.split('consumeResumeSessionId(').length - 1;
+      expect(passes, `${file} builds ${builds} commands but resolves the resume id ${passes} times`).toBe(builds);
     }
   });
 
