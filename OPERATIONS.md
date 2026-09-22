@@ -963,6 +963,18 @@ field Tars has lost track of is taken as "whatever was in it, it emptied", and t
 `UserPromptSubmit` hook confirms it 33 to 57 ms later. Before 1.7.8 only Ctrl+C did, and a
 message could sit behind a stale draft through a whole turn.
 
+**A command typed by hand ends it too.** A `/model` or `/effort` picker answered with the arrows
+and Enter fires no hook, and until 2026-09-23 a message waited behind it until somebody pressed
+Ctrl+C in that terminal (three agents were deaf that way on 2026-09-22). A command leaves three
+records in the session transcript when it finishes, `<local-command-caveat>`, `<command-name>`
+and `<local-command-stdout>`, 44 to 74 ms after the key that closes it (Claude Code 2.1.280). A
+terminal holding a message looks for them every second (`FIELD_PROBE_MS`,
+`lastLocalCommandAt`), and one newer than the last key typed there means the field is empty:
+the message goes in, and the log says `a command typed into <agent>'s terminal has finished`.
+Not while a panel is open: `/config` wrote its records only when it closed. Two cases write
+nothing, `/model` cancelled with Esc and `/help`: there the message waits for the next thing
+typed into that terminal, or for Ctrl+C.
+
 **Where to see one.** The agent's panel says who is waiting; `agent:message-waiting` pushes each
 change and `electronAPI.agent.messagesWaiting()` answers for a panel that opened later. In the
 log, one line when a message starts waiting and one when it goes out:
@@ -977,11 +989,21 @@ grep 'is going out now'
 
 `POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the
 message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
+`send_message`, `start_agent` and `delegate_task` say it too, in a result that begins `HELD:`;
+`delegate_task` then returns at once rather than wait on a turn that has not begun
+(`wait_for_agent` follows it).
+
+**Who a message is from.** A message Tars pastes into a CLI (anything over 200 characters or
+holding a line break) comes after a typed line saying who sent it, as Tars verified it:
+`Message from agent "<name>" ("<id>")` for the agent whose token made the call, `Message from
+Tars` for Tars's own notes and pass, `Message from Telegram`, `Slack` or `Hermes`. Claude Code
+2.1.280 hands a folded paste to the model as `<pasted_content>`, and a dispatch used to arrive
+with nothing outside it. Never a bare name: any agent can be named "Noah".
 
 | Symptom | Cause |
 |---|---|
 | a task "sent" that the CLI never received | the terminal is holding a draft. The panel names it; clear the field with Ctrl+C or send it |
-| the panel says a message is waiting and nothing is in the field | a key Tars does not follow left it unsure. Ctrl+C settles it |
+| the panel says a message is waiting and nothing is in the field | a key Tars does not follow left it unsure, or a command that writes no record (`/model` cancelled with Esc, `/help`). Ctrl+C settles it |
 | a message waiting for an agent nobody is typing into | the pause is per terminal: check that the right one is named in `messagesWaiting()` |
 
 A note is also skipped while the orchestrator is sitting in `GET /api/agents/:id/wait` on that
