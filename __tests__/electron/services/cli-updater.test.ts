@@ -25,6 +25,11 @@ import type { AppSettings } from '../../../electron/types';
 
 const NODE_DIR = path.dirname(process.execPath);
 
+// Every test here starts real processes (node scripts, lsof). The first one
+// took 546 ms alone and 5036 ms beside two other runs on a loaded machine,
+// past vitest's 5 s default: the time is spawning, not the code under test.
+vi.setConfig({ testTimeout: 30_000 });
+
 /** A claude that records its argv and does what FAKE_CLAUDE_MODE says, the way 2.1.280 does. */
 const FAKE_CLAUDE = `#!/usr/bin/env node
 const fs = require('fs'), path = require('path');
@@ -61,6 +66,12 @@ const fs = require('fs'), path = require('path');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_CALLS, JSON.stringify(['npm', ...args]) + '\\n');
 if (args[0] === 'view') { console.log(process.env.FAKE_LATEST); process.exit(0); }
+// An Amp launched while the update downloads: FAKE_START_DURING_DOWNLOAD names its binary.
+if (args[0] === 'install' && !args.includes('--global') && process.env.FAKE_START_DURING_DOWNLOAD) {
+  const child = require('child_process').spawn(process.env.FAKE_START_DURING_DOWNLOAD, ['-e', 'setTimeout(() => {}, 60000)'], { detached: true, stdio: 'ignore' });
+  fs.writeFileSync(process.env.FAKE_START_DURING_DOWNLOAD + '.pid', String(child.pid));
+  child.unref();
+}
 if (args[0] === 'install' && args.includes('--global')) {
   const spec = args[args.length - 1];
   const at = spec.lastIndexOf('@');
@@ -317,7 +328,9 @@ describe('amp as a global npm package', () => {
     expect(result).toMatchObject({ cli: 'amp', outcome: 'updated', from: '0.0.1', to: '0.0.2' });
     const npm = recorded();
     expect(npm.map(c => c.slice(0, 2))).toEqual([['npm', 'view'], ['npm', 'install'], ['npm', 'install']]);
-    expect(npm[0]).toEqual(['npm', 'view', '@sourcegraph/amp', 'version', '--prefix', prefix]);
+    const cache = npm[0][npm[0].indexOf('--cache') + 1];
+    // Without retries: a refused connection fails in under a second and says so.
+    expect(npm[0]).toEqual(['npm', 'view', '@sourcegraph/amp', 'version', '--prefix', prefix, '--cache', cache, '--fetch-retries=0']);
     // The download goes into a scratch prefix, never the real one...
     const scratch = npm[1][npm[1].indexOf('--prefix') + 1];
     expect(scratch).not.toBe(prefix);
@@ -325,7 +338,11 @@ describe('amp as a global npm package', () => {
     expect(npm[1].at(-1)).toBe('@sourcegraph/amp@0.0.2');
     expect(fs.existsSync(scratch)).toBe(false);
     // ...and only then the install over the real one, from what was downloaded.
-    expect(npm[2]).toEqual(['npm', 'install', '--global', '--prefix', prefix, '--prefer-offline', '--no-audit', '--no-fund', '@sourcegraph/amp@0.0.2']);
+    expect(npm[2]).toEqual(['npm', 'install', '--global', '--prefix', prefix, '--cache', cache, '--prefer-offline', '--no-audit', '--no-fund', '@sourcegraph/amp@0.0.2']);
+    // One cache for all three, in the scratch folder, gone with it.
+    expect(npm[1][npm[1].indexOf('--cache') + 1]).toBe(cache);
+    expect(path.dirname(cache)).toBe(path.dirname(scratch));
+    expect(fs.existsSync(path.dirname(cache))).toBe(false);
     // `amp update` would have asked for @ampcode/cli, which EEXISTs on this install.
     expect(JSON.stringify(npm)).not.toContain('@ampcode/cli');
     expect(logLines(ctx)[0]).toContain('amp updated 0.0.1 to 0.0.2: npm install -g @sourcegraph/amp@0.0.2');
@@ -342,7 +359,9 @@ describe('amp as a global npm package', () => {
 
     expect(held.outcome).toBe('deferred');
     expect(held.detail).toContain(`pid ${session.pid}`);
-    expect(recorded().some(c => c.includes('--global'))).toBe(false);
+    // Not even downloaded: with nothing kept between checks, a download per
+    // deferred check would fetch the whole tarball every half hour.
+    expect(recorded().map(c => c[1])).toEqual(['view']);
     expect(fs.existsSync(binary)).toBe(true);
 
     session.kill('SIGKILL');
@@ -350,6 +369,23 @@ describe('amp as a global npm package', () => {
 
     const done = await updateCli('amp', path.join(prefix, 'bin', 'amp'), ctx);
     expect(done).toMatchObject({ outcome: 'updated', from: '0.0.1', to: '0.0.2' });
+  }, 120_000);
+
+  it.skipIf(!hasLsof())('asks again after the download, and holds back for an amp started meanwhile', async () => {
+    const home = path.join(root, 'home');
+    const prefix = path.join(home, 'npm-global');
+    const binary = npmAmp(prefix, '0.0.1', true);
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_START_DURING_DOWNLOAD: binary });
+    try {
+      const result = await updateCli('amp', path.join(prefix, 'bin', 'amp'), ctx);
+
+      expect(result.outcome).toBe('deferred');
+      expect(result.detail).toContain(`pid ${fs.readFileSync(`${binary}.pid`, 'utf8')}`);
+      expect(recorded().map(c => c[1])).toEqual(['view', 'install']);
+      expect(recorded().some(c => c.includes('--global'))).toBe(false);
+    } finally {
+      try { process.kill(Number(fs.readFileSync(`${binary}.pid`, 'utf8')), 'SIGKILL'); } catch { /* not started */ }
+    }
   }, 120_000);
 
   it.each([
@@ -365,6 +401,25 @@ describe('amp as a global npm package', () => {
 
     expect(result.outcome).toBe('unchanged');
     expect(recorded().map(c => c[1])).toEqual(['view']);
+  });
+
+  it.each([
+    ['nothing newer', { FAKE_LATEST: '0.0.1' }],
+    ['a view that fails', { FAKE_LATEST: '' }],
+  ])('keeps npm\'s cache out of the home, and removes it, when there is %s', async (_name, env) => {
+    // ~/.npm is never pruned: it kept 38 MB of every Amp release, even of an
+    // update that was then deferred.
+    const home = path.join(root, 'home');
+    const prefix = path.join(home, 'npm-global');
+    npmAmp(prefix, '0.0.1');
+
+    await updateCli('amp', path.join(prefix, 'bin', 'amp'), ctxFor(home, env));
+
+    const caches = recorded().map(c => c[c.indexOf('--cache') + 1]);
+    expect(caches).toHaveLength(1);
+    expect(recorded()[0]).toContain('--cache');
+    expect(path.relative(home, caches[0]).startsWith('..')).toBe(true);
+    expect(fs.existsSync(path.dirname(caches[0]))).toBe(false);
   });
 
   it('leaves amp alone when the user turned its updates off in their own settings', async () => {
