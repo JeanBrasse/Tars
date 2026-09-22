@@ -527,17 +527,20 @@ so neither updates itself inside a Tars terminal. Tars updates them instead
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
 | claude | the native installer: `~/.local/bin/claude` is a link into `~/.local/share/claude/versions/` | `claude update` |
-| amp | a global npm package | `npm view <package> version`, a download into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, with the npm beside that prefix's node |
+| amp | a global npm package | `npm view <package> version`, a download into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, with the npm beside that prefix's node and a cache in the scratch folder, deleted after |
 
 What a running session sees: nothing. A claude update writes the new version beside the old one
 and swaps the link in one step; the session keeps running its own file, and its next turn
 answers. New launches and restarts start on the new version. A session that outlives two newer
-releases can see its file deleted by claude's own cleanup (SPECS §13): its turns go on, a `claude`
-started from inside it does not, and a restart ends it.
+releases can see its file deleted by claude's own cleanup (SPECS §13): its turns go on, but its
+Grep and Glob fail (every time with no `rg` on PATH, once with Homebrew's), as does a `claude`
+started from inside it, and a restart ends it.
 
 An Amp update is never started while a process has the Amp binary open (`lsof -t`), because npm
 removes the old package before the new one is in place: `amp` is missing for a few seconds while
-it runs, and a launch in those seconds fails.
+it runs, and a launch in those seconds fails. npm's cache for it lives in the scratch folder and
+goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
+package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
 
 Everything else is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those

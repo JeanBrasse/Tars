@@ -37,8 +37,15 @@ import { buildFullPath } from '../utils/path-builder';
  *   newer versions pushing it out of those two, the running version survived,
  *   and was deleted by the first cleanup after that session exited, with a
  *   second session still on it. That session's next turn answered all the
- *   same, from the deleted file. A new launch, and so a restart, starts on the
- *   new version.
+ *   same, from the deleted file, but its Grep and Glob tools did not (QA, on
+ *   three sessions of 2.1.280): native claude runs its embedded ripgrep by
+ *   starting its own file again, as `rg`. With no `rg` on PATH every later
+ *   search fails, `posix_spawn 'rg'` ENOENT; with Homebrew's on PATH, as in a
+ *   Tars terminal on Noah's machine, the first one fails with a misleading
+ *   "ripgrep not found on PATH" and the next ones go through the system `rg`.
+ *   USE_BUILTIN_RIPGREP=0, with `rg` on PATH, kept both working: a later
+ *   change to managedCliEnv. A new launch, and so a restart, starts on the new
+ *   version, and ends it.
  * - Two or three `claude update` at once all succeed and leave one install.
  *   Tars still runs one pass at a time.
  *
@@ -51,7 +58,9 @@ import { buildFullPath } from '../utils/path-builder';
  * and 3.3 to 9.3 s when the tarballs were already cached, followed by 0.2 to
  * 0.9 s on a 141-byte placeholder that prints "Amp native binary not
  * installed". Hence the download into a scratch prefix first. A launch that
- * falls in the window still fails: nothing here holds a launch back.
+ * falls in the window still fails: nothing here holds a launch back. npm's
+ * cache for all of it lives in that scratch folder and goes with it, since
+ * ~/.npm is never pruned and kept 38 MB of every Amp release.
  *
  * `amp update` itself cannot do it for Noah: his Amp is installed as
  * @sourcegraph/amp, renamed since to @ampcode/cli, and `amp update` runs
@@ -311,35 +320,55 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
   const npm = locate('npm', env.PATH);
   if (!npm) return { cli, outcome: 'failed', from, detail: `no npm found to update ${install.pkg} in ${install.prefix}` };
 
-  const view = await runFile(npm, ['view', install.pkg, 'version', '--prefix', install.prefix], env, QUERY_TIMEOUT_MS, ctx.home);
-  const latest = lines(view.stdout).pop();
-  if (view.code !== 0 || !latest) return { cli, outcome: 'failed', from, detail: `npm view ${install.pkg}: ${failure(view)}` };
-  if (!newer(latest, from)) return { cli, outcome: 'unchanged', from, detail: `${install.pkg} ${latest} is the latest on npm` };
-
-  // Downloaded before anything is removed: the window in which the binary is
-  // missing then lasts as long as unpacking, not as long as the network.
+  // Everything npm fetches here goes into a cache of its own, in a scratch
+  // folder deleted at the end, and never into ~/.npm, which npm never prunes.
+  // Measured by QA: each Amp release left 38 MB there for good, a 27.8 MB
+  // tarball and its metadata, even an update that was then deferred, and Amp
+  // publishes about ten a day. The price is the package's metadata fetched whole
+  // on every check instead of revalidated: 1.2 MB on the wire for
+  // @sourcegraph/amp.
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-cli-update-'));
-  let fetched: Run;
+  const cache = path.join(scratch, 'npm-cache');
   try {
-    fetched = await runFile(npm, ['install', '--prefix', scratch, '--ignore-scripts', '--no-save', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, scratch);
+    // No retries: npm retries a refused connection for 70 s, past the query
+    // timeout, and the log then said "exit timeout" instead of naming the network.
+    const view = await runFile(npm, ['view', install.pkg, 'version', '--prefix', install.prefix, '--cache', cache, '--fetch-retries=0'], env, QUERY_TIMEOUT_MS, ctx.home);
+    const latest = lines(view.stdout).pop();
+    if (view.code !== 0 || !latest) return { cli, outcome: 'failed', from, detail: `npm view ${install.pkg}: ${failure(view)}` };
+    if (!newer(latest, from)) return { cli, outcome: 'unchanged', from, detail: `${install.pkg} ${latest} is the latest on npm` };
+
+    // Asked before the download as well as after it: with nothing kept between
+    // checks, an update deferred every half hour would download the tarball
+    // again each time.
+    const deferred = runningFor(cli, from, latest, install.binary, await processesUsing(install.binary, ctx));
+    if (deferred) return deferred;
+
+    // Downloaded before anything is removed: the window in which the binary is
+    // missing then lasts as long as unpacking, not as long as the network.
+    const download = path.join(scratch, 'download');
+    const fetched = await runFile(npm, ['install', '--prefix', download, '--cache', cache, '--ignore-scripts', '--no-save', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, scratch);
+    if (fetched.code !== 0) return { cli, outcome: 'failed', from, detail: `downloading ${install.pkg}@${latest}: ${failure(fetched)}` };
+
+    const deferredNow = runningFor(cli, from, latest, install.binary, await processesUsing(install.binary, ctx));
+    if (deferredNow) return deferredNow;
+
+    const run = await runFile(npm, ['install', '--global', '--prefix', install.prefix, '--cache', cache, '--prefer-offline', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, ctx.home);
+    const now = readJson(path.join(install.prefix, 'lib', 'node_modules', install.pkg, 'package.json'))?.version;
+    const took = `${(run.ms / 1000).toFixed(1)} s`;
+    if (run.code === 0 && typeof now === 'string' && now !== from) {
+      return { cli, outcome: 'updated', from, to: now, detail: `npm install -g ${install.pkg}@${latest} (${took})` };
+    }
+    return { cli, outcome: 'failed', from, detail: `npm install -g ${install.pkg}@${latest}: ${failure(run)}, ${took}` };
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
-  if (fetched.code !== 0) return { cli, outcome: 'failed', from, detail: `downloading ${install.pkg}@${latest}: ${failure(fetched)}` };
+}
 
-  const running = await processesUsing(install.binary, ctx);
-  if (running === null) return { cli, outcome: 'deferred', from, detail: `${latest} is out, and whether ${install.binary} is running could not be checked` };
-  if (running.length > 0) {
-    return { cli, outcome: 'deferred', from, detail: `${latest} is out; waiting for ${running.length === 1 ? 'the process' : `the ${running.length} processes`} running it to end (pid ${running.join(', ')})` };
-  }
-
-  const run = await runFile(npm, ['install', '--global', '--prefix', install.prefix, '--prefer-offline', '--no-audit', '--no-fund', `${install.pkg}@${latest}`], env, INSTALL_TIMEOUT_MS, ctx.home);
-  const now = readJson(path.join(install.prefix, 'lib', 'node_modules', install.pkg, 'package.json'))?.version;
-  const took = `${(run.ms / 1000).toFixed(1)} s`;
-  if (run.code === 0 && typeof now === 'string' && now !== from) {
-    return { cli, outcome: 'updated', from, to: now, detail: `npm install -g ${install.pkg}@${latest} (${took})` };
-  }
-  return { cli, outcome: 'failed', from, detail: `npm install -g ${install.pkg}@${latest}: ${failure(run)}, ${took}` };
+/** The deferral for an update whose binary is in use, or null when nothing runs it. */
+function runningFor(cli: string, from: string, latest: string, binary: string, running: number[] | null): CliUpdateResult | null {
+  if (running === null) return { cli, outcome: 'deferred', from, detail: `${latest} is out, and whether ${binary} is running could not be checked` };
+  if (running.length === 0) return null;
+  return { cli, outcome: 'deferred', from, detail: `${latest} is out; waiting for ${running.length === 1 ? 'the process' : `the ${running.length} processes`} running it to end (pid ${running.join(', ')})` };
 }
 
 /** Update one CLI if Tars knows how to for the way it is installed. */
