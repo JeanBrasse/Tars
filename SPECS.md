@@ -129,7 +129,7 @@ Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `sr
 
 `getProvider(id)` falls back to Claude for anything unknown, including `'local'` (Tasmania), which is a Claude sub-mode rather than a provider of its own. `isValidProvider` accepts `'local'` plus the 15 registry keys.
 
-`safeEffort()` is exported from the same module and validates reasoning effort against `{low, medium, high, xhigh, max}` before it lands unquoted in a shell string. The value arrives over IPC, so it is validated at the point of use, not trusted from the caller.
+`safeEffort()` is exported from the same module and validates reasoning effort against `{low, medium, high, xhigh, max}` before it lands unquoted in a shell string. The value arrives over IPC, so it is validated at the point of use, not trusted from the caller. `effortFlag()` turns it into ` --effort <level>` for the fourteen providers on the claude binary, medium included: without the flag Claude Code starts at the effort it last saved for that model from any terminal (`/effort` writes `modelSettings.<model>.effortLevel` into `~/.claude/settings.json`), not at medium. An agent with no effort gets no flag, which is the one case that means the CLI's own.
 
 ### The registry (19 providers)
 
@@ -257,7 +257,7 @@ Session updates handled: `agent_message_chunk`, `tool_call`, `tool_call_update`,
 
 **`registry.ts`.** Launch commands are fetched from the public ACP registry (`agentclientprotocol/registry`, one `agent.json` per agent) rather than hardcoded, and cached in `~/.dorothy/acp-registry.json` with a 24 h TTL. `PROVIDER_TO_ACP` maps six providers: `claude→claude-acp`, `codex→codex-acp`, `gemini`, `grok`, `opencode`, `pi`. `FALLBACK` covers five of the six: **`pi` has no fallback entry, so `pi` only has an ACP mode when the registry fetch has succeeded at least once.** Fetch failures are per-agent and never throw.
 
-**`delegate.ts`: `delegateOverAcp()`.** Resolves the launch entry, checks the cwd (`worktreePath ?? projectPath`) exists, builds the session with provider env vars plus `CLAUDE_AGENT_ID`/`CLAUDE_PROJECT_PATH`, and attaches two MCP servers (`tars-memory` and `claude-mgr-orchestrator`) if their bundles exist. Orchestrators get `ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook']`. On completion it calls `recordUsage()` and returns `{ ok: stopReason === 'end_turn', transport: 'acp', stopReason, text, toolCalls, usage, costUSD }`. The session is stopped in `finally`: a delegated task is a unit of work, not a conversation.
+**`delegate.ts`: `delegateOverAcp()`.** Resolves the launch entry, checks the cwd (`worktreePath ?? projectPath`) exists, builds the session with provider env vars plus `CLAUDE_AGENT_ID`/`CLAUDE_PROJECT_PATH`, and attaches two MCP servers (`tars-memory` and `claude-mgr-orchestrator`) if their bundles exist. Orchestrators get `ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook']`. Once the session is open it sets the agent's model, then its effort, through `session/set_config_option`, when the agent offers those options (claude-agent-acp does, in 0.70 as in 0.79): a delegation used to run on the adapter's defaults, whatever the agent was set to. A value the agent refuses is logged and the turn runs anyway. On completion it calls `recordUsage()` and returns `{ ok: stopReason === 'end_turn', transport: 'acp', stopReason, text, toolCalls, usage, costUSD }`. The session is stopped in `finally`: a delegated task is a unit of work, not a conversation.
 
 ### The MCP orchestrator: `mcp-orchestrator/`
 
@@ -298,6 +298,8 @@ else                                  → spawnAgentSession(), mode 'start'
 
 `spawnAgentSession()` is shared by `/start`, the `/message` reconnect path and `/dispatch`, so every entry point gets identical behaviour: the identity header, the skills prefix, the MCP config for flag-strategy providers, orchestrator instructions (`electron/resources/super-agent-instructions.md`) via `--append-system-prompt-file`, the tool block, trust pre-acceptance, stale-PTY kill, the `ptyCwd` invariant and the session-ownership reset.
 
+The model on its command line is the one the call names, or else the agent's own, `agent.model`. The same rule holds for every launch from a window (`agent:start`, which the Kanban automation and the restart below call too, through `core/agent-launch.ts`), for Telegram and Slack, and for ACP. It is never the model the agent's previous session last answered on: that reading, from the transcript, comes back to the renderer as `sessionModel` on `agent:list`, for a screen that wants to show a `/model` typed into a terminal. Such a `/model` lasts for that session; the next launch uses the agent's model.
+
 Every prompt is prefixed with an identity header, because agents that don't know who they are ask the orchestrator:
 
 ```
@@ -315,7 +317,27 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 - Only `session-start.sh` sends a `source` field. A post carrying `source` **registers** the session and never touches status: its startup `"idle"` would otherwise resolve the orchestrator's long-poll before the task began.
 - Any post whose `session_id` equals `lastKilledSessionId` is dropped; any post whose `session_id` differs from the registered `currentSessionId` is dropped as stale. `currentSessionId` is *not* cleared on idle: the one-shot process is still alive at its prompt and its later hooks must keep matching.
 - Fallback: if `SessionStart` never arrived (API briefly down at boot), the first non-tombstoned session that reports in is adopted.
+- A restart for changed settings (below) kills the PTY and lays the tombstone the same way, then continues the conversation with `--resume <id> --fork-session`: the same conversation under a new session id. Resumed under its own id, the restarted session would be the tombstone, and every one of its posts, registration included, would be dropped.
+- Claude Code writes a forked session's transcript at its first turn, not before. Until then the agent keeps `forkedFromSessionId`, the session the fork continues, and `resolveResumeSessionId` falls back to it: a second restart, or an app restart, with no turn in between would otherwise find no transcript and start a fresh session.
 - `loadAgents()` clears `currentSessionId`, `lastKilledSessionId`, `ptyId`, `ptyCwd` and `waitingReason`: session ownership is runtime state, and a persisted session would make the guard reject the next real session's hooks.
+
+### Settings that apply at launch: `core/agent-restart.ts`
+
+A CLI reads its model, its effort, its permission flag, its orchestrator restrictions and its `--add-dir` folders once, when it starts. When `agent:update` changes one of them (`model`, `effort`, `permissionMode`, the orchestrator flags from the role, the name or `orchestratorMode`, `secondaryProjectPath`, `obsidianVaultPaths`, the local provider's `localModel`), the agent's CLI is restarted on the new values through the same launch as `agent:start`, with no task, and continues its conversation (see Session ownership). When:
+
+| The agent | What happens |
+|---|---|
+| no CLI running in its terminal | nothing; the next launch reads the new values |
+| on a CLI other than claude (codex, gemini, grok, opencode, pi, amp) | nothing until its next launch: these report no end of turn, and their input field is not one the draft model follows |
+| `running`, or `waiting` on a permission answer | restarted when the turn ends, on the status change that ends it |
+| a note or room message held for it by agent-watch | restarted once that went in (it is bound to the session and would be dropped with it) |
+| work its session left running in the background when the turn ended (a Bash command, a Monitor, an asynchronous Agent) | restarted once that work reported back and the turn it started ended (`pendingBackgroundWork` in `services/agent-truth.ts`, read from the transcript) |
+| its field holds something typed and not sent, was typed in less than 5 s ago, holds queued messages, or Tars typed into it less than 3 s ago | restarted once the field is free (`fieldInUse` in `core/pty-manager.ts`) |
+| between turns, field free | restarted at once |
+
+After the restart the agent is `idle` at its prompt. Each decision is one `[restart] <agent>: ...` line in the main process log. Skills are not a launch setting (they only preface a task); the provider, the CLI path, the project and the worktree already end the terminal when they change.
+
+A start with no task, which is every Dashboard start and autostart and every restart, leaves the agent `idle`. It used to set `running`, which nothing cleared until a turn the CLI never had came to an end, and agent-watch writes nothing to a `running` agent.
 
 ### Cross-project scoping
 
@@ -733,6 +755,7 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **The bus leaves three things out of v1, on purpose.** Nothing writes into a turn Tars knows is running: that is a decision for Noah and the control is drawn disabled with its reason. There is no heartbeat. And there is no ACP steering or cancellation, since `AcpSession.cancel()` still has no caller. None of these is inferred from silence: idleness detection is deliberately absent.
 - **A message to a CLI with no end of turn is held, not lost.** amp, codex, grok, opencode and pi never leave `running` in an interactive session, so nothing is queued for them and the delivery reads NOT SENT with its reason and the time it was refused. `bus:releaseNotSent(agentId)` is the way out, and only a human calls it: it writes what is held into that terminal, oldest first, and the messages become `delivered`. Tars still refuses to do this by itself, because it cannot know the state of that session. Two deliberate exceptions live here: the session barrier does not apply, so an agent killed and relaunched between the button being drawn and the click receives them in its new session, because a person is aiming at the agent and not at a session id; and one release runs at a time per agent, a second refused with its reason rather than queued, because two would interleave their writes into one terminal.
 - **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path.
+- **A changed model or effort restarts only the CLIs on the claude binary.** codex, gemini, grok, opencode, pi and amp report no end of turn, so they take new settings at their next launch. The thirteen alternative providers restart without their conversation: only `claude` passes `--resume`.
 - **The `/run-task` status event name does not match what `/wait` listens on.** `emit('status', …)` vs `` `status:${agentId}` ``.
 - **The caller-identity header name has drifted between the MCP source and the server.** Shipped bundles still send the old name and work; rebuilding the MCP servers disables project scoping and 403s every guarded route until one side is renamed.
 - **`pi` has no ACP fallback entry.** If the ACP registry has never been reachable, `pi` has no ACP mode at all.

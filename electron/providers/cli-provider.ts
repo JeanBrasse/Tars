@@ -45,6 +45,12 @@ export interface InteractiveCommandParams {
    * start fresh, which is what they did before.
    */
   resumeSessionId?: string;
+  /**
+   * Continue `resumeSessionId` under a new session id rather than its own. A
+   * restart needs this: the session it resumes is the one it just killed, whose
+   * id is the tombstone the hooks routes refuse posts from.
+   */
+  forkSession?: boolean;
 }
 
 /**
@@ -286,6 +292,28 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;
+}
+
+/**
+ * The agent's effort as the CLI's flag: every level Tars stores, medium too.
+ *
+ * Medium used to be left off, as if no flag meant medium. It means whatever the
+ * CLI picks by itself, and Claude Code picks the effort last saved for that
+ * model by `/effort` in any session on the machine. Measured on 2.1.280:
+ * `/effort high` writes `modelSettings.<model>.effortLevel` into
+ * ~/.claude/settings.json, and a later launch of that model without the flag
+ * comes up at high. An agent set to medium therefore ran at whatever level
+ * somebody last chose in another terminal. With the flag, each of low, medium,
+ * high, xhigh and max comes up as passed, read back from the session header,
+ * and the flag wins over the saved level.
+ *
+ * No effort on the agent, no flag: that one does mean the CLI's own. Shared by
+ * the fourteen providers that run the claude binary, which each carried their
+ * own copy of the medium exception.
+ */
+export function effortFlag(effort: string | undefined): string {
+  const level = safeEffort(effort);
+  return level ? ` --effort ${level}` : '';
 }
 
 /**

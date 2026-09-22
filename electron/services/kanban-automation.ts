@@ -11,6 +11,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentStatus, AgentCharacter } from '../types';
+import { launchAgent } from '../core/agent-launch';
 import type { KanbanTask } from '../handlers/kanban-handlers';
 import * as os from 'os';
 
@@ -24,7 +25,6 @@ export interface KanbanAutomationDependencies {
     name?: string;
     permissionMode?: 'normal' | 'auto' | 'bypass';
   }) => Promise<AgentStatus>;
-  startAgent: (id: string, prompt: string, options?: { model?: string }) => Promise<void>;
   saveAgents: () => void;
 }
 
@@ -137,14 +137,18 @@ export async function createAgentForTask(task: KanbanTask): Promise<string> {
 }
 
 /**
- * Start an agent with a task prompt
+ * Start an agent with a task prompt.
+ *
+ * Through the one launch every window uses (core/agent-launch.ts), so a task
+ * from the board runs on the agent's own model and effort, with its MCP
+ * servers and its provider. This used to type a bare
+ * `claude --dangerously-skip-permissions`, built in main.ts, which ran on
+ * whatever the CLI defaulted to. The permission it imposed is kept: board
+ * tasks run unattended.
  */
 export async function startAgentForTask(agentId: string, prompt: string): Promise<void> {
-  if (!deps) {
-    throw new Error('Kanban automation not initialized');
-  }
-
-  await deps.startAgent(agentId, prompt);
+  const result = await launchAgent(agentId, prompt, { permissionMode: 'bypass' });
+  if (!result.success) throw new Error(result.error);
 }
 
 /**

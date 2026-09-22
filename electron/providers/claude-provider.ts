@@ -11,7 +11,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag } from './cli-provider';
 import { DATA_DIR } from '../constants';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
@@ -56,6 +56,9 @@ export class ClaudeProvider implements CLIProvider {
     // start.
     if (params.resumeSessionId) {
       command += ` --resume '${params.resumeSessionId}'`;
+      // `--fork-session`: "When resuming, create a new session ID instead of
+      // reusing the original", per the same --help. Measured on 2.1.280.
+      if (params.forkSession) command += ' --fork-session';
     }
 
     // Model
@@ -86,9 +89,7 @@ export class ClaudeProvider implements CLIProvider {
     command += orchestratorToolFlags(params.orchestratorMode);
 
     // Effort level
-    if (safeEffort(params.effort) && params.effort !== 'medium') {
-      command += ` --effort ${safeEffort(params.effort)}`;
-    }
+    command += effortFlag(params.effort);
 
     // Chrome browser sharing (uses the user's logged-in Chrome via claude-in-chrome extension)
     if (params.chrome) {

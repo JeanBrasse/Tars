@@ -20,7 +20,8 @@ import { emitAgentStatus } from '../agent-events';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
-import { withSessionTruth, sessionModel } from '../agent-truth';
+import { withSessionTruth } from '../agent-truth';
+import { noteLaunch } from '../../core/agent-restart';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
@@ -164,12 +165,12 @@ async function spawnAgentSession(
     if (fs.existsSync(candidate)) mcpConfigPath = candidate;
   }
 
-  // An explicit model on this call wins; otherwise the session's own model
-  // wins over the record. Typing `/model opus` into the terminal used to be
-  // undone the next time the PTY was respawned, because the command was
-  // rebuilt from a record nothing had updated. The identity header above
-  // already carries the branch for the same reason.
-  const resolvedModel = opts.model || sessionModel(agent) || agent.model;
+  // An explicit model on this call wins, otherwise the model the agent is set
+  // to. Not the model its last session answered on: that is the session this
+  // spawn replaces, and preferring it put every agent moved to a new model in
+  // the Agents page back on the old one. A `/model` typed into a terminal
+  // lasts for that session; the Agents page is where a model is kept.
+  const resolvedModel = opts.model || agent.model;
   const effectiveMode = opts.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal');
 
 
@@ -257,6 +258,8 @@ async function spawnAgentSession(
   if (agent.currentSessionId) {
     agent.lastKilledSessionId = agent.currentSessionId;
   }
+  // Whatever it resumes, this session is not a fork waiting on its first turn.
+  agent.forkedFromSessionId = undefined;
 
   // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd.
   ensureProjectTrusted(rawWorkingDir);
@@ -295,6 +298,7 @@ async function spawnAgentSession(
 
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
+  noteLaunch(ptyProcess, agent);
 
   agent.ptyId = ptyId;
   // The link recorded at the top of the route named the session that was live

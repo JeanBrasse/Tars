@@ -3,6 +3,7 @@ import { AcpSession, type TurnResult } from './client';
 import { acpLaunchFor, loadAcpRegistry } from './registry';
 import { getMcpOrchestratorPath, getMcpMemoryPath } from '../mcp-orchestrator';
 import { getProvider } from '../../providers';
+import { safeEffort } from '../../providers/cli-provider';
 import type { AgentStatus, AppSettings } from '../../types';
 import * as fs from 'fs';
 import { recordUsage } from '../usage-ledger';
@@ -138,6 +139,19 @@ export async function delegateOverAcp(opts: {
 
   try {
     await session.start();
+    // The agent's own model and effort. A launch in a terminal puts them on the
+    // command line; this one has none, so the session is configured once open,
+    // through the options the agent offers, model first because the effort
+    // levels on offer depend on the model. Without this every delegation ran
+    // on the adapter's default model and effort, whatever the agent was set to.
+    const model = agent.model && agent.model !== 'default' ? agent.model : undefined;
+    if (model && !(await session.setConfigOption('model', model))) {
+      console.warn(`[acp] ${agent.name || agent.id}: this run is not on ${model}, the agent did not take it`);
+    }
+    const effort = safeEffort(agent.effort);
+    if (effort && !(await session.setConfigOption('effort', effort))) {
+      console.warn(`[acp] ${agent.name || agent.id}: this run is not at ${effort} effort, the agent did not take it`);
+    }
     const turn: TurnResult = await session.prompt(task, opts.timeoutMs);
 
     // Every provider reports its tokens over ACP, which is the only place
