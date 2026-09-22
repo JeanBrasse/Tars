@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       model?: string;
       localModel?: string;
       obsidianVaultPaths?: string[];
+      /** The Orchestrator toggle: 'orchestrator' makes it its project's one. */
+      role?: 'orchestrator' | 'worker';
+      /** The toggle's old name, read only when `role` is absent. */
       orchestratorMode?: boolean;
       cliPath?: string;
     }) => ipcRenderer.invoke('agent:create', config),
@@ -73,6 +76,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       savedPrompt?: string | null;
       obsidianVaultPaths?: string[];
       worktree?: { enabled: boolean; branchName: string };
+      /** The Orchestrator toggle: 'orchestrator' takes the role from the
+       *  project's current one, which becomes a worker; both CLIs restart. */
+      role?: 'orchestrator' | 'worker';
+      /** The toggle's old name, read only when `role` is absent. */
       orchestratorMode?: boolean;
       cliPath?: string | null;
     }) => ipcRenderer.invoke('agent:update', params),

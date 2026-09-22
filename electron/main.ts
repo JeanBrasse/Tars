@@ -80,6 +80,7 @@ import {
 import { configureStatusHooks } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
 import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
+import { assignRole } from './core/agent-role';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -544,6 +545,8 @@ app.whenReady().then(async () => {
         name: config.name || `Agent ${id.slice(0, 4)}`,
         permissionMode: config.permissionMode || 'auto',
       };
+      // A board creates workers, whatever it names them.
+      assignRole(status, 'worker', agents.values());
 
       agents.set(id, status);
       saveAgents();

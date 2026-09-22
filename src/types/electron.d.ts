@@ -278,10 +278,12 @@ export interface AgentStatus {
   skipPermissions?: boolean;
   permissionMode?: 'normal' | 'auto' | 'bypass';
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-  /** Orchestrator mode: agent cannot edit files directly; must delegate. */
+  /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;
-  /** Set by team templates. Mirrors electron/types/index.ts, which has
-   *  carried it all along; the renderer copy simply never did. */
+  /** The Orchestrator toggle, and nothing else: never read from the name.
+   *  An orchestrator gets the orchestration instructions, cannot edit files,
+   *  sits in the global room and answers Telegram and Slack. A project has
+   *  one at most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
@@ -399,6 +401,9 @@ export interface TeamTemplateMember {
   skills: string[];
   savedPrompt?: string;
   worktreeBranch?: string;
+  /** The Orchestrator toggle of the agent this member deploys. */
+  role?: 'orchestrator' | 'worker';
+  /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;
 }
 
@@ -715,6 +720,10 @@ export interface ElectronAPI {
       provider?: AgentProvider;
       localModel?: string;
       obsidianVaultPaths?: string[];
+      /** The Orchestrator toggle: 'orchestrator' takes the role from the
+       *  project's current one, which becomes a worker and restarts. */
+      role?: 'orchestrator' | 'worker';
+      /** @deprecated Send `role`. Read only when `role` is absent. */
       orchestratorMode?: boolean;
     }) => Promise<AgentStatus & { ptyId: string }>;
     update: (params: {
@@ -732,6 +741,10 @@ export interface ElectronAPI {
       savedPrompt?: string | null;
       obsidianVaultPaths?: string[];
       worktree?: WorktreeConfig;
+      /** The Orchestrator toggle: 'orchestrator' takes the role from the
+       *  project's current one, which becomes a worker; both CLIs restart. */
+      role?: 'orchestrator' | 'worker';
+      /** @deprecated Send `role`. Read only when `role` is absent. */
       orchestratorMode?: boolean;
       cliPath?: string | null;
     }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;

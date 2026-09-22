@@ -58,7 +58,9 @@ describe('saveAgents', () => {
     manager.saveAgents();
 
     const raw = JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf-8'));
-    expect(raw.version).toBe(2);
+    // 3 since the role is the Orchestrator toggle's: a file below it is
+    // migrated once on load (core/agent-role.ts).
+    expect(raw.version).toBe(3);
     expect(raw.agents).toHaveLength(1);
 
     manager.agents.clear();
@@ -223,6 +225,85 @@ describe('loadAgents', () => {
     manager.loadAgents();
 
     expect(manager.agents.get('o1')?.role).toBe('orchestrator');
+  });
+});
+
+describe('the role on load', () => {
+  const role = (id: string) => {
+    const a = manager.agents.get(id)!;
+    return { role: a.role, orchestratorMode: a.orchestratorMode };
+  };
+
+  it('migrates a file from before the toggle was the role: toggle on, or the role the name gave', () => {
+    // What 1.7.9 wrote: the role stored from the name, the toggle beside it.
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify({ version: 2, agents: [
+      agent('named', { name: 'Tars-Orchestrator', role: 'orchestrator', orchestratorMode: true, projectPath: '/p/tars' }),
+      agent('toggle-off', { name: '1212-Orchestrator', role: 'orchestrator', orchestratorMode: false, projectPath: '/p/1212' }),
+      agent('no-role', { name: 'Super Agent', projectPath: '/p/sak' }),
+      agent('toggled-worker', { name: 'Reviewer', role: 'worker', orchestratorMode: true, projectPath: '/p/drone' }),
+      agent('worker', { name: 'Tars-Backend', role: 'worker', orchestratorMode: false, projectPath: '/p/tars' }),
+    ] }));
+
+    manager.loadAgents();
+
+    expect(role('named')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    // Its toggle was off and changed nothing; it stays what it was.
+    expect(role('toggle-off')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    expect(role('no-role')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    // The toggle was on: it is the role now.
+    expect(role('toggled-worker')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    expect(role('worker')).toEqual({ role: 'worker', orchestratorMode: false });
+
+    manager.saveAgents();
+    expect(JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf-8')).version).toBe(3);
+  });
+
+  it('migrates once: after that the name is never read', () => {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify({ version: 2, agents: [
+      agent('lead', { name: 'Tars-Orchestrator', role: 'orchestrator', projectPath: '/p/tars' }),
+    ] }));
+    manager.loadAgents();
+    manager.saveAgents();
+
+    // Renamed on disk, and a worker named like an orchestrator beside it.
+    const file = JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf-8'));
+    file.agents[0].name = 'Tars-Lead';
+    file.agents.push(agent('docs', { name: 'Orchestrator docs', role: 'worker', projectPath: '/p/tars' }));
+    file.agents.push(agent('bare', { name: 'Super Agent', projectPath: '/p/other' }));
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify(file));
+    manager.agents.clear();
+    manager.loadAgents();
+
+    expect(role('lead')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    expect(role('docs')).toEqual({ role: 'worker', orchestratorMode: false });
+    // A record with no role in a current file is a worker, whatever its name.
+    expect(role('bare')).toEqual({ role: 'worker', orchestratorMode: false });
+  });
+
+  it('reads the role, not the old toggle field, from a current file', () => {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify({ version: 3, agents: [
+      agent('o', { role: 'orchestrator', orchestratorMode: false, projectPath: '/p/a' }),
+      agent('w', { role: 'worker', orchestratorMode: true, projectPath: '/p/b' }),
+    ] }));
+
+    manager.loadAgents();
+
+    expect(role('o')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    expect(role('w')).toEqual({ role: 'worker', orchestratorMode: false });
+  });
+
+  it('keeps one orchestrator per project: the first in the file', () => {
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify({ version: 2, agents: [
+      agent('first', { name: 'Orchestrator', role: 'orchestrator', projectPath: '/p/tars' }),
+      agent('other-project', { name: 'Orchestrator', role: 'orchestrator', projectPath: '/p/sak' }),
+      agent('second', { name: 'Planner', role: 'worker', orchestratorMode: true, projectPath: '/p/tars' }),
+    ] }));
+
+    manager.loadAgents();
+
+    expect(role('first')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    expect(role('other-project')).toEqual({ role: 'orchestrator', orchestratorMode: true });
+    expect(role('second')).toEqual({ role: 'worker', orchestratorMode: false });
   });
 });
 

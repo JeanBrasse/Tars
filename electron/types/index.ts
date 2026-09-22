@@ -42,6 +42,9 @@ export type AgentPermissionMode = 'normal' | 'auto' | 'bypass';
  */
 export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+/** What the Orchestrator toggle sets. See core/agent-role.ts. */
+export type AgentRole = 'orchestrator' | 'worker';
+
 export interface AgentStatus {
   id: string;
   status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
@@ -69,14 +72,15 @@ export interface AgentStatus {
   skipPermissions?: boolean;
   permissionMode?: AgentPermissionMode;
   effort?: AgentEffort;
-  /** When true, the agent is an orchestrator and should not have Edit/Write
-   *  implementation tools available: it can only read, delegate, and use
-   *  shell/git commands. See BUG 5. */
+  /** The Orchestrator toggle's old field, kept equal to `role === 'orchestrator'`
+   *  for the renderer that still reads and sends it. Read `role`. See
+   *  core/agent-role.ts. */
   orchestratorMode?: boolean;
-  /** 'orchestrator' agents delegate work and message other agents of the SAME
-   *  project; 'worker' agents receive tasks. Migrated from name-substring
-   *  matching in loadAgents. */
-  role?: 'orchestrator' | 'worker';
+  /** The Orchestrator toggle. An orchestrator gets the orchestration
+   *  instructions, loses the editing tools, sits in the global room and
+   *  answers Telegram and Slack; a project has one at most. Set by the toggle
+   *  only, never by the name. See core/agent-role.ts. */
+  role?: AgentRole;
   /**
    * The agent that asked for this one's current work, from the
    * X-Tars-Caller-Id header the MCP client sends on every call.
