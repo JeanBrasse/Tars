@@ -4,7 +4,7 @@ import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
-import { spawnAgentPty } from '../../core/agent-pty';
+import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -573,6 +573,30 @@ export async function performDispatch(
   return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson));
 }
 
+/**
+ * Whether a message typed into the agent's terminal reaches a session, which
+ * is then the one thing to do with it. Where it does not, a session is
+ * started with the message as its task, which ends whatever the terminal held.
+ *
+ * A CLI running there is read from the terminal, never from the status alone.
+ * Every turn ends on `idle` (the Stop hook posts it), a failed turn on
+ * `error`, and both leave the CLI at its prompt: /dispatch took those statuses
+ * for "no session", killed the terminal and started a new claude with no
+ * `--resume`, the resume being spent once per run. So a message sent to an
+ * agent that had just finished a turn ended its conversation. Measured on
+ * 2026-09-23 on the orchestrator itself: its last Stop at 02:14:16, no
+ * idle_prompt after it, a report dispatched at 02:22:24, SessionEnd of its
+ * session and SessionStart of a new one within two seconds.
+ *
+ * `running` and `waiting` still take the message without a CLI in view, as
+ * they always did: a session spawned a moment ago runs its shell for a second
+ * before claude is up, and what is typed then reaches it.
+ */
+function sessionTakesMessages(agent: AgentStatus, ptyProcess: ReturnType<typeof ptyProcesses.get>): boolean {
+  if (!ptyProcess) return false;
+  return cliRunningIn(ptyProcess) || agent.status === 'running' || agent.status === 'waiting';
+}
+
 async function performDispatchLocked(
   agent: AgentStatus,
   opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string },
@@ -595,8 +619,8 @@ async function performDispatchLocked(
     }, 409);
     return;
   }
-  if (livePty && (agent.status === 'running' || agent.status === 'waiting')) {
-    // Live claude session mid-task or at a prompt: type the message into it.
+  if (livePty && sessionTakesMessages(agent, livePty)) {
+    // A live session, mid-task or at its prompt: type the message into it.
     const outcome = writeProgrammaticInput(livePty, opts.message, true, {
       agentId: agent.id,
       from: opts.from ?? 'Tars',
@@ -623,7 +647,7 @@ async function performDispatchLocked(
     return;
   }
 
-  // No usable session: spawn a fresh one with the message as the prompt.
+  // No session: spawn a fresh one with the message as the prompt.
   if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode }, ctx, sendJson))) {
     return;
   }
@@ -929,8 +953,19 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     recordRequester(agent, req);
 
-    const spawned = await withAgentLock(agent.id, () =>
-      spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson));
+    const spawned = await withAgentLock(agent.id, async () => {
+      // Starting kills the terminal. With a CLI up in it, that is its session:
+      // refused, as a start from a window is (agent:start). /dispatch types
+      // the task into it instead.
+      if (cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) {
+        sendJson({
+          error: `A CLI already runs in the terminal of "${agent.name || agent.id}": starting would end its session. Send the task with /dispatch, which types it in.`,
+          cliRunning: true,
+        }, 409);
+        return false;
+      }
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson);
+    });
     if (!spawned) return;
 
     sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
@@ -1096,11 +1131,13 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         return;
       }
 
-      if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-        // No live PTY: the claude process exited (e.g. crashed while 'waiting').
-        // Auto-respawn: start a fresh one-shot claude session using the message
-        // as the prompt, identical to the /start path.  This ensures send_message
-        // and delegate_task reconnect transparently instead of timing out.
+      if (!sessionTakesMessages(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) {
+        // No session: the claude process exited (e.g. crashed while 'waiting'),
+        // or the terminal is a shell with no CLI, where a typed message would be
+        // run as a command. Auto-respawn: start a fresh one-shot claude session
+        // using the message as the prompt, identical to the /start path. This
+        // ensures send_message and delegate_task reconnect transparently
+        // instead of timing out.
         if (!(await spawnAgentSession(agent, message, {}, ctx, sendJson))) {
           return;
         }
@@ -1108,7 +1145,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         return;
       }
 
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
+      const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
       if (ptyProcess) {
         const outcome = writeProgrammaticInput(ptyProcess, message, true, {
           agentId: agent.id,

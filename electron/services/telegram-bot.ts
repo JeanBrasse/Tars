@@ -11,6 +11,7 @@ import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
+import { cliRunningIn } from '../core/agent-pty';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch } from '../core/agent-restart';
@@ -742,6 +743,25 @@ export function initTelegramBot() {
           return;
         }
 
+        // A CLI already up in the terminal is a session between turns (every
+        // turn ends on `idle`, a failed one on `error`): the task goes in as a
+        // message. Typed as a launch command it landed in the CLI's own field.
+        if (cliRunningIn(ptyProcess)) {
+          const outcome = writeProgrammaticInput(ptyProcess, task, true, { agentId: agent.id, from: 'Telegram' });
+          if (outcome === 'refused') {
+            telegramBot?.sendMessage(msg.chat.id, `❌ ${agent.name} has too many messages waiting for its terminal.`);
+            return;
+          }
+          agent.status = 'running';
+          agent.currentTask = task.slice(0, 100);
+          agent.lastActivity = new Date().toISOString();
+          saveAgents();
+          telegramBot?.sendMessage(msg.chat.id, outcome === 'held'
+            ? `⏳ ${agent.name}'s session is open but its field is in use: the task goes in once it is free.\n\nTask: ${task}`
+            : `📨 Sent to ${agent.name}, whose session is open.\n\nTask: ${task}`);
+          return;
+        }
+
         // Build command using the shared provider interface (same as agent:start in ipc-handlers)
         const cliProvider = getProvider(agent.provider);
         const binaryPath = cliProvider.resolveBinaryPath(appSettings);
@@ -1236,8 +1256,8 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       return;
     }
 
-    // If agent is running or waiting, send message to the existing Claude session
-    if (superAgent.status === 'running' || superAgent.status === 'waiting') {
+    // If agent is running or waiting, or its CLI is up, send message to the existing Claude session
+    if (superAgent.status === 'running' || superAgent.status === 'waiting' || cliRunningIn(ptyProcess)) {
       // Track that this input came from Telegram
       superAgentTelegramTask = true;
       superAgentOutputBuffer = [];
