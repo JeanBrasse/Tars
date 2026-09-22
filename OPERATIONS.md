@@ -754,8 +754,17 @@ both behave identically. It:
 2. **refuses with `409`** if the agent is `waiting` on a permission dialog: a typed message
    cannot answer arrow-key UI, and the trailing `\r` could *accept* the pending permission:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
-3. types the message into a live `running`/`waiting` session (`mode: "message"`), or
-4. spawns a fresh session with the message as the prompt (`mode: "start"`).
+3. types the message into the session (`mode: "message"`) when a CLI runs in the terminal,
+   whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
+   at its prompt), or when the status is `running`/`waiting` (a session still starting), or
+4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
+   runs: the spawn kills the terminal, and a session it replaced is not resumed.
+
+Until 2026-09-23 step 3 read the status alone, so a message to an agent that had just ended a
+turn (`idle`) spawned over its CLI and threw its conversation away: the hooks log shows it as a
+`SESSION_END` of the agent's session followed within two seconds by a `SESSION_START` of a new
+one. `/message` follows the same rule; `/start` refuses with `409` (`cliRunning: true`) when a CLI
+is up.
 
 ---
 

@@ -291,10 +291,12 @@ Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` wh
 ```
 killStalePty(agent)                       // BUG 4: worktreePath changed after spawn
 if live PTY && waiting on permission  → 409, refuse
-if live PTY && (running || waiting)   → writeProgrammaticInput, clear lastCleanOutput,
-                                         status = running, mode 'message'
+if live PTY && (a CLI runs in it       → writeProgrammaticInput, clear lastCleanOutput,
+     || running || waiting)              status = running, mode 'message'
 else                                  → spawnAgentSession(), mode 'start'
 ```
+
+A CLI running in the terminal is read from the terminal (`cliRunningIn`, its foreground process), not from the status: every turn ends on `idle` (the Stop hook posts it) and a failed one on `error`, with the CLI still at its prompt. Taking those for "no session" spawned a new claude over it, which kills the terminal, with no `--resume` (the resume is spent once per run): a message to an agent that had just finished a turn ended its conversation. `running` and `waiting` still type without a CLI in view, which covers a session spawned a moment ago whose shell has not yet handed over to claude. `/message` follows the same rule, and starts a session rather than type into a bare shell, where the message would run as a command. `/start` answers `409` with `cliRunning: true` when a CLI is up, as `agent:start` does. Telegram `/start_agent`, Slack `start` and a message to the super agent from either type the task into a CLI that is up instead of typing a launch command into its field.
 
 `spawnAgentSession()` is shared by `/start`, the `/message` reconnect path and `/dispatch`, so every entry point gets identical behaviour: the identity header, the skills prefix, the MCP config for flag-strategy providers, orchestrator instructions (`electron/resources/super-agent-instructions.md`) via `--append-system-prompt-file`, the tool block, trust pre-acceptance, stale-PTY kill, the `ptyCwd` invariant and the session-ownership reset.
 
