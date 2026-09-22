@@ -18,8 +18,22 @@ type DispatchResult = {
   success: boolean;
   mode: "message" | "start";
   previousStatus?: string;
+  /**
+   * Nothing was typed yet: the message is queued for the agent's terminal,
+   * whose field is in use, and goes in by itself when it frees. The route has
+   * said so since 1.7.8; the tools answered "Sent message" over it.
+   */
+  held?: boolean;
+  heldReason?: string;
   agent: { id: string; name?: string; status: string };
 };
+
+/** What a caller is told when its message is queued rather than typed. */
+function heldText(agentName: string, what: string, reason?: string): string {
+  return `HELD: ${what} for "${agentName}" is waiting for its terminal and has not been typed in yet. `
+    + (reason ?? "Its field is in use.")
+    + " Nothing needs resending: it goes in by itself once the field is free.";
+}
 
 /**
  * Atomically hand a task to an agent. The server decides message-vs-spawn
@@ -427,6 +441,10 @@ export function registerAgentTools(server: McpServer): void {
         const data = await dispatchToAgent(id, prompt, model, allowCrossProject);
         const agentName = data.agent.name || id;
 
+        if (data.held) {
+          return { content: [{ type: "text", text: heldText(agentName, "The task", data.heldReason) }] };
+        }
+
         if (data.mode === "message") {
           return {
             content: [
@@ -516,6 +534,10 @@ export function registerAgentTools(server: McpServer): void {
         const data = await dispatchToAgent(id, resolvedMessage, undefined, allowCrossProject);
         const agentName = data.agent.name || id;
         const previousStatus = data.previousStatus ?? "idle";
+
+        if (data.held) {
+          return { content: [{ type: "text", text: heldText(agentName, "Your message", data.heldReason) }] };
+        }
 
         if (data.mode === "start") {
           return {
@@ -744,6 +766,19 @@ export function registerAgentTools(server: McpServer): void {
         // lock, so a stale status can never route the prompt to a dead PTY.
         const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject);
         const agentName = dispatched.agent.name || id;
+
+        // Not typed yet: waiting here would wait on a turn that has not
+        // started, for as long as the field stays in use, and then report the
+        // agent as still running. Say it now; wait_for_agent follows it.
+        if (dispatched.held) {
+          return {
+            content: [{
+              type: "text",
+              text: heldText(agentName, "The task", dispatched.heldReason)
+                + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
+            }],
+          };
+        }
 
         // Wait for completion via long-poll
         let waitData = await waitForAgentStatus(id, timeoutSeconds);

@@ -44,7 +44,7 @@ const broadcasts: Array<{ channel: string; payload: unknown }> = [];
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
 import { agents } from '../../../../electron/core/agent-manager';
 import {
-  TYPING_PAUSE_MS, messagesWaiting, ptyProcesses, resetTerminalInput, writeHumanInput,
+  PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, ptyProcesses, resetTerminalInput, writeHumanInput,
 } from '../../../../electron/core/pty-manager';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -57,7 +57,7 @@ let written: string[];
 let terminal: { write: (data: string) => void };
 
 /** Calls a route the way the server does, and returns what it answered. */
-async function call(method: string, url: string, body: Record<string, unknown> = {}, caller?: string) {
+async function call(method: string, url: string, body: Record<string, unknown> = {}, caller?: string, internal = false) {
   const pathname = url.split('?')[0];
   for (const route of routes.routes) {
     if (route.method !== method) continue;
@@ -67,7 +67,7 @@ async function call(method: string, url: string, body: Record<string, unknown> =
     const req = {
       method, pathname, url: new URL(`http://localhost${url}`), body,
       raw: { headers: {}, on: () => {} }, res: {}, params: m[1] ? { id: m[1] } : {},
-      callerAgentId: caller,
+      callerAgentId: caller, internal,
     } as unknown as RouteRequest;
     await route.handler(req, (data, status = 200) => { answers.push({ data: data as Record<string, unknown>, status }); }, ctx);
     return answers.at(-1);
@@ -178,5 +178,38 @@ describe('POST /message into a terminal that is not free', () => {
     expect(answer?.data.success).toBe(true);
     expect(answer?.data.held, 'the route answered as if the message had been typed in').toBe(true);
     expect(written).toEqual([]);
+  });
+});
+
+describe('who a dispatch is from', () => {
+  // A dispatch reached Claude Code 2.1.280 as <pasted_content> with no word
+  // outside it, not even who sent it. The line before it is typed where the
+  // receiver reads its user's own words, so it names the agent whose token made
+  // the call, by id, and never takes a name for an identity.
+  const BRIEF = 'Gate PR #126.\nRead the report first.\nThen run the suite.\nThen answer.';
+
+  it('is typed before the paste, as the agent whose token made the call', async () => {
+    const answer = await call('POST', '/api/agents/worker/dispatch', { message: BRIEF }, 'orch');
+    vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
+
+    expect(answer?.data.mode).toBe('message');
+    expect(written[0]).toBe('Message from agent "Orchestrator" ("orch"): ');
+    expect(written[1]).toBe(`\x1b[200~${BRIEF}\x1b[201~`);
+  });
+
+  it('stays an agent, however the agent is named', async () => {
+    agents.get('orch')!.name = 'Noah';
+
+    await call('POST', '/api/agents/worker/message', { message: BRIEF }, 'orch');
+    vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
+
+    expect(written[0]).toBe('Message from agent "Noah" ("orch"): ');
+  });
+
+  it('is Tars when Tars makes the call itself (the super chat)', async () => {
+    await call('POST', '/api/agents/worker/dispatch', { message: BRIEF }, undefined, true);
+    vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
+
+    expect(written[0]).toBe('Message from Tars: ');
   });
 });

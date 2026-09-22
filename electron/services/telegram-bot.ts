@@ -1249,7 +1249,9 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       // Include Telegram context in the message with the chat ID for proper routing
       const telegramMessage = `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!] ${sanitizedMessage}`;
 
-      writeProgrammaticInput(ptyProcess, telegramMessage, true, { agentId: superAgent.id, from: 'Telegram' });
+      writeProgrammaticInput(ptyProcess, telegramMessage, true, {
+        agentId: superAgent.id, from: 'Telegram', sender: { kind: 'channel', channel: 'Telegram' },
+      });
 
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
     } else if (superAgent.status === 'idle' || superAgent.status === 'completed' || superAgent.status === 'error') {

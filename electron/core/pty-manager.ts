@@ -4,6 +4,7 @@ import * as os from 'os';
 import { BrowserWindow } from 'electron';
 import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke, restoreKeys } from './input-draft';
 import { broadcastToAllWindows } from '../utils/broadcast';
+import { envelopeValue } from '../utils/envelope-value';
 import { AgentMessageWaiting } from '../types';
 
 export const ptyProcesses: Map<string, pty.IPty> = new Map();
@@ -126,6 +127,38 @@ const RESTORE_DELAY_MS = 250;
 const RESTORE_PIECE_GAP_MS = 30;
 
 /**
+ * How often a terminal holding a message looks again at a field it cannot
+ * vouch for, when nothing else will make it look.
+ *
+ * The thing it waits for, a local command's record in the session transcript,
+ * is written within 74 ms of the key that closes the command (measured on
+ * 2.1.280), and nothing calls `pump` when a file changes. A second is well
+ * under anything a person would notice as the message being late, and the
+ * look is a stat and a tail read of one file.
+ */
+export const FIELD_PROBE_MS = 1000;
+
+/**
+ * Proof that an agent's field emptied without anybody Tars can see emptying
+ * it: the time of the latest such proof, or undefined.
+ *
+ * A slash command typed by hand, a /model or /effort picker answered with the
+ * arrows and Enter, empties the field and opens and closes a panel, and fires
+ * no hook: the draft model, which can only follow keys, is left `pending` or
+ * `unknown`, and a message held behind it waited until somebody pressed Ctrl+C
+ * in that terminal. Three agents were deaf that way on 2026-09-22 while the MCP
+ * said "Sent message". The command's record in the session transcript is the
+ * proof (services/agent-truth.ts, lastLocalCommandAt), and reading it needs the
+ * agent, which this module does not know: the main process sets the probe.
+ */
+export type FieldProbe = (agentId: string) => number | undefined;
+let fieldProbe: FieldProbe | null = null;
+
+export function setFieldProbe(probe: FieldProbe | null): void {
+  fieldProbe = probe;
+}
+
+/**
  * How much one terminal can be holding.
  *
  * The same number, and the same reason, as the cap on what agent-watch holds
@@ -143,11 +176,33 @@ const MAX_WAITING_MESSAGES = 20;
  * nobody can see is the thing this is here to avoid, so the panel is told
  * which agent is holding what, and from whom.
  */
+/**
+ * Who a message Tars types into a CLI is from, as Tars has verified it: the
+ * agent whose own token made the call, Tars itself, or one of Noah's channels.
+ * Never a bare name: any agent can be given any name, "Noah" included, and the
+ * line it goes into is typed where the receiver reads its user's own words.
+ */
+export type MessageSender =
+  | { kind: 'agent'; id: string; name?: string }
+  | { kind: 'tars' }
+  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Hermes' };
+
+/** The line typed before a pasted message: who sent it, and nothing else. */
+export function senderLine(sender: MessageSender): string {
+  if (sender.kind === 'agent') {
+    return `Message from agent ${envelopeValue(sender.name || sender.id)} (${envelopeValue(sender.id)}): `;
+  }
+  if (sender.kind === 'channel') return `Message from ${sender.channel}: `;
+  return 'Message from Tars: ';
+}
+
 export interface WriteOrigin {
   /** The agent whose terminal this is. */
   agentId: string;
   /** Who the message is from, named as the panel should name them. */
   from: string;
+  /** Who it is from, as typed before it when it goes in as a paste. */
+  sender?: MessageSender;
   /**
    * Called once the message has actually been written into the terminal.
    *
@@ -332,6 +387,28 @@ function noteHeld(state: TerminalInput, why: string): void {
   console.log(`[pty] a message${from}${who} is waiting for a terminal: ${why}`);
 }
 
+/**
+ * Whether the field is empty although the draft model cannot vouch for it: a
+ * local command finished after the last key anybody typed into it. Only after:
+ * a key typed since may have put something in the field again, and that is
+ * left for the person to send or clear. Settles the draft when it is.
+ */
+function fieldProvenEmpty(ptyProcess: pty.IPty, state: TerminalInput): boolean {
+  const agentId = state.agentId ?? terminalOwner.get(ptyProcess);
+  if (!fieldProbe || !agentId) return false;
+  let emptiedAt: number | undefined;
+  try {
+    emptiedAt = fieldProbe(agentId);
+  } catch (err) {
+    console.warn('[pty] could not read whether a command emptied the field:', err);
+    return false;
+  }
+  if (emptiedAt === undefined || emptiedAt < state.lastKeyAt) return false;
+  console.log(`[pty] a command typed into ${agentId}'s terminal has finished: its field is empty`);
+  state.draft = emptyDraft();
+  return true;
+}
+
 /** Milliseconds until this terminal is out of use, or 0 if it already is. */
 function pauseLeft(state: TerminalInput): number {
   return Math.max(0, state.lastKeyAt + TYPING_PAUSE_MS - Date.now());
@@ -359,9 +436,13 @@ function pump(ptyProcess: pty.IPty): void {
     state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, left);
     return;
   }
-  if (state.draft.state !== 'known') {
+  if (state.draft.state !== 'known' && !fieldProvenEmpty(ptyProcess, state)) {
     noteHeld(state, 'it holds a draft Tars cannot put back as it was');
     announce(ptyProcess, state);
+    // Look again later: a command's record comes a moment after its panel
+    // closes, and no key or hook will come to say so. A key or a hook still
+    // looks at once, as before.
+    if (fieldProbe) state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
     return;
   }
 
@@ -399,7 +480,7 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   };
 
   if (draft.text) write(ptyProcess, state, clearKeys(draft));
-  writeBody(ptyProcess, state, item.data);
+  writeBody(ptyProcess, state, item.data, item.origin?.sender);
   try {
     item.origin?.onWritten?.();
   } catch (err) {
@@ -418,8 +499,15 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender): void {
   if (data.includes('\n') || data.length > 200) {
+    // Who it is from, typed before the paste. Claude Code 2.1.280 hands a
+    // paste it folds to the model as <pasted_content>, and a dispatch arrived
+    // with nothing outside it: no word of who sent it. The line is outside,
+    // and says only that, as Tars verified it. It asks for nothing: whether
+    // the message is work to do is for the agent's own instructions to say
+    // (agent-instructions.md), not for a sentence typed to get it done.
+    if (sender) write(ptyProcess, state, senderLine(sender));
     // Bracket paste mode: \x1b[200~ ... \x1b[201~ tells the terminal
     // "everything between these markers is pasted content, not typed input"
     write(ptyProcess, state, '\x1b[200~' + data + '\x1b[201~');
