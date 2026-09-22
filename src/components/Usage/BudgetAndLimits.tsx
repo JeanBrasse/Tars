@@ -214,8 +214,10 @@ export function BudgetAndLimits({
     <div className="border border-border-primary bg-bg-secondary p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="text-[12.5px]">Budget &amp; limits</div>
+        {/* The one panel the page's timeframe does not reach: a budget is
+            monthly and a rate window is whatever it is right now. */}
         <p className="text-[10.5px] text-text-muted hidden sm:block">
-          each provider shows the limit it actually has
+          spend is month to date, windows are live: the timeframe does not apply here
         </p>
       </div>
 

@@ -103,6 +103,11 @@ export interface ClaudeStats {
     /** The day priced from its own tokens, cache included. Absent on the
      *  legacy stats-cache.json shape, which carries no per-day cost at all. */
     costUSD?: number;
+    /** The same price per model, 1h and 5m cache writes apart, so it adds up
+     *  to `costUSD` over the models and to `modelUsage[m].costUSD` over the
+     *  days. What every cost on the Usage page is summed from. Absent on the
+     *  legacy stats-cache.json shape. */
+    costByModel?: Record<string, number>;
   }>;
   modelUsage: Record<string, {
     inputTokens: number;
