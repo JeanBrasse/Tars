@@ -11,7 +11,11 @@
  * Claude nothing until the next key or resize.
  *
  * So what is trimmed is read for the state it left the terminal in, and that
- * state goes back in front of what is kept. A state and not a list, because
+ * state goes back in front of what is kept. Since core/terminal-mirror.ts a
+ * Dashboard panel, the Agents window and the tray are handed the screen
+ * itself, and this carry serves the replays that remain: an agent terminal
+ * with no mirror, and the quick terminal's own buffer, which imports it. A
+ * state and not a list, because
  * xterm 5.3 holds one active screen, one mouse protocol and one mouse encoding:
  * a later request replaces an earlier one, any reset in a group clears it, and
  * a mode set then reset must not come back (InputHandler.setModePrivate and

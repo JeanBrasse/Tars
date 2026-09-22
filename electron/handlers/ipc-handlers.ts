@@ -41,6 +41,7 @@ import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth, sessionModel } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
+import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -815,7 +816,19 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = ptyId;
     }
 
-    return { ...agent, cliRunning: cliRunningIn(ptyProcesses.get(agent.ptyId)) };
+    const ptyProcess = ptyProcesses.get(agent.ptyId);
+    // What a panel writes to show this agent: its terminal's screen as one
+    // chunk, rather than the kept tail of the stream, which after a long turn
+    // no longer held a frame. See core/terminal-mirror.ts. Taken last, with
+    // nothing awaited after it, so no chunk can reach a panel between the
+    // snapshot and this reply.
+    const screen = terminalSnapshot(ptyProcess);
+    return {
+      ...agent,
+      output: screen === undefined ? agent.output : [screen],
+      cliRunning: cliRunningIn(ptyProcess),
+      leftFullscreen: leftFullscreenIn(ptyProcess),
+    };
   });
 
   // Get all agents
@@ -831,6 +844,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       ...agent,
       output: [],
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
+      leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
     }));
   });
 
@@ -1154,12 +1168,16 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
   // Resize agent PTY
   ipcMain.handle('agent:resize', async (_event, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
+    // Kept even when there is no PTY to resize yet: the next one is spawned
+    // at this size. See rememberPanelSize.
+    if (!rememberPanelSize(id, cols, rows)) return { success: false, error: 'Invalid size' };
     const agent = agents.get(id);
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
         try {
           ptyProcess.resize(cols, rows);
+          resizeTerminalMirror(ptyProcess, cols, rows);
           return { success: true };
         } catch (err) {
           console.error('Failed to resize PTY:', err);
