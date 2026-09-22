@@ -89,6 +89,20 @@ describe('the status line writing token-stats.json', () => {
     expect(JSON.parse(text)).toEqual({ 's-new': NEW_SESSION });
   });
 
+  it('starts again from an empty object when the file parses to something that is not one', () => {
+    // jq cannot set a key on an array, a number, a string or a boolean: it
+    // fails, the temp file is thrown away, and the file stays as it was at
+    // every render after, which is the empty file's story again.
+    for (const content of ['[]', '[{"s-old":{}}]', '42', '"s-old"', 'true']) {
+      fs.writeFileSync(statsFile(), content);
+
+      const { text, why } = afterRender('s-new');
+
+      expect(text, `${content}: ${why}`).not.toBe(content);
+      expect(JSON.parse(text), `${content}: ${why}`).toEqual({ 's-new': NEW_SESSION });
+    }
+  });
+
   it('keeps every session a readable file already holds', () => {
     const old = { in: 5, out: 6, cost: 0.01, model: 'claude-sonnet-5', extra: true, date: '2026-09-01', provider: 'claude' };
     fs.writeFileSync(statsFile(), JSON.stringify({ 's-old': old }));
