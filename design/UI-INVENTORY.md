@@ -116,6 +116,7 @@ a single monospace line so they never read as an answer.
 | Message waiting · notice | The line a panel shows while a message waits for a field somebody is typing in, with the two ways out |
 | Panel history · states | Reading (skeleton in the real shape) and no transcript |
 | Left fullscreen · notice | The line a panel shows when its claude left fullscreen and the wheel can no longer scroll it, with read history and restart (and its light copy) |
+| Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
 
 The `history` control is present on every panel, including the CLIs that write
 no transcript. Pressing it there is what surfaces the reason: only the fifteen
