@@ -441,7 +441,9 @@ export async function runCliUpdatePass(
       result = { cli, outcome: 'failed', detail: err instanceof Error ? err.message : String(err) };
     }
     results.push(result);
-    const key = `${result.outcome} ${result.from ?? ''} ${result.to ?? ''}`;
+    // A skip's reason is part of what it says: an Amp no agent runs, then one
+    // an agent runs that is not installed, are two lines, not one repeated.
+    const key = `${result.outcome} ${result.from ?? ''} ${result.to ?? ''} ${result.outcome === 'skipped' ? result.detail : ''}`;
     const slot = `${ctx.logFile}\0${cli}`;
     const repeat = result.outcome !== 'failed' && lastOutcome.get(slot) === key;
     lastOutcome.set(slot, key);

@@ -530,9 +530,11 @@ Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its upd
 so neither updates itself inside a Tars terminal. Tars updates them instead
 (`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time,
 while "Check for updates" is on in Settings (the one switch for Tars's own updates and these), and
-only the CLIs at least one agent runs: every provider but Amp runs claude, so Amp is checked only
-when an Amp agent exists. The log says `all off` once when the switch is off, and
-`amp skipped: no agent runs it` once when no agent runs Amp.
+only the CLIs at least one agent runs. An agent with no provider, and the thirteen providers pointed
+at another vendor, run claude; an Amp agent runs Amp; codex, gemini, grok, opencode and pi run their
+own binaries, which Tars does not update. So a fleet with no Amp agent never has Amp checked, and a
+codex-only fleet never has claude checked. The log says `all off` once when the switch is off, and
+`<cli> skipped: <why>` once for each reason a CLI is left alone, such as no agent running it.
 
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
