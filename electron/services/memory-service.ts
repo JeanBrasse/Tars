@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { decodeProjectPath } from '../utils/decode-project-path';
+import { projectFolders } from './project-index';
 
 export interface MemoryFile {
   name: string;
@@ -51,15 +51,8 @@ function getProjectName(decodedPath: string): string {
   return path.basename(decodedPath) || decodedPath;
 }
 
-function readMemoryFile(filePath: string): MemoryFile {
-  const stat = fs.statSync(filePath);
+function memoryFile(filePath: string, stat: fs.Stats, content: string): MemoryFile {
   const name = path.basename(filePath);
-  let content = '';
-  try {
-    content = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    content = '';
-  }
   return {
     name,
     path: filePath,
@@ -68,6 +61,24 @@ function readMemoryFile(filePath: string): MemoryFile {
     lastModified: stat.mtime.toISOString(),
     isEntrypoint: name === 'MEMORY.md',
   };
+}
+
+function readMemoryFile(filePath: string): MemoryFile {
+  const stat = fs.statSync(filePath);
+  let content = '';
+  try {
+    content = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    content = '';
+  }
+  return memoryFile(filePath, stat, content);
+}
+
+/** The same, without blocking, for the listing of every project. */
+async function readMemoryFileAsync(filePath: string): Promise<MemoryFile> {
+  const stat = await fs.promises.stat(filePath);
+  const content = await fs.promises.readFile(filePath, 'utf-8').catch(() => '');
+  return memoryFile(filePath, stat, content);
 }
 
 /** Claude Code's own encoding: every '/' and '.' becomes '-'. */
@@ -80,29 +91,19 @@ function encodeProjectPath(projectPath: string): string {
  * page). They belong in Brain even when Claude Code never opened them:
  * otherwise a freshly added project is invisible here.
  */
-export function listProjectMemories(extraProjectPaths: string[] = []): ProjectMemory[] {
+export async function listProjectMemories(extraProjectPaths: string[] = []): Promise<ProjectMemory[]> {
   const results: ProjectMemory[] = [];
   const seenPaths = new Set<string>();
 
   for (const { provider, dir: projectsDir } of PROVIDER_MEMORY_DIRS) {
-    if (!fs.existsSync(projectsDir)) continue;
-
-    let entries;
-    try {
-      entries = fs.readdirSync(projectsDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-
-      const memoryDir = path.join(projectsDir, entry.name, 'memory');
-      const decodedPath = decodeProjectPath(entry.name);
+    // Read without blocking, each folder's path decoded once (project-index.ts).
+    for (const folder of await projectFolders(projectsDir)) {
+      const memoryDir = path.join(folder.dir, 'memory');
+      const decodedPath = folder.projectPath;
       const projectName = getProjectName(decodedPath);
 
       const project: ProjectMemory = {
-        id: `${provider}:${entry.name}`,
+        id: `${provider}:${folder.name}`,
         projectName,
         projectPath: decodedPath,
         memoryDir,
@@ -113,9 +114,9 @@ export function listProjectMemories(extraProjectPaths: string[] = []): ProjectMe
         provider,
       };
 
-      if (fs.existsSync(memoryDir)) {
+      if (await fs.promises.access(memoryDir).then(() => true, () => false)) {
         try {
-          const mdFiles = fs.readdirSync(memoryDir)
+          const mdFiles = (await fs.promises.readdir(memoryDir))
             .filter(f => f.endsWith('.md'))
             .sort((a, b) => {
               // MEMORY.md always first
@@ -124,7 +125,7 @@ export function listProjectMemories(extraProjectPaths: string[] = []): ProjectMe
               return a.localeCompare(b);
             });
 
-          const files = mdFiles.map(f => readMemoryFile(path.join(memoryDir, f)));
+          const files = await Promise.all(mdFiles.map(f => readMemoryFileAsync(path.join(memoryDir, f))));
           const totalSize = files.reduce((sum, f) => sum + f.size, 0);
           const lastModified = files.reduce((latest, f) =>
             f.lastModified > latest ? f.lastModified : latest, '');

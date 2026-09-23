@@ -18,7 +18,8 @@ import { App as SlackApp, LogLevel } from '@slack/bolt';
 import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
-import { decodeProjectPath } from '../utils/decode-project-path';
+import { projectFolders } from '../services/project-index';
+import { marketplaceListing } from '../services/skills-marketplace';
 import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
@@ -1367,37 +1368,9 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
   });
 
   // Fetch skills marketplace from skills.sh (server-side to avoid CORS)
-  ipcMain.handle('skill:fetch-marketplace', async () => {
-    try {
-      const res = await fetch('https://skills.sh/', {
-        headers: { 'User-Agent': 'Tars/1.0' },
-      });
-      if (!res.ok) return { skills: null };
-
-      const html = await res.text();
-      const match = html.match(/initialSkills.*?(\[\{.*?\}\])/);
-      if (!match) return { skills: null };
-
-      const raw = match[1].replace(/\\"/g, '"');
-      const allSkills: { source: string; name: string; installs: number }[] = JSON.parse(raw);
-
-      // The directory publishes ~600 skills; the old 300 cap hid half of them
-      // behind a search box that only filters what was already downloaded.
-      const skills = allSkills.map((s, i) => ({
-        rank: i + 1,
-        name: s.name,
-        repo: s.source,
-        installs: s.installs >= 1000
-          ? `${(s.installs / 1000).toFixed(1).replace(/\.0$/, '')}K`
-          : String(s.installs),
-        installsNum: s.installs,
-      }));
-
-      return { skills };
-    } catch {
-      return { skills: null };
-    }
-  });
+  // skills.sh, served from the last listing and refreshed behind it
+  // (services/skills-marketplace.ts). `fetchedAt` says how old it is.
+  ipcMain.handle('skill:fetch-marketplace', async () => marketplaceListing());
 
   // Legacy install (kept for backwards compatibility)
   ipcMain.handle('skill:install', async (_event, repo: string) => {
@@ -2313,26 +2286,21 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       const projects: Array<{ id: string; path: string; name: string; custom?: boolean }> = [];
       const seen = new Set<string>();
 
-      const push = (p: string, id: string, custom = false) => {
+      const push = async (p: string, id: string, custom = false) => {
         if (!p || p === '/' || p === os.homedir()) return;
-        if (seen.has(p) || !fs.existsSync(p)) return;
-        if (/\/\.?worktrees\//.test(p)) return;
+        if (seen.has(p) || /\/\.?worktrees\//.test(p)) return;
         seen.add(p);
+        if (!await fs.promises.access(p).then(() => true, () => false)) return;
         projects.push({ id, path: p, name: path.basename(p), ...(custom ? { custom: true } : {}) });
       };
 
       // Projects the user explicitly added (persisted here, not in the
       // renderer's localStorage, so they survive updates and are visible to
       // every surface: agent creation, team deployment, Brain).
-      for (const p of readCustomProjects()) push(p, `custom:${p}`, true);
+      for (const p of readCustomProjects()) await push(p, `custom:${p}`, true);
 
-      if (fs.existsSync(claudeDir)) {
-        for (const dir of fs.readdirSync(claudeDir)) {
-          const fullPath = path.join(claudeDir, dir);
-          if (!fs.statSync(fullPath).isDirectory()) continue;
-          push(decodeProjectPath(dir), dir);
-        }
-      }
+      // Decoded once per folder, without blocking (services/project-index.ts).
+      for (const folder of await projectFolders(claudeDir)) await push(folder.projectPath, folder.name);
 
       return projects;
     } catch (err) {
@@ -2431,12 +2399,9 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     }
 
     // Projects Claude Code has seen, same source as fs:list-projects.
-    try {
-      const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-      for (const dir of fs.readdirSync(claudeDir)) {
-        roots.push(decodeProjectPath(dir));
-      }
-    } catch { /* no Claude projects yet */ }
+    for (const folder of await projectFolders(path.join(os.homedir(), '.claude', 'projects'))) {
+      roots.push(folder.projectPath);
+    }
 
     // Skills can be symlinks out of ~/.claude/skills, so allow the real paths
     // the app resolved rather than only the directory they are linked from.

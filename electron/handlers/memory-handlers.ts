@@ -10,7 +10,7 @@ import {
 export function registerMemoryHandlers(): void {
   ipcMain.handle('memory:list-projects', async (_event, extraProjectPaths?: string[]) => {
     try {
-      const projects = listProjectMemories(Array.isArray(extraProjectPaths) ? extraProjectPaths : []);
+      const projects = await listProjectMemories(Array.isArray(extraProjectPaths) ? extraProjectPaths : []);
       return { projects, error: null };
     } catch (err) {
       return { projects: [], error: err instanceof Error ? err.message : 'Failed to list memory projects' };
