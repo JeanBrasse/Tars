@@ -467,7 +467,9 @@ export async function handleSlackCommand(
       // turn ends on `idle`, a failed one on `error`): the task goes in as a
       // message. Typed as a launch command it landed in the CLI's own field.
       if (cliRunningIn(ptyProcess)) {
-        const outcome = writeProgrammaticInput(ptyProcess, task, true, { agentId: agent.id, from: 'Slack' });
+        const outcome = writeProgrammaticInput(ptyProcess, task, true, {
+          agentId: agent.id, from: 'Slack', sender: { kind: 'channel', channel: 'Slack' },
+        });
         if (outcome === 'refused') {
           await say(`:x: ${agent.name} has too many messages waiting for its terminal.`);
           return;
@@ -614,7 +616,9 @@ export async function sendToSuperAgentFromSlack(
 
       const slackMessage = `[FROM SLACK - Use send_slack MCP tool to respond!] ${sanitizedMessage}`;
 
-      writeProgrammaticInput(ptyProcess, slackMessage, true, { agentId: superAgent.id, from: 'Slack' });
+      writeProgrammaticInput(ptyProcess, slackMessage, true, {
+        agentId: superAgent.id, from: 'Slack', sender: { kind: 'channel', channel: 'Slack' },
+      });
 
       await say(':crown: Super Agent is processing...');
     } else {

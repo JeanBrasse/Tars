@@ -168,6 +168,8 @@ describe('an agent whose CLI is already up', () => {
     await settle();
 
     expect(typed(terminal)).toContain('Rebase onto main');
+    // Behind the line that says where it came from, like every message Tars types (#128).
+    expect(typed(terminal)).toContain('Message from Telegram: Rebase onto main');
     expect(typed(terminal)).not.toContain("&& '");
     expect(spawned, 'a terminal was opened').toHaveLength(1);
     expect(terminal.kill).not.toHaveBeenCalled();
@@ -180,6 +182,7 @@ describe('an agent whose CLI is already up', () => {
     await settle();
 
     expect(typed(terminal)).toContain('Rebase onto main');
+    expect(typed(terminal)).toContain('Message from Slack: Rebase onto main');
     expect(typed(terminal)).not.toContain("&& '");
     expect(spawned).toHaveLength(1);
   });

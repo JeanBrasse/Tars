@@ -39,7 +39,8 @@ function rail(agent: RoomAgent): string {
   );
 }
 
-const ROOM = { id: 'project:/tmp/project', name: 'project', memberIds: ['a1', 'a2'] } as unknown as BusRoom;
+// The room's shape as BusRoom declares it: its label is `title` (it said `name` until #124 read it).
+const ROOM = { id: 'project:/tmp/project', kind: 'project', title: 'project', memberIds: ['a1', 'a2'], createdAt: '2026-09-23T00:00:00.000Z' } as unknown as BusRoom;
 
 function room(agents: RoomAgent[]): string {
   return renderToStaticMarkup(
@@ -56,8 +57,9 @@ function room(agents: RoomAgent[]): string {
 }
 
 const HOLLOW = 'border border-text-muted';
-const ALL_STOPPED = 'Every agent here is stopped. Nothing moves until you start one.';
-const WRITE = 'Write to the room, or pick who it is for.';
+const ALL_STOPPED = 'Everyone in project is stopped. Nothing you write reaches an agent until one starts.';
+const START_TO_WRITE = 'Start an agent to write here';
+const WRITE = 'Write to everyone in project';
 
 describe('the team rail', () => {
   it('says stopped, no live session, in the hollow square, with no stop to press', () => {
@@ -94,7 +96,10 @@ describe('the team rail', () => {
 
 describe('the room composer', () => {
   it('says every agent is stopped only when every one has no session', () => {
-    expect(room([member({ id: 'a1', stopped: true }), member({ id: 'a2', stopped: true })])).toContain(ALL_STOPPED);
+    const html = room([member({ id: 'a1', stopped: true }), member({ id: 'a2', stopped: true })]);
+    expect(html).toContain(ALL_STOPPED);
+    expect(html).toContain(START_TO_WRITE);
+    expect(html).not.toContain(WRITE);
   });
 
   it('does not call a room of agents at rest stopped', () => {

@@ -86,7 +86,7 @@ against a budget you set.
 
 ## Install
 
-Download the latest release for macOS:
+Download the latest release for macOS 13 (Ventura) or later:
 
 **[github.com/JeanBrasse/Tars/releases/latest](https://github.com/JeanBrasse/Tars/releases/latest)**
 

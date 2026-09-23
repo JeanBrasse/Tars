@@ -751,7 +751,9 @@ export function initTelegramBot() {
         // turn ends on `idle`, a failed one on `error`): the task goes in as a
         // message. Typed as a launch command it landed in the CLI's own field.
         if (cliRunningIn(ptyProcess)) {
-          const outcome = writeProgrammaticInput(ptyProcess, task, true, { agentId: agent.id, from: 'Telegram' });
+          const outcome = writeProgrammaticInput(ptyProcess, task, true, {
+            agentId: agent.id, from: 'Telegram', sender: { kind: 'channel', channel: 'Telegram' },
+          });
           if (outcome === 'refused') {
             telegramBot?.sendMessage(msg.chat.id, `❌ ${agent.name} has too many messages waiting for its terminal.`);
             return;
@@ -1279,7 +1281,9 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       // Include Telegram context in the message with the chat ID for proper routing
       const telegramMessage = `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!] ${sanitizedMessage}`;
 
-      writeProgrammaticInput(ptyProcess, telegramMessage, true, { agentId: superAgent.id, from: 'Telegram' });
+      writeProgrammaticInput(ptyProcess, telegramMessage, true, {
+        agentId: superAgent.id, from: 'Telegram', sender: { kind: 'channel', channel: 'Telegram' },
+      });
 
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
     } else {
