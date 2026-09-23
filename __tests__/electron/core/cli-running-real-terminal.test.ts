@@ -104,6 +104,19 @@ describe('the terminal spawnAgentSession opens', () => {
     expect(names.has('sleep'), 'the command led the terminal without an exec').toBe(false);
     expect(readAsNone, 'read as no CLI while its command ran').toEqual([]);
   }, 60_000);
+
+  it('reads as no CLI once it has exited, whatever node-pty still names', async () => {
+    // How this fails, written before the code (QA, main's CI on Linux): once
+    // the terminal is gone node-pty names the file it spawned, `/bin/bash`,
+    // where macOS names nothing. The record of a terminal handed a command
+    // outlived it, so an exited terminal read as a running CLI, and a message
+    // to its agent was typed into nothing instead of starting a session.
+    const terminal = open(['-l', '-c', 'exit 0']);
+    await exited(terminal);
+    Object.defineProperty(terminal, 'process', { get: () => '/bin/bash', configurable: true });
+
+    expect(cliRunningIn(terminal)).toBe(false);
+  }, 30_000);
 });
 
 describe('an interactive shell, as the Dashboard and a restart open one', () => {

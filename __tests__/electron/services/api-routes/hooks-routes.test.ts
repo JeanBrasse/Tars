@@ -193,7 +193,10 @@ describe('hooks-routes', () => {
 
       expect(agent.status).toBe('running');
       expect(agent.currentSessionId).toBe('fresh-sess');
-      expect(emitSpy).not.toHaveBeenCalled();
+      // No status event, which would answer a /wait for a change that did not
+      // happen. The fleet change agent-watch flushes on is not one (#134).
+      expect(emitSpy.mock.calls.map(c => String(c[0])).filter(name => name.startsWith('status:'))).toEqual([]);
+      expect(emitSpy.mock.calls.map(c => String(c[0]))).toEqual(['fleet-change']);
       expect(sendJson).toHaveBeenCalledWith({ success: true, registered: true, agent: { id: 'a1', status: 'running' } });
     });
 

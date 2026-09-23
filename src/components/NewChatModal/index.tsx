@@ -5,7 +5,6 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { NewChatModalProps } from './types';
 import type { AgentCharacter, AgentProvider, TeamTemplateMember } from '@/types/electron';
 import type { AgentPermissionMode } from '@/types/agent';
-import { CHARACTER_OPTIONS } from './constants';
 import { computeProviderAvailability } from '@/lib/providers';
 import { useElectronAgents } from '@/hooks/useElectron';
 import { useElectronTeamTemplates } from '@/hooks/useElectronTeamTemplates';
@@ -16,7 +15,7 @@ import { AgentPanel } from './AgentPanel';
 import { TeamPanel } from './TeamPanel';
 import SkillInstallTerminal from './SkillInstallTerminal';
 import { blankMember } from './team-defaults';
-import { canSubmitAgent, canSubmitTeam, deployButtonLabel } from './logic';
+import { canSubmitAgent, canSubmitTeam, deployButtonLabel, deployedMemberName } from './logic';
 import type { CreationMode } from './types';
 import { ReplaceOrchestratorDialog } from './ReplaceOrchestratorDialog';
 import type { PendingReplace } from './ReplaceOrchestratorDialog';
@@ -29,11 +28,12 @@ const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
 /**
  * What an agent is called when the NAME field is left empty. One source for
  * both the field's placeholder and the name actually saved, so the two can
- * never drift apart.
+ * never drift apart. It was the character's word (`Robot on tars`) while there
+ * was a character to show; the mark beside the field is drawn from this name.
  */
-function generatedAgentName(character: AgentCharacter, projectPath: string): string {
+function generatedAgentName(projectPath: string): string {
   const projectName = projectPath.split('/').pop() || 'project';
-  return `${CHARACTER_OPTIONS.find(c => c.id === character)?.name || 'Agent'} on ${projectName}`;
+  return `Agent on ${projectName}`;
 }
 
 /**
@@ -84,11 +84,11 @@ export default function NewChatModal({
   const [provider, setProvider] = useState<AgentProvider>('claude');
   const [model, setModel] = useState<string>('default');
   const [cliPath, setCliPath] = useState('');
-  // State, not a ref: the character decides the generated name the NAME field
-  // shows as its placeholder, so changing it has to redraw that field.
+  // Kept in the agent's data and carried through an edit, but drawn nowhere:
+  // an agent is shown by the mark its name draws.
   const [character, setCharacter] = useState<AgentCharacter>('robot');
   // Edited through the NAME field the frame draws at the top of the panel.
-  // Left empty it falls back to the generated `<character> on <project>` below,
+  // Left empty it falls back to the generated `Agent on <project>` below,
   // which is also what the field shows as its placeholder.
   const [agentName, setAgentName] = useState('');
   const skipNextSkillsClear = useRef(false);
@@ -311,7 +311,7 @@ export default function NewChatModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const commitAgent = useCallback(async () => {
     const agentCharacter = character;
-    const finalName = agentName.trim() || generatedAgentName(agentCharacter, projectPath);
+    const finalName = agentName.trim() || generatedAgentName(projectPath);
 
     setIsSubmitting(true);
     try {
@@ -381,14 +381,14 @@ export default function NewChatModal({
         setPendingReplace({
           kind: isEditMode ? 'edit' : 'create',
           holder: holder.name || holder.id,
-          newcomer: agentName.trim() || generatedAgentName(character, projectPath),
+          newcomer: agentName.trim() || generatedAgentName(projectPath),
           project: projectPath.split('/').pop() || projectPath,
         });
         return;
       }
     }
     await commitAgent();
-  }, [projectPath, useWorktree, branchName, isOrchestrator, currentOrchestrator, editAgent, isEditMode, agentName, character, commitAgent]);
+  }, [projectPath, useWorktree, branchName, isOrchestrator, currentOrchestrator, editAgent, isEditMode, agentName, commitAgent]);
 
   /* ── submit: a team ──────────────────────────────────────────────── */
   const selectedMembers = useMemo(
@@ -399,13 +399,12 @@ export default function NewChatModal({
   const commitTeam = useCallback(async () => {
     setDeploying(true);
     setDeployErrors([]);
-    const projectName = projectPath.split('/').pop() || 'project';
     const existingNames = new Set(existingAgents.filter(a => a.projectPath === projectPath).map(a => a.name));
     const createdIds: string[] = [];
     const issues: string[] = [];
 
     for (const member of selectedMembers) {
-      const agentDisplayName = `${member.name} - ${projectName}`;
+      const agentDisplayName = deployedMemberName(member.name, projectPath);
       if (existingNames.has(agentDisplayName)) {
         issues.push(`${member.name}: already deployed on this project - skipped.`);
         continue;
@@ -456,7 +455,7 @@ export default function NewChatModal({
     const lead = selectedMembers.find(m => m.role === 'orchestrator');
     if (lead) {
       const projectName = projectPath.split('/').pop() || 'project';
-      const leadName = `${lead.name} - ${projectName}`;
+      const leadName = deployedMemberName(lead.name, projectPath);
       setDeploying(true);
       let holder: Awaited<ReturnType<typeof currentOrchestrator>>;
       try {
@@ -537,7 +536,7 @@ export default function NewChatModal({
             <AgentPanel
               name={agentName}
               onNameChange={setAgentName}
-              namePlaceholder={generatedAgentName(character, projectPath)}
+              namePlaceholder={generatedAgentName(projectPath)}
               projects={projects}
               projectPath={projectPath}
               onSelectProject={setProjectPath}

@@ -1504,12 +1504,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "aS64H",
-                              "name": "StatusSquare idle",
-                              "fill": "$status-idle",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "r2xGB",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "TcJYj",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "s20Vp",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "VEdzw",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "NF5Ic",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "AxGqE",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "PNC8q",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "zThiF",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Z27SXK",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "doyRp",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "RedsP",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "u1wjQy",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "yNCxI",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "N0VXj5",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "UxOCx",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "pXHpH",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "DmYgI",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "dNxpN",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "qgoHy",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "q0223I",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "k0V6a",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "rOVsy",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -1561,7 +1733,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -1611,12 +1783,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "yxO1a",
-                              "name": "StatusSquare running",
-                              "fill": "$status-running",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "wr56E",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "Dnjau",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "TG7id",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Y2QP7",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "uZRVB",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "r4mraK",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "V1zv3g",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "S7Ozw",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "jpLul",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "DQV8G",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "hvfn4",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "yX5MY",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "qrQ3i",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "VEsTZ",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "jlucE",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Ljyrl",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "g09EYL",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "C8ADQ",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "dgxuj",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "uB8ik",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "XIift",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "hMnBh",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -1678,7 +2022,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -1752,12 +2096,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "M21qT",
-                              "name": "StatusSquare running",
-                              "fill": "$status-running",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "PbtDh",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "u0WGfE",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "sd4iM",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "R5sBW5",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "in60r",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "lSrkm",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "WT0gT",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "Vmzun",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "gztuh",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "iSusE",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "vUWFL",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "eEGW9",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "IEM8n",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "SExTx",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "JNw4K",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "szq6y",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "KAQws",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "d4EzV",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "OyCtz",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "FBhO7",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "pUZ1f",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "f3Thti",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -1819,7 +2335,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -1870,12 +2386,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "MHUE3",
-                              "name": "StatusSquare waiting",
-                              "fill": "$status-waiting",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "rybtR",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "qbwo4",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "Jye00",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Q3q2xe",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "JA3Ix",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "x8oH5",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "gL93S",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "m8qet",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "TeFjO",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "n6Uzls",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "RhATZ",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "PXS9D",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "LaOgH",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "psaYw",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "MYrbx",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "altlR",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "LCaYb",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "AgKoh",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "w1kOa",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "v5ARh",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "QIlAz",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "rXXrn",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -1937,7 +2625,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -2079,10 +2767,183 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "sgozW",
-                              "name": "StatusSquare none",
-                              "width": 6,
-                              "height": 6
+                              "id": "pwv9Y",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "pYMkg",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "XhwY1",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "k4twL",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "cqGSI",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "nsRTW",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "tMAhu",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "HhzIL",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "uGa0z",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "C8nFT",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "o4cie",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "W5HPS",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "lje3w",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "l2umYt",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "DpCWp",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "NswPa",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "sGbHD",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "r8xoD",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "gX2r4",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "jPzkj",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "nNa84",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "cRVXI",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -2134,7 +2995,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -2208,13 +3069,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "xImwR",
-                              "name": "StatusSquare hollow",
-                              "width": 6,
-                              "height": 6,
-                              "stroke": "$text-muted",
-                              "strokeWidth": 1
+                              "type": "frame",
+                              "id": "KlxZN",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "R8htfd",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "Dz5vy",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "T1eUe",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "e0kVC",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "VOoDH",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "V1O614",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "mL2In",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "lOitO",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "FUspo",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "QKcEv",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Hk7qp",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "BIfct",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "HALS0",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "TZMzH",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "p4EEQ1",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "k96i5r",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "X8a4y",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Tu1vF",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "fuCLe",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "WPJzC",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "SJpR3",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -2266,7 +3298,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -11491,12 +12523,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "s0sVJj",
-                              "name": "StatusSquare idle",
-                              "fill": "$status-idle",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "xWLKP",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "A0j6NQ",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "PYBfC",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "bAaWU",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "rT2vm",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "u9fWT",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "x6S1fd",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "lEKXc",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Du7gn",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "G4yD8H",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "a7v7rw",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "D8hcu0",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "N7V6y",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "E2M9Um",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "t2aFX",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "e9upn",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "c9jS9M",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "WXD48",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "BL2Jn",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "KWXNS",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "o1USl",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "LG1jo",
+                                          "name": "on",
+                                          "fill": "$accent",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -11548,7 +12752,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -11598,12 +12802,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "K9chQo",
-                              "name": "StatusSquare running",
-                              "fill": "$status-running",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "E0wuL",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "NlqCe",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "jxGIg",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "A7M8bq",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "sjTGi",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "BktvA",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "UE6mj",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "chn0W",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "tqaVA",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "a1L0ZT",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "fsow6",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "n9xe1",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "PyOML",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "EBLsM",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Ub4Mx",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "KArET",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Z6d1k7",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "EqgLX",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "ssPvN",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "a8sLc6",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "oWg7O",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "j9cLt",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -11665,7 +13041,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -11739,12 +13115,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "F23vdf",
-                              "name": "StatusSquare running",
-                              "fill": "$status-running",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "sTF0d",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "uvkuZ",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "r2ZSf",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "B7skQc",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "pzLVm",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "dTLzL",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "QS2FP",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "h95J2",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "et8M4",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "dsDoW",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Vl6xE",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "leBz1",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "M8YXHJ",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "tMMyW",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Wg32D",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Wmwoi",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "XBlY7",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "zxuQl",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "XEbMR",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "c3Dpq",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "OeUaJ",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "I5Cdy",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -11806,7 +13354,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -11857,12 +13405,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "M4Cxp",
-                              "name": "StatusSquare waiting",
-                              "fill": "$status-waiting",
-                              "width": 6,
-                              "height": 6
+                              "type": "frame",
+                              "id": "XGOCj",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "J1X34",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "OOZXq",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "j44arg",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "E7AvPM",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "hhY2r",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "aZiRr",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "RSUtK",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "o1iz1Z",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "uTyA3",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "bfxkI",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "hK0q4",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "WxkZD",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "nUL5p",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "vn8yW",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "LADct",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "J57b1g",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "WQ8bE",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "rsRUV",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "SgYqh",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Z5EjF",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "rCs5K",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -11924,7 +13644,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -12066,10 +13786,183 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "utMp4",
-                              "name": "StatusSquare none",
-                              "width": 6,
-                              "height": 6
+                              "id": "Swmqv",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "cCMRy",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "T4Cmc",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "IF9JZ",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "pkjzM",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "qzyKP",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "aw8IK",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "bLkTh",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "vc4Un",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "mWs71",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "orloW",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "US3Fl",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "j0Qq16",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "chXlE",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "UrR2a",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "ij8E1",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "VeQ2D",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "uXAyA",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Q0yFz",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "B4snP",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "EPmo6",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "tDtY0",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -12121,7 +14014,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [
@@ -12195,13 +14088,184 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "rectangle",
-                              "id": "j3g5O9",
-                              "name": "StatusSquare hollow",
-                              "width": 6,
-                              "height": 6,
-                              "stroke": "$text-muted",
-                              "strokeWidth": 1
+                              "type": "frame",
+                              "id": "P5gsF",
+                              "name": "agent mark",
+                              "width": 16,
+                              "height": 16,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "kO6lq",
+                                  "name": "grid",
+                                  "layout": "vertical",
+                                  "gap": 1,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "DAi5y",
+                                      "name": "row 0",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "R7u6W",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "RTrqN",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "uHrO6",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "mNxth",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "uZHoz",
+                                      "name": "row 1",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "bgMdA",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "B3L0rN",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "OcL4Q",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "HbYIe",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "Gwvt4",
+                                      "name": "row 2",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "pSv5r",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "y2j8x",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "Du1x3",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "iRMv9",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "nGsYx",
+                                      "name": "row 3",
+                                      "gap": 1,
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "gjtvD",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "kHLFN",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "T29czJ",
+                                          "name": "off",
+                                          "fill": "$surface-raised",
+                                          "width": 3,
+                                          "height": 3
+                                        },
+                                        {
+                                          "type": "rectangle",
+                                          "id": "DAD6i",
+                                          "name": "on",
+                                          "fill": "$text-secondary",
+                                          "width": 3,
+                                          "height": 3
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "text",
@@ -12253,7 +14317,7 @@
                             0,
                             0,
                             0,
-                            14
+                            24
                           ],
                           "alignItems": "center",
                           "children": [

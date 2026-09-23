@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, StatusSquare } from '@/components/ui';
+import { AgentMark, Button } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { errorReason } from '@/app/agents/constants';
@@ -39,6 +39,15 @@ export function agentTone(agent: RoomAgent): StatusTone | 'none' {
 export function shownStopped(agent: RoomAgent): boolean {
   return agent.stopped && agent.status !== 'error';
 }
+
+/** The status word's colour: the tone's own for running, waiting and error,
+ *  muted for an agent at rest, stopped, or whose state Tars cannot vouch for.
+ *  The word carries the state the square used to; the mark says who it is. */
+const STATUS_INK: Partial<Record<StatusTone, string>> = {
+  running: 'text-status-running',
+  waiting: 'text-status-waiting',
+  error: 'text-status-error',
+};
 
 export function agentStatusLabel(agent: RoomAgent): string {
   if (!agent.hasEndOfTurn) return 'no turn signal';
@@ -110,12 +119,11 @@ export function TeamRail({
           ) : agents.map(agent => {
             const waiting = pending[agent.id] ?? { queued: 0, notSent: 0 };
             const t = agentTone(agent);
+            const ink = (t !== 'none' && !shownStopped(agent) && STATUS_INK[t]) || 'text-muted-foreground';
             return (
               <div key={agent.id} className="flex gap-2 px-2.5 py-[9px] border-b border-border last:border-b-0">
-                <span className="pt-1.5 shrink-0">
-                  {t === 'none'
-                    ? <span className="block w-1.5 h-1.5" />
-                    : <StatusSquare tone={t} hollow={shownStopped(agent)} />}
+                <span className="pt-px shrink-0">
+                  <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} />
                 </span>
                 <div className="flex-1 min-w-0 flex flex-col gap-[3px]">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -124,7 +132,7 @@ export function TeamRail({
                       {agent.provider ?? 'claude'}
                     </span>
                     <span className="flex-1" />
-                    <span className="font-mono text-[10.5px] shrink-0 text-muted-foreground">{agentStatusLabel(agent)}</span>
+                    <span className={`font-mono text-[10.5px] shrink-0 ${ink}`}>{agentStatusLabel(agent)}</span>
                   </div>
                   {detail(agent) && (
                     <p className="text-[11px] leading-[1.45] text-muted-foreground line-clamp-2">{detail(agent)}</p>

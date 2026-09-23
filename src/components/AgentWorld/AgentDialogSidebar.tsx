@@ -214,10 +214,6 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
           </div>
 
           <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between gap-2">
-              <span className="text-muted-foreground">Character</span>
-              <span className="font-mono text-[11px]">{agent.character || 'robot'}</span>
-            </div>
             {agent.branchName && (
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Branch</span>

@@ -11,6 +11,7 @@ import { cliRunningIn } from '../core/agent-pty';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
+import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -479,12 +480,18 @@ export async function handleSlackCommand(
       return;
     }
 
+    let launch: object | null = null;
     try {
       const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
 
       // BUG 4 guard: if worktreePath changed after PTY spawn, the running
       // PTY is in the wrong cwd. Kill it so initAgentPty respawns correctly.
       killStalePty(agent);
+
+      // A launch on its way owns the terminal until its CLI runs: wait for it.
+      await sessionStarted(agent);
+      // No CLI up there: this is a launch from now on, for every other sender.
+      launch = launchUnlessRunning(agent);
 
       if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
         const ptyId = await initAgentPtyWithCallbacks(agent);
@@ -493,6 +500,7 @@ export async function handleSlackCommand(
 
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (!ptyProcess) {
+        if (launch) launchAbandoned(agent.id, launch);
         await say(':x: Failed to initialize agent terminal.');
         return;
       }
@@ -560,6 +568,7 @@ export async function handleSlackCommand(
       const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
       await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);
     } catch (err) {
+      if (launch) launchAbandoned(agent.id, launch);
       console.error('Failed to start agent from Slack:', err);
       await say(`:x: Failed to start agent: ${err}`);
     }
@@ -621,12 +630,18 @@ export async function sendToSuperAgentFromSlack(
   // Sanitize message - replace newlines with spaces for terminal compatibility
   const sanitizedMessage = message.replace(/\r?\n/g, ' ').trim();
 
+  let launch: object | null = null;
   try {
     // BUG 4 guard: if worktreePath changed after PTY spawn, the existing
     // PTY is stuck in the wrong cwd. Kill it so initAgentPty respawns.
     killStalePty(superAgent);
 
     // Initialize PTY if needed
+    // A launch on its way owns the terminal until its CLI runs: wait for it.
+    await sessionStarted(superAgent);
+    // No CLI up there: this is a launch from now on, for every other sender.
+    launch = launchUnlessRunning(superAgent);
+
     if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
       const ptyId = await initAgentPtyWithCallbacks(superAgent);
       superAgent.ptyId = ptyId;
@@ -634,6 +649,7 @@ export async function sendToSuperAgentFromSlack(
 
     const ptyProcess = ptyProcesses.get(superAgent.ptyId);
     if (!ptyProcess) {
+      if (launch) launchAbandoned(superAgent.id, launch);
       await say(':x: Failed to connect to Super Agent terminal.');
       return;
     }
@@ -719,6 +735,7 @@ export async function sendToSuperAgentFromSlack(
       await say(':crown: Super Agent is processing your request...');
     }
   } catch (err) {
+    if (launch) launchAbandoned(superAgent.id, launch);
     console.error('Failed to send to Super Agent:', err);
     await say(`:x: Error: ${err}`);
   }

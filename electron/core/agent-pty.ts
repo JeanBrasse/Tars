@@ -116,6 +116,9 @@ export function spawnAgentPty(opts: {
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {
     terminalExited(spawned);
+    // And what it was spawned as: gone, node-pty on Linux still names the
+    // shell it spawned, and a terminal handed a command read as a running CLI.
+    spawnedAs.delete(spawned);
     // And its token: a stopped CLI's stayed valid until the agent's next launch.
     if (agentId && token) revokeTerminalToken(agentId, token);
   });

@@ -490,7 +490,9 @@ path, so a change to either setting changes the other with it. The comment on `G
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
-Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates === false`.
+Auto-check fires 5 s after `whenReady()` and every 30 minutes, and each tick reads `appSettings.autoCheckUpdates`:
+with it `false` the tick does nothing, so turning the switch off or on needs no restart. The same switch
+governs the CLI updates below.
 
 ### Cut a release
 
@@ -572,7 +574,13 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
 so neither updates itself inside a Tars terminal. Tars updates them instead
-(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time,
+while "Check for updates" is on in Settings (the one switch for Tars's own updates and these), and
+only the CLIs at least one agent runs. An agent with no provider, and the thirteen providers pointed
+at another vendor, run claude; an Amp agent runs Amp; codex, gemini, grok, opencode and pi run their
+own binaries, which Tars does not update. So a fleet with no Amp agent never has Amp checked, and a
+codex-only fleet never has claude checked. The log says `all off` once when the switch is off, and
+`<cli> skipped: <why>` once for each reason a CLI is left alone, such as no agent running it.
 
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
@@ -592,7 +600,7 @@ it runs, and a launch in those seconds fails. npm's cache for it lives in the sc
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
 package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
 
-Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
 yourself.
 
@@ -879,7 +887,9 @@ both behave identically. It:
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
-   `waiting` over a bare shell had the message run as a command. Otherwise it
+   `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
+   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
 
