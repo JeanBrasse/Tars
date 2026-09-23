@@ -649,6 +649,18 @@ export interface BusRoom {
    *  the overseer's own conversation and is not in this journal. */
   lastMessageAt?: string;
   lastMessagePreview?: string;
+  /** What is waiting in this room, by delivery state, so the conversation
+   *  list can show it without reading each room. Zero for the global room,
+   *  whose messages are not in this journal. */
+  pending: BusRoomPending;
+}
+
+/** Deliveries of a room's messages still waiting, by state. `delivered` and
+ *  `dropped` are over and not counted. */
+export interface BusRoomPending {
+  queued: number;
+  held: number;
+  notSent: number;
 }
 
 /** `open` is live; `bounded` hit three rounds or ten agent messages and only a
@@ -671,7 +683,31 @@ export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
 /** What a machine line is about, so the page can draw each as its own row
  *  instead of collapsing them into one grey line. There is no `passed`: a
  *  silence is refused before anything is stored, so it has no row. */
-export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released' | 'turn_interrupted';
+
+/** What a `members_changed` line is about, as data: the page picks its icon
+ *  and names from this, never from the sentence. `added` and `removed` are
+ *  agent ids; `names` holds each one's name when the change was made, since a
+ *  removed agent may be gone by the time the row is drawn. `dropped` is how
+ *  many messages still queued in the thread the change closed were dropped. */
+export interface BusMembersChanged {
+  added: string[];
+  removed: string[];
+  names: Record<string, string>;
+  dropped: number;
+}
+
+/** A file staged for a room (`bus:stageFiles`): written under ~/.dorothy,
+ *  which is in every agent's `--add-dir`, and named by its absolute path in
+ *  what each target receives. */
+export interface BusAttachment {
+  id: string;
+  name: string;
+  /** Absolute, readable by the agents. */
+  path: string;
+  bytes: number;
+  isImage: boolean;
+}
 
 export interface BusMessage {
   id: string;
@@ -684,13 +720,21 @@ export interface BusMessage {
   mentions: string[];
   /** Set only when `authorKind` is `system`. */
   systemKind?: BusSystemKind;
+  /** Set only on a `members_changed` line. */
+  systemData?: BusMembersChanged;
+  /** Files staged with `bus:stageFiles` and sent with it. */
+  attachments?: BusAttachment[];
   createdAt: string;
 }
 
 /** `not_sent` is the state to render as NOT SENT: the target has no end of
  *  turn, so nothing is queued and nothing leaves on its own. It carries its
  *  reason and moves only on an explicit human action. */
-export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
+/** `held` is taken by the target's terminal but waits behind what somebody has
+ *  typed in its field (`reasonCode: 'draft'`, `heldAt`): Tars never types
+ *  across a draft, and it goes in by itself once that field is sent or
+ *  cleared, when it turns `delivered`. */
+export type BusDeliveryState = 'queued' | 'held' | 'not_sent' | 'delivered' | 'dropped';
 
 /** Why a delivery is not going anywhere, as a value the Chat page can render
  *  without matching on English. The sentence in `reason` is for a human.
@@ -701,7 +745,8 @@ export type BusDeliveryReason =
   | 'session_replaced'
   | 'thread_stopped'
   | 'thread_replaced'
-  | 'members_changed';
+  | 'members_changed'
+  | 'draft';
 
 export interface BusDelivery {
   messageId: string;
@@ -710,6 +755,8 @@ export interface BusDelivery {
   reasonCode?: BusDeliveryReason;
   reason?: string;
   queuedAt: string;
+  /** When it was found waiting behind a draft: set with `held`. */
+  heldAt?: string;
   deliveredAt?: string;
   /** When it stopped being on its way: set with `dropped` and `not_sent`. */
   refusedAt?: string;
@@ -723,6 +770,9 @@ export interface BusMember {
   name: string;
   provider?: string;
   hasEndOfTurn: boolean;
+  /** Tars can interrupt this member's turn (`bus:sendNow`): a CLI on the claude
+   *  binary, where Esc stops the turn and the transcript records it. */
+  canInterrupt: boolean;
 }
 
 export interface BusRoomSnapshot {
@@ -1427,7 +1477,7 @@ export interface ElectronAPI {
 
   // Kanban board
   /** The agent bus. Mirror of the `bus` namespace in electron/preload.ts:
-   *  five calls, and three pushes so the Chat page never polls. */
+   *  its calls, and three pushes so the Chat page never polls. */
   bus?: {
     listRooms: () => Promise<{ rooms: BusRoom[]; error?: string }>;
     getRoom: (
@@ -1442,7 +1492,7 @@ export interface ElectronAPI {
       deliveries?: BusDelivery[];
       error?: string;
     }>;
-    postMessage: (params: { roomId: string; text: string; mentions?: string[] }) => Promise<{
+    postMessage: (params: { roomId: string; text: string; mentions?: string[]; attachments?: string[] }) => Promise<{
       success: boolean;
       messageId?: string;
       threadId?: string;
@@ -1467,6 +1517,28 @@ export interface ElectronAPI {
      *  queued, since both would write into the same terminal at once. */
     releaseNotSent: (agentId: string) => Promise<{
       success: boolean;
+      deliveries?: BusDelivery[];
+      error?: string;
+    }>;
+    /** Put files where every agent can read them, for a message to come.
+     *  `attachments` are then passed by id to postMessage or sendNow. 12 MB a
+     *  file; what is refused is named in `error`, the rest staged. */
+    stageFiles: (params: {
+      roomId: string;
+      files: Array<{ name: string; mimeType: string; data: Uint8Array }>;
+    }) => Promise<{ success: boolean; attachments: BusAttachment[]; error?: string }>;
+    /** Send to one agent now: recorded as postMessage records it; a busy
+     *  member that `canInterrupt` gets an Esc first, and the message is typed
+     *  once its transcript records the interrupt (5 s at most), through the
+     *  draft guard. `interrupted: false` when it was at rest (delivered as any
+     *  message), cannot be interrupted, or the interrupt was not confirmed in
+     *  time, when it is queued for the turn's end as `deliveries` says.
+     *  `error` only when nothing was recorded. */
+    sendNow: (params: { roomId: string; agentId: string; text: string; attachments?: string[] }) => Promise<{
+      success: boolean;
+      messageId?: string;
+      threadId?: string;
+      interrupted: boolean;
       deliveries?: BusDelivery[];
       error?: string;
     }>;
@@ -1636,6 +1708,13 @@ export interface ElectronAPI {
       success: boolean;
       attachments: OverseerAttachment[];
       canceled?: boolean;
+      error?: string;
+    }>;
+    /** The upload attachFiles does, without its dialog: for a paste or a drop.
+     *  12 MB a file; what is refused is named in `error`, the rest uploaded. */
+    attachData: (files: Array<{ name: string; mimeType: string; data: Uint8Array }>) => Promise<{
+      success: boolean;
+      attachments: OverseerAttachment[];
       error?: string;
     }>;
     /** The gateway's `agent.reasoning_effort`. It belongs to the gateway, not
