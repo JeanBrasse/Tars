@@ -1113,7 +1113,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 
 | Symptom | Where to look |
 |---|---|
-| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `/tmp/dorothy-hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
 | an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1124,8 +1124,10 @@ in `ps`.
 ### Debugging hooks
 
 ```bash
-tail -f /tmp/dorothy-hooks.log          # session-start
-tail -f /tmp/dorothy-hooks-debug.log    # on-stop, verbose
+tail -f ~/.dorothy/logs/hooks.log          # session-start, prompts, stops
+tail -f ~/.dorothy/logs/hooks-debug.log    # on-stop, verbose
+# Until 2026-09-23 these were /tmp/dorothy-hooks.log and -debug.log, readable by
+# every user and shared by every Tars on the machine, a sandbox's included.
 
 # are they installed and pointing at a file that exists?
 jq -r '.hooks | to_entries[] | "\(.key)\t\(.value[0].hooks[0].command)"' ~/.claude/settings.json
@@ -1134,6 +1136,12 @@ jq -r '.hooks | to_entries[] | .value[0].hooks[0].command' ~/.claude/settings.js
 # the hooks need jq and curl
 which jq curl
 ```
+
+A hook post that is refused (`401` or `403` in those logs) comes from a CLI whose
+token is not its terminal's: one that outlived its terminal (a restart replaced it), or
+one Tars did not start. The agent's status then stops following that CLI: stop and
+start the agent from Tars. After an update from 1.7.9 there is none of these, since
+quitting kills every agent terminal and each comes back with a token.
 
 | Symptom | Cause |
 |---|---|
@@ -1396,7 +1404,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/age
 
 ### An agent restarted by itself after its model or effort changed
 
-Saving a model, an effort, a permission mode, orchestrator mode, a secondary folder, an
+Saving a model, an effort, a permission mode, the Orchestrator toggle, a secondary folder, an
 Obsidian vault or a local model in the Agents page restarts that agent's CLI on the new values,
 continuing its conversation (`--resume <session> --fork-session`), unless something would be cut
 (`electron/core/agent-restart.ts`). Every decision is one line in the main process log:
@@ -1421,6 +1429,29 @@ its argv (the model and effort are on the command line):
 
 ```bash
 ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
+```
+
+### An orchestrator became a worker, or the other way round
+
+The Orchestrator toggle is the role, and a project has one orchestrator
+(`electron/core/agent-role.ts`). Switching it on for an agent makes the project's current
+orchestrator a worker, and both CLIs restart on their new flags:
+
+```
+[restart] Tars-Backend: orchestrator changed: restarting its CLI now
+[restart] Tars-Orchestrator: orchestrator changed: restarting when its turn ends
+```
+
+The name decides nothing: renaming "Tars-Orchestrator" leaves it the orchestrator, and an agent
+called "Orchestrator" can be a worker. On load, a file with two orchestrators in one project keeps
+the first and logs `[role] <name> is a worker now: <project> had another orchestrator, and a
+project has one`. Who is what, and what a running CLI got:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents?all=true \
+  | jq -r '.agents[] | "\(.role)\t\(.name)\t\(.projectPath)"' | sort
+# an orchestrator's argv carries the instructions file and the tool block
+ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 ```
 
 ### Fleet-wide log search

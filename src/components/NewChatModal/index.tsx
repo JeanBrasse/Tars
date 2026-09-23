@@ -18,6 +18,8 @@ import SkillInstallTerminal from './SkillInstallTerminal';
 import { blankMember } from './team-defaults';
 import { canSubmitAgent, canSubmitTeam, deployButtonLabel } from './logic';
 import type { CreationMode } from './types';
+import { ReplaceOrchestratorDialog } from './ReplaceOrchestratorDialog';
+import type { PendingReplace } from './ReplaceOrchestratorDialog';
 
 const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
   { value: 'agent', label: 'One agent' },
@@ -83,8 +85,7 @@ export default function NewChatModal({
   const [model, setModel] = useState<string>('default');
   const [cliPath, setCliPath] = useState('');
   // State, not a ref: the character decides the generated name the NAME field
-  // shows as its placeholder, so turning an agent into an orchestrator has to
-  // redraw that field.
+  // shows as its placeholder, so changing it has to redraw that field.
   const [character, setCharacter] = useState<AgentCharacter>('robot');
   // Edited through the NAME field the frame draws at the top of the panel.
   // Left empty it falls back to the generated `<character> on <project>` below,
@@ -102,6 +103,10 @@ export default function NewChatModal({
   const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'xhigh' | 'max'>('medium');
   const [isOrchestrator, setIsOrchestrator] = useState(false);
   const [agentOptionsOpen, setAgentOptionsOpen] = useState(false);
+  // A save that gives the orchestrator role to an agent while another agent of
+  // the same project holds it is asked first (ReplaceOrchestratorDialog), and
+  // the answer goes ahead with the save it interrupted.
+  const [pendingReplace, setPendingReplace] = useState<PendingReplace | null>(null);
 
   const handleRefreshSkills = useCallback(() => {
     onRefreshSkills?.();
@@ -211,7 +216,7 @@ export default function NewChatModal({
       setEffort(editAgent.effort || 'medium');
       if ((editAgent.provider || 'claude') !== provider) skipNextSkillsClear.current = true;
       setProvider(editAgent.provider || 'claude');
-      setIsOrchestrator(editAgent.orchestratorMode || false);
+      setIsOrchestrator(editAgent.role === 'orchestrator');
       setCliPath(editAgent.cliPath || '');
     } else {
       setProjectPath(initialProjectPath || '');
@@ -239,6 +244,7 @@ export default function NewChatModal({
     setAgentOptionsOpen(false);
     setTeamOptionsOpen(false);
     setDeployErrors([]);
+    setPendingReplace(null);
 
     window.electronAPI?.appSettings?.get().then((settings) => {
       if (cancelled) return;
@@ -292,22 +298,18 @@ export default function NewChatModal({
     setSelectedSkills((prev) => prev.includes(skillName) ? prev.filter((s) => s !== skillName) : [...prev, skillName]);
   }, []);
 
-  const handleOrchestratorToggle = useCallback((enabled: boolean) => {
-    setIsOrchestrator(enabled);
-    if (enabled) {
-      setPermissionMode('auto');
-      setCharacter('wizard');
-    } else {
-      setPermissionMode('normal');
-      setCharacter(prev => (prev === 'wizard' ? 'robot' : prev));
-    }
-  }, []);
+  /* ── one orchestrator per project ────────────────────────────────── */
+  // The other orchestrator of the project an agent is saved into, read from the
+  // main process at the moment of saving rather than from this dialog's copy of
+  // the fleet: a role can change hands elsewhere, and nothing pushes it here.
+  const currentOrchestrator = useCallback(async (inProject: string, selfId?: string) => {
+    const fleet = (await window.electronAPI?.agent?.list()) ?? existingAgents;
+    return fleet.find(a => a.projectPath === inProject && a.role === 'orchestrator' && a.id !== selfId) ?? null;
+  }, [existingAgents]);
 
   /* ── submit: one agent ───────────────────────────────────────────── */
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const handleSubmitAgent = useCallback(async () => {
-    if (!canSubmitAgent({ projectPath, useWorktree, branchName })) return;
-
+  const commitAgent = useCallback(async () => {
     const agentCharacter = character;
     const finalName = agentName.trim() || generatedAgentName(agentCharacter, projectPath);
 
@@ -328,7 +330,7 @@ export default function NewChatModal({
           provider,
           savedPrompt: prompt.trim() || null,
           worktree: worktreeConfig,
-          orchestratorMode: isOrchestrator,
+          role: isOrchestrator ? 'orchestrator' : 'worker',
           cliPath: cliPath || null,
         });
         if (result === false) return;
@@ -340,7 +342,7 @@ export default function NewChatModal({
         || (selectedSkills.length > 0 ? `Use the following skills: ${selectedSkills.join(', ')}` : '');
       const worktreeConfig = useWorktree ? { enabled: true, branchName: branchName.trim() } : undefined;
 
-      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, undefined, permissionMode, provider, undefined, undefined, effort, isOrchestrator, cliPath || undefined);
+      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, undefined, permissionMode, provider, undefined, undefined, effort, isOrchestrator ? 'orchestrator' : 'worker', cliPath || undefined);
       if (result === false) return;
 
       setProjectPath('');
@@ -361,14 +363,40 @@ export default function NewChatModal({
     }
   }, [projectPath, prompt, selectedSkills, useWorktree, branchName, model, permissionMode, effort, provider, cliPath, agentName, character, onSubmit, isEditMode, editAgent, onUpdate, onClose, isOrchestrator]);
 
+  // Switching the toggle on, creating with it on and moving an orchestrator into
+  // another project all end here: the project is the one the dialog now names.
+  const handleSubmitAgent = useCallback(async () => {
+    if (!canSubmitAgent({ projectPath, useWorktree, branchName })) return;
+    if (isOrchestrator) {
+      // Busy while it looks, as it is while it saves: a second click in
+      // between would otherwise save twice.
+      setIsSubmitting(true);
+      let holder: Awaited<ReturnType<typeof currentOrchestrator>>;
+      try {
+        holder = await currentOrchestrator(projectPath, editAgent?.id);
+      } finally {
+        setIsSubmitting(false);
+      }
+      if (holder) {
+        setPendingReplace({
+          kind: isEditMode ? 'edit' : 'create',
+          holder: holder.name || holder.id,
+          newcomer: agentName.trim() || generatedAgentName(character, projectPath),
+          project: projectPath.split('/').pop() || projectPath,
+        });
+        return;
+      }
+    }
+    await commitAgent();
+  }, [projectPath, useWorktree, branchName, isOrchestrator, currentOrchestrator, editAgent, isEditMode, agentName, character, commitAgent]);
+
   /* ── submit: a team ──────────────────────────────────────────────── */
   const selectedMembers = useMemo(
     () => editedMembers.filter((_, i) => selectedMemberIdx.has(i)),
     [editedMembers, selectedMemberIdx],
   );
 
-  const handleDeployTeam = useCallback(async () => {
-    if (!canSubmitTeam({ projectPath, selectedCount: selectedMembers.length })) return;
+  const commitTeam = useCallback(async () => {
     setDeploying(true);
     setDeployErrors([]);
     const projectName = projectPath.split('/').pop() || 'project';
@@ -395,7 +423,7 @@ export default function NewChatModal({
           model: resolvedModel,
           localModel: member.localModel,
           worktree: member.worktreeBranch ? { enabled: true, branchName: member.worktreeBranch } : undefined,
-          orchestratorMode: member.orchestratorMode,
+          role: member.role,
         });
         createdIds.push(agent.id);
         if (member.worktreeBranch && !agent.branchName) {
@@ -419,6 +447,39 @@ export default function NewChatModal({
     if (issues.length === 0) onClose();
   }, [projectPath, selectedMembers, existingAgents, createAgent, updateAgent, startAgent, teamBrief, startOnDeploy, onTeamDeployed, onClose]);
 
+  // A team with an orchestrator member, deployed into a project that already
+  // has one, takes the role from it. Not when that member is the orchestrator
+  // already there: the deploy skips a member deployed before, so nothing
+  // changes hands.
+  const handleDeployTeam = useCallback(async () => {
+    if (!canSubmitTeam({ projectPath, selectedCount: selectedMembers.length })) return;
+    const lead = selectedMembers.find(m => m.role === 'orchestrator');
+    if (lead) {
+      const projectName = projectPath.split('/').pop() || 'project';
+      const leadName = `${lead.name} - ${projectName}`;
+      setDeploying(true);
+      let holder: Awaited<ReturnType<typeof currentOrchestrator>>;
+      try {
+        holder = await currentOrchestrator(projectPath);
+      } finally {
+        setDeploying(false);
+      }
+      if (holder && holder.name !== leadName) {
+        setPendingReplace({ kind: 'team', holder: holder.name || holder.id, newcomer: leadName, project: projectName });
+        return;
+      }
+    }
+    await commitTeam();
+  }, [projectPath, selectedMembers, currentOrchestrator, commitTeam]);
+
+  const confirmReplace = useCallback(async () => {
+    const pending = pendingReplace;
+    setPendingReplace(null);
+    if (!pending) return;
+    if (pending.kind === 'team') await commitTeam();
+    else await commitAgent();
+  }, [pendingReplace, commitTeam, commitAgent]);
+
   const canStartAgent = canSubmitAgent({ projectPath, useWorktree, branchName });
   const canDeployTeam = canSubmitTeam({ projectPath, selectedCount: selectedMembers.length }) && !deploying;
 
@@ -429,7 +490,9 @@ export default function NewChatModal({
   return (
     <>
       <DialogShell
-        onClose={onClose}
+        // Both dialogs close on Escape through the window. While the question
+        // is open, Escape answers it and leaves this one as it was.
+        onClose={pendingReplace ? () => setPendingReplace(null) : onClose}
         width={width}
         title={isEditMode ? 'Edit agent' : mode === 'team' ? 'New team' : 'New agent'}
         subtitle={isEditMode
@@ -442,9 +505,11 @@ export default function NewChatModal({
         )}
         className="[&_button:not(:disabled)]:cursor-pointer"
         footerLeft={
-          mode === 'team' && !isEditMode
-            ? <span className="text-xs text-muted-foreground">Five worktrees are created under the project. Nothing is pushed.</span>
-            : <span className="text-xs text-muted-foreground">It starts as soon as you create it.</span>
+          isEditMode
+            ? undefined
+            : mode === 'team'
+              ? <span className="text-xs text-muted-foreground">Five worktrees are created under the project. Nothing is pushed.</span>
+              : <span className="text-xs text-muted-foreground">It starts as soon as you create it.</span>
         }
         footerRight={
           <>
@@ -503,7 +568,8 @@ export default function NewChatModal({
               branchName={branchName}
               onBranchNameChange={setBranchName}
               isOrchestrator={isOrchestrator}
-              onOrchestratorToggle={handleOrchestratorToggle}
+              onOrchestratorToggle={setIsOrchestrator}
+              editing={isEditMode}
               cliPath={cliPath}
               onCliPathChange={setCliPath}
             />
@@ -534,6 +600,14 @@ export default function NewChatModal({
           )}
         </div>
       </DialogShell>
+
+      {pendingReplace && (
+        <ReplaceOrchestratorDialog
+          pending={pendingReplace}
+          onCancel={() => setPendingReplace(null)}
+          onReplace={confirmReplace}
+        />
+      )}
 
       {/* Skill installation terminal - its own overlay, lifted above the
           dialog's z-70 the same way the old wizard did. */}

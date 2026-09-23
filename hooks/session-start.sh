@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
 # Session start hook for tars
 # Registers session ID and injects memory context (does NOT set running — that's UserPromptSubmit's job)
 
@@ -10,7 +11,7 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
 
-echo "[$(date)] SESSION_START hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> /tmp/dorothy-hooks.log
+echo "[$(date)] SESSION_START hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> "$HOOK_LOG"
 
 # API endpoint
 # The Tars that spawned this agent, not whoever happens to own 31415:
@@ -47,21 +48,23 @@ PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 # touching status — the status lifecycle belongs to UserPromptSubmit/Stop.
 # Retry once: if registration is lost, the stale-session guard would ignore
 # every later status post from this session.
-RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\"}" 2>&1)
 if [ -z "$RESULT" ]; then
   sleep 1
-  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
     -H "Content-Type: application/json" \
     -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\"}" 2>&1)
 fi
-echo "[$(date)] SESSION_START curl result: $RESULT" >> /tmp/dorothy-hooks.log
+echo "[$(date)] SESSION_START curl result: $RESULT" >> "$HOOK_LOG"
 
-# The /api/agents and /api/memory endpoints require the API token (only
-# /api/hooks/* and /api/health are auth-exempt).
-API_TOKEN=""
-if [ -f "$HOME/.dorothy/api-token" ]; then
+# The /api/agents and /api/memory endpoints require a token (only /api/health
+# and /api/local-file are exempt).
+# The CLI's own token: it names this agent. The shared file only when Tars
+# did not start this CLI and gave it none.
+API_TOKEN="${CLAUDE_MGR_API_TOKEN:-}"
+if [ -z "$API_TOKEN" ] && [ -f "$HOME/.dorothy/api-token" ]; then
   API_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
 fi
 

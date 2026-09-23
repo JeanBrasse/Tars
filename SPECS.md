@@ -22,8 +22,8 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~23k LOC)
 │     └─ one shell per agent, cwd = worktreePath ?? projectPath
 │
 ├── Local HTTP API  127.0.0.1:31415  (electron/services/api-server.ts)
-│     ├── Bearer ~/.dorothy/api-token  (exempt: /api/health, /api/hooks/*,
-│     │                                 /api/local-file)
+│     ├── Bearer token  (exempt: /api/health, /api/local-file;
+│     │                  /api/hooks/*: the agent's own token only)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
@@ -349,7 +349,7 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 
 ### Settings that apply at launch: `core/agent-restart.ts`
 
-A CLI reads its model, its effort, its permission flag, its orchestrator restrictions and its `--add-dir` folders once, when it starts. When `agent:update` changes one of them (`model`, `effort`, `permissionMode`, the orchestrator flags from the role, the name or `orchestratorMode`, `secondaryProjectPath`, `obsidianVaultPaths`, the local provider's `localModel`), the agent's CLI is restarted on the new values through the same launch as `agent:start`, with no task, and continues its conversation (see Session ownership). When:
+A CLI reads its model, its effort, its permission flag, its orchestrator restrictions and its `--add-dir` folders once, when it starts. When `agent:update` changes one of them (`model`, `effort`, `permissionMode`, the `role` the Orchestrator toggle sets, `secondaryProjectPath`, `obsidianVaultPaths`, the local provider's `localModel`), the agent's CLI is restarted on the new values through the same launch as `agent:start`, with no task, and continues its conversation (see Session ownership). When:
 
 | The agent | What happens |
 |---|---|
@@ -364,6 +364,24 @@ A CLI reads its model, its effort, its permission flag, its orchestrator restric
 After the restart the agent is `idle` at its prompt. Each decision is one `[restart] <agent>: ...` line in the main process log. A launch notes the settings its command carried, read when it built the command: `agent:start` then waits half a second for a new shell before typing, and a change saved in that half second is not in the command, so it restarts the CLI again once it is up. Noted after the wait, the change passed for launched, and the CLI stayed on the old values (the QA's gate of #123: a role taken back and given again 100 ms apart left an orchestrator by role that could edit). Skills are not a launch setting (they only preface a task); the provider, the CLI path, the project and the worktree already end the terminal when they change.
 
 A start with no task, which is every Dashboard start and autostart and every restart, leaves the agent `idle`. It used to set `running`, which nothing cleared until a turn the CLI never had came to an end, and agent-watch writes nothing to a `running` agent.
+
+### The orchestrator role: `core/agent-role.ts`
+
+The Orchestrator toggle is the role, `role: 'orchestrator' | 'worker'` on the agent, and nothing else sets it: the name decides nothing, and renaming an agent never changes its role. An orchestrator gets, on every launch (Dashboard start and autostart, the API's `spawnAgentSession`, Telegram `/start_agent` and Slack `start`, the Telegram and Slack super agent, a restart):
+
+| What | Where |
+|---|---|
+| the orchestration instructions, `--append-system-prompt-file super-agent-instructions.md` | every claude-binary launch |
+| no editing tools: `--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"` | the 14 claude-binary providers; over ACP the same tools are denied to an orchestrator, whatever its provider |
+| "orchestrator of project" in the identity header, and the orchestration rules in `/bootstrap` | every session |
+| a seat in the Chat's global room | `bus-store.ts`, read at each call |
+| Telegram and Slack messages | `getSuperAgent(agents)`: the first orchestrator in the fleet, all projects considered |
+
+A project has one orchestrator at most, and only the Agents page makes or unmakes one: `POST /api/agents` answers `403` to a request for the role, from any caller, since it would demote and restart the current orchestrator with none of the confirmation the page asks for. Through `agent:create` and `agent:update`, the agent being written takes the role from its project's current orchestrator, which becomes a worker: switching the toggle on, creating an orchestrator, or moving one into a project that has one. Both CLIs restart through `core/agent-restart.ts` (the `orchestrator` launch setting), at a moment that cuts nothing. On load, a file with two orchestrators in a project keeps the first and says so: `[role] <name> is a worker now: <project> had another orchestrator, and a project has one`.
+
+The permission mode is the agent's own on every launch, orchestrator or not. `agent:start` used to put every orchestrator in bypass whatever it was set to, so a permission mode changed in the Agents page never reached one, restart or not, and a worker switched to orchestrator was quietly given bypass. Two unattended launches still ask for bypass: the Kanban automation, and a Telegram message that has to start the super agent.
+
+The contract: `role` on `agent:create` and `agent:update`, where anything but the two values is refused; `POST /api/agents` takes `worker` and refuses `orchestrator` with a `403`. `orchestratorMode`, the toggle's old field, is read as the same toggle when `role` is absent, and kept equal to `role` on every record, for the renderer until it reads `role`. `agents.json` is at version 3 since: a file below it is migrated once on load, `role` = toggle on, or the role stored from the name, or the name itself on a record older than the role field, so no orchestrator of that day changes. After that the name is never read. A team template member saved without a role gets the same migration.
 
 ### Cross-project scoping
 
@@ -607,7 +625,7 @@ Files Tars writes **outside** its own directory:
 
 ### `AgentStatus`: what survives a restart
 
-`persistable()` strips `ptyId` and `pathMissing`, truncates `output` to the last 100 chunks, and demotes `running` to `idle`. `loadAgents()` additionally clears `ptyCwd`, `currentSessionId`, `lastKilledSessionId` and `waitingReason`, marks `pathMissing` for vanished directories, and runs two migrations: `skipPermissions: boolean → permissionMode`, and name-substring orchestrator detection → the persistent `role` field. `orchestratorMode` stays an independent tool-restriction toggle and must **not** promote an agent into the Telegram/Slack super-agent pool.
+`persistable()` strips `ptyId` and `pathMissing`, truncates `output` to the last 100 chunks, and demotes `running` to `idle`. `loadAgents()` additionally clears `ptyCwd`, `currentSessionId`, `lastKilledSessionId` and `waitingReason`, marks `pathMissing` for vanished directories, and runs two migrations: `skipPermissions: boolean → permissionMode`, and, on a file below version 3, the role from the Orchestrator toggle or else from the name, once (see The orchestrator role, §4). Every load then leaves one orchestrator per project.
 
 Live output is bounded at 600 chunks, spliced back to 400 (`OUTPUT_CHUNK_CAP` / `OUTPUT_RETAIN`): five PTY handlers pushed into `agent.output` and none of them capped it, so a chatty CLI grew that array for the life of the app, once per agent. What is spliced off is read for the terminal modes it left set (alternate screen, mouse protocol and encoding, bracketed paste, focus events, application cursor keys, hidden cursor), and those go back in as the first chunk (`electron/utils/terminal-modes.ts`). Claude Code in fullscreen sets most of them once, at start: without that chunk, a panel mounted after a long turn replayed onto the normal screen with no mouse request and no bracketed paste. The panels no longer replay these chunks: they are shown the terminal's mirror (§1), and the carry now serves a terminal with no mirror and the quick terminal's own buffer. What `output` feeds is text: the status line, log search, `get_agent_output`, the overseer and Telegram. So the 100 chunks written to disk are read back for those, and after a restart a panel shows the new terminal, not the old tail replayed onto it. Fields mutated on every PTY chunk (`output`, `statusLine`, `lastActivity`) set a dirty flag flushed every 30 s, bounding what a crash loses.
 
@@ -743,7 +761,8 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
 | Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory for each terminal spawn and each delegated run, or Tars's own pass, minted in memory and written nowhere, which the super chat presents on the loopback, or on `/api/webhooks/hermes` alone the webhook secret. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403. The shared token names no agent, no header is read with it, and it drives no agent, the webhook included |
-| Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
+| Auth-exempt | `/api/health` and `/api/local-file` |
+| Hook routes | `/api/hooks/*` take the token of the CLI they run in (`CLAUDE_MGR_API_TOKEN`), for the `agent_id` they name: anything else is a 403, and a token whose terminal was replaced is a 401. Exempt until 2026-09-23: a post with no credential registered any session for any agent (the Audit resumed one agent's conversation in another through it), and a killed CLI's late SessionStart took its agent from the live session |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |

@@ -303,7 +303,7 @@ export default function ProjectsPage() {
     localModel?: string,
     obsidianVaultPaths?: string[],
     effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-    orchestratorMode?: boolean,
+    role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
     try {
@@ -321,7 +321,7 @@ export default function ProjectsPage() {
         model: resolvedModel,
         localModel,
         obsidianVaultPaths,
-        orchestratorMode,
+        role,
         cliPath,
       });
 

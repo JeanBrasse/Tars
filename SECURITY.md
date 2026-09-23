@@ -45,7 +45,7 @@ alone:
 
 | Credential | Who it is | What it opens |
 |---|---|---|
-| An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents, and a new agent in its own project; another project's only with `allowCrossProject`. Not the webhook |
+| An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents, and a new agent in its own project, never an orchestrator (`POST /api/agents` refuses the role to every caller: only the Agents page makes one); another project's only with `allowCrossProject`. Not the webhook |
 | Tars's own pass (minted in memory, written nowhere) | the main process | every agent of every project: it is Noah's super chat, which drives every project by design. Not the webhook |
 | `~/.tars-private/hermes-webhook-secret` | Hermes | `POST /api/webhooks/hermes` and nothing else, and through it any agent of any project, named by id or by name |
 | `~/.dorothy/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent, and does not open the webhook |
@@ -77,11 +77,27 @@ token file. It is not isolation: see §3.
 
 **What it leaves open, deliberately.** The read routes (`GET /api/agents`, and
 per-agent status, output, health, wait, bootstrap) still accept the shared
-token, because `hooks/session-start.sh` fetches an agent's bootstrap with it at
-the start of every session. So a process holding that file can still enumerate
-the fleet and read any agent's terminal output. Closing that means giving the
-hooks an identity of their own, which is a change to every CLI's hook config,
-not to a route.
+token. So a process holding that file can still enumerate the fleet and read any
+agent's terminal output. The hooks no longer need it: since 2026-09-23 they
+present the token of the CLI they run in, for the bootstrap and memory reads and
+on `/api/hooks/*`, where nothing else is accepted (below). Closing the reads to
+the shared token is now a change to routes only.
+
+**What the hook routes take.** `/api/hooks/*` sets an agent's status and output and
+registers the session that owns it, so until 2026-09-23 anybody on the loopback could
+post for any agent with no credential: the Audit registered one agent's session for
+another and got its conversation back through a restart (`--resume`), and a killed
+CLI's late SessionStart took its agent from the live session by accident. The hooks
+run inside the agent's CLI and inherit its `CLAUDE_MGR_API_TOKEN`, minted for that
+terminal: a post now carries it, and the route takes nothing else (not the shared
+token, not Tars's pass) and only for the `agent_id` it names. A terminal replaced by
+a restart or a new start takes its token with it: the old CLI's late posts are a 401.
+Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
+outlives the update, and each is relaunched with a token and the new scripts (they sit
+in the app bundle). One that survives anyway posts without a token, or with one this
+Tars never minted, and is refused: stop and start it from Tars. The hook logs moved
+from `/tmp` (readable by every user, shared by every Tars on the machine) to
+`~/.dorothy/logs/`, `0600`.
 
 **What the webhook secret is.** The reach of Noah's own chat, handed to Hermes,
 so it lives where Noah's conversation lives, in `~/.tars-private`, and not in

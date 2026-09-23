@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../tars-hook.sh"
 # Notification hook for tars (Gemini CLI)
 
 INPUT=$(cat)
@@ -17,7 +18,7 @@ PROJECT_PATH="${DOROTHY_PROJECT_PATH:-$CWD}"
 # Forward notification to tars
 if [ -n "$MESSAGE" ]; then
   SAFE_MSG=$(echo "$MESSAGE" | jq -Rs .)
-  curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" \
+  curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" -H @<(tars_auth) \
     -H "Content-Type: application/json" \
     -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"message\": $SAFE_MSG, \"project_path\": \"$PROJECT_PATH\"}" \
     > /dev/null 2>&1 &

@@ -7,6 +7,7 @@ import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
+import { rolesOnLoad } from './agent-role';
 import { ptyProcesses, writeProgrammaticInput } from './pty-manager';
 import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
@@ -237,8 +238,10 @@ export function handleStatusChangeNotification(
 /**
  * On-disk format version. Bumping it lets loadAgents migrate old records
  * deliberately instead of hoping every field happens to still line up.
+ * 3: the role is the Orchestrator toggle's, and no longer read from the name
+ * (see core/agent-role.ts).
  */
-const AGENTS_SCHEMA_VERSION = 2;
+const AGENTS_SCHEMA_VERSION = 3;
 
 /**
  * Retained terminal chunks per agent, bounded. What reads them now is text:
@@ -336,7 +339,7 @@ function backupPreviousGeneration(): void {
   if (!fs.existsSync(AGENTS_FILE)) return;
   try {
     const existing = fs.readFileSync(AGENTS_FILE, 'utf-8');
-    const existingAgents = parseAgentsFile(existing);
+    const existingAgents = parseAgentsFile(existing)?.agents;
     if (existingAgents && existingAgents.length > 0) {
       fs.writeFileSync(backupFile(), existing);
     }
@@ -357,16 +360,17 @@ function persistable(agent: AgentStatus): AgentStatus {
   } as AgentStatus;
 }
 
-function parseAgentsFile(raw: string): AgentStatus[] | null {
+function parseAgentsFile(raw: string): { agents: AgentStatus[]; version: number } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return null;
   }
-  if (Array.isArray(parsed)) return parsed as AgentStatus[];       // v1: bare array
+  if (Array.isArray(parsed)) return { agents: parsed as AgentStatus[], version: 1 };       // v1: bare array
   const file = parsed as Partial<AgentsFile>;
-  return Array.isArray(file?.agents) ? file.agents : null;
+  if (!Array.isArray(file?.agents)) return null;
+  return { agents: file.agents, version: typeof file.version === 'number' ? file.version : 1 };
 }
 
 /**
@@ -444,22 +448,22 @@ export function loadAgents() {
     }
 
     const data = fs.readFileSync(AGENTS_FILE, 'utf-8');
-    let agentsArray = parseAgentsFile(data);
+    let file = parseAgentsFile(data);
 
     // Unparseable or empty: fall back to the backup rather than carrying on
     // with an empty map, which the next save would then write over the file.
-    if (!agentsArray || agentsArray.length === 0) {
+    if (!file || file.agents.length === 0) {
       const backup = backupFile();
       if (fs.existsSync(backup)) {
         const restored = parseAgentsFile(fs.readFileSync(backup, 'utf-8'));
-        if (restored && restored.length > 0) {
-          console.warn(`agents.json unusable - restoring ${restored.length} agents from backup`);
-          agentsArray = restored;
+        if (restored && restored.agents.length > 0) {
+          console.warn(`agents.json unusable - restoring ${restored.agents.length} agents from backup`);
+          file = restored;
         }
       }
     }
 
-    if (!agentsArray) {
+    if (!file) {
       // Keep the unreadable file for inspection instead of silently replacing it.
       try {
         fs.copyFileSync(AGENTS_FILE, `${AGENTS_FILE}.corrupt`);
@@ -467,6 +471,11 @@ export function loadAgents() {
       console.error('agents.json could not be parsed; kept a copy at agents.json.corrupt');
       agentsLoaded = true;
       return;
+    }
+    const agentsArray = file.agents;
+
+    for (const agent of rolesOnLoad(agentsArray, file.version)) {
+      console.warn(`[role] ${agent.name || agent.id} is a worker now: ${agent.projectPath} had another orchestrator, and a project has one`);
     }
 
     for (const agent of agentsArray) {
@@ -509,16 +518,6 @@ export function loadAgents() {
       // Migrate legacy skipPermissions boolean → permissionMode
       if (!agent.permissionMode) {
         agent.permissionMode = agent.skipPermissions ? 'auto' : 'normal';
-      }
-
-      // Migrate name-substring orchestrator detection → persistent role field.
-      // Name-only on purpose: orchestratorMode is a tool-restriction toggle
-      // and must not promote agents into the Telegram/Slack super-agent pool.
-      if (!agent.role) {
-        const name = agent.name?.toLowerCase() || '';
-        agent.role = (name.includes('super agent') || name.includes('orchestrator'))
-          ? 'orchestrator'
-          : 'worker';
       }
 
       // Backfill createdAt for legacy agents using lastActivity

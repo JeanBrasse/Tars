@@ -66,10 +66,8 @@ IMPORTANT:
 
 Say hello and list the current agents.`;
 
-export const isSuperAgentCheck = (agent: AgentStatus) => {
-  const name = agent.name?.toLowerCase() || '';
-  return name.includes('super agent') || name.includes('orchestrator');
-};
+// The Orchestrator toggle, which is the role. The name decides nothing.
+export const isSuperAgentCheck = (agent: AgentStatus) => agent.role === 'orchestrator';
 
 export const PROVIDER_LABELS: Record<string, string> = {
   claude: 'Claude',

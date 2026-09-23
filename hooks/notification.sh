@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
 # Notification hook for tars
 # Captures and forwards Claude Code notifications
 
@@ -20,7 +21,7 @@ API_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}"
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 
-echo "[$(date)] NOTIFICATION hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} TYPE=$NOTIFICATION_TYPE" >> /tmp/dorothy-hooks.log
+echo "[$(date)] NOTIFICATION hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} TYPE=$NOTIFICATION_TYPE" >> "$HOOK_LOG"
 
 # Skip if no notification type
 if [ -z "$NOTIFICATION_TYPE" ]; then
@@ -31,7 +32,7 @@ fi
 # Forward notification to our API. printf and not echo, as on-stop.sh does:
 # echo ends the text with a newline and jq -Rs keeps it, so every title and
 # message reached Tars with a "\n" the CLI never wrote.
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" \
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"type\": \"$NOTIFICATION_TYPE\", \"title\": $(printf '%s' "$TITLE" | jq -Rs .), \"message\": $(printf '%s' "$MESSAGE" | jq -Rs .)}" \
   > /dev/null 2>&1
@@ -39,7 +40,7 @@ curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" \
 # Permission prompts are handled by the dedicated PermissionRequest hook.
 # Idle prompts still set waiting here since there's no dedicated hook for them.
 if [ "$NOTIFICATION_TYPE" = "idle_prompt" ]; then
-  curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+  curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
     -H "Content-Type: application/json" \
     -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"waiting\", \"waiting_reason\": \"idle\"}" \
     > /dev/null 2>&1

@@ -15,7 +15,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 
 // Import types
-import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort } from '../types';
+import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { decodeProjectPath } from '../utils/decode-project-path';
@@ -35,6 +35,7 @@ import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledg
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchBegins, launchAbandoned, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch } from '../core/agent-restart';
+import { assignRole, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
 import * as https from 'https';
@@ -262,6 +263,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     model?: string;
     localModel?: string;
     obsidianVaultPaths?: string[];
+    /** The Orchestrator toggle. See core/agent-role.ts. */
+    role?: AgentRole;
+    /** The toggle's old name, read when `role` is absent. */
     orchestratorMode?: boolean;
     cliPath?: string;
   }) => {
@@ -273,6 +277,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (config.effort && !VALID_EFFORTS.includes(config.effort)) {
       throw new Error(`Invalid effort level: ${config.effort}`);
     }
+    // Before anything is created: a refused role leaves no worktree or terminal behind.
+    const role = requestedRole(config) ?? 'worker';
 
     // Validate model name: only allow safe characters (alphanumeric, dash, dot, slash, colon, underscore)
     if (config.model && !/^[a-zA-Z0-9._\-\/:@]+$/.test(config.model)) {
@@ -427,17 +433,19 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       name: config.name || `Agent ${id.slice(0, 4)}`,
       permissionMode: config.permissionMode || 'normal',
       effort: config.effort,
-      orchestratorMode: config.orchestratorMode || false,
       provider: config.provider || 'claude',
       model: config.model,
       localModel: config.localModel,
       obsidianVaultPaths: config.obsidianVaultPaths || [],
       cliPath: config.cliPath,
     };
+    // A new orchestrator takes the role from its project's current one.
+    const demoted = assignRole(status, role, agents.values());
     agents.set(id, status);
 
     // Save agents to disk
     saveAgents();
+    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
 
     // Forward PTY output to renderer
     // Guard: skip if this PTY was replaced (e.g. local provider recreates PTY in agent:start)
@@ -607,8 +615,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       };
 
       // Through spawnAgentPty like the other two. This is an agent's pty: it
-      // carries CLAUDE_AGENT_ID, and its hooks post to /api/hooks/*, which is
-      // one of the four routes that need no token. Spawned directly it had no
+      // carries CLAUDE_AGENT_ID, and its hooks post to /api/hooks/* with the
+      // token spawnAgentPty mints for it. Spawned directly it had no
       // CLAUDE_MGR_API_URL, so those posts fell back to 31415 and a sandbox
       // agent switched to local wrote its status into the live Tars, under a
       // real fleet id. Exactly the damage the same variable fixed elsewhere.
@@ -693,9 +701,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
 
-    // Check if this is the Super Agent (orchestrator)
-    const isSuperAgentCheck = agent.name?.toLowerCase().includes('super agent') ||
-                      agent.name?.toLowerCase().includes('orchestrator');
+    // Its project's orchestrator: the toggle, never the name.
+    const isSuperAgentCheck = isSuperAgent(agent);
 
     // Resolve MCP config path: pass for ALL agents using flag strategy (Claude)
     let mcpConfigPath: string | undefined;
@@ -778,8 +785,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       prompt: promptWithMemory,
       model: resolvedModel,
       verbose: appSettingsForCommand.verboseModeEnabled,
-      permissionMode: options?.permissionMode
-        ?? (isSuperAgentCheck ? 'bypass' : (agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'))),
+      // The agent's own, orchestrator or not, as the API launch has always
+      // done. This one put every orchestrator in bypass whatever it was set
+      // to, so a permission mode changed in the Agents page never reached an
+      // orchestrator, restart or not, and a worker switched to orchestrator
+      // was quietly given bypass. The Kanban automation still asks for it.
+      permissionMode: options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'),
       effort: agent.effort,
       secondaryProjectPath: agent.secondaryProjectPath,
       obsidianVaultPaths: agent.obsidianVaultPaths,
@@ -788,9 +799,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       skills: allAgentSkills,
       isSuperAgent: isSuperAgentCheck,
       chrome: appSettingsForCommand.chromeEnabled,
-      // BUG 5: Super Agent is implicitly an orchestrator; regular agents opt in
-      // via the "Orchestrator Mode" toggle in NewChatModal.
-      orchestratorMode: isSuperAgentCheck || agent.orchestratorMode,
+      // BUG 5: an orchestrator cannot edit files.
+      orchestratorMode: isSuperAgentCheck,
     });
 
     // Persist the prompt for future re-launches and update status. Working
@@ -942,12 +952,21 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     savedPrompt?: string | null;
     obsidianVaultPaths?: string[];
     worktree?: WorktreeConfig;
+    /** The Orchestrator toggle. See core/agent-role.ts. */
+    role?: AgentRole;
+    /** The toggle's old name, read when `role` is absent. */
     orchestratorMode?: boolean;
     cliPath?: string | null;
   }) => {
     const agent = agents.get(params.id);
     if (!agent) {
       return { success: false, error: 'Agent not found' };
+    }
+    let role: AgentRole | undefined;
+    try {
+      role = requestedRole(params);
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
     // What the running CLI was started with, as far as this edit can change it.
     const launchBefore = launchSettings(agent);
@@ -988,14 +1007,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.effort = params.effort === null ? undefined : params.effort;
     }
     if (params.name !== undefined) {
+      // Only the name: the role is the toggle's (core/agent-role.ts).
       agent.name = params.name;
-      // role tracks the name-based orchestrator semantics; a rename must
-      // recompute it or a former "orchestrator-*" agent keeps orchestrator
-      // restrictions (no Edit/Write) forever with nothing visible explaining it.
-      const lowerName = params.name.toLowerCase();
-      agent.role = (lowerName.includes('super agent') || lowerName.includes('orchestrator'))
-        ? 'orchestrator'
-        : 'worker';
     }
     if (params.character !== undefined) {
       agent.character = params.character;
@@ -1028,9 +1041,6 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
     if (params.obsidianVaultPaths !== undefined) {
       agent.obsidianVaultPaths = params.obsidianVaultPaths;
-    }
-    if (params.orchestratorMode !== undefined) {
-      agent.orchestratorMode = params.orchestratorMode;
     }
     if (params.cliPath !== undefined) {
       const newCliPath = params.cliPath === null ? undefined : params.cliPath;
@@ -1090,15 +1100,21 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
     }
 
+    // Last, once the project is settled: an orchestrator, whether the toggle
+    // was just switched on or it has just moved in, is its project's only one.
+    const demoted = assignRole(agent, role ?? (agent.role === 'orchestrator' ? 'orchestrator' : 'worker'), agents.values());
+
     agent.lastActivity = new Date().toISOString();
     saveAgents();
 
     // A model, an effort or another flag the CLI only reads when it starts is
     // applied by restarting it, at a moment that cuts nothing: see
     // core/agent-restart.ts. Saving it used to change the record and leave the
-    // CLI running on the old value until somebody relaunched it by hand.
+    // CLI running on the old value until somebody relaunched it by hand. The
+    // orchestrator this one replaced goes back to work as a worker the same way.
     const changedAtLaunch = changedLaunchSettings(launchBefore, launchSettings(agent));
     if (changedAtLaunch.length > 0) restartForSettings(agent.id, changedAtLaunch);
+    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
 
     return { success: true, agent };
   });

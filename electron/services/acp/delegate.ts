@@ -11,6 +11,7 @@ import { mintRunToken } from '../../core/agent-tokens';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { API_PORT } from '../../constants';
+import { isSuperAgent } from '../../utils';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -77,11 +78,10 @@ export async function delegateOverAcp(opts: {
   agent: AgentStatus;
   task: string;
   appSettings: AppSettings;
-  isOrchestrator?: boolean;
   timeoutMs?: number;
   onEvent?: (event: { type: string; payload: unknown }) => void;
 }): Promise<DelegationResult> {
-  const { agent, task, appSettings, isOrchestrator, onEvent } = opts;
+  const { agent, task, appSettings, onEvent } = opts;
 
   await loadAcpRegistry().catch(() => undefined);
   const launch = acpLaunchFor(agent.provider ?? 'claude');
@@ -126,8 +126,9 @@ export async function delegateOverAcp(opts: {
     permissionMode: agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : 'normal',
     // An orchestrator delegates; it does not edit. Enforced here by the
-    // protocol rather than by a flag only one CLI understands.
-    denyTools: isOrchestrator || agent.orchestratorMode ? ORCHESTRATOR_DENY : undefined,
+    // protocol rather than by a flag only one CLI understands. The role, as
+    // every launch reads it (core/agent-role.ts).
+    denyTools: isSuperAgent(agent) ? ORCHESTRATOR_DENY : undefined,
   });
 
   if (onEvent) {
