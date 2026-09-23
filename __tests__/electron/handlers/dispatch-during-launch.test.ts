@@ -593,3 +593,91 @@ describe('QA #158: CLI_UP_MS itself', () => {
     expect(answer.body.mode, JSON.stringify(answer.body)).toBe('message');
   });
 });
+
+describe('QA #158: every sender answered in time, and the link a refusal leaves', () => {
+  // Written by the QA at the gate of #158. What each one guards:
+  // 1. The 20 s a sender waits is counted from the moment it takes the agent's
+  //    lock, not from its request: a second sender queued behind the first
+  //    waits out the first's 20 s, then its own, and is answered after the MCP
+  //    tools have given up at 30 s, which is the answer that reaches nobody.
+  // 2. A sender refused with 409 typed nothing, and takes nothing either: the
+  //    delegation link stays with the agent the launch's work is for, which
+  //    is the one agent-watch tells when that work is done.
+  function plannerBeingStarted(): { agent: AgentStatus; terminal: () => FakePty } {
+    for (const id of ['orch', 'qa']) {
+      agents.set(id, {
+        id, name: id === 'orch' ? 'Orchestrator' : 'QA', status: 'running', provider: 'claude', projectPath: project,
+        skills: [], output: [], lastActivity: new Date().toISOString(),
+      } as AgentStatus);
+    }
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    const before = spawned.length;
+    return { agent, terminal: () => newTerminal(before) };
+  }
+
+  /** As dispatch() above, from the agent `caller`. */
+  function send(caller: string, id: string, message: string, endpoint: 'dispatch' | 'message' = 'dispatch'): Promise<{ status: number; body: Record<string, unknown> }> {
+    const app: RouteApp = {
+      routes: [],
+      add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
+      get(pattern, handler) { this.add('GET', pattern, handler); },
+      post(pattern, handler) { this.add('POST', pattern, handler); },
+      put(pattern, handler) { this.add('PUT', pattern, handler); },
+      delete(pattern, handler) { this.add('DELETE', pattern, handler); },
+    };
+    registerAgentRoutes(app, {
+      mainWindow: null, appSettings: {} as AppSettings, getAppSettings: () => ({} as AppSettings),
+      getTelegramBot: () => null, getSlackApp: () => null, slackResponseChannel: null, slackResponseThreadTs: null,
+      handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(),
+      initAgentPtyCallback: vi.fn(async () => 'unused'), agentStatusEmitter: new EventEmitter(),
+    } as unknown as RouteContext);
+    const pathname = `/api/agents/${id}/${endpoint}`;
+    const route = app.routes.find(r => r.method === 'POST' && typeof r.pattern !== 'string' && r.pattern.test(pathname))!;
+    let answer = { status: 200, body: {} as Record<string, unknown> };
+    return Promise.resolve(route.handler({
+      method: 'POST', pathname, url: new URL(`http://localhost${pathname}`), body: { message },
+      raw: { headers: {}, on: () => {} }, res: {}, params: { id }, callerAgentId: caller,
+    } as unknown as RouteRequest, (json, status = 200) => { answer = { status, body: json as Record<string, unknown> }; }, {} as RouteContext))
+      .then(() => answer);
+  }
+
+  it('answers a second sender, queued behind the first, before its caller gives up at 30 s', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const t0 = Date.now();
+    const at: number[] = [];
+    const first = send('orch', agent.id, 'ONE?').then(r => { at[0] = Date.now() - t0; return r; });
+    const second = send('qa', agent.id, 'TWO?', 'message').then(r => { at[1] = Date.now() - t0; return r; });
+    // The launch comes up 35 s after both were sent: past the MCP tools' 30 s.
+    await vi.advanceTimersByTimeAsync(35_000);
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const answers = [await first, await second];
+
+    expect(answers[0].status).toBe(409);
+    expect(at[0]).toBeLessThan(30_000);
+    expect(at[1], `the second sender was answered ${JSON.stringify(answers[1])} after ${at[1]} ms`).toBeLessThan(30_000);
+  });
+
+  it('leaves the delegation link with the agent the launch works for when a sender is refused', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    expect(agent.requestedBy?.agentId).toBe('orch');
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const refused = send('qa', agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect((await refused).status).toBe(409);
+
+    expect(agent.requestedBy?.agentId, 'a sender typed nothing, and took the note owed to the orchestrator').toBe('orch');
+  });
+});
