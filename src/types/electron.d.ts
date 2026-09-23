@@ -800,7 +800,8 @@ export interface ElectronAPI {
     listInstalled: () => Promise<string[]>;
     listInstalledAll: () => Promise<Record<string, string[]>>;
     linkToProvider: (params: { skillName: string; providerId: string }) => Promise<{ success: boolean; error?: string }>;
-    fetchMarketplace: () => Promise<{ skills: Array<{ rank: number; name: string; repo: string; installs: string; installsNum: number }> | null }>;
+    /** The last skills.sh listing, at once, refreshed behind it when older than an hour; only the first ever call waits on the network. `fetchedAt` is when it was fetched (ms). */
+    fetchMarketplace: () => Promise<{ skills: Array<{ rank: number; name: string; repo: string; installs: string; installsNum: number }> | null; fetchedAt?: number }>;
     onPtyData: (callback: (event: { id: string; data: string }) => void) => () => void;
     onPtyExit: (callback: (event: { id: string; exitCode: number }) => void) => () => void;
     onInstallOutput: (callback: (event: SkillInstallOutputEvent) => void) => () => void;
@@ -1301,7 +1302,8 @@ export interface ElectronAPI {
 
   // CLI paths management
   cliPaths?: {
-    detect: () => Promise<{
+    /** The last detection, cached in main for the app run and the saved paths; `refresh: true` looks again (a login shell and a probe of every CLI). */
+    detect: (options?: { refresh?: boolean }) => Promise<{
       amp: string;
       claude: string;
       codex: string;

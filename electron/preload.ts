@@ -689,8 +689,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   cliPaths: {
-    detect: () =>
-      ipcRenderer.invoke('cliPaths:detect'),
+    /** The last detection; `refresh: true` looks again (the Detect button). */
+    detect: (options?: { refresh?: boolean }) =>
+      ipcRenderer.invoke('cliPaths:detect', options),
     get: () =>
       ipcRenderer.invoke('cliPaths:get'),
     save: (paths: { amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string; additionalPaths: string[] }) =>
