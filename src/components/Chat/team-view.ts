@@ -208,6 +208,9 @@ export function roomCounts(
   if (pending?.queued) counts.push({ label: `${pending.queued} queued` });
   if (!running && idle > 0) counts.push({ label: `${idle} idle` });
   if (stopped) counts.push({ label: `${stopped} stopped` });
+  // Three at most, in the order a reader acts on: a fourth truncated every
+  // count in 208px instead of leaving one out.
+  counts.splice(3);
   const tone: RowTone = errors ? 'error'
     : needYou ? 'waiting'
     : running ? 'running'

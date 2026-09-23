@@ -80,7 +80,9 @@ export function ConversationRow({
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
       // Active is a box: the tinted fill, never a rule down the side.
-      className={`w-full h-[52px] shrink-0 flex flex-col gap-1 px-3 py-2 text-left border-b border-border cursor-pointer ${
+      // pb 7: the bottom border takes the last pixel of the row, as the frame's
+      // stroke does, so the row is 52 and not 53.
+      className={`w-full h-[52px] shrink-0 flex flex-col gap-1 px-3 pt-2 pb-[7px] text-left border-b border-border cursor-pointer ${
         selected ? 'bg-accent-dim' : 'hover:bg-secondary'
       }`}
     >
@@ -91,11 +93,11 @@ export function ConversationRow({
         <span className="flex-1" />
         {time && <span className="font-mono text-[11px] leading-4 text-text-muted shrink-0">{time}</span>}
       </span>
-      <span className="w-full h-4 flex items-center gap-1.5 pl-6 min-w-0">
+      <span className="w-full h-4 flex items-center gap-1.5 pl-6 min-w-0 overflow-hidden">
         {counts.map((c, i) => (
           <Fragment key={c.label}>
             {i > 0 && <span className="text-[12px] leading-4 text-text-muted">·</span>}
-            <span className={`text-[12px] leading-4 truncate ${c.tone ? COUNT_INK[c.tone] : 'text-text-muted'}`}>{c.label}</span>
+            <span className={`text-[12px] leading-4 whitespace-nowrap ${c.tone ? COUNT_INK[c.tone] : 'text-text-muted'}`}>{c.label}</span>
           </Fragment>
         ))}
       </span>
@@ -249,7 +251,8 @@ export function TeamRow({
   const act = (id: RowActionId) => { setMenuOpen(false); onAction(id, agent); };
 
   return (
-    <div className={`shrink-0 flex flex-col gap-1 px-3 py-2 border-b border-border ${open ? 'bg-secondary' : ''}`}>
+    // 56 folded and 96 open: pb 7, the bottom border taking the last pixel.
+    <div className={`shrink-0 flex flex-col gap-1 px-3 pt-2 pb-[7px] border-b border-border ${open ? 'bg-secondary' : ''}`}>
       <button
         type="button"
         onClick={onToggle}
@@ -405,7 +408,7 @@ export function TeamSection({
 /** A line of text in the column, in the text column, with an optional lead. */
 export function SidebarNote({ lead, children, actions }: { lead?: ReactNode; children: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="shrink-0 flex gap-2 px-3 py-2 border-b border-border">
+    <div className="shrink-0 flex gap-2 px-3 pt-2 pb-[7px] border-b border-border">
       <Lead>{lead}</Lead>
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <p className="text-[12px] leading-4 text-text-muted">{children}</p>
