@@ -126,6 +126,90 @@ const TASK_ID = /<task-id>([^<]+)<\/task-id>/;
 const TASK_STATUS = /<status>([^<]+)<\/status>/;
 const STOP_TOOLS = new Set(['TaskStop', 'KillShell', 'KillBash']);
 
+/** How much of a transcript's end the local-command probe reads. A command's
+ *  three records take a few hundred bytes; a transcript runs to megabytes. */
+const LOCAL_COMMAND_TAIL = 256 * 1024;
+
+/**
+ * When the agent's session last recorded a local command finishing, in ms since
+ * the epoch, or undefined.
+ *
+ * A command typed by hand at the prompt (/model, /effort, /config ...) runs in
+ * the CLI and never reaches the model: no UserPromptSubmit hook fires, and
+ * nothing else says the field emptied. What it leaves is three records in the
+ * session transcript, `<local-command-caveat>`, `<command-name>` and
+ * `<local-command-stdout>`, written when it finishes, not when it opens.
+ * Measured on Claude Code 2.1.280: 44 to 74 ms after the Enter or the Esc that
+ * closes a /model or /effort picker; the /config panel wrote them only when it
+ * finally closed, after a first Esc that merely cleared its filter. By then the
+ * command's text has left the field and its panel is gone: the field is empty.
+ *
+ * Some finish without a record this takes: /help and /config closed without
+ * a change write none, and /model cancelled with Esc writes two `system`
+ * records (subtype local_command) that are skipped on purpose, since the same
+ * pair is written when the "Switch model?" confirmation is backed out of with
+ * Esc while the picker stays open (the gate of #128). For those this says
+ * nothing.
+ */
+export function lastLocalCommandAt(
+  agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string },
+  homeDir = os.homedir(),
+): number | undefined {
+  const sessionId = agent.currentSessionId?.trim();
+  if (!sessionId) return undefined;
+  for (const root of [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p)) {
+    const file = transcriptPath(root, sessionId, homeDir);
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(file, 'r');
+      const { size, mtimeMs } = fs.fstatSync(fd);
+      // Asked every second while a message waits on a field somebody left
+      // something in: the tail is read again only when the file has changed.
+      const known = lastReadOf.get(file);
+      if (known && known.size === size && known.mtimeMs === mtimeMs) return known.at;
+      const length = Math.min(size, LOCAL_COMMAND_TAIL);
+      const tail = Buffer.alloc(length);
+      fs.readSync(fd, tail, 0, length, size - length);
+      const at = latestLocalCommand(tail.toString('utf-8'));
+      lastReadOf.set(file, { size, mtimeMs, at });
+      return at;
+    } catch {
+      // not in this root
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+  }
+  return undefined;
+}
+
+/** What lastLocalCommandAt last read in each transcript, and the file it read it from. */
+const lastReadOf = new Map<string, { size: number; mtimeMs: number; at: number | undefined }>();
+
+/** The newest local-command record in some transcript lines, as its time. */
+function latestLocalCommand(lines: string): number | undefined {
+  let latest: number | undefined;
+  for (const line of lines.split('\n')) {
+    if (!line.includes('<command-name>') && !line.includes('<local-command-stdout>')) continue;
+    let entry: Record<string, unknown>;
+    try {
+      // The first line of a tail is usually cut in two, and fails here.
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry.type !== 'user') continue;
+    const content = (entry.message as { content?: unknown } | undefined)?.content;
+    const text = typeof content === 'string'
+      ? content
+      : Array.isArray(content) ? content.map(b => (typeof b?.text === 'string' ? b.text : '')).join('') : '';
+    // The CLI's own record starts with the tag; a prompt that quotes one does not.
+    if (!/^\s*<(command-name|local-command-stdout)>/.test(text)) continue;
+    const at = Date.parse(String(entry.timestamp ?? ''));
+    if (Number.isFinite(at) && (latest === undefined || at > latest)) latest = at;
+  }
+  return latest;
+}
+
 /**
  * The background work this session started and has not heard back from.
  *

@@ -3,7 +3,7 @@ import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
 import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
-import { rememberTerminalOwner } from './pty-manager';
+import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 
 /**
@@ -111,6 +111,9 @@ export function spawnAgentPty(opts: {
   // one function that spawns an agent's terminal, and a caller that has to
   // remember is a caller that will not.
   if (agentId) rememberTerminalOwner(spawned, agentId);
+  // And what it held goes when it does: a message queued for a terminal whose
+  // CLI has exited would be probed for, and later typed into nothing.
+  spawned.onExit(() => terminalExited(spawned));
   // Before any caller subscribes, so a chunk is in the mirror before it is
   // broadcast. Here for the reason above: every agent terminal needs one. The
   // left-fullscreen watch only for the claude binary, whose two renderers it
