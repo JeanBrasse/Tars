@@ -36,6 +36,29 @@ export interface TurnResult {
   /** Tool calls it made, in order. */
   toolCalls: { title: string; kind?: string; status?: string }[];
   costUSD?: number;
+  /**
+   * What the turn started and left running when it ended: background
+   * commands, monitors, wakeups. A delegated run ends with its turn, and all
+   * of it is stopped with the agent (see backgroundOf).
+   */
+  background: string[];
+}
+
+/**
+ * The name to report for a tool call that leaves work running after the turn,
+ * or null. Claude Code has three: a Bash command started with
+ * `run_in_background`, a Monitor, and a ScheduleWakeup (claude-agent-acp
+ * titles those two by their tool name). In a terminal session each brings the
+ * agent back when it fires; in a delegated run nothing does, since the run
+ * ends with the turn and the agent is stopped.
+ */
+function backgroundOf(title: string, rawInput: unknown): string | null {
+  const input = (rawInput ?? {}) as { run_in_background?: unknown; command?: unknown; description?: unknown };
+  if (input.run_in_background === true) {
+    return typeof input.command === 'string' ? input.command : typeof input.description === 'string' ? input.description : title;
+  }
+  if (title === 'Monitor' || title === 'ScheduleWakeup') return title;
+  return null;
 }
 
 export interface McpServerSpec {
@@ -109,6 +132,10 @@ export class AcpSession extends EventEmitter {
   /** Text and tool calls for the turn currently in flight. */
   private turnText: string[] = [];
   private turnTools: { title: string; kind?: string; status?: string }[] = [];
+  /** Tool calls of this turn that leave work running past it, by toolCallId. */
+  private turnBackground = new Map<string, string>();
+  /** This turn's tool calls by toolCallId, so an update can name one better. */
+  private turnToolsById = new Map<string, { title: string; kind?: string; status?: string }>();
   private turnUsage: AcpUsage | undefined;
   private turnCost: number | undefined;
 
@@ -251,6 +278,8 @@ export class AcpSession extends EventEmitter {
 
     this.turnText = [];
     this.turnTools = [];
+    this.turnBackground = new Map();
+    this.turnToolsById = new Map();
     this.turnUsage = undefined;
     this.turnCost = undefined;
 
@@ -265,7 +294,16 @@ export class AcpSession extends EventEmitter {
       text: this.turnText.join(''),
       toolCalls: this.turnTools,
       costUSD: this.turnCost,
+      background: [...this.turnBackground.values()],
     };
+  }
+
+  /**
+   * What the turn in flight has said and done so far: for a turn stopped at
+   * its limit, which otherwise answered nothing however far it had got.
+   */
+  partialTurn(): { text: string; toolCalls: { title: string; kind?: string; status?: string }[]; background: string[] } {
+    return { text: this.turnText.join(''), toolCalls: this.turnTools, background: [...this.turnBackground.values()] };
   }
 
   async cancel(): Promise<void> {
@@ -370,7 +408,19 @@ export class AcpSession extends EventEmitter {
     if (kind === 'tool_call' || kind === 'tool_call_update') {
       const title = (update.title as string) || (update.rawInput as { command?: string } | undefined)?.command || 'tool';
       const entry = { title, kind: update.kind as string | undefined, status: update.status as string | undefined };
-      if (kind === 'tool_call') this.turnTools.push(entry);
+      const id = update.toolCallId as string | undefined;
+      if (kind === 'tool_call') {
+        this.turnTools.push(entry);
+        if (id) this.turnToolsById.set(id, entry);
+      } else if (id && update.title) {
+        // The adapter emits a call first under a placeholder ("Terminal") and
+        // its command in an update: name it by what it ran.
+        const recorded = this.turnToolsById.get(id);
+        if (recorded) recorded.title = title;
+      }
+      // Read on the update too: the adapter emits a call before its input.
+      const left = backgroundOf(title, update.rawInput);
+      if (left && id) this.turnBackground.set(id, left);
       this.emit('tool', entry);
       return;
     }

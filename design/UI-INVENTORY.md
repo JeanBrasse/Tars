@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 87 root frames.
-`design/chat-design.pen` holds 75 of those, the other three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 89 root frames.
+`design/chat-design.pen` holds 75 of those, the other fourteen being newer than the
 fork, plus the eleven frames of the Chat
 room listed on the `/chat` line below: 86 in all. The first 74 share their ids
 and names across the two. The 75th, `Agent error · reason`, was drawn after the
@@ -118,6 +118,7 @@ a single monospace line so they never read as an answer.
 | Message waiting · notice | The line a panel shows while a message waits for a field somebody is typing in, with the two ways out |
 | Panel history · states | Reading (skeleton in the real shape) and no transcript |
 | Left fullscreen · notice | The line a panel shows when its claude left fullscreen and the wheel can no longer scroll it, with read history and restart (and its light copy) |
+| Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
 
 The `history` control is present on every panel, including the CLIs that write
 no transcript. Pressing it there is what surfaces the reason: only the fifteen

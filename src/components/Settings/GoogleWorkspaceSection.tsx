@@ -78,11 +78,13 @@ export const GoogleWorkspaceSection = ({ appSettings, onSaveAppSettings }: Googl
     }
   }, []);
 
-  const detectAll = useCallback(async () => {
+  // `refresh` looks again rather than reading main's cached detection (#144):
+  // after an install, the cache still says the CLI is not there.
+  const detectAll = useCallback(async (refresh = false) => {
     setDetecting(true);
     try {
       // Use centralized CLI paths detection
-      const paths = await window.electronAPI?.cliPaths?.detect();
+      const paths = await window.electronAPI?.cliPaths?.detect(refresh ? { refresh: true } : undefined);
       if (paths) {
         setGwsPath(paths.gws || '');
         setGcloudPath(paths.gcloud || '');
@@ -180,7 +182,7 @@ export const GoogleWorkspaceSection = ({ appSettings, onSaveAppSettings }: Googl
   };
 
   const handleInstallComplete = async () => {
-    await detectAll();
+    await detectAll(true);
     if (installType === 'skills') {
       await fetchSkills();
     }

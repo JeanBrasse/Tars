@@ -29,13 +29,46 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd,
 const BEFORE: FakeGhState = { releases: { 'v2.0.0': { assets: publishedAssets('2.0.0') } }, latest: 'v2.0.0' };
 
 let gh: FakeGh;
+let removePlutil: () => void;
+
+/**
+ * plutil, where the machine has none. release.mjs reads the built app's version
+ * with it, and a release is only ever cut on a Mac, where the real one answers
+ * and this is not installed. A Linux CI runner has none: this answers the one
+ * query release.mjs makes, `plutil -extract <key> raw -o - <file>`, the way
+ * plutil does, with the value and 0, or nothing and 1.
+ */
+const PLUTIL = String.raw`#!/usr/bin/env node
+const [flag, key, format, o, out, file] = process.argv.slice(2);
+if (flag !== '-extract' || format !== 'raw' || o !== '-o' || out !== '-' || !file) process.exit(2);
+let xml = '';
+try { xml = require('fs').readFileSync(file, 'utf8'); } catch { process.exit(1); }
+const found = xml.match(new RegExp('<key>' + key + '</key>\\s*<string>([^<]*)</string>'));
+if (!found) process.exit(1);
+process.stdout.write(found[1] + '\n');
+`;
+
+function standInPlutil(): () => void {
+  const installed = (process.env.PATH ?? '').split(path.delimiter).some(dir => dir && fs.existsSync(path.join(dir, 'plutil')));
+  if (installed) return () => {};
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-plutil-'));
+  fs.writeFileSync(path.join(bin, 'plutil'), PLUTIL, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${saved ?? ''}`;
+  return () => {
+    process.env.PATH = saved;
+    fs.rmSync(bin, { recursive: true, force: true });
+  };
+}
 
 beforeEach(() => {
   gh = fakeGh(BEFORE);
   gh.install();
+  removePlutil = standInPlutil();
 });
 
 afterEach(() => {
+  removePlutil();
   gh.uninstall();
 });
 
