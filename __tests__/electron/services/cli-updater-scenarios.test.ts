@@ -431,4 +431,16 @@ describe('QA #140: the switch at every tick, and the fleet at every tick', () =>
       await passes(1);
     });
   }, 60_000);
+
+  it('V5 logs a skip whose reason changed: an Amp no agent ran, then one an agent runs that is not installed', async () => {
+    const home = path.join(root, 'home');
+    fs.mkdirSync(home, { recursive: true });
+    // No node folder on this PATH: the one that holds node can hold a real Amp.
+    const ctx = ctxFor(home, {}, [path.join(home, '.local', 'bin'), '/usr/bin', '/bin', '/usr/sbin', '/sbin']);
+    await runCliUpdatePass([{ cli: 'amp', command: 'amp', inUse: false }], ctx);
+    await runCliUpdatePass([{ cli: 'amp', command: 'amp', inUse: true }], ctx);
+    const lines = logLines(ctx.logFile);
+    expect(lines.filter(l => / amp skipped: no agent runs it/.test(l)), lines.join('\n')).toHaveLength(1);
+    expect(lines.filter(l => / amp skipped: not installed: amp not found$/.test(l)), 'the new reason was not logged').toHaveLength(1);
+  });
 });
