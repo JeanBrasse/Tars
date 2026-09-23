@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { runCliUpdatePass, updateCli, startCliUpdates, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
+import { runCliUpdatePass, updateCli, startCliUpdates, clisInUse, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
 import type { AppSettings } from '../../../electron/types';
 
 /**
@@ -141,7 +141,7 @@ function captureTimers(run: () => void): { timeouts: Captured[]; intervals: Capt
 
 describe('QA #119: the schedule', () => {
   it('Q1 arms the first pass at 5 s and the next every 30 min, neither holding the app open', () => {
-    const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({}) as AppSettings));
+    const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({}) as AppSettings, () => []));
     expect(timeouts.map(t => [t.ms, t.unref])).toEqual([[5000, true]]);
     expect(intervals.map(t => [t.ms, t.unref])).toEqual([[30 * 60 * 1000, true]]);
   });
@@ -164,7 +164,7 @@ describe('QA #119: the schedule', () => {
     const savedPath = process.env.PATH;
     process.env.PATH = [nodeOnly, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
     try {
-      const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({ cliPaths: {} }) as unknown as AppSettings));
+      const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({ cliPaths: {} }) as unknown as AppSettings, () => ['claude', 'codex']));
       const [first] = timeouts;
       const [tick] = intervals;
 
@@ -179,7 +179,8 @@ describe('QA #119: the schedule', () => {
       const one = logLines(CLI_UPDATES_LOG);
       expect(one.filter(l => / claude updated 1\.0\.0 to 1\.0\.1: /.test(l))).toHaveLength(1);
       expect(one.filter(l => / codex skipped: installed through .*no update path for it has been measured/.test(l))).toHaveLength(1);
-      expect(one.filter(l => / amp skipped: not installed: amp not found$/.test(l))).toHaveLength(1);
+      // No agent runs Amp: named once, never looked for.
+      expect(one.filter(l => / amp skipped: no agent runs it, so Tars does not check it$/.test(l))).toHaveLength(1);
 
       Object.assign(process.env, { SLOW_MS: '0', FAKE_CLAUDE_MODE: 'current' });
       tick.fn();
@@ -276,4 +277,170 @@ describe('QA #119: Amp paths the PR tests do not reach', () => {
     const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.1.0' }));
     expect(r).toMatchObject({ outcome: 'updated', from: '0.0.5', to: '0.1.0' });
   }, 60_000);
+});
+
+describe('one switch, and only the CLIs the fleet runs (Noah, 2026-09-23)', () => {
+  it('U1 checks no CLI while "Check for updates" is off, says so once, and checks again once it is back on', async () => {
+    const home = os.homedir();
+    nativeClaude(home, '1.0.0');
+    process.env.FAKE_CALLS = calls;
+    process.env.FAKE_NEXT = '1.0.1';
+    const nodeOnly = path.join(root, 'node-only');
+    fs.mkdirSync(nodeOnly);
+    fs.writeFileSync(path.join(nodeOnly, 'node'), `#!/bin/sh\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = [nodeOnly, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
+    const settings = { cliPaths: {}, autoCheckUpdates: false } as unknown as AppSettings;
+    try {
+      const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => settings, () => ['claude']));
+
+      timeouts[0].fn();
+      intervals[0].fn();
+      await sleep(500);
+      expect(recorded(), 'a CLI was checked with the switch off').toEqual([]);
+      expect(logLines(CLI_UPDATES_LOG).filter(l => / all off: "Check for updates" is off in Settings/.test(l))).toHaveLength(1);
+
+      settings.autoCheckUpdates = true;
+      intervals[0].fn();
+      await vi.waitFor(() => expect(logLines(CLI_UPDATES_LOG).some(l => / claude updated 1\.0\.0 to 1\.0\.1: /.test(l))).toBe(true), { timeout: 20_000, interval: 100 });
+    } finally {
+      delete process.env.FAKE_CALLS;
+      delete process.env.FAKE_NEXT;
+      process.env.PATH = savedPath;
+      fs.rmSync(path.join(home, '.local'), { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('U2 leaves an installed Amp alone on a fleet with no Amp agent, and updates it once one runs it', async () => {
+    const home = path.join(root, 'home');
+    const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2' });
+
+    const [unused] = await runCliUpdatePass([{ cli: 'amp', command: amp, inUse: false }], ctx);
+    expect(unused).toMatchObject({ outcome: 'skipped', detail: 'no agent runs it, so Tars does not check it' });
+    expect(recorded(), 'npm was run for an Amp no agent uses').toEqual([]);
+
+    const [used] = await runCliUpdatePass([{ cli: 'amp', command: amp, inUse: true }], ctx);
+    expect(used.outcome).not.toBe('skipped');
+    expect(recorded().length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('U3 reads the fleet by provider: no provider is Claude, the thirteen other vendors run claude, Amp runs amp', () => {
+    expect([...clisInUse([])]).toEqual([]);
+    expect([...clisInUse([undefined, 'claude', 'minimax' as never])]).toEqual(['claude']);
+    expect(clisInUse(['claude', 'amp' as never, 'codex' as never])).toEqual(new Set(['claude', 'amp', 'codex']));
+  });
+});
+
+/**
+ * What U1 to U3 leave open, written by QA at the gate of PR #140.
+ *
+ * U1's "back on" half reads the shared log, where Q2 has already written the
+ * line it looks for, so it holds whatever the switch does once it is back on.
+ * Here a pass is counted by the fake CLI's own calls, in this test's file, and
+ * a log line by what it adds to the log. A tick that lands while a pass is
+ * still running does nothing, so each step waits for its pass to end.
+ */
+describe('QA #140: the switch at every tick, and the fleet at every tick', () => {
+  const runs = () => recorded().filter(c => c[0] === 'claude-end').length;
+  const count = (re: RegExp) => logLines(CLI_UPDATES_LOG).filter(l => re.test(l)).length;
+  const OFF = / all off: "Check for updates" is off in Settings, so no CLI is checked$/;
+  const NOT_RUN = / claude skipped: no agent runs it, so Tars does not check it$/;
+
+  /** Waits for claude to have been run `n` times in all, and for that pass to be over. */
+  async function passes(n: number) {
+    await vi.waitFor(() => expect(runs()).toBe(n), { timeout: 20_000, interval: 100 });
+    await sleep(500);
+  }
+
+  async function scheduled(getSettings: () => AppSettings, fleet: Array<string | undefined>, body: (tick: () => void) => Promise<void>) {
+    const home = os.homedir();
+    nativeClaude(home, '1.0.0');
+    Object.assign(process.env, { FAKE_CALLS: calls, FAKE_CLAUDE_MODE: 'current' });
+    const nodeOnly = path.join(root, 'node-only');
+    fs.mkdirSync(nodeOnly);
+    fs.writeFileSync(path.join(nodeOnly, 'node'), `#!/bin/sh\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = [nodeOnly, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
+    try {
+      const { timeouts, intervals } = captureTimers(() => startCliUpdates(getSettings, () => fleet as never));
+      let fired = false;
+      await body(() => { (fired ? intervals[0] : timeouts[0]).fn(); fired = true; });
+    } finally {
+      delete process.env.FAKE_CALLS;
+      delete process.env.FAKE_CLAUDE_MODE;
+      process.env.PATH = savedPath;
+      fs.rmSync(path.join(home, '.local'), { recursive: true, force: true });
+    }
+  }
+
+  // Settings are saved the way app:saveSettings saves them: a new object each
+  // time, never the one the updater was started with changed in place.
+  it('V1 checks again at the next tick once the switch is back on, counted by the CLI it runs', async () => {
+    let settings = { cliPaths: {}, autoCheckUpdates: false } as unknown as AppSettings;
+    await scheduled(() => settings, ['claude'], async tick => {
+      tick();
+      await sleep(800);
+      expect(recorded(), 'a CLI was run with the switch off').toEqual([]);
+      settings = { ...settings, autoCheckUpdates: true };
+      tick();
+      await passes(1);
+    });
+  }, 60_000);
+
+  it('V2 stops at the next tick when the switch is turned off after a pass, says so once, and resumes when it is back on', async () => {
+    let settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
+    await scheduled(() => settings, ['claude'], async tick => {
+      tick();
+      await passes(1);
+      const before = count(OFF);
+      settings = { ...settings, autoCheckUpdates: false };
+      tick();
+      tick();
+      await sleep(800);
+      expect(runs(), 'claude was run after the switch was turned off').toBe(1);
+      expect(count(OFF) - before, 'the off line, once for two ticks').toBe(1);
+      settings = { ...settings, autoCheckUpdates: true };
+      tick();
+      await passes(2);
+    });
+  }, 60_000);
+
+  it('V3 leaves an installed claude alone once no agent runs it, says so, and checks it again when one does', async () => {
+    const settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
+    const fleet: Array<string | undefined> = ['claude'];
+    await scheduled(() => settings, fleet, async tick => {
+      tick();
+      await passes(1);
+      const before = count(NOT_RUN);
+      fleet.splice(0, fleet.length, 'codex');
+      tick();
+      await vi.waitFor(() => expect(count(NOT_RUN)).toBe(before + 1), { timeout: 20_000, interval: 100 });
+      await sleep(500);
+      expect(recorded().filter(c => c[0] === 'claude-start'), 'claude was run for a fleet that does not run it').toHaveLength(1);
+      fleet.push('claude');
+      tick();
+      await passes(2);
+    });
+  }, 60_000);
+
+  it('V4 counts an agent with no provider as a claude agent, as every launch does', async () => {
+    const settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
+    await scheduled(() => settings, [undefined], async tick => {
+      tick();
+      await passes(1);
+    });
+  }, 60_000);
+
+  it('V5 logs a skip whose reason changed: an Amp no agent ran, then one an agent runs that is not installed', async () => {
+    const home = path.join(root, 'home');
+    fs.mkdirSync(home, { recursive: true });
+    // No node folder on this PATH: the one that holds node can hold a real Amp.
+    const ctx = ctxFor(home, {}, [path.join(home, '.local', 'bin'), '/usr/bin', '/bin', '/usr/sbin', '/sbin']);
+    await runCliUpdatePass([{ cli: 'amp', command: 'amp', inUse: false }], ctx);
+    await runCliUpdatePass([{ cli: 'amp', command: 'amp', inUse: true }], ctx);
+    const lines = logLines(ctx.logFile);
+    expect(lines.filter(l => / amp skipped: no agent runs it/.test(l)), lines.join('\n')).toHaveLength(1);
+    expect(lines.filter(l => / amp skipped: not installed: amp not found$/.test(l)), 'the new reason was not logged').toHaveLength(1);
+  });
 });
