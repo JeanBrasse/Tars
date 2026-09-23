@@ -53,7 +53,7 @@ import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-role-routes-'));
-const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
 
 afterAll(() => fs.rmSync(project, { recursive: true, force: true }));
 
