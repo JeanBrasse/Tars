@@ -80,16 +80,17 @@ In dev the window loads `process.env.DOROTHY_DEV_URL || 'http://localhost:3000'`
 DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 `app://-/index.html` off the custom protocol, served from `<appPath>/out`.
 
-From the second launch on, neither process compiles its JavaScript from source. The app://
-scheme has Chromium's `codeCache` privilege, so V8 keeps what it compiled of the renderer
-bundle in the profile's `Code Cache/js`. The main process turns on Node's compile cache before
-it requires anything else (`electron/core/compile-cache.ts`), in the profile's `compile-cache/`,
-and flushes it once the window has loaded. Both are keyed by each file's content: an update is
-compiled once more, and deleting either folder only costs one slower launch. Measured on
-2026-09-24 on a packaged build, from the second launch: the main process's compile work fell
-from 181 to 441 ms to 79 to 101 ms, and the renderer's main-thread compile from 59 to 129 ms
-to 3 ms. `NODE_DEBUG_NATIVE=COMPILE_CACHE` in the app's environment prints each module the
-cache served.
+From the second launch on, the main process no longer compiles its JavaScript from source, and
+from the third the renderer does not either. The app:// scheme has Chromium's `codeCache`
+privilege, so V8 keeps what it compiled of the renderer bundle in the profile's `Code Cache/js`:
+Chromium writes it during the second launch and reads it from the third. The main process turns
+on Node's compile cache before it requires anything else (`electron/core/compile-cache.ts`), in
+the profile's `compile-cache/`, and flushes it once the window has loaded. Both are keyed by each
+file's content: an update is compiled once more. Deleting `compile-cache/` costs one slower
+launch, deleting `Code Cache` two. Measured on 2026-09-24 on packaged builds: the main process's
+compile work fell from 181 to 441 ms to 79 to 101 ms, and the renderer's main-thread compile from
+59 to 129 ms to 3 ms once its cache is read. `NODE_DEBUG_NATIVE=COMPILE_CACHE` in the app's
+environment prints each module the cache served.
 
 ### Run the renderer alone
 
