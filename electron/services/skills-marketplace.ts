@@ -35,6 +35,38 @@ const FETCH_TIMEOUT_MS = 15_000;
 let kept: { skills: MarketplaceSkill[]; fetchedAt: number } | null = null;
 let inFlight: Promise<MarketplaceListing> | null = null;
 
+/**
+ * One path segment of a GitHub `owner/repo/skill`: letters, digits, `_`, `.`
+ * and `-`, not starting with `-` (an option to whatever reads it) and not `.`
+ * or `..` (a path that climbs out of github.com/<owner>).
+ */
+function repoSegment(segment: string): boolean {
+  return /^[A-Za-z0-9_.][A-Za-z0-9_.-]{0,99}$/.test(segment) && segment !== '.' && segment !== '..';
+}
+
+/**
+ * Whether an entry is one the Extensions page can show and install from.
+ *
+ * The listing comes from someone else's server, and is kept in
+ * ~/.dorothy/skills-marketplace.json, a folder every agent can write. `repo`
+ * is what `npx skills add https://github.com/<repo>` installs when the user
+ * clicks Install, so a planted entry could show a well-known name beside
+ * somebody else's repository (the Audit, gate of #144); the other fields are
+ * read by the page, which calls toLowerCase on them. Checked on the way in
+ * from the network and on the way back from the file.
+ */
+function validSkill(entry: unknown): entry is MarketplaceSkill {
+  if (!entry || typeof entry !== 'object') return false;
+  const s = entry as Record<string, unknown>;
+  if (typeof s.repo !== 'string') return false;
+  const segments = s.repo.split('/');
+  return (segments.length === 2 || segments.length === 3) && segments.every(repoSegment)
+    && typeof s.name === 'string' && s.name.length > 0 && s.name.length <= 200 && !/[\u0000-\u001f\u007f]/.test(s.name)
+    && Number.isInteger(s.rank) && (s.rank as number) >= 1
+    && typeof s.installs === 'string' && s.installs.length <= 16
+    && typeof s.installsNum === 'number' && Number.isFinite(s.installsNum) && s.installsNum >= 0;
+}
+
 /** The listing as skills.sh publishes it in its page, or null when it cannot be read. */
 export function parseMarketplace(html: string): MarketplaceSkill[] | null {
   const match = html.match(/initialSkills.*?(\[\{.*?\}\])/);
@@ -43,7 +75,7 @@ export function parseMarketplace(html: string): MarketplaceSkill[] | null {
   const allSkills: { source: string; name: string; installs: number }[] = JSON.parse(raw);
   // The directory publishes ~600 skills; the old 300 cap hid half of them
   // behind a search box that only filters what was already downloaded.
-  return allSkills.map((s, i) => ({
+  const skills = allSkills.map((s, i) => ({
     rank: i + 1,
     name: s.name,
     repo: s.source,
@@ -51,14 +83,20 @@ export function parseMarketplace(html: string): MarketplaceSkill[] | null {
       ? `${(s.installs / 1000).toFixed(1).replace(/\.0$/, '')}K`
       : String(s.installs),
     installsNum: s.installs,
-  }));
+  })).filter(validSkill);
+  return skills.length > 0 ? skills : null;
 }
 
 function readKept(): typeof kept {
   if (kept) return kept;
   try {
     const parsed = JSON.parse(fs.readFileSync(MARKETPLACE_CACHE_FILE, 'utf-8'));
-    if (Array.isArray(parsed?.skills) && typeof parsed.fetchedAt === 'number') kept = parsed;
+    // Only the entries that pass, and nothing kept when none does: an empty
+    // listing served from a spoiled file would never be fetched again.
+    const skills = Array.isArray(parsed?.skills) ? parsed.skills.filter(validSkill) : [];
+    if (skills.length > 0 && typeof parsed.fetchedAt === 'number' && Number.isFinite(parsed.fetchedAt)) {
+      kept = { skills, fetchedAt: parsed.fetchedAt };
+    }
   } catch {
     // Nothing kept yet, or unreadable: the next fetch writes it.
   }
@@ -73,8 +111,10 @@ function refresh(): Promise<MarketplaceListing> {
         headers: { 'User-Agent': 'Tars/1.0' },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+      // A failure leaves `kept` as it was, in memory and on disk: whoever asks
+      // next is served it. This result is only awaited when nothing was kept.
       const skills = res.ok ? parseMarketplace(await res.text()) : null;
-      if (!skills) return readKept() ?? { skills: null };
+      if (!skills) return { skills: null };
       kept = { skills, fetchedAt: Date.now() };
       try {
         writeAtomicSync(MARKETPLACE_CACHE_FILE, JSON.stringify(kept));
@@ -83,7 +123,7 @@ function refresh(): Promise<MarketplaceListing> {
       }
       return kept;
     } catch {
-      return readKept() ?? { skills: null };
+      return { skills: null };
     } finally {
       inFlight = null;
     }
