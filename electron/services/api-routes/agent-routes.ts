@@ -8,9 +8,9 @@ import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
-import { AgentStatus, AgentCharacter } from '../../types';
+import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
-import { getSuperAgentInstructionsPath } from '../../utils';
+import { getSuperAgentInstructionsPath, isSuperAgent } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
@@ -21,7 +21,8 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
-import { noteLaunch, launchSettings } from '../../core/agent-restart';
+import { noteLaunch, launchSettings, restartForSettings } from '../../core/agent-restart';
+import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
@@ -97,9 +98,8 @@ async function spawnAgentSession(
 
   const usePrintMode = opts.printMode;
 
-  const isSuperAgentApi = agent.role === 'orchestrator' ||
-                          agent.name?.toLowerCase().includes('super agent') ||
-                          agent.name?.toLowerCase().includes('orchestrator');
+  // Its project's orchestrator: the toggle, never the name (core/agent-role.ts).
+  const isSuperAgentApi = isSuperAgent(agent);
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
@@ -216,8 +216,8 @@ async function spawnAgentSession(
       // itself instead of delegating.
       systemPromptFile: orchestratorInstructionsFile(isSuperAgentApi),
       isSuperAgent: isSuperAgentApi,
-      // BUG 5: orchestrator-mode agents cannot edit files directly.
-      orchestratorMode: isSuperAgentApi || agent.orchestratorMode,
+      // BUG 5: an orchestrator cannot edit files directly.
+      orchestratorMode: isSuperAgentApi,
       verbose: appSettings.verboseModeEnabled,
       chrome: appSettings.chromeEnabled,
     });
@@ -786,9 +786,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    const isOrchestrator = agent.role === 'orchestrator' ||
-                           agent.name?.toLowerCase().includes('super agent') ||
-                           agent.name?.toLowerCase().includes('orchestrator');
+    const isOrchestrator = isSuperAgent(agent);
 
     const teammates = Array.from(agents.values())
       .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id)
@@ -868,13 +866,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const driver = resolveDriver(req, sendJson);
     if (!driver) return;
 
-    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, orchestratorMode, provider, model, effort, cliPath } = req.body as {
+    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, provider, model, effort, cliPath } = req.body as {
       projectPath: string;
       name?: string;
       skills?: string[];
       character?: AgentCharacter;
       permissionMode?: 'normal' | 'auto' | 'bypass';
       secondaryProjectPath?: string;
+      /** The Orchestrator toggle, or its old name: see requestedRole. */
+      role?: AgentRole;
       orchestratorMode?: boolean;
       provider?: string;
       model?: string;
@@ -905,10 +905,29 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Invalid effort level' }, 400);
       return;
     }
+    let role: AgentRole;
+    try {
+      role = requestedRole(req.body as { role?: unknown; orchestratorMode?: unknown }) ?? 'worker';
+    } catch (err) {
+      sendJson({ error: err instanceof Error ? err.message : 'Invalid role' }, 400);
+      return;
+    }
+    // An orchestrator is made in the Agents page and nowhere else. Made here,
+    // it took the role from the project's current one and restarted it on the
+    // word of whoever held a token, with none of the confirmation Noah asked
+    // for: the QA's gate of #123 measured a worker's own token making itself a
+    // "Rogue" orchestrator of its project, and with allowCrossProject, in
+    // bypass, of another one. Nothing asks for it legitimately: the MCP's
+    // create_agent sends no role. Decided on 2026-09-23, for every caller.
+    if (role === 'orchestrator') {
+      sendJson({
+        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; Noah can make it the orchestrator there.',
+      }, 403);
+      return;
+    }
 
     const id = uuidv4();
     const resolvedName = name || `Agent ${id.slice(0, 6)}`;
-    const lowerName = resolvedName.toLowerCase();
     const agent: AgentStatus = {
       id,
       status: 'idle',
@@ -920,20 +939,17 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       character,
       name: resolvedName,
       permissionMode: permissionMode || 'auto',
-      orchestratorMode: orchestratorMode || false,
       provider: provider as AgentStatus['provider'],
       model,
       effort,
       cliPath,
-      // role mirrors the historical name-based isSuperAgent semantics.
-      // orchestratorMode stays an independent tool-restriction toggle. It
-      // must NOT promote an agent into the Telegram/Slack super-agent pool.
-      role: (lowerName.includes('super agent') || lowerName.includes('orchestrator'))
-        ? 'orchestrator'
-        : 'worker',
     };
+    // The role asked for, never the name; an orchestrator takes the role from
+    // its project's current one, whoever creates it (core/agent-role.ts).
+    const demoted = assignRole(agent, role, agents.values());
     agents.set(id, agent);
     saveAgents();
+    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
     announceAgent(agent);
     sendJson({ agent });
   });
@@ -1042,7 +1058,6 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       agent,
       task,
       appSettings: ctx.getAppSettings(),
-      isOrchestrator: agent.role === 'orchestrator',
       timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
     });
 

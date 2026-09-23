@@ -1,4 +1,4 @@
-import type { AgentCharacter, AgentProvider, AgentPermissionMode, AgentEffort } from './index';
+import type { AgentCharacter, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from './index';
 
 /** One agent slot in a team. Deploying a team creates one agent per member. */
 export interface TeamTemplateMember {
@@ -14,6 +14,10 @@ export interface TeamTemplateMember {
   savedPrompt?: string;
   /** Git worktree branch the agent works on (omit to work on the main checkout). */
   worktreeBranch?: string;
+  /** The Orchestrator toggle of the agent it deploys. See core/agent-role.ts. */
+  role?: AgentRole;
+  /** The toggle's old name, equal to `role === 'orchestrator'`, for the
+   *  renderer that still reads it. */
   orchestratorMode?: boolean;
 }
 

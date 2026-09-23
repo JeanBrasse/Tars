@@ -9,6 +9,7 @@ import type {
   TeamTemplateMember,
   TeamTemplateStore,
 } from '../types/team-template';
+import { requestedRole, roleFromName } from '../core/agent-role';
 
 const TEAM_TEMPLATES_FILE = path.join(DATA_DIR, 'team-templates.json');
 
@@ -22,7 +23,7 @@ export const BUILTIN_TEAM_TEMPLATES: TeamTemplate[] = [
     description: 'Orchestrator + Frontend, Backend, QA, Audit and Database devs, each on their own worktree branch.',
     icon: '🚀',
     members: [
-      { name: 'Orchestrator', character: 'wizard', provider: 'claude', permissionMode: 'auto', skills: [], orchestratorMode: true,
+      { name: 'Orchestrator', character: 'wizard', provider: 'claude', permissionMode: 'auto', skills: [], role: 'orchestrator', orchestratorMode: true,
         savedPrompt: 'You are the orchestrator of this project. You never write code yourself: you break work into tasks, delegate to the team via the MCP orchestrator tools (delegate_task / send_message), track progress, unblock waiting agents, and report a concise status. Verify each teammate\'s result before marking anything done.' },
       { name: 'Frontend Engineer', character: 'astronaut', provider: 'claude', permissionMode: 'auto', skills: [], worktreeBranch: 'feat/frontend',
         savedPrompt: 'You are the frontend developer. You own the UI: components, styling, state, accessibility and visual consistency. Work only on your feat/frontend worktree, keep changes small and coherent, run the relevant checks before reporting, and describe what you changed when you finish a task.' },
@@ -55,7 +56,7 @@ function loadStore(): TeamTemplateStore {
     const parsed = JSON.parse(data);
     return {
       user: Array.isArray(parsed.user)
-        ? parsed.user.filter((t: TeamTemplate) => !!t && !t.builtin)
+        ? parsed.user.filter((t: TeamTemplate) => !!t && !t.builtin).map(withMemberRoles)
         : [],
     };
   } catch (err) {
@@ -69,8 +70,27 @@ function saveStore(store: TeamTemplateStore): void {
   fs.writeFileSync(TEAM_TEMPLATES_FILE, JSON.stringify(store, null, 2));
 }
 
+/**
+ * A team saved before the toggle was the role deployed its orchestrator by the
+ * member's name, or by the toggle: its members get that role once, as the
+ * agents did (core/agent-role.ts), so the team deploys the same agents.
+ */
+function withMemberRoles(team: TeamTemplate): TeamTemplate {
+  if (!Array.isArray(team.members)) return team;
+  return {
+    ...team,
+    members: team.members.map(member => {
+      if (member.role === 'orchestrator' || member.role === 'worker') return member;
+      const role = member.orchestratorMode === true ? 'orchestrator' : roleFromName(member.name);
+      return { ...member, role, orchestratorMode: role === 'orchestrator' || undefined };
+    }),
+  };
+}
+
 function normalizeMember(raw: Partial<TeamTemplateMember>): TeamTemplateMember | null {
   if (!raw || typeof raw.name !== 'string' || !raw.name.trim()) return null;
+  // The toggle, never the name. Throws on a role that is neither.
+  const role = requestedRole(raw) ?? 'worker';
   return {
     name: raw.name.trim(),
     character: raw.character ?? 'robot',
@@ -82,7 +102,8 @@ function normalizeMember(raw: Partial<TeamTemplateMember>): TeamTemplateMember |
     skills: Array.isArray(raw.skills) ? raw.skills : [],
     savedPrompt: raw.savedPrompt,
     worktreeBranch: raw.worktreeBranch?.trim() || undefined,
-    orchestratorMode: raw.orchestratorMode || undefined,
+    role,
+    orchestratorMode: role === 'orchestrator' || undefined,
   };
 }
 

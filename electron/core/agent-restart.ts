@@ -8,6 +8,7 @@ import { holdsFor } from '../services/agent-watch';
 import { pendingBackgroundWork } from '../services/agent-truth';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
+import { isSuperAgent } from '../utils';
 import type { AgentStatus } from '../types';
 
 /**
@@ -63,15 +64,12 @@ export interface LaunchSettings {
 }
 
 export function launchSettings(agent: AgentStatus): LaunchSettings {
-  const name = agent.name?.toLowerCase() ?? '';
   return {
     model: agent.model && agent.model !== 'default' ? agent.model : undefined,
     effort: agent.effort || undefined,
     permissionMode: agent.permissionMode,
-    // As the two launch paths decide it: by the name in agent:start, by the
-    // role or the name in the API. A rename can move an agent across.
-    orchestrator: agent.role === 'orchestrator' || name.includes('super agent') || name.includes('orchestrator')
-      || !!agent.orchestratorMode,
+    // The role, which the Orchestrator toggle sets (core/agent-role.ts).
+    orchestrator: isSuperAgent(agent),
     secondaryProjectPath: agent.secondaryProjectPath || undefined,
     obsidianVaultPaths: [...(agent.obsidianVaultPaths ?? [])],
     localModel: agent.localModel || undefined,

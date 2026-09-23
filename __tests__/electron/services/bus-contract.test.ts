@@ -608,6 +608,21 @@ describe('a round that ends, so a thread can bound itself', () => {
   });
 });
 
+describe('the global room', () => {
+  it('holds the orchestrators, by role and never by name, and follows the toggle', () => {
+    // The role is the Orchestrator toggle's (core/agent-role.ts).
+    putAgent({ id: 'lead', name: 'Lead', role: 'orchestrator' });
+    const named = putAgent({ id: 'named', name: 'Tars-Orchestrator', role: 'worker' });
+    putAgent({ id: 'sak', name: 'Sak', role: 'orchestrator', projectPath: '/sak' });
+    const global = () => store.listRooms().find(r => r.kind === 'global')!.memberIds.slice().sort();
+
+    expect(global()).toEqual(['lead', 'sak']);
+
+    named.role = 'orchestrator';
+    expect(global()).toEqual(['lead', 'named', 'sak']);
+  });
+});
+
 describe('a change of members', () => {
   it('closes the anchor in flight and reports the new membership', () => {
     putAgent({ id: 'a', status: 'running' });

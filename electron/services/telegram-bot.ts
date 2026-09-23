@@ -787,9 +787,14 @@ export function initTelegramBot() {
           secondaryProjectPath: agent.secondaryProjectPath,
           obsidianVaultPaths: agent.obsidianVaultPaths,
           mcpConfigPath,
+          // An orchestrator starts with its instructions from here too, as from
+          // the Dashboard and the API: without them it does the work itself.
+          systemPromptFile: isSuperAgent(agent) && fs.existsSync(getSuperAgentInstructionsPath())
+            ? getSuperAgentInstructionsPath()
+            : undefined,
           skills: [...new Set(agent.skills || [])],
           isSuperAgent: isSuperAgent(agent),
-          orchestratorMode: isSuperAgent(agent) || agent.orchestratorMode,
+          orchestratorMode: isSuperAgent(agent),
         });
 
         agent.status = 'running';
