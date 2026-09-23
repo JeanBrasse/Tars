@@ -364,9 +364,13 @@ export function errorDetail(status: number, body: unknown): string {
   return `HTTP ${status}`;
 }
 
-export async function fetchHermesBoard(conn: HermesConnection, board?: string) {
+/** The board, or one tenant of it: the agents' kanban files each project as a tenant. */
+export async function fetchHermesBoard(conn: HermesConnection, board?: string, tenant?: string) {
   const baseUrl = resolveHermesBaseUrl(conn);
-  const query = board ? `?board=${encodeURIComponent(board)}` : '';
+  const params = new URLSearchParams();
+  if (board) params.set('board', board);
+  if (tenant) params.set('tenant', tenant);
+  const query = params.size ? `?${params.toString()}` : '';
   const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/board${query}`, { token: conn.token });
   if (status !== 200) {
     return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
