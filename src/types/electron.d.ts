@@ -101,6 +101,10 @@ export interface AgentTickItem {
    *  failed leaves claude alive, and done or idle agents keep their session.
    *  Always set on agents:tick; optional for items the renderer builds itself. */
   cliRunning?: boolean;
+  /** The CLI repaints inline on an alternate screen it never left: it asked for
+   *  the wheel in fullscreen and no longer reads the reports. Always set on
+   *  agents:tick; optional for items the renderer builds itself. */
+  leftFullscreen?: boolean;
 }
 
 /**
@@ -264,12 +268,19 @@ export interface AgentStatus {
   branchName?: string;
   skills: string[];
   currentTask?: string;
+  /** Empty from agent:list. From agent:get, what to write into a fresh terminal
+   *  to show this agent: its terminal's screen as one chunk, opening with RIS
+   *  (core/terminal-mirror.ts), or the kept tail of the stream when the
+   *  terminal has no mirror. */
   output: string[];
   lastActivity: string;
   error?: string;
   ptyId?: string;
   /** Set by agent:list and agent:get: a CLI runs in the agent's terminal. */
   cliRunning?: boolean;
+  /** Set by agent:list and agent:get: the CLI repaints inline on an alternate
+   *  screen it never left, so wheel reports reach nothing. */
+  leftFullscreen?: boolean;
   character?: AgentCharacter;
   name?: string;
   statusLine?: string;    // ANSI-stripped last meaningful output line

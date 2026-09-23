@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -38,6 +38,7 @@ export class MiMoProvider implements CLIProvider {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
     if (params.mcpConfigPath && fs.existsSync(params.mcpConfigPath)) command += ` --mcp-config '${params.mcpConfigPath.replace(/'/g, "'\\''")}'`;
     if (params.systemPromptFile && fs.existsSync(params.systemPromptFile)) command += ` --append-system-prompt-file '${params.systemPromptFile.replace(/'/g, "'\\''")}'`;
+    command += resumeFlags(params.resumeSessionId, params.forkSession);
     if (params.model && params.model !== 'default') {
       if (!/^[a-zA-Z0-9._:\/\-]+$/.test(params.model)) throw new Error('Invalid model name');
       command += ` --model '${params.model}'`;

@@ -36,7 +36,8 @@ vi.mock('../../../../electron/core/pty-manager', () => ({
   writeProgrammaticInput: vi.fn(),
   rememberTerminalOwner: vi.fn(),
 }));
-vi.mock('../../../../electron/core/agent-restart', () => ({
+vi.mock('../../../../electron/core/agent-restart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../electron/core/agent-restart')>()),
   noteLaunch: vi.fn(),
   restartForSettings: vi.fn(),
 }));
