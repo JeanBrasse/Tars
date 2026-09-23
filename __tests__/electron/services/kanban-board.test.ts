@@ -63,6 +63,8 @@ class FakeHermes implements KanbanHermes {
   /** A yield inside each call, so that concurrent callers interleave as they would over HTTP. */
   latencyMs = 0;
   down = false;
+  /** A gateway that ignores `?tenant=` and answers with the whole board. */
+  ignoreTenant = false;
 
   private async tick() {
     if (this.down) throw new Error('connect ECONNREFUSED 127.0.0.1:8642');
@@ -77,7 +79,7 @@ class FakeHermes implements KanbanHermes {
   async board(tenant?: string) {
     await this.tick();
     const names = ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done'];
-    const all = [...this.tasks.values()].filter(t => tenant === undefined || t.tenant === tenant);
+    const all = [...this.tasks.values()].filter(t => this.ignoreTenant || tenant === undefined || t.tenant === tenant);
     return { success: true as const, board: { columns: names.map(name => ({ name, tasks: all.filter(t => t.status === name).map(t => ({ ...t })) })) } };
   }
   async get(id: string) {
@@ -244,6 +246,16 @@ describe('4. an agent acts only on its own project\'s tasks, and not on one anot
       expect(r.ok).toBe(false);
       expect(r.ok ? 0 : r.status).toBe(404);
     }
+  });
+
+  it('keeps another project\'s task out of reach even from a gateway that ignores the tenant filter', async () => {
+    const theirs = await parked(far, 'Theirs');
+    h.ignoreTenant = true;
+    const list = await listTasks(h, dune, {});
+    expect(list.ok && list.value.map(t => t.id)).toEqual([]);
+    const r = await claimTask(h, dune, theirs);
+    expect(r.ok ? 0 : r.status).toBe(404);
+    expect(h.tasks.get(theirs)!.assignee).toBe(TARS_LANE);
   });
 
   it('refuses progress, completion, release and deletion of a task another agent holds', async () => {
