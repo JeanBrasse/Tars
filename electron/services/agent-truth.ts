@@ -144,8 +144,12 @@ const LOCAL_COMMAND_TAIL = 256 * 1024;
  * finally closed, after a first Esc that merely cleared its filter. By then the
  * command's text has left the field and its panel is gone: the field is empty.
  *
- * Some finish without a record (/model cancelled with Esc, /help), and for
- * those this says nothing.
+ * Some finish without a record this takes: /help and /config closed without
+ * a change write none, and /model cancelled with Esc writes two `system`
+ * records (subtype local_command) that are skipped on purpose, since the same
+ * pair is written when the "Switch model?" confirmation is backed out of with
+ * Esc while the picker stays open (the gate of #128). For those this says
+ * nothing.
  */
 export function lastLocalCommandAt(
   agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string },
