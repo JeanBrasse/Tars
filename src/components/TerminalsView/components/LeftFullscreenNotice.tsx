@@ -13,8 +13,9 @@ const ACTION = 'font-mono lowercase';
  * reports go to a claude that no longer reads them. The main process sees it
  * in the way claude repaints (`leftFullscreen`, from #127), and useMultiTerminal
  * stops forwarding the wheel while it lasts. What is left is to say so, and to
- * offer the two ways back: the conversation read from its transcript, or a new
- * session, which opens fullscreen.
+ * offer the two ways back: the conversation read from its transcript, or the
+ * same conversation in a new session (`agent.restart`, #138), which opens
+ * fullscreen.
  *
  * The row of MessageWaitingNotice, 26 high under the header: the sentence is
  * cut first, the two actions stay.
@@ -42,7 +43,7 @@ export default function LeftFullscreenNotice({ onHistory, onRestart }: {
             read history
           </Button>
         )}
-        <Button variant="ghost" size="sm" className={ACTION} onClick={onRestart} title="Stop this session and start the agent again: it opens fullscreen">
+        <Button variant="ghost" size="sm" className={ACTION} onClick={onRestart} title="Restart its CLI on the same conversation: it opens fullscreen">
           restart
         </Button>
       </div>

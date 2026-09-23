@@ -119,6 +119,7 @@ export const DEFAULT_APP_SETTINGS = {
   slackAppToken: '',
   slackSigningSecret: '',
   slackChannelId: '',
+  slackAllowedUserIds: [],
   socialDataEnabled: false,
   socialDataApiKey: '',
   xPostingEnabled: false,
