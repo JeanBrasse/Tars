@@ -4,11 +4,11 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 78 root frames.
-`design/chat-design.pen` holds 75 of those, the other three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 79 root frames.
+`design/chat-design.pen` holds 74 of those, the other five being newer than the
 fork, plus the eleven frames of the Chat
-room listed on the `/chat` line below: 86 in all. The first 74 share their ids
-and names across the two. The 75th, `Agent error · reason`, was drawn after the
+room listed on the `/chat` line below: 85 in all. The first 73 share their ids
+and names across the two. The 74th, `Agent error · reason`, was drawn after the
 fork by one script run against both documents, so it has the same name and the
 same content in each but different ids. The room frames were drawn in the fork
 and exist nowhere else, so until the two are reconciled, `chat-design.pen` is
@@ -27,6 +27,12 @@ is what the next Chat TSX implements: the room and Hermes pages, dark and light,
 and every state of the composer. Until that lands, `chat-design.pen` still
 describes the Chat as it ships. Draw anything for the redesign in
 `chat-redesign-a.pen`.
+
+A fourth document, `design/landing.pen`, holds the site in `landing/`:
+`Landing · desktop`, `Landing · 404`, and `Landing · social image`, the picture
+link previews show. It was forked from `tars-redesign.pen` on 2026-09-23 with
+only the landing kept, and the landing frame left the first two documents in the
+same change. Draw anything for the site in `landing.pen`.
 
 Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,
