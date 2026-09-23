@@ -218,3 +218,90 @@ export function roomCounts(
     : 'idle';
   return { tone, counts: counts.length ? counts : [{ label: 'at rest' }] };
 }
+
+export type NeedAction = 'open terminal' | 'send it' | 'start';
+
+export interface NeedRow {
+  id: string;
+  agentId: string;
+  tone: RowTone;
+  text: string;
+  /** When it began, when the room knows: a refused delivery carries its time;
+   *  a waiting agent's does not yet (#159, contract 4). */
+  since?: string;
+  action: NeedAction;
+  actionLabel: string;
+}
+
+const hhmm = (iso: string | undefined): string | undefined => {
+  if (!iso) return undefined;
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? undefined : at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+/**
+ * What in this room needs you, one row per thing only you can do, most urgent
+ * first: a turn that failed, an agent waiting on you, messages to a stopped
+ * agent, messages to a CLI that cannot say when its turn ends. Frame: the
+ * needs-you strip of `Chat · A · Room · *` and the sheet `Chat · A · Thread
+ * rows · states` > `NEEDS YOU`.
+ */
+export function needsRows(
+  agents: RoomAgent[],
+  deliveries: Array<{ targetAgentId: string; state: string; queuedAt: string; refusedAt?: string }>,
+): NeedRow[] {
+  const rows: Array<NeedRow & { rank: number }> = [];
+  for (const agent of agents) {
+    const name = agent.name || agent.id.slice(0, 8);
+    const notSent = deliveries.filter(d => d.targetAgentId === agent.id && d.state === 'not_sent');
+    const oldest = notSent.map(d => d.refusedAt ?? d.queuedAt).sort()[0];
+    if (agent.status === 'error') {
+      const reason = errorReason(agent)?.replace(/[.\s]+$/, '');
+      rows.push({
+        rank: 0,
+        id: `${agent.id}:error`,
+        agentId: agent.id,
+        tone: 'error',
+        text: `${name}’s turn failed${reason ? `: ${reason}` : ''}.${agent.stopped ? '' : ' Its session is still open.'}`,
+        action: 'open terminal',
+        actionLabel: 'open terminal',
+      });
+      continue;
+    }
+    if (!agent.stopped && agent.status === 'waiting') {
+      rows.push({ rank: 1, id: `${agent.id}:waiting`, agentId: agent.id, tone: 'waiting', text: `${name} is waiting on you.`, action: 'open terminal', actionLabel: 'open terminal' });
+    }
+    if (notSent.length === 0) continue;
+    const n = notSent.length;
+    if (shownStopped(agent)) {
+      rows.push({
+        rank: 2,
+        id: `${agent.id}:stopped`,
+        agentId: agent.id,
+        tone: 'hollow',
+        text: `${name} is stopped, so ${n === 1 ? 'one message for it is' : `${n} messages for it are`} not sent.`,
+        since: hhmm(oldest),
+        action: 'start',
+        // The slot is 96 wide: a long name would push the button out of it.
+        actionLabel: name.length <= 8 ? `start ${name}` : 'start',
+      });
+    } else if (!agent.hasEndOfTurn) {
+      rows.push({
+        rank: 3,
+        id: `${agent.id}:not-sent`,
+        agentId: agent.id,
+        tone: 'none',
+        text: `${name} cannot tell Tars when its turn ends, so ${n === 1 ? 'one message waits for you to send it' : `${n} messages wait for you to send them`}.`,
+        since: hhmm(oldest),
+        action: 'send it',
+        actionLabel: 'send it',
+      });
+    }
+  }
+  rows.sort((a, b) => a.rank - b.rank);
+  return rows.map(row => {
+    const { rank, ...rest } = row;
+    void rank;
+    return rest;
+  });
+}

@@ -1,54 +1,24 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BrandSpinner } from '@/components/ui';
+import { ArrowDown } from 'lucide-react';
+import { BrandSpinner, Button } from '@/components/ui';
 import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
-import { RoomRow, RoomNotice } from './RoomRow';
+import { DayRow, MessageRow, NoticeRow, SystemRow } from './RoomRow';
+import { NeedsStrip } from './NeedsStrip';
 import { RoomComposer } from './RoomComposer';
 import type { ComposerFailure, ComposerTarget } from './RoomComposer';
-import { agentStatusLabel, agentTone } from './team-view';
-import { currentThread, summarise, threadNotice, toRows } from './bus-view';
+import { agentStatusLabel, agentTone, needsRows } from './team-view';
+import type { NeedAction } from './team-view';
+import { currentThread, threadItems } from './bus-view';
+import type { ThreadItem } from './bus-view';
 
 /**
  * One project's room: the log, what is still waiting under it, and the
  * composer. Frames: `Chat · Room · agents at work`, `· you step in`,
  * `· limit reached`, `· all stopped`, `· no agents`, `· at rest or stopped`.
  */
-
-/** What is waiting, above the composer. A queue nobody can see is the silent
- *  failure this page had once already. */
-function QueueBand({
-  queued,
-  queuedItems,
-  notSent,
-  notSentItems,
-}: ReturnType<typeof summarise>) {
-  if (!queued && !notSent) return null;
-  return (
-    <div className="flex items-center gap-2.5 h-8 px-3 border border-border bg-card shrink-0 overflow-hidden">
-      {queued > 0 && (
-        <>
-          <span className="text-[10px] uppercase tracking-[0.06em] text-text-secondary shrink-0">
-            queued · {queued}
-          </span>
-          <span className="font-mono text-[10.5px] text-muted-foreground truncate">{queuedItems.join(' · ')}</span>
-        </>
-      )}
-      {notSent > 0 && (
-        <>
-          <span className="flex-1" />
-          <span className="text-[10px] uppercase tracking-[0.06em] text-text-secondary shrink-0">
-            not sent · {notSent}
-          </span>
-          <span className="font-mono text-[10.5px] text-muted-foreground truncate shrink-0">
-            {notSentItems.join(' · ')}
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
 
 export function RoomView({
   room,
@@ -62,6 +32,8 @@ export function RoomView({
   head,
   targetId: controlledTarget,
   onTargetChange,
+  onRelease,
+  onOpenTerminal,
 }: {
   room: BusRoom;
   threads: BusThread[];
@@ -80,6 +52,10 @@ export function RoomView({
    *  picks its agent here. Uncontrolled when absent. */
   targetId?: string;
   onTargetChange?: (id: string) => void;
+  /** Sends what is held for an agent with no turn signal, oldest first. */
+  onRelease?: (agentId: string) => void;
+  /** Where an agent's terminal is: the Dashboard's panel. */
+  onOpenTerminal?: (agentId: string) => void;
 }) {
   const [draft, setDraft] = useState('');
   const [ownTarget, setOwnTarget] = useState('');
@@ -91,16 +67,53 @@ export function RoomView({
 
   const logRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const seenCount = useRef(0);
+  const [unseen, setUnseen] = useState(0);
 
-  const rows = useMemo(() => toRows(messages, deliveries, agents), [messages, deliveries, agents]);
   const thread = useMemo(() => currentThread(threads), [threads]);
-  const notice = useMemo(() => threadNotice(thread), [thread]);
-  const pending = useMemo(() => summarise(deliveries, agents), [deliveries, agents]);
+  const items = useMemo(
+    () => threadItems(messages, deliveries, agents, thread),
+    [messages, deliveries, agents, thread],
+  );
+  const needs = useMemo(() => needsRows(agents, deliveries), [agents, deliveries]);
+  const messageCount = messages.length;
 
+  // The thread starts under the head; once it is longer than the panel, the
+  // view follows the newest message, unless you scrolled up to read, in which
+  // case what arrived is counted in a band under the thread instead.
   useEffect(() => {
-    if (!logRef.current || !stickToBottom.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [rows.length, notice]);
+    const el = logRef.current;
+    const added = messageCount - seenCount.current;
+    seenCount.current = messageCount;
+    if (!el) return;
+    if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    } else if (added > 0) {
+      setUnseen(n => n + added);
+    }
+  }, [messageCount, items.length]);
+
+  const jumpToLatest = () => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    stickToBottom.current = true;
+    setUnseen(0);
+  };
+
+  const onNeed = (action: NeedAction, agentId: string) => {
+    if (action === 'send it') onRelease?.(agentId);
+    else if (action === 'start') void start([agentId]);
+    else onOpenTerminal?.(agentId);
+  };
+
+  const renderItem = (item: ThreadItem) => {
+    switch (item.kind) {
+      case 'message': return <MessageRow key={item.id} item={item} />;
+      case 'system': return <SystemRow key={item.id} item={item} />;
+      case 'day': return <DayRow key={item.id} item={item} />;
+      case 'notice': return <NoticeRow key={item.id} item={item} />;
+    }
+  };
 
   const targets: ComposerTarget[] = useMemo(() => agents.map(a => ({
     id: a.id,
@@ -149,19 +162,23 @@ export function RoomView({
     <div className="flex-1 min-w-0 flex flex-col gap-2.5 min-h-0">
       <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
         {head}
+        <NeedsStrip rows={needs} onAction={onNeed} />
         <div
           ref={logRef}
+          data-thread
           onScroll={() => {
             const el = logRef.current;
-            if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            if (!el) return;
+            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            if (stickToBottom.current && unseen) setUnseen(0);
           }}
-          className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-end gap-[3px] px-3 py-2.5"
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col pt-2 pb-3"
         >
           {loading ? (
             <div className="flex-1 flex items-center justify-center">
               <BrandSpinner size={26} label="Reading the room" />
             </div>
-          ) : rows.length === 0 ? (
+          ) : items.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
               <p className="text-sm text-foreground">
                 {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
@@ -172,16 +189,18 @@ export function RoomView({
                   : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
               </p>
             </div>
-          ) : (
-            <>
-              {rows.map(row => <RoomRow key={row.id} row={row} />)}
-              {notice && <RoomNotice caption={notice.caption} lines={notice.lines} />}
-            </>
-          )}
+          ) : items.map(renderItem)}
         </div>
+        {unseen > 0 && (
+          <div className="h-10 shrink-0 flex items-center px-6 bg-secondary border-t border-border">
+            <span className="w-12 shrink-0 flex items-center"><ArrowDown className="w-3 h-3 text-foreground" /></span>
+            <span className="flex-1 min-w-0 text-[12px] leading-4 text-foreground">
+              {unseen} new message{unseen === 1 ? '' : 's'} below
+            </span>
+            <Button size="sm" onClick={jumpToLatest}>jump to latest</Button>
+          </div>
+        )}
       </div>
-
-      <QueueBand {...pending} />
 
       <RoomComposer
         value={draft}

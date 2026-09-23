@@ -148,13 +148,15 @@ function ChatRoom({
   agents,
   recipient,
   onRecipient,
+  onOpenTerminal,
 }: {
   bus: ReturnType<typeof useBusRoom>;
   agents: RoomAgent[];
   recipient: string;
   onRecipient: (id: string) => void;
+  onOpenTerminal: () => void;
 }) {
-  const { snapshot, loading, error, post, stopThread } = bus;
+  const { snapshot, loading, error, post, stopThread, releaseHeld } = bus;
   const thread = useMemo(() => currentThread(snapshot.threads), [snapshot.threads]);
   const state = useMemo(() => roomState(agents, thread, snapshot.messages), [agents, thread, snapshot.messages]);
   // The open anchor is what stop stops.
@@ -192,6 +194,8 @@ function ChatRoom({
       onStart={startAgents}
       targetId={recipient}
       onTargetChange={onRecipient}
+      onRelease={id => { void releaseHeld(id); }}
+      onOpenTerminal={onOpenTerminal}
       head={(
         <RoomHead
           title={room.title}
@@ -634,7 +638,14 @@ export default function ChatPage() {
         </ChatSidebar>
 
         {roomId ? (
-          <ChatRoom bus={bus} agents={roomAgents} recipient={recipient} onRecipient={setRecipient} />
+          <ChatRoom
+            bus={bus}
+            agents={roomAgents}
+            recipient={recipient}
+            onRecipient={setRecipient}
+            // The terminal an agent lives in is the Dashboard's.
+            onOpenTerminal={() => router.push('/')}
+          />
         ) : (
         <>
         {/* No max width: the rail is a fixed 332 and the frame's 830 is simply
