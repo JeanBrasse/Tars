@@ -4,6 +4,7 @@ import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
+import LeftFullscreenNotice from './LeftFullscreenNotice';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import TerminalPanelHeader from './TerminalPanelHeader';
 import type { PanelView } from './TerminalPanelHeader';
@@ -18,6 +19,7 @@ interface TerminalPanelProps {
   onRegisterContainer: (agentId: string, container: HTMLDivElement | null) => void;
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
+  onRestart: (agentId: string) => void;
   onRemove: (agentId: string) => void;
   onClear: (agentId: string) => void;
   onFullscreen: (agentId: string) => void;
@@ -44,6 +46,7 @@ function TerminalPanel({
   onRegisterContainer,
   onStart,
   onStop,
+  onRestart,
   onRemove,
   onClear,
   onFullscreen,
@@ -108,6 +111,8 @@ function TerminalPanel({
 
   const handleStart = useCallback(() => onStart(agent.id), [agent.id, onStart]);
   const handleStop = useCallback(() => onStop(agent.id), [agent.id, onStop]);
+  const handleRestart = useCallback(() => onRestart(agent.id), [agent.id, onRestart]);
+  const handleReadHistory = useCallback(() => setView('history'), []);
   const handleRemove = useCallback(() => onRemove(agent.id), [agent.id, onRemove]);
   const handleClear = useCallback(() => onClear(agent.id), [agent.id, onClear]);
   const handleFullscreen = useCallback(() => onFullscreen(agent.id), [agent.id, onFullscreen]);
@@ -145,6 +150,18 @@ function TerminalPanel({
           in it: the header has about fifty pixels to spare on a board panel,
           and a notice cut to fifty pixels is the one nobody reads. */}
       <MessageWaitingNotice waiting={waiting} />
+
+      {/* This terminal's claude left fullscreen, so the wheel reaches nothing
+          (useMultiTerminal has stopped sending it). The history view is the
+          one way to read back in this session; restarting gives a session that
+          opens fullscreen. Offered from the history view too, minus the
+          action that would open the view already open. */}
+      {agent.leftFullscreen && (
+        <LeftFullscreenNotice
+          onHistory={view === 'history' ? undefined : handleReadHistory}
+          onRestart={handleRestart}
+        />
+      )}
 
       {/* Terminal body.
           History is drawn over the terminal, never instead of it: the xterm

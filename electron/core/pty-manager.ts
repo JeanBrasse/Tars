@@ -189,6 +189,8 @@ interface TerminalInput {
   announced?: string;
   /** Kept so the panel can be told the wait is over after the queue empties. */
   agentId?: string;
+  /** When Tars last finished typing a message in, or 0. */
+  lastWriteAt: number;
 }
 
 const inputs = new WeakMap<pty.IPty, TerminalInput>();
@@ -213,7 +215,7 @@ export function rememberTerminalOwner(ptyProcess: pty.IPty, agentId: string): vo
 function inputOf(ptyProcess: pty.IPty): TerminalInput {
   let state = inputs.get(ptyProcess);
   if (!state) {
-    state = { draft: emptyDraft(), lastKeyAt: 0, held: null, queue: [] };
+    state = { draft: emptyDraft(), lastKeyAt: 0, held: null, queue: [], lastWriteAt: 0 };
     inputs.set(ptyProcess, state);
   }
   return state;
@@ -250,6 +252,7 @@ export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   state.draft = feedDraft(state.draft, data);
   ptyProcess.write(data);
   if (state.queue.length > 0) pump(ptyProcess);
+  fieldChanged(ptyProcess);
 }
 
 /**
@@ -263,6 +266,7 @@ export function noteSubmitted(ptyProcess: pty.IPty): void {
   const state = inputOf(ptyProcess);
   state.draft = confirmSubmitted(state.draft);
   if (state.queue.length > 0) pump(ptyProcess);
+  fieldChanged(ptyProcess);
 }
 
 /**
@@ -385,11 +389,13 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   const done = () => {
     const held = state.held ?? [];
     state.held = null;
+    state.lastWriteAt = Date.now();
     for (const data of held) {
       state.draft = feedDraft(state.draft, data);
       write(ptyProcess, state, data);
     }
     pump(ptyProcess);
+    fieldChanged(ptyProcess);
   };
 
   if (draft.text) write(ptyProcess, state, clearKeys(draft));
@@ -505,6 +511,75 @@ export function writeProgrammaticInput(
   // The pump runs synchronously as far as the write, so the item has left the
   // queue exactly when it went into the terminal.
   return state.queue.includes(item) ? 'held' : 'written';
+}
+
+/**
+ * How long after Tars has typed a message in that a field still counts as in
+ * use for a restart.
+ *
+ * The message is submitted by its carriage return, but the turn it starts only
+ * shows as `running` once the UserPromptSubmit hook has reached the app: 33 to
+ * 57 ms after the Enter inside the CLI (input-draft.ts), then the hook's own
+ * round trip. A restart in that gap would kill the turn the message had just
+ * started. Three seconds is many times that, and costs a restart three seconds.
+ */
+export const WRITE_SETTLE_MS = 3000;
+
+/** Why an agent's input field cannot be taken from whoever is using it. */
+export type FieldInUse =
+  /** Tars is typing a message in, or finished a moment ago. */
+  | 'writing'
+  /** Messages are waiting for the field. */
+  | 'queued'
+  /** Something is typed and not sent, or may be: a key the draft model cannot follow. */
+  | 'draft'
+  /** A key was typed less than TYPING_PAUSE_MS ago. */
+  | 'typing';
+
+/**
+ * Whether the field of this terminal is in use, and why, or null when nobody
+ * is using it: nothing typed and not sent, no key in the last five seconds,
+ * nothing Tars is typing or holding for it, nothing typed in a moment ago.
+ *
+ * For the restart that applies an agent's changed settings, which kills the
+ * terminal: a draft, a waiting message or a turn just started would go with it.
+ * `retryInMs` is when a use that ends by itself, a pause, will have ended.
+ */
+export function fieldInUse(ptyProcess: pty.IPty): { reason: FieldInUse; retryInMs?: number } | null {
+  const state = inputs.get(ptyProcess);
+  // Nothing was ever typed or written here.
+  if (!state) return null;
+  if (state.held) return { reason: 'writing' };
+  if (state.queue.length > 0) return { reason: 'queued' };
+  if (state.draft.state !== 'known' || state.draft.text) return { reason: 'draft' };
+  const typing = pauseLeft(state);
+  if (typing > 0) return { reason: 'typing', retryInMs: typing };
+  const settling = state.lastWriteAt + WRITE_SETTLE_MS - Date.now();
+  if (settling > 0) return { reason: 'writing', retryInMs: settling };
+  return null;
+}
+
+/** Who is told when a terminal's field may have changed hands. */
+const fieldListeners = new Set<(ptyProcess: pty.IPty) => void>();
+
+/**
+ * Be told when a field may have become free: a key was typed, a submission
+ * was seen, or Tars finished typing a message in. Called synchronously, so a
+ * listener defers what it does. Returns the way to stop listening.
+ */
+export function onFieldChange(listener: (ptyProcess: pty.IPty) => void): () => void {
+  fieldListeners.add(listener);
+  return () => { fieldListeners.delete(listener); };
+}
+
+function fieldChanged(ptyProcess: pty.IPty): void {
+  for (const listener of fieldListeners) {
+    try {
+      listener(ptyProcess);
+    } catch (err) {
+      console.error('[pty] a field listener threw:', err);
+    }
+  }
 }
 
 export function writeToPty(ptyId: string, data: string, isQuick = false): boolean {

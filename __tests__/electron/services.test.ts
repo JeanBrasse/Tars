@@ -188,21 +188,18 @@ describe('kanban-automation', () => {
 
   const mockAgents = new Map<any, any>();
   const mockCreateAgent = vi.fn();
-  const mockStartAgent = vi.fn();
   const mockSaveAgents = vi.fn();
 
   beforeEach(async () => {
     vi.resetModules();
     mockAgents.clear();
     mockCreateAgent.mockReset();
-    mockStartAgent.mockReset();
     mockSaveAgents.mockReset();
 
     kanbanMod = await import('../../electron/services/kanban-automation');
     kanbanMod.initKanbanAutomation({
       agents: mockAgents as any,
       createAgent: mockCreateAgent,
-      startAgent: mockStartAgent,
       saveAgents: mockSaveAgents,
     });
   });

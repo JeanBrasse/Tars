@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { safeEffort, orchestratorToolFlags, promptOperand } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -45,6 +45,8 @@ export class NousPortalProvider implements CLIProvider {
       command += ` --append-system-prompt-file '${params.systemPromptFile.replace(/'/g, "'\\''")}'`;
     }
 
+    command += resumeFlags(params.resumeSessionId, params.forkSession);
+
     if (params.model && params.model !== 'default') {
       if (!/^[a-zA-Z0-9._:\/\-]+$/.test(params.model)) {
         throw new Error('Invalid model name');
@@ -62,9 +64,7 @@ export class NousPortalProvider implements CLIProvider {
 
     command += orchestratorToolFlags(params.orchestratorMode);
 
-    if (safeEffort(params.effort) && params.effort !== 'medium') {
-      command += ` --effort ${safeEffort(params.effort)}`;
-    }
+    command += effortFlag(params.effort);
 
     command += ` --add-dir '${DATA_DIR}'`;
 

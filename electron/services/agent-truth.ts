@@ -6,14 +6,21 @@ import { transcriptPath } from '../utils/resume-session';
 /**
  * What an agent is actually on, as opposed to what Tars last wrote down.
  *
- * `agent.branchName` and `agent.model` were only ever set by Tars itself, from
- * the edit screen or the create call. Nothing read them back. So an agent that
- * ran `git checkout -b` kept the old branch on its card, and a session where
- * you typed `/model opus` kept the old model, and then the next respawn passed
- * `--model <the old one>` and undid the change without saying anything.
+ * `agent.branchName` was only ever set by Tars itself, from the edit screen or
+ * the create call, and nothing read it back, so an agent that ran
+ * `git checkout -b` kept the old branch on its card. The working tree wins for
+ * the branch: it is what actually happened.
  *
- * The session wins. It is what actually happened; the record is a note Tars
- * made earlier. Both readings are cheap and cached, because the agent list is
+ * The model is the other way round, and it used to be the same way. The
+ * session's model replaced the record's everywhere, launches included, so the
+ * model a session last answered on outlived every choice made after it: moved
+ * to Opus 5.5 in the Agents page, thirteen agents relaunched on the model their
+ * previous session had used, Opus 5 for most and Opus 4.8 for one. And the edit
+ * screen, filled from that list, wrote the old model back into the record on
+ * the next save of anything. So the record is the model an agent launches on,
+ * and the session's reading travels beside it as `sessionModel`, for a screen
+ * that wants to say the session runs something else, after a `/model` typed
+ * into it. Both readings are cheap and cached, because the agent list is
  * rebuilt about twice a second.
  */
 
@@ -86,7 +93,8 @@ function lastAssistantModel(file: string): string | null {
  * The model the session last actually answered on, or null.
  *
  * Read from the transcript rather than from anything Tars stores, which is the
- * whole point: it reflects a `/model` typed into the terminal.
+ * whole point: it reflects a `/model` typed into the terminal. A reading for a
+ * screen, never for a launch: see the top of this file.
  */
 export function sessionModel(
   agent: { resumableSessionId?: string; projectPath?: string; worktreePath?: string },
@@ -111,12 +119,117 @@ export function sessionModel(
   return found;
 }
 
+/* ── Work still running after the turn ─────────────────────────────────── */
+
+const TASK_NOTE = /<task-notification>([\s\S]*?)<\/task-notification>/g;
+const TASK_ID = /<task-id>([^<]+)<\/task-id>/;
+const TASK_STATUS = /<status>([^<]+)<\/status>/;
+const STOP_TOOLS = new Set(['TaskStop', 'KillShell', 'KillBash']);
+
 /**
- * The agent as it really is: its own record, with the branch and the model
- * replaced by what the working tree and the transcript say when they disagree.
+ * The background work this session started and has not heard back from.
  *
- * Only ever fills in; a null reading leaves the stored value alone, so an
- * agent with no session yet still shows the model it was created with.
+ * A turn can end with work still running: a Bash command run in the
+ * background, a Monitor, an Agent launched asynchronously. Claude Code ends the
+ * turn (Stop, so Tars reads `idle`), and when the work finishes it injects a
+ * `<task-notification>` that starts the next turn by itself. Killing the CLI in
+ * between kills that work and the turn it was waiting for. Measured on 2.1.280:
+ * asked to `sleep 25`, the CLI refused a foreground sleep, ran it in the
+ * background and stopped its turn ten seconds in.
+ *
+ * Read from the transcript, because that is where Claude Code records both
+ * ends, and both are structured. Across a week of Noah's transcripts (329
+ * background starts): a Bash start carries `toolUseResult.backgroundTaskId`,
+ * a Monitor `toolUseResult.taskId`, an asynchronous Agent `agentId` with
+ * `isAsync`; 322 were followed by a note naming the id with a `<status>`
+ * (completed, failed, killed, stopped), 7 were stopped with TaskStop, which
+ * sends no note, and the other 3 were still running. A Monitor's event notes
+ * carry no status: only a status ends it.
+ *
+ * `sinceMs` is when the CLI now running was launched. A resumed or forked
+ * session copies the earlier conversation into its transcript, stamped with the
+ * new session id but with the old timestamps, and a task started by a process
+ * that is gone is not running.
+ */
+export function pendingBackgroundWork(
+  agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string },
+  sinceMs: number,
+  homeDir = os.homedir(),
+): string[] {
+  const sessionId = agent.currentSessionId?.trim();
+  if (!sessionId) return [];
+  let raw: string | undefined;
+  for (const root of [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p)) {
+    try {
+      raw = fs.readFileSync(transcriptPath(root, sessionId, homeDir), 'utf-8');
+      break;
+    } catch {
+      // not in this root
+    }
+  }
+  if (!raw) return [];
+
+  const started = new Set<string>();
+  const finished = new Set<string>();
+  const monitorCalls = new Set<string>();
+  for (const line of raw.split('\n')) {
+    // Most lines are none of these, and a transcript runs to megabytes.
+    if (!/backgroundTaskId|isAsync|taskId|task-notification|Monitor|TaskStop|KillShell|KillBash/.test(line)) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!(Date.parse(String(entry.timestamp ?? '')) >= sinceMs)) continue;
+    const content = (entry.message as { content?: unknown } | undefined)?.content;
+    const blocks = Array.isArray(content) ? content as Array<Record<string, unknown>> : [];
+
+    if (entry.type === 'assistant') {
+      for (const block of blocks) {
+        if (block.type !== 'tool_use') continue;
+        if (block.name === 'Monitor' && typeof block.id === 'string') monitorCalls.add(block.id);
+        if (STOP_TOOLS.has(String(block.name))) {
+          const input = (block.input ?? {}) as Record<string, unknown>;
+          const id = input.task_id ?? input.shell_id ?? input.bash_id;
+          if (typeof id === 'string') finished.add(id);
+        }
+      }
+      continue;
+    }
+    if (entry.type !== 'user') continue;
+
+    const result = entry.toolUseResult as Record<string, unknown> | undefined;
+    if (result && typeof result === 'object') {
+      if (typeof result.backgroundTaskId === 'string') started.add(result.backgroundTaskId);
+      else if (result.isAsync === true && typeof result.agentId === 'string') started.add(result.agentId);
+      else if (typeof result.taskId === 'string'
+        && blocks.some(b => b.type === 'tool_result' && monitorCalls.has(String(b.tool_use_id)))) {
+        started.add(result.taskId);
+      }
+    }
+    const text = typeof content === 'string'
+      ? content
+      : blocks.map(b => (typeof b.text === 'string' ? b.text : '')).join('\n');
+    for (const [, note] of text.matchAll(TASK_NOTE)) {
+      const id = note.match(TASK_ID)?.[1];
+      const status = note.match(TASK_STATUS)?.[1]?.trim();
+      if (id && status && status !== 'running') finished.add(id);
+    }
+  }
+  return [...started].filter(id => !finished.has(id));
+}
+
+/**
+ * The agent as it really is: its own record, with the branch replaced by what
+ * the working tree says, and the model its session last answered on beside the
+ * one it is set to, as `sessionModel`.
+ *
+ * `model` stays the record's: it is what the next launch uses, and what the
+ * edit screen shows and saves back.
+ *
+ * Only ever fills in; a null reading leaves the stored value alone, and an
+ * agent with no session yet has no `sessionModel`.
  */
 export function withSessionTruth<T extends {
   model?: string;
@@ -124,13 +237,13 @@ export function withSessionTruth<T extends {
   projectPath?: string;
   worktreePath?: string;
   resumableSessionId?: string;
-}>(agent: T): T {
+}>(agent: T): T & { sessionModel?: string } {
   const branch = currentBranch(agent.worktreePath || agent.projectPath);
   const model = sessionModel(agent);
   return {
     ...agent,
     ...(branch ? { branchName: branch } : {}),
-    ...(model ? { model } : {}),
+    ...(model ? { sessionModel: model } : {}),
   };
 }
 

@@ -71,7 +71,10 @@ export function buildBudgetRows(opts: {
   for (const spend of opts.providerSpend) {
     const id = spend.provider;
     if (!id) continue;
-    if (id === 'claude' && rows.length > 0) continue; // already covered by its windows
+    // Already covered by its rate windows, when it has any. Not "any row so
+    // far": with no windows, Claude's row vanished whenever another provider
+    // had spent more this month and sorted first.
+    if (id === 'claude' && rows.some(r => r.providerId === 'claude')) continue;
     if (id === 'local' || id === 'tasmania') {
       // A model running on this machine has no bill and no rate window. Say so:
       // the cell used to hold a bare dash, which reads as missing data.
@@ -214,8 +217,10 @@ export function BudgetAndLimits({
     <div className="border border-border-primary bg-bg-secondary p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="text-[12.5px]">Budget &amp; limits</div>
+        {/* The one panel the page's timeframe does not reach: a budget is
+            monthly and a rate window is whatever it is right now. */}
         <p className="text-[10.5px] text-text-muted hidden sm:block">
-          each provider shows the limit it actually has
+          spend is month to date, windows are live: the timeframe does not apply here
         </p>
       </div>
 

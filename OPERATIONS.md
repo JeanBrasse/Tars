@@ -518,6 +518,71 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 ---
 
+## The agents' CLIs: kept up to date by Tars
+
+Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
+so neither updates itself inside a Tars terminal. Tars updates them instead
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+
+| CLI | Covered when installed as | Command Tars runs |
+|---|---|---|
+| claude | the native installer: `~/.local/bin/claude` is a link into `~/.local/share/claude/versions/` | `claude update` |
+| amp | a global npm package | `npm view <package> version`, a download into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, with the npm beside that prefix's node and a cache in the scratch folder, deleted after |
+
+What a running session sees: nothing. A claude update writes the new version beside the old one
+and swaps the link in one step; the session keeps running its own file, and its next turn
+answers. New launches and restarts start on the new version. A session that outlives two newer
+releases can see its file deleted by claude's own cleanup (SPECS §13): its turns go on, but its
+Grep and Glob fail (every time with no `rg` on PATH, once with Homebrew's), as does a `claude`
+started from inside it, and a restart ends it.
+
+An Amp update is never started while a process has the Amp binary open (`lsof -t`), because npm
+removes the old package before the new one is in place: `amp` is missing for a few seconds while
+it runs, and a launch in those seconds fails. npm's cache for it lives in the scratch folder and
+goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
+package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
+
+Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
+yourself.
+
+```bash
+# what Tars did, newest last, times in UTC (these two are from the sandbox it was measured in)
+tail -n 20 ~/.dorothy/cli-updates.log
+# 2026-09-22T20:30:40.981Z claude updated 2.1.273 to 2.1.280: Successfully updated from 2.1.273 to version 2.1.280 (9.0 s)
+# 2026-09-22T20:34:32.376Z amp updated 0.0.1788811227-gce258b to 0.0.1790107230-g213fd2: npm install -g @sourcegraph/amp@0.0.1790107230-g213fd2 (17.4 s)
+
+# what is installed now
+readlink ~/.local/bin/claude          # .../versions/<version>
+amp --version
+```
+
+A check that changes nothing is written once, not every half hour; a failure is written every
+time. Past 256 KB the log moves to `cli-updates.log.1`.
+
+**To stop it for one CLI**, use that CLI's own switch, which Tars reads: for claude,
+`"env": { "DISABLE_AUTOUPDATER": "1" }` in `~/.claude/settings.json` (or `DISABLE_UPDATES`, the
+administrator lockdown, which also makes a typed `claude update` refuse); for Amp,
+`"amp.updates.mode": "disabled"` in `~/.config/amp/settings.json`. Tars started with
+`DISABLE_AUTOUPDATER` in its own environment, from a Tars terminal for instance, updates nothing
+for claude.
+
+| Log line | Meaning |
+|---|---|
+| `claude failed ...: Error: Failed to install native update; ... ECONNREFUSED ...` | no network. Retried at the next pass |
+| `claude failed ...: Another Claude process ...` | a `claude update` of yours was running. Retried at the next pass |
+| `claude unchanged ...: Updates are disabled by your administrator...` | `DISABLE_UPDATES` in a managed settings file. Tars cannot see it beforehand; claude refuses and says so |
+| `claude skipped: ... is one fixed version` | Settings > CLI paths points at `~/.local/share/claude/versions/<v>`: point it at `~/.local/bin/claude` |
+| `amp deferred ...: waiting for the process running it to end (pid N)` | an `amp` is running, in Tars or elsewhere. Updated at the first pass after it ends |
+| `... skipped ...: is outside <home>` | the install belongs to another home. Normal in a sandbox (`scripts/sandbox.sh`), whose `HOME` is `~/Tars-sandbox` |
+
+An Amp installed before its rename is the package `@sourcegraph/amp`, and `amp update` cannot
+update it: it runs `npm install -g @ampcode/cli`, which fails with `EEXIST` on the `amp` link the
+old package owns. Tars updates `@sourcegraph/amp` by its own name, which works. Moving to the new
+name is a manual step: `npm uninstall -g @sourcegraph/amp && npm install -g @ampcode/cli`.
+
+---
+
 ## Storage
 
 Everything Tars owns lives under `~/.dorothy` (`DATA_DIR`). Nothing is in a database except
@@ -539,6 +604,7 @@ work.
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
 | `~/.dorothy/cli-paths.json` | `electron/handlers/cli-paths-handlers.ts` | resolved binary paths, readable by MCP |
+| `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
@@ -968,9 +1034,10 @@ change and `electronAPI.agent.messagesWaiting()` answers for a panel that opened
 log, one line when a message starts waiting and one when it goes out:
 
 ```bash
-# The main process logs to the terminal Tars was started from. Nothing writes a
-# log file today: app.getPath('logs') is never used, and ~/Library/Logs/tars does
-# not exist. Started from the Dock, these lines are only in the Console app.
+# The main process logs to the terminal Tars was started from. No log file has
+# these lines: app.getPath('logs') is never used, ~/Library/Logs/tars does not
+# exist, and the one log Tars writes, ~/.dorothy/cli-updates.log, is about CLI
+# updates only. Started from the Dock, these lines are only in the Console app.
 grep 'is waiting for a terminal'   # in that terminal's output
 grep 'is going out now'
 ```
@@ -1206,9 +1273,10 @@ is skipped.
 
 ## Agents and PTYs
 
-Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`, 120×30,
+Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
-if that path is gone). Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
+API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
 
 The environment is `process.env` plus:
 
@@ -1242,6 +1310,22 @@ If a provider shows as unavailable but the binary works in your terminal, the di
 almost always a PATH entry added by a shell rc file that only runs for interactive **login**
 shells: set the path explicitly in Settings rather than fighting it.
 
+### What a panel shows
+
+A panel is handed its terminal's screen by `agent:get`, from the terminal's mirror
+(`electron/core/terminal-mirror.ts`): a headless xterm fed every byte of that PTY. It does
+not depend on how much output was kept, so a panel that comes back after a long turn is whole.
+Cost, measured with 20 PTYs replaying real Claude Code streams under Electron 43: 3.1 ms of
+main process CPU per second for all 20 (68 chunks a second), 0.3 MB per mirror at 180×45, a
+snapshot of 2 KB in 1 to 2 ms. A mirror with its 1000 lines of history full is 2.3 to 3.7 MB
+and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU per MB.
+
+| Symptom | Look for |
+|---|---|
+| a panel blank but for the spinner after coming back to the Dashboard | `[terminal-mirror] xterm-headless could not be loaded` at startup: without it the panels replay the kept chunks, as they did before the mirror. `[terminal-mirror] <agent id>: dropped after a parse failure`: that one terminal fell back |
+| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
+| Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
+
 ### Agent stuck in the wrong directory
 
 `killStalePty()` compares the PTY's recorded `ptyCwd` against `worktreePath || projectPath` and
@@ -1253,6 +1337,35 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:31415/api/agents/<id>?full=true" | jq '{projectPath, worktreePath, ptyCwd, ptyId}'
 # then stop and re-dispatch
 curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents/<id>/stop
+```
+
+### An agent restarted by itself after its model or effort changed
+
+Saving a model, an effort, a permission mode, orchestrator mode, a secondary folder, an
+Obsidian vault or a local model in the Agents page restarts that agent's CLI on the new values,
+continuing its conversation (`--resume <session> --fork-session`), unless something would be cut
+(`electron/core/agent-restart.ts`). Every decision is one line in the main process log:
+
+```
+[restart] Planner: model, effort changed: restarting its CLI now
+[restart] Planner: model changed: restarting when its turn ends
+[restart] Planner: model changed: restarting once its field is empty: something is typed in it and not sent
+[restart] Planner: effort changed: restarting once the background work it started (bql8cpyac) has reported back
+[restart] Planner: effort changed with no CLI running: the next launch uses the new values
+```
+
+A turn can end with work still running in the background (Claude Code refuses a long foreground
+`sleep` and runs it in the background, and orchestrators run monitors that way). That work
+reports back as a turn of its own; the restart waits for it, reading the session's transcript.
+
+A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
+vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+amp never are: stop and start them. To see what a running CLI was actually launched with, read
+its argv (the model and effort are on the command line):
+
+```bash
+ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
 ```
 
 ### Fleet-wide log search
@@ -1311,7 +1424,7 @@ wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # st
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
-| "extra usage" never shows | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
+| "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 
 ---
 
@@ -1336,6 +1449,10 @@ rm ~/.dorothy/acp-registry.json    # force a refresh on next boot
 Provider → registry id: `claude→claude-acp`, `codex→codex-acp`, `gemini`, `grok`, `opencode`,
 `pi`. A provider absent from that map has no ACP path and runs over PTY only.
 
+A run is set to the agent's model, then its effort, with `session/set_config_option` once the
+session is open, when the agent offers those options. A value it refuses is logged as
+`[acp] <agent>: this run is not on <model>` (or `... at <level> effort`) and the turn runs anyway.
+
 ---
 
 ## Lifecycle
@@ -1346,7 +1463,8 @@ Provider → registry id: `claude→claude-acp`, `codex→codex-acp`, `gemini`, 
 `startAgentAutosave()` → `initTray()` → `initVaultDb()` → `startApiServer()` →
 `loadCatalog()` (un-awaited) → `setupMcpOrchestrator()` (un-awaited) →
 `setupMemoryBackends()` → `await configureStatusHooks()` → `initAutoUpdater()` →
-update check after 5 s.
+update check after 5 s → `startCliUpdates()`, whose first pass runs 5 s later too (see *The
+agents' CLIs: kept up to date by Tars*).
 
 The two un-awaited calls are deliberate: both shell out per provider and used to hold the main
 thread through the first paint.

@@ -90,6 +90,7 @@ orchestrator agent's CLI
 | 12 | `setupMcpOrchestrator()` (not awaited) | registering spawns CLIs; it used to hold the first paint |
 | 13 | `configureStatusHooks()` (awaited) | |
 | 14 | update check after 5 s | `electron-updater`, `autoCheckUpdates !== false` |
+| 15 | `startCliUpdates()` | claude and Amp brought up to date 5 s after launch, then every 30 min, one at a time. §2 *Keeping the CLIs current* |
 
 `process.stdout` / `process.stderr` get an `EPIPE`-swallowing error handler at module load: a closed pipe from the launching shell would otherwise crash the app on the next `console.log`.
 
@@ -103,6 +104,12 @@ Four maps in `electron/core/pty-manager.ts`: `ptyProcesses` (agents), `quickPtyP
 - `bracketPaste: true` is for a live Claude Code TUI. Input over 200 chars or containing a newline is wrapped in `\x1b[200~ … \x1b[201~`. **The carriage return is always a separate write delayed 300 ms**, because the TUI treats a rapid `text\r` burst as one paste event: the text lands in the box as `[Pasted text]` and is never submitted.
 
 It must never be used for keystroke passthrough from an xterm.js terminal.
+
+Every agent terminal also has a mirror, `electron/core/terminal-mirror.ts`: a headless xterm 5.3 (`xterm-headless` at the renderer's version, with the Dashboard's `convertEol`) that `spawnAgentPty` attaches before any caller subscribes, and that parses each chunk as it arrives. `agent:get` hands a panel `terminalSnapshot()` of it as its `output`, one chunk: RIS, both screens as the serialize addon writes them (the normal one with 1000 lines of history, then the alternate one when it is active), and what the addon leaves out: the SGR mouse encoding, the cursor's visibility, a scroll region, the cursor put back absolutely. A panel that remounts, back from another page or from another project's tab, is shown the screen itself instead of a replay of the kept chunks, which after a few minutes of a fullscreen turn held no frame: the Audit measured 856 visible characters in a panel before leaving the Dashboard and 37 after coming back, on 2026-09-23. One mirror per PTY, runtime only, nothing persisted. A terminal with no mirror falls back to the kept chunks.
+
+`agent:resize` remembers each agent's panel size even when the agent has no PTY yet (`rememberPanelSize`), and `spawnAgentPty` spawns every new agent PTY at it rather than the caller's 120×30 or 120×40, which a PTY created after its panel's first fit used to keep.
+
+The mirror of a `claude` PTY also watches how it is repainted. Fullscreen Claude Code positions absolutely (`CSI H`) and never moves the cursor up or back; inline, it climbs back over what it drew (`CSI A`, `CSI D`). An alternate screen repainted the second way over a window of 8 chunks is a CLI that left fullscreen without telling its terminal, which Claude Code 2.1.280 did twice among seventeen sessions on 2026-09-22: every panel kept the alternate screen and the mouse request, and the wheel reached nothing. The flag, `leftFullscreen`, rides on `agent:list`, `agent:get` and the tick, and clears when the terminal really leaves the alternate screen, when a program asks for it again, or with the PTY.
 
 ### Renderer
 
@@ -129,7 +136,7 @@ Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `sr
 
 `getProvider(id)` falls back to Claude for anything unknown, including `'local'` (Tasmania), which is a Claude sub-mode rather than a provider of its own. `isValidProvider` accepts `'local'` plus the 15 registry keys.
 
-`safeEffort()` is exported from the same module and validates reasoning effort against `{low, medium, high, xhigh, max}` before it lands unquoted in a shell string. The value arrives over IPC, so it is validated at the point of use, not trusted from the caller.
+`safeEffort()` is exported from the same module and validates reasoning effort against `{low, medium, high, xhigh, max}` before it lands unquoted in a shell string. The value arrives over IPC, so it is validated at the point of use, not trusted from the caller. `effortFlag()` turns it into ` --effort <level>` for the fourteen providers on the claude binary, medium included: without the flag Claude Code starts at the effort it last saved for that model from any terminal (`/effort` writes `modelSettings.<model>.effortLevel` into `~/.claude/settings.json`), not at medium. An agent with no effort gets no flag, which is the one case that means the CLI's own.
 
 ### The registry (19 providers)
 
@@ -187,6 +194,23 @@ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD = 1
 ```
 
 `CLAUDE_AGENT_ID` and `CLAUDE_PROJECT_PATH` are re-asserted explicitly after the provider spread: MCP project scoping and every hook depend on them.
+
+On the `claude` binary, the fourteen providers that run it get `managedCliEnv()` as well: `DISABLE_AUTOUPDATER=1` and `CLAUDE_CODE_DISABLE_MOUSE_CLICKS=1`. Amp gets its update check turned off through the settings copy Tars hands it (`~/.dorothy/amp-settings.json`, `amp.updates.mode: "disabled"`). Neither CLI updates itself inside a Tars terminal: Tars does it, below.
+
+### Keeping the CLIs current
+
+`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`.
+
+| CLI, installed as | What Tars runs | When it holds back |
+|---|---|---|
+| `claude`, native installer (`~/.local/bin/claude` → `~/.local/share/claude/versions/<version>`) | `claude update` | never for a running session: each version is its own file, a session keeps running the one it started from, and the link is swapped in one step. The verdict is read off the link, since `claude update` exits 0 when an administrator has disabled updates |
+| `amp`, global npm package | `npm view <package> version`, then the new version downloaded into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, all three with a `--cache` in that scratch folder, which is deleted after: `~/.npm` is never pruned and kept 38 MB of every Amp release | while any process has the binary open (`lsof -t`), asked before the download and again before the install, because npm removes the old package before the new one is in place |
+
+`<package>` is the one that owns the binary, read from where the launcher really points: `@sourcegraph/amp` on an install made before Amp's rename to `@ampcode/cli`, which `amp update` itself cannot update (it asks for `@ampcode/cli` and npm refuses with `EEXIST`).
+
+Nothing is updated when its own switch says not to: for claude, `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` in Tars's environment or in `~/.claude/settings.json`, or `autoUpdates: false` in `~/.claude.json` that the native installer did not write itself; for Amp, `amp.updates.mode: "disabled"` in `~/.config/amp/settings.json`. Nor is anything installed outside the home Tars runs in, which keeps a sandbox or a test run, whose `HOME` is a scratch folder, off the real CLIs, and nothing runs when `DOROTHY_E2E=1`.
+
+codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
 
 ---
 
@@ -257,7 +281,7 @@ Session updates handled: `agent_message_chunk`, `tool_call`, `tool_call_update`,
 
 **`registry.ts`.** Launch commands are fetched from the public ACP registry (`agentclientprotocol/registry`, one `agent.json` per agent) rather than hardcoded, and cached in `~/.dorothy/acp-registry.json` with a 24 h TTL. `PROVIDER_TO_ACP` maps six providers: `claude→claude-acp`, `codex→codex-acp`, `gemini`, `grok`, `opencode`, `pi`. `FALLBACK` covers five of the six: **`pi` has no fallback entry, so `pi` only has an ACP mode when the registry fetch has succeeded at least once.** Fetch failures are per-agent and never throw.
 
-**`delegate.ts`: `delegateOverAcp()`.** Resolves the launch entry, checks the cwd (`worktreePath ?? projectPath`) exists, builds the session with provider env vars plus `CLAUDE_AGENT_ID`/`CLAUDE_PROJECT_PATH`, and attaches two MCP servers (`tars-memory` and `claude-mgr-orchestrator`) if their bundles exist. Orchestrators get `ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook']`. On completion it calls `recordUsage()` and returns `{ ok: stopReason === 'end_turn', transport: 'acp', stopReason, text, toolCalls, usage, costUSD }`. The session is stopped in `finally`: a delegated task is a unit of work, not a conversation.
+**`delegate.ts`: `delegateOverAcp()`.** Resolves the launch entry, checks the cwd (`worktreePath ?? projectPath`) exists, builds the session with provider env vars plus `CLAUDE_AGENT_ID`/`CLAUDE_PROJECT_PATH`, and attaches two MCP servers (`tars-memory` and `claude-mgr-orchestrator`) if their bundles exist. Orchestrators get `ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook']`. Once the session is open it sets the agent's model, then its effort, through `session/set_config_option`, when the agent offers those options (claude-agent-acp does, in 0.70 as in 0.79): a delegation used to run on the adapter's defaults, whatever the agent was set to. A value the agent refuses is logged and the turn runs anyway. On completion it calls `recordUsage()` and returns `{ ok: stopReason === 'end_turn', transport: 'acp', stopReason, text, toolCalls, usage, costUSD }`. The session is stopped in `finally`: a delegated task is a unit of work, not a conversation.
 
 ### The MCP orchestrator: `mcp-orchestrator/`
 
@@ -298,6 +322,8 @@ else                                  → spawnAgentSession(), mode 'start'
 
 `spawnAgentSession()` is shared by `/start`, the `/message` reconnect path and `/dispatch`, so every entry point gets identical behaviour: the identity header, the skills prefix, the MCP config for flag-strategy providers, orchestrator instructions (`electron/resources/super-agent-instructions.md`) via `--append-system-prompt-file`, the tool block, trust pre-acceptance, stale-PTY kill, the `ptyCwd` invariant and the session-ownership reset.
 
+The model on its command line is the one the call names, or else the agent's own, `agent.model`. The same rule holds for every launch from a window (`agent:start`, which the Kanban automation and the restart below call too, through `core/agent-launch.ts`), for Telegram and Slack, and for ACP. It is never the model the agent's previous session last answered on: that reading, from the transcript, comes back to the renderer as `sessionModel` on `agent:list`, for a screen that wants to show a `/model` typed into a terminal. Such a `/model` lasts for that session; the next launch uses the agent's model.
+
 Every prompt is prefixed with an identity header, because agents that don't know who they are ask the orchestrator:
 
 ```
@@ -315,7 +341,27 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 - Only `session-start.sh` sends a `source` field. A post carrying `source` **registers** the session and never touches status: its startup `"idle"` would otherwise resolve the orchestrator's long-poll before the task began.
 - Any post whose `session_id` equals `lastKilledSessionId` is dropped; any post whose `session_id` differs from the registered `currentSessionId` is dropped as stale. `currentSessionId` is *not* cleared on idle: the one-shot process is still alive at its prompt and its later hooks must keep matching.
 - Fallback: if `SessionStart` never arrived (API briefly down at boot), the first non-tombstoned session that reports in is adopted.
+- A restart for changed settings (below) kills the PTY and lays the tombstone the same way, then continues the conversation with `--resume <id> --fork-session`: the same conversation under a new session id. Every provider on the claude binary passes the flags (`resumeFlags` in `providers/cli-provider.ts`), the thirteen that point it at another vendor included: until the fix of #120 they had none, and a changed setting started them on a new conversation. Resumed under its own id, the restarted session would be the tombstone, and every one of its posts, registration included, would be dropped.
+- Claude Code writes a forked session's transcript at its first turn, not before. Until then the agent keeps `forkedFromSessionId`, the session the fork continues, and `resolveResumeSessionId` falls back to it: a second restart, or an app restart, with no turn in between would otherwise find no transcript and start a fresh session.
 - `loadAgents()` clears `currentSessionId`, `lastKilledSessionId`, `ptyId`, `ptyCwd` and `waitingReason`: session ownership is runtime state, and a persisted session would make the guard reject the next real session's hooks.
+
+### Settings that apply at launch: `core/agent-restart.ts`
+
+A CLI reads its model, its effort, its permission flag, its orchestrator restrictions and its `--add-dir` folders once, when it starts. When `agent:update` changes one of them (`model`, `effort`, `permissionMode`, the orchestrator flags from the role, the name or `orchestratorMode`, `secondaryProjectPath`, `obsidianVaultPaths`, the local provider's `localModel`), the agent's CLI is restarted on the new values through the same launch as `agent:start`, with no task, and continues its conversation (see Session ownership). When:
+
+| The agent | What happens |
+|---|---|
+| no CLI running in its terminal | nothing; the next launch reads the new values |
+| on a CLI other than claude (codex, gemini, grok, opencode, pi, amp) | nothing until its next launch: these report no end of turn, and their input field is not one the draft model follows |
+| `running`, or `waiting` on a permission answer | restarted when the turn ends, on the status change that ends it |
+| a note or room message held for it by agent-watch | restarted once that went in (it is bound to the session and would be dropped with it) |
+| work its session left running in the background when the turn ended (a Bash command, a Monitor, an asynchronous Agent) | restarted once that work reported back and the turn it started ended (`pendingBackgroundWork` in `services/agent-truth.ts`, read from the transcript) |
+| its field holds something typed and not sent, was typed in less than 5 s ago, holds queued messages, or Tars typed into it less than 3 s ago | restarted once the field is free (`fieldInUse` in `core/pty-manager.ts`) |
+| between turns, field free | restarted at once |
+
+After the restart the agent is `idle` at its prompt. Each decision is one `[restart] <agent>: ...` line in the main process log. A launch notes the settings its command carried, read when it built the command: `agent:start` then waits half a second for a new shell before typing, and a change saved in that half second is not in the command, so it restarts the CLI again once it is up. Noted after the wait, the change passed for launched, and the CLI stayed on the old values (the QA's gate of #123: a role taken back and given again 100 ms apart left an orchestrator by role that could edit). Skills are not a launch setting (they only preface a task); the provider, the CLI path, the project and the worktree already end the terminal when they change.
+
+A start with no task, which is every Dashboard start and autostart and every restart, leaves the agent `idle`. It used to set `running`, which nothing cleared until a turn the CLI never had came to an end, and agent-watch writes nothing to a `running` agent.
 
 ### Cross-project scoping
 
@@ -491,6 +537,18 @@ It also keeps `~/.dorothy/token-stats.json`, one entry per Claude session: `{ in
 
 For the Usage page the file is a label on part of the transcripts' spend, never more spend. Every session in it ran inside the claude binary, which writes a transcript, so its `cost` is already counted there, and adding `extraCost` to transcript or ledger cost counts it twice. It cannot be cut by day either: a session's whole running cost sits under its last day, and `extra` marks all of it once a quota passes 100 %.
 
+### On the page
+
+`src/app/usage/page.tsx` reads both sources per day and cuts them with one window, `usageWindow()` in `src/lib/usage-window.ts`: the last 14 days, the last 12 Sunday-to-Saturday weeks, or the last 12 calendar months, the last bar being the day, week or month that holds today. Every tile, provider row and bar is a sum over that window, so the total cost is the sum of the cost bars and of the provider rows, and the latest tile is today, this week or this month.
+
+- **Cost**: `costByModel` from the transcripts, plus the ledger's `daily` rows of every provider but `claude`. Nothing from `token-stats.json`: its over-quota spend is printed under the total as a part of it (`of which ~$X over quota`), summed over the window's days.
+- **Tokens**: in is input, cache reads and cache writes, out is output, for the tiles, the provider rows, the tokens chart and its card.
+- **Messages**: replies, which only the transcripts count.
+- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so.
+- **Where the records start**: the earliest transcript day or the ledger's `oldest`, whichever comes first. When the window starts before it, the header prints `records start <date>` beside the timeframe.
+
+A day of the legacy `stats-cache.json` shape, which the main process returns only when there is no transcript at all, carries no price and no cache, and adds nothing to these figures.
+
 ---
 
 ## §7 Persistence
@@ -518,6 +576,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
 | `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock; anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
+| `cli-updates.log` (+ `.1`) | one line per CLI update result: time, CLI, outcome, versions, what it said | `services/cli-updater.ts` | append-only, moved to `.1` past 256 KB. A check that changes nothing is written once, a failure every time |
 | `telegram-downloads/` | media from Telegram | Telegram bot | |
 | `CLAUDE.md` | Tars's own agent instructions | `ensureTarsClaudeMd()` | mounted read-write into every agent via `--add-dir` |
 | `statusline.sh` | generated bash | `enableStatusLine()` | mode `0755` |
@@ -537,6 +596,8 @@ Files Tars writes **outside** its own directory:
 | `~/.claude.json` → `mcpServers.{gbrain,honcho}` | remote memory backends |
 | `~/.claude/settings.json` → `hooks`, `statusLine` | eight hook types, merged rather than replaced |
 | `~/.claude/mcp.json` | fallback when `claude mcp add` fails |
+| `~/.local/share/claude/versions/`, `~/.local/bin/claude` | through `claude update`, which writes them itself |
+| `<npm prefix>/lib/node_modules/<package>`, `<npm prefix>/bin/amp` | through `npm install --global`, for Amp |
 | per-provider MCP config files | `codex`, `gemini`, `grok`, `opencode`, `pi` |
 | `<project>/.worktrees/<branch>` | git worktrees |
 
@@ -544,7 +605,7 @@ Files Tars writes **outside** its own directory:
 
 `persistable()` strips `ptyId` and `pathMissing`, truncates `output` to the last 100 chunks, and demotes `running` to `idle`. `loadAgents()` additionally clears `ptyCwd`, `currentSessionId`, `lastKilledSessionId` and `waitingReason`, marks `pathMissing` for vanished directories, and runs two migrations: `skipPermissions: boolean → permissionMode`, and name-substring orchestrator detection → the persistent `role` field. `orchestratorMode` stays an independent tool-restriction toggle and must **not** promote an agent into the Telegram/Slack super-agent pool.
 
-Live output is bounded at 600 chunks, spliced back to 400 (`OUTPUT_CHUNK_CAP` / `OUTPUT_RETAIN`): five PTY handlers pushed into `agent.output` and none of them capped it, so a chatty CLI grew that array for the life of the app, once per agent. What is spliced off is read for the terminal modes it left set (alternate screen, mouse protocol and encoding, bracketed paste, focus events, application cursor keys, hidden cursor), and those go back in as the first chunk (`electron/utils/terminal-modes.ts`). Claude Code in fullscreen sets most of them once, at start: without that chunk, a panel mounted after a long turn replayed onto the normal screen with no mouse request and no bracketed paste. Fields mutated on every PTY chunk (`output`, `statusLine`, `lastActivity`) set a dirty flag flushed every 30 s, bounding what a crash loses.
+Live output is bounded at 600 chunks, spliced back to 400 (`OUTPUT_CHUNK_CAP` / `OUTPUT_RETAIN`): five PTY handlers pushed into `agent.output` and none of them capped it, so a chatty CLI grew that array for the life of the app, once per agent. What is spliced off is read for the terminal modes it left set (alternate screen, mouse protocol and encoding, bracketed paste, focus events, application cursor keys, hidden cursor), and those go back in as the first chunk (`electron/utils/terminal-modes.ts`). Claude Code in fullscreen sets most of them once, at start: without that chunk, a panel mounted after a long turn replayed onto the normal screen with no mouse request and no bracketed paste. The panels no longer replay these chunks: they are shown the terminal's mirror (§1), and the carry now serves a terminal with no mirror and the quick terminal's own buffer. What `output` feeds is text: the status line, log search, `get_agent_output`, the overseer and Telegram. So the 100 chunks written to disk are read back for those, and after a restart a panel shows the new terminal, not the old tail replayed onto it. Fields mutated on every PTY chunk (`output`, `statusLine`, `lastActivity`) set a dirty flag flushed every 30 s, bounding what a crash loses.
 
 ---
 
@@ -609,7 +670,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
-| `/usage` | Usage | Cost and tokens: transcript-derived Claude figures merged with the cross-provider ledger, daily cost, token and message charts, per-model and per-provider tables, catalogue freshness. 1035 lines, the largest page | `Usage · dark` / `· light` / `· daily messages` |
+| `/usage` | Usage | Cost and tokens over one timeframe chosen in the header (14 days, 12 weeks, 12 months): four tiles, the provider rows, and cost, token and message charts on the same bars. Budget rows stay month to date and rate windows live. See §6, On the page | `Usage · dark` (14 days) / `· light` (12 months) / `· daily messages` |
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
@@ -625,7 +686,7 @@ Every data surface must show five states: loading (nothing under 400 ms, then th
 
 ### The tick
 
-`scheduleTick()` coalesces to one `agents:tick` broadcast per 500 ms carrying the whole roster: id, name, character, raw status, `displayStatus`, status line, current task, project name, last activity, provider. `displayStatus` derives `working | waiting | done | error` from status, and splits `idle` into `ready` (a PTY exists) or `stopped`. The tray badge lights when any agent is `waiting`.
+`scheduleTick()` coalesces to one `agents:tick` broadcast per 500 ms carrying the whole roster: id, name, character, raw status, `displayStatus`, status line, current task, project name, last activity, provider, whether a CLI runs in the terminal (`cliRunning`), and whether that CLI left fullscreen without telling its terminal (`leftFullscreen`, §1). `displayStatus` derives `working | waiting | done | error` from status, and splits `idle` into `ready` (a PTY exists) or `stopped`. The tray badge lights when any agent is `waiting`.
 
 Every path that changes an agent announces it on both channels, the interface's IPC handlers, the hooks and the API's agent routes alike: `agent:status` for the transition, and a tick. They are not interchangeable. The Chat page's rail reloads the fleet on `agent:status`; the Agents page and the Dashboard redraw from the tick. The API routes announced nothing until 1.7.5, so an agent the super chat started, gave a task or stopped did not change on an open page until it was reloaded.
 
@@ -721,12 +782,18 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **The bus leaves three things out of v1, on purpose.** Nothing writes into a turn Tars knows is running: that is a decision for Noah and the control is drawn disabled with its reason. There is no heartbeat. And there is no ACP steering or cancellation, since `AcpSession.cancel()` still has no caller. None of these is inferred from silence: idleness detection is deliberately absent.
 - **A message to a CLI with no end of turn is held, not lost.** amp, codex, grok, opencode and pi never leave `running` in an interactive session, so nothing is queued for them and the delivery reads NOT SENT with its reason and the time it was refused. `bus:releaseNotSent(agentId)` is the way out, and only a human calls it: it writes what is held into that terminal, oldest first, and the messages become `delivered`. Tars still refuses to do this by itself, because it cannot know the state of that session. Two deliberate exceptions live here: the session barrier does not apply, so an agent killed and relaunched between the button being drawn and the click receives them in its new session, because a person is aiming at the agent and not at a session id; and one release runs at a time per agent, a second refused with its reason rather than queued, because two would interleave their writes into one terminal.
 - **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path.
+- **A changed model or effort restarts only the CLIs on the claude binary.** codex, gemini, grok, opencode, pi and amp report no end of turn, so they take new settings at their next launch.
 - **The `/run-task` status event name does not match what `/wait` listens on.** `emit('status', …)` vs `` `status:${agentId}` ``.
 - **The caller-identity header name has drifted between the MCP source and the server.** Shipped bundles still send the old name and work; rebuilding the MCP servers disables project scoping and 403s every guarded route until one side is renamed.
 - **`pi` has no ACP fallback entry.** If the ACP registry has never been reachable, `pi` has no ACP mode at all.
 - **Some of Tars's own files are still written in place.** `templates.json` (after a backup copy), `team-templates.json` and `cli-paths.json`, and the caches and generated files. `agents.json`, `app-settings.json`, `hermes-connection.json`, `projects.json` and `kanban-tasks.json` are written to a temp file and renamed over. Claude's own files, `~/.claude.json`, `~/.claude/settings.json` and `~/.claude/mcp.json`, go through `updateSharedJsonSync`, which also keeps their mode and never writes over a file that is not JSON: `claude-files-writers.test.ts` fails if anything in the main process or the MCP servers writes them another way.
 - **`agent.output` retains 600 chunks live and 100 on disk.** `/logs` searches only what is retained; there is no persistent log store.
+- **A panel's history reaches back 1000 lines.** That is what a terminal's mirror keeps above the screen, where a panel that never unmounted keeps 10000. And a cursor parked past the last column (xterm waiting to wrap) comes back on the last column, since no cursor move reaches past it: 2 chunks in 4269 across twelve recordings of Claude Code, the content identical.
+- **The left-fullscreen flag is only watched for the `claude` binary.** Its signature was measured on Claude Code's two renderers; another fullscreen CLI that climbs its frame with `CSI A` in every chunk would be taken for inline, so none is watched. Tars reports the state and sends the program nothing: what a panel does about the wheel is the renderer's decision.
 - **The API token is a single flat credential.** No per-agent scoping, no rotation UI.
 - **The webhook is the only surface designed to leave the machine**, and it needs an operator-provided tunnel; nothing in the app opens one.
 - **`installBundledSkills()` currently ships nothing.** Its only remaining job is deleting stale `world-builder` copies left by older versions, and only when the file content is recognizably ours.
 - **macOS only.** `electron-builder` targets `--mac`; `window-all-closed` quits on other platforms but nothing else is tested there.
+- **An Amp update leaves `amp` missing for a few seconds.** npm removes the old package before the new one is unpacked: measured, 3.3 to 9.3 s with the tarballs already downloaded, which Tars makes sure of first, then under a second on a placeholder that prints "Amp native binary not installed". Tars waits for every running `amp` to end before it starts, but nothing holds a launch back during those seconds, and one that falls in them fails. A claude update has no such window.
+- **A claude session that outlives two newer releases can lose its binary file.** The native installer's cleanup keeps the two newest versions and any version whose lock is held, and only the first session on a version holds that lock. Measured: once that session had exited, the cleanup deleted the file under a second session on the same version, and that session's next turn still answered, but its Grep and Glob tools do not: native claude runs its embedded ripgrep by starting its own file again, as `rg`. With no `rg` on PATH every later search fails (`posix_spawn 'rg'`, ENOENT); with Homebrew's on PATH, as in a Tars terminal on Noah's machine, the first search fails with a misleading "ripgrep not found on PATH" and the next ones go through the system `rg`. A `claude` started from inside it fails too. A restart ends it. `USE_BUILTIN_RIPGREP=0`, with `rg` on PATH, kept Grep and Glob working when QA measured it, and is for a later change. The cleanup is claude's own: every session's housekeeping runs it, not only an update.
+- **Agents started before a claude update finishes stay on the version they started with** until they are restarted. The pass runs 5 s after launch and takes about 10 s, while the agents set to start with the app may already be starting.
