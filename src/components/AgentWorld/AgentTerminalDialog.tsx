@@ -285,7 +285,7 @@ export default function AgentTerminalDialog({
             style={{ width: RAIL_WIDTH }}
           >
             {isSuperAgentMode ? (
-              <AgentDialogSuperAgentSidebar agents={agents} projects={projects} />
+              <AgentDialogSuperAgentSidebar agentId={agent?.id} agents={agents} projects={projects} />
             ) : (
               <AgentDialogSidebar
                 agent={agent}
