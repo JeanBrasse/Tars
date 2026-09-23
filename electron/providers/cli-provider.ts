@@ -45,6 +45,12 @@ export interface InteractiveCommandParams {
    * start fresh, which is what they did before.
    */
   resumeSessionId?: string;
+  /**
+   * Continue `resumeSessionId` under a new session id rather than its own. A
+   * restart needs this: the session it resumes is the one it just killed, whose
+   * id is the tombstone the hooks routes refuse posts from.
+   */
+  forkSession?: boolean;
 }
 
 /**
@@ -287,6 +293,49 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;
+}
+
+/**
+ * The agent's effort as the CLI's flag: every level Tars stores, medium too.
+ *
+ * Medium used to be left off, as if no flag meant medium. It means whatever the
+ * CLI picks by itself, and Claude Code picks the effort last saved for that
+ * model by `/effort` in any session on the machine. Measured on 2.1.280:
+ * `/effort high` writes `modelSettings.<model>.effortLevel` into
+ * ~/.claude/settings.json, and a later launch of that model without the flag
+ * comes up at high. An agent set to medium therefore ran at whatever level
+ * somebody last chose in another terminal. With the flag, each of low, medium,
+ * high, xhigh and max comes up as passed, read back from the session header,
+ * and the flag wins over the saved level.
+ *
+ * No effort on the agent, no flag: that one does mean the CLI's own. Shared by
+ * the fourteen providers that run the claude binary, which each carried their
+ * own copy of the medium exception.
+ */
+export function effortFlag(effort: string | undefined): string {
+  const level = safeEffort(effort);
+  return level ? ` --effort ${level}` : '';
+}
+
+/**
+ * Pick a conversation up: `--resume <id>`, and with `--fork-session` continue
+ * it under a new id. Verified against `claude --help`: `-r, --resume [value]`
+ * takes a session id, and `--fork-session` is "When resuming, create a new
+ * session ID instead of reusing the original". The caller passes only an id
+ * whose transcript it has found (utils/resume-session.ts), because a missing
+ * one makes the binary exit rather than start.
+ *
+ * Shared by the fourteen providers that run the claude binary. The thirteen
+ * that point it at another vendor had no resume at all, so the restart that
+ * applies a changed setting started them on a new conversation, silently (the
+ * Audit's gate of #120). The binary resumes wherever it is pointed: measured
+ * on 2.1.280 with ANTHROPIC_BASE_URL on a local Messages API, as those
+ * providers set it, a session resumed with --fork-session sent the endpoint
+ * its whole history under a new id, and a fresh one sent none.
+ */
+export function resumeFlags(resumeSessionId: string | undefined, forkSession: boolean | undefined): string {
+  if (!resumeSessionId) return '';
+  return ` --resume '${resumeSessionId}'${forkSession ? ' --fork-session' : ''}`;
 }
 
 /**

@@ -109,6 +109,18 @@ export interface AgentStatus {
    * it, updating the app threw away every agent's conversation.
    */
   resumableSessionId?: string;
+  /**
+   * The session a forked session continues, until the fork has a transcript of
+   * its own.
+   *
+   * A restart continues the conversation with `--resume <id> --fork-session`,
+   * and Claude Code writes the forked session's transcript at its first turn,
+   * not before. Measured on 2.1.280: a fork left without a turn has no file,
+   * so the next resume of `resumableSessionId` found nothing and started a
+   * fresh session, and the conversation was gone after two restarts in a row,
+   * or after an app restart that followed one.
+   */
+  forkedFromSessionId?: string;
   /** Session id of the most recently killed PTY's claude session. Its hooks
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */

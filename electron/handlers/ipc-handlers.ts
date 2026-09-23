@@ -32,13 +32,15 @@ import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
-import { consumeResumeSessionId } from '../utils/resume-session';
+import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
+import { registerAgentLauncher, type AgentLauncher } from '../core/agent-launch';
+import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch } from '../core/agent-restart';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
 import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
-import { withSessionTruth, sessionModel } from '../services/agent-truth';
+import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -490,12 +492,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { ...status, ptyId };
   });
 
-  // Start an agent with a prompt (sends command to PTY)
-  ipcMain.handle('agent:start', async (_event, { id, prompt, options }: {
-    id: string;
-    prompt: string;
-    options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string }
-  }) => {
+  // Start an agent with a prompt (sends command to PTY). The one launch of an
+  // agent's CLI into its terminal: the handler below, the Kanban automation and
+  // the restart that applies changed settings all come through here. See
+  // core/agent-launch.ts.
+  const startAgentCli: AgentLauncher = async (id, prompt, options) => {
     const agent = agents.get(id);
     if (!agent) throw new Error('Agent not found');
 
@@ -717,10 +718,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     const allAgentSkills = [...new Set(agent.skills || [])];
 
-    // Same order as the API path: an explicit model wins, then the session's
-    // own, then the record. See services/agent-truth.ts.
-    const resolvedModel = (provider !== 'local')
-      ? (options?.model || sessionModel(agent) || agent.model)
+    // The model the agent is set to, as the API path does: an explicit model
+    // on this call, else the record. The session's own model used to come
+    // between the two, which is the model the session being replaced last
+    // answered on: an agent moved to Opus 5.5 in the Agents page came back up
+    // on Opus 5, and one untouched for a month on whatever it ran then.
+    // `default` is no model at all, so the CLI picks its own.
+    const chosenModel = options?.model || agent.model;
+    const resolvedModel = (provider !== 'local' && chosenModel && chosenModel !== 'default')
+      ? chosenModel
       : undefined;
 
     // CLIs without Claude's SessionStart hook get the project's memory in the
@@ -741,13 +747,39 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
     }
 
+    // Which conversation to continue. Without a word from the caller, the usual
+    // rule: the last session, once per app run. A restart names the session it
+    // has just replaced, and it is continued under a new id: `--resume` alone
+    // keeps the id, which is now the tombstone of the killed session, so every
+    // post of the resumed one would be dropped as stale. Measured on 2.1.280,
+    // `--resume <id> --fork-session` with a new model and effort: both show in
+    // the header, the conversation answers from its history, and the
+    // transcript is a new file under a new id.
+    const namedResume = options?.resumeSessionId;
+    const resumeSessionId = namedResume === undefined
+      ? consumeResumeSessionId(agent)
+      : namedResume === null
+        ? null
+        : resolveResumeSessionId({ ...agent, resumableSessionId: namedResume });
+
+    const forkSession = !!resumeSessionId && namedResume !== undefined;
+    // A fork writes no transcript before its first turn: until it does, the
+    // conversation to resume is still this one. See forkedFromSessionId.
+    agent.forkedFromSessionId = forkSession ? resumeSessionId ?? undefined : undefined;
+
+    // What this launch passes, read with the command it builds: the shell wait
+    // below leaves half a second for a change to land that the command does
+    // not carry (see noteLaunch).
+    const launched = launchSettings(agent);
     const command = cliProvider.buildInteractiveCommand({
-      resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
+      resumeSessionId: resumeSessionId ?? undefined,
+      forkSession,
       binaryPath,
       prompt: promptWithMemory,
       model: resolvedModel,
       verbose: appSettingsForCommand.verboseModeEnabled,
-      permissionMode: isSuperAgentCheck ? 'bypass' : (agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal')),
+      permissionMode: options?.permissionMode
+        ?? (isSuperAgentCheck ? 'bypass' : (agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'))),
       effort: agent.effort,
       secondaryProjectPath: agent.secondaryProjectPath,
       obsidianVaultPaths: agent.obsidianVaultPaths,
@@ -761,12 +793,24 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       orchestratorMode: isSuperAgentCheck || agent.orchestratorMode,
     });
 
-    // Persist the prompt for future re-launches and update status
+    // Persist the prompt for future re-launches and update status. Working
+    // only with a task. A start without one, which is every start from the
+    // Dashboard, autostart included, and every restart, brings the CLI up at
+    // its prompt, where it waits: marked `running`, it stayed that way until a
+    // turn it never had came to an end. Measured on 2026-09-22: eleven agents
+    // relaunched by hand from the Dashboard sat in `running` with no task for
+    // half an hour in front of an idle prompt, and agent-watch will not write
+    // to an agent that is `running`, so a note owed to one of them waited on a
+    // turn that was not coming.
     if (prompt.trim()) {
       agent.savedPrompt = prompt;
+      agent.status = 'running';
+      agent.currentTask = prompt.slice(0, 100);
+    } else {
+      agent.status = 'idle';
+      agent.currentTask = undefined;
+      agent.waitingReason = undefined;
     }
-    agent.status = 'running';
-    agent.currentTask = prompt.slice(0, 100);
     agent.lastActivity = new Date().toISOString();
     // Started from the Agents page, which never touches the API and so was
     // the one path with no check on whether the task actually landed.
@@ -774,7 +818,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     broadcastToAllWindows('agent:status', {
       type: 'status',
       agentId: id,
-      status: 'running',
+      status: agent.status,
       timestamp: agent.lastActivity,
     });
     scheduleTick();
@@ -797,12 +841,28 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     } else {
       writeProgrammaticInput(ptyProcess, fullCommand);
     }
+    noteLaunch(ptyProcess, launched);
 
     // Save updated status
     saveAgents();
 
     return { success: true };
-  });
+  };
+  registerAgentLauncher(startAgentCli);
+
+  ipcMain.handle('agent:start', async (_event, { id, prompt, options }: {
+    id: string;
+    prompt: string;
+    options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string }
+  }) =>
+    // What a window may choose, and nothing else: the session a restart
+    // resumes lands on a command line, and the permission the Kanban
+    // automation imposes is its own. Neither is taken from an IPC message.
+    startAgentCli(id, prompt, {
+      model: options?.model,
+      provider: options?.provider,
+      localModel: options?.localModel,
+    }));
 
   // Get agent status
   ipcMain.handle('agent:get', async (_event, id: string) => {
@@ -871,6 +931,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (!agent) {
       return { success: false, error: 'Agent not found' };
     }
+    // What the running CLI was started with, as far as this edit can change it.
+    const launchBefore = launchSettings(agent);
 
     // Update fields if provided
     if (params.projectPath !== undefined && params.projectPath !== agent.projectPath) {
@@ -1012,6 +1074,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     agent.lastActivity = new Date().toISOString();
     saveAgents();
+
+    // A model, an effort or another flag the CLI only reads when it starts is
+    // applied by restarting it, at a moment that cuts nothing: see
+    // core/agent-restart.ts. Saving it used to change the record and leave the
+    // CLI running on the old value until somebody relaunched it by hand.
+    const changedAtLaunch = changedLaunchSettings(launchBefore, launchSettings(agent));
+    if (changedAtLaunch.length > 0) restartForSettings(agent.id, changedAtLaunch);
 
     return { success: true, agent };
   });

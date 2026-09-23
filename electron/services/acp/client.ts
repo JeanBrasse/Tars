@@ -101,6 +101,8 @@ export class AcpSession extends EventEmitter {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private sessionId: string | null = null;
+  /** The configuration options the agent offered when the session opened. */
+  private configOptionIds = new Set<string>();
   private closed = false;
   private stderrTail = '';
 
@@ -171,6 +173,10 @@ export class AcpSession extends EventEmitter {
     }, INITIALIZE_TIMEOUT) as { sessionId: string };
 
     this.sessionId = session.sessionId;
+    const offered = (session as { configOptions?: { id?: unknown }[] }).configOptions;
+    this.configOptionIds = new Set((Array.isArray(offered) ? offered : [])
+      .map(option => option?.id)
+      .filter((id): id is string => typeof id === 'string'));
     await this.selectMode(session as unknown as Record<string, unknown>);
 
     return {
@@ -213,6 +219,29 @@ export class AcpSession extends EventEmitter {
       this.emit('mode', target);
     } catch (err) {
       this.emit('stderr', `could not set session mode to ${target}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Sets one of the options the agent offered for this session, such as its
+   * model or its effort (`session/set_config_option`). ACP has no command line
+   * to put them on: a session is configured once it is open. Answers whether
+   * the agent took the value, and says why not when it did not, because the
+   * turn runs either way and a setting that silently did not apply is how a
+   * delegation came to run on the CLI's defaults.
+   */
+  async setConfigOption(configId: string, value: string): Promise<boolean> {
+    if (!this.sessionId) throw new Error('session not started');
+    if (!this.configOptionIds.has(configId)) {
+      this.emit('stderr', `the agent offers no ${configId} option, so ${value} was not applied`);
+      return false;
+    }
+    try {
+      await this.request('session/set_config_option', { sessionId: this.sessionId, configId, value }, 15_000);
+      return true;
+    } catch (err) {
+      this.emit('stderr', `could not set ${configId} to ${value}: ${String(err)}`);
+      return false;
     }
   }
 

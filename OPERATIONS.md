@@ -1339,6 +1339,35 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents/<id>/stop
 ```
 
+### An agent restarted by itself after its model or effort changed
+
+Saving a model, an effort, a permission mode, orchestrator mode, a secondary folder, an
+Obsidian vault or a local model in the Agents page restarts that agent's CLI on the new values,
+continuing its conversation (`--resume <session> --fork-session`), unless something would be cut
+(`electron/core/agent-restart.ts`). Every decision is one line in the main process log:
+
+```
+[restart] Planner: model, effort changed: restarting its CLI now
+[restart] Planner: model changed: restarting when its turn ends
+[restart] Planner: model changed: restarting once its field is empty: something is typed in it and not sent
+[restart] Planner: effort changed: restarting once the background work it started (bql8cpyac) has reported back
+[restart] Planner: effort changed with no CLI running: the next launch uses the new values
+```
+
+A turn can end with work still running in the background (Claude Code refuses a long foreground
+`sleep` and runs it in the background, and orchestrators run monitors that way). That work
+reports back as a turn of its own; the restart waits for it, reading the session's transcript.
+
+A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
+vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+amp never are: stop and start them. To see what a running CLI was actually launched with, read
+its argv (the model and effort are on the command line):
+
+```bash
+ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
+```
+
 ### Fleet-wide log search
 
 The Logs page reads the retained output buffers in the main process (400 chunks per agent, ANSI
@@ -1419,6 +1448,10 @@ rm ~/.dorothy/acp-registry.json    # force a refresh on next boot
 
 Provider → registry id: `claude→claude-acp`, `codex→codex-acp`, `gemini`, `grok`, `opencode`,
 `pi`. A provider absent from that map has no ACP path and runs over PTY only.
+
+A run is set to the agent's model, then its effort, with `session/set_config_option` once the
+session is open, when the agent offers those options. A value it refuses is logged as
+`[acp] <agent>: this run is not on <model>` (or `... at <level> effort`) and the turn runs anyway.
 
 ---
 

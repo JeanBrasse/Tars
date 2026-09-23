@@ -11,7 +11,6 @@
 
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
 
 // Types
@@ -19,7 +18,6 @@ import type { AppSettings, AgentStatus } from './types';
 
 // Constants
 import { APP_SETTINGS_FILE, API_TOKEN_FILE } from './constants';
-import { promptOperand } from './providers/cli-provider';
 
 // Core modules
 import {
@@ -38,9 +36,7 @@ import {
   handleStatusChangeNotification,
   getSuperAgentOutputBuffer,
   clearSuperAgentOutputBuffer,
-  killStalePty,
   superAgentTelegramTask,
-  armTaskStartWatch,
 } from './core/agent-manager';
 
 import {
@@ -49,7 +45,6 @@ import {
   skillPtyProcesses,
   pluginPtyProcesses,
   killAllPty,
-  writeProgrammaticInput,
 } from './core/pty-manager';
 
 import { runShutdownSteps } from './core/shutdown';
@@ -599,63 +594,6 @@ app.whenReady().then(async () => {
       });
 
       return status;
-    },
-    startAgent: async (agentId, prompt) => {
-      const agent = agents.get(agentId);
-      if (!agent) throw new Error('Agent not found');
-
-      // BUG 4 guard: kill stale PTY if worktreePath changed after spawn.
-      killStalePty(agent);
-
-      // Initialize PTY if needed
-      if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-        const ptyId = await initAgentPty(
-          agent,
-          getMainWindow(),
-          handleStatusChangeNotificationWrapper,
-          saveAgents
-        );
-        agent.ptyId = ptyId;
-      }
-
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (!ptyProcess) throw new Error('PTY not found');
-
-      // Build Claude command - always use dangerous mode for kanban tasks
-      let command = 'claude --dangerously-skip-permissions';
-      if (appSettings.verboseModeEnabled) {
-        command += ' --verbose';
-      }
-
-      // Build final prompt with skills, and no operand at all without a task.
-      let finalPrompt = prompt?.trim() ? prompt : '';
-      if (finalPrompt && agent.skills && agent.skills.length > 0) {
-        const skillsList = agent.skills.join(', ');
-        finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${prompt}`;
-      }
-
-      command += promptOperand(finalPrompt);
-
-      // Update status
-      agent.status = 'running';
-      agent.currentTask = prompt.slice(0, 100);
-      agent.lastActivity = new Date().toISOString();
-      // Started by the Kanban automation, which carries a task like any other.
-      armTaskStartWatch(agent, agent.ptyId, finalPrompt);
-
-      const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
-      const fullCommand = `cd '${workingPath}' && ${command}`;
-
-      // For long commands, write to a temp script to avoid PTY line-wrapping mangling
-      if (fullCommand.length > 100) {
-        const tmpScript = path.join(os.tmpdir(), `claude-agent-${agentId}.sh`);
-        fs.writeFileSync(tmpScript, `#!/bin/bash\n${fullCommand}\n`, { mode: 0o755 });
-        writeProgrammaticInput(ptyProcess, `bash '${tmpScript}'`);
-      } else {
-        writeProgrammaticInput(ptyProcess, fullCommand);
-      }
-
-      saveAgents();
     },
     saveAgents,
   });

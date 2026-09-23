@@ -246,6 +246,19 @@ function holding(held: Pending): number {
   return held.children.size + held.bus.length;
 }
 
+/**
+ * Whether something is owed to this agent and not typed in yet, or is being
+ * typed in right now.
+ *
+ * What is held is bound to the session it was owed to (see `flush`): an agent
+ * whose terminal is replaced loses it for good. So a restart for changed
+ * settings asks here first, and waits for it to go in.
+ */
+export function holdsFor(agentId: string): boolean {
+  const held = pending.get(agentId);
+  return (!!held && holding(held) > 0) || delivering.has(agentId) || releasing.has(agentId);
+}
+
 function queueForRequester(child: AgentStatus, news: News): void {
   const link = child.requestedBy;
   // Self-dispatch would be a message an agent sends itself on every task.
