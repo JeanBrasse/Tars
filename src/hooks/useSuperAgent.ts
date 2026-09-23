@@ -17,12 +17,8 @@ export function useSuperAgent({
 }: UseSuperAgentProps) {
   const [isCreatingSuperAgent, setIsCreatingSuperAgent] = useState(false);
 
-  const superAgent = useMemo(() => {
-    return agents.find(a =>
-      a.name?.toLowerCase().includes('super agent') ||
-      a.name?.toLowerCase().includes('orchestrator')
-    ) || null;
-  }, [agents]);
+  // The Orchestrator toggle, which is the role. The name decides nothing.
+  const superAgent = useMemo(() => agents.find(a => a.role === 'orchestrator') || null, [agents]);
 
   const handleSuperAgentClick = useCallback(async () => {
     // If super agent exists, just open its edit modal: don't auto-start it

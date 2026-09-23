@@ -44,7 +44,10 @@ export function useElectronAgents() {
             prevAgent.currentTask !== agent.currentTask ||
             prevAgent.lastActivity !== agent.lastActivity ||
             prevAgent.error !== agent.error ||
-            prevAgent.cliRunning !== agent.cliRunning
+            prevAgent.cliRunning !== agent.cliRunning ||
+            // Another agent's save can take this one's role, and a role
+            // change moves nothing else on the record.
+            prevAgent.role !== agent.role
           );
         });
         return hasChanged ? list : prev;
@@ -70,7 +73,7 @@ export function useElectronAgents() {
     model?: string;
     localModel?: string;
     obsidianVaultPaths?: string[];
-    orchestratorMode?: boolean;
+    role?: 'orchestrator' | 'worker';
     cliPath?: string;
   }) => {
     if (!isElectron()) {
@@ -78,8 +81,11 @@ export function useElectronAgents() {
     }
     const agent = await window.electronAPI!.agent.create(config);
     setAgents(prev => [...prev, agent]);
+    // A new orchestrator takes the role from its project's current one, and
+    // neither the answer nor the tick says so: the list is read again.
+    if (config.role === 'orchestrator') await fetchAgents();
     return agent;
-  }, []);
+  }, [fetchAgents]);
 
   // Update an agent
   const updateAgent = useCallback(async (params: {
@@ -97,7 +103,7 @@ export function useElectronAgents() {
     savedPrompt?: string | null;
     obsidianVaultPaths?: string[];
     worktree?: { enabled: boolean; branchName: string };
-    orchestratorMode?: boolean;
+    role?: 'orchestrator' | 'worker';
     cliPath?: string | null;
   }) => {
     if (!isElectron()) {
@@ -106,9 +112,11 @@ export function useElectronAgents() {
     const result = await window.electronAPI!.agent.update(params);
     if (result.success && result.agent) {
       setAgents(prev => prev.map(a => a.id === params.id ? result.agent! : a));
+      // Same as a create: the project's previous orchestrator is a worker now.
+      if (params.role === 'orchestrator') await fetchAgents();
     }
     return result;
-  }, []);
+  }, [fetchAgents]);
 
   // Start an agent
   const startAgent = useCallback(async (

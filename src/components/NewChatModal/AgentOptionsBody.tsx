@@ -43,6 +43,8 @@ export function AgentOptionsBody(props: {
   onBranchNameChange: (name: string) => void;
   isOrchestrator: boolean;
   onOrchestratorToggle: (enabled: boolean) => void;
+  /** Editing an agent that exists, which a save restarts to apply the role. */
+  editing?: boolean;
   cliPath: string;
   onCliPathChange: (path: string) => void;
   /** So the orchestrator row can say whether this CLI enforces the mode. */
@@ -117,7 +119,12 @@ export function AgentOptionsBody(props: {
         />
       </OptionRow>
 
-      <OrchestratorModeToggle isOrchestrator={props.isOrchestrator} onToggle={props.onOrchestratorToggle} provider={props.provider} />
+      <OrchestratorModeToggle
+        isOrchestrator={props.isOrchestrator}
+        onToggle={props.onOrchestratorToggle}
+        provider={props.provider}
+        editing={props.editing}
+      />
 
       {detectedClis.length > 0 && (
         <OptionRow label="CLI binary" hint="Which binary runs it. The provider's own by default.">
