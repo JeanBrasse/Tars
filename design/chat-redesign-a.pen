@@ -404,10 +404,10 @@
                     {
                       "type": "icon",
                       "id": "sTsbI",
-                      "name": "sparkles",
+                      "name": "puzzle",
                       "width": 14,
                       "height": 14,
-                      "icon": "sparkles",
+                      "icon": "puzzle",
                       "library": "lucide",
                       "fill": "$status-idle"
                     },
@@ -3928,10 +3928,10 @@
                     {
                       "type": "icon",
                       "id": "lfUYa",
-                      "name": "sparkles",
+                      "name": "puzzle",
                       "width": 14,
                       "height": 14,
-                      "icon": "sparkles",
+                      "icon": "puzzle",
                       "library": "lucide",
                       "fill": "$status-idle"
                     },
@@ -10391,10 +10391,10 @@
                     {
                       "type": "icon",
                       "id": "vQj0c",
-                      "name": "sparkles",
+                      "name": "puzzle",
                       "width": 14,
                       "height": 14,
-                      "icon": "sparkles",
+                      "icon": "puzzle",
                       "library": "lucide",
                       "fill": "$status-idle"
                     },
@@ -13918,10 +13918,10 @@
                     {
                       "type": "icon",
                       "id": "FtyqI",
-                      "name": "sparkles",
+                      "name": "puzzle",
                       "width": 14,
                       "height": 14,
-                      "icon": "sparkles",
+                      "icon": "puzzle",
                       "library": "lucide",
                       "fill": "$status-idle"
                     },
