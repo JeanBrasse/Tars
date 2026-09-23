@@ -1,0 +1,110 @@
+import { describe, it, expect, afterEach } from 'vitest';
+import type * as pty from 'node-pty';
+import { spawnAgentPty, cliRunningIn } from '../../../electron/core/agent-pty';
+
+/**
+ * What runs in an agent's terminal, read from a real one.
+ *
+ * Every other test of cliRunningIn gives node-pty's answer by hand, and gave
+ * it the shape the Dashboard opens: an interactive `bash -l`, where a typed
+ * command leads a process group of its own. None opened the terminal the API
+ * opens, `bash -l -c "cd ... && <cli>"`, where a shell without job control
+ * kept the CLI in its own group and node-pty named `bash` for the CLI's whole
+ * life. So every agent the API had started read as no CLI while its claude
+ * ran, the orchestrator among them, and the tests stayed green (the Audit's
+ * gate of #126, 2026-09-23).
+ *
+ * node-pty is the real one here, under Node rather than Electron: its N-API
+ * build loads in both. `/bin/sleep` stands in for the CLI, since what is read
+ * is which process leads the terminal, not what that process is.
+ */
+
+const opened: pty.IPty[] = [];
+
+function open(args: string[]): pty.IPty {
+  const terminal = spawnAgentPty({
+    binaryName: 'claude', shell: '/bin/bash', args, cwd: '/tmp', cols: 80, rows: 24,
+    env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TERM: 'xterm-256color' },
+  });
+  opened.push(terminal);
+  return terminal;
+}
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Wait until node-pty names `name` in front, or fail saying what it named.
+ * Generous: a login shell on a machine busy with other suites is slow to start.
+ */
+async function until(terminal: pty.IPty, name: string, within = 20_000): Promise<void> {
+  const seen: Array<string | undefined> = [];
+  for (let waited = 0; waited < within; waited += 50) {
+    const now = terminal.process;
+    if (now === name) return;
+    if (seen.at(-1) !== now) seen.push(now);
+    await pause(50);
+  }
+  throw new Error(`node-pty never named ${name} in front: ${JSON.stringify(seen)}`);
+}
+
+const exited = (terminal: pty.IPty) => new Promise<void>(resolve => { terminal.onExit(() => resolve()); });
+
+afterEach(() => {
+  for (const terminal of opened.splice(0)) {
+    try { terminal.kill(); } catch { /* already gone */ }
+  }
+});
+
+describe('the terminal spawnAgentSession opens', () => {
+  it('names the CLI once the shell has handed it the terminal, and reads as a CLI until it ends', async () => {
+    const terminal = open(['-l', '-c', "cd '/tmp' && exec '/bin/sleep' 2"]);
+    const gone = exited(terminal);
+
+    await until(terminal, 'sleep');
+    expect(cliRunningIn(terminal)).toBe(true);
+
+    await gone;
+    expect(terminal.process).toBeUndefined();
+    expect(cliRunningIn(terminal)).toBe(false);
+  }, 60_000);
+
+  it('without the exec names the shell for the whole command, and still reads as a CLI while it runs', async () => {
+    // The shape it had until 2026-09-23, and the moment before the exec in the
+    // one it has now, while the shell reads its login files: only the command
+    // it was handed says a CLI is on its way or running.
+    const terminal = open(['-l', '-c', "cd '/tmp' && '/bin/sleep' 2"]);
+    let running = true;
+    terminal.onExit(() => { running = false; });
+    const names = new Set<string>();
+    const readAsNone: string[] = [];
+
+    while (running) {
+      const now = terminal.process;
+      if (now) {
+        names.add(now);
+        if (!cliRunningIn(terminal)) readAsNone.push(now);
+      }
+      await pause(50);
+    }
+
+    expect(names.has('bash'), `named ${JSON.stringify([...names])}`).toBe(true);
+    expect(names.has('sleep'), 'the command led the terminal without an exec').toBe(false);
+    expect(readAsNone, 'read as no CLI while its command ran').toEqual([]);
+  }, 60_000);
+});
+
+describe('an interactive shell, as the Dashboard and a restart open one', () => {
+  it('reads as no CLI at its prompt, as one while a typed command runs, and as none again after', async () => {
+    const terminal = open(['-l']);
+
+    await until(terminal, 'bash');
+    expect(cliRunningIn(terminal)).toBe(false);
+
+    terminal.write('/bin/sleep 1\r');
+    await until(terminal, 'sleep');
+    expect(cliRunningIn(terminal)).toBe(true);
+
+    await until(terminal, 'bash');
+    expect(cliRunningIn(terminal)).toBe(false);
+  }, 60_000);
+});

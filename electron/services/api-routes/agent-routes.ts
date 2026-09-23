@@ -234,7 +234,13 @@ async function spawnAgentSession(
     }
   }
 
-  const command = `cd '${workingDir}' && ${cliCommand}`;
+  // `exec`: the shell hands its terminal to the CLI instead of waiting on it.
+  // Without it the CLI ran inside the shell's process group and the terminal
+  // named `bash` for the CLI's whole life, so everything that reads what runs
+  // there (cliRunningIn, in core/agent-pty.ts) took a live session for a bare
+  // shell. The provider builds one simple command, the quoted binary and its
+  // arguments, which is what exec needs; a test holds every provider to it.
+  const command = `cd '${workingDir}' && exec ${cliCommand}`;
 
   const shell = '/bin/bash';
   // Include user-configured CLI dirs so non-claude binaries resolve too.
@@ -573,30 +579,6 @@ export async function performDispatch(
   return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson));
 }
 
-/**
- * Whether a message typed into the agent's terminal reaches a session, which
- * is then the one thing to do with it. Where it does not, a session is
- * started with the message as its task, which ends whatever the terminal held.
- *
- * A CLI running there is read from the terminal, never from the status alone.
- * Every turn ends on `idle` (the Stop hook posts it), a failed turn on
- * `error`, and both leave the CLI at its prompt: /dispatch took those statuses
- * for "no session", killed the terminal and started a new claude with no
- * `--resume`, the resume being spent once per run. So a message sent to an
- * agent that had just finished a turn ended its conversation. Measured on
- * 2026-09-23 on the orchestrator itself: its last Stop at 02:14:16, no
- * idle_prompt after it, a report dispatched at 02:22:24, SessionEnd of its
- * session and SessionStart of a new one within two seconds.
- *
- * `running` and `waiting` still take the message without a CLI in view, as
- * they always did: a session spawned a moment ago runs its shell for a second
- * before claude is up, and what is typed then reaches it.
- */
-function sessionTakesMessages(agent: AgentStatus, ptyProcess: ReturnType<typeof ptyProcesses.get>): boolean {
-  if (!ptyProcess) return false;
-  return cliRunningIn(ptyProcess) || agent.status === 'running' || agent.status === 'waiting';
-}
-
 async function performDispatchLocked(
   agent: AgentStatus,
   opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string },
@@ -619,7 +601,18 @@ async function performDispatchLocked(
     }, 409);
     return;
   }
-  if (livePty && sessionTakesMessages(agent, livePty)) {
+  // Typed into the session only where a CLI runs, read from the terminal and
+  // never from the status. Every turn ends on `idle` (the Stop hook posts it)
+  // and a failed one on `error`, both with the CLI at its prompt: /dispatch
+  // took those for "no session" and started a new claude over it, with no
+  // `--resume`, which ended the orchestrator's conversation on 2026-09-23
+  // (its last Stop at 02:14:16, a report dispatched at 02:22:24). And
+  // `running` or `waiting` over a bare shell, a CLI that died without its
+  // SessionEnd, took the message too, and the shell ran it as a command: the
+  // Audit typed `echo MARK-SHELL-$((6*7))` and read MARK-SHELL-42. A session
+  // still starting counts, through cliRunningIn: its terminal holds the CLI.
+  // Elsewhere a session is started with the message as its task.
+  if (livePty && cliRunningIn(livePty)) {
     // A live session, mid-task or at its prompt: type the message into it.
     const outcome = writeProgrammaticInput(livePty, opts.message, true, {
       agentId: agent.id,
@@ -1131,10 +1124,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         return;
       }
 
-      if (!sessionTakesMessages(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) {
+      if (!cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) {
         // No session: the claude process exited (e.g. crashed while 'waiting'),
         // or the terminal is a shell with no CLI, where a typed message would be
-        // run as a command. Auto-respawn: start a fresh one-shot claude session
+        // run as a command whatever the status says (see performDispatchLocked).
+        // Auto-respawn: start a fresh one-shot claude session
         // using the message as the prompt, identical to the /start path. This
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.

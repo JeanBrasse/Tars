@@ -593,8 +593,10 @@ export async function sendToSuperAgentFromSlack(
       return;
     }
 
-    // If agent is running or waiting, or its CLI is up, send message to existing session
-    if (superAgent.status === 'running' || superAgent.status === 'waiting' || cliRunningIn(ptyProcess)) {
+    // A CLI up in its terminal gets the message, whatever the status says. The
+    // status said `running` or `waiting` over a bare shell after a CLI died
+    // without its SessionEnd, and the message typed there ran as a command.
+    if (cliRunningIn(ptyProcess)) {
       superAgentSlackTask = true;
       superAgentSlackBuffer = [];
 
@@ -607,12 +609,8 @@ export async function sendToSuperAgentFromSlack(
       writeProgrammaticInput(ptyProcess, slackMessage, true, { agentId: superAgent.id, from: 'Slack' });
 
       await say(':crown: Super Agent is processing...');
-    } else if (
-      superAgent.status === 'idle' ||
-      superAgent.status === 'completed' ||
-      superAgent.status === 'error'
-    ) {
-      // No active session, start a new one
+    } else {
+      // No CLI in its terminal, whatever the status says: start one
       const workingPath = (superAgent.worktreePath || superAgent.projectPath).replace(
         /'/g,
         "'\\''",
@@ -672,8 +670,6 @@ export async function sendToSuperAgentFromSlack(
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
 
       await say(':crown: Super Agent is processing your request...');
-    } else {
-      await say(`:crown: Super Agent is in ${superAgent.status} state. Try again in a moment.`);
     }
   } catch (err) {
     console.error('Failed to send to Super Agent:', err);

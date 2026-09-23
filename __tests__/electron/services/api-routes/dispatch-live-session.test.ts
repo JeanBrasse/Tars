@@ -89,10 +89,14 @@ async function call(method: string, url: string, body: Record<string, unknown>, 
   throw new Error(`no route for ${method} ${url}`);
 }
 
-/** The worker, with its terminal open and `foreground` in front: a CLI's version, or the shell. */
-function worker(status: AgentStatus['status'], foreground: string): { agent: AgentStatus; terminal: FakePty } {
+/**
+ * The worker, with its terminal open and `foreground` in front: a CLI's
+ * version, or the shell. Interactive, as the Dashboard opens one, unless
+ * `args` say otherwise.
+ */
+function worker(status: AgentStatus['status'], foreground: string, args = ['-l']): { agent: AgentStatus; terminal: FakePty } {
   const terminal = spawnAgentPty({
-    binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30,
+    binaryName: 'claude', shell: '/bin/bash', args, cwd: project, cols: 120, rows: 30,
     env: { CLAUDE_AGENT_ID: 'worker' },
   }) as unknown as FakePty;
   terminal.process = foreground;
@@ -160,14 +164,92 @@ describe('POST /dispatch to an agent whose CLI is up', () => {
     expect(agent.status).toBe('running');
   });
 
-  it('still types into a session that is starting, before its CLI is up', async () => {
-    // A spawn runs its shell for a moment before claude: `running`, shell in front.
-    const { terminal } = worker('running', 'bash');
+  it('types into a session the API has just started, before its CLI has taken the terminal', async () => {
+    // spawnAgentSession hands the shell its command. Until the exec, while the
+    // shell reads its login files, the shell leads the terminal.
+    const { terminal } = worker('running', 'bash', ['-l', '-c', `cd '${project}' && exec '/usr/local/bin/claude'`]);
 
     const answer = await call('POST', '/api/agents/worker/dispatch', { message: 'second task' }, 'orch');
 
     expect(answer.data.mode).toBe('message');
     expect(terminal.kill).not.toHaveBeenCalled();
+  });
+});
+
+describe('a session the API started', () => {
+  /** The worker with no terminal yet, as before a /start. */
+  function workerWithoutTerminal(): AgentStatus {
+    const agent = {
+      id: 'worker', name: 'Tars-QA', status: 'idle', projectPath: project, provider: 'claude',
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set('worker', agent);
+    return agent;
+  }
+
+  it('runs its CLI in place of the shell, so the terminal names the CLI', async () => {
+    workerWithoutTerminal();
+
+    const started = await call('POST', '/api/agents/worker/start', { prompt: 'remember KIWI' }, 'orch');
+
+    expect(started.status).toBe(200);
+    expect(spawned).toHaveLength(1);
+    const [login, dashC, command] = spawned[0].spawnedWith;
+    expect([login, dashC]).toEqual(['-l', '-c']);
+    expect(command).toMatch(new RegExp(`^cd '${project}' && exec '`));
+  });
+
+  it('takes a /dispatch at its prompt into the same session, as on 2026-09-23 at 02:22:24 it did not', async () => {
+    // The orchestrator's own session had been started by the API: idle at its
+    // prompt, node-pty naming `bash`, and the dispatch ended it.
+    const agent = workerWithoutTerminal();
+    await call('POST', '/api/agents/worker/start', { prompt: 'remember KIWI' }, 'orch');
+    const terminal = spawned[0];
+    terminal.process = 'bash';
+    agent.status = 'idle';
+    agent.currentSessionId = 'sess-started';
+
+    const answer = await call('POST', '/api/agents/worker/dispatch', { message: 'which word?' }, 'orch');
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(answer.data.mode).toBe('message');
+    expect(terminal.kill, 'the session was ended').not.toHaveBeenCalled();
+    expect(spawned).toHaveLength(1);
+    expect(typedInto(terminal)).toContain('which word?');
+    expect(agent.currentSessionId).toBe('sess-started');
+  });
+
+  it('is not ended by a second /start', async () => {
+    const agent = workerWithoutTerminal();
+    await call('POST', '/api/agents/worker/start', { prompt: 'remember KIWI' }, 'orch');
+    agent.status = 'idle';
+
+    const again = await call('POST', '/api/agents/worker/start', { prompt: 'fresh task' }, 'orch');
+
+    expect(again.status).toBe(409);
+    expect(again.data.cliRunning).toBe(true);
+    expect(spawned[0].kill).not.toHaveBeenCalled();
+    expect(spawned).toHaveLength(1);
+  });
+});
+
+describe('a bare shell whose status still says the agent works', () => {
+  // A claude that dies without its SessionEnd leaves `running` or `waiting`
+  // behind. The Audit forced `waiting` on such a terminal and sent
+  // `echo MARK-SHELL-$((6*7))` through /message: the shell printed
+  // MARK-SHELL-42. A message from another agent is not a command to run.
+  it.each([
+    ['running', 'dispatch'], ['waiting', 'dispatch'], ['running', 'message'], ['waiting', 'message'],
+  ] as const)('gets nothing typed into it when the status says %s (/%s): a session is started instead', async (status, route) => {
+    const { terminal } = worker(status, 'bash');
+
+    await call('POST', `/api/agents/worker/${route}`, { message: 'echo MARK-SHELL-$((6*7))' }, 'orch');
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(typedInto(terminal), 'the shell was handed a message to run').not.toContain('MARK-SHELL');
+    expect(terminal.kill).toHaveBeenCalled();
+    expect(spawned).toHaveLength(2);
+    expect(spawned[1].spawnedWith.join(' ')).toContain('MARK-SHELL');
   });
 });
 

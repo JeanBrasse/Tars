@@ -292,7 +292,7 @@ describe('an agent changed over the API', () => {
   });
 
   it('shows as working when /dispatch types into its live session', async () => {
-    const terminal = liveTerminal('pty-live');
+    const terminal = liveCliTerminal('pty-live');
     putAgent({ id: 'a1', status: 'waiting', ptyId: 'pty-live', ptyCwd: project });
 
     const answer = await call('POST', '/api/agents/a1/dispatch', { message: 'carry on' });

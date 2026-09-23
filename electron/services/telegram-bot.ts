@@ -1256,8 +1256,10 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       return;
     }
 
-    // If agent is running or waiting, or its CLI is up, send message to the existing Claude session
-    if (superAgent.status === 'running' || superAgent.status === 'waiting' || cliRunningIn(ptyProcess)) {
+    // A CLI up in its terminal gets the message, whatever the status says. The
+    // status said `running` or `waiting` over a bare shell after a CLI died
+    // without its SessionEnd, and the message typed there ran as a command.
+    if (cliRunningIn(ptyProcess)) {
       // Track that this input came from Telegram
       superAgentTelegramTask = true;
       superAgentOutputBuffer = [];
@@ -1272,8 +1274,8 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       writeProgrammaticInput(ptyProcess, telegramMessage, true, { agentId: superAgent.id, from: 'Telegram' });
 
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
-    } else if (superAgent.status === 'idle' || superAgent.status === 'completed' || superAgent.status === 'error') {
-      // No active session, start a new one
+    } else {
+      // No CLI in its terminal, whatever the status says: start one
       const workingPath = (superAgent.worktreePath || superAgent.projectPath).replace(/'/g, "'\\''");
 
       // Build command using the shared provider interface
@@ -1350,10 +1352,6 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
 
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
-    } else {
-      telegramBot?.sendMessage(chatId,
-        `👑 Super Agent is in ${superAgent.status} state. Try again in a moment.`
-      );
     }
   } catch (err) {
     console.error('Failed to send to Super Agent:', err);
