@@ -298,7 +298,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `wait_for_agent` | Single long-poll against `/wait`, no polling loop |
 | `delegate_task` | The composite. ACP first, terminal dispatch as fallback |
 | `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
-| `send_telegram` / `send_slack` | Reply to whichever channel the request came from |
+| `send_telegram` / `send_slack` | Reply to whichever channel the request came from: for Telegram, only a chat authorized in Settings (the app's route and mcp-telegram alike); for Slack, the channel of the last allowed user who wrote |
 
 Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` when the process was started with one and `~/.dorothy/api-token` otherwise, plus `X-Tars-Client: mcp` and caller identity headers. The server takes the caller from the token alone: an id header naming another agent is refused, and on the shared token the call has no agent identity at all. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
 

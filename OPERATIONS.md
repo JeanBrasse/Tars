@@ -782,8 +782,13 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
-| POST | `/api/telegram/{send,send-photo,send-video,send-document}` · `/api/slack/send` |
+| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` |
 | POST | `/api/webhooks/hermes` |
+
+The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
+none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
+which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`; both read
+the settings as they are, so a change there counts without a restart (SECURITY §6).
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
 raises its own fetch timeout to 600 s for any path containing `/wait` so the client never

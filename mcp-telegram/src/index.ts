@@ -63,10 +63,7 @@ function isBlockedName(name: string): boolean {
   return BLOCKED_NAMES.has(lower) || lower.startsWith(".env.");
 }
 
-function assertSendablePath(filePath: string): string {
-  const resolved = path.resolve(filePath);
-  const home = os.homedir();
-
+function assertSendableName(resolved: string, home: string): void {
   if (resolved !== home && !resolved.startsWith(home + path.sep)) {
     throw new Error(`Refused: ${resolved} is outside the home directory`);
   }
@@ -77,14 +74,77 @@ function assertSendablePath(filePath: string): string {
     }
   }
   // Every segment, not just the last: a directory called `.ssh` three levels
-  // into a project is still an `.ssh` directory.
+  // into a project is still an `.ssh` directory. In any case: the volume macOS
+  // ships ignores it, so `.TARS-PRIVATE` opens `.tars-private`.
   for (const segment of resolved.slice(home.length).split(path.sep)) {
     if (!segment) continue;
-    if (isBlockedName(segment) || BLOCKED_DIRS.includes(segment)) {
+    if (isBlockedName(segment) || BLOCKED_DIRS.includes(segment.toLowerCase())) {
       throw new Error(`Refused: ${segment} holds credentials and cannot be sent`);
     }
   }
+}
+
+function assertSendablePath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  assertSendableName(resolved, os.homedir());
+  // And the file the name opens: a symlink put a blocked directory under an
+  // ordinary name (the audit's lead #21, on the vault's guard). Judged by its
+  // real path, against the home's own real path.
+  let real: string | undefined;
+  try {
+    real = fs.realpathSync.native(resolved);
+  } catch {
+    // Not there: the send says so after the guard.
+  }
+  if (real !== undefined) assertSendableName(real, fs.realpathSync.native(os.homedir()));
+  // A hard link has no path back to the file it names, so it is looked for by
+  // inode, in the two small directories whose files are secrets whole (the
+  // audit's gate of #137).
+  for (const dir of [".tars-private", ".ssh"]) {
+    if (isHardLinkInto(resolved, path.join(os.homedir(), dir))) {
+      throw new Error(`Refused: this file is also in ${dir}, which holds credentials and cannot be sent`);
+    }
+  }
   return resolved;
+}
+
+/**
+ * Whether `candidate` is another name for a regular file under `dir`, by
+ * device and inode. The app's own guard has the same function
+ * (electron/utils/path-identity.ts); this server is built on its own.
+ */
+function isHardLinkInto(candidate: string, dir: string): boolean {
+  let file: fs.Stats;
+  try {
+    file = fs.statSync(candidate);
+  } catch {
+    return false;
+  }
+  if (!file.isFile() || file.nlink < 2) return false;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full);
+      } else if (entry.isFile()) {
+        try {
+          const here = fs.lstatSync(full);
+          if (here.dev === file.dev && here.ino === file.ino) return true;
+        } catch {
+          // Gone since it was listed.
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**
