@@ -166,6 +166,43 @@ describe('the menu picker', () => {
     expect(onChange).toHaveBeenCalledWith('c');
   });
 
+  // F1 of the gate of #124. Chromium sends a mouseenter and a mousemove at one
+  // spot when the panel opens under a pointer at rest; a real move reports
+  // another spot.
+  const rowAt = (index: number) => (elements(page!.result) as unknown as El[])
+    .find(el => el.props.role === 'option' && el.props['data-index'] === index)!;
+  // Whichever of the two a row listens to: the pair Chromium sends at rest.
+  const pointerOn = (index: number, screenX: number, screenY: number) => {
+    (rowAt(index).props.onMouseEnter as ((e: unknown) => void) | undefined)?.({ screenX, screenY });
+    (rowAt(index).props.onMouseMove as ((e: unknown) => void) | undefined)?.({ screenX, screenY });
+  };
+  const lit = () => (elements(page!.result) as unknown as El[])
+    .filter(el => el.props.role === 'option' && String(el.props.className).includes('bg-secondary'))
+    .map(el => el.props['data-index']);
+
+  it('keeps the keys on the current choice when the menu opens under a pointer at rest', () => {
+    const { onChange, key } = picker('a');
+    key('ArrowDown');
+    pointerOn(2, 400, 300);
+    key('ArrowDown');
+    key('Enter');
+    expect(onChange).toHaveBeenCalledWith('b');
+  });
+
+  it('lets a pointer that really moves take the highlight, and lights one row only', () => {
+    const { onChange, key } = picker('a');
+    key('ArrowDown');
+    expect(lit()).toEqual([0]);
+    pointerOn(2, 400, 300);
+    expect(lit()).toEqual([0]);
+    (rowAt(2).props.onMouseMove as (e: unknown) => void)({ screenX: 401, screenY: 304 });
+    // C takes the fill; A, the current choice, keeps its check and not the fill.
+    expect(lit()).toEqual([2]);
+    expect(rowAt(0).props['aria-selected']).toBe(true);
+    key('Enter');
+    expect(onChange).toHaveBeenCalledWith('c');
+  });
+
   it('steps over a disabled row, and Escape closes without a change', () => {
     const { onChange, key } = picker('a', [{ value: 'a', label: 'A' }, { value: 'b', label: 'B', disabled: true }, { value: 'c', label: 'C' }]);
     key('ArrowDown');

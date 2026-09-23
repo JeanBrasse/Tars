@@ -55,6 +55,20 @@ describe('Composer attachments', () => {
     expect(button).toMatch(/\sdisabled=""/);
   });
 
+  it('says why + and send are off while Hermes cannot be reached', () => {
+    // The gate of #124: faded under their usual names they read as broken, and
+    // only the placeholder explained.
+    const html = render({ disabled: true, onAttach: () => {}, value: 'hello' });
+    const plus = 'Files cannot reach Hermes until its connection works';
+    const send = 'Nothing reaches Hermes until its connection works';
+    for (const label of [plus, send]) {
+      expect(html).toContain(`aria-label="${label}"`);
+      const button = html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))![0];
+      expect(button).toContain(`title="${label}"`);
+      expect(button).toMatch(/\sdisabled=""/);
+    }
+  });
+
   it('shows a chip per staged file, naming it', () => {
     const html = render({ onAttach: () => {}, attachments: files });
     expect(html).toContain('brief.pdf');
