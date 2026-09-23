@@ -3,7 +3,9 @@ import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
 import { agentStatusEmitter } from './agent-events';
+import { sessionStarting } from '../core/agent-launch';
 import { envelopeValue } from '../utils/envelope-value';
+import { pendingBackgroundWork } from './agent-truth';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -55,6 +57,12 @@ type News = {
   reason?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
   handedAt?: string;
+  /**
+   * For `ended`: work the agent started and left running when its turn
+   * ended (pendingBackgroundWork). Its terminal session brings it back when
+   * that work reports, so the rest is not the end of the work handed to it.
+   */
+  background?: string[];
 };
 
 /**
@@ -282,7 +290,17 @@ function queueForRequester(child: AgentStatus, news: News): void {
   // save it, nothing saved it being spent, and 26 of the 42 agents on this
   // machine carried one that had already been used. The file said work was
   // owed for agents that owed nothing.
-  if (news.kind !== 'wait') {
+  //
+  // Not spent, though, by a rest with work still running in the background:
+  // the agent comes back when that work reports (the Audit, 2026-09-23: rest
+  // at 18:55:59, back at 18:56:15, done at 18:56:52), and the link is what
+  // tells its requester about the real end. That rest is reported as what it
+  // is instead.
+  if (news.kind === 'ended' && child.workHandedAt) {
+    const left = pendingBackgroundWork(child, Date.parse(child.workHandedAt));
+    if (left.length > 0) news = { ...news, background: left };
+  }
+  if (news.kind !== 'wait' && !news.background) {
     child.requestedBy = undefined;
     saveAgents();
   }
@@ -427,6 +445,10 @@ function flush(requesterId: string): void {
     return;
   }
   if (requester.status === 'running') return;
+  // A launch on its way: its terminal is a shell about to hand over, where a
+  // note would be pasted at a prompt. Its SessionStart announces itself as a
+  // fleet change (hooks-routes), which flushes again.
+  if (sessionStarting(requester)) return;
 
   // A write already in flight has not sent its carriage return yet. Adding a
   // second one now would land inside the first message and be submitted by
@@ -437,6 +459,15 @@ function flush(requesterId: string): void {
   // authoritative, and an id sitting in lastKilledSessionId is a tombstone.
   // A killed and relaunched agent has a new pty and a new session, and it
   // never dispatched any of this and was never in that conversation.
+  // Held for a terminal whose session had not registered yet (a launch on
+  // its way, the only time one is held there): it is owed to the session that
+  // then registers in that same terminal, which is the one it was queued for.
+  // Bound to no session, it was dropped at that very registration, the first
+  // moment it could have gone in.
+  if (held.sessionId === undefined && requester.currentSessionId
+    && held.ptyId === requester.ptyId && requester.sessionPtyId === requester.ptyId) {
+    held.sessionId = requester.currentSessionId;
+  }
   const sameSession = held.ptyId === requester.ptyId
     && held.sessionId === requester.currentSessionId
     && (held.sessionId === undefined || held.sessionId !== requester.lastKilledSessionId);
@@ -532,6 +563,10 @@ function abandonBusMessages(recipientId: string, held: Pending): void {
  *  worded like a finished turn, so an orchestrator could not tell a question
  *  from a result. */
 function describeNews(news: News): string {
+  if (news.kind === 'ended' && news.background?.length) {
+    return `has ended its turn with background work still running (${news.background.map(envelopeValue).join(', ')}): `
+      + 'it resumes when that work reports, and you will be told again when it is done';
+  }
   if (news.kind === 'ended') return 'has finished its turn';
   if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';
   return `is now ${news.status}`;

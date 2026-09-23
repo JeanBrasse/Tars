@@ -490,7 +490,9 @@ path, so a change to either setting changes the other with it. The comment on `G
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
-Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates === false`.
+Auto-check fires 5 s after `whenReady()` and every 30 minutes, and each tick reads `appSettings.autoCheckUpdates`:
+with it `false` the tick does nothing, so turning the switch off or on needs no restart. The same switch
+governs the CLI updates below.
 
 ### Cut a release
 
@@ -572,7 +574,13 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
 so neither updates itself inside a Tars terminal. Tars updates them instead
-(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time,
+while "Check for updates" is on in Settings (the one switch for Tars's own updates and these), and
+only the CLIs at least one agent runs. An agent with no provider, and the thirteen providers pointed
+at another vendor, run claude; an Amp agent runs Amp; codex, gemini, grok, opencode and pi run their
+own binaries, which Tars does not update. So a fleet with no Amp agent never has Amp checked, and a
+codex-only fleet never has claude checked. The log says `all off` once when the switch is off, and
+`<cli> skipped: <why>` once for each reason a CLI is left alone, such as no agent running it.
 
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
@@ -592,7 +600,7 @@ it runs, and a launch in those seconds fails. npm's cache for it lives in the sc
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
 package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
 
-Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
 yourself.
 
@@ -879,7 +887,9 @@ both behave identically. It:
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
-   `waiting` over a bare shell had the message run as a command. Otherwise it
+   `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
+   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
 
@@ -1163,6 +1173,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 | Symptom | Where to look |
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
 | an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 

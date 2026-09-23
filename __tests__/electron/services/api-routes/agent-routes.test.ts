@@ -46,6 +46,7 @@ vi.mock('../../../../electron/utils/path-builder', () => ({
 
 import * as pty from 'node-pty';
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
+import { resetLaunches } from '../../../../electron/core/agent-launch';
 import { agents, saveAgents, killStalePty } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
@@ -117,6 +118,8 @@ function makeReq(overrides: Partial<RouteRequest> = {}): RouteRequest {
 let ctx: RouteContext;
 
 beforeEach(() => {
+  // A launch marked by one test holds the agent in the next (core/agent-launch.ts).
+  resetLaunches();
   agents.clear();
   ptyProcesses.clear();
   vi.mocked(saveAgents).mockClear();

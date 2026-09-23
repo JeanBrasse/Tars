@@ -26,6 +26,23 @@ Use auto memory (`~/.claude/projects/.../memory/`) actively on every project:
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what is necessary.
 
+## Waiting on work you started
+
+Your turn ending is your report. When you stop, Tars tells whoever gave you the task that you have
+finished, whatever you started is still running. So finish inside your turn:
+
+- A build, a test run or a download you need the result of: run it in the foreground with a
+  timeout (up to 10 minutes per command), or start it in the background and then wait on it in
+  the foreground, with a bounded loop that checks for its end, for instance
+  `until grep -q DONE out.log; do sleep 5; done` inside a command whose timeout covers it.
+- Claude Code refuses a bare foreground `sleep`: wait on a condition, never on the clock.
+- A task delegated to you with `delegate_task` runs as one turn: the moment you answer, it ends,
+  and every background job, monitor and wakeup you left is stopped. Nothing will bring you back.
+  Wait for them before you answer, or say in your answer what was left running.
+- A delegated task also has a time limit (the `timeoutSeconds` it was given, at most one hour). At
+  the limit the run is stopped where it stands. When the work is longer, do it in steps and report
+  each step before the limit.
+
 ## Autonomy
 
 When you are delegated a task by Tars or an orchestrator agent, **always act autonomously**:
