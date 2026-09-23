@@ -2,7 +2,7 @@
 
 import { memo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Sparkles, FolderKanban, X } from 'lucide-react';
+import { Users, Blocks, FolderKanban, X } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import SidebarAgentList from './SidebarAgentList';
 import SidebarSkillsPalette from './SidebarSkillsPalette';
@@ -78,7 +78,7 @@ function Sidebar({
             <div className="flex border-b border-border [&_button]:cursor-pointer">
               {([
                 { id: 'agents' as const, icon: Users, label: 'Agents' },
-                { id: 'skills' as const, icon: Sparkles, label: 'Skills' },
+                { id: 'skills' as const, icon: Blocks, label: 'Skills' },
                 { id: 'projects' as const, icon: FolderKanban, label: 'Projects' },
               ]).map(t => (
                 <button

@@ -79,9 +79,10 @@ import {
   getClaudeSkills,
   getClaudeHistory,
 } from './services/claude-service';
-import { configureStatusHooks } from './services/hooks-manager';
+import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
 import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
+import { assignRole } from './core/agent-role';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -154,6 +155,7 @@ function loadAppSettings(): AppSettings {
     slackAppToken: '',
     slackSigningSecret: '',
     slackChannelId: '',
+    slackAllowedUserIds: [],
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -230,7 +232,8 @@ function initTelegramBot() {
   initTelegramBotService(
     agents,
     ptyProcesses,
-    appSettings,
+    // Live: a save replaces this object, and the bot must see the new one.
+    () => appSettings,
     getMainWindow(),
     () => getSuperAgent(agents),
     saveAgents,
@@ -288,7 +291,7 @@ function createIpcDependencies(): IpcHandlerDependencies {
     isSuperAgent,
     getMcpOrchestratorPath,
     initTelegramBot,
-    initSlackBot: () => initSlackBot(appSettings, (settings) => {
+    initSlackBot: () => initSlackBot(() => appSettings, (settings) => {
       appSettings = settings;
       saveAppSettingsToFile(settings);
     }, getMainWindow()),
@@ -547,6 +550,8 @@ app.whenReady().then(async () => {
         name: config.name || `Agent ${id.slice(0, 4)}`,
         permissionMode: config.permissionMode || 'auto',
       };
+      // A board creates workers, whatever it names them.
+      assignRole(status, 'worker', agents.values());
 
       agents.set(id, status);
       saveAgents();
@@ -602,7 +607,7 @@ app.whenReady().then(async () => {
 
   // Initialize services
   initTelegramBot();
-  initSlackBot(appSettings, (settings) => {
+  initSlackBot(() => appSettings, (settings) => {
     appSettings = settings;
     saveAppSettingsToFile(settings);
   }, getMainWindow());
@@ -628,6 +633,7 @@ app.whenReady().then(async () => {
     console.error('MCP registration failed:', err));
   setupMemoryBackends(appSettings);
   await configureStatusHooks();
+  removeLegacyHookLogs();
 
   // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
   initAutoUpdater(getMainWindow);
@@ -639,22 +645,26 @@ app.whenReady().then(async () => {
   // least: Tars is left open for days at a time, so someone who never quits
   // never learned there was a new version. Half an hour is well inside
   // GitHub's unauthenticated rate limit and the check itself is one request.
-  if (appSettings.autoCheckUpdates !== false) {
-    const check = () => {
-      checkForUpdates().catch((err) => {
-        console.error('Auto-update check failed:', err);
-      });
-    };
-    setTimeout(check, 5000);
-    const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
-    // Never hold the process open for a version check.
-    timer.unref?.();
-  }
+  //
+  // "Check for updates" is read at every tick, not once at launch: turning it
+  // off stops the next check, and turning it on starts one within half an hour,
+  // without a restart. It is the one switch for these and the CLIs' below.
+  const check = () => {
+    if (appSettings.autoCheckUpdates === false) return;
+    checkForUpdates().catch((err) => {
+      console.error('Auto-update check failed:', err);
+    });
+  };
+  setTimeout(check, 5000);
+  const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  // Never hold the process open for a version check.
+  timer.unref?.();
 
   // And the CLIs the agents run, which Tars keeps from updating themselves:
-  // claude and Amp, 5 s after launch and every half hour, logged to
-  // ~/.dorothy/cli-updates.log. See services/cli-updater.ts.
-  startCliUpdates(() => appSettings);
+  // claude and Amp, when at least one agent runs them, 5 s after launch and
+  // every half hour, logged to ~/.dorothy/cli-updates.log. Under the same
+  // switch. See services/cli-updater.ts.
+  startCliUpdates(() => appSettings, () => [...agents.values()].map(agent => agent.provider));
 
   console.log('App initialization complete');
 });

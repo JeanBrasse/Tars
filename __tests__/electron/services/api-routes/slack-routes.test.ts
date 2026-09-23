@@ -23,6 +23,8 @@ beforeEach(() => {
   ctx = {
     mainWindow: null,
     appSettings: { slackChannelId: 'C123' } as unknown as AppSettings,
+    // The routes read the live settings, as the server hands them (api-server.ts).
+    getAppSettings: () => ctx.appSettings,
     getTelegramBot: () => null,
     getSlackApp: () => ({
       client: { chat: { postMessage: mockPostMessage } },

@@ -5,6 +5,7 @@ import * as path from 'path';
 import { CHAT_ROOMS, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The Chat room, one frame per state, in a sandbox of its own.
@@ -21,7 +22,6 @@ import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from 
  * that works.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 let app: ElectronApplication;
 let page: Page;
@@ -39,7 +39,7 @@ test.beforeAll(async () => {
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the other suites may still be holding 31498 and 31496.
-      DOROTHY_API_PORT: '31495',
+      DOROTHY_API_PORT: apiPort(31495),
       DOROTHY_E2E: '1',
       // Every row carries a time, so the clock is pinned here rather than left
       // to whichever machine records the baseline.

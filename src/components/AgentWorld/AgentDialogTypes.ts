@@ -23,8 +23,7 @@ export interface AgentTerminalDialogProps {
   skipHistoricalOutput?: boolean;
 }
 
-export function isSuperAgent(agent: { name?: string } | null): boolean {
-  if (!agent) return false;
-  const name = agent.name?.toLowerCase() || '';
-  return name.includes('super agent') || name.includes('orchestrator');
+// The Orchestrator toggle, which is the role. The name decides nothing.
+export function isSuperAgent(agent: { role?: string } | null): boolean {
+  return agent?.role === 'orchestrator';
 }

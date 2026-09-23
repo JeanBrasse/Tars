@@ -92,6 +92,7 @@ import { ptyProcesses, writeHumanInput, resetTerminalInput } from '../../../elec
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { resetResumeTracking, encodeProjectDirName } from '../../../electron/utils/resume-session';
 import { resetAgentRestarts } from '../../../electron/core/agent-restart';
+import { resetLaunches } from '../../../electron/core/agent-launch';
 import { emitAgentStatus } from '../../../electron/services/agent-events';
 import { startAgentForTask } from '../../../electron/services/kanban-automation';
 import { resetAgentWatch, queueBusMessage, deliverBusMessages, startAgentWatch, stopAgentWatch, holdsFor } from '../../../electron/services/agent-watch';
@@ -221,6 +222,7 @@ beforeEach(() => {
   resetResumeTracking();
   resetAgentRestarts();
   resetAgentWatch();
+  resetLaunches();
   registerIpcHandlers(deps());
 });
 

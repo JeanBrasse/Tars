@@ -68,7 +68,7 @@ npm run electron:dev
 
 That is `concurrently` over two things:
 
-1. `npm run dev`: `next dev` on port 3000.
+1. `npm run dev`: `next dev` on 127.0.0.1, port 3000.
 2. `npm run electron:start`: `wait-on http://localhost:3000`, then
    `tsc -p electron/tsconfig.json`, then `NODE_ENV=development electron .`.
 
@@ -83,13 +83,16 @@ DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 ### Run the renderer alone
 
 ```bash
-npm run dev            # next dev, port 3000
-npm run dev:network    # next dev -H 0.0.0.0, for a phone/tailnet client
+npm run dev            # next dev on 127.0.0.1, port 3000
 ```
 
-`next.config.ts` already allows `http://100.92.4.122:3000` as a dev origin. The renderer alone
-has no IPC bridge: every `window.electron.*` call is undefined, so most pages render empty.
-Use it only for pure-layout work.
+The dev server listens on the loopback only. It used to listen on every interface, and a
+`dev:network` script and a tailnet dev origin were there to reach it from another machine:
+both are gone, with the web build's API routes they served (`/api/agents` spawned `claude`
+from an HTTP request, and `/api/skills` ran a shell command). The e2e suite starts its own
+`next dev` on port 3100 (`playwright.config.ts`). The renderer alone has no IPC bridge: every
+`window.electron.*` call is undefined, so most pages render empty. Use it only for pure-layout
+work.
 
 ### Compile just the main process
 
@@ -157,7 +160,44 @@ npm run lint:design     # design guardrail, see below
 
 ## Tests and guardrails
 
-Four separate gates. They do not overlap.
+The rules are in CLAUDE.md, Workflow Rule 3, and they are Noah's (2026-09-23): a feature is
+proven end to end in the real app, every E2E run leaves an artefact, a unit tested in isolation
+is written failures first, and the vitest suite stays as the regression net. Below, how to prove
+a feature, then the four gates. They do not overlap.
+
+### Proving a feature: an E2E spec and its artefact
+
+A feature's spec lives in `e2e/<feature>.spec.ts` and drives the running app, never a component
+or a mock:
+
+1. **Launch** through `launchSandboxed(electron, home)` from `e2e/fixture.mjs`, with a HOME made
+   for the run and seeded before the launch (`seedSandbox`, or the files the feature reads).
+   Spell it `/tmp/...`: the app reports its folders under `/tmp`, so a HOME spelled
+   `/private/tmp/...` fails the fixture's check. The fixture adds `--user-data-dir` and
+   `CFFIXED_USER_HOME`, and fails the launch if the app reports any folder outside the sandbox.
+2. **A CLI** in the feature is real claude (its path in the seed's `cliPaths.claude` or the
+   agent's `cliPath`; a fake Messages API behind `ANTHROPIC_BASE_URL` when no real turn is
+   needed), or the recording fake CLI through `cliPath`. The sweep's agents run the fake CLI
+   `seedSandbox` writes; a spec that needs its own CLI writes one through `cliPath`, as
+   `terminal-replay-modes.spec.ts` does. `launchSandboxed` refuses to hand the app the caller's
+   `CLAUDE_*`, `DOROTHY_*` or `ANTHROPIC_*`: a variable of that family the app needs is set in
+   the spec's `env`. Check which hook scripts the sandbox's `~/.claude/settings.json` names
+   before a CLI starts: they must post to the sandbox's port.
+3. **Assert** on what the user sees or the main process reports: the DOM,
+   `window.electronAPI.agent.list()`, the files written. Never on a mock.
+4. **Leave the artefact.** `npx tsc -p electron/tsconfig.json`, then
+   `E2E_TRACE=on npx playwright test e2e/<feature>.spec.ts`. Every run writes into its own
+   directory, `test-results/runs/<stamp>` (or `E2E_RUN_DIR`), which holds `command.txt`: the
+   commit and the command that reproduce it. In the spec, `recordValues({...})`
+   (`e2e/fixture.mjs`) writes the values asserted to `values.json`, and
+   `stepShot(page, '<step>')` each screenshot. `E2E_TRACE=on` adds the app's own trace,
+   `app-trace.zip`. Playwright's `--trace` records only the runner's steps for an Electron app.
+   The PR names the run directory.
+5. **Show it bites**: run it against the old build (the base branch's `electron/dist` and
+   renderer) or a mutant, and see it red.
+
+Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
+moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
 ### Unit tests: `npm test`
 
@@ -167,7 +207,12 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Current state: **46 files, 733 tests, ~5 s.** Config is `vitest.config.mts`: node environment,
+A unit tested in isolation (a parser, `electron/core/input-draft.ts`, `src/lib/usage-window.ts`,
+the worktree path guard) starts with a header listing every way it can fail, then the tests,
+then the code. A test written after the code, one that restates a constant or one that only
+checks a mock was called is refused at the gate.
+
+Config is `vitest.config.mts`: node environment,
 globals on, `include: ['__tests__/**/*.test.ts']`, and an `@` → `src/` alias so renderer
 modules resolve the same way Next resolves them.
 
@@ -180,8 +225,9 @@ Layout mirrors the source tree: `__tests__/electron/services/api-routes/*.test.t
 print stack traces on success (`team-template-handlers` corrupt-store case, the security
 suites); a stderr block is not a failure, read the final summary line.
 
-`npm test` does **not** cover `src/` React components beyond two files
-(`__tests__/components/`). The renderer is guarded by the E2E sweep instead.
+`npm test` reaches `src/` through the 25 test files of `__tests__/components/`, several of which
+call a component as a function under `__tests__/components/hook-runtime.ts`. The renderer in a
+real window is the E2E specs' to prove.
 
 ### E2E surface sweep: `npm run e2e`
 
@@ -444,7 +490,9 @@ path, so a change to either setting changes the other with it. The comment on `G
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
-Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates === false`.
+Auto-check fires 5 s after `whenReady()` and every 30 minutes, and each tick reads `appSettings.autoCheckUpdates`:
+with it `false` the tick does nothing, so turning the switch off or on needs no restart. The same switch
+governs the CLI updates below.
 
 ### Cut a release
 
@@ -526,7 +574,13 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
 so neither updates itself inside a Tars terminal. Tars updates them instead
-(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time,
+while "Check for updates" is on in Settings (the one switch for Tars's own updates and these), and
+only the CLIs at least one agent runs. An agent with no provider, and the thirteen providers pointed
+at another vendor, run claude; an Amp agent runs Amp; codex, gemini, grok, opencode and pi run their
+own binaries, which Tars does not update. So a fleet with no Amp agent never has Amp checked, and a
+codex-only fleet never has claude checked. The log says `all off` once when the switch is off, and
+`<cli> skipped: <why>` once for each reason a CLI is left alone, such as no agent running it.
 
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
@@ -546,7 +600,7 @@ it runs, and a launch in those seconds fails. npm's cache for it lives in the sc
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
 package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
 
-Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
 yourself.
 
@@ -736,8 +790,13 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
-| POST | `/api/telegram/{send,send-photo,send-video,send-document}` · `/api/slack/send` |
+| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` |
 | POST | `/api/webhooks/hermes` |
+
+The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
+none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
+which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`; both read
+the settings as they are, so a change there counts without a restart (SECURITY §6).
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
 raises its own fetch timeout to 600 s for any path containing `/wait` so the client never
@@ -828,7 +887,9 @@ both behave identically. It:
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
-   `waiting` over a bare shell had the message run as a command. Otherwise it
+   `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
+   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
 
@@ -1111,7 +1172,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 
 | Symptom | Where to look |
 |---|---|
-| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `/tmp/dorothy-hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
 | an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1122,8 +1183,11 @@ in `ps`.
 ### Debugging hooks
 
 ```bash
-tail -f /tmp/dorothy-hooks.log          # session-start
-tail -f /tmp/dorothy-hooks-debug.log    # on-stop, verbose
+tail -f ~/.dorothy/logs/hooks.log          # session-start, prompts, stops
+tail -f ~/.dorothy/logs/hooks-debug.log    # on-stop, verbose
+# Until 2026-09-23 these were /tmp/dorothy-hooks.log and -debug.log, readable by
+# every user and shared by every Tars on the machine, a sandbox's included. Tars
+# removes those two at startup, when HOME is the user's own (never from a sandbox).
 
 # are they installed and pointing at a file that exists?
 jq -r '.hooks | to_entries[] | "\(.key)\t\(.value[0].hooks[0].command)"' ~/.claude/settings.json
@@ -1132,6 +1196,12 @@ jq -r '.hooks | to_entries[] | .value[0].hooks[0].command' ~/.claude/settings.js
 # the hooks need jq and curl
 which jq curl
 ```
+
+A hook post that is refused (`401` or `403` in those logs) comes from a CLI whose
+token is not its terminal's: one that outlived its terminal (a restart replaced it), or
+one Tars did not start. The agent's status then stops following that CLI: stop and
+start the agent from Tars. After an update from 1.7.9 there is none of these, since
+quitting kills every agent terminal and each comes back with a token.
 
 | Symptom | Cause |
 |---|---|
@@ -1394,7 +1464,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/age
 
 ### An agent restarted by itself after its model or effort changed
 
-Saving a model, an effort, a permission mode, orchestrator mode, a secondary folder, an
+Saving a model, an effort, a permission mode, the Orchestrator toggle, a secondary folder, an
 Obsidian vault or a local model in the Agents page restarts that agent's CLI on the new values,
 continuing its conversation (`--resume <session> --fork-session`), unless something would be cut
 (`electron/core/agent-restart.ts`). Every decision is one line in the main process log:
@@ -1420,6 +1490,29 @@ its argv (the model and effort are on the command line):
 
 ```bash
 ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
+```
+
+### An orchestrator became a worker, or the other way round
+
+The Orchestrator toggle is the role, and a project has one orchestrator
+(`electron/core/agent-role.ts`). Switching it on for an agent makes the project's current
+orchestrator a worker, and both CLIs restart on their new flags:
+
+```
+[restart] Tars-Backend: orchestrator changed: restarting its CLI now
+[restart] Tars-Orchestrator: orchestrator changed: restarting when its turn ends
+```
+
+The name decides nothing: renaming "Tars-Orchestrator" leaves it the orchestrator, and an agent
+called "Orchestrator" can be a worker. On load, a file with two orchestrators in one project keeps
+the first and logs `[role] <name> is a worker now: <project> had another orchestrator, and a
+project has one`. Who is what, and what a running CLI got:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents?all=true \
+  | jq -r '.agents[] | "\(.role)\t\(.name)\t\(.projectPath)"' | sort
+# an orchestrator's argv carries the instructions file and the tool block
+ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 ```
 
 ### Fleet-wide log search

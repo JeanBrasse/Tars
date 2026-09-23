@@ -112,50 +112,6 @@ export const SKILLS_DATABASE: Skill[] = [
   { rank: 100, name: 'vue', repo: 'onmax/nuxt-skills', installs: '478', category: 'Frontend' },
 ];
 
-/**
- * Fetch live skills from skills.sh.
- * In Electron: uses IPC to fetch from the main process (avoids CORS).
- * In dev/web: uses the Next.js API route.
- * Returns null on failure so callers can fall back to SKILLS_DATABASE.
- */
-// Live marketplace entries carry no category; borrow it from the bundled
-// snapshot so category filters/badges keep working with live data.
-const CATEGORY_BY_NAME = new Map(SKILLS_DATABASE.map(s => [s.name, s.category]));
-
-function withCategories(skills: Skill[] | null): Skill[] | null {
-  if (!skills) return null;
-  return skills.map(s => s.category ? s : { ...s, category: CATEGORY_BY_NAME.get(s.name) });
-}
-
-export async function fetchSkillsFromMarketplace(): Promise<Skill[] | null> {
-  // Electron path: fetch via IPC (main process, no CORS)
-  if (typeof window !== 'undefined' && window.electronAPI?.skill?.fetchMarketplace) {
-    try {
-      const result = await window.electronAPI.skill.fetchMarketplace();
-      return withCategories(result.skills);
-    } catch {
-      return null;
-    }
-  }
-
-  // Dev/web path: page through the Next.js API route (defaults to 50/page,
-  // which would otherwise shrink the catalog below the bundled snapshot)
-  try {
-    const all: Skill[] = [];
-    for (let page = 1; page <= 5; page++) {
-      const res = await fetch(`/api/skills/marketplace?limit=200&page=${page}`);
-      if (!res.ok) return all.length > 0 ? withCategories(all) : null;
-      const data = await res.json();
-      if (!data?.skills?.length) break;
-      all.push(...data.skills);
-      if (!data.hasMore) break;
-    }
-    return all.length > 0 ? withCategories(all) : null;
-  } catch {
-    return null;
-  }
-}
-
 export interface SkillsPageResult {
   skills: Skill[];
   total: number;
@@ -165,9 +121,8 @@ export interface SkillsPageResult {
 }
 
 /**
- * Fetch skills with pagination and optional search.
- * In Electron: fetches all via IPC then paginates/filters client-side.
- * In web/dev: delegates to the Next.js API route which supports pagination natively.
+ * Fetch skills with pagination and optional search: all of them over IPC,
+ * then paginated and filtered here. Null outside the desktop app.
  */
 export async function fetchSkillsPaginated(params: {
   page?: number;
@@ -207,30 +162,7 @@ export async function fetchSkillsPaginated(params: {
     }
   }
 
-  // Web/dev path: use the Next.js API route with pagination params
-  try {
-    const qp = new URLSearchParams();
-    qp.set('page', String(page));
-    qp.set('limit', String(pageSize));
-    if (search) qp.set('q', search);
-
-    const res = await fetch(`/api/skills/marketplace?${qp}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-
-    if (data?.skills && Array.isArray(data.skills)) {
-      return {
-        skills: data.skills as Skill[],
-        total: data.total ?? data.skills.length,
-        page: data.page ?? page,
-        pageSize: data.pageSize ?? pageSize,
-        hasMore: data.hasMore ?? (data.skills.length >= pageSize),
-      };
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 // Get unique categories

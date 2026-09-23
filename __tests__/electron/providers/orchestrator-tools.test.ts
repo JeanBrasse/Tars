@@ -29,9 +29,16 @@ describe('the restriction itself', () => {
 
   it('blocks every file-mutating tool', () => {
     const flags = orchestratorToolFlags(true);
-    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
       expect(flags).toContain(`"${tool}"`);
     }
+  });
+
+  it('names no tool claude does not have: every orchestrator start warned about MultiEdit', () => {
+    // claude 2.1.268, 2.1.273 and 2.1.280: `Permission deny rule "MultiEdit"
+    // matches no known tool - check for typos.` on stderr, at every start.
+    expect(orchestratorToolFlags(true)).toBe(' --disallowed-tools "Edit" "Write" "NotebookEdit" "Task"');
+    expect(orchestratorToolFlags(true)).not.toContain('MultiEdit');
   });
 
   it('blocks the built-in subagent tool', () => {
@@ -52,20 +59,35 @@ describe('every provider that runs the claude binary applies it', () => {
       return s.includes("binaryName = 'claude'") && s.includes('buildInteractiveCommand');
     });
 
-  it('finds all of them', () => {
-    // Claude plus the ones that re-point the same binary at another vendor.
-    expect(repointed.length).toBeGreaterThanOrEqual(14);
+  async function claudeBinaryProviders() {
+    const { getAllProviders } = await import('../../../electron/providers');
+    return getAllProviders().filter(p => p.binaryName === 'claude');
+  }
+
+  it('finds all of them', async () => {
+    // Claude plus the ones that re-point the same binary at another vendor,
+    // counted from the registry and from the directory, which must agree: a
+    // provider file the registry forgot is one no launch reaches.
+    const registered = await claudeBinaryProviders();
+    expect(registered.length).toBeGreaterThanOrEqual(14);
+    expect(registered.length).toBe(repointed.length);
   });
 
-  for (const file of repointed) {
-    it(`${file} restricts orchestrator mode`, () => {
-      const src = fs.readFileSync(path.join(dir, file), 'utf-8');
-      expect(
-        src.includes('orchestratorToolFlags(params.orchestratorMode)'),
-        `${file} builds a claude command but never calls orchestratorToolFlags`,
-      ).toBe(true);
-    });
-  }
+  // What the provider builds, rather than the line of source that builds it:
+  // the test this replaces read each file for the text
+  // `orchestratorToolFlags(params.orchestratorMode)`, and passed for a
+  // provider that called it and then dropped the result.
+  it('puts the block on the command line of an orchestrator, and only there', async () => {
+    for (const provider of await claudeBinaryProviders()) {
+      const params = { binaryPath: 'claude', prompt: 'Delegate the audit' };
+      const orchestrator = provider.buildInteractiveCommand({ ...params, orchestratorMode: true });
+      const worker = provider.buildInteractiveCommand({ ...params, orchestratorMode: false });
+
+      expect(orchestrator, `${provider.id} launches an orchestrator with its editing tools`)
+        .toContain(orchestratorToolFlags(true).trim());
+      expect(worker, `${provider.id} takes a worker's editing tools away`).not.toContain('--disallowed-tools');
+    }
+  });
 
   it('nobody keeps a private copy of the list', () => {
     // Two copies drift. That is how thirteen providers ended up with none.

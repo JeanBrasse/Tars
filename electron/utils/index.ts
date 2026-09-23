@@ -213,12 +213,10 @@ function playSound(filePath: string): void {
   }
 }
 
+/** Its project's orchestrator: the Orchestrator toggle, and never the name.
+ *  See core/agent-role.ts. */
 export function isSuperAgent(agent: AgentStatus): boolean {
-  // The persisted role is authoritative; the name-substring test only covers
-  // agents created before the role field existed (loadAgents migrates them).
-  if (agent.role) return agent.role === 'orchestrator';
-  const name = agent.name?.toLowerCase() || '';
-  return name.includes('super agent') || name.includes('orchestrator');
+  return agent.role === 'orchestrator';
 }
 
 /** Find an orchestrator agent. Pass projectPath to get the orchestrator OF

@@ -5,12 +5,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { sessionStarted, launchBegins, launchAbandoned } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
-import { AgentStatus, AgentCharacter } from '../../types';
+import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
-import { getSuperAgentInstructionsPath } from '../../utils';
+import { getSuperAgentInstructionsPath, isSuperAgent } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
@@ -21,7 +22,8 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
-import { noteLaunch, launchSettings } from '../../core/agent-restart';
+import { noteLaunch, launchSettings, restartForSettings } from '../../core/agent-restart';
+import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
@@ -97,9 +99,8 @@ async function spawnAgentSession(
 
   const usePrintMode = opts.printMode;
 
-  const isSuperAgentApi = agent.role === 'orchestrator' ||
-                          agent.name?.toLowerCase().includes('super agent') ||
-                          agent.name?.toLowerCase().includes('orchestrator');
+  // Its project's orchestrator: the toggle, never the name (core/agent-role.ts).
+  const isSuperAgentApi = isSuperAgent(agent);
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
@@ -216,8 +217,8 @@ async function spawnAgentSession(
       // itself instead of delegating.
       systemPromptFile: orchestratorInstructionsFile(isSuperAgentApi),
       isSuperAgent: isSuperAgentApi,
-      // BUG 5: orchestrator-mode agents cannot edit files directly.
-      orchestratorMode: isSuperAgentApi || agent.orchestratorMode,
+      // BUG 5: an orchestrator cannot edit files directly.
+      orchestratorMode: isSuperAgentApi,
       verbose: appSettings.verboseModeEnabled,
       chrome: appSettings.chromeEnabled,
     });
@@ -292,15 +293,28 @@ async function spawnAgentSession(
   // A session that never starts a turn must stop claiming to work. See
   // TASK_START_GRACE_MS below for what this catches and why it is checked
   // rather than assumed.
-  const ptyProcess = spawnAgentPty({
-    binaryName: cliProvider.binaryName,
-    shell,
-    args: ['-l', '-c', command],
-    cols: 120,
-    rows: 40,
-    cwd: rawWorkingDir,
-    env: spawnEnv,
-  });
+  //
+  // A launch, for every other sender, from before its terminal exists
+  // (core/agent-launch.ts): the CLI execs at once and counts as running, but
+  // takes no keys until its SessionStart. Unmarked, a /dispatch 0.1 to 0.3 s
+  // after a /start typed its message into a claude not yet reading, and it was
+  // lost 4 times in 5 while the caller heard 200 (the Audit, gate of #134).
+  const launch = launchBegins(agent.id, { withTask: !!prompt.trim() });
+  let ptyProcess: ReturnType<typeof spawnAgentPty>;
+  try {
+    ptyProcess = spawnAgentPty({
+      binaryName: cliProvider.binaryName,
+      shell,
+      args: ['-l', '-c', command],
+      cols: 120,
+      rows: 40,
+      cwd: rawWorkingDir,
+      env: spawnEnv,
+    });
+  } catch (err) {
+    launchAbandoned(agent.id, launch);
+    throw err;
+  }
 
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
@@ -353,6 +367,9 @@ async function spawnAgentSession(
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    // A CLI that exits before its session came up is not coming up: nobody
+    // waits the rest of CLI_BOOT_MS for it.
+    launchAbandoned(agent.id, launch);
     // Remove from the live map IMMEDIATELY: node-pty write() on a dead PTY is
     // a silent no-op, so leaving it registered lets /dispatch and /message
     // "successfully" type a task into a corpse during the status-delay below.
@@ -601,6 +618,11 @@ async function performDispatchLocked(
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
+  // A launch on its way (a restart, a start from a window) owns the terminal
+  // until its CLI runs there: wait for it, then type into its session. Taken
+  // for "no session", the message started one over it, without the resume.
+  await sessionStarted(agent);
+
   // BUG 4 guard: kill the PTY if its cwd no longer matches the agent's
   // worktree so the spawn path below restarts it in the right directory.
   killStalePty(agent);
@@ -793,9 +815,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    const isOrchestrator = agent.role === 'orchestrator' ||
-                           agent.name?.toLowerCase().includes('super agent') ||
-                           agent.name?.toLowerCase().includes('orchestrator');
+    const isOrchestrator = isSuperAgent(agent);
 
     const teammates = Array.from(agents.values())
       .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id)
@@ -875,13 +895,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const driver = resolveDriver(req, sendJson);
     if (!driver) return;
 
-    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, orchestratorMode, provider, model, effort, cliPath } = req.body as {
+    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, provider, model, effort, cliPath } = req.body as {
       projectPath: string;
       name?: string;
       skills?: string[];
       character?: AgentCharacter;
       permissionMode?: 'normal' | 'auto' | 'bypass';
       secondaryProjectPath?: string;
+      /** The Orchestrator toggle, or its old name: see requestedRole. */
+      role?: AgentRole;
       orchestratorMode?: boolean;
       provider?: string;
       model?: string;
@@ -912,10 +934,29 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Invalid effort level' }, 400);
       return;
     }
+    let role: AgentRole;
+    try {
+      role = requestedRole(req.body as { role?: unknown; orchestratorMode?: unknown }) ?? 'worker';
+    } catch (err) {
+      sendJson({ error: err instanceof Error ? err.message : 'Invalid role' }, 400);
+      return;
+    }
+    // An orchestrator is made in the Agents page and nowhere else. Made here,
+    // it took the role from the project's current one and restarted it on the
+    // word of whoever held a token, with none of the confirmation Noah asked
+    // for: the QA's gate of #123 measured a worker's own token making itself a
+    // "Rogue" orchestrator of its project, and with allowCrossProject, in
+    // bypass, of another one. Nothing asks for it legitimately: the MCP's
+    // create_agent sends no role. Decided on 2026-09-23, for every caller.
+    if (role === 'orchestrator') {
+      sendJson({
+        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; Noah can make it the orchestrator there.',
+      }, 403);
+      return;
+    }
 
     const id = uuidv4();
     const resolvedName = name || `Agent ${id.slice(0, 6)}`;
-    const lowerName = resolvedName.toLowerCase();
     const agent: AgentStatus = {
       id,
       status: 'idle',
@@ -927,20 +968,17 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       character,
       name: resolvedName,
       permissionMode: permissionMode || 'auto',
-      orchestratorMode: orchestratorMode || false,
       provider: provider as AgentStatus['provider'],
       model,
       effort,
       cliPath,
-      // role mirrors the historical name-based isSuperAgent semantics.
-      // orchestratorMode stays an independent tool-restriction toggle. It
-      // must NOT promote an agent into the Telegram/Slack super-agent pool.
-      role: (lowerName.includes('super agent') || lowerName.includes('orchestrator'))
-        ? 'orchestrator'
-        : 'worker',
     };
+    // The role asked for, never the name; an orchestrator takes the role from
+    // its project's current one, whoever creates it (core/agent-role.ts).
+    const demoted = assignRole(agent, role, agents.values());
     agents.set(id, agent);
     saveAgents();
+    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
     announceAgent(agent);
     sendJson({ agent });
   });
@@ -1049,7 +1087,6 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       agent,
       task,
       appSettings: ctx.getAppSettings(),
-      isOrchestrator: agent.role === 'orchestrator',
       timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
     });
 
@@ -1126,6 +1163,9 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     recordRequester(agent, req);
 
     await withAgentLock(agent.id, async () => {
+      // As /dispatch: a launch on its way is waited for, never spawned over.
+      await sessionStarted(agent);
+
       // BUG 4 guard: if the agent's worktreePath changed after the PTY was
       // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
       // reconnect path below spawns fresh with the correct working directory.

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The wheel over a terminal never types into the program running in it.
@@ -26,7 +27,6 @@ import { launchSandboxed, seedSandbox } from './fixture.mjs';
  * sandbox's HOME, whose .zshrc hands the terminal to the recorder.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 /**
  * Raw mode, no echo, every byte appended to the log. `n` leaves for the main
@@ -98,7 +98,7 @@ test('the wheel types nothing into a full-screen program, and the keys still do'
     env: {
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
-      DOROTHY_API_PORT: '31493',
+      DOROTHY_API_PORT: apiPort(31493),
       DOROTHY_E2E: '1',
       SHELL: '/bin/zsh',
       TARS_TERMINAL_RECORDER: recorder,

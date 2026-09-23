@@ -128,6 +128,19 @@ describe('useElectronAgents carries cliRunning to the panes', () => {
     expect(before[0].cliRunning).toBe(false);
   });
 
+  it('agent:list where only the role changes replaces the list, so a demoted orchestrator shows at once', async () => {
+    // Added at the QA gate of #129: another agent's save can take this one's
+    // role, and a role change moves nothing else on the record.
+    listed = [agent({ role: 'orchestrator' }), agent({ id: 'a2', name: 'Reviewer', role: 'worker' })];
+    await hook.result.refresh();
+    await settle();
+    listed = [agent({ role: 'worker' }), agent({ id: 'a2', name: 'Reviewer', role: 'orchestrator' })];
+    await hook.result.refresh();
+    await settle();
+    expect(hook.result.agents).toBe(listed);
+    expect(hook.result.agents.map(x => x.role)).toEqual(['worker', 'orchestrator']);
+  });
+
   it('agent:list where nothing changes keeps the list it has', async () => {
     const before = hook.result.agents;
     listed = [agent(), agent({ id: 'a2', name: 'Reviewer' })];

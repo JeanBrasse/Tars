@@ -60,10 +60,13 @@ describe('team-template-handlers', () => {
       expect(team.members.map(m => m.name)).toEqual([
         'Orchestrator', 'Frontend Engineer', 'Backend Engineer', 'QA Engineer', 'Audit Engineer', 'Database Engineer',
       ]);
-      // Only the orchestrator has orchestratorMode; every dev has its own branch
+      // Only the orchestrator has the role, and the toggle's old field equal to
+      // it for the renderer that deploys from it; every dev has its own branch
+      expect(team.members[0].role).toBe('orchestrator');
       expect(team.members[0].orchestratorMode).toBe(true);
       expect(team.members[0].worktreeBranch).toBeUndefined();
       for (const member of team.members.slice(1)) {
+        expect(member.role ?? 'worker').toBe('worker');
         expect(member.orchestratorMode).toBeUndefined();
         expect(member.worktreeBranch).toMatch(/^feat\//);
       }
@@ -103,6 +106,29 @@ describe('team-template-handlers', () => {
       expect(list.teams).toHaveLength(2); // builtin + user
     });
 
+    it("sets each member's role from the toggle, never from the name", async () => {
+      const result = await invoke('teamTemplate:create', {
+        name: 'Roles',
+        members: [
+          { name: 'Lead', role: 'orchestrator' },
+          { name: 'Planner', orchestratorMode: true },
+          { name: 'Orchestrator docs' },
+        ],
+      }) as { success: boolean; team: { members: Array<Record<string, unknown>> } };
+
+      expect(result.success).toBe(true);
+      expect(result.team.members.map(m => [m.role, m.orchestratorMode])).toEqual([
+        ['orchestrator', true],
+        ['orchestrator', true],
+        ['worker', undefined],
+      ]);
+    });
+
+    it('refuses a member whose role is neither', async () => {
+      expect(await invoke('teamTemplate:create', { name: 'Bad', members: [{ name: 'X', role: 'boss' }] }))
+        .toMatchObject({ success: false, error: 'Invalid role: boss' });
+    });
+
     it('rejects a team without a name or without members', async () => {
       expect(await invoke('teamTemplate:create', { name: '', members: [{ name: 'x' }] }))
         .toMatchObject({ success: false });
@@ -126,6 +152,28 @@ describe('team-template-handlers', () => {
       expect(await invoke('teamTemplate:delete', 'nonexistent'))
         .toMatchObject({ success: false });
     });
+  });
+
+  it('gives the members of a team saved before the toggle was the role the role they deployed with', async () => {
+    // Deployed then, "Lead Orchestrator - <project>" was an orchestrator by its
+    // name, and the toggle added nothing: the same team deploys the same agents.
+    fs.writeFileSync(path.join(tmpDir, 'team-templates.json'), JSON.stringify({ user: [{
+      id: 'old', builtin: false, name: 'Old', description: '', icon: '👥', createdAt: '', updatedAt: '',
+      members: [
+        { name: 'Lead Orchestrator', character: 'wizard', provider: 'claude', permissionMode: 'auto', skills: [] },
+        { name: 'Planner', character: 'robot', provider: 'claude', permissionMode: 'auto', skills: [], orchestratorMode: true },
+        { name: 'Dev', character: 'robot', provider: 'claude', permissionMode: 'auto', skills: [] },
+      ],
+    }] }));
+
+    const list = await invoke('teamTemplate:list') as { teams: Array<{ id: string; members: Array<Record<string, unknown>> }> };
+    const old = list.teams.find(t => t.id === 'old')!;
+
+    expect(old.members.map(m => [m.name, m.role, m.orchestratorMode])).toEqual([
+      ['Lead Orchestrator', 'orchestrator', true],
+      ['Planner', 'orchestrator', true],
+      ['Dev', 'worker', undefined],
+    ]);
   });
 
   it('survives a corrupt store file', async () => {

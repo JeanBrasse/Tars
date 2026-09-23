@@ -2,6 +2,23 @@ import * as fs from 'fs';
 import { isSafeTelegramPath } from './utils';
 import { RouteApp, RouteContext } from './types';
 
+/**
+ * The chats a send may go to: the ones Noah authorized, as the settings say
+ * now. Read live, never from the snapshot the server was started with: a chat
+ * removed in Settings kept receiving until the next launch (the audit's lead
+ * #20). The same set mcp-telegram's own send accepts.
+ */
+function authorizedChats(ctx: RouteContext): Set<string> {
+  const settings = ctx.getAppSettings();
+  return new Set([settings.telegramChatId, ...(settings.telegramAuthorizedChatIds ?? [])].filter(Boolean).map(String));
+}
+
+/** Where a send goes when its caller names no chat. */
+function defaultChat(ctx: RouteContext): string | undefined {
+  const settings = ctx.getAppSettings();
+  return settings.telegramChatId || settings.telegramAuthorizedChatIds?.[0];
+}
+
 export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/telegram/send
   app.post('/api/telegram/send', async (req, sendJson) => {
@@ -12,9 +29,16 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = chat_id || ctx.appSettings.telegramChatId || ctx.appSettings.telegramAuthorizedChatIds?.[0];
+    const targetChatId = chat_id ? String(chat_id) : defaultChat(ctx);
     if (!telegramBot || !targetChatId) {
       sendJson({ error: 'Telegram not configured or no chat ID. Set a default chat in Settings > Telegram.' }, 400);
+      return;
+    }
+    // Only a chat Noah authorized. The chat_id comes from a model (send_telegram
+    // in every agent), and a prompt-injected one could name any chat that had
+    // started the bot.
+    if (!authorizedChats(ctx).has(targetChatId)) {
+      sendJson({ error: 'That chat is not one of the chats authorized in Settings > Telegram.' }, 403);
       return;
     }
 
@@ -44,7 +68,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = ctx.appSettings.telegramChatId || ctx.appSettings.telegramAuthorizedChatIds?.[0];
+    const targetChatId = defaultChat(ctx);
     if (!telegramBot || !targetChatId) {
       sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
       return;
@@ -80,7 +104,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = ctx.appSettings.telegramChatId || ctx.appSettings.telegramAuthorizedChatIds?.[0];
+    const targetChatId = defaultChat(ctx);
     if (!telegramBot || !targetChatId) {
       sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
       return;
@@ -116,7 +140,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = ctx.appSettings.telegramChatId || ctx.appSettings.telegramAuthorizedChatIds?.[0];
+    const targetChatId = defaultChat(ctx);
     if (!telegramBot || !targetChatId) {
       sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
       return;

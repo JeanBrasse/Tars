@@ -11,7 +11,7 @@ import { API_PORT, API_TOKEN_FILE } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
-import { agentForToken, isInternalToken } from '../core/agent-tokens';
+import { agentForToken, isInternalToken, isTerminalToken } from '../core/agent-tokens';
 import { isWebhookSecret } from './hermes-webhook-secret';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
@@ -123,7 +123,9 @@ export function getApiToken(): string {
  *  when it is the main process calling its own API, Hermes when it presents
  *  the webhook secret on the webhook. */
 export type CallerResolution =
-  | { ok: true; agentId?: string; internal?: boolean; hermes?: boolean }
+  | { ok: true; agentId?: string; internal?: boolean; hermes?: boolean;
+    /** The token is the agent's terminal's, as it is now: not a delegated run's. */
+    terminal?: boolean }
   | { ok: false; status: number; error: string };
 
 /** The one route published off this machine, and the only one the webhook secret opens. */
@@ -140,8 +142,8 @@ const HERMES_WEBHOOK_PATH = '/api/webhooks/hermes';
  * - The **shared token**, `~/.dorothy/api-token`: authorised, and nobody. No
  *   header is read with it, neither the id nor the project. Every agent can
  *   read that file, so a name that comes with it proves nothing, and believing
- *   the name was how any agent could be any other. Who presents it: the shell
- *   hooks, a curl run by hand, and an MCP server whose process was started
+ *   the name was how any agent could be any other. Who presents it: a curl run
+ *   by hand, and an MCP server whose process was started
  *   without a token of its own. The super chat and Hermes did too, measured
  *   before 1.7.6; each holds a credential of its own now. Not the renderer: it
  *   only ever calls /api/local-file, which is exempt, and presents no token.
@@ -164,8 +166,8 @@ const HERMES_WEBHOOK_PATH = '/api/webhooks/hermes';
  * this lot the routes that drive an agent do the same: the shared token opens
  * no room and starts, stops, messages and deletes nothing. Nor does it reach
  * the webhook, which is Hermes's alone; it used to, as a fallback, and that
- * was the whole fleet. It still reads: `session-start.sh` fetches an agent's
- * bootstrap with it, so the listing and the per-agent reads stay open to it.
+ * was the whole fleet, nor the hook routes, which take an agent's own token.
+ * It still reads: the listing and the per-agent reads stay open to it.
  */
 export function resolveCaller(
   headers: http.IncomingHttpHeaders,
@@ -191,7 +193,7 @@ export function resolveCaller(
           + 'An agent speaks as itself.',
       };
     }
-    return { ok: true, agentId };
+    return { ok: true, agentId, terminal: isTerminalToken(presented) };
   }
 
   if (presented && isInternalToken(presented)) {
@@ -290,15 +292,17 @@ export function startApiServer(
     const url = new URL(req.url || '/', `http://localhost:${API_PORT}`);
     const pathname = url.pathname;
 
-    // Auth check: exempt local-only endpoints called from hooks/shell scripts.
-    // Three, not four. /api/kanban/complete was the fourth and had no caller
-    // at all: not the hooks, not mcp-kanban which writes the file itself, not
-    // the renderer. Unauthenticated, it marked any task done with a summary
-    // the caller supplied and deleted the agent the task had created from the
-    // live fleet, leaving its pty orphaned. The route is gone with it.
+    // Auth check: two local-only endpoints are exempt, and nothing else.
+    // /api/kanban/complete was one and had no caller at all: unauthenticated,
+    // it marked any task done and deleted the agent the task had created. The
+    // hooks were another until 2026-09-23: they post an agent's status and
+    // register its session, and with no credential anybody could do either for
+    // any agent. The Audit registered one agent's session for another and read
+    // its conversation back through a restart, and a killed CLI's late
+    // SessionStart took the agent from its live session. They present the
+    // agent's own token now (below).
     const authExempt = pathname === '/api/local-file'
-      || pathname === '/api/health'
-      || pathname.startsWith('/api/hooks/');
+      || pathname === '/api/health';
 
     // A browser tab on any site can reach 127.0.0.1. CORS hides the response
     // but not the side effect, so reject cross-origin callers outright: our
@@ -312,8 +316,7 @@ export function startApiServer(
     }
 
     // Resolved once, before routing, so no route has to decide for itself who
-    // it is talking to. Exempt paths keep their own guards: the hooks answer
-    // to session ownership, which is stronger than anything a header could say.
+    // it is talking to. The two exempt paths keep their own guards.
     let caller: CallerResolution = { ok: true };
     if (!authExempt) {
       caller = resolveCaller(req.headers, pathname);
@@ -364,6 +367,31 @@ export function startApiServer(
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));
     };
+
+    // A hook runs inside an agent's CLI, whose environment carries that
+    // terminal's own token (CLAUDE_MGR_API_TOKEN, minted per spawn), and posts
+    // for that agent and no other. The shared token, which every agent can
+    // read, names nobody and is refused here, as are Tars's pass and the
+    // webhook secret. A CLI whose terminal was replaced or has ended holds a
+    // token that no longer maps to anyone: its late posts get the 401 above.
+    // A delegated ACP run's token names its agent but is not its terminal's:
+    // a hook in that run posting a SessionStart took the agent from its live
+    // terminal (the Audit, gate of #135), so it is refused here too.
+    if (pathname.startsWith('/api/hooks/')) {
+      const posted = typeof body.agent_id === 'string' ? body.agent_id : undefined;
+      const agentId = caller.ok ? caller.agentId : undefined;
+      const fromTerminal = caller.ok && caller.terminal === true;
+      if (!agentId || posted !== agentId || !fromTerminal) {
+        sendJson({
+          error: !agentId
+            ? 'Hook posts take the token of the agent\'s own CLI (CLAUDE_MGR_API_TOKEN).'
+            : !fromTerminal
+              ? 'A delegated run does not post hook events for its agent: only the CLI in the agent\'s terminal does.'
+              : 'A hook posts for the agent whose CLI it runs in, with that CLI\'s own token.',
+        }, 403);
+        return;
+      }
+    }
 
     try {
       // Dispatch to first matching route

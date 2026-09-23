@@ -22,8 +22,8 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~23k LOC)
 │     └─ one shell per agent, cwd = worktreePath ?? projectPath
 │
 ├── Local HTTP API  127.0.0.1:31415  (electron/services/api-server.ts)
-│     ├── Bearer ~/.dorothy/api-token  (exempt: /api/health, /api/hooks/*,
-│     │                                 /api/local-file)
+│     ├── Bearer token  (exempt: /api/health, /api/local-file;
+│     │                  /api/hooks/*: the agent's own token only)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
@@ -89,7 +89,7 @@ orchestrator agent's CLI
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
 | 12 | `setupMcpOrchestrator()` (not awaited) | registering spawns CLIs; it used to hold the first paint |
 | 13 | `configureStatusHooks()` (awaited) | |
-| 14 | update check after 5 s | `electron-updater`, `autoCheckUpdates !== false` |
+| 14 | update check after 5 s, then every 30 min | `electron-updater`, `autoCheckUpdates !== false` read at each tick; the same switch governs the CLI updates |
 | 15 | `startCliUpdates()` | claude and Amp brought up to date 5 s after launch, then every 30 min, one at a time. §2 *Keeping the CLIs current* |
 
 `process.stdout` / `process.stderr` get an `EPIPE`-swallowing error handler at module load: a closed pipe from the launching shell would otherwise crash the app on the next `console.log`.
@@ -199,7 +199,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 
 ### Keeping the CLIs current
 
-`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`.
+`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`. A pass runs only while `autoCheckUpdates` is on, read at every pass: it is the one "Check for updates" switch, for Tars's own updates and the CLIs' (Noah, 2026-09-23). And it checks only the CLIs at least one agent runs, by each agent's provider (`clisInUse`): an agent with none, and the thirteen providers pointed at another vendor, run claude, so a fleet with no Amp agent never has Amp checked.
 
 | CLI, installed as | What Tars runs | When it holds back |
 |---|---|---|
@@ -210,7 +210,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 
 Nothing is updated when its own switch says not to: for claude, `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` in Tars's environment or in `~/.claude/settings.json`, or `autoUpdates: false` in `~/.claude.json` that the native installer did not write itself; for Amp, `amp.updates.mode: "disabled"` in `~/.config/amp/settings.json`. Nor is anything installed outside the home Tars runs in, which keeps a sandbox or a test run, whose `HOME` is a scratch folder, off the real CLIs, and nothing runs when `DOROTHY_E2E=1`.
 
-codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
+codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one an agent runs and found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
 
 ---
 
@@ -298,7 +298,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `wait_for_agent` | Single long-poll against `/wait`, no polling loop |
 | `delegate_task` | The composite. ACP first, terminal dispatch as fallback |
 | `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
-| `send_telegram` / `send_slack` | Reply to whichever channel the request came from |
+| `send_telegram` / `send_slack` | Reply to whichever channel the request came from: for Telegram, only a chat authorized in Settings (the app's route and mcp-telegram alike); for Slack, the channel of the last allowed user who wrote |
 
 Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` when the process was started with one and `~/.dorothy/api-token` otherwise, plus `X-Tars-Client: mcp` and caller identity headers. The server takes the caller from the token alone: an id header naming another agent is refused, and on the shared token the call has no agent identity at all. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
 
@@ -320,7 +320,7 @@ if live PTY && a CLI runs in it       → writeProgrammaticInput, clear lastClea
 else                                  → spawnAgentSession(), mode 'start'
 ```
 
-A CLI running in the terminal is read from the terminal (`cliRunningIn`, its foreground process), not from the status: every turn ends on `idle` (the Stop hook posts it) and a failed one on `error`, with the CLI still at its prompt. Taking those for "no session" spawned a new claude over it, which kills the terminal, with no `--resume` (the resume is spent once per run): a message to an agent that had just finished a turn ended its conversation. Nor does `running` or `waiting` type by itself: over a bare shell, left by a CLI that died without its SessionEnd, the message went into the shell, which ran it as a command. A session the API starts runs `bash -l -c "cd … && exec <cli>"`: the exec hands the terminal to the CLI, so node-pty names the CLI, and a terminal handed a command counts as a CLI's for as long as it can be read, which covers the moment before the exec while the shell reads its login files. Until 2026-09-23 there was no exec, node-pty named `bash` for the CLI's whole life, and every agent the API had started read as no CLI: `/dispatch` and `/start` ended their sessions and the Dashboard's Start typed its launch line into claude's field. `/message` follows the same rule, and starts a session rather than type into a bare shell. `/start` answers `409` with `cliRunning: true` when a CLI is up, as `agent:start` does. Telegram `/start_agent`, Slack `start` and a message to the super agent from either type the task into a CLI that is up instead of typing a launch command into its field, and start one where none runs, whatever the status says.
+A CLI running in the terminal is read from the terminal (`cliRunningIn`, its foreground process), not from the status: every turn ends on `idle` (the Stop hook posts it) and a failed one on `error`, with the CLI still at its prompt. Taking those for "no session" spawned a new claude over it, which kills the terminal, with no `--resume` (the resume is spent once per run): a message to an agent that had just finished a turn ended its conversation. Nor does `running` or `waiting` type by itself: over a bare shell, left by a CLI that died without its SessionEnd, the message went into the shell, which ran it as a command. A session the API starts runs `bash -l -c "cd … && exec <cli>"`: the exec hands the terminal to the CLI, so node-pty names the CLI, and a terminal handed a command counts as a CLI's for as long as it can be read, which covers the moment before the exec while the shell reads its login files. Until 2026-09-23 there was no exec, node-pty named `bash` for the CLI's whole life, and every agent the API had started read as no CLI: `/dispatch` and `/start` ended their sessions and the Dashboard's Start typed its launch line into claude's field. `/message` follows the same rule, and starts a session rather than type into a bare shell. A launch on its way (a restart, a start from a window, a bot's cold start, a session the API starts) owns the terminal until its session is up, or for `CLI_BOOT_MS` (15 s) at most: `/dispatch`, `/message` and the bots wait for it and then type into its session, and agent-watch holds its notes (`sessionStarting`, `core/agent-launch.ts`). Up, for a CLI on the claude binary, is not the exec: claude 2.1.280 takes no keys for a moment after it execs, and a `/dispatch` 0.1 to 0.3 s after a `/start` was typed there and lost 4 times in 5 (the Audit, gate of #134). A launch with no task (a restart, a Dashboard start) is up at its SessionStart; one that carries a task at that task's `UserPromptSubmit`, because between the two claude submits its initial prompt from its own field, and a message typed then was lost once in five. Typed once the turn runs, claude queues it and takes it after: 8 of 8 delivered once in the app. A launch is marked before its terminal is opened (the bots mark it once they know no CLI is up), and dropped when it fails, is refused or its CLI exits, so nobody waits the 15 s for it. The SessionStart registration is announced as a fleet change, and a note agent-watch held for the terminal during the launch goes in then, to the session that registered in that terminal. Measured by the Audit before this: a dispatch 0.3 s after a restart started a session over the launch without `--resume` and lost the conversation, and at 0.49 s the killed CLI's late SessionStart also took the agent from the live one. `/start` answers `409` with `cliRunning: true` when a CLI is up, as `agent:start` does. Telegram `/start_agent`, Slack `start` and a message to the super agent from either type the task into a CLI that is up instead of typing a launch command into its field, and start one where none runs, whatever the status says.
 
 `spawnAgentSession()` is shared by `/start`, the `/message` reconnect path and `/dispatch`, so every entry point gets identical behaviour: the identity header, the skills prefix, the MCP config for flag-strategy providers, orchestrator instructions (`electron/resources/super-agent-instructions.md`) via `--append-system-prompt-file`, the tool block, trust pre-acceptance, stale-PTY kill, the `ptyCwd` invariant and the session-ownership reset.
 
@@ -349,7 +349,7 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 
 ### Settings that apply at launch: `core/agent-restart.ts`
 
-A CLI reads its model, its effort, its permission flag, its orchestrator restrictions and its `--add-dir` folders once, when it starts. When `agent:update` changes one of them (`model`, `effort`, `permissionMode`, the orchestrator flags from the role, the name or `orchestratorMode`, `secondaryProjectPath`, `obsidianVaultPaths`, the local provider's `localModel`), the agent's CLI is restarted on the new values through the same launch as `agent:start`, with no task, and continues its conversation (see Session ownership). When:
+A CLI reads its model, its effort, its permission flag, its orchestrator restrictions and its `--add-dir` folders once, when it starts. When `agent:update` changes one of them (`model`, `effort`, `permissionMode`, the `role` the Orchestrator toggle sets, `secondaryProjectPath`, `obsidianVaultPaths`, the local provider's `localModel`), the agent's CLI is restarted on the new values through the same launch as `agent:start`, with no task, and continues its conversation (see Session ownership). When:
 
 | The agent | What happens |
 |---|---|
@@ -368,6 +368,24 @@ A restart that waits says so. `agent:restart-pending` is pushed to every window 
 `agent:restart` restarts an agent's CLI when somebody asks, at once and whatever it is doing, through the same restart: the conversation continues under a new session id. It is what the Dashboard's `restart` calls (the notice of a panel whose claude left fullscreen). The window's stop then start it replaces began a new conversation, since a start continues the last one only once per app run. A restart waiting on new settings is done by it and stops waiting. If it cannot launch, it answers the reason and leaves the agent in `error` with it.
 
 A start with no task, which is every Dashboard start and autostart and every restart, leaves the agent `idle`. It used to set `running`, which nothing cleared until a turn the CLI never had came to an end, and agent-watch writes nothing to a `running` agent.
+
+### The orchestrator role: `core/agent-role.ts`
+
+The Orchestrator toggle is the role, `role: 'orchestrator' | 'worker'` on the agent, and nothing else sets it: the name decides nothing, and renaming an agent never changes its role. An orchestrator gets, on every launch (Dashboard start and autostart, the API's `spawnAgentSession`, Telegram `/start_agent` and Slack `start`, the Telegram and Slack super agent, a restart):
+
+| What | Where |
+|---|---|
+| the orchestration instructions, `--append-system-prompt-file super-agent-instructions.md` | every claude-binary launch |
+| no editing tools: `--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"` (no `MultiEdit`: claude 2.1.268 to 2.1.280 know no tool by that name and warn at every start) | the 14 claude-binary providers; over ACP the same tools are denied to an orchestrator, whatever its provider |
+| "orchestrator of project" in the identity header, and the orchestration rules in `/bootstrap` | every session |
+| a seat in the Chat's global room | `bus-store.ts`, read at each call |
+| Telegram and Slack messages | `getSuperAgent(agents)`: the first orchestrator in the fleet, all projects considered |
+
+A project has one orchestrator at most, and only the Agents page makes or unmakes one: `POST /api/agents` answers `403` to a request for the role, from any caller, since it would demote and restart the current orchestrator with none of the confirmation the page asks for. Through `agent:create` and `agent:update`, the agent being written takes the role from its project's current orchestrator, which becomes a worker: switching the toggle on, creating an orchestrator, or moving one into a project that has one. Both CLIs restart through `core/agent-restart.ts` (the `orchestrator` launch setting), at a moment that cuts nothing. On load, a file with two orchestrators in a project keeps the first and says so: `[role] <name> is a worker now: <project> had another orchestrator, and a project has one`.
+
+The permission mode is the agent's own on every launch, orchestrator or not. `agent:start` used to put every orchestrator in bypass whatever it was set to, so a permission mode changed in the Agents page never reached one, restart or not, and a worker switched to orchestrator was quietly given bypass. Two unattended launches still ask for bypass: the Kanban automation, and a Telegram message that has to start the super agent.
+
+The contract: `role` on `agent:create` and `agent:update`, where anything but the two values is refused; `POST /api/agents` takes `worker` and refuses `orchestrator` with a `403`. `orchestratorMode`, the toggle's old field, is read as the same toggle when `role` is absent, and kept equal to `role` on every record, for the renderer until it reads `role`. `agents.json` is at version 3 since: a file below it is migrated once on load, `role` = toggle on, or the role stored from the name, or the name itself on a record older than the role field, so no orchestrator of that day changes. After that the name is never read. A team template member saved without a role gets the same migration.
 
 ### Cross-project scoping
 
@@ -611,7 +629,7 @@ Files Tars writes **outside** its own directory:
 
 ### `AgentStatus`: what survives a restart
 
-`persistable()` strips `ptyId` and `pathMissing`, truncates `output` to the last 100 chunks, and demotes `running` to `idle`. `loadAgents()` additionally clears `ptyCwd`, `currentSessionId`, `lastKilledSessionId` and `waitingReason`, marks `pathMissing` for vanished directories, and runs two migrations: `skipPermissions: boolean → permissionMode`, and name-substring orchestrator detection → the persistent `role` field. `orchestratorMode` stays an independent tool-restriction toggle and must **not** promote an agent into the Telegram/Slack super-agent pool.
+`persistable()` strips `ptyId` and `pathMissing`, truncates `output` to the last 100 chunks, and demotes `running` to `idle`. `loadAgents()` additionally clears `ptyCwd`, `currentSessionId`, `lastKilledSessionId` and `waitingReason`, marks `pathMissing` for vanished directories, and runs two migrations: `skipPermissions: boolean → permissionMode`, and, on a file below version 3, the role from the Orchestrator toggle or else from the name, once (see The orchestrator role, §4). Every load then leaves one orchestrator per project.
 
 Live output is bounded at 600 chunks, spliced back to 400 (`OUTPUT_CHUNK_CAP` / `OUTPUT_RETAIN`): five PTY handlers pushed into `agent.output` and none of them capped it, so a chatty CLI grew that array for the life of the app, once per agent. What is spliced off is read for the terminal modes it left set (alternate screen, mouse protocol and encoding, bracketed paste, focus events, application cursor keys, hidden cursor), and those go back in as the first chunk (`electron/utils/terminal-modes.ts`). Claude Code in fullscreen sets most of them once, at start: without that chunk, a panel mounted after a long turn replayed onto the normal screen with no mouse request and no bracketed paste. The panels no longer replay these chunks: they are shown the terminal's mirror (§1), and the carry now serves a terminal with no mirror and the quick terminal's own buffer. What `output` feeds is text: the status line, log search, `get_agent_output`, the overseer and Telegram. So the 100 chunks written to disk are read back for those, and after a restart a panel shows the new terminal, not the old tail replayed onto it. Fields mutated on every PTY chunk (`output`, `statusLine`, `lastActivity`) set a dirty flag flushed every 30 s, bounding what a crash loses.
 
@@ -747,7 +765,8 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
 | Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory for each terminal spawn and each delegated run, or Tars's own pass, minted in memory and written nowhere, which the super chat presents on the loopback, or on `/api/webhooks/hermes` alone the webhook secret. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403. The shared token names no agent, no header is read with it, and it drives no agent, the webhook included |
-| Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
+| Auth-exempt | `/api/health` and `/api/local-file` |
+| Hook routes | `/api/hooks/*` take the token of the CLI they run in (`CLAUDE_MGR_API_TOKEN`), for the `agent_id` they name: anything else is a 403, and a token whose terminal was replaced is a 401. Exempt until 2026-09-23: a post with no credential registered any session for any agent (the Audit resumed one agent's conversation in another through it), and a killed CLI's late SessionStart took its agent from the live session |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |

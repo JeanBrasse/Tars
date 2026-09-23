@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { VAULT_DIR, MIME_TYPES, PRIVATE_DIR } from '../../constants';
 import { getVaultDb, ftsSearch } from '../vault-db';
 import { RouteApp, RouteContext } from './types';
+import { isHardLinkInto, isWithinDir } from '../../utils/path-identity';
 
 export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
   // GET /api/vault/documents
@@ -242,8 +243,15 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
       // serves it without a token: one vault_attach_file call put Noah's
       // conversation, or the webhook secret, back where the move had taken it
       // from. Measured while closing the Telegram side of the same gap.
+      // Asked of the file, not of its name: a case variant, the Data volume's
+      // firmlink or a symlink opened the same file past a prefix test (the
+      // audit's lead #21). And the file copied is the one that was checked.
+      // A hard link has no path back to it at all, so it is looked for by
+      // inode among the private files (the audit's gate of #137).
       const resolved = path.resolve(file_path);
-      if (resolved === PRIVATE_DIR || resolved.startsWith(PRIVATE_DIR + path.sep)) {
+      const real = fs.realpathSync.native(file_path);
+      if (resolved === PRIVATE_DIR || resolved.startsWith(PRIVATE_DIR + path.sep) || isWithinDir(real, PRIVATE_DIR)
+        || isHardLinkInto(real, PRIVATE_DIR)) {
         sendJson({ error: 'Access denied: path not allowed' }, 403);
         return;
       }
@@ -251,7 +259,7 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
       const id = uuidv4();
       const filename = path.basename(file_path);
       const destPath = path.join(VAULT_DIR, 'attachments', `${id}-${filename}`);
-      fs.copyFileSync(file_path, destPath);
+      fs.copyFileSync(real, destPath);
 
       const stats = fs.statSync(destPath);
       const ext = path.extname(filename).toLowerCase();

@@ -19,11 +19,11 @@ import { broadcastPublication, fanOutDeliveries } from '../bus-delivery';
  * messages, the silence markers or the rotation, because this route applies
  * none of them itself and refuses whatever the store refuses.
  *
- * Authenticated like everything else under /api: the three exempt routes are
- * /api/local-file, /api/health and /api/hooks/*, and this is not one of them.
- * It was four until /api/kanban/complete was removed, unauthenticated and
- * uncalled, and a comment that still says four is how someone reopens that
- * hole believing it was already open.
+ * Authenticated like everything else under /api: the two exempt routes are
+ * /api/local-file and /api/health, and this is not one of them. It was four
+ * until /api/kanban/complete was removed, unauthenticated and uncalled, and
+ * three until the hooks took the agent's own token: a comment that still says
+ * more is how someone reopens that hole believing it was already open.
  */
 
 /**

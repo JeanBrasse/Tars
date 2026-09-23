@@ -29,7 +29,8 @@ export interface EditAgentData {
   branchName?: string;
   obsidianVaultPaths?: string[];
   savedPrompt?: string;
-  orchestratorMode?: boolean;
+  /** The Orchestrator toggle. */
+  role?: 'orchestrator' | 'worker';
   cliPath?: string;
 }
 
@@ -53,7 +54,7 @@ export interface NewChatModalProps {
     localModel?: string,
     obsidianVaultPaths?: string[],
     effort?: AgentEffort,
-    orchestratorMode?: boolean,
+    role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => void | Promise<boolean | void>;
   onUpdate?: (id: string, updates: {
@@ -70,7 +71,7 @@ export interface NewChatModalProps {
     savedPrompt?: string | null;
     obsidianVaultPaths?: string[];
     worktree?: WorktreeConfig;
-    orchestratorMode?: boolean;
+    role?: 'orchestrator' | 'worker';
     cliPath?: string | null;
   }) => void | Promise<boolean | void>;
   /** Called after a team is deployed, with the ids of the agents created. */

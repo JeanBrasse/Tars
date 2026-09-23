@@ -30,18 +30,6 @@ export const statusTone = (status: AgentStatus['status']): StatusTone =>
 export const errorReason = (agent: Pick<AgentStatus, 'status' | 'error'>): string | null =>
   agent.status === 'error' ? agent.error?.trim() || null : null;
 
-export const CHARACTER_FACES: Record<string, string> = {
-  robot: '🤖',
-  ninja: '🥷',
-  wizard: '🧙',
-  astronaut: '👨‍🚀',
-  knight: '⚔️',
-  pirate: '🏴‍☠️',
-  alien: '👽',
-  viking: '🪓',
-  frog: '🐸',
-};
-
 export const ORCHESTRATOR_PROMPT = `You are the Super Agent - an orchestrator that manages other agents using MCP tools.
 
 AVAILABLE MCP TOOLS (from "claude-mgr-orchestrator"):
@@ -66,18 +54,8 @@ IMPORTANT:
 
 Say hello and list the current agents.`;
 
-export const isSuperAgentCheck = (agent: AgentStatus) => {
-  const name = agent.name?.toLowerCase() || '';
-  return name.includes('super agent') || name.includes('orchestrator');
-};
-
-export const PROVIDER_LABELS: Record<string, string> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  gemini: 'Gemini',
-  grok: 'Grok',
-  local: 'Local',
-};
+// The Orchestrator toggle, which is the role. The name decides nothing.
+export const isSuperAgentCheck = (agent: AgentStatus) => agent.role === 'orchestrator';
 
 export const getStatusPriority = (status: string) => {
   if (status === 'running') return 0;

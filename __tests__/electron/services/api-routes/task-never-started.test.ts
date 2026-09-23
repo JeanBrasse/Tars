@@ -56,6 +56,7 @@ vi.mock('../../../../electron/services/memory-hub', () => ({
 
 import * as pty from 'node-pty';
 import { performDispatch } from '../../../../electron/services/api-routes/agent-routes';
+import { resetLaunches } from '../../../../electron/core/agent-launch';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { agents, armTaskStartWatch } from '../../../../electron/core/agent-manager';
 import { scheduleTick } from '../../../../electron/utils/agents-tick';
@@ -71,6 +72,8 @@ let ctx: RouteContext;
 let emitted: string[];
 
 beforeEach(() => {
+  // A launch marked by one test holds the agent in the next (core/agent-launch.ts).
+  resetLaunches();
   agents.clear();
   ptyProcesses.clear();
   mockPtys.length = 0;
