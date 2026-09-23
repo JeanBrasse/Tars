@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../tars-hook.sh"
 # Session start hook for tars (Gemini CLI)
 
 INPUT=$(cat)
@@ -16,7 +17,7 @@ AGENT_ID="${DOROTHY_AGENT_ID:-$SESSION_ID}"
 # session id WITHOUT touching status. Without it, the stale-session guard
 # would reject every later post from this session once a previous Gemini
 # session had registered.
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"source\": \"startup\"}" \
   > /dev/null 2>&1 &

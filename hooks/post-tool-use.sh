@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
 # Post-tool-use hook for tars memory system
 # Captures file edits, writes, and commands
 
@@ -28,7 +29,7 @@ PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 
 # Update agent status to "running" — this hook fires after each tool use,
 # which signals Claude is actively working (e.g. after permission is granted)
-curl -s --connect-timeout 1 --max-time 3 -X POST "$BASE_URL/api/hooks/status" \
+curl -s --connect-timeout 1 --max-time 3 -X POST "$BASE_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\"}" \
   > /dev/null 2>&1
@@ -37,8 +38,10 @@ curl -s --connect-timeout 1 --max-time 3 -X POST "$BASE_URL/api/hooks/status" \
 # input routinely contains quotes/newlines/backslashes, and naive string
 # interpolation would produce invalid JSON (observation silently dropped)
 # or let agent-controlled text inject extra JSON fields.
-API_TOKEN=""
-if [ -f "$HOME/.dorothy/api-token" ]; then
+# The CLI's own token: it names this agent. The shared file only when Tars
+# did not start this CLI and gave it none.
+API_TOKEN="${CLAUDE_MGR_API_TOKEN:-}"
+if [ -z "$API_TOKEN" ] && [ -f "$HOME/.dorothy/api-token" ]; then
   API_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
 fi
 

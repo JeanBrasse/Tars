@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
 # Session end hook for tars
 # Sets agent status to "completed" when session terminates and captures final output
 
@@ -11,7 +12,7 @@ TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 REASON=$(echo "$INPUT" | jq -r '.reason // "other"')
 
-echo "[$(date)] SESSION_END hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> /tmp/dorothy-hooks.log
+echo "[$(date)] SESSION_END hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> "$HOOK_LOG"
 
 # API endpoint
 # The Tars that spawned this agent, not whoever happens to own 31415:
@@ -34,7 +35,7 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     | last // empty' "$TRANSCRIPT_PATH" 2>/dev/null | head -c 4000)
 
   if [ -n "$LAST_ASSISTANT_MSG" ]; then
-    curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" \
+    curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H @<(tars_auth) \
       -H "Content-Type: application/json" \
       -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$LAST_ASSISTANT_MSG" | jq -Rs .)}" \
       > /dev/null 2>&1
@@ -42,7 +43,7 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
 fi
 
 # Update agent status to "completed" (session ended)
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"completed\", \"reason\": \"$REASON\"}" \
   > /dev/null 2>&1

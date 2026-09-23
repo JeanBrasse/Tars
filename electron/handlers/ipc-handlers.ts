@@ -615,8 +615,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       };
 
       // Through spawnAgentPty like the other two. This is an agent's pty: it
-      // carries CLAUDE_AGENT_ID, and its hooks post to /api/hooks/*, which is
-      // one of the four routes that need no token. Spawned directly it had no
+      // carries CLAUDE_AGENT_ID, and its hooks post to /api/hooks/* with the
+      // token spawnAgentPty mints for it. Spawned directly it had no
       // CLAUDE_MGR_API_URL, so those posts fell back to 31415 and a sandbox
       // agent switched to local wrote its status into the live Tars, under a
       // real fleet id. Exactly the damage the same variable fixed elsewhere.
