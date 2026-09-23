@@ -365,7 +365,9 @@ export function setupOrchestratorStatusHandler(): void {
  * was shell. Asynchronous as well, so a slow `claude` does not hold the main
  * process, and bounded, as the status check's `claude mcp list` is.
  */
-const runClaude = (args: string[]) => promisify(execFile)('claude', args, { encoding: 'utf-8', timeout: 15_000 });
+// SIGKILL at the timeout: the default SIGTERM leaves a child that ignores it
+// running, and the setup waiting on it for good (the gate of #128).
+const runClaude = (args: string[]) => promisify(execFile)('claude', args, { encoding: 'utf-8', timeout: 15_000, killSignal: 'SIGKILL' });
 
 /**
  * Setup the MCP orchestrator using claude mcp add command

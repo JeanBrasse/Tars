@@ -814,8 +814,9 @@ export function registerAgentTools(server: McpServer): void {
             if (remainingMs <= 0) break;
 
             autoContinues++;
+            let continued: DispatchResult;
             try {
-              await dispatchToAgent(
+              continued = await dispatchToAgent(
                 id,
                 "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
                 undefined,
@@ -825,6 +826,18 @@ export function registerAgentTools(server: McpServer): void {
               // Auto-continue itself failed (agent gone, network hiccup):
               // stop looping and report the waiting state as-is below.
               break;
+            }
+            // Held like the task itself can be: nothing was typed, and a wait
+            // now would run out on a turn that never began, then call the
+            // agent still running (the gate of #128).
+            if (continued.held) {
+              return {
+                content: [{
+                  type: "text",
+                  text: heldText(agentName, "The answer to its question", continued.heldReason)
+                    + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
+                }],
+              };
             }
             waitData = await waitForAgentStatus(id, Math.max(Math.floor(remainingMs / 1000), 30));
           }

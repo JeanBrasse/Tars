@@ -89,6 +89,38 @@ describe('a message the route has held', () => {
   });
 });
 
+describe('the answer delegate_task types when the agent stops at a question', () => {
+  it('is reported as held too, not as a task still running', async () => {
+    // The gate of #128: the task went in, the agent asked a question, and the
+    // "Yes, continue" was held. The tool waited, then answered that the agent
+    // was still running.
+    let dispatches = 0;
+    let waits = 0;
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+      if (endpoint.includes('/dispatch')) {
+        dispatches++;
+        return dispatches === 1
+          ? { success: true, mode: 'message', previousStatus: 'idle', agent: { id: 'a1', name: 'Tars-QA', status: 'running' } }
+          : { success: true, mode: 'message', previousStatus: 'waiting', held: true, heldReason: REASON, agent: { id: 'a1', name: 'Tars-QA', status: 'running' } };
+      }
+      if (endpoint.includes('/wait')) {
+        waits++;
+        return waits === 1 ? { status: 'waiting' } : { status: 'running', timeout: true };
+      }
+      return { agent: { status: 'running', name: 'Tars-QA' } };
+    });
+
+    const result = text(await (await tool('delegate_task'))({ id: 'a1', prompt: 'Gate #126', timeoutSeconds: 2 }));
+
+    expect(dispatches).toBe(2);
+    expect(waits, 'it waited on a turn the held answer never started').toBe(1);
+    expect(result).toMatch(/^HELD: /);
+    expect(result).toContain(REASON);
+    expect(result).not.toMatch(/still running/);
+  });
+});
+
 describe('a message the route has typed in', () => {
   it('is still reported as sent by send_message', async () => {
     dispatchAnswers({ mode: 'message', previousStatus: 'waiting' });

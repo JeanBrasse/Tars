@@ -139,9 +139,10 @@ describe('a message held behind a picker answered by hand', () => {
   });
 
   it('keeps waiting on a command that finishes without a record, and keeps looking', () => {
-    // /model cancelled with Esc writes nothing (measured): nothing proves the
-    // panel closed, and typing into an open panel changes settings (/config
-    // took a typed Enter as "Disable auto-compact").
+    // /model cancelled with Esc writes no user record, only system ones the
+    // reader skips (measured): nothing proves the panel closed, and typing into
+    // an open panel changes settings (/config took a typed Enter as "Disable
+    // auto-compact").
     types('/model');
     key('\r');
     key('\x1b');
@@ -230,11 +231,13 @@ describe('a message typed in as a paste', () => {
     expect(senderLine({ kind: 'channel', channel: 'Telegram' })).toBe('Message from Telegram: ');
   });
 
-  it('is left as it was when it is short enough to be typed', () => {
+  it('comes before a short message too, which is typed rather than pasted', () => {
+    // Left without one, a short message read as typed by the person, and an
+    // agent could type Tars's own line (the gate of #128).
     writeProgrammaticInput(terminal.pty, 'carry on', true, { agentId: 'worker', from: 'Tars-Orchestrator', sender: ORCH });
     vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
 
-    expect(terminal.written).toEqual(['carry on', '\r']);
+    expect(terminal.written).toEqual([senderLine(ORCH), 'carry on', '\r']);
   });
 
   it('is left as it was when nobody says who it is from', () => {
