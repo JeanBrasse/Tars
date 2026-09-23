@@ -68,7 +68,7 @@ npm run electron:dev
 
 That is `concurrently` over two things:
 
-1. `npm run dev`: `next dev` on port 3000.
+1. `npm run dev`: `next dev` on 127.0.0.1, port 3000.
 2. `npm run electron:start`: `wait-on http://localhost:3000`, then
    `tsc -p electron/tsconfig.json`, then `NODE_ENV=development electron .`.
 
@@ -83,13 +83,16 @@ DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 ### Run the renderer alone
 
 ```bash
-npm run dev            # next dev, port 3000
-npm run dev:network    # next dev -H 0.0.0.0, for a phone/tailnet client
+npm run dev            # next dev on 127.0.0.1, port 3000
 ```
 
-`next.config.ts` already allows `http://100.92.4.122:3000` as a dev origin. The renderer alone
-has no IPC bridge: every `window.electron.*` call is undefined, so most pages render empty.
-Use it only for pure-layout work.
+The dev server listens on the loopback only. It used to listen on every interface, and a
+`dev:network` script and a tailnet dev origin were there to reach it from another machine:
+both are gone, with the web build's API routes they served (`/api/agents` spawned `claude`
+from an HTTP request, and `/api/skills` ran a shell command). The e2e suite starts its own
+`next dev` on port 3100 (`playwright.config.ts`). The renderer alone has no IPC bridge: every
+`window.electron.*` call is undefined, so most pages render empty. Use it only for pure-layout
+work.
 
 ### Compile just the main process
 
