@@ -529,7 +529,11 @@ a build of the version being released.
 
 `scripts/release.mjs` stops at the first thing that is not as it should be:
 
-1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean,
+1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean, the
+   Electron the build will package is the one `package.json` accepts and `package-lock.json`
+   locks, package and binary (`dist/version`), found where Node finds it from the checkout,
+   which from a worktree is the main checkout's `node_modules` (the Audit, 2026-09-24: 43.4.1
+   installed under a `^44.4.4`; the fix is `npm ci` then `npx install-electron`),
    `v<version>` exists on GitHub neither as a release nor as a tag, the top entry of the
    changelog is that version, and no newer version is published. A GitHub it cannot ask is a
    refusal, not a pass;
