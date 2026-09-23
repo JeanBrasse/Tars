@@ -518,6 +518,71 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 ---
 
+## The agents' CLIs: kept up to date by Tars
+
+Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
+so neither updates itself inside a Tars terminal. Tars updates them instead
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+
+| CLI | Covered when installed as | Command Tars runs |
+|---|---|---|
+| claude | the native installer: `~/.local/bin/claude` is a link into `~/.local/share/claude/versions/` | `claude update` |
+| amp | a global npm package | `npm view <package> version`, a download into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, with the npm beside that prefix's node and a cache in the scratch folder, deleted after |
+
+What a running session sees: nothing. A claude update writes the new version beside the old one
+and swaps the link in one step; the session keeps running its own file, and its next turn
+answers. New launches and restarts start on the new version. A session that outlives two newer
+releases can see its file deleted by claude's own cleanup (SPECS §13): its turns go on, but its
+Grep and Glob fail (every time with no `rg` on PATH, once with Homebrew's), as does a `claude`
+started from inside it, and a restart ends it.
+
+An Amp update is never started while a process has the Amp binary open (`lsof -t`), because npm
+removes the old package before the new one is in place: `amp` is missing for a few seconds while
+it runs, and a launch in those seconds fails. npm's cache for it lives in the scratch folder and
+goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
+package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
+
+Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
+yourself.
+
+```bash
+# what Tars did, newest last, times in UTC (these two are from the sandbox it was measured in)
+tail -n 20 ~/.dorothy/cli-updates.log
+# 2026-09-22T20:30:40.981Z claude updated 2.1.273 to 2.1.280: Successfully updated from 2.1.273 to version 2.1.280 (9.0 s)
+# 2026-09-22T20:34:32.376Z amp updated 0.0.1788811227-gce258b to 0.0.1790107230-g213fd2: npm install -g @sourcegraph/amp@0.0.1790107230-g213fd2 (17.4 s)
+
+# what is installed now
+readlink ~/.local/bin/claude          # .../versions/<version>
+amp --version
+```
+
+A check that changes nothing is written once, not every half hour; a failure is written every
+time. Past 256 KB the log moves to `cli-updates.log.1`.
+
+**To stop it for one CLI**, use that CLI's own switch, which Tars reads: for claude,
+`"env": { "DISABLE_AUTOUPDATER": "1" }` in `~/.claude/settings.json` (or `DISABLE_UPDATES`, the
+administrator lockdown, which also makes a typed `claude update` refuse); for Amp,
+`"amp.updates.mode": "disabled"` in `~/.config/amp/settings.json`. Tars started with
+`DISABLE_AUTOUPDATER` in its own environment, from a Tars terminal for instance, updates nothing
+for claude.
+
+| Log line | Meaning |
+|---|---|
+| `claude failed ...: Error: Failed to install native update; ... ECONNREFUSED ...` | no network. Retried at the next pass |
+| `claude failed ...: Another Claude process ...` | a `claude update` of yours was running. Retried at the next pass |
+| `claude unchanged ...: Updates are disabled by your administrator...` | `DISABLE_UPDATES` in a managed settings file. Tars cannot see it beforehand; claude refuses and says so |
+| `claude skipped: ... is one fixed version` | Settings > CLI paths points at `~/.local/share/claude/versions/<v>`: point it at `~/.local/bin/claude` |
+| `amp deferred ...: waiting for the process running it to end (pid N)` | an `amp` is running, in Tars or elsewhere. Updated at the first pass after it ends |
+| `... skipped ...: is outside <home>` | the install belongs to another home. Normal in a sandbox (`scripts/sandbox.sh`), whose `HOME` is `~/Tars-sandbox` |
+
+An Amp installed before its rename is the package `@sourcegraph/amp`, and `amp update` cannot
+update it: it runs `npm install -g @ampcode/cli`, which fails with `EEXIST` on the `amp` link the
+old package owns. Tars updates `@sourcegraph/amp` by its own name, which works. Moving to the new
+name is a manual step: `npm uninstall -g @sourcegraph/amp && npm install -g @ampcode/cli`.
+
+---
+
 ## Storage
 
 Everything Tars owns lives under `~/.dorothy` (`DATA_DIR`). Nothing is in a database except
@@ -539,6 +604,7 @@ work.
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
 | `~/.dorothy/cli-paths.json` | `electron/handlers/cli-paths-handlers.ts` | resolved binary paths, readable by MCP |
+| `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
@@ -985,9 +1051,10 @@ change and `electronAPI.agent.messagesWaiting()` answers for a panel that opened
 log, one line when a message starts waiting and one when it goes out:
 
 ```bash
-# The main process logs to the terminal Tars was started from. Nothing writes a
-# log file today: app.getPath('logs') is never used, and ~/Library/Logs/tars does
-# not exist. Started from the Dock, these lines are only in the Console app.
+# The main process logs to the terminal Tars was started from. No log file has
+# these lines: app.getPath('logs') is never used, ~/Library/Logs/tars does not
+# exist, and the one log Tars writes, ~/.dorothy/cli-updates.log, is about CLI
+# updates only. Started from the Dock, these lines are only in the Console app.
 grep 'is waiting for a terminal'   # in that terminal's output
 grep 'is going out now'
 ```
@@ -1425,7 +1492,8 @@ session is open, when the agent offers those options. A value it refuses is logg
 `startAgentAutosave()` → `initTray()` → `initVaultDb()` → `startApiServer()` →
 `loadCatalog()` (un-awaited) → `setupMcpOrchestrator()` (un-awaited) →
 `setupMemoryBackends()` → `await configureStatusHooks()` → `initAutoUpdater()` →
-update check after 5 s.
+update check after 5 s → `startCliUpdates()`, whose first pass runs 5 s later too (see *The
+agents' CLIs: kept up to date by Tars*).
 
 The two un-awaited calls are deliberate: both shell out per provider and used to hold the main
 thread through the first paint.

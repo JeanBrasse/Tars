@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { mount, settle, elements, ofType, textOf, type Mount } from './hook-runtime';
 import UsagePage from '../../src/app/usage/page';
 import { BudgetAndLimits, buildBudgetRows } from '../../src/components/Usage/BudgetAndLimits';
+import { recordsStart } from '../../src/lib/usage-window';
 import { PageHeader, PanelCaption, SegmentedControl } from '../../src/components/ui';
 
 vi.mock('react', async (importOriginal) => ({
@@ -632,5 +633,82 @@ describe('T9: usage outside the window, times seven, moves nothing on the page b
     expect([inWindow('daily', '2026-09-09'), inWindow('daily', '2026-09-08')]).toEqual([true, false]);
     expect([inWindow('weekly', '2026-07-05'), inWindow('weekly', '2026-07-04')]).toEqual([true, false]);
     expect([inWindow('monthly', '2025-10-01'), inWindow('monthly', '2025-09-30')]).toEqual([true, false]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The follow-ups of #121, fixed in #130 and pinned at its QA gate.
+// ---------------------------------------------------------------------------
+
+describe('the Usage page between two polls, and the rest of #121 follow-ups', () => {
+  type Api = { claude: { getData: ReturnType<typeof vi.fn> }; usage: { byProvider: ReturnType<typeof vi.fn> } };
+  const api = () => (g.window as { electronAPI: Api }).electronAPI;
+  const reads = () => api().usage.byProvider.mock.calls.length;
+  const today = (tree: Tree) => parseUsd(tiles(tree)[LATEST.daily].value);
+  /** One of useClaude's ten-second polls, and whatever it hands the page. */
+  const poll = async () => { vi.advanceTimersByTime(10_000); await settle(); };
+
+  it('shows a cost that grew today, where nothing else moved, and reads the ledger again for it; a poll that changes nothing does neither', async () => {
+    const p = await render();
+    select(p, 'daily');
+    await settle();
+    const before = today(p.result);
+    const read = reads();
+
+    // The date, the sessions, the projects and the rate windows stay as they were:
+    // only the newest day's cost and tokens grow, as they do all day long.
+    const grown: Seed = { ...SEED, transcripts: [...SEED.transcripts, tr('2026-09-22', 'claude-opus-5', 1000, 1)] };
+    api().claude.getData.mockImplementation(async () => claudePayload(grown));
+    await poll();
+    expect(today(p.result)).toBeCloseTo(before + 1000, 2);
+    expect(reads()).toBe(read + 1);
+
+    await poll();
+    expect(today(p.result)).toBeCloseTo(before + 1000, 2);
+    expect(reads()).toBe(read + 1);
+  });
+
+  it('hands over a poll where only token-stats.json changed', async () => {
+    await render();
+    const read = reads();
+    const more: Seed = { ...SEED, extra: { ...SEED.extra, '2026-09-22': (SEED.extra['2026-09-22'] ?? 0) + 7 } };
+    api().claude.getData.mockImplementation(async () => claudePayload(more));
+    await poll();
+    expect(reads()).toBe(read + 1);
+  });
+
+  it("keeps Claude's budget row when another provider spent more this month and Claude has no rate windows", () => {
+    const spend = [{ provider: 'gemini', costUSD: 300 }, { provider: 'claude', costUSD: 42.6 }, { provider: 'codex', costUSD: 20 }];
+    const rows = buildBudgetRows({ rateLimits: null, providerSpend: spend, budgets: {}, installed: { claude: true, gemini: true, codex: true } });
+    expect(rows.map(r => r.providerId)).toEqual(['gemini', 'claude', 'codex']);
+  });
+
+  it('adds no second Claude row beside its rate windows', () => {
+    const claudeRows = (spend: { provider: string; costUSD: number }[]) =>
+      buildBudgetRows({ rateLimits: RATE_LIMITS, providerSpend: spend, budgets: {}, installed: { claude: true, gemini: true } })
+        .filter(r => r.providerId === 'claude').length;
+    expect(claudeRows([{ provider: 'gemini', costUSD: 300 }])).toBeGreaterThan(0);
+    expect(claudeRows([{ provider: 'gemini', costUSD: 300 }, { provider: 'claude', costUSD: 42.6 }])).toBe(claudeRows([{ provider: 'gemini', costUSD: 300 }]));
+  });
+
+  it('starts the records at the first day with a price or a split, never at a legacy stats-cache day', async () => {
+    const legacy = { date: '2026-03-03', tokensByModel: { 'claude-opus-4-6': 10 } };
+    const split = { date: '2026-08-15', tokensByModel: { 'claude-opus-5': 1 }, breakdownByModel: { 'claude-opus-5': { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 } } };
+    const priced = { date: '2026-09-01', tokensByModel: { 'claude-opus-5': 1 }, costByModel: { 'claude-opus-5': 1 } };
+    expect(recordsStart([legacy, split, priced] as never, null)).toBe('2026-08-15');
+    expect(recordsStart([legacy, priced] as never, null)).toBe('2026-09-01');
+    expect(recordsStart([legacy] as never, null)).toBeNull();
+    expect(recordsStart([legacy] as never, '2026-05-01')).toBe('2026-05-01');
+
+    // On the page: twelve months of stats-cache.json alone said "records start 3 Mar 2026" beside $0.00.
+    const p = await render({ transcripts: [], ledger: [], extra: {}, rateLimits: null, legacy: [legacy] });
+    expect(recordsLine(p.result)).not.toContain('3 Mar');
+  });
+
+  it('names the fifth generation by family and version, and never reads a date as a version', async () => {
+    const models = ['claude-opus-5-5', 'claude-opus-5-5[1m]', 'claude-fable-5-1', 'claude-opus-5-20260101', 'claude-sonnet-5', 'claude-haiku-4-5'];
+    const p = await render({ transcripts: models.map(m => tr('2026-09-22', m, 1, 1)), ledger: [], extra: {}, rateLimits: null });
+    const claude = providerRows(p.result).find(r => r[0] === 'Claude')!;
+    expect(claude[1].split(', ').sort()).toEqual(['Claude Haiku 4.5', 'Fable 5.1', 'Opus 5', 'Opus 5.5', 'Sonnet 5']);
   });
 });

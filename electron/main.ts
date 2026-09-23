@@ -106,6 +106,7 @@ import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-s
 import { startAgentWatch } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
+import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
@@ -649,6 +650,11 @@ app.whenReady().then(async () => {
     // Never hold the process open for a version check.
     timer.unref?.();
   }
+
+  // And the CLIs the agents run, which Tars keeps from updating themselves:
+  // claude and Amp, 5 s after launch and every half hour, logged to
+  // ~/.dorothy/cli-updates.log. See services/cli-updater.ts.
+  startCliUpdates(() => appSettings);
 
   console.log('App initialization complete');
 });

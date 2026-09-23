@@ -93,6 +93,13 @@ Download the latest release for macOS:
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
 
+It also keeps claude and Amp up to date, at launch and every half hour, so a model
+a new CLI release brings is there for every agent without a `claude update` by
+hand. Sessions already running are left alone and restarts pick up the new version;
+what was updated, or why not, is in `~/.dorothy/cli-updates.log`. The other CLIs
+are yours to update: [OPERATIONS.md](OPERATIONS.md#the-agents-clis-kept-up-to-date-by-tars)
+says which and why.
+
 Building from source is in [OPERATIONS.md](OPERATIONS.md#development). Node 22
 is required; Node 18 fails at startup.
 
