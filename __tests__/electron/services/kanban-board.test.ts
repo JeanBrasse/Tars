@@ -44,7 +44,11 @@ import {
  * 10. the migration of the local board duplicates tasks when run twice, moves done
  *     tasks, touches the local file, or leaves a task where Hermes takes it;
  * 11. assigning a task to another agent: a target of another project or unknown is
- *     accepted, or the claim is made and the task never reaches the agent.
+ *     accepted, or the claim is made and the task never reaches the agent;
+ * 12. Hermes's answers read in a shape it does not send: POST /tasks and PATCH answer
+ *     `{ "task": {...} }` (measured: the gateway's create_task and update_task), and a
+ *     task read at the top level has no id. Found by the in-app run, where the local
+ *     board's move failed on every task with "created as undefined".
  */
 
 // ── A Hermes board that answers the way the measured one does ─────────────
@@ -93,7 +97,7 @@ class FakeHermes implements KanbanHermes {
     const key = (body.idempotency_key as string) || null;
     if (key) {
       const existing = [...this.tasks.values()].find(t => t.idempotency_key === key && t.status !== 'archived');
-      if (existing) return { success: true as const, task: { ...existing } };
+      if (existing) return { success: true as const, task: { task: { ...existing } } };
     }
     const id = `t_${(++this.seq).toString(16).padStart(8, '0')}`;
     const t: FakeTask = {
@@ -102,7 +106,7 @@ class FakeHermes implements KanbanHermes {
       tenant: (body.tenant as string) ?? null, idempotency_key: key,
     };
     this.tasks.set(id, t); this.record(t);
-    return { success: true as const, task: { ...t } };
+    return { success: true as const, task: { task: { ...t } } };
   }
   async update(id: string, patch: Record<string, unknown>) {
     await this.tick();
@@ -126,7 +130,7 @@ class FakeHermes implements KanbanHermes {
       t.status = s; if (s === 'done') t.result = (patch.result as string) ?? (patch.summary as string) ?? null;
       this.record(t);
     }
-    return { success: true as const, task: { ...t } };
+    return { success: true as const, task: { task: { ...t } } };
   }
   async remove(id: string) {
     await this.tick();
@@ -271,10 +275,10 @@ describe('4. an agent acts only on its own project\'s tasks, and not on one anot
 
   it('refuses to claim a task Noah handed to Hermes', async () => {
     const created = await h.create({ title: 'For Hermes', tenant: TARS, assignee: 'coder' });
-    const r = await claimTask(h, dune, created.task!.id);
+    const r = await claimTask(h, dune, (created.task as { task: { id: string } }).task.id);
     expect(r.ok).toBe(false);
     expect(r.ok ? '' : r.error).toMatch(/Hermes/);
-    expect(h.tasks.get(created.task!.id)!.assignee).toBe('coder');
+    expect(h.tasks.get((created.task as { task: { id: string } }).task.id)!.assignee).toBe('coder');
   });
 });
 
@@ -363,7 +367,7 @@ describe('9. ids and prefixes', () => {
     const p = await parked(dune, 'Parked');
     const c = await parked(dune, 'Claimed');
     await claimTask(h, dove, c);
-    const hermesOwn = (await h.create({ title: 'Hermes has it', tenant: TARS, assignee: 'coder' })).task!.id;
+    const hermesOwn = ((await h.create({ title: 'Hermes has it', tenant: TARS, assignee: 'coder' })).task as { task: { id: string } }).task.id;
     const list = await listTasks(h, dune, {});
     const byId = Object.fromEntries((list.ok ? list.value : []).map(t => [t.id, t]));
     expect(byId[p].column).toBe('backlog');
