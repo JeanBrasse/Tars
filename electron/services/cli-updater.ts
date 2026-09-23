@@ -2,9 +2,9 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AppSettings } from '../types';
+import type { AgentProvider, AppSettings } from '../types';
 import { dataPath } from '../constants';
-import { getAllProviders } from '../providers';
+import { getAllProviders, getProvider } from '../providers';
 import { buildFullPath } from '../utils/path-builder';
 
 /**
@@ -73,6 +73,11 @@ import { buildFullPath } from '../utils/path-builder';
  * alone and says so in the log: none of codex, gemini, grok, opencode or pi is
  * installed on the machine this was measured on, so no update path for them
  * could be checked, and a guessed one would look covered and do nothing.
+ *
+ * Only the CLIs at least one agent runs are checked: a fleet with no Amp agent
+ * never has Amp updated, and the log says so once. And only while "Check for
+ * updates" is on in Settings, the one switch for Tars's own updates and these
+ * (Noah, 2026-09-23), read at every pass so turning it off stops the next one.
  *
  * Only an install under the home Tars runs in is touched. That is where
  * `claude update` writes, and it keeps a sandbox or a test run, whose HOME is a
@@ -421,12 +426,17 @@ const lastOutcome = new Map<string, string>();
  * One pass over the CLIs, one at a time. A result is logged when it differs
  * from that CLI's previous one, and a failure every time.
  */
-export async function runCliUpdatePass(targets: Array<{ cli: string; command: string }>, ctx: CliUpdateContext): Promise<CliUpdateResult[]> {
+export async function runCliUpdatePass(
+  targets: Array<{ cli: string; command: string; inUse?: boolean }>,
+  ctx: CliUpdateContext,
+): Promise<CliUpdateResult[]> {
   const results: CliUpdateResult[] = [];
-  for (const { cli, command } of targets) {
+  for (const { cli, command, inUse } of targets) {
     let result: CliUpdateResult;
     try {
-      result = await updateCli(cli, command, ctx);
+      result = inUse === false
+        ? { cli, outcome: 'skipped', detail: 'no agent runs it, so Tars does not check it' }
+        : await updateCli(cli, command, ctx);
     } catch (err) {
       result = { cli, outcome: 'failed', detail: err instanceof Error ? err.message : String(err) };
     }
@@ -443,13 +453,27 @@ export async function runCliUpdatePass(targets: Array<{ cli: string; command: st
 let passInFlight: Promise<unknown> | null = null;
 
 /**
- * Update the CLIs 5 s after launch and every thirty minutes after, one pass at a
- * time. The first pass also names the CLIs installed here that Tars leaves
- * alone. Never in an E2E run, which boots the real app in a scratch HOME.
+ * The binaries the fleet runs, by each agent's provider. An agent with none is
+ * on Claude, as every launch reads it, and so are the thirteen providers that
+ * point the claude binary at another vendor.
  */
-export function startCliUpdates(getSettings: () => AppSettings): void {
+export function clisInUse(providers: Iterable<AgentProvider | undefined>): Set<string> {
+  return new Set([...providers].map(provider => getProvider(provider ?? 'claude').binaryName));
+}
+
+/**
+ * Update the CLIs the agents run 5 s after launch and every thirty minutes
+ * after, one pass at a time, while "Check for updates" is on. The first pass
+ * also names the CLIs in use here that Tars leaves alone. Never in an E2E run,
+ * which boots the real app in a scratch HOME.
+ */
+export function startCliUpdates(
+  getSettings: () => AppSettings,
+  getProvidersInUse: () => Iterable<AgentProvider | undefined>,
+): void {
   if (process.env.DOROTHY_E2E === '1') return;
   let first = true;
+  let wasOff = false;
   const pass = () => {
     if (passInFlight) return;
     const settings = getSettings();
@@ -458,13 +482,23 @@ export function startCliUpdates(getSettings: () => AppSettings): void {
       env: { ...process.env, PATH: buildFullPath() },
       logFile: CLI_UPDATES_LOG,
     };
+    if (settings.autoCheckUpdates === false) {
+      if (!wasOff) writeLog(ctx.logFile, `${new Date().toISOString()} all off: "Check for updates" is off in Settings, so no CLI is checked`);
+      wasOff = true;
+      return;
+    }
+    wasOff = false;
+    const inUse = clisInUse(getProvidersInUse());
     const binaries: string[] = first
       ? [...new Set([...UPDATABLE, ...getAllProviders().map(p => p.binaryName)])]
       : UPDATABLE;
-    const targets = binaries.flatMap(cli => {
-      const provider = getAllProviders().find(p => p.binaryName === cli);
-      return provider ? [{ cli, command: provider.resolveBinaryPath(settings) }] : [];
-    })
+    const targets = binaries
+      // One Tars updates but no agent runs is named, and not touched.
+      .filter(cli => inUse.has(cli) || UPDATABLE.includes(cli as UpdatableCli))
+      .flatMap(cli => {
+        const provider = getAllProviders().find(p => p.binaryName === cli);
+        return provider ? [{ cli, command: provider.resolveBinaryPath(settings), inUse: inUse.has(cli) }] : [];
+      })
       // A CLI Tars does not update is only worth a line when it is there.
       .filter(t => UPDATABLE.includes(t.cli as UpdatableCli) || locate(t.command, ctx.env.PATH ?? ''));
     first = false;

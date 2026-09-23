@@ -444,7 +444,9 @@ path, so a change to either setting changes the other with it. The comment on `G
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
-Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates === false`.
+Auto-check fires 5 s after `whenReady()` and every 30 minutes, and each tick reads `appSettings.autoCheckUpdates`:
+with it `false` the tick does nothing, so turning the switch off or on needs no restart. The same switch
+governs the CLI updates below.
 
 ### Cut a release
 
@@ -526,7 +528,11 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
 so neither updates itself inside a Tars terminal. Tars updates them instead
-(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time,
+while "Check for updates" is on in Settings (the one switch for Tars's own updates and these), and
+only the CLIs at least one agent runs: every provider but Amp runs claude, so Amp is checked only
+when an Amp agent exists. The log says `all off` once when the switch is off, and
+`amp skipped: no agent runs it` once when no agent runs Amp.
 
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
@@ -546,7 +552,7 @@ it runs, and a launch in those seconds fails. npm's cache for it lives in the sc
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
 package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
 
-Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
 yourself.
 

@@ -89,7 +89,7 @@ orchestrator agent's CLI
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
 | 12 | `setupMcpOrchestrator()` (not awaited) | registering spawns CLIs; it used to hold the first paint |
 | 13 | `configureStatusHooks()` (awaited) | |
-| 14 | update check after 5 s | `electron-updater`, `autoCheckUpdates !== false` |
+| 14 | update check after 5 s, then every 30 min | `electron-updater`, `autoCheckUpdates !== false` read at each tick; the same switch governs the CLI updates |
 | 15 | `startCliUpdates()` | claude and Amp brought up to date 5 s after launch, then every 30 min, one at a time. §2 *Keeping the CLIs current* |
 
 `process.stdout` / `process.stderr` get an `EPIPE`-swallowing error handler at module load: a closed pipe from the launching shell would otherwise crash the app on the next `console.log`.
@@ -199,7 +199,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 
 ### Keeping the CLIs current
 
-`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`.
+`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`. A pass runs only while `autoCheckUpdates` is on, read at every pass: it is the one "Check for updates" switch, for Tars's own updates and the CLIs' (Noah, 2026-09-23). And it checks only the CLIs at least one agent runs, by each agent's provider (`clisInUse`): an agent with none, and the thirteen providers pointed at another vendor, run claude, so a fleet with no Amp agent never has Amp checked.
 
 | CLI, installed as | What Tars runs | When it holds back |
 |---|---|---|
@@ -210,7 +210,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 
 Nothing is updated when its own switch says not to: for claude, `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` in Tars's environment or in `~/.claude/settings.json`, or `autoUpdates: false` in `~/.claude.json` that the native installer did not write itself; for Amp, `amp.updates.mode: "disabled"` in `~/.config/amp/settings.json`. Nor is anything installed outside the home Tars runs in, which keeps a sandbox or a test run, whose `HOME` is a scratch folder, off the real CLIs, and nothing runs when `DOROTHY_E2E=1`.
 
-codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
+codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one an agent runs and found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
 
 ---
 

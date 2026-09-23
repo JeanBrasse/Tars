@@ -93,7 +93,8 @@ Download the latest release for macOS 13 (Ventura) or later:
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
 
-It also keeps claude and Amp up to date, at launch and every half hour, so a model
+It also keeps claude and Amp up to date, when an agent runs them, at launch and every half
+hour, under the same "Check for updates" switch as Tars itself, so a model
 a new CLI release brings is there for every agent without a `claude update` by
 hand. Sessions already running are left alone and restarts pick up the new version;
 what was updated, or why not, is in `~/.dorothy/cli-updates.log`. The other CLIs

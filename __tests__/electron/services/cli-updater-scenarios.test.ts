@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { runCliUpdatePass, updateCli, startCliUpdates, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
+import { runCliUpdatePass, updateCli, startCliUpdates, clisInUse, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
 import type { AppSettings } from '../../../electron/types';
 
 /**
@@ -141,7 +141,7 @@ function captureTimers(run: () => void): { timeouts: Captured[]; intervals: Capt
 
 describe('QA #119: the schedule', () => {
   it('Q1 arms the first pass at 5 s and the next every 30 min, neither holding the app open', () => {
-    const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({}) as AppSettings));
+    const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({}) as AppSettings, () => []));
     expect(timeouts.map(t => [t.ms, t.unref])).toEqual([[5000, true]]);
     expect(intervals.map(t => [t.ms, t.unref])).toEqual([[30 * 60 * 1000, true]]);
   });
@@ -164,7 +164,7 @@ describe('QA #119: the schedule', () => {
     const savedPath = process.env.PATH;
     process.env.PATH = [nodeOnly, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
     try {
-      const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({ cliPaths: {} }) as unknown as AppSettings));
+      const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => ({ cliPaths: {} }) as unknown as AppSettings, () => ['claude', 'codex']));
       const [first] = timeouts;
       const [tick] = intervals;
 
@@ -179,7 +179,8 @@ describe('QA #119: the schedule', () => {
       const one = logLines(CLI_UPDATES_LOG);
       expect(one.filter(l => / claude updated 1\.0\.0 to 1\.0\.1: /.test(l))).toHaveLength(1);
       expect(one.filter(l => / codex skipped: installed through .*no update path for it has been measured/.test(l))).toHaveLength(1);
-      expect(one.filter(l => / amp skipped: not installed: amp not found$/.test(l))).toHaveLength(1);
+      // No agent runs Amp: named once, never looked for.
+      expect(one.filter(l => / amp skipped: no agent runs it, so Tars does not check it$/.test(l))).toHaveLength(1);
 
       Object.assign(process.env, { SLOW_MS: '0', FAKE_CLAUDE_MODE: 'current' });
       tick.fn();
@@ -276,4 +277,57 @@ describe('QA #119: Amp paths the PR tests do not reach', () => {
     const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.1.0' }));
     expect(r).toMatchObject({ outcome: 'updated', from: '0.0.5', to: '0.1.0' });
   }, 60_000);
+});
+
+describe('one switch, and only the CLIs the fleet runs (Noah, 2026-09-23)', () => {
+  it('U1 checks no CLI while "Check for updates" is off, says so once, and checks again once it is back on', async () => {
+    const home = os.homedir();
+    nativeClaude(home, '1.0.0');
+    process.env.FAKE_CALLS = calls;
+    process.env.FAKE_NEXT = '1.0.1';
+    const nodeOnly = path.join(root, 'node-only');
+    fs.mkdirSync(nodeOnly);
+    fs.writeFileSync(path.join(nodeOnly, 'node'), `#!/bin/sh\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = [nodeOnly, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
+    const settings = { cliPaths: {}, autoCheckUpdates: false } as unknown as AppSettings;
+    try {
+      const { timeouts, intervals } = captureTimers(() => startCliUpdates(() => settings, () => ['claude']));
+
+      timeouts[0].fn();
+      intervals[0].fn();
+      await sleep(500);
+      expect(recorded(), 'a CLI was checked with the switch off').toEqual([]);
+      expect(logLines(CLI_UPDATES_LOG).filter(l => / all off: "Check for updates" is off in Settings/.test(l))).toHaveLength(1);
+
+      settings.autoCheckUpdates = true;
+      intervals[0].fn();
+      await vi.waitFor(() => expect(logLines(CLI_UPDATES_LOG).some(l => / claude updated 1\.0\.0 to 1\.0\.1: /.test(l))).toBe(true), { timeout: 20_000, interval: 100 });
+    } finally {
+      delete process.env.FAKE_CALLS;
+      delete process.env.FAKE_NEXT;
+      process.env.PATH = savedPath;
+      fs.rmSync(path.join(home, '.local'), { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('U2 leaves an installed Amp alone on a fleet with no Amp agent, and updates it once one runs it', async () => {
+    const home = path.join(root, 'home');
+    const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2' });
+
+    const [unused] = await runCliUpdatePass([{ cli: 'amp', command: amp, inUse: false }], ctx);
+    expect(unused).toMatchObject({ outcome: 'skipped', detail: 'no agent runs it, so Tars does not check it' });
+    expect(recorded(), 'npm was run for an Amp no agent uses').toEqual([]);
+
+    const [used] = await runCliUpdatePass([{ cli: 'amp', command: amp, inUse: true }], ctx);
+    expect(used.outcome).not.toBe('skipped');
+    expect(recorded().length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('U3 reads the fleet by provider: no provider is Claude, the thirteen other vendors run claude, Amp runs amp', () => {
+    expect([...clisInUse([])]).toEqual([]);
+    expect([...clisInUse([undefined, 'claude', 'minimax' as never])]).toEqual(['claude']);
+    expect(clisInUse(['claude', 'amp' as never, 'codex' as never])).toEqual(new Set(['claude', 'amp', 'codex']));
+  });
 });
