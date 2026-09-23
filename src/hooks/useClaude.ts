@@ -159,17 +159,9 @@ export function useClaude() {
           throw new Error('Failed to get Claude data from Electron');
         }
       } else {
-        const response = await fetch('/api/claude');
-        if (!response.ok) throw new Error('Failed to fetch');
-        const result = await response.json();
-        // Only update if data actually changed
-        setData(prev => {
-          if (!prev) return result;
-          if (prev.projects?.length !== result.projects?.length) return result;
-          if (prev.activeSessions?.length !== result.activeSessions?.length) return result;
-          return prev;
-        });
-        setError(null);
+        // The web build's /api/claude route is gone: the main process is the
+        // one reader of Claude Code's files now.
+        throw new Error('Claude Code data is read by the desktop app');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -195,32 +187,6 @@ export function useClaude() {
   }, [fetchData]);
 
   return { data, loading, error, refresh: fetchData };
-}
-
-export function useProjects() {
-  const [projects, setProjects] = useState<ClaudeProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchProjects = useCallback(async () => {
-    try {
-      const response = await fetch('/api/claude/projects');
-      if (!response.ok) throw new Error('Failed to fetch');
-      const result = await response.json();
-      setProjects(result);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
-
-  return { projects, loading, error, refresh: fetchProjects };
 }
 
 export function useSessionMessages(projectId: string | null, sessionId: string | null) {
