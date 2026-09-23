@@ -1,12 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { xApiRequest } from "../utils/api.js";
+import { assertPostingEnabled, xApiRequest } from "../utils/api.js";
 
 export function registerPostTools(server: McpServer): void {
   // Post a new tweet
   server.tool(
     "x_post_tweet",
-    "Post a new tweet on X (Twitter). The tweet text must be 280 characters or less.",
+    "Post a new tweet on X (Twitter). The tweet text must be 280 characters or less. Refused unless Posting is on in Tars Settings > X (Twitter).",
     {
       text: z
         .string()
@@ -19,6 +19,7 @@ export function registerPostTools(server: McpServer): void {
     },
     async ({ text, quote_tweet_id }) => {
       try {
+        assertPostingEnabled();
         const body: Record<string, unknown> = { text };
         if (quote_tweet_id) {
           body.quote_tweet_id = quote_tweet_id;
@@ -64,7 +65,7 @@ export function registerPostTools(server: McpServer): void {
   // Reply to a tweet
   server.tool(
     "x_reply_tweet",
-    "Reply to an existing tweet on X (Twitter).",
+    "Reply to an existing tweet on X (Twitter). Refused unless Posting is on in Tars Settings > X (Twitter).",
     {
       text: z
         .string()
@@ -76,6 +77,7 @@ export function registerPostTools(server: McpServer): void {
     },
     async ({ text, reply_to_id }) => {
       try {
+        assertPostingEnabled();
         const body: Record<string, unknown> = {
           text,
           reply: {
@@ -123,12 +125,13 @@ export function registerPostTools(server: McpServer): void {
   // Delete a tweet
   server.tool(
     "x_delete_tweet",
-    "Delete a tweet by its ID. You can only delete tweets you own.",
+    "Delete a tweet by its ID. You can only delete tweets you own. Refused unless Posting is on in Tars Settings > X (Twitter).",
     {
       tweet_id: z.string().describe("The ID of the tweet to delete"),
     },
     async ({ tweet_id }) => {
       try {
+        assertPostingEnabled();
         const result = (await xApiRequest(
           "DELETE",
           `/2/tweets/${tweet_id}`
