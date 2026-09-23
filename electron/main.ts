@@ -155,6 +155,7 @@ function loadAppSettings(): AppSettings {
     slackAppToken: '',
     slackSigningSecret: '',
     slackChannelId: '',
+    slackAllowedUserIds: [],
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -231,7 +232,8 @@ function initTelegramBot() {
   initTelegramBotService(
     agents,
     ptyProcesses,
-    appSettings,
+    // Live: a save replaces this object, and the bot must see the new one.
+    () => appSettings,
     getMainWindow(),
     () => getSuperAgent(agents),
     saveAgents,
@@ -289,7 +291,7 @@ function createIpcDependencies(): IpcHandlerDependencies {
     isSuperAgent,
     getMcpOrchestratorPath,
     initTelegramBot,
-    initSlackBot: () => initSlackBot(appSettings, (settings) => {
+    initSlackBot: () => initSlackBot(() => appSettings, (settings) => {
       appSettings = settings;
       saveAppSettingsToFile(settings);
     }, getMainWindow()),
@@ -605,7 +607,7 @@ app.whenReady().then(async () => {
 
   // Initialize services
   initTelegramBot();
-  initSlackBot(appSettings, (settings) => {
+  initSlackBot(() => appSettings, (settings) => {
     appSettings = settings;
     saveAppSettingsToFile(settings);
   }, getMainWindow());

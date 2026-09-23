@@ -104,7 +104,7 @@ beforeEach(() => {
   bot.texts.length = 0;
   bot.sent.length = 0;
   initTelegramBotService(
-    agents, ptyProcesses, settings, null,
+    agents, ptyProcesses, () => settings, null,
     // As main.ts hands it over: the first orchestrator, by role.
     () => getSuperAgent(agents),
     () => {}, async () => null,

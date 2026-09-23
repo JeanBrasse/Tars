@@ -10,14 +10,16 @@ export function registerSlackRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const slackApp = ctx.getSlackApp();
-    if (!slackApp || !ctx.appSettings.slackChannelId) {
+    // The settings as they are now, not the server's startup snapshot.
+    const settings = ctx.getAppSettings();
+    if (!slackApp || !settings.slackChannelId) {
       sendJson({ error: 'Slack not configured or no channel ID' }, 400);
       return;
     }
 
     try {
       const postParams: { channel: string; text: string; mrkdwn: boolean; thread_ts?: string } = {
-        channel: ctx.slackResponseChannel || ctx.appSettings.slackChannelId,
+        channel: ctx.slackResponseChannel || settings.slackChannelId,
         text: `:crown: ${message}`,
         mrkdwn: true,
       };

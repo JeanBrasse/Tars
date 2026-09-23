@@ -986,6 +986,7 @@ export interface ElectronAPI {
       slackAppToken: string;
       slackSigningSecret: string;
       slackChannelId: string;
+      slackAllowedUserIds: string[];
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1082,6 +1083,7 @@ export interface ElectronAPI {
       slackAppToken?: string;
       slackSigningSecret?: string;
       slackChannelId?: string;
+      slackAllowedUserIds?: string[];
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;

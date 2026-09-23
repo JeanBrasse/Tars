@@ -26,7 +26,14 @@ let currentResponseChatId: string | null = null; // Track which chat to respond 
 // References to external state (will be injected)
 let agents: Map<string, AgentStatus>;
 let ptyProcesses: Map<string, pty.IPty>;
-let appSettings: AppSettings;
+/**
+ * The settings as they are now. A getter, not the object the bot was started
+ * with: app:saveSettings replaces main's object on every save, and the bot kept
+ * checking chats and /auth tokens against the old one, so a chat removed or a
+ * token regenerated in Settings stayed good until a restart (the audit's lead
+ * #19). Every read goes through here.
+ */
+let getSettings: () => AppSettings = () => ({} as AppSettings);
 /**
  * What `/stats` reads out of Claude Code's own usage data. Only the fields this
  * bot renders are modelled; the rest of the object belongs to the reader that
@@ -61,7 +68,7 @@ let saveAppSettings: (settings: AppSettings) => void;
 export function initTelegramBotService(
   agentsMap: Map<string, AgentStatus>,
   ptyMap: Map<string, pty.IPty>,
-  settings: AppSettings,
+  settings: () => AppSettings,
   window: BrowserWindow | null,
   getSuperAgentFn: () => AgentStatus | undefined,
   saveAgentsFn: () => void,
@@ -71,7 +78,7 @@ export function initTelegramBotService(
 ) {
   agents = agentsMap;
   ptyProcesses = ptyMap;
-  appSettings = settings;
+  getSettings = settings;
   mainWindow = window;
   getSuperAgent = getSuperAgentFn;
   saveAgents = saveAgentsFn;
@@ -106,9 +113,9 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
   }
 
   // Fallback: send to all authorized users (for notifications not from a specific chat)
-  const chatIds = appSettings.telegramAuthorizedChatIds?.length > 0
-    ? appSettings.telegramAuthorizedChatIds
-    : (appSettings.telegramChatId ? [appSettings.telegramChatId] : []);
+  const chatIds = getSettings().telegramAuthorizedChatIds?.length > 0
+    ? getSettings().telegramAuthorizedChatIds
+    : (getSettings().telegramChatId ? [getSettings().telegramChatId] : []);
 
   if (chatIds.length === 0) return;
 
@@ -236,7 +243,7 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
  * Check if a chat ID is authorized
  */
 function isAuthorized(chatId: string): boolean {
-  return appSettings.telegramAuthorizedChatIds?.includes(chatId) || false;
+  return getSettings().telegramAuthorizedChatIds?.includes(chatId) || false;
 }
 
 /**
@@ -257,7 +264,7 @@ function shouldRespondToMessage(msg: TelegramBot.Message): boolean {
   }
 
   // If require mention is disabled, always respond
-  if (!appSettings.telegramRequireMention) {
+  if (!getSettings().telegramRequireMention) {
     console.log(`Telegram: Mention not required, responding to group message`);
     return true;
   }
@@ -335,7 +342,7 @@ function ensureDownloadsDir(): void {
  * Download a file from Telegram servers
  */
 async function downloadTelegramFile(fileId: string, fileName: string): Promise<string> {
-  if (!telegramBot || !appSettings.telegramBotToken) {
+  if (!telegramBot || !getSettings().telegramBotToken) {
     throw new Error('Telegram bot not initialized');
   }
 
@@ -355,7 +362,7 @@ async function downloadTelegramFile(fileId: string, fileName: string): Promise<s
   const localPath = path.join(TELEGRAM_DOWNLOADS_DIR, uniqueFileName);
 
   // Download file from Telegram
-  const fileUrl = `https://api.telegram.org/file/bot${appSettings.telegramBotToken}/${file.file_path}`;
+  const fileUrl = `https://api.telegram.org/file/bot${getSettings().telegramBotToken}/${file.file_path}`;
 
   return new Promise((resolve, reject) => {
     const fileStream = fs.createWriteStream(localPath);
@@ -424,18 +431,18 @@ export function initTelegramBot() {
     telegramBot = null;
   }
 
-  if (!appSettings.telegramEnabled || !appSettings.telegramBotToken) {
+  if (!getSettings().telegramEnabled || !getSettings().telegramBotToken) {
     console.log('Telegram bot disabled or no bot token');
     return;
   }
 
-  if (!appSettings.telegramAuthToken) {
+  if (!getSettings().telegramAuthToken) {
     console.log('Telegram bot disabled: no auth token configured (security requirement)');
     return;
   }
 
   try {
-    telegramBot = new TelegramBot(appSettings.telegramBotToken, { polling: true });
+    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
     console.log('Telegram bot started');
 
     // Fetch and cache bot username for mention detection
@@ -457,7 +464,8 @@ export function initTelegramBot() {
       }
 
       // Check if auth token is configured
-      if (!appSettings.telegramAuthToken) {
+      const live = getSettings();
+      if (!live.telegramAuthToken) {
         telegramBot?.sendMessage(chatId,
           '⚠️ No authentication token configured.\n\n' +
           '_Generate one in Tars Settings → Telegram_',
@@ -467,17 +475,19 @@ export function initTelegramBot() {
       }
 
       // Verify the token
-      if (providedToken === appSettings.telegramAuthToken) {
-        // Add to authorized list if not already there
-        if (!appSettings.telegramAuthorizedChatIds) {
-          appSettings.telegramAuthorizedChatIds = [];
+      if (providedToken === live.telegramAuthToken) {
+        // Add to authorized list if not already there. Onto the live settings:
+        // writing the bot's old object back would restore what Settings had
+        // removed since, on disk as well.
+        if (!live.telegramAuthorizedChatIds) {
+          live.telegramAuthorizedChatIds = [];
         }
-        if (!appSettings.telegramAuthorizedChatIds.includes(chatId)) {
-          appSettings.telegramAuthorizedChatIds.push(chatId);
+        if (!live.telegramAuthorizedChatIds.includes(chatId)) {
+          live.telegramAuthorizedChatIds.push(chatId);
           // Also update legacy field for backwards compatibility
-          appSettings.telegramChatId = chatId;
-          saveAppSettings(appSettings);
-          mainWindow?.webContents.send('settings:updated', appSettings);
+          live.telegramChatId = chatId;
+          saveAppSettings(live);
+          mainWindow?.webContents.send('settings:updated', live);
         }
 
         telegramBot?.sendMessage(chatId,
@@ -766,7 +776,7 @@ export function initTelegramBot() {
 
         // Build command using the shared provider interface (same as agent:start in ipc-handlers)
         const cliProvider = getProvider(agent.provider);
-        const binaryPath = cliProvider.resolveBinaryPath(appSettings);
+        const binaryPath = cliProvider.resolveBinaryPath(getSettings());
 
         // Resolve MCP config path if provider uses flag strategy
         let mcpConfigPath: string | undefined;
@@ -1154,7 +1164,7 @@ export function initTelegramBot() {
 
       // Voice messages in groups don't have captions for mentions, so we check reply-to
       // For now, voice messages always trigger in groups (can't easily @mention with voice)
-      if (msg.chat.type !== 'private' && appSettings.telegramRequireMention) {
+      if (msg.chat.type !== 'private' && getSettings().telegramRequireMention) {
         // In groups with require mention, voice messages are ignored unless replying to bot
         return;
       }
@@ -1289,7 +1299,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
       // Build command using the shared provider interface
       const cliProvider = getProvider(superAgent.provider || 'claude');
-      const binaryPath = cliProvider.resolveBinaryPath(appSettings);
+      const binaryPath = cliProvider.resolveBinaryPath(getSettings());
 
       // Resolve MCP config path
       let mcpConfigPath: string | undefined;
