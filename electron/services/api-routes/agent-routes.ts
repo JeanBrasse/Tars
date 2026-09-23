@@ -885,6 +885,19 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: err instanceof Error ? err.message : 'Invalid role' }, 400);
       return;
     }
+    // An orchestrator is made in the Agents page and nowhere else. Made here,
+    // it took the role from the project's current one and restarted it on the
+    // word of whoever held a token, with none of the confirmation Noah asked
+    // for: the QA's gate of #123 measured a worker's own token making itself a
+    // "Rogue" orchestrator of its project, and with allowCrossProject, in
+    // bypass, of another one. Nothing asks for it legitimately: the MCP's
+    // create_agent sends no role. Decided on 2026-09-23, for every caller.
+    if (role === 'orchestrator') {
+      sendJson({
+        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; Noah can make it the orchestrator there.',
+      }, 403);
+      return;
+    }
 
     const id = uuidv4();
     const resolvedName = name || `Agent ${id.slice(0, 6)}`;
