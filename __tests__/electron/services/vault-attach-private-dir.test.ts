@@ -181,6 +181,56 @@ describe('attaching a file to a vault document', () => {
     expect(attachments()).toEqual([]);
   });
 
+  /**
+   * A hard link is a second name for the file with no path back to the first,
+   * so a check that follows paths finds it inside nothing (the audit's gate of
+   * #137, measured on this route). How the check for it can fail, written
+   * before it:
+   * 1. a hard link made outside, to a file in the private directory, is copied in;
+   * 2. every file with a second name is refused: a pnpm store is made of them;
+   * 3. a copy, which is another file with the same bytes, is refused;
+   * 4. the search leaves the private directory through a symlink inside it.
+   */
+  it('refuses a hard link, made outside, to a file in the private directory', async () => {
+    const link = path.join(tmp, 'notes.txt');
+    fs.rmSync(link, { force: true });
+    fs.linkSync(secretFile(), link);
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: link });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  it('still attaches a file with two ordinary names, and a copy of a private file', async () => {
+    const first = path.join(tmp, 'store-first.txt');
+    const second = path.join(tmp, 'store-second.txt');
+    fs.writeFileSync(first, 'one file, two names');
+    fs.rmSync(second, { force: true });
+    fs.linkSync(first, second);
+    const copy = path.join(tmp, 'copy-of-the-secret.txt');
+    fs.copyFileSync(secretFile(), copy);
+    // A way out of the private directory, to where the pair lives: the search
+    // must not take it.
+    const exit = path.join(privateDir, 'to-the-pair');
+    fs.rmSync(exit, { force: true });
+    fs.symlinkSync(tmp, exit);
+
+    try {
+      for (const file of [second, copy]) {
+        const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+          authorization: `Bearer ${sharedToken}`,
+        }, { file_path: file });
+        expect(status, `${file}: ${text}`).toBe(200);
+      }
+      expect(attachments()).toHaveLength(2);
+    } finally {
+      fs.rmSync(exit, { force: true });
+    }
+  });
+
   it('still attaches an ordinary file, which the copy above would otherwise prove nothing about', async () => {
     const ordinary = path.join(tmp, 'report.txt');
     fs.writeFileSync(ordinary, 'an ordinary report');

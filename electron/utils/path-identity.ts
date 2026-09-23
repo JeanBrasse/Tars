@@ -41,3 +41,49 @@ export function isWithinDir(candidate: string, dir: string): boolean {
     current = parent;
   }
 }
+
+/**
+ * Whether `candidate` is another name for a file inside `dir`: a hard link.
+ *
+ * isWithinDir follows a path, and a hard link has none back to the file it
+ * names: it is a second directory entry for the same inode, anywhere on the
+ * volume, so a link made in /tmp to the webhook secret is inside nothing and
+ * the vault copied it in (the audit's gate of #137, measured). Only a regular
+ * file with more than one name can be one, so only those are looked for, by
+ * device and inode, among the regular files under `dir`, whose symlinks are
+ * not followed. `dir` is walked, so this is for small directories whose files
+ * are secrets whole: the private directory and ~/.ssh.
+ */
+export function isHardLinkInto(candidate: string, dir: string): boolean {
+  let file: fs.Stats;
+  try {
+    file = fs.statSync(candidate);
+  } catch {
+    return false;
+  }
+  if (!file.isFile() || file.nlink < 2) return false;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full);
+      } else if (entry.isFile()) {
+        try {
+          const here = fs.lstatSync(full);
+          if (here.dev === file.dev && here.ino === file.ino) return true;
+        } catch {
+          // Gone since it was listed.
+        }
+      }
+    }
+  }
+  return false;
+}

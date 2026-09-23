@@ -330,6 +330,10 @@ routes now compare the real path, and each directory above it, with the private
 directory by device and inode (`electron/utils/path-identity.ts`), so a case
 variant, the firmlink or a symlink is refused like the plain name; the agents'
 Telegram MCP server compares segments in any case and checks the real path too.
+A hard link has no path back to the file it names, so a link made elsewhere to
+a private file passed all of that; all three guards now look for its inode among
+the files of the private directory, and the two Telegram ones in `~/.ssh` as
+well (the audit's gate of #137).
 It still copies any other file its caller names, `~/.ssh` included; that is older than 1.7.6, and closing it means
 deciding what an agent may attach. Each of these is a refusal of the one-call
 route, not a wall: an agent with a shell copies the file somewhere else first,

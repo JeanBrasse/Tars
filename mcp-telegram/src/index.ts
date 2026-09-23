@@ -97,7 +97,54 @@ function assertSendablePath(filePath: string): string {
     // Not there: the send says so after the guard.
   }
   if (real !== undefined) assertSendableName(real, fs.realpathSync.native(os.homedir()));
+  // A hard link has no path back to the file it names, so it is looked for by
+  // inode, in the two small directories whose files are secrets whole (the
+  // audit's gate of #137).
+  for (const dir of [".tars-private", ".ssh"]) {
+    if (isHardLinkInto(resolved, path.join(os.homedir(), dir))) {
+      throw new Error(`Refused: this file is also in ${dir}, which holds credentials and cannot be sent`);
+    }
+  }
   return resolved;
+}
+
+/**
+ * Whether `candidate` is another name for a regular file under `dir`, by
+ * device and inode. The app's own guard has the same function
+ * (electron/utils/path-identity.ts); this server is built on its own.
+ */
+function isHardLinkInto(candidate: string, dir: string): boolean {
+  let file: fs.Stats;
+  try {
+    file = fs.statSync(candidate);
+  } catch {
+    return false;
+  }
+  if (!file.isFile() || file.nlink < 2) return false;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full);
+      } else if (entry.isFile()) {
+        try {
+          const here = fs.lstatSync(full);
+          if (here.dev === file.dev && here.ino === file.ino) return true;
+        } catch {
+          // Gone since it was listed.
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**

@@ -5,7 +5,7 @@ import { agents } from '../../core/agent-manager';
 import { AgentStatus } from '../../types';
 import { RouteRequest } from './types';
 import { DATA_DIR_NAME, PRIVATE_DIR_NAME } from '../../constants';
-import { isWithinDir } from '../../utils/path-identity';
+import { isHardLinkInto, isWithinDir } from '../../utils/path-identity';
 
 /** Project path or id of the calling agent, injected as a header by the MCP
  *  client from its PTY environment. Read only by the server's door, which
@@ -104,6 +104,13 @@ export function isSafeTelegramPath(filePath: string): boolean {
     if (resolved === blocked || resolved.startsWith(blocked + path.sep) || isWithinDir(resolved, blocked)) {
       return false;
     }
+  }
+
+  // A hard link has no path back to the file it names, so it is looked for by
+  // inode, in the two small directories whose files are secrets whole (the
+  // audit's gate of #137).
+  for (const dir of [path.join(home, PRIVATE_DIR_NAME), path.join(home, '.ssh')]) {
+    if (isHardLinkInto(resolved, dir)) return false;
   }
 
   return true;
