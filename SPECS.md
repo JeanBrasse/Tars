@@ -90,6 +90,7 @@ orchestrator agent's CLI
 | 12 | `setupMcpOrchestrator()` (not awaited) | registering spawns CLIs; it used to hold the first paint |
 | 13 | `configureStatusHooks()` (awaited) | |
 | 14 | update check after 5 s | `electron-updater`, `autoCheckUpdates !== false` |
+| 15 | `startCliUpdates()` | claude and Amp brought up to date 5 s after launch, then every 30 min, one at a time. §2 *Keeping the CLIs current* |
 
 `process.stdout` / `process.stderr` get an `EPIPE`-swallowing error handler at module load: a closed pipe from the launching shell would otherwise crash the app on the next `console.log`.
 
@@ -193,6 +194,23 @@ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD = 1
 ```
 
 `CLAUDE_AGENT_ID` and `CLAUDE_PROJECT_PATH` are re-asserted explicitly after the provider spread: MCP project scoping and every hook depend on them.
+
+On the `claude` binary, the fourteen providers that run it get `managedCliEnv()` as well: `DISABLE_AUTOUPDATER=1` and `CLAUDE_CODE_DISABLE_MOUSE_CLICKS=1`. Amp gets its update check turned off through the settings copy Tars hands it (`~/.dorothy/amp-settings.json`, `amp.updates.mode: "disabled"`). Neither CLI updates itself inside a Tars terminal: Tars does it, below.
+
+### Keeping the CLIs current
+
+`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`.
+
+| CLI, installed as | What Tars runs | When it holds back |
+|---|---|---|
+| `claude`, native installer (`~/.local/bin/claude` → `~/.local/share/claude/versions/<version>`) | `claude update` | never for a running session: each version is its own file, a session keeps running the one it started from, and the link is swapped in one step. The verdict is read off the link, since `claude update` exits 0 when an administrator has disabled updates |
+| `amp`, global npm package | `npm view <package> version`, then the new version downloaded into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, all three with a `--cache` in that scratch folder, which is deleted after: `~/.npm` is never pruned and kept 38 MB of every Amp release | while any process has the binary open (`lsof -t`), asked before the download and again before the install, because npm removes the old package before the new one is in place |
+
+`<package>` is the one that owns the binary, read from where the launcher really points: `@sourcegraph/amp` on an install made before Amp's rename to `@ampcode/cli`, which `amp update` itself cannot update (it asks for `@ampcode/cli` and npm refuses with `EEXIST`).
+
+Nothing is updated when its own switch says not to: for claude, `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` in Tars's environment or in `~/.claude/settings.json`, or `autoUpdates: false` in `~/.claude.json` that the native installer did not write itself; for Amp, `amp.updates.mode: "disabled"` in `~/.config/amp/settings.json`. Nor is anything installed outside the home Tars runs in, which keeps a sandbox or a test run, whose `HOME` is a scratch folder, off the real CLIs, and nothing runs when `DOROTHY_E2E=1`.
+
+codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
 
 ---
 
@@ -536,6 +554,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
 | `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock; anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
+| `cli-updates.log` (+ `.1`) | one line per CLI update result: time, CLI, outcome, versions, what it said | `services/cli-updater.ts` | append-only, moved to `.1` past 256 KB. A check that changes nothing is written once, a failure every time |
 | `telegram-downloads/` | media from Telegram | Telegram bot | |
 | `CLAUDE.md` | Tars's own agent instructions | `ensureTarsClaudeMd()` | mounted read-write into every agent via `--add-dir` |
 | `statusline.sh` | generated bash | `enableStatusLine()` | mode `0755` |
@@ -555,6 +574,8 @@ Files Tars writes **outside** its own directory:
 | `~/.claude.json` → `mcpServers.{gbrain,honcho}` | remote memory backends |
 | `~/.claude/settings.json` → `hooks`, `statusLine` | eight hook types, merged rather than replaced |
 | `~/.claude/mcp.json` | fallback when `claude mcp add` fails |
+| `~/.local/share/claude/versions/`, `~/.local/bin/claude` | through `claude update`, which writes them itself |
+| `<npm prefix>/lib/node_modules/<package>`, `<npm prefix>/bin/amp` | through `npm install --global`, for Amp |
 | per-provider MCP config files | `codex`, `gemini`, `grok`, `opencode`, `pi` |
 | `<project>/.worktrees/<branch>` | git worktrees |
 
@@ -750,3 +771,6 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **The webhook is the only surface designed to leave the machine**, and it needs an operator-provided tunnel; nothing in the app opens one.
 - **`installBundledSkills()` currently ships nothing.** Its only remaining job is deleting stale `world-builder` copies left by older versions, and only when the file content is recognizably ours.
 - **macOS only.** `electron-builder` targets `--mac`; `window-all-closed` quits on other platforms but nothing else is tested there.
+- **An Amp update leaves `amp` missing for a few seconds.** npm removes the old package before the new one is unpacked: measured, 3.3 to 9.3 s with the tarballs already downloaded, which Tars makes sure of first, then under a second on a placeholder that prints "Amp native binary not installed". Tars waits for every running `amp` to end before it starts, but nothing holds a launch back during those seconds, and one that falls in them fails. A claude update has no such window.
+- **A claude session that outlives two newer releases can lose its binary file.** The native installer's cleanup keeps the two newest versions and any version whose lock is held, and only the first session on a version holds that lock. Measured: once that session had exited, the cleanup deleted the file under a second session on the same version, and that session's next turn still answered, but its Grep and Glob tools do not: native claude runs its embedded ripgrep by starting its own file again, as `rg`. With no `rg` on PATH every later search fails (`posix_spawn 'rg'`, ENOENT); with Homebrew's on PATH, as in a Tars terminal on Noah's machine, the first search fails with a misleading "ripgrep not found on PATH" and the next ones go through the system `rg`. A `claude` started from inside it fails too. A restart ends it. `USE_BUILTIN_RIPGREP=0`, with `rg` on PATH, kept Grep and Glob working when QA measured it, and is for a later change. The cleanup is claude's own: every session's housekeeping runs it, not only an update.
+- **Agents started before a claude update finishes stay on the version they started with** until they are restarted. The pass runs 5 s after launch and takes about 10 s, while the agents set to start with the app may already be starting.
