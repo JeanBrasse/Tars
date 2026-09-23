@@ -71,10 +71,6 @@ export default function AgentTerminalDialog({
     () => agent?.worktreePath || agent?.projectPath || '',
     [agent?.worktreePath, agent?.projectPath],
   );
-  const character = useMemo(
-    () => (agent?.name?.toLowerCase() === 'bitwonka' ? 'frog' : agent?.character || 'robot'),
-    [agent?.name, agent?.character],
-  );
   const hasSecondaryProject = !!agent?.secondaryProjectPath;
   // A message this window's terminal is holding, for the same reason a board
   // panel holds one: somebody is typing in the field it would go into.
@@ -220,7 +216,6 @@ export default function AgentTerminalDialog({
       <div className="-m-4 flex flex-col h-[620px]">
         <AgentDialogHeader
           agent={agent}
-          character={character}
           isFullscreen={isFullscreen}
           hasSecondaryProject={hasSecondaryProject}
           isSuperAgentMode={isSuperAgentMode}

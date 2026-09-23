@@ -1,8 +1,8 @@
 'use client';
 
 import type { AgentStatus } from '@/types/electron';
-import { Button, MetaChip, StatusSquare } from '@/components/ui';
-import { STATUS_COLORS, PROVIDER_LABELS, errorReason, statusTone } from '@/app/agents/constants';
+import { AgentMark, Button } from '@/components/ui';
+import { STATUS_COLORS, errorReason, statusTone } from '@/app/agents/constants';
 
 // Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
 // button each, sitting inside the card padding - the card has no footer band.
@@ -34,6 +34,8 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const reason = errorReason(agent);
   const provider = agent.provider || 'claude';
   const model = provider === 'local' ? agent.localModel : agent.model;
+  // Provider, model and branch as plain words, the way the frame writes them.
+  const facts = [provider, model, agent.branchName].filter(Boolean).join(' · ');
 
   return (
     <div
@@ -41,9 +43,10 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
       className="cursor-pointer transition-colors border border-border bg-card hover:bg-secondary"
     >
       <div className="p-3 flex flex-col gap-2">
-        {/* Row 1: status mark + name, raw status word right-aligned (R6) */}
+        {/* Row 1: the agent's mark + name, raw status word right-aligned (R6).
+            The word carries the status; the mark says who it is. */}
         <div className="flex items-center gap-2">
-          <StatusSquare tone={tone} />
+          <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} />
           <span className="flex-1 min-w-0 truncate text-xs font-semibold text-foreground">
             {agent.name || 'Unnamed Agent'}
           </span>
@@ -72,11 +75,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
         )}
 
         {/* Row 3: provider, model, branch */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <MetaChip>{PROVIDER_LABELS[provider] || provider}</MetaChip>
-          {model && <MetaChip className="max-w-[140px] truncate">{model}</MetaChip>}
-          {agent.branchName && <MetaChip className="max-w-[140px] truncate">{agent.branchName}</MetaChip>}
-        </div>
+        <p className="font-mono text-[10.5px] text-muted-foreground truncate" title={facts}>
+          {facts}
+        </p>
 
         <div className="flex items-center gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
           <Button size="sm" className={ROW_ACTION} onClick={onClick}>

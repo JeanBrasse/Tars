@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { GripVertical, ShieldOff, Bot, Shield, Gauge } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { SegmentedControl, StatusSquare } from '@/components/ui';
+import { AgentMark, SegmentedControl } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
-import { errorReason } from '@/app/agents/constants';
+import { STATUS_COLORS, errorReason } from '@/app/agents/constants';
 
 export type PanelView = 'live' | 'history';
 
@@ -105,8 +105,9 @@ export default function TerminalPanelHeader({
         <GripVertical className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
       )}
 
-      {/* Agent identity: status square, name, git branch */}
-      <StatusSquare tone={statusTone(agent.status)} />
+      {/* Agent identity: its mark, name, git branch. The status is the word
+          on the right, as on the agent cards. Frame: `Dashboard · dark`. */}
+      <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} />
       <span className="text-[11.5px] font-semibold text-foreground truncate max-w-[140px]">{name}</span>
       {reason ? (
         // In error, why: the reason takes the branch's place and the room the
@@ -118,7 +119,7 @@ export default function TerminalPanelHeader({
           {reason}
         </span>
       ) : branch && (
-        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px]">
+        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px] shrink-[3]">
           {branch}
         </span>
       )}
@@ -161,17 +162,18 @@ export default function TerminalPanelHeader({
         </>
       )}
 
-      {/* Which CLI, then which model. The provider was only ever implied by the
-          model string, so an agent left on its provider default showed nothing
-          at all and you could not tell what would launch. */}
-      {agent.provider && (
-        <span className="text-[10px] font-mono text-foreground/80 truncate max-w-[70px]">
-          {agent.provider}
-        </span>
-      )}
-      {model && (
-        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[90px]">
-          {model}
+      {/* The status as a word in its colour, then which CLI and which model as
+          plain words. The provider was only ever implied by the model string,
+          so an agent left on its provider default showed nothing at all and
+          you could not tell what would launch. */}
+      <span className={`text-[10px] font-mono shrink-0 ${STATUS_COLORS[agent.status].text}`}>
+        {statusTone(agent.status)}
+      </span>
+      {/* It gives way first, then the branch, so the name keeps its width
+          in a narrow panel: the mark and the status word took the room. */}
+      {(agent.provider || model) && (
+        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[160px] shrink-[6]">
+          {[agent.provider, model].filter(Boolean).join(' · ')}
         </span>
       )}
 
