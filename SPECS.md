@@ -258,7 +258,7 @@ models.dev adds it → next `loadCatalog()` past the 6-hour TTL (or `models:refr
 | Delivery guarantee | the turn resolved or the call errored | bytes were written to a pty |
 | Deny-list enforcement | protocol-level, every provider | `--disallowed-tools`, Claude only |
 | Usage captured | yes, every provider | Claude only, after the fact from transcripts |
-| Session lifetime | one task, torn down after | persists at the CLI prompt |
+| Session lifetime | one turn, torn down after: what the turn left running in the background (a `run_in_background` command, a Monitor, a ScheduleWakeup) is stopped with it, and nothing brings the agent back for it; a turn still going at `timeoutSeconds` (at most one hour) is stopped mid-command | persists at the CLI prompt; a background job's notice starts a turn of its own |
 | Visible in the UI terminal | no | yes |
 
 ### The ACP layer: `electron/services/acp/`
@@ -304,8 +304,8 @@ Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` wh
 
 `delegate_task` in full:
 
-1. `POST /api/agents/:id/run-task` with `(timeoutSeconds + 60) * 1000` client timeout. If the response is not `retryWithDispatch` and has `ok` or `text`, return the agent's answer with a metadata line: `ended: <stopReason> | tools: … | <n> tokens | $<cost>`.
-2. Otherwise `POST /dispatch` → `GET /wait`.
+1. `POST /api/agents/:id/run-task` with `(timeoutSeconds + 60) * 1000` client timeout. While it waits it sends the caller an MCP progress notification every minute (`keepCallerListening`): Claude Code abandons an MCP call silent for 30 minutes ("sent no response or progress for 1811s; aborting", four delegations of the Parallel project on 2026-09-23), and progress resets that clock. The route answers 200 whenever the run started, `started: true`, however it ended, and 502 only when it could not start. For a run that started, return the agent's answer with a metadata line: `ended: <stopReason> | tools: … | <n> tokens | $<cost>`, then the reason when it failed (`turn_limit`: stopped at its limit, with what it said and did before it) and `stopped when the run ended: …` for the background work its turn left behind (`backgroundStopped`).
+2. When no run started (`retryWithDispatch`, a launch that failed), `POST /dispatch` → `GET /wait`. Never after a run that started, and never when this call's own wait ran out (the run may still be working): either one typed the same brief into the terminal as well, and the task ran twice.
 3. If the agent lands in `waiting` with `waitingReason: 'permission'`, stop. A blocking permission dialog expects arrow keys and Enter; a typed message cannot answer it and the delayed `\r` could *accept* the pending permission.
 4. Any other `waiting`: auto-reply *"Yes, continue. Do not ask for confirmation…"* once, then wait again with `max(timeout - 30, 60)`.
 5. On completion, fetch `lastCleanOutput` with 3 attempts 700 ms apart: the Stop hook posts output and status over separate HTTP calls, so the status event that resolves `/wait` can beat the output write.

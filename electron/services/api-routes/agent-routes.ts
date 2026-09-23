@@ -819,7 +819,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       lines.push(
         ``,
         `## Working rules`,
-        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`
+        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
 
@@ -1076,7 +1077,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       announceAgent(agent);
     }
 
-    sendJson(result, result.ok ? 200 : 502);
+    // A run that started is an answer, however it ended: 502 only when none
+    // did, which is when delegate_task may type the task into the terminal
+    // instead without running it twice.
+    sendJson(result, result.ok || result.started ? 200 : 502);
   });
 
   // POST /api/agents/:id/stop

@@ -4,6 +4,7 @@ import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
 import { agentStatusEmitter } from './agent-events';
 import { envelopeValue } from '../utils/envelope-value';
+import { pendingBackgroundWork } from './agent-truth';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -55,6 +56,12 @@ type News = {
   reason?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
   handedAt?: string;
+  /**
+   * For `ended`: work the agent started and left running when its turn
+   * ended (pendingBackgroundWork). Its terminal session brings it back when
+   * that work reports, so the rest is not the end of the work handed to it.
+   */
+  background?: string[];
 };
 
 /**
@@ -282,7 +289,17 @@ function queueForRequester(child: AgentStatus, news: News): void {
   // save it, nothing saved it being spent, and 26 of the 42 agents on this
   // machine carried one that had already been used. The file said work was
   // owed for agents that owed nothing.
-  if (news.kind !== 'wait') {
+  //
+  // Not spent, though, by a rest with work still running in the background:
+  // the agent comes back when that work reports (the Audit, 2026-09-23: rest
+  // at 18:55:59, back at 18:56:15, done at 18:56:52), and the link is what
+  // tells its requester about the real end. That rest is reported as what it
+  // is instead.
+  if (news.kind === 'ended' && child.workHandedAt) {
+    const left = pendingBackgroundWork(child, Date.parse(child.workHandedAt));
+    if (left.length > 0) news = { ...news, background: left };
+  }
+  if (news.kind !== 'wait' && !news.background) {
     child.requestedBy = undefined;
     saveAgents();
   }
@@ -532,6 +549,10 @@ function abandonBusMessages(recipientId: string, held: Pending): void {
  *  worded like a finished turn, so an orchestrator could not tell a question
  *  from a result. */
 function describeNews(news: News): string {
+  if (news.kind === 'ended' && news.background?.length) {
+    return `has ended its turn with background work still running (${news.background.map(envelopeValue).join(', ')}): `
+      + 'it resumes when that work reports, and you will be told again when it is done';
+  }
   if (news.kind === 'ended') return 'has finished its turn';
   if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';
   return `is now ${news.status}`;
