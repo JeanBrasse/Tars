@@ -92,6 +92,7 @@ export function TeamPanel(props: {
         ) : (
           <MembersTable
             members={props.members}
+            projectPath={props.projectPath}
             selected={props.selected}
             onToggleSelect={props.onToggleSelect}
             onPatch={props.onPatchMember}

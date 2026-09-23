@@ -722,4 +722,25 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
       agent: agents.get(BETA.id), task: 'take this over',
     }));
   });
+  // A run that started is an answer however it ended; 502 is what tells
+  // delegate_task it may type the task into the terminal instead, and after a
+  // run that started that runs it twice (sessions that died while they
+  // waited, 2026-09-23). Written before the route changed.
+  it('answers 200 for a run that started and was stopped at its limit, 502 only for one that never started', async () => {
+    putAgent({ id: 'agent-beta-3', projectPath: BETA.projectPath });
+    const sameProject = tokens.mintAgentToken('agent-beta-3');
+    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
+      ok: false, transport: 'acp', started: true, stopReason: 'turn_limit', text: 'half', toolCalls: ['pnpm build'],
+      error: "stopped at the run's limit of 3600 s while the agent was still working",
+    } as never);
+    const stopped = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
+      ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'spawn npx ENOENT',
+    } as never);
+    const neverStarted = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+
+    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+    expect(stopped.body).toMatchObject({ started: true, stopReason: 'turn_limit', text: 'half' });
+    expect(neverStarted.status).toBe(502);
+  });
 });

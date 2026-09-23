@@ -639,3 +639,62 @@ describe('the link a dispatch left behind', () => {
     ).toBeTruthy();
   });
 });
+
+describe('an agent that ends its turn with background work still running (2026-09-23)', () => {
+  // The Audit ended its turn at 18:55:59 on "waiting for the rerun of 10
+  // files", with the rerun in the background. Its terminal session brought it
+  // back when the rerun reported (18:56:15) and it finished at 18:56:52, but
+  // the one note its orchestrator got was the first: "has finished its turn",
+  // with the link spent. The orchestrator read a half-done result and was
+  // never told about the real one.
+  //
+  // How this fails, written before the code:
+  // 1. The note says "finished" while the transcript shows work still running.
+  // 2. The link is spent at that first rest, so the real end reaches nobody.
+  // 3. The link is kept for good: every later rest keeps reporting to it.
+  const SESSION = 'sess-audit';
+  const t0 = Date.now() - 60_000;
+  const at = (s: number) => new Date(t0 + s * 1000).toISOString();
+  function transcript(lines: unknown[]): void {
+    // Claude Code's own encoding of the project path: every / and . is a -.
+    const dir = path.join(os.homedir(), '.claude', 'projects', '/tars'.replace(/[/.]/g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${SESSION}.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+  }
+  const started = [
+    { type: 'assistant', timestamp: at(5), message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test', run_in_background: true } }] } },
+    { type: 'user', timestamp: at(6), toolUseResult: { backgroundTaskId: 'brerun1' }, message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'Command running in background with ID: brerun1' }] } },
+  ];
+  const reported = { type: 'user', timestamp: at(40), message: { content: '<task-notification>\n<task-id>brerun1</task-id>\n<status>completed</status>\n<summary>x</summary>\n</task-notification>' } };
+
+  it('says the work is still running, keeps the link, and reports again when the agent is really done', () => {
+    vi.useFakeTimers({ now: t0 + 60_000 });
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({
+      id: 'audit', name: 'Audit', status: 'running', currentSessionId: SESSION,
+      workHandedAt: at(0), lastTurnStartedAt: at(1), requestedBy: { agentId: 'orch', ptyId: '' },
+    });
+    transcript(started);
+
+    move('audit', 'idle');
+
+    const first = received(terminal);
+    expect(first).toContain('Audit');
+    expect(first).toMatch(/background work still running \("?brerun1"?\)/);
+    expect(agentManager.agents.get('audit')!.requestedBy, 'the link was spent on a half-done result').toBeDefined();
+
+    // Past the writer's own pause after typing that note.
+    vi.advanceTimersByTime(10_000);
+    // The rerun reports, the terminal session takes it up as a turn of its own.
+    transcript([...started, reported]);
+    move('audit', 'running');
+    move('audit', 'idle');
+    vi.advanceTimersByTime(10_000);
+
+    const second = received(terminal).slice(first.length);
+    expect(second).toContain('has finished its turn');
+    expect(second).not.toMatch(/background work still running/);
+    expect(agentManager.agents.get('audit')!.requestedBy).toBeUndefined();
+  });
+});

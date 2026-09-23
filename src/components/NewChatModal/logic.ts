@@ -55,6 +55,11 @@ export function canSubmitTeam(opts: { projectPath: string; selectedCount: number
 }
 
 /** "Deploy 5 agents" / "Deploy 1 agent" / "Deploy a team" while nothing is picked yet. */
+/** The name a team member is deployed under, and so the name its mark in the table is drawn from. */
+export function deployedMemberName(memberName: string, projectPath: string): string {
+  return `${memberName} - ${projectPath.split('/').pop() || 'project'}`;
+}
+
 export function deployButtonLabel(selectedCount: number): string {
   if (selectedCount <= 0) return 'Deploy a team';
   return `Deploy ${selectedCount} agent${selectedCount === 1 ? '' : 's'}`;
