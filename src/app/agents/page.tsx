@@ -59,12 +59,7 @@ export default function AgentsPage() {
 
 
   // Custom hooks
-  const { superAgent } = useSuperAgent({
-    agents,
-    startAgent,
-    onAgentCreated: (id) => setEditAgentId(id),
-    onCreateNew: () => setShowNewChatModal(true),
-  });
+  const { superAgent } = useSuperAgent({ agents });
 
   // A project whose last agent is gone has nothing to show, so the page falls
   // back to every project rather than to an empty list under a stale name.
