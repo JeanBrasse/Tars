@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../tars-hook.sh"
 # Post-tool-use hook for tars memory system (Gemini CLI)
 
 INPUT=$(cat)
@@ -21,8 +22,10 @@ PROJECT_PATH="${DOROTHY_PROJECT_PATH:-$CWD}"
 
 # jq-built payload: tool input contains quotes/newlines that would break
 # naive JSON interpolation (observation dropped) or inject extra fields.
-API_TOKEN=""
-if [ -f "$HOME/.dorothy/api-token" ]; then
+# The CLI's own token: it names this agent. The shared file only when Tars
+# did not start this CLI and gave it none.
+API_TOKEN="${CLAUDE_MGR_API_TOKEN:-}"
+if [ -z "$API_TOKEN" ] && [ -f "$HOME/.dorothy/api-token" ]; then
   API_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
 fi
 

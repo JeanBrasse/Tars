@@ -113,7 +113,7 @@ export function MembersTable({ members, selected, onToggleSelect, onPatch, onRem
                 mono
                 value={m.worktreeBranch || ''}
                 onChange={(e) => onPatch(i, { worktreeBranch: e.target.value.replace(/\s+/g, '-') || undefined })}
-                placeholder={m.orchestratorMode ? 'main (no worktree)' : '(project root)'}
+                placeholder={m.role === 'orchestrator' ? 'main (no worktree)' : '(project root)'}
                 compact
               />
               <button

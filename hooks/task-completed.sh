@@ -1,5 +1,6 @@
 #!/bin/bash
-LOG="/tmp/dorothy-hooks-debug.log"
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
+LOG="$HOOK_DEBUG_LOG"
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 # The Tars that spawned this agent, not whoever happens to own 31415:
@@ -26,7 +27,7 @@ if [ -z "$LAST_MSG" ]; then
 fi
 if [ -n "$LAST_MSG" ]; then
   TRIMMED=$(printf '%s' "$LAST_MSG" | head -c 4000)
-  curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
+  curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
 fi
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/task-completed" -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/task-completed" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
 echo '{"continue":true,"suppressOutput":true}'

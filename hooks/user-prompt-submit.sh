@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
 # UserPromptSubmit hook for tars
 # Sets agent status back to "running" when user submits a new prompt mid-session
 
@@ -9,7 +10,7 @@ INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
 
-echo "[$(date)] USER_PROMPT_SUBMIT hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> /tmp/dorothy-hooks.log
+echo "[$(date)] USER_PROMPT_SUBMIT hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> "$HOOK_LOG"
 
 # API endpoint
 # The Tars that spawned this agent, not whoever happens to own 31415:
@@ -39,16 +40,16 @@ AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 # `event` names what happened: the server cannot tell a turn starting from any
 # other "running" post, and a dispatch has already set that status at spawn.
 PAYLOAD="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"event\": \"UserPromptSubmit\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}"
-RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" 2>&1)
 if [ -z "$RESULT" ]; then
   sleep 1
-  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" 2>&1)
 fi
-echo "[$(date)] USER_PROMPT_SUBMIT curl result: $RESULT" >> /tmp/dorothy-hooks.log
+echo "[$(date)] USER_PROMPT_SUBMIT curl result: $RESULT" >> "$HOOK_LOG"
 
 echo '{"continue":true,"suppressOutput":true}'
 exit 0

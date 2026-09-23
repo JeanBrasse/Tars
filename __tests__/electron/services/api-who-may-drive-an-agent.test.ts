@@ -198,6 +198,46 @@ beforeEach(() => {
   fs.rmSync(HERMES_SECRET_LEGACY, { force: true });
 });
 
+describe('the hook routes, which only an agent\'s own CLI posts to', () => {
+  // Exempt from auth until 2026-09-23: with no credential a post registered
+  // any session for any agent, which the Audit used to resume one agent's
+  // conversation in another, and which a killed CLI's late SessionStart did
+  // by accident. The hooks run inside the CLI and carry its token.
+  const post = (headers: Record<string, string>, agentId: string) =>
+    call('POST', '/api/hooks/status', headers, { agent_id: agentId, session_id: 'sess-a', status: 'idle', source: 'startup' });
+
+  it('refuses a post with no token', async () => {
+    expect((await post({}, ALPHA.id)).status).toBe(401);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('refuses the shared token and Tars\'s pass, which name no CLI', async () => {
+    expect((await post(bearer(sharedToken), ALPHA.id)).status).toBe(403);
+    expect((await post(bearer(tokens.internalToken()), ALPHA.id)).status).toBe(403);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('takes the agent\'s own token, for that agent', async () => {
+    const answer = await post(bearer(alphaToken), ALPHA.id);
+
+    expect(answer.status).toBe(200);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe('sess-a');
+  });
+
+  it('refuses one agent\'s token posting for another', async () => {
+    expect((await post(bearer(betaToken), ALPHA.id)).status).toBe(403);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('refuses the token of a terminal that has been replaced, as a killed CLI\'s late post', async () => {
+    const replaced = alphaToken;
+    tokens.mintAgentToken(ALPHA.id);
+
+    expect((await post(bearer(replaced), ALPHA.id)).status).toBe(401);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+});
+
 describe('the super chat, which is Noah driving every project', () => {
   it('reaches an agent of any project, through its own code and its own request', async () => {
     const beta = agents.get(BETA.id)!;

@@ -105,6 +105,8 @@ function scriptUnderTest(name: string, port: number): string {
   const out = path.join(tmp, `${port}-${name}`);
   fs.writeFileSync(out, original.replaceAll('http://127.0.0.1:31415', `http://127.0.0.1:${port}`));
   fs.chmodSync(out, 0o755);
+  // Beside it, as in the app: every hook sources the helper next to it.
+  fs.copyFileSync(path.join(HOOKS_DIR, 'tars-hook.sh'), path.join(tmp, 'tars-hook.sh'));
   return out;
 }
 

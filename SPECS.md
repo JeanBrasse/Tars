@@ -22,8 +22,8 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~23k LOC)
 │     └─ one shell per agent, cwd = worktreePath ?? projectPath
 │
 ├── Local HTTP API  127.0.0.1:31415  (electron/services/api-server.ts)
-│     ├── Bearer ~/.dorothy/api-token  (exempt: /api/health, /api/hooks/*,
-│     │                                 /api/local-file)
+│     ├── Bearer token  (exempt: /api/health, /api/local-file;
+│     │                  /api/hooks/*: the agent's own token only)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
@@ -762,7 +762,8 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 |---|---|
 | Bind | `127.0.0.1:31415` (`DOROTHY_API_PORT` overrides, for a sandboxed E2E instance) |
 | Auth | `Authorization: Bearer <~/.dorothy/api-token>`, 32 random bytes, file mode `0600`, or an agent's own token, minted in memory for each terminal spawn and each delegated run, or Tars's own pass, minted in memory and written nowhere, which the super chat presents on the loopback, or on `/api/webhooks/hermes` alone the webhook secret. The agent's token decides who is calling; with it, an `X-Tars-Caller-Id` naming another agent is a 403. The shared token names no agent, no header is read with it, and it drives no agent, the webhook included |
-| Auth-exempt | `/api/health`, `/api/hooks/*`, `/api/local-file`, all called by shell hooks that send no `Origin` |
+| Auth-exempt | `/api/health` and `/api/local-file` |
+| Hook routes | `/api/hooks/*` take the token of the CLI they run in (`CLAUDE_MGR_API_TOKEN`), for the `agent_id` they name: anything else is a 403, and a token whose terminal was replaced is a 401. Exempt until 2026-09-23: a post with no credential registered any session for any agent (the Audit resumed one agent's conversation in another through it), and a killed CLI's late SessionStart took its agent from the live session |
 | Origin guard | any request with an `Origin` other than `app://-` or `http://localhost:3000` is 403'd **before** auth. A browser tab on any site can reach `127.0.0.1`; CORS hides the response but not the side effect |
 | Body | 4 MB, prototype-pollution keys stripped |
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |

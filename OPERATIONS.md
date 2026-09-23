@@ -1112,7 +1112,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 
 | Symptom | Where to look |
 |---|---|
-| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `/tmp/dorothy-hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
 | an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1123,8 +1123,10 @@ in `ps`.
 ### Debugging hooks
 
 ```bash
-tail -f /tmp/dorothy-hooks.log          # session-start
-tail -f /tmp/dorothy-hooks-debug.log    # on-stop, verbose
+tail -f ~/.dorothy/logs/hooks.log          # session-start, prompts, stops
+tail -f ~/.dorothy/logs/hooks-debug.log    # on-stop, verbose
+# Until 2026-09-23 these were /tmp/dorothy-hooks.log and -debug.log, readable by
+# every user and shared by every Tars on the machine, a sandbox's included.
 
 # are they installed and pointing at a file that exists?
 jq -r '.hooks | to_entries[] | "\(.key)\t\(.value[0].hooks[0].command)"' ~/.claude/settings.json
@@ -1133,6 +1135,12 @@ jq -r '.hooks | to_entries[] | .value[0].hooks[0].command' ~/.claude/settings.js
 # the hooks need jq and curl
 which jq curl
 ```
+
+A hook post that is refused (`401` or `403` in those logs) comes from a CLI whose
+token is not its terminal's: one that outlived its terminal (a restart replaced it), or
+one Tars did not start. The agent's status then stops following that CLI: stop and
+start the agent from Tars. After an update from 1.7.9 there is none of these, since
+quitting kills every agent terminal and each comes back with a token.
 
 | Symptom | Cause |
 |---|---|
