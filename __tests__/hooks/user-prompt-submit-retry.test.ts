@@ -67,6 +67,8 @@ beforeAll(async () => {
   scriptUnderTest = path.join(tmp, 'user-prompt-submit.sh');
   fs.writeFileSync(scriptUnderTest, original.replaceAll('http://127.0.0.1:31415', `http://127.0.0.1:${port}`));
   fs.chmodSync(scriptUnderTest, 0o755);
+  // Beside it, as in the app: every hook sources the helper next to it.
+  fs.copyFileSync(path.join(__dirname, '../../hooks/tars-hook.sh'), path.join(tmp, 'tars-hook.sh'));
 });
 
 afterAll(async () => {

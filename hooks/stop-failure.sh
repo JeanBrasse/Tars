@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/tars-hook.sh"
 # StopFailure hook for tars
 #
 # A turn that ends on an API error does not fire Stop. It fires StopFailure, and
@@ -29,7 +30,7 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 ERROR_KIND=$(echo "$INPUT" | jq -r '.error // empty')
 MESSAGE=$(echo "$INPUT" | jq -r '.last_assistant_message // empty')
 
-echo "[$(date)] STOP_FAILURE hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID ERROR=$ERROR_KIND" >> /tmp/dorothy-hooks.log
+echo "[$(date)] STOP_FAILURE hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID ERROR=$ERROR_KIND" >> "$HOOK_LOG"
 
 # The Tars that spawned this agent, not whoever happens to own 31415:
 # CLAUDE_MGR_API_URL is in the pty environment and follows DOROTHY_API_PORT.
@@ -48,15 +49,15 @@ PAYLOAD=$(jq -n \
 
 # Retried once, like the other posts that decide what Tars believes about a
 # session: lost, and the agent goes back to saying it is working.
-RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" 2>&1)
 if [ -z "$RESULT" ]; then
   sleep 1
-  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" 2>&1)
 fi
-echo "[$(date)] STOP_FAILURE curl result: $RESULT" >> /tmp/dorothy-hooks.log
+echo "[$(date)] STOP_FAILURE curl result: $RESULT" >> "$HOOK_LOG"
 
 exit 0
