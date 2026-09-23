@@ -766,6 +766,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // conversation to resume is still this one. See forkedFromSessionId.
     agent.forkedFromSessionId = forkSession ? resumeSessionId ?? undefined : undefined;
 
+    // What this launch passes, read with the command it builds: the shell wait
+    // below leaves half a second for a change to land that the command does
+    // not carry (see noteLaunch).
+    const launched = launchSettings(agent);
     const command = cliProvider.buildInteractiveCommand({
       resumeSessionId: resumeSessionId ?? undefined,
       forkSession,
@@ -836,7 +840,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     } else {
       writeProgrammaticInput(ptyProcess, fullCommand);
     }
-    noteLaunch(ptyProcess, agent);
+    noteLaunch(ptyProcess, launched);
 
     // Save updated status
     saveAgents();

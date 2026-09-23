@@ -317,6 +317,27 @@ export function effortFlag(effort: string | undefined): string {
 }
 
 /**
+ * Pick a conversation up: `--resume <id>`, and with `--fork-session` continue
+ * it under a new id. Verified against `claude --help`: `-r, --resume [value]`
+ * takes a session id, and `--fork-session` is "When resuming, create a new
+ * session ID instead of reusing the original". The caller passes only an id
+ * whose transcript it has found (utils/resume-session.ts), because a missing
+ * one makes the binary exit rather than start.
+ *
+ * Shared by the fourteen providers that run the claude binary. The thirteen
+ * that point it at another vendor had no resume at all, so the restart that
+ * applies a changed setting started them on a new conversation, silently (the
+ * Audit's gate of #120). The binary resumes wherever it is pointed: measured
+ * on 2.1.280 with ANTHROPIC_BASE_URL on a local Messages API, as those
+ * providers set it, a session resumed with --fork-session sent the endpoint
+ * its whole history under a new id, and a fresh one sent none.
+ */
+export function resumeFlags(resumeSessionId: string | undefined, forkSession: boolean | undefined): string {
+  if (!resumeSessionId) return '';
+  return ` --resume '${resumeSessionId}'${forkSession ? ' --fork-session' : ''}`;
+}
+
+/**
  * Whether a user-supplied string is a usable OpenAI-compatible base URL:
  * parses at all, and is http/https (not file:, not a bare host that `new
  * URL()` would otherwise reject, not a scheme fetch() cannot use). Used by

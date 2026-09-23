@@ -93,7 +93,7 @@ import { resetResumeTracking, encodeProjectDirName } from '../../../electron/uti
 import { resetAgentRestarts } from '../../../electron/core/agent-restart';
 import { emitAgentStatus } from '../../../electron/services/agent-events';
 import { startAgentForTask } from '../../../electron/services/kanban-automation';
-import { resetAgentWatch, queueBusMessage, deliverBusMessages, startAgentWatch, stopAgentWatch } from '../../../electron/services/agent-watch';
+import { resetAgentWatch, queueBusMessage, deliverBusMessages, startAgentWatch, stopAgentWatch, holdsFor } from '../../../electron/services/agent-watch';
 import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks-routes';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
@@ -614,5 +614,132 @@ describe('a changed model or effort', () => {
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(terminal.kill).not.toHaveBeenCalled();
+  });
+
+  it('restarts on a changed permission mode, and launches on the new one', async () => {
+    // Noah's own sequence on 2026-09-22: the model, the effort and the bypass
+    // level edited together. The app applied all three; no test said so for
+    // the third.
+    const { agent, terminal } = agentWithTerminal({ foreground: '2.1.280', permissionMode: 'bypass' });
+    const before = spawned.length;
+
+    await update({ id: agent.id, permissionMode: 'auto' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(terminal.kill).toHaveBeenCalled();
+    const typed = typedInto(newTerminal(before));
+    expect(typed).toContain(' --permission-mode auto');
+    expect(typed).not.toContain('--dangerously-skip-permissions');
+  });
+
+  it('puts the agent in error, with the reason, when the restart cannot launch it', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+    const pty = await import('node-pty');
+    vi.mocked(pty.spawn).mockImplementationOnce(() => { throw new Error('posix_spawnp failed.'); });
+
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(agent.status).toBe('error');
+    expect(agent.error).toContain('the restart failed');
+    expect(agent.error).toContain('posix_spawnp failed.');
+    expect(broadcasts.some(b => b.channel === 'agent:status' && (b.payload as { status?: string }).status === 'error')).toBe(true);
+  });
+
+  it('takes the terminal it killed out of the ones the app knows', async () => {
+    const { agent, terminal } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(terminal.kill).toHaveBeenCalled();
+    // Left there, it would be killed a second time at quit, and a route
+    // reading the map could type into a terminal that is gone.
+    expect([...ptyProcesses.values()]).not.toContain(terminal);
+    expect(ptyProcesses.has('pty-a')).toBe(false);
+  });
+
+  it('waits while agent-watch is typing a message in, not only while it holds one', async () => {
+    startAgentWatch();
+    try {
+      const { agent, terminal } = agentWithTerminal({
+        foreground: '2.1.280', model: 'claude-opus-5', currentSessionId: OLD_SESSION,
+      });
+      expect(queueBusMessage(agent.id, {
+        messageId: 'm1', roomId: 'project:/p', threadId: 't1',
+        authorKind: 'agent', authorName: 'QA', text: 'the gate is green',
+      })).toBe(true);
+      deliverBusMessages(agent.id);
+      // Typed, its carriage return not yet sent: nothing is held any more,
+      // and the note is still going in.
+      expect(typedInto(terminal)).toContain('the gate is green');
+      expect(holdsFor(agent.id), 'a note being typed in is not owed to the agent').toBe(true);
+
+      await update({ id: agent.id, model: 'claude-opus-5-5' });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(terminal.kill, 'restarted while a note was being typed in').not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(400);
+      expect(holdsFor(agent.id), 'still owed once the note had gone in').toBe(false);
+    } finally {
+      stopAgentWatch();
+    }
+  });
+
+  it("adopts the restarted session's first post when its SessionStart never came", async () => {
+    // The restart lets go of the session it ended. Kept as the owner, that id
+    // is also the tombstone, and every post of the new session was refused as
+    // stale, for good.
+    lastSessionAnsweredOn('claude-opus-5');
+    const { agent } = agentWithTerminal({
+      foreground: '2.1.280', model: 'claude-opus-5',
+      currentSessionId: OLD_SESSION, resumableSessionId: OLD_SESSION, sessionPtyId: 'pty-a',
+    });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    const RESTARTED = 'a0e6a0a8-7d1e-4f67-9a6e-5f9d0f3b2c11';
+    expect(hookStatus({ agent_id: agent.id, session_id: RESTARTED, status: 'running', event: 'UserPromptSubmit' }))
+      .toMatchObject({ success: true });
+    expect(agent.currentSessionId).toBe(RESTARTED);
+    expect(agent.status).toBe('running');
+  });
+
+  it('restarts again when a change lands while the restarted CLI is being typed in', async () => {
+    // The QA's case on #123. agent:start builds the command, gives a new shell
+    // half a second, then types it: a change saved in that half second is not
+    // in the command, and was noted as launched all the same.
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+    const before = spawned.length;
+
+    await update({ id: agent.id, model: 'claude-sonnet-5' });
+    await vi.advanceTimersByTimeAsync(100);
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    for (let i = 0; i < 40; i++) {
+      for (const terminal of spawned.slice(before)) terminal.process = '2.1.280';
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    const last = spawned[spawned.length - 1];
+    expect(typedInto(last), 'the CLI was left on a model the record no longer has').toContain(" --model 'claude-opus-5-5'");
+  });
+
+  it('picks the conversation up on another vendor too, as it does on Claude', async () => {
+    // The thirteen providers that point the claude binary elsewhere had no
+    // resume: a changed setting started them on a new conversation.
+    lastSessionAnsweredOn('qwen3-coder');
+    const { agent, terminal } = agentWithTerminal({
+      foreground: '2.1.280', provider: 'ollama', model: 'qwen3-coder', effort: 'high',
+      currentSessionId: OLD_SESSION, resumableSessionId: OLD_SESSION, sessionPtyId: 'pty-a',
+    });
+    const before = spawned.length;
+
+    await update({ id: agent.id, effort: 'max' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(terminal.kill).toHaveBeenCalled();
+    const typed = typedInto(newTerminal(before));
+    expect(typed).toContain(`--resume '${OLD_SESSION}' --fork-session`);
+    expect(typed).toContain(' --effort max');
   });
 });
