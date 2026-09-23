@@ -58,6 +58,10 @@ export interface AppSettings {
   slackAppToken: string;
   slackSigningSecret: string;
   slackChannelId: string;
+  /**
+   * The Slack member IDs the bot answers; empty answers nobody (#137).
+   */
+  slackAllowedUserIds: string[];
   socialDataEnabled: boolean;
   socialDataApiKey: string;
   xPostingEnabled: boolean;
