@@ -5,6 +5,7 @@ import { agents } from '../../core/agent-manager';
 import { AgentStatus } from '../../types';
 import { RouteRequest } from './types';
 import { DATA_DIR_NAME, PRIVATE_DIR_NAME } from '../../constants';
+import { isWithinDir } from '../../utils/path-identity';
 
 /** Project path or id of the calling agent, injected as a header by the MCP
  *  client from its PTY environment. Read only by the server's door, which
@@ -67,7 +68,11 @@ export function isSafeTelegramPath(filePath: string): boolean {
   const resolved = path.resolve(filePath);
   const home = os.homedir();
 
-  if (!resolved.startsWith(home + path.sep) && resolved !== home) {
+  // By name and by identity: a case variant or the Data volume's firmlink
+  // names a file in the home directory without the home's spelling, and one in
+  // a blocked directory without its spelling (the audit's lead #21, the vault's
+  // side of the same test). An existing file is judged by what it is.
+  if (!resolved.startsWith(home + path.sep) && resolved !== home && !isWithinDir(resolved, home)) {
     return false;
   }
 
@@ -96,7 +101,7 @@ export function isSafeTelegramPath(filePath: string): boolean {
   ];
 
   for (const blocked of blockedDirs) {
-    if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
+    if (resolved === blocked || resolved.startsWith(blocked + path.sep) || isWithinDir(resolved, blocked)) {
       return false;
     }
   }

@@ -127,6 +127,60 @@ describe('attaching a file to a vault document', () => {
     expect(attachments(), 'the conversation was copied into the directory every agent is handed').toEqual([]);
   });
 
+  // The same file under the other names the file system gives it (the audit's
+  // lead #21, reproduced in a sandbox app on main b9a95b1: both copied the
+  // webhook secret in, and /api/local-file served it without a token). A
+  // prefix test on the string sees neither.
+  const secretFile = () => {
+    fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    const secret = path.join(privateDir, 'hermes-webhook-secret');
+    fs.writeFileSync(secret, 'the webhook secret', { mode: 0o600 });
+    return secret;
+  };
+  const upperCased = (file: string) => file.replace(path.basename(privateDir), path.basename(privateDir).toUpperCase());
+  const caseInsensitive = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-case-probe-'));
+    try { return fs.existsSync(probe.toUpperCase()) && fs.existsSync(probe.replace(/tars-case-probe/, 'TARS-CASE-PROBE')); } finally { fs.rmSync(probe, { recursive: true, force: true }); }
+  })();
+
+  it.runIf(caseInsensitive)('refuses the private directory spelled in another case, on a volume that does not care', async () => {
+    const alias = upperCased(secretFile());
+    expect(fs.existsSync(alias), 'the alias does not open the file here').toBe(true);
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: alias });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  it.runIf(fs.existsSync('/System/Volumes/Data'))('refuses the private directory reached through the Data volume', async () => {
+    const alias = path.join('/System/Volumes/Data', fs.realpathSync(secretFile()));
+    expect(fs.existsSync(alias), 'the firmlink does not open the file here').toBe(true);
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: alias });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  it('refuses the private directory reached through a symlink', async () => {
+    const link = path.join(tmp, 'innocent-looking');
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(privateDir, link);
+    secretFile();
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: path.join(link, 'hermes-webhook-secret') });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
   it('still attaches an ordinary file, which the copy above would otherwise prove nothing about', async () => {
     const ordinary = path.join(tmp, 'report.txt');
     fs.writeFileSync(ordinary, 'an ordinary report');

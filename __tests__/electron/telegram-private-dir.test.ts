@@ -101,6 +101,32 @@ describe('the guard of the app\'s own Telegram routes', () => {
     expect(isSafeTelegramPath(ORDINARY)).toBe(true);
   });
 
+  it('refuses them under the other names the file system gives them (case, Data volume, symlink)', () => {
+    // The audit's lead #21 on the vault, the same prefix test here: an existing
+    // key or secret, named another way, passed. Files that exist, since only
+    // an existing file has another name.
+    const ssh = path.join(home, '.ssh');
+    fs.mkdirSync(ssh, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(ssh, 'id_rsa'), 'a private key', { mode: 0o600 });
+    fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(PRIVATE_FILES[1], 'the webhook secret', { mode: 0o600 });
+    const aliases: string[] = [];
+    const upper = path.join(home, '.SSH', 'id_rsa');
+    if (fs.existsSync(upper)) aliases.push(upper, path.join(home, '.TARS-PRIVATE', 'hermes-webhook-secret'));
+    const data = path.join('/System/Volumes/Data', fs.realpathSync(path.join(ssh, 'id_rsa')));
+    if (fs.existsSync(data)) aliases.push(data);
+    const link = path.join(home, 'Documents', 'keys');
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(ssh, link);
+    aliases.push(path.join(link, 'id_rsa'));
+    for (const alias of aliases) expect(isSafeTelegramPath(alias), alias).toBe(false);
+    // The witness: an ordinary file that exists still goes.
+    const report = path.join(home, 'Documents', 'report.pdf');
+    fs.writeFileSync(report, 'a report');
+    expect(isSafeTelegramPath(report)).toBe(true);
+  });
+
   it('refuses the files the app itself puts there, wherever the constants say they are', () => {
     // Held to the constants rather than to a spelling, so a renamed directory
     // cannot quietly leave the guard behind.
@@ -153,6 +179,28 @@ describe('the Telegram MCP server, which every agent is given', () => {
       // file not being there, so the refusals above are the guard's.
       const ordinary = await send!({ [arg]: path.join(tmpHome, 'Documents', 'report.pdf') });
       expect(ordinary.content[0].text).toContain('File not found');
+    });
+
+    it(`${tool} refuses the private directory under its other names (case, symlink)`, async () => {
+      // The audit's lead #21, on this guard: a segment compared by its exact
+      // spelling, and the path as named rather than the file it opens.
+      const secret = path.join(tmpHome, '.tars-private', 'hermes-webhook-secret');
+      fs.mkdirSync(path.dirname(secret), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(secret, 'the webhook secret', { mode: 0o600 });
+      const link = path.join(tmpHome, 'Documents', `looks-harmless-${tool}`);
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      fs.rmSync(link, { force: true });
+      fs.symlinkSync(path.dirname(secret), link);
+      const aliases = [path.join(link, 'hermes-webhook-secret')];
+      const upper = path.join(tmpHome, '.TARS-PRIVATE', 'hermes-webhook-secret');
+      if (fs.existsSync(upper)) aliases.push(upper);
+
+      const send = tools.get(tool)!;
+      for (const alias of aliases) {
+        const result = await send({ [arg]: alias });
+        expect(result.isError, alias).toBe(true);
+        expect(result.content[0].text, alias).toContain('Refused');
+      }
     });
   }
 });
