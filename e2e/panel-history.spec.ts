@@ -5,6 +5,7 @@ import * as path from 'path';
 import { PANEL_HISTORY, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * A Dashboard panel switched to its history view, in a sandbox where nothing
@@ -17,7 +18,6 @@ import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from 
  * terminal exactly as it was.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 let app: ElectronApplication;
 let page: Page;
@@ -44,7 +44,7 @@ test.beforeAll(async () => {
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the two other suites may still be holding 31498 and 31497.
-      DOROTHY_API_PORT: '31496',
+      DOROTHY_API_PORT: apiPort(31496),
       DOROTHY_E2E: '1',
       // The view prints each message in local time, so the clock is pinned
       // here rather than left to whichever machine records the baseline.

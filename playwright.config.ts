@@ -1,4 +1,13 @@
 import { defineConfig } from '@playwright/test';
+import * as path from 'node:path';
+import { DEV_PORT } from './e2e/ports.mjs';
+
+// One directory per run, named once here in the runner and handed to the
+// workers through the environment, which they inherit: each process loads this
+// file, and a stamp taken in each would name a different folder. The run's
+// artefacts land in it (traces, screenshots, values.json, command.txt), and
+// E2E_RUN_DIR names it outright.
+process.env.E2E_RUN_DIR ||= path.join('test-results', 'runs', new Date().toISOString().replace(/[:.]/g, '-'));
 
 export default defineConfig({
   testDir: './e2e',
@@ -6,6 +15,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   timeout: 60_000,
+  outputDir: process.env.E2E_RUN_DIR,
   retries: 0,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'e2e/report' }]],
   snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
@@ -32,8 +42,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx next dev -p 3100',
-    url: 'http://localhost:3100',
+    // E2E_PORT_OFFSET moves this with every suite's API port: see e2e/ports.mjs.
+    command: `npx next dev -p ${DEV_PORT}`,
+    url: `http://localhost:${DEV_PORT}`,
     reuseExistingServer: true,
     timeout: 120_000,
     // Next dev phones home twice per run (telemetry.nextjs.org, seen leaving
