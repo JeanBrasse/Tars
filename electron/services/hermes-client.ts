@@ -347,11 +347,12 @@ const KANBAN = '/api/plugins/kanban';
  * `{ detail: "title is required" }` or `{ detail: [{ msg, loc, ... }] }`. Every
  * kanban call used to collapse that to a bare `HTTP 422`, so a task created
  * with no title told the user nothing they could act on. Read `detail` the
- * same way for every call in this file: eight more turned the array into a
- * string, and the Schedules page, the model picker, a memory write and the
- * Chat said "[object Object],[object Object]" instead.
+ * same way for every Hermes call, here and in hermes-session.ts: eight more
+ * here, and the Chat's effort picker there, turned the array into a string,
+ * and the Schedules page, the model picker, a memory write and the Chat said
+ * "[object Object],[object Object]" instead.
  */
-function errorDetail(status: number, body: unknown): string {
+export function errorDetail(status: number, body: unknown): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === 'string') return detail;
