@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import * as path from 'node:path';
 import type * as pty from 'node-pty';
 import { spawnAgentPty, cliRunningIn } from '../../../electron/core/agent-pty';
 
@@ -17,6 +18,9 @@ import { spawnAgentPty, cliRunningIn } from '../../../electron/core/agent-pty';
  * node-pty is the real one here, under Node rather than Electron: its N-API
  * build loads in both. `/bin/sleep` stands in for the CLI, since what is read
  * is which process leads the terminal, not what that process is.
+ *
+ * On Linux node-pty names the process by its path (`/bin/sleep`), on macOS by
+ * its name (`sleep`); cliRunningIn takes either, and so does `until`.
  */
 
 const opened: pty.IPty[] = [];
@@ -40,7 +44,7 @@ async function until(terminal: pty.IPty, name: string, within = 20_000): Promise
   const seen: Array<string | undefined> = [];
   for (let waited = 0; waited < within; waited += 50) {
     const now = terminal.process;
-    if (now === name) return;
+    if (now !== undefined && path.basename(now) === name) return;
     if (seen.at(-1) !== now) seen.push(now);
     await pause(50);
   }
@@ -72,7 +76,13 @@ describe('the terminal spawnAgentSession opens', () => {
     // The shape it had until 2026-09-23, and the moment before the exec in the
     // one it has now, while the shell reads its login files: only the command
     // it was handed says a CLI is on its way or running.
-    const terminal = open(['-l', '-c', "cd '/tmp' && '/bin/sleep' 2"]);
+    //
+    // macOS's /bin/bash (3.2), the shell Tars spawns, keeps itself in front of
+    // that command. A newer bash, as on a Linux CI runner, execs the last
+    // command of a -c list by itself, so there it takes a command after it to
+    // keep the shell in front.
+    const keepShell = process.platform === 'darwin' ? '' : '; :';
+    const terminal = open(['-l', '-c', `cd '/tmp' && '/bin/sleep' 2${keepShell}`]);
     let running = true;
     terminal.onExit(() => { running = false; });
     const names = new Set<string>();
@@ -81,7 +91,7 @@ describe('the terminal spawnAgentSession opens', () => {
     while (running) {
       const now = terminal.process;
       if (now) {
-        names.add(now);
+        names.add(path.basename(now));
         if (!cliRunningIn(terminal)) readAsNone.push(now);
       }
       await pause(50);
