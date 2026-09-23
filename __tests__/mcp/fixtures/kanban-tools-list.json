@@ -1,0 +1,231 @@
+{
+ "tools": [
+  {
+   "name": "list_tasks",
+   "description": "List all kanban tasks. Optionally filter by column (backlog, planned, ongoing, done).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "column": {
+      "type": "string",
+      "enum": [
+       "backlog",
+       "planned",
+       "ongoing",
+       "done"
+      ],
+      "description": "Filter by column"
+     },
+     "assigned_to_me": {
+      "type": "boolean",
+      "description": "Only show tasks assigned to this agent"
+     }
+    },
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "get_task",
+   "description": "Get detailed information about a specific task.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "task_id": {
+      "type": "string",
+      "description": "The task ID (can be partial, will match prefix)"
+     }
+    },
+    "required": [
+     "task_id"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "create_task",
+   "description": "Create a new kanban task. Tasks start in the backlog column.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "title": {
+      "type": "string",
+      "description": "Task title"
+     },
+     "description": {
+      "type": "string",
+      "description": "Task description with details"
+     },
+     "project_path": {
+      "type": "string",
+      "description": "Project path (defaults to current directory)"
+     },
+     "priority": {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high"
+      ],
+      "description": "Task priority (default: medium)"
+     },
+     "labels": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Labels/tags for the task"
+     }
+    },
+    "required": [
+     "title",
+     "description"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "update_task_progress",
+   "description": "Update the progress percentage of a task.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "task_id": {
+      "type": "string",
+      "description": "The task ID"
+     },
+     "progress": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Progress percentage (0-100)"
+     }
+    },
+    "required": [
+     "task_id",
+     "progress"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "mark_task_done",
+   "description": "Mark a task as completed and move it to the done column. IMPORTANT: Call this when you finish working on an assigned task.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "task_id": {
+      "type": "string",
+      "description": "The task ID to mark as done"
+     },
+     "summary": {
+      "type": "string",
+      "description": "A brief summary of what was accomplished (1-3 sentences)"
+     }
+    },
+    "required": [
+     "task_id",
+     "summary"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "move_task",
+   "description": "Move a task to a different column (backlog, planned, ongoing, done).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "task_id": {
+      "type": "string",
+      "description": "The task ID to move"
+     },
+     "column": {
+      "type": "string",
+      "enum": [
+       "backlog",
+       "planned",
+       "ongoing",
+       "done"
+      ],
+      "description": "Target column"
+     }
+    },
+    "required": [
+     "task_id",
+     "column"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "delete_task",
+   "description": "Delete a task from the kanban board.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "task_id": {
+      "type": "string",
+      "description": "The task ID to delete"
+     }
+    },
+    "required": [
+     "task_id"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  },
+  {
+   "name": "assign_task",
+   "description": "Assign an agent to a task (or assign yourself).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "task_id": {
+      "type": "string",
+      "description": "The task ID"
+     },
+     "agent_id": {
+      "type": "string",
+      "description": "Agent ID to assign (defaults to self if CLAUDE_AGENT_ID is set)"
+     }
+    },
+    "required": [
+     "task_id"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+   },
+   "execution": {
+    "taskSupport": "forbidden"
+   }
+  }
+ ]
+}
