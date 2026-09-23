@@ -1274,9 +1274,11 @@ A turn can end with work still running in the background (Claude Code refuses a 
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
 
-A restart waiting on a field is waiting on you: send what is typed there, or clear it. A CLI other
-than claude is never restarted this way; stop and start it. To see what a running CLI was
-actually launched with, read its argv (the model and effort are on the command line):
+A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
+vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+amp never are: stop and start them. To see what a running CLI was actually launched with, read
+its argv (the model and effort are on the command line):
 
 ```bash
 ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
