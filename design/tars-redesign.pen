@@ -67524,6 +67524,9 @@
       "x": 0,
       "y": 17000,
       "name": "Dashboard · light",
+      "theme": {
+        "mode": "light"
+      },
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -75256,6 +75259,9 @@
       "x": 0,
       "y": 18000,
       "name": "Settings · Providers · light",
+      "theme": {
+        "mode": "light"
+      },
       "clip": true,
       "width": 1440,
       "height": 900,
@@ -77569,6 +77575,9 @@
       "x": 1540,
       "y": 18000,
       "name": "Review · light",
+      "theme": {
+        "mode": "light"
+      },
       "clip": true,
       "width": 1440,
       "height": 900,
