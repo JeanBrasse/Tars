@@ -508,25 +508,30 @@ input, textarea, select {
   filter: brightness(0.92);
 }
 
-/* Input styling */
-input, textarea, select {
-  background: var(--input);
-  border: 1px solid var(--border);
-  color: var(--foreground);
-  font-family: inherit;
-  font-size: 14px;
-  border-radius: 2px;
-  transition: border-color 0.15s ease;
-}
+/* Input styling: the defaults a field falls back on, in the base layer so the
+   field's own utilities win. Unlayered, these beat every Tailwind utility
+   whatever its specificity: every input was 14px against DESIGN's 12, sat on
+   --input whatever its bg-* said, and took the full accent on focus. */
+@layer base {
+  input, textarea, select {
+    background: var(--input);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 2px;
+    transition: border-color 0.15s ease;
+  }
 
-/* Focus is a 1px accent border and nothing else. No halo. */
-input:focus, textarea:focus, select:focus {
-  border-color: var(--primary);
-  outline: none;
-}
+  /* Focus is a 1px accent border and nothing else. No halo. */
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--primary);
+    outline: none;
+  }
 
-input::placeholder, textarea::placeholder {
-  color: var(--muted-foreground);
+  input::placeholder, textarea::placeholder {
+    color: var(--muted-foreground);
+  }
 }
 
 /* Smooth transitions for interactive elements */

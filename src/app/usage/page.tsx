@@ -26,10 +26,13 @@ import type { SegmentedOption } from '@/components/ui';
 // Get friendly model name
 function getModelDisplayName(modelId: string): string {
   const lower = modelId.toLowerCase();
+  // The fifth generation by family and version, the minor one included:
+  // claude-opus-5-5 read as "Opus 5". A minor is one or two digits, so a date
+  // suffix such as -20260101 is never taken for one.
+  const fifth = lower.match(/(fable|mythos|opus|sonnet)[-.]?5(?:[-.](\d{1,2})(?!\d))?/);
+  if (fifth) return `${fifth[1][0].toUpperCase()}${fifth[1].slice(1)} 5${fifth[2] ? `.${fifth[2]}` : ''}`;
   if (lower.includes('fable')) return 'Fable 5';
   if (lower.includes('mythos')) return 'Mythos 5';
-  if (lower.includes('opus-5') || lower.includes('opus5')) return 'Opus 5';
-  if (lower.includes('sonnet-5') || lower.includes('sonnet5')) return 'Sonnet 5';
   const lowerModel = modelId.toLowerCase();
   if (lowerModel.includes('opus-4-6') || lowerModel.includes('opus-4.6')) return 'Claude Opus 4.6';
   if (lowerModel.includes('opus-4-5') || lowerModel.includes('opus-4.5')) return 'Claude Opus 4.5';
@@ -149,19 +152,26 @@ export default function UsagePage() {
   // Per-turn usage reported by the agents themselves. This is the only source
   // that covers the CLIs which write no transcript of their own. Read per day,
   // so it can be cut to the window like everything else.
+  //
+  // Read again whenever the transcripts' figures change, which is when
+  // useClaude hands over a new `data`, rather than once on mount, when a turn
+  // run after the page opened never reached it, and rather than on every
+  // ten-second poll: at its cap the ledger is over a megabyte.
   useEffect(() => {
     let cancelled = false;
     window.electronAPI?.usage?.byProvider()
       .then(res => { if (!cancelled) setLedger({ daily: res?.daily ?? [], oldest: res?.oldest ?? null }); })
       .catch(() => { if (!cancelled) setLedger({ daily: [], oldest: null }); });
     return () => { cancelled = true; };
-  }, []);
+  }, [data]);
 
   const days = data?.stats?.dailyModelTokens;
   const rows = useMemo(() => usageRows(days, ledger.daily), [days, ledger.daily]);
 
-  // Read at every render rather than once, so the window moves on at midnight
-  // without waiting for the figures to change.
+  // Read at every render rather than once, so after midnight the window moves
+  // on at the page's next render: a hover, a click or new figures. Nothing
+  // re-renders it at midnight itself, and until then it keeps showing the day
+  // before under that day's own date.
   const todayKey = localDayKey(new Date());
   const period = useMemo(() => usageWindow(timeframe, dayOf(todayKey)), [timeframe, todayKey]);
   const totals = useMemo(() => windowTotals(rows, period), [rows, period]);

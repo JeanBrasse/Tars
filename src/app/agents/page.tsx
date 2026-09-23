@@ -69,6 +69,10 @@ export default function AgentsPage() {
   // A project whose last agent is gone has nothing to show, so the page falls
   // back to every project rather than to an empty list under a stale name.
   const project = projectFilter && agents.some(a => a.projectPath === projectFilter) ? projectFilter : null;
+  // And the pick is dropped, not only ignored: kept, it came back by itself the
+  // moment a new agent was added to that project. Set during render, React's
+  // way of adjusting state to what it was handed, so no frame shows the old pick.
+  if (projectFilter && !project) setProjectFilter(null);
 
   const { filteredAgents, uniqueProjects } = useAgentFiltering({
     agents,
