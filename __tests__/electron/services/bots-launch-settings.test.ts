@@ -409,6 +409,53 @@ describe('a launch on its way, and the bots (#134)', () => {
   });
 });
 
+describe('QA #158: a launch slower than the API senders wait, and the bots', () => {
+  // Written by the QA at the gate of #158. The bots have no caller timing out
+  // on them, so they hold a task for as long as a launch whose CLI runs is
+  // starting (CLI_UP_MS), where /dispatch and /message give up at 20 s. What
+  // this guards: a bot let go with the API senders, at 20 s, types into a
+  // claude that is not taking keys yet, and the task is lost.
+  const entryPoints: Array<[string, boolean, () => Promise<unknown>]> = [
+    ['Telegram /start_agent', false, async () => {
+      const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+      const text = '/start_agent worker Rebase onto main';
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    }],
+    ['Telegram message to the super agent', true, () => sendToSuperAgent('42', 'Rebase onto main')],
+    ['Slack `start`', false, () => handleSlackCommand('start worker Rebase onto main', 'C1', async () => undefined, settings)],
+    ['Slack message to the super agent', true, () => sendToSuperAgentFromSlack('C1', 'Rebase onto main', async () => undefined, settings)],
+  ];
+  const typed = (terminal: FakePty) => terminal.write.mock.calls.map(call => String(call[0])).join('');
+
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each(entryPoints)('%s holds its task while the CLI boots past 20 s, then types it into the session', async (_name, superAgent, send) => {
+    const terminal = spawnAgentPty({
+      binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30,
+      env: { CLAUDE_AGENT_ID: superAgent ? 'agent-s' : 'agent-w' },
+    }) as unknown as FakePty;
+    // The claude runs, slowly, and has not registered its session.
+    terminal.process = '2.1.280';
+    ptyProcesses.set('pty-launching', terminal as never);
+    const target = agent(superAgent
+      ? { id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator', ptyId: 'pty-launching', ptyCwd: project }
+      : { ptyId: 'pty-launching', ptyCwd: project });
+    launchBegins(target.id);
+
+    const sent = send();
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(typed(terminal), 'typed into a claude not yet taking keys').toBe('');
+
+    target.sessionRegisteredAt = new Date().toISOString();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await sent;
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(typed(terminal)).toContain('Rebase onto main');
+  });
+});
+
 /**
  * The launch command, as the bytes a bot types into a cold terminal.
  *

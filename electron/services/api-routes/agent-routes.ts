@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
-import { sessionStarted, launchBegins, launchAbandoned } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -603,25 +603,58 @@ async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<
  * decided, /dispatch with assertMayDriveAgent and the webhook by opening to
  * Hermes alone. A third caller decides for itself first.
  */
+export interface DispatchOpts {
+  message: string;
+  model?: string;
+  permissionMode?: 'normal' | 'auto' | 'bypass';
+  from?: string;
+  sender?: MessageSender;
+  /** Run once the agent takes keys, before anything is typed: never for a sender refused 409. */
+  onAccepted?: () => void;
+}
+
 export async function performDispatch(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
+  opts: DispatchOpts,
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
-  return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson));
+  // The wait is counted from the request, not from the lock: a sender queued
+  // behind another is still answered inside the MCP tools' 30 s.
+  const until = Date.now() + SENDER_WAIT_MS;
+  return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson, until));
+}
+
+/**
+ * The answer to a sender that waited SENDER_WAIT_MS on a launch still on its
+ * way: its CLI runs but has not started its session or task, and a message
+ * typed now would be lost. Nothing was typed; the caller may try again.
+ */
+function stillStarting(agent: AgentStatus): Record<string, unknown> {
+  return {
+    error: `${agent.name || agent.id}'s CLI is still starting (it has not taken keys after ${SENDER_WAIT_MS / 1000} s, `
+      + 'as happens on a loaded machine): nothing was typed. Send it again in a moment.',
+    starting: true,
+    agent: { id: agent.id, name: agent.name, status: agent.status },
+  };
 }
 
 async function performDispatchLocked(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
+  opts: DispatchOpts,
   ctx: RouteContext,
   sendJson: SendJson,
+  until: number,
 ): Promise<void> {
   // A launch on its way (a restart, a start from a window) owns the terminal
   // until its CLI runs there: wait for it, then type into its session. Taken
   // for "no session", the message started one over it, without the resume.
-  await sessionStarted(agent);
+  // Still starting when the caller can wait no longer: say so, type nothing.
+  if (!(await sessionStarted(agent, until - Date.now()))) {
+    sendJson(stillStarting(agent), 409);
+    return;
+  }
+  opts.onAccepted?.();
 
   // BUG 4 guard: kill the PTY if its cwd no longer matches the agent's
   // worktree so the spawn path below restarts it in the right directory.
@@ -1039,9 +1072,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'message is required' }, 400);
       return;
     }
-    recordRequester(agent, req);
-
-    await performDispatch(agent, { message, model, permissionMode, from: senderName(agent, req), sender: senderOf(agent, req) }, ctx, sendJson);
+    await performDispatch(agent, {
+      message, model, permissionMode, from: senderName(agent, req), sender: senderOf(agent, req),
+      // After the wait: a sender refused 409 typed nothing and takes no link.
+      onAccepted: () => recordRequester(agent, req),
+    }, ctx, sendJson);
   });
 
   /**
@@ -1164,11 +1199,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'message is required' }, 400);
       return;
     }
-    recordRequester(agent, req);
-
+    const until = Date.now() + SENDER_WAIT_MS;
     await withAgentLock(agent.id, async () => {
-      // As /dispatch: a launch on its way is waited for, never spawned over.
-      await sessionStarted(agent);
+      // As /dispatch: a launch on its way is waited for, never spawned over,
+      // and never typed into before it takes keys, counted from the request.
+      if (!(await sessionStarted(agent, until - Date.now()))) {
+        sendJson(stillStarting(agent), 409);
+        return;
+      }
+      recordRequester(agent, req);
 
       // BUG 4 guard: if the agent's worktreePath changed after the PTY was
       // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
