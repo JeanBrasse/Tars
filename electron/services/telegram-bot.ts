@@ -13,7 +13,7 @@ import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
-import { noteLaunch } from '../core/agent-restart';
+import { noteLaunch, launchSettings } from '../core/agent-restart';
 
 // ============== Telegram Bot State ==============
 let telegramBot: TelegramBot | null = null;
@@ -774,7 +774,7 @@ export function initTelegramBot() {
         agent.currentTask = task.slice(0, 100);
         agent.lastActivity = new Date().toISOString();
         writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
-        noteLaunch(ptyProcess, agent);
+        noteLaunch(ptyProcess, launchSettings(agent));
         saveAgents();
         // Started from a phone, and just as able to come up with no task.
         armTaskStartWatch(agent, agent.ptyId, task);
@@ -1326,7 +1326,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
       // Start new Claude session
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
-      noteLaunch(ptyProcess, superAgent);
+      noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();
       // A cold start of the super agent carries a task like any other start.
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);

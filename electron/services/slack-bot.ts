@@ -9,7 +9,7 @@ import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } fro
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
-import { noteLaunch } from '../core/agent-restart';
+import { noteLaunch, launchSettings } from '../core/agent-restart';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -487,7 +487,7 @@ export async function handleSlackCommand(
       agent.currentTask = task.slice(0, 100);
       agent.lastActivity = new Date().toISOString();
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-      noteLaunch(ptyProcess, agent);
+      noteLaunch(ptyProcess, launchSettings(agent));
       saveAgents();
       // Started from Slack, and just as able to come up with no task.
       armTaskStartWatch(agent, agent.ptyId, task);
@@ -648,7 +648,7 @@ export async function sendToSuperAgentFromSlack(
       superAgentSlackBuffer = [];
 
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-      noteLaunch(ptyProcess, superAgent);
+      noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();
       // A cold start of the super agent carries a task like any other start.
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);

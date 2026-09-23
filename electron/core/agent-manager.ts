@@ -240,7 +240,14 @@ export function handleStatusChangeNotification(
  */
 const AGENTS_SCHEMA_VERSION = 2;
 
-/** Retained terminal chunks per agent: enough to redraw a screen, bounded. */
+/**
+ * Retained terminal chunks per agent, bounded. What reads them now is text:
+ * the status line, log search, get_agent_output, the overseer and Telegram.
+ * A panel is shown the screen from the terminal's mirror instead, which is
+ * what this buffer never reliably held after a long turn: see
+ * core/terminal-mirror.ts. It is still the replay for a terminal with no
+ * mirror, which is why the trim below keeps carrying the modes.
+ */
 const OUTPUT_CHUNK_CAP = 600;
 const OUTPUT_RETAIN = 400;
 
@@ -250,7 +257,7 @@ const OUTPUT_RETAIN = 400;
  * Five PTY handlers pushed into agent.output and none of them capped it, so a
  * chatty CLI grew that array for the life of the app, once per agent.
  *
- * What is trimmed goes on counting for the replay: the modes it left set, the
+ * What is trimmed goes on counting for a replay: the modes it left set, the
  * alternate screen and the mouse request first of all, come back as the first
  * chunk. See terminal-modes.ts.
  */

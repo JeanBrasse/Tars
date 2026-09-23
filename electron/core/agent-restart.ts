@@ -38,7 +38,10 @@ import type { AgentStatus } from '../types';
  * and StopFailure hooks) and their field is the one the draft model was
  * measured on. Codex, Gemini, Grok, OpenCode, Pi and Amp report neither, so
  * restarting one could cut a turn or a draft nobody can see: they take the new
- * values at their next launch.
+ * values at their next launch. The thirteen providers that point the claude
+ * binary at another vendor are among those restarted, and pick their
+ * conversation up the same way (resumeFlags, in providers/cli-provider.ts):
+ * until they did, a changed setting silently started them on a new one.
  */
 
 /**
@@ -76,18 +79,27 @@ export function launchSettings(agent: AgentStatus): LaunchSettings {
 }
 
 /**
- * What each terminal's CLI was launched with: the agent's record at that
- * moment, noted by the launch that typed it. A restart that waited on a turn,
- * while the agent was stopped and started again, or started by an orchestrator
- * on the new values, has nothing left to apply, and without this it fired
- * anyway the next time the agent was free. Keyed by the terminal, so a new one
- * never inherits it.
+ * What each terminal's CLI was launched with, noted by the launch that typed
+ * it. A restart that waited on a turn, while the agent was stopped and started
+ * again, or started by an orchestrator on the new values, has nothing left to
+ * apply, and without this it fired anyway the next time the agent was free.
+ * Keyed by the terminal, so a new one never inherits it.
  */
 const launchedWith = new WeakMap<object, { settings: string; at: number }>();
 
-/** Called by every launch, once it has typed the CLI into `ptyProcess`. */
-export function noteLaunch(ptyProcess: object | undefined, agent: AgentStatus): void {
-  if (ptyProcess) launchedWith.set(ptyProcess, { settings: JSON.stringify(launchSettings(agent)), at: Date.now() });
+/**
+ * Called by every launch, once it has typed the CLI into `ptyProcess`, with
+ * the settings it read when it built the command. Read again here, they were
+ * the record half a second later: agent:start waits that long for a new shell
+ * before typing, and a change saved in between was typed with the old values
+ * and noted as launched on the new ones. The restart it asked for then found
+ * nothing to do. Measured by the QA on #123: a role taken back and given again
+ * 100 ms apart left an orchestrator by role whose CLI could edit and had no
+ * instructions, and a model changed twice left the record on one model and the
+ * CLI on the other.
+ */
+export function noteLaunch(ptyProcess: object | undefined, settings: LaunchSettings): void {
+  if (ptyProcess) launchedWith.set(ptyProcess, { settings: JSON.stringify(settings), at: Date.now() });
 }
 
 /** The names of the settings that differ, in a stable order. */

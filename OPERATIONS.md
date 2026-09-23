@@ -1228,9 +1228,10 @@ is skipped.
 
 ## Agents and PTYs
 
-Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`, 120×30,
+Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
-if that path is gone). Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
+API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
 
 The environment is `process.env` plus:
 
@@ -1264,6 +1265,22 @@ If a provider shows as unavailable but the binary works in your terminal, the di
 almost always a PATH entry added by a shell rc file that only runs for interactive **login**
 shells: set the path explicitly in Settings rather than fighting it.
 
+### What a panel shows
+
+A panel is handed its terminal's screen by `agent:get`, from the terminal's mirror
+(`electron/core/terminal-mirror.ts`): a headless xterm fed every byte of that PTY. It does
+not depend on how much output was kept, so a panel that comes back after a long turn is whole.
+Cost, measured with 20 PTYs replaying real Claude Code streams under Electron 43: 3.1 ms of
+main process CPU per second for all 20 (68 chunks a second), 0.3 MB per mirror at 180×45, a
+snapshot of 2 KB in 1 to 2 ms. A mirror with its 1000 lines of history full is 2.3 to 3.7 MB
+and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU per MB.
+
+| Symptom | Look for |
+|---|---|
+| a panel blank but for the spinner after coming back to the Dashboard | `[terminal-mirror] xterm-headless could not be loaded` at startup: without it the panels replay the kept chunks, as they did before the mirror. `[terminal-mirror] <agent id>: dropped after a parse failure`: that one terminal fell back |
+| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
+| Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
+
 ### Agent stuck in the wrong directory
 
 `killStalePty()` compares the PTY's recorded `ptyCwd` against `worktreePath || projectPath` and
@@ -1296,9 +1313,11 @@ A turn can end with work still running in the background (Claude Code refuses a 
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
 
-A restart waiting on a field is waiting on you: send what is typed there, or clear it. A CLI other
-than claude is never restarted this way; stop and start it. To see what a running CLI was
-actually launched with, read its argv (the model and effort are on the command line):
+A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
+vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+amp never are: stop and start them. To see what a running CLI was actually launched with, read
+its argv (the model and effort are on the command line):
 
 ```bash
 ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
