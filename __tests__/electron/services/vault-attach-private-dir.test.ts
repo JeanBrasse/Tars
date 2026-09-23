@@ -4,6 +4,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 
 /**
  * The vault does not copy the private directory back into the agents' one.
@@ -228,6 +229,39 @@ describe('attaching a file to a vault document', () => {
       expect(attachments()).toHaveLength(2);
     } finally {
       fs.rmSync(exit, { force: true });
+    }
+  });
+
+  /**
+   * The mutant the gate left alive (V2): copying the name the caller gave
+   * instead of the file that was checked passes every test above, because a
+   * name opens the same file at the check and at the copy unless it is changed
+   * in between, which no test can time. So the copy's source is read instead:
+   * a symlink is checked by what it opens, and that file, never the symlink,
+   * is what gets copied.
+   */
+  it('copies the file it checked, not the name it was given', async () => {
+    const checked = path.join(tmp, 'checked.txt');
+    fs.writeFileSync(checked, 'the file that was checked');
+    const alias = path.join(tmp, 'alias-of-checked.txt');
+    fs.rmSync(alias, { force: true });
+    fs.symlinkSync(checked, alias);
+    // The CommonJS object, which a spy can replace, and every ESM view of it
+    // brought up to date, the route's included.
+    const cjsFs = createRequire(import.meta.url)('fs') as typeof fs;
+    const copies = vi.spyOn(cjsFs, 'copyFileSync');
+    syncBuiltinESMExports();
+
+    try {
+      const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+        authorization: `Bearer ${sharedToken}`,
+      }, { file_path: alias });
+
+      expect(status, text).toBe(200);
+      expect(copies.mock.calls.map(call => String(call[0]))).toEqual([fs.realpathSync.native(checked)]);
+    } finally {
+      copies.mockRestore();
+      syncBuiltinESMExports();
     }
   });
 
