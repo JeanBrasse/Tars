@@ -61,6 +61,17 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   const prevInitialFontSizeRef = useRef(initialFontSize);
   const onTerminalReadyRef = useRef(onTerminalReady);
   const broadcastModeRef = useRef(broadcastMode);
+  // The agents whose claude left fullscreen (agent.leftFullscreen, from the
+  // main process's screen mirror). Their panel still holds the alternate
+  // screen, so the wheel keeps being turned into reports, and the claude that
+  // reads them is gone: 48 of them for six notches reached nothing. None is
+  // sent; the panel's notice offers the history view and a restart instead.
+  const leftFullscreenRef = useRef<Set<string>>(new Set());
+  // The PTY each panel last saw under its agent. A new PTY is born at the last
+  // size anybody asked for, which the Agents window or the tray may have asked
+  // after this panel did, so a panel that meets a new PTY resends its own size
+  // rather than waiting for its next resize.
+  const ptyOfRef = useRef<Map<string, string>>(new Map());
   // Written in an effect, not during render: a ref assignment during render
   // is unsafe under concurrent rendering, and every reader of this one runs
   // after commit (a callback, a subscription), so the timing is the same.
@@ -170,6 +181,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       term.open(container);
       // The panel under the pointer only, even in broadcast mode.
       passWheelToProgram(term, input => {
+        if (leftFullscreenRef.current.has(agentId)) return;
         if (isElectron()) window.electronAPI!.agent.sendInput({ id: agentId, input }).catch(() => {});
       });
 
@@ -307,6 +319,40 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     initTerminal(agentId, container);
   }, [initTerminal, unregisterContainer]);
 
+  // A panel that meets a new PTY under its agent resends its size. The first
+  // PTY a panel sees needs nothing: its own fit already asked for its size.
+  const notePty = useCallback((agentId: string, ptyId: string | undefined) => {
+    if (!ptyId) return;
+    const previous = ptyOfRef.current.get(agentId);
+    ptyOfRef.current.set(agentId, ptyId);
+    if (previous === undefined || previous === ptyId) return;
+    const entry = terminalsRef.current.get(agentId);
+    if (!entry || entry.disposed) return;
+    entry.lastCols = 0;
+    entry.lastRows = 0;
+    safeFit(agentId, entry);
+  }, []);
+
+  // What the list says: which agents left fullscreen, and each one's PTY. The
+  // list learns a new PTY when it is read again (a start or a stop from here
+  // reads it); the output events below catch the ones started elsewhere.
+  useEffect(() => {
+    leftFullscreenRef.current = new Set(agents.filter(a => a.leftFullscreen).map(a => a.id));
+    for (const agent of agents) notePty(agent.id, agent.ptyId);
+  }, [agents, notePty]);
+
+  // The panel's own text, as it shows it: the active screen, and the history
+  // above it on the normal one. Null when this agent has no panel.
+  const terminalText = useCallback((agentId: string): string | null => {
+    const entry = terminalsRef.current.get(agentId);
+    if (!entry || entry.disposed) return null;
+    const buffer = entry.terminal.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    return lines.join('\n');
+  }, []);
+
   // Write to a specific terminal
   const writeToTerminal = useCallback((agentId: string, data: string) => {
     const entry = terminalsRef.current.get(agentId);
@@ -425,6 +471,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     if (!isElectron()) return;
 
     const unsubOutput = window.electronAPI!.agent.onOutput((event) => {
+      notePty(event.agentId, event.ptyId);
       writeToTerminal(event.agentId, event.data);
     });
 
@@ -436,7 +483,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       unsubOutput();
       unsubError();
     };
-  }, [writeToTerminal]);
+  }, [writeToTerminal, notePty]);
 
   // Cleanup all terminals on unmount
   useEffect(() => {
@@ -466,6 +513,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     fitTerminal,
     fitAll,
     writeToTerminal,
+    terminalText,
     zoomIn,
     zoomOut,
     zoomReset,
