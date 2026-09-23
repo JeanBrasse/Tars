@@ -174,29 +174,27 @@ or a mock:
    `CFFIXED_USER_HOME`, and fails the launch if the app reports any folder outside the sandbox.
 2. **A CLI** in the feature is real claude (its path in the seed's `cliPaths.claude` or the
    agent's `cliPath`; a fake Messages API behind `ANTHROPIC_BASE_URL` when no real turn is
-   needed), or the recording fake CLI through `cliPath`. Check which hook scripts the sandbox's
-   `~/.claude/settings.json` names before a CLI starts: they must post to the sandbox's port.
+   needed), or the recording fake CLI through `cliPath`. The sweep's agents run the fake CLI
+   `seedSandbox` writes; a spec that needs its own CLI writes one through `cliPath`, as
+   `terminal-replay-modes.spec.ts` does. `launchSandboxed` refuses to hand the app the caller's
+   `CLAUDE_*`, `DOROTHY_*` or `ANTHROPIC_*`: a variable of that family the app needs is set in
+   the spec's `env`. Check which hook scripts the sandbox's `~/.claude/settings.json` names
+   before a CLI starts: they must post to the sandbox's port.
 3. **Assert** on what the user sees or the main process reports: the DOM,
    `window.electronAPI.agent.list()`, the files written. Never on a mock.
-4. **Leave the artefact.** Run with a trace, into a directory of its own, since `test-results/`
-   is emptied at every run:
-
-   ```bash
-   npx tsc -p electron/tsconfig.json
-   npx playwright test e2e/<feature>.spec.ts --trace on --output test-results/runs/<feature>-<date>
-   ```
-
-   In the spec, write the values asserted to `testInfo.outputPath('values.json')`, each
-   screenshot to `testInfo.outputPath('<step>.png')`, and the command above to
-   `testInfo.outputPath('command.txt')`. The run directory then holds the trace, the
-   screenshots, the values and the command: another agent re-runs the command and compares.
-   The PR names the directory.
+4. **Leave the artefact.** `npx tsc -p electron/tsconfig.json`, then
+   `E2E_TRACE=on npx playwright test e2e/<feature>.spec.ts`. Every run writes into its own
+   directory, `test-results/runs/<stamp>` (or `E2E_RUN_DIR`), which holds `command.txt`: the
+   commit and the command that reproduce it. In the spec, `recordValues({...})`
+   (`e2e/fixture.mjs`) writes the values asserted to `values.json`, and
+   `stepShot(page, '<step>')` each screenshot. `E2E_TRACE=on` adds the app's own trace,
+   `app-trace.zip`. Playwright's `--trace` records only the runner's steps for an Electron app.
+   The PR names the run directory.
 5. **Show it bites**: run it against the old build (the base branch's `electron/dist` and
    renderer) or a mutant, and see it red.
 
-Only one E2E run fits on the machine at a time: `next dev` takes 3100 and the app 31498, both
-fixed in `playwright.config.ts` and the fixture. Taking them from the environment is QA's change
-(`e2e/`), and E2E first needs it before two agents can prove features at once.
+Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
+moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
 ### Unit tests: `npm test`
 
@@ -211,7 +209,7 @@ the worktree path guard) starts with a header listing every way it can fail, the
 then the code. A test written after the code, one that restates a constant or one that only
 checks a mock was called is refused at the gate.
 
-Current state: **166 files, 2,414 tests** (2026-09-23; about 160 s under a heavy load). Config is `vitest.config.mts`: node environment,
+Config is `vitest.config.mts`: node environment,
 globals on, `include: ['__tests__/**/*.test.ts']`, and an `@` → `src/` alias so renderer
 modules resolve the same way Next resolves them.
 

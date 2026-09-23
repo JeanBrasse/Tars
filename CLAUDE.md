@@ -214,12 +214,12 @@ Pencil traps that will cost you an afternoon:
 > this repo is below. It is Noah's rule, not an agent's preference: do not revert it.
 
 1. **E2E first.** A feature is proven by an E2E spec that drives the real app: Playwright and `launchSandboxed` from `e2e/fixture.mjs`, real claude or the recording fake CLI through the agent's `cliPath`, a sandbox `HOME`, `--user-data-dir` and `CFFIXED_USER_HOME` (the fixture sets the last two)
-2. **Every E2E run leaves an artefact** another agent can re-run and compare: the Playwright trace, the screenshots and a JSON of the values asserted, in one run directory, with the one command that reproduces it. OPERATIONS.md, "Tests and guardrails", says how
+2. **Every E2E run leaves an artefact** another agent can re-run and compare: the app's own trace (`E2E_TRACE=on`), the screenshots and a JSON of the values asserted, in one run directory, with the one command that reproduces it. OPERATIONS.md, "Tests and guardrails", says how
 3. **A unit tested in isolation is written failures first.** A parser, `electron/core/input-draft.ts`, `src/lib/usage-window.ts`, the worktree path guard: the PR first writes down every way the unit can fail, in the test file's header, then the tests, then the code. No unit test is written after the code it tests
 4. **The vitest suite stays the regression net.** Nobody deletes tests to comply. A test that only restates a constant or asserts a mock call may go during the cleanup, with QA's agreement, in the same PR as the code it covered
 5. **A test is shown to bite**, E2E specs included: the old build or a mutant turns it red (negative witness, mutation bench)
 
-Known limit, QA's to lift (`e2e/`): every run uses the same fixed ports, `next dev` on 3100 and the app on 31498, so only one E2E run fits on the machine at a time. E2E first needs `playwright.config.ts` and `e2e/fixture.mjs` to take their ports from the environment.
+Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
 Nothing is complete until all of these pass. Run them from the repo root on Node 22:
 
