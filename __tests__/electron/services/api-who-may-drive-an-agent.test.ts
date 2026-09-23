@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as fs from 'node:fs';
@@ -391,6 +391,48 @@ describe('the super chat, which is Noah driving every project', () => {
     expect(sharedFound, 'the walk found nothing at all, so finding no pass means nothing').toContain('api-token');
     expect(found).toEqual([]);
   });
+});
+
+describe('the super chat, to an agent whose launch is slow (the Database Engineer, re-gate of #134)', () => {
+  // /dispatch holds a sender up to SENDER_WAIT_MS (20 s) on a launch whose CLI
+  // runs and has not started its session, as happens on a loaded machine.
+  //
+  // How this fails, written before the code:
+  // 1. The super chat gives up on its request before /dispatch answers, and
+  //    tells Noah the message failed while it is typed a moment later.
+  // 2. It reports a bare "timeout" where /dispatch said the CLI is still
+  //    starting and nothing was typed.
+  afterEach(async () => { (await import('../../../electron/core/agent-launch')).resetLaunches(); });
+
+  it('waits for a launch that comes up after 15 s, and says the message went in', async () => {
+    const { launchBegins } = await import('../../../electron/core/agent-launch');
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+    launchBegins(beta.id, { withTask: false });
+    const up = setTimeout(() => { beta.sessionRegisteredAt = new Date().toISOString(); }, 16_500);
+
+    try {
+      const result = await overseer.sendToAgent(BETA.id, 'ship the thing');
+
+      expect(result, JSON.stringify(result)).toEqual({ success: true, mode: 'message' });
+      expect(terminal.written.join('')).toContain('ship the thing');
+    } finally {
+      clearTimeout(up);
+    }
+  }, 60_000);
+
+  it('passes on that nothing was typed when the launch is still starting', async () => {
+    const { launchBegins } = await import('../../../electron/core/agent-launch');
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+    launchBegins(beta.id, { withTask: false });
+
+    const result = await overseer.sendToAgent(BETA.id, 'ship the thing');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/still starting.*nothing was typed/);
+    expect(terminal.written.join('')).not.toContain('ship the thing');
+  }, 60_000);
 });
 
 describe('Hermes, the one caller published off this machine', () => {

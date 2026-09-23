@@ -464,3 +464,95 @@ describe('a room message held while its recipient launches', () => {
     }
   });
 });
+
+describe('a launch slower than CLI_BOOT_MS, as under load (Database Engineer, re-gate of #134)', () => {
+  // At a load average of 120 to 300, 5 of 18 launches took longer than 15 s.
+  // The sender was released at 15 s, typed into a claude not yet taking keys,
+  // answered 200 "message", and the text was lost.
+  //
+  // How this fails, written before the code:
+  // 1. At CLI_BOOT_MS a launch whose CLI runs but whose session or task has
+  //    not started is given up, and the next sender types blind.
+  // 2. A sender is held past what its own caller waits for (30 s for the MCP
+  //    tools), so the caller gives up on an answer that later says "message".
+  // 3. A sender that cannot wait any longer types anyway, instead of saying
+  //    nothing was typed.
+  // 4. A CLI that never comes up holds every sender forever.
+  function agentBeingStarted(): { agent: AgentStatus; terminal: () => FakePty; before: number } {
+    agents.set('orch', {
+      id: 'orch', name: 'Orchestrator', status: 'running', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus);
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    const before = spawned.length;
+    return { agent, terminal: () => newTerminal(before), before };
+  }
+
+  it('keeps holding a sender while the CLI runs and its task has not started, then types once it has', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    expect((await dispatch(agent.id, 'Rebase onto main')).body.mode).toBe('start');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(14_000);
+    const second = dispatch(agent.id, 'WORD?');
+    // Past CLI_BOOT_MS: the claude runs, slowly, and has not started its task.
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(typedInto(terminal()), 'typed into a claude not yet taking keys').not.toContain('WORD?');
+
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = await second;
+
+    expect(answer.body.mode, JSON.stringify(answer.body)).toBe('message');
+    expect(typedInto(terminal()).split('WORD?').length - 1).toBe(1);
+  });
+
+  it('answers that nothing was typed when the launch is still starting at the end of its wait', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+    const t0 = Date.now();
+    let answeredAt = 0;
+    const second = dispatch(agent.id, 'WORD?').then(r => { answeredAt = Date.now(); return r; });
+    await vi.advanceTimersByTimeAsync(40_000);
+    const answer = await second;
+
+    expect(answer.status, JSON.stringify(answer.body)).toBe(409);
+    expect(answer.body).toMatchObject({ starting: true });
+    // Before the MCP tools' own 30 s: an answer after it reaches nobody.
+    expect(answeredAt - t0, 'answered after the caller had given up').toBeLessThan(30_000);
+    expect(typedInto(terminal())).not.toContain('WORD?');
+  });
+
+  it('answers the same for a /message, which the MCP send_message uses', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+    const second = dispatch(agent.id, 'WORD?', 'message');
+    await vi.advanceTimersByTimeAsync(40_000);
+    const answer = await second;
+
+    expect(answer.status, JSON.stringify(answer.body)).toBe(409);
+    expect(answer.body).toMatchObject({ starting: true });
+    expect(typedInto(terminal())).not.toContain('WORD?');
+  });
+
+  it('stops holding senders for a CLI that never comes up', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    const late = dispatch(agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = await late;
+
+    expect(answer.status, 'a dead launch held the agent').not.toBe(409);
+  });
+});

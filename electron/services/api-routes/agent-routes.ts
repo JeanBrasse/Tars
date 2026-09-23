@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
-import { sessionStarted, launchBegins, launchAbandoned } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -605,6 +605,20 @@ export async function performDispatch(
   return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson));
 }
 
+/**
+ * The answer to a sender that waited SENDER_WAIT_MS on a launch still on its
+ * way: its CLI runs but has not started its session or task, and a message
+ * typed now would be lost. Nothing was typed; the caller may try again.
+ */
+function stillStarting(agent: AgentStatus): Record<string, unknown> {
+  return {
+    error: `${agent.name || agent.id}'s CLI is still starting (it has not taken keys after ${SENDER_WAIT_MS / 1000} s, `
+      + 'as happens on a loaded machine): nothing was typed. Send it again in a moment.',
+    starting: true,
+    agent: { id: agent.id, name: agent.name, status: agent.status },
+  };
+}
+
 async function performDispatchLocked(
   agent: AgentStatus,
   opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
@@ -614,7 +628,11 @@ async function performDispatchLocked(
   // A launch on its way (a restart, a start from a window) owns the terminal
   // until its CLI runs there: wait for it, then type into its session. Taken
   // for "no session", the message started one over it, without the resume.
-  await sessionStarted(agent);
+  // Still starting when the caller can wait no longer: say so, type nothing.
+  if (!(await sessionStarted(agent, SENDER_WAIT_MS))) {
+    sendJson(stillStarting(agent), 409);
+    return;
+  }
 
   // BUG 4 guard: kill the PTY if its cwd no longer matches the agent's
   // worktree so the spawn path below restarts it in the right directory.
@@ -1156,8 +1174,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     recordRequester(agent, req);
 
     await withAgentLock(agent.id, async () => {
-      // As /dispatch: a launch on its way is waited for, never spawned over.
-      await sessionStarted(agent);
+      // As /dispatch: a launch on its way is waited for, never spawned over,
+      // and never typed into before it takes keys.
+      if (!(await sessionStarted(agent, SENDER_WAIT_MS))) {
+        sendJson(stillStarting(agent), 409);
+        return;
+      }
 
       // BUG 4 guard: if the agent's worktreePath changed after the PTY was
       // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
