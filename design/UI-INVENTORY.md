@@ -23,8 +23,10 @@ Until then, draw a Chat room frame in `chat-design.pen` and anything else in
 A third document, `design/chat-redesign-a.pen`, holds the Chat page's redesign:
 direction A, which Noah chose on 2026-09-17 (the thread first, the team folded
 into the left column), with its composer, modeled on Claude's and ChatGPT's. It
-is what the next Chat TSX implements: the room and Hermes pages, dark and light,
-and every state of the composer. Until that lands, `chat-design.pen` still
+is what the next Chat TSX implements: the room and Hermes pages in every state a
+user can meet, sheets for the team, the thread, Hermes and the composer, each
+dark and light, and two notes frames. Hermes is the global room. Until that
+lands, `chat-design.pen` still
 describes the Chat as it ships. Draw anything for the redesign in
 `chat-redesign-a.pen`.
 
