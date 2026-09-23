@@ -165,6 +165,16 @@ function toAgentTask(t: HermesTask, caller: KanbanCaller): AgentTask {
 
 type Conn = KanbanHermes | null;
 
+/**
+ * The task in a create or a patch answer. The gateway sends `{ "task": {...} }`
+ * (its create_task and update_task); read at the top level it has no id, which
+ * is how the local board's move failed on every task in the first in-app run.
+ */
+function taskIn(answer: unknown): HermesTask {
+  const wrapped = (answer as { task?: HermesTask } | null)?.task;
+  return (wrapped && typeof wrapped === 'object' ? wrapped : answer) as HermesTask;
+}
+
 function notConfigured(): { ok: false; status: number; error: string } {
   return fail(503, 'Hermes is not configured in Tars (Settings, Hermes): the kanban lives on the Hermes board, and there is no other.');
 }
@@ -296,13 +306,13 @@ export async function createParkedTask(
       priority: PRIORITY_TO_HERMES[input.priority ?? 'medium'] ?? 0,
     });
     if (!created.success) return refused(created);
-    const task = created.task as HermesTask;
+    const task = taskIn(created.task);
     const parked = await h.update(task.id, { status: PARKED });
     if (!parked.success) {
       // Left `ready` on the Tars lane, where Hermes skips it, and said so.
       return fail(502, `Task ${task.id} was created but not parked: ${parked.error || 'no reason given'}. Hermes will not start it (it is on the Tars lane); park it on the Kanban page.`);
     }
-    return { ok: true, value: toAgentTask(parked.task as HermesTask, caller) };
+    return { ok: true, value: toAgentTask(taskIn(parked.task), caller) };
   });
 }
 
@@ -340,7 +350,7 @@ export async function claimTask(
       // agent's lane, which Hermes skips, never `ready` on no lane.
       const claimed = await h.update(t.id, { assignee: lane, status: 'ready' });
       if (!claimed.success) return refused(claimed);
-      const after = claimed.task as HermesTask;
+      const after = taskIn(claimed.task);
       if (after.assignee !== lane || after.status !== 'ready') {
         return fail(502, `Hermes did not record the claim of ${t.id} (${after.status}, ${after.assignee}).`);
       }
@@ -381,7 +391,7 @@ export async function completeTask(h: Conn, caller: KanbanCaller, idOrPrefix: st
       }
       const r = await h.update(t.id, { status: 'done', summary, result: summary });
       if (!r.success) return refused(r);
-      return { ok: true as const, value: toAgentTask(r.task as HermesTask, caller) };
+      return { ok: true as const, value: toAgentTask(taskIn(r.task), caller) };
     });
   });
 }
@@ -394,7 +404,7 @@ async function release(h: KanbanHermes, caller: KanbanCaller, t: HermesTask): Pr
   const lane = await h.update(t.id, { assignee: TARS_LANE });
   if (!lane.success) return refused(lane);
   await h.comment(t.id, `Released by ${caller.name || caller.agentId}, back to the parked tasks.`).catch(() => undefined);
-  return { ok: true, value: toAgentTask(lane.task as HermesTask, caller) };
+  return { ok: true, value: toAgentTask(taskIn(lane.task), caller) };
 }
 
 export async function moveTask(h: Conn, caller: KanbanCaller, idOrPrefix: string, column: AgentColumn): Promise<KanbanResult<AgentTask>> {
@@ -481,7 +491,7 @@ export async function migrateLocalTasks(h: KanbanHermes, file: string, record: s
         idempotency_key: `tars-local:${t.id}`,
       });
       if (!created.success) { out.errors.push(`${t.id}: ${created.error || 'refused'}`); continue; }
-      const task = created.task as HermesTask;
+      const task = taskIn(created.task);
       if (task.status !== PARKED) {
         const parked = await h.update(task.id, { status: PARKED });
         if (!parked.success) { out.errors.push(`${t.id}: created as ${task.id} but not parked: ${parked.error || 'refused'}`); continue; }
