@@ -5,7 +5,9 @@ import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
 import LeftFullscreenNotice from './LeftFullscreenNotice';
+import RestartPendingNotice from './RestartPendingNotice';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
+import { useRestartPending } from '@/hooks/useRestartPending';
 import TerminalPanelHeader from './TerminalPanelHeader';
 import type { PanelView } from './TerminalPanelHeader';
 import PanelHistory from './PanelHistory';
@@ -104,6 +106,7 @@ function TerminalPanel({
   // the window, and each panel reading its own agent out of it means a wait on
   // one terminal re-renders that panel and leaves the other nineteen alone.
   const waiting = useMessageWaiting(agent.id);
+  const restartPending = useRestartPending(agent.id);
 
   const handleClick = useCallback(() => {
     onFocus(agent.id);
@@ -150,6 +153,10 @@ function TerminalPanel({
           in it: the header has about fifty pixels to spare on a board panel,
           and a notice cut to fifty pixels is the one nobody reads. */}
       <MessageWaitingNotice waiting={waiting} />
+
+      {/* A changed setting waits to restart this agent, and says on what: until
+          it has, the agent answers on the old settings. */}
+      {restartPending && <RestartPendingNotice pending={restartPending} />}
 
       {/* This terminal's claude left fullscreen, so the wheel reaches nothing
           (useMultiTerminal has stopped sending it). The history view is the

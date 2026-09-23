@@ -80,6 +80,18 @@ In dev the window loads `process.env.DOROTHY_DEV_URL || 'http://localhost:3000'`
 DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 `app://-/index.html` off the custom protocol, served from `<appPath>/out`.
 
+From the second launch on, the main process no longer compiles its JavaScript from source, and
+from the third the renderer does not either. The app:// scheme has Chromium's `codeCache`
+privilege, so V8 keeps what it compiled of the renderer bundle in the profile's `Code Cache/js`:
+Chromium writes it during the second launch and reads it from the third. The main process turns
+on Node's compile cache before it requires anything else (`electron/core/compile-cache.ts`), in
+the profile's `compile-cache/`, and flushes it once the window has loaded. Both are keyed by each
+file's content: an update is compiled once more. Deleting `compile-cache/` costs one slower
+launch, deleting `Code Cache` two. Measured on 2026-09-24 on packaged builds: the main process's
+compile work fell from 181 to 441 ms to 79 to 101 ms, and the renderer's main-thread compile from
+59 to 129 ms to 3 ms once its cache is read. `NODE_DEBUG_NATIVE=COMPILE_CACHE` in the app's
+environment prints each module the cache served.
+
 ### Run the renderer alone
 
 ```bash
@@ -889,7 +901,10 @@ both behave identically. It:
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
    `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
-   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   a start from a window, a bot's cold start) is waited for and never spawned over: 15 s, and
+   past that while its CLI runs, up to 180 s. The API waits 20 s at most, counted from the
+   request even for a sender queued behind another, then answers `409` with `starting: true`
+   and types nothing: send it again. A sender refused so does not become the agent's requester.
    Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.

@@ -464,3 +464,265 @@ describe('a room message held while its recipient launches', () => {
     }
   });
 });
+
+describe('a launch slower than CLI_BOOT_MS, as under load (Database Engineer, re-gate of #134)', () => {
+  // At a load average of 120 to 300, 5 of 18 launches took longer than 15 s.
+  // The sender was released at 15 s, typed into a claude not yet taking keys,
+  // answered 200 "message", and the text was lost.
+  //
+  // How this fails, written before the code:
+  // 1. At CLI_BOOT_MS a launch whose CLI runs but whose session or task has
+  //    not started is given up, and the next sender types blind.
+  // 2. A sender is held past what its own caller waits for (30 s for the MCP
+  //    tools), so the caller gives up on an answer that later says "message".
+  // 3. A sender that cannot wait any longer types anyway, instead of saying
+  //    nothing was typed.
+  // 4. A CLI that never comes up holds every sender forever.
+  function agentBeingStarted(): { agent: AgentStatus; terminal: () => FakePty; before: number } {
+    agents.set('orch', {
+      id: 'orch', name: 'Orchestrator', status: 'running', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus);
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    const before = spawned.length;
+    return { agent, terminal: () => newTerminal(before), before };
+  }
+
+  it('keeps holding a sender while the CLI runs and its task has not started, then types once it has', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    expect((await dispatch(agent.id, 'Rebase onto main')).body.mode).toBe('start');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(14_000);
+    const second = dispatch(agent.id, 'WORD?');
+    // Past CLI_BOOT_MS: the claude runs, slowly, and has not started its task.
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(typedInto(terminal()), 'typed into a claude not yet taking keys').not.toContain('WORD?');
+
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = await second;
+
+    expect(answer.body.mode, JSON.stringify(answer.body)).toBe('message');
+    expect(typedInto(terminal()).split('WORD?').length - 1).toBe(1);
+  });
+
+  it('answers that nothing was typed when the launch is still starting at the end of its wait', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+    const t0 = Date.now();
+    let answeredAt = 0;
+    const second = dispatch(agent.id, 'WORD?').then(r => { answeredAt = Date.now(); return r; });
+    await vi.advanceTimersByTimeAsync(40_000);
+    const answer = await second;
+
+    expect(answer.status, JSON.stringify(answer.body)).toBe(409);
+    expect(answer.body).toMatchObject({ starting: true });
+    // Before the MCP tools' own 30 s: an answer after it reaches nobody.
+    expect(answeredAt - t0, 'answered after the caller had given up').toBeLessThan(30_000);
+    expect(typedInto(terminal())).not.toContain('WORD?');
+  });
+
+  it('answers the same for a /message, which the MCP send_message uses', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+    const second = dispatch(agent.id, 'WORD?', 'message');
+    await vi.advanceTimersByTimeAsync(40_000);
+    const answer = await second;
+
+    expect(answer.status, JSON.stringify(answer.body)).toBe(409);
+    expect(answer.body).toMatchObject({ starting: true });
+    expect(typedInto(terminal())).not.toContain('WORD?');
+  });
+
+  it('stops holding senders for a CLI that never comes up', async () => {
+    const { agent, terminal } = agentBeingStarted();
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    const late = dispatch(agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = await late;
+
+    expect(answer.status, 'a dead launch held the agent').not.toBe(409);
+  });
+});
+
+describe('QA #158: CLI_UP_MS itself', () => {
+  // Written by the QA at the gate of #158. The test above holds a launch ten
+  // minutes and lets any bound under that pass: measured, CLI_UP_MS at 160 s
+  // or at ten minutes left the whole file green. A launch whose CLI runs is
+  // still held at 170 s, and let go by 186 s, at once.
+  it('holds a sender while the CLI runs up to CLI_UP_MS, and not a moment past it', async () => {
+    agents.set('orch', {
+      id: 'orch', name: 'Orchestrator', status: 'running', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus);
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    const terminal = () => newTerminal(0);
+
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(150_000);
+    const held = dispatch(agent.id, 'EARLY?');
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect((await held).status, 'a CLI still booting at 170 s was let go').toBe(409);
+    expect(typedInto(terminal())).not.toContain('EARLY?');
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    const t1 = Date.now();
+    let lateAt = -1;
+    const late = dispatch(agent.id, 'LATE?').then(r => { lateAt = Date.now() - t1; return r; });
+    await vi.advanceTimersByTimeAsync(25_000);
+    const answer = await late;
+
+    expect(lateAt, 'a launch 186 s old still held its sender').toBeLessThan(1_000);
+    expect(answer.body.mode, JSON.stringify(answer.body)).toBe('message');
+  });
+});
+
+describe('QA #158: every sender answered in time, and the link a refusal leaves', () => {
+  // Written by the QA at the gate of #158. What each one guards:
+  // 1. The 20 s a sender waits is counted from the moment it takes the agent's
+  //    lock, not from its request: a second sender queued behind the first
+  //    waits out the first's 20 s, then its own, and is answered after the MCP
+  //    tools have given up at 30 s, which is the answer that reaches nobody.
+  // 2. A sender refused with 409 typed nothing, and takes nothing either: the
+  //    delegation link stays with the agent the launch's work is for, which
+  //    is the one agent-watch tells when that work is done.
+  function plannerBeingStarted(): { agent: AgentStatus; terminal: () => FakePty } {
+    for (const id of ['orch', 'qa']) {
+      agents.set(id, {
+        id, name: id === 'orch' ? 'Orchestrator' : 'QA', status: 'running', provider: 'claude', projectPath: project,
+        skills: [], output: [], lastActivity: new Date().toISOString(),
+      } as AgentStatus);
+    }
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    const before = spawned.length;
+    return { agent, terminal: () => newTerminal(before) };
+  }
+
+  /** As dispatch() above, from the agent `caller`. */
+  function send(caller: string, id: string, message: string, endpoint: 'dispatch' | 'message' = 'dispatch'): Promise<{ status: number; body: Record<string, unknown> }> {
+    const app: RouteApp = {
+      routes: [],
+      add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
+      get(pattern, handler) { this.add('GET', pattern, handler); },
+      post(pattern, handler) { this.add('POST', pattern, handler); },
+      put(pattern, handler) { this.add('PUT', pattern, handler); },
+      delete(pattern, handler) { this.add('DELETE', pattern, handler); },
+    };
+    registerAgentRoutes(app, {
+      mainWindow: null, appSettings: {} as AppSettings, getAppSettings: () => ({} as AppSettings),
+      getTelegramBot: () => null, getSlackApp: () => null, slackResponseChannel: null, slackResponseThreadTs: null,
+      handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(),
+      initAgentPtyCallback: vi.fn(async () => 'unused'), agentStatusEmitter: new EventEmitter(),
+    } as unknown as RouteContext);
+    const pathname = `/api/agents/${id}/${endpoint}`;
+    const route = app.routes.find(r => r.method === 'POST' && typeof r.pattern !== 'string' && r.pattern.test(pathname))!;
+    let answer = { status: 200, body: {} as Record<string, unknown> };
+    return Promise.resolve(route.handler({
+      method: 'POST', pathname, url: new URL(`http://localhost${pathname}`), body: { message },
+      raw: { headers: {}, on: () => {} }, res: {}, params: { id }, callerAgentId: caller,
+    } as unknown as RouteRequest, (json, status = 200) => { answer = { status, body: json as Record<string, unknown> }; }, {} as RouteContext))
+      .then(() => answer);
+  }
+
+  it('answers a second sender, queued behind the first, before its caller gives up at 30 s', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const t0 = Date.now();
+    const at: number[] = [];
+    const first = send('orch', agent.id, 'ONE?').then(r => { at[0] = Date.now() - t0; return r; });
+    const second = send('qa', agent.id, 'TWO?', 'message').then(r => { at[1] = Date.now() - t0; return r; });
+    // The launch comes up 35 s after both were sent: past the MCP tools' 30 s.
+    await vi.advanceTimersByTimeAsync(35_000);
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const answers = [await first, await second];
+
+    expect(answers[0].status).toBe(409);
+    expect(at[0]).toBeLessThan(30_000);
+    expect(at[1], `the second sender was answered ${JSON.stringify(answers[1])} after ${at[1]} ms`).toBeLessThan(30_000);
+  });
+
+  it('leaves the delegation link with the agent the launch works for when a sender is refused', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    expect(agent.requestedBy?.agentId).toBe('orch');
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const refused = send('qa', agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect((await refused).status).toBe(409);
+
+    expect(agent.requestedBy?.agentId, 'a sender typed nothing, and took the note owed to the orchestrator').toBe('orch');
+  });
+
+  // The same two, the other way round: which route comes second, and which is
+  // refused. Measured at the re-check: with only the tests above, /dispatch
+  // counting its 20 s from the lock again, and /message recording the link
+  // before its wait or never, all left the suite green.
+  it('answers a second sender that is a /dispatch, queued behind a /message, before its caller gives up', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const t0 = Date.now();
+    const at: number[] = [];
+    const first = send('orch', agent.id, 'ONE?', 'message').then(r => { at[0] = Date.now() - t0; return r; });
+    const second = send('qa', agent.id, 'TWO?').then(r => { at[1] = Date.now() - t0; return r; });
+    await vi.advanceTimersByTimeAsync(35_000);
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const answers = [await first, await second];
+
+    expect(answers[0].status).toBe(409);
+    expect(at[0]).toBeLessThan(30_000);
+    expect(at[1], `the second sender was answered ${JSON.stringify(answers[1])} after ${at[1]} ms`).toBeLessThan(30_000);
+  });
+
+  it('leaves the link alone when a /message is refused, and gives it to a /message once typed', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const refused = send('qa', agent.id, 'WORD?', 'message');
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect((await refused).status).toBe(409);
+    expect(agent.requestedBy?.agentId, 'a refused /message took the note owed to the orchestrator').toBe('orch');
+
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const typed = send('qa', agent.id, 'WORD?', 'message');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await typed).status).toBe(200);
+    expect(agent.requestedBy?.agentId, 'a /message typed in did not become the requester').toBe('qa');
+  });
+});
