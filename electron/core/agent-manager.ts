@@ -774,6 +774,7 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
       const outcome = writeProgrammaticInput(ptyProcess, pending.task, true, {
         agentId: live.id,
         from: 'Tars',
+        sender: { kind: 'tars' },
         // Armed when the task is actually typed in, not when it was handed
         // over. A write waiting behind somebody's half-written sentence would
         // otherwise be counted as delivered, and the agent accused a minute

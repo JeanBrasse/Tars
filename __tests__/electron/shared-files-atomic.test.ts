@@ -43,7 +43,7 @@ vi.mock('electron', () => ({
 // The claude binary never runs here. `claude mcp add` and `claude mcp remove`
 // fail, as they do when the CLI is missing, so the provider takes its mcp.json
 // path, which is the one under test.
-const { claudeRuns } = vi.hoisted(() => ({ claudeRuns: [] as string[][] }));
+const { claudeRuns, claudeOptions } = vi.hoisted(() => ({ claudeRuns: [] as string[][], claudeOptions: [] as unknown[] }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   return {
@@ -55,13 +55,16 @@ vi.mock('child_process', async (importOriginal) => {
       }
       return (actual.execFileSync as (...args: unknown[]) => unknown)(file, ...rest);
     },
-    // The orchestrator setup still hands `claude mcp ...` to a shell.
-    execSync: (command: string, ...rest: unknown[]) => {
-      if (/^claude\b/.test(command)) {
-        claudeRuns.push([command]);
-        throw new Error('claude: command not found');
+    // The orchestrator setup runs `claude mcp ...` asynchronously, with an argv.
+    execFile: (file: string, args: unknown, ...rest: unknown[]) => {
+      if (file === 'claude') {
+        claudeRuns.push(args as string[]);
+        claudeOptions.push(rest.find(r => typeof r === 'object'));
+        const done = rest.find(r => typeof r === 'function') as ((err: Error) => void) | undefined;
+        setImmediate(() => done?.(new Error('claude: command not found')));
+        return {};
       }
-      return (actual.execSync as (...args: unknown[]) => unknown)(command, ...rest);
+      return (actual.execFile as (...a: unknown[]) => unknown)(file, args, ...rest);
     },
   };
 });
@@ -861,7 +864,11 @@ describe('~/.claude/mcp.json, from the orchestrator setup when `claude mcp add` 
   it('registers beside the servers already there', async () => {
     expect(await setup()).toMatchObject({ success: true, method: 'mcp-json-fallback' });
 
-    expect(claudeRuns.some(run => run[0].startsWith('claude mcp add'))).toBe(true);
+    // An argv: the path is an argument of its own, never inside a shell string.
+    expect(claudeRuns).toContainEqual(['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', bundle]);
+    // Bounded for good: the default SIGTERM leaves a child that ignores it
+    // running, and the setup waiting on it (the gate of #128).
+    expect(claudeOptions.at(-1)).toMatchObject({ timeout: 15_000, killSignal: 'SIGKILL' });
     expect(readAsJson(mcpJson())).toEqual({
       mcpServers: { ...mcpServersNow.mcpServers, 'claude-mgr-orchestrator': { command: 'node', args: [bundle] } },
     });

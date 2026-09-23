@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Dropdown } from '@/components/ui';
+import { MenuPicker } from '@/components/ui';
 import { ModelEffortPicker } from './ModelEffortPicker';
-import type { DropdownOption } from '@/components/ui';
+import type { MenuPickerOption } from '@/components/ui';
 import type { OverseerModelProvider, OverseerSettings } from '@/types/electron';
 
 /**
@@ -19,7 +19,7 @@ import type { OverseerModelProvider, OverseerSettings } from '@/types/electron';
  * which providers have credentials is a property of that install.
  */
 
-const INTERVALS: DropdownOption[] = [
+const INTERVALS: MenuPickerOption[] = [
   { value: '60000', label: 'every 1 min' },
   { value: '300000', label: 'every 5 min' },
   { value: '900000', label: 'every 15 min' },
@@ -130,12 +130,7 @@ export function WatchControls({
         onEffort={handleEffort}
         disabledReason={optionsError ?? undefined}
       />
-      <Dropdown
-        size="sm"
-        mono
-        quiet
-        align="left"
-            drop="up"
+      <MenuPicker
         ariaLabel="How often the overseer checks the fleet"
         value={String(settings.watchIntervalMs)}
         options={
@@ -144,7 +139,6 @@ export function WatchControls({
             : [...INTERVALS, { value: String(settings.watchIntervalMs), label: intervalLabel(settings.watchIntervalMs) }]
         }
         onChange={v => onChange({ watchIntervalMs: Number(v) })}
-        className="w-[132px]"
       />
     </>
   );

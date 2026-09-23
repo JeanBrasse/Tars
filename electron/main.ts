@@ -45,7 +45,9 @@ import {
   skillPtyProcesses,
   pluginPtyProcesses,
   killAllPty,
+  setFieldProbe,
 } from './core/pty-manager';
+import { lastLocalCommandAt } from './services/agent-truth';
 
 import { runShutdownSteps } from './core/shutdown';
 import { initTray, destroyTray } from './core/tray-manager';
@@ -611,6 +613,12 @@ app.whenReady().then(async () => {
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
   startAgentWatch();
+  // A message held behind a slash command typed by hand goes in once the
+  // command's record says the field emptied (core/pty-manager.ts).
+  setFieldProbe(agentId => {
+    const agent = agents.get(agentId);
+    return agent ? lastLocalCommandAt(agent) : undefined;
+  });
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk

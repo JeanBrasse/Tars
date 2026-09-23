@@ -81,12 +81,14 @@ vi.mock('../../../electron/services/acp/delegate', () => ({
   delegateOverAcp: vi.fn(async () => ({ ok: true, transport: 'acp', text: 'done', toolCalls: [] })),
 }));
 
+import * as pty from 'node-pty';
 import type { AgentStatus } from '../../../electron/types';
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 
 let api: typeof import('../../../electron/services/api-server');
 let agents: typeof import('../../../electron/core/agent-manager')['agents'];
 let ptyProcesses: typeof import('../../../electron/core/pty-manager')['ptyProcesses'];
+let spawnAgentPty: typeof import('../../../electron/core/agent-pty')['spawnAgentPty'];
 let tokens: typeof import('../../../electron/core/agent-tokens');
 let overseer: typeof import('../../../electron/services/overseer');
 
@@ -102,13 +104,21 @@ let sharedToken = '';
 let alphaToken = '';
 let betaToken = '';
 
-/** A terminal that records what was typed into it, the way a live claude is one. */
+/**
+ * A terminal that records what was typed into it, with a live claude in front,
+ * opened the way every agent terminal is: the routes type into a session only
+ * where cliRunningIn finds a CLI.
+ */
 function liveTerminal(agent: AgentStatus): { written: string[] } {
   const written: string[] = [];
   agent.ptyId = `pty-${agent.id}`;
   agent.status = 'running';
   agent.ptyCwd = agent.projectPath;
-  ptyProcesses.set(agent.ptyId, { write: (d: string) => { written.push(d); } } as never);
+  // onExit: spawnAgentPty drops what a terminal held when it exits (#128).
+  const terminal = { write: (d: string) => { written.push(d); }, process: '2.1.280', onExit: () => ({ dispose() {} }) };
+  vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
+  spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: agent.projectPath, cols: 80, rows: 24, env: {} });
+  ptyProcesses.set(agent.ptyId, terminal as never);
   return { written };
 }
 
@@ -149,6 +159,7 @@ beforeAll(async () => {
   api = await import('../../../electron/services/api-server');
   ({ agents } = await import('../../../electron/core/agent-manager'));
   ({ ptyProcesses } = await import('../../../electron/core/pty-manager'));
+  ({ spawnAgentPty } = await import('../../../electron/core/agent-pty'));
   tokens = await import('../../../electron/core/agent-tokens');
   overseer = await import('../../../electron/services/overseer');
   api.startApiServer(

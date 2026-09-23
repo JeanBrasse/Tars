@@ -215,7 +215,7 @@ export default function TerminalsView() {
   // it: a field the panel reads and the key leaves out is a field that can
   // change without the panel ever hearing of it.
   const filteredAgentsKey = useMemo(
-    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}`).join('\u0000'),
+    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}\u0000${a.leftFullscreen}\u0000${a.ptyId}`).join('\u0000'),
     [computedFilteredAgents]
   );
   const filteredAgents = useMemo(
@@ -367,6 +367,14 @@ export default function TerminalsView() {
     await stopAgent(agentId);
   }, [stopAgent]);
 
+  // The way back offered to a panel whose claude left fullscreen: the header's
+  // stop, then its start, so the new session opens fullscreen and the wheel
+  // scrolls again. A start that fails says why, as it does from the header.
+  const handleRestartAgent = useCallback(async (agentId: string) => {
+    await stopAgent(agentId);
+    await handleStartAgent(agentId);
+  }, [stopAgent, handleStartAgent]);
+
   // Remove from tab (custom tabs): stop agent + remove from tab membership
   //
   // Deps here and below name the specific fields read, not `tabManager` or
@@ -465,12 +473,19 @@ export default function TerminalsView() {
 
   const handleClosePanel = useCallback(() => setPanelOpen(false), []);
 
+  // The panel's own text first: since #127 the main process answers with a
+  // redraw of the screen, escape sequences and all, where the panel has the
+  // lines as they read. The redraw is only for a panel with no terminal.
+  const terminalText = multiTerminal.terminalText;
   const handleCopyOutput = useCallback(async (agentId: string) => {
-    // The list no longer carries the scrollback, so ask for this one agent.
-    const full = await window.electronAPI?.agent?.get(agentId);
-    const output = full?.output?.join('') ?? '';
+    let output = terminalText(agentId);
+    if (!output) {
+      // The list no longer carries the scrollback, so ask for this one agent.
+      const full = await window.electronAPI?.agent?.get(agentId);
+      output = full?.output?.join('') ?? '';
+    }
     if (output) navigator.clipboard.writeText(output).catch(() => { });
-  }, []);
+  }, [terminalText]);
 
   const handleNewAgent = useCallback(async (
     projectPath: string,
@@ -657,6 +672,7 @@ export default function TerminalsView() {
             onRegisterContainer={multiTerminal.registerContainer}
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}
+            onRestartAgent={handleRestartAgent}
             onRemoveAgent={handleRemoveAgent}
             onClearTerminal={multiTerminal.clearTerminal}
             onFullscreenPanel={grid.fullscreenPanel}

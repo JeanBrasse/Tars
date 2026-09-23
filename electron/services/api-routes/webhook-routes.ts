@@ -103,6 +103,8 @@ export function registerWebhookRoutes(app: RouteApp, ctx: RouteContext): void {
       message,
       model: body.model,
       permissionMode: body.permission_mode,
+      from: 'Hermes',
+      sender: { kind: 'channel', channel: 'Hermes' },
     }, ctx, sendJson);
   });
 }
