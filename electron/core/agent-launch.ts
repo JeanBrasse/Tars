@@ -1,4 +1,7 @@
 import type { AgentPermissionMode, AgentProvider } from '../types';
+import { ptyProcesses } from './pty-manager';
+import { cliRunningIn } from './agent-pty';
+import { getProvider } from '../providers';
 
 /**
  * The launch of an agent's CLI in its terminal, reachable without a renderer.
@@ -49,4 +52,82 @@ export function registerAgentLauncher(fn: AgentLauncher): void {
 export function launchAgent(agentId: string, prompt: string, options?: AgentLaunchOptions): Promise<AgentLaunchResult> {
   if (!launcher) return Promise.reject(new Error('No agent launcher registered: the IPC handlers are not set up yet'));
   return launcher(agentId, prompt, options);
+}
+
+/**
+ * How long a launch counts as starting: from the moment one begins until its
+ * CLI takes the terminal. A warm start takes about 1.4 s (measured before
+ * SessionStart); past this, whatever was typed is not coming up.
+ */
+export const CLI_BOOT_MS = 15_000;
+
+/** Launches under way, by agent: when each began. One per agent, the latest. */
+const launchesUnderWay = new Map<string, { since: number }>();
+
+/**
+ * A launch into an agent's terminal has begun: a start from a window, a
+ * restart, a bot's cold start. Until its CLI runs there, the terminal is a
+ * shell that is about to hand over, and anything that would start a session
+ * over it must wait instead (see sessionStarting). Returns the launch, for
+ * launchAbandoned.
+ */
+export function launchBegins(agentId: string): object {
+  const launch = { since: Date.now() };
+  launchesUnderWay.set(agentId, launch);
+  return launch;
+}
+
+/** That launch failed or was refused: nothing is coming up. */
+export function launchAbandoned(agentId: string, launch: object): void {
+  if (launchesUnderWay.get(agentId) === launch) launchesUnderWay.delete(agentId);
+}
+
+/**
+ * Whether an agent's session is on its way: a launch began less than
+ * CLI_BOOT_MS ago and no CLI runs in its terminal yet.
+ *
+ * Measured by the Audit on 2026-09-23 (re-gate of #120 and #126): from a
+ * restart's kill to the new CLI's exec there is about 0.6 s in which the
+ * terminal is a bare shell, or none at all, and cliRunningIn rightly says no
+ * CLI. A /dispatch landing there started a session over the launch, without
+ * --resume (spent once per run), and the conversation was lost; landing just
+ * after the launch was typed, the CLI it killed had already started, and its
+ * late SessionStart took the agent from the live session, which then ended in
+ * error while its CLI answered.
+ */
+export function sessionStarting(agent: StartingAgent): boolean {
+  const launch = launchesUnderWay.get(agent.id);
+  if (!launch) return false;
+  if (Date.now() - launch.since >= CLI_BOOT_MS || sessionUp(agent, launch.since)) {
+    launchesUnderWay.delete(agent.id);
+    return false;
+  }
+  return true;
+}
+
+type StartingAgent = { id: string; ptyId?: string; provider?: AgentProvider; sessionRegisteredAt?: string };
+
+/**
+ * Up, for a CLI on the claude binary, once a session has registered since the
+ * launch began (its SessionStart), not once the process has exec'd: measured
+ * in a sandbox on 2026-09-23, a message typed the moment claude 2.1.280
+ * exec'd landed in its field and the Enter after it was lost, the CLI not yet
+ * taking keys. The other CLIs send no SessionStart; for them the exec is all
+ * there is to go on.
+ */
+function sessionUp(agent: StartingAgent, since: number): boolean {
+  const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  if (!terminal || !cliRunningIn(terminal)) return false;
+  if (getProvider(agent.provider).binaryName !== 'claude') return true;
+  return !!agent.sessionRegisteredAt && Date.parse(agent.sessionRegisteredAt) >= since;
+}
+
+/** Wait for a session on its way to be up, or for its launch to be given up on. */
+export async function sessionStarted(agent: StartingAgent): Promise<void> {
+  while (sessionStarting(agent)) await new Promise(resolve => setTimeout(resolve, 100));
+}
+
+/** Test seam. */
+export function resetLaunches(): void {
+  launchesUnderWay.clear();
 }

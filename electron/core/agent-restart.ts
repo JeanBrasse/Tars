@@ -1,7 +1,7 @@
 import { agents, saveAgents } from './agent-manager';
 import { ptyProcesses, fieldInUse, onFieldChange, type FieldInUse } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
-import { launchAgent } from './agent-launch';
+import { launchAgent, CLI_BOOT_MS } from './agent-launch';
 import { getProvider } from '../providers';
 import { agentStatusEmitter } from '../services/agent-events';
 import { holdsFor } from '../services/agent-watch';
@@ -131,7 +131,6 @@ const restarting = new Set<string>();
  * next launch that already happened.
  */
 const restartedAt = new Map<string, number>();
-const CLI_BOOT_MS = 15_000;
 
 /**
  * How long after an event this looks again. Long enough for whatever the

@@ -33,7 +33,7 @@ import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
-import { registerAgentLauncher, type AgentLauncher } from '../core/agent-launch';
+import { registerAgentLauncher, launchBegins, launchAbandoned, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch } from '../core/agent-restart';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
@@ -496,7 +496,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // agent's CLI into its terminal: the handler below, the Kanban automation and
   // the restart that applies changed settings all come through here. See
   // core/agent-launch.ts.
-  const startAgentCli: AgentLauncher = async (id, prompt, options) => {
+  const launchInTerminal: AgentLauncher = async (id, prompt, options) => {
     const agent = agents.get(id);
     if (!agent) throw new Error('Agent not found');
 
@@ -847,6 +847,24 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     saveAgents();
 
     return { success: true };
+  };
+  /**
+   * The launch, under way from its first line until its CLI runs in the
+   * terminal (sessionStarting, core/agent-launch.ts): a restart kills the old
+   * terminal, opens a new one, gives its shell half a second, then types. A
+   * sender that lands in that time waits for the CLI rather than start a
+   * session over it and lose the conversation.
+   */
+  const startAgentCli: AgentLauncher = async (id, prompt, options) => {
+    const launch = launchBegins(id);
+    try {
+      const result = await launchInTerminal(id, prompt, options);
+      if (!result.success) launchAbandoned(id, launch);
+      return result;
+    } catch (err) {
+      launchAbandoned(id, launch);
+      throw err;
+    }
   };
   registerAgentLauncher(startAgentCli);
 

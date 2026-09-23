@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { sessionStarted } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -585,6 +586,11 @@ async function performDispatchLocked(
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
+  // A launch on its way (a restart, a start from a window) owns the terminal
+  // until its CLI runs there: wait for it, then type into its session. Taken
+  // for "no session", the message started one over it, without the resume.
+  await sessionStarted(agent);
+
   // BUG 4 guard: kill the PTY if its cwd no longer matches the agent's
   // worktree so the spawn path below restarts it in the right directory.
   killStalePty(agent);
@@ -1109,6 +1115,9 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     recordRequester(agent, req);
 
     await withAgentLock(agent.id, async () => {
+      // As /dispatch: a launch on its way is waited for, never spawned over.
+      await sessionStarted(agent);
+
       // BUG 4 guard: if the agent's worktreePath changed after the PTY was
       // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
       // reconnect path below spawns fresh with the correct working directory.

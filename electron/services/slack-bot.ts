@@ -11,6 +11,7 @@ import { cliRunningIn } from '../core/agent-pty';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
+import { sessionStarted, launchBegins } from '../core/agent-launch';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -448,6 +449,9 @@ export async function handleSlackCommand(
       // PTY is in the wrong cwd. Kill it so initAgentPty respawns correctly.
       killStalePty(agent);
 
+      // A launch on its way owns the terminal until its CLI runs: wait for it.
+      await sessionStarted(agent);
+
       if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
         const ptyId = await initAgentPtyWithCallbacks(agent);
         agent.ptyId = ptyId;
@@ -508,6 +512,7 @@ export async function handleSlackCommand(
       agent.lastActivity = new Date().toISOString();
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(agent));
+      launchBegins(agent.id);
       saveAgents();
       // Started from Slack, and just as able to come up with no task.
       armTaskStartWatch(agent, agent.ptyId, task);
@@ -582,6 +587,9 @@ export async function sendToSuperAgentFromSlack(
     killStalePty(superAgent);
 
     // Initialize PTY if needed
+    // A launch on its way owns the terminal until its CLI runs: wait for it.
+    await sessionStarted(superAgent);
+
     if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
       const ptyId = await initAgentPtyWithCallbacks(superAgent);
       superAgent.ptyId = ptyId;
@@ -665,6 +673,7 @@ export async function sendToSuperAgentFromSlack(
 
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(superAgent));
+      launchBegins(superAgent.id);
       saveAgents();
       // A cold start of the super agent carries a task like any other start.
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);

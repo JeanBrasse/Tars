@@ -15,6 +15,7 @@ import { cliRunningIn } from '../core/agent-pty';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
+import { sessionStarted, launchBegins } from '../core/agent-launch';
 
 // ============== Telegram Bot State ==============
 let telegramBot: TelegramBot | null = null;
@@ -732,6 +733,9 @@ export function initTelegramBot() {
         killStalePty(agent);
 
         // Initialize PTY if needed
+        // A launch on its way owns the terminal until its CLI runs: wait for it.
+        await sessionStarted(agent);
+
         if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
           const ptyId = await initAgentPty(agent);
           agent.ptyId = ptyId;
@@ -795,6 +799,7 @@ export function initTelegramBot() {
         agent.lastActivity = new Date().toISOString();
         writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
         noteLaunch(ptyProcess, launchSettings(agent));
+        launchBegins(agent.id);
         saveAgents();
         // Started from a phone, and just as able to come up with no task.
         armTaskStartWatch(agent, agent.ptyId, task);
@@ -1245,6 +1250,9 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
     killStalePty(superAgent);
 
     // Initialize PTY if needed
+    // A launch on its way owns the terminal until its CLI runs: wait for it.
+    await sessionStarted(superAgent);
+
     if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
       const ptyId = await initAgentPty(superAgent);
       superAgent.ptyId = ptyId;
@@ -1347,6 +1355,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       // Start new Claude session
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
       noteLaunch(ptyProcess, launchSettings(superAgent));
+      launchBegins(superAgent.id);
       saveAgents();
       // A cold start of the super agent carries a task like any other start.
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);

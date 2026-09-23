@@ -59,6 +59,7 @@ vi.mock('node-telegram-bot-api', () => ({
 
 import { agents, initAgentPty } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
+import { resetLaunches } from '../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendToSuperAgent } from '../../../electron/services/telegram-bot';
 import { handleSlackCommand, sendToSuperAgentFromSlack } from '../../../electron/services/slack-bot';
@@ -95,6 +96,8 @@ async function typedAfter(launch: () => Promise<unknown>): Promise<string> {
 }
 
 beforeEach(() => {
+  // A cold start of one test is not a launch still on its way in the next.
+  resetLaunches();
   fs.rmSync(tmpHome, { recursive: true, force: true });
   fs.mkdirSync(project, { recursive: true });
   agents.clear();

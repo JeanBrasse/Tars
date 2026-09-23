@@ -3,6 +3,7 @@ import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
 import { agentStatusEmitter } from './agent-events';
+import { sessionStarting } from '../core/agent-launch';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -426,6 +427,10 @@ function flush(requesterId: string): void {
     return;
   }
   if (requester.status === 'running') return;
+  // A launch on its way: its terminal is a shell about to hand over, where a
+  // note would be pasted at a prompt. The session's start is a status change,
+  // and flushes again.
+  if (sessionStarting(requester)) return;
 
   // A write already in flight has not sent its carriage return yet. Adding a
   // second one now would land inside the first message and be submitted by
