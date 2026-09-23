@@ -151,8 +151,13 @@ export function useAgentDialogTerminal({
           try {
             const latestAgent = await window.electronAPI.agent.get(agent.id);
             if (latestAgent?.output?.length) {
-              const isGemini = agent.provider === 'gemini';
-              const writeLine = (line: string) => term.write(isGemini ? stripCursorSequences(line) : line);
+              // Since #127 an agent with a live terminal answers with one
+              // redraw of its screen, which opens with RIS and places every
+              // cell with the very cursor sequences gemini's strip removes.
+              // The strip is for raw output only.
+              const isSnapshot = latestAgent.output.length === 1 && latestAgent.output[0].startsWith('\x1bc');
+              const strip = agent.provider === 'gemini' && !isSnapshot;
+              const writeLine = (line: string) => term.write(strip ? stripCursorSequences(line) : line);
 
               if (skipHistoricalOutput) {
                 latestAgent.output.slice(-20).forEach(writeLine);

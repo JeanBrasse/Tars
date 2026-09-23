@@ -44,7 +44,10 @@ export function useElectronAgents() {
             prevAgent.currentTask !== agent.currentTask ||
             prevAgent.lastActivity !== agent.lastActivity ||
             prevAgent.error !== agent.error ||
-            prevAgent.cliRunning !== agent.cliRunning
+            prevAgent.cliRunning !== agent.cliRunning ||
+            prevAgent.leftFullscreen !== agent.leftFullscreen ||
+            // A new terminal under the same agent: its panel resends its size.
+            prevAgent.ptyId !== agent.ptyId
           );
         });
         return hasChanged ? list : prev;
@@ -211,9 +214,11 @@ export function useElectronAgents() {
       setAgents(prev => {
         // Check if any status, currentTask or running CLI changed. A CLI starts
         // and exits without the status moving (/exit, or claude left at its
-        // prompt by a failed turn), and the panel's start/stop follows it.
+        // prompt by a failed turn), and the panel's start/stop follows it. The
+        // same for a claude that left fullscreen: its panel says so.
         const changed = (a: AgentStatus, t: (typeof tickAgents)[number]) =>
-          a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning;
+          a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning ||
+          a.leftFullscreen !== t.leftFullscreen;
         const hasChange = tickAgents.some(t => {
           const existing = prev.find(a => a.id === t.id);
           return existing && changed(existing, t);
@@ -222,7 +227,7 @@ export function useElectronAgents() {
         return prev.map(a => {
           const tick = tickAgents.find(t => t.id === a.id);
           if (tick && changed(a, tick)) {
-            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning };
+            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen };
           }
           return a;
         });
