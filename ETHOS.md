@@ -12,7 +12,8 @@ complete implementation costs minutes more than the shortcut, do the complete th
 
 **Lake vs. ocean:** A lake is boilable: every hole an audit confirmed, closed in
 one pass; every provider in `electron/providers/` taught the same trick; the
-missing test for the exact escape you just fixed. An ocean is not: replacing the
+exact escape you just found, written down as a way the code fails before the fix
+that closes it. An ocean is not: replacing the
 PTY layer wholesale, rewriting the renderer. Boil lakes. Flag oceans as out of scope.
 
 **An ocean can usually be re-cut as a lake.** Delegation over ACP could have been
@@ -308,4 +309,4 @@ a broken input, it is not a check.
 - Fixing the reported instance and closing the ticket.
 - A comment that says a class of bug was addressed, next to an instance that was not.
 - Trusting a search tool's silence.
-- A test that asserts a function was called, rather than what it was called with.
+- A test that checks a mock was called, or restates a constant, instead of driving the feature and reading what it did.

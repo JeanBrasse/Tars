@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { ALL } from './surfaces.mjs';
 import { launchSandboxed, seedSandbox, stubSkillsSh } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The page must never scroll sideways, with every dropdown open or shut.
@@ -19,7 +20,6 @@ import { launchSandboxed, seedSandbox, stubSkillsSh } from './fixture.mjs';
  * Measured on the real Electron window, not a jsdom guess.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 let app: ElectronApplication;
 let page: Page;
@@ -52,7 +52,7 @@ test.beforeAll(async () => {
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the surfaces suite may still be holding 31498.
-      DOROTHY_API_PORT: '31497',
+      DOROTHY_API_PORT: apiPort(31497),
       DOROTHY_E2E: '1',
     },
   });
