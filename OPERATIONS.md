@@ -157,7 +157,44 @@ npm run lint:design     # design guardrail, see below
 
 ## Tests and guardrails
 
-Four separate gates. They do not overlap.
+The rules are in CLAUDE.md, Workflow Rule 3, and they are Noah's (2026-09-23): a feature is
+proven end to end in the real app, every E2E run leaves an artefact, a unit tested in isolation
+is written failures first, and the vitest suite stays as the regression net. Below, how to prove
+a feature, then the four gates. They do not overlap.
+
+### Proving a feature: an E2E spec and its artefact
+
+A feature's spec lives in `e2e/<feature>.spec.ts` and drives the running app, never a component
+or a mock:
+
+1. **Launch** through `launchSandboxed(electron, home)` from `e2e/fixture.mjs`, with a HOME made
+   for the run and seeded before the launch (`seedSandbox`, or the files the feature reads).
+   Spell it `/tmp/...`: the app reports its folders under `/tmp`, so a HOME spelled
+   `/private/tmp/...` fails the fixture's check. The fixture adds `--user-data-dir` and
+   `CFFIXED_USER_HOME`, and fails the launch if the app reports any folder outside the sandbox.
+2. **A CLI** in the feature is real claude (its path in the seed's `cliPaths.claude` or the
+   agent's `cliPath`; a fake Messages API behind `ANTHROPIC_BASE_URL` when no real turn is
+   needed), or the recording fake CLI through `cliPath`. The sweep's agents run the fake CLI
+   `seedSandbox` writes; a spec that needs its own CLI writes one through `cliPath`, as
+   `terminal-replay-modes.spec.ts` does. `launchSandboxed` refuses to hand the app the caller's
+   `CLAUDE_*`, `DOROTHY_*` or `ANTHROPIC_*`: a variable of that family the app needs is set in
+   the spec's `env`. Check which hook scripts the sandbox's `~/.claude/settings.json` names
+   before a CLI starts: they must post to the sandbox's port.
+3. **Assert** on what the user sees or the main process reports: the DOM,
+   `window.electronAPI.agent.list()`, the files written. Never on a mock.
+4. **Leave the artefact.** `npx tsc -p electron/tsconfig.json`, then
+   `E2E_TRACE=on npx playwright test e2e/<feature>.spec.ts`. Every run writes into its own
+   directory, `test-results/runs/<stamp>` (or `E2E_RUN_DIR`), which holds `command.txt`: the
+   commit and the command that reproduce it. In the spec, `recordValues({...})`
+   (`e2e/fixture.mjs`) writes the values asserted to `values.json`, and
+   `stepShot(page, '<step>')` each screenshot. `E2E_TRACE=on` adds the app's own trace,
+   `app-trace.zip`. Playwright's `--trace` records only the runner's steps for an Electron app.
+   The PR names the run directory.
+5. **Show it bites**: run it against the old build (the base branch's `electron/dist` and
+   renderer) or a mutant, and see it red.
+
+Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
+moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
 ### Unit tests: `npm test`
 
@@ -167,7 +204,12 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Current state: **46 files, 733 tests, ~5 s.** Config is `vitest.config.mts`: node environment,
+A unit tested in isolation (a parser, `electron/core/input-draft.ts`, `src/lib/usage-window.ts`,
+the worktree path guard) starts with a header listing every way it can fail, then the tests,
+then the code. A test written after the code, one that restates a constant or one that only
+checks a mock was called is refused at the gate.
+
+Config is `vitest.config.mts`: node environment,
 globals on, `include: ['__tests__/**/*.test.ts']`, and an `@` → `src/` alias so renderer
 modules resolve the same way Next resolves them.
 
@@ -180,8 +222,9 @@ Layout mirrors the source tree: `__tests__/electron/services/api-routes/*.test.t
 print stack traces on success (`team-template-handlers` corrupt-store case, the security
 suites); a stderr block is not a failure, read the final summary line.
 
-`npm test` does **not** cover `src/` React components beyond two files
-(`__tests__/components/`). The renderer is guarded by the E2E sweep instead.
+`npm test` reaches `src/` through the 25 test files of `__tests__/components/`, several of which
+call a component as a function under `__tests__/components/hook-runtime.ts`. The renderer in a
+real window is the E2E specs' to prove.
 
 ### E2E surface sweep: `npm run e2e`
 

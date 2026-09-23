@@ -16,7 +16,7 @@
 - **MCP**: seven servers in `mcp-*/`, each bundled to `dist/bundle.js` and shipped in `extraResources`: orchestrator, memory, telegram, kanban, vault, socialdata, x
 - **Delegation**: two transports: keystrokes written into the PTY (`/dispatch`), and the Agent Client Protocol (`electron/services/acp/`), which actually returns a result
 - **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat and the Hermes webhook secret. `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI
-- **Tests**: `vitest` (unit, `__tests__/`), `@playwright/test` driving the real Electron app (`e2e/`)
+- **Tests**: E2E first: `@playwright/test` drives the real Electron app (`e2e/`), and every run leaves an artefact. `vitest` (`__tests__/`) is the regression net and the home of units tested in isolation, written failures first. The rules are in Workflow Rule 3
 - **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` declares `>=22.12.0`, Electron's own floor since 43, and CI runs 22
 
 ## Key Files
@@ -117,7 +117,8 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 ### QA Agent
 - **Owns**: `__tests__/`, `e2e/`, `vitest.config.mts`, `playwright.config.ts`
 - **Read-only** everywhere else: report defects, do not patch them
-- **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint` and `npm run lint:design` are clean, and `npm run e2e:auto` shows no new visual diff and no page error
+- **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint` and `npm run lint:design` are clean, `npm run e2e:auto` shows no new visual diff and no page error, and a feature's own E2E spec passes and leaves its artefact (Workflow Rule 3)
+- **Refused at the gate**: a unit test written after the code it tests, a test that restates a constant, a test that only checks a mock was called, and a spec nobody has seen turn red on the old build or a mutant
 - `npm run e2e:auto` decides from the diff whether the surfaces can have moved, and runs the full suite whenever they can. It skips only when every changed file is outside the running app (`__tests__/`, `mcp-*/`, `hooks/`, `scripts/`, root markdown), and says so at length when it does. Anything it cannot classify runs. `electron/` always runs: the suite boots the real app against a seeded home, so a main process change can and does move a screenshot
 - Reach for `npm run e2e` directly to force the full suite, and `npm run e2e:guard` when a surface was added
 - A visual diff is a finding, not a licence to re-record. `npm run e2e:update` is only run when the design was deliberately changed and the Pencil frame already reflects it
@@ -205,6 +206,21 @@ Pencil traps that will cost you an afternoon:
 
 ### 3. Verify before done
 
+> **The testing rules, Noah's instruction of 2026-09-23.** "Ajuste le CLAUDE.md et les .md
+> pertinents avec ca: https://x.com/anshnanda/status/2101627891721371971". The post opens an
+> AGENTS.md with three lines: never write unit tests after the code; prefer E2E tests as the
+> sole testing mechanism, each ending on a verifiable and repeatable artefact; to test a system
+> in isolation, first write all the ways it could fail, then write the code. What that means in
+> this repo is below. It is Noah's rule, not an agent's preference: do not revert it.
+
+1. **E2E first.** A feature is proven by an E2E spec that drives the real app: Playwright and `launchSandboxed` from `e2e/fixture.mjs`, real claude or the recording fake CLI through the agent's `cliPath`, a sandbox `HOME`, `--user-data-dir` and `CFFIXED_USER_HOME` (the fixture sets the last two)
+2. **Every E2E run leaves an artefact** another agent can re-run and compare: the app's own trace (`E2E_TRACE=on`), the screenshots and a JSON of the values asserted, in one run directory, with the one command that reproduces it. OPERATIONS.md, "Tests and guardrails", says how
+3. **A unit tested in isolation is written failures first.** A parser, `electron/core/input-draft.ts`, `src/lib/usage-window.ts`, the worktree path guard: the PR first writes down every way the unit can fail, in the test file's header, then the tests, then the code. No unit test is written after the code it tests
+4. **The vitest suite stays the regression net.** Nobody deletes tests to comply. A test that only restates a constant or asserts a mock call may go during the cleanup, with QA's agreement, in the same PR as the code it covered
+5. **A test is shown to bite**, E2E specs included: the old build or a mutant turns it red (negative witness, mutation bench)
+
+Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
+
 Nothing is complete until all of these pass. Run them from the repo root on Node 22:
 
 ```bash
@@ -233,7 +249,7 @@ To see a change in a real packaged build without disturbing your live instance: 
 
 - No temporary fixes, no `// TODO: proper fix later`, no swallowing an error to make a symptom disappear
 - Every change touches the minimum number of files. If a diff is growing sideways, you are solving the wrong problem
-- New behaviour that another feature depends on is not done until a test asserts the whole chain, not that a mock was called
+- New behaviour that another feature depends on is not done until an E2E spec drives the whole chain in the real app (Rule 3), not until a unit test shows a mock was called
 
 ---
 
@@ -265,7 +281,7 @@ When you are delegated a task by Tars or an orchestrator agent, **always act aut
 
 - **Simplicity first**: make every change as simple as it can be, and touch as little as possible
 - **No laziness**: find the root cause, senior-developer standards, no temporary fixes
-- **Prove it**: never mark a task complete without running the checks in Workflow Rule 3
+- **Prove it**: never mark a task complete without the checks in Workflow Rule 3, and never a feature without the E2E spec that drives it and the artefact it leaves
 
 ---
 
