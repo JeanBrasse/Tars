@@ -331,3 +331,104 @@ describe('one switch, and only the CLIs the fleet runs (Noah, 2026-09-23)', () =
     expect(clisInUse(['claude', 'amp' as never, 'codex' as never])).toEqual(new Set(['claude', 'amp', 'codex']));
   });
 });
+
+/**
+ * What U1 to U3 leave open, written by QA at the gate of PR #140.
+ *
+ * U1's "back on" half reads the shared log, where Q2 has already written the
+ * line it looks for, so it holds whatever the switch does once it is back on.
+ * Here a pass is counted by the fake CLI's own calls, in this test's file, and
+ * a log line by what it adds to the log. A tick that lands while a pass is
+ * still running does nothing, so each step waits for its pass to end.
+ */
+describe('QA #140: the switch at every tick, and the fleet at every tick', () => {
+  const runs = () => recorded().filter(c => c[0] === 'claude-end').length;
+  const count = (re: RegExp) => logLines(CLI_UPDATES_LOG).filter(l => re.test(l)).length;
+  const OFF = / all off: "Check for updates" is off in Settings, so no CLI is checked$/;
+  const NOT_RUN = / claude skipped: no agent runs it, so Tars does not check it$/;
+
+  /** Waits for claude to have been run `n` times in all, and for that pass to be over. */
+  async function passes(n: number) {
+    await vi.waitFor(() => expect(runs()).toBe(n), { timeout: 20_000, interval: 100 });
+    await sleep(500);
+  }
+
+  async function scheduled(getSettings: () => AppSettings, fleet: Array<string | undefined>, body: (tick: () => void) => Promise<void>) {
+    const home = os.homedir();
+    nativeClaude(home, '1.0.0');
+    Object.assign(process.env, { FAKE_CALLS: calls, FAKE_CLAUDE_MODE: 'current' });
+    const nodeOnly = path.join(root, 'node-only');
+    fs.mkdirSync(nodeOnly);
+    fs.writeFileSync(path.join(nodeOnly, 'node'), `#!/bin/sh\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = [nodeOnly, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
+    try {
+      const { timeouts, intervals } = captureTimers(() => startCliUpdates(getSettings, () => fleet as never));
+      let fired = false;
+      await body(() => { (fired ? intervals[0] : timeouts[0]).fn(); fired = true; });
+    } finally {
+      delete process.env.FAKE_CALLS;
+      delete process.env.FAKE_CLAUDE_MODE;
+      process.env.PATH = savedPath;
+      fs.rmSync(path.join(home, '.local'), { recursive: true, force: true });
+    }
+  }
+
+  // Settings are saved the way app:saveSettings saves them: a new object each
+  // time, never the one the updater was started with changed in place.
+  it('V1 checks again at the next tick once the switch is back on, counted by the CLI it runs', async () => {
+    let settings = { cliPaths: {}, autoCheckUpdates: false } as unknown as AppSettings;
+    await scheduled(() => settings, ['claude'], async tick => {
+      tick();
+      await sleep(800);
+      expect(recorded(), 'a CLI was run with the switch off').toEqual([]);
+      settings = { ...settings, autoCheckUpdates: true };
+      tick();
+      await passes(1);
+    });
+  }, 60_000);
+
+  it('V2 stops at the next tick when the switch is turned off after a pass, says so once, and resumes when it is back on', async () => {
+    let settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
+    await scheduled(() => settings, ['claude'], async tick => {
+      tick();
+      await passes(1);
+      const before = count(OFF);
+      settings = { ...settings, autoCheckUpdates: false };
+      tick();
+      tick();
+      await sleep(800);
+      expect(runs(), 'claude was run after the switch was turned off').toBe(1);
+      expect(count(OFF) - before, 'the off line, once for two ticks').toBe(1);
+      settings = { ...settings, autoCheckUpdates: true };
+      tick();
+      await passes(2);
+    });
+  }, 60_000);
+
+  it('V3 leaves an installed claude alone once no agent runs it, says so, and checks it again when one does', async () => {
+    const settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
+    const fleet: Array<string | undefined> = ['claude'];
+    await scheduled(() => settings, fleet, async tick => {
+      tick();
+      await passes(1);
+      const before = count(NOT_RUN);
+      fleet.splice(0, fleet.length, 'codex');
+      tick();
+      await vi.waitFor(() => expect(count(NOT_RUN)).toBe(before + 1), { timeout: 20_000, interval: 100 });
+      await sleep(500);
+      expect(recorded().filter(c => c[0] === 'claude-start'), 'claude was run for a fleet that does not run it').toHaveLength(1);
+      fleet.push('claude');
+      tick();
+      await passes(2);
+    });
+  }, 60_000);
+
+  it('V4 counts an agent with no provider as a claude agent, as every launch does', async () => {
+    const settings = { cliPaths: {}, autoCheckUpdates: true } as unknown as AppSettings;
+    await scheduled(() => settings, [undefined], async tick => {
+      tick();
+      await passes(1);
+    });
+  }, 60_000);
+});
