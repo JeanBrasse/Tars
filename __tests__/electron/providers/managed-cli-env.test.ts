@@ -22,10 +22,10 @@ import * as path from 'node:path';
  * the source for a direct pty.spawn.
  *
  * On the variable itself: the auto-updater is not what loses a dispatch, and
- * saying so is the point of the comment on managedCliEnv. It is off because it
- * swaps the binary under a live session and because its thirty minute redraw is
- * the only output an idle agent makes, which fills the hundred chunks Tars
- * keeps and loses the terminal's real history.
+ * saying so is the point of the comment on managedCliEnv. It is off because
+ * Tars updates claude itself, once (services/cli-updater.ts, and its tests in
+ * cli-updater.test.ts), where the updater inside each session downloaded every
+ * release once per session and asked each one for a restart.
  */
 
 const spawnCalls: Array<{ args: string[]; env: Record<string, string> }> = [];

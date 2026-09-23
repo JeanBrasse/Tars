@@ -257,14 +257,15 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
  * failed underneath it. An agent that looks stopped on "Checking for updates"
  * is not stopped by it.
  *
- * It is still wrong for a managed PTY, for two reasons that have both happened
- * on this machine. It replaces the binary under a session that is already
- * running, so an agent ends a task on a build it did not start on and the
- * footer offers a restart the user is not the one performing. And its thirty
- * minute redraw is the only output an idle agent produces, so it fills the
- * hundred output chunks Tars keeps per agent and the terminal's real history is
- * gone: sixteen agents here have nothing left in their buffer but update noise,
- * which is what made the updater look like the cause in the first place.
+ * It stays off in a managed PTY because Tars updates claude itself, once, in
+ * services/cli-updater.ts. Measured from 2.1.273 to 2.1.280: the updater in each
+ * session made its own 217 MB download, three for three sessions started
+ * together, and left every footer reading "Update installed · Restart to
+ * update", a restart the user is not the one performing. It does not replace
+ * the binary under a running session, as this comment used to say: the native
+ * installer gives each version its own file, and a session keeps running the
+ * one it started from. Its thirty minute redraw was also, on 2026-09-02, the
+ * only output idle agents had left in their buffers.
  *
  * DISABLE_AUTOUPDATER rather than DISABLE_UPDATES. Both stop the background
  * updater. DISABLE_UPDATES is the administrator lockdown: it is checked first,
