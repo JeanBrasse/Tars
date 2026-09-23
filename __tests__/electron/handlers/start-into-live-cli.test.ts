@@ -109,9 +109,9 @@ function deps(overrides: Record<string, unknown> = {}): IpcHandlerDependencies {
 }
 
 /** An agent whose terminal is open, spawned the way every agent terminal is. */
-function agentWithTerminal(status: AgentStatus['status']): { agent: AgentStatus; terminal: FakePty } {
+function agentWithTerminal(status: AgentStatus['status'], args = ['-l']): { agent: AgentStatus; terminal: FakePty } {
   const terminal = spawnAgentPty({
-    binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30,
+    binaryName: 'claude', shell: '/bin/bash', args, cwd: project, cols: 120, rows: 30,
     env: { CLAUDE_AGENT_ID: 'agent-live' },
   }) as unknown as FakePty;
   ptyProcesses.set('pty-live', terminal as never);
@@ -221,6 +221,27 @@ describe('start with only the shell left, after /exit', () => {
  * an agent that has none, after a stop, and read it within the same call: the
  * Frontend measured `/bin/bash` at 3 ms and `bash` only at 24 ms.
  */
+describe('a session the API started, which hands the shell its CLI to run', () => {
+  // spawnAgentSession opens `bash -l -c "cd ... && exec <cli>"`. Before the
+  // exec, and for the CLI's whole life when there was none, node-pty named
+  // bash: every agent the API had started read no CLI, the Dashboard offered
+  // Start, and Start typed its launch line into claude's own field (measured
+  // by the Frontend on 2026-09-23, on five of Noah's six Tars agents).
+  it.each(['bash', '2.1.280'])('types nothing and says so, with %s in front', async (name) => {
+    const { agent, terminal } = agentWithTerminal('idle', ['-l', '-c', `cd '${project}' && exec '/usr/local/bin/claude'`]);
+    terminal.process = name;
+
+    expect(await tickFor(agent.id)).toMatchObject({ cliRunning: true });
+    const result = await start(agent.id);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(result).toMatchObject({ success: false, cliRunning: true });
+    expect(result.error).toContain('Nothing was typed');
+    expect(terminal.write).not.toHaveBeenCalled();
+    expect(agent.status).toBe('idle');
+  });
+});
+
 describe('a terminal whose shell is still starting', () => {
   it.each(['/bin/bash', 'spawn-helper'])('reads %s as the shell: start types, and nothing says a CLI runs', async (name) => {
     const { agent, terminal } = agentWithTerminal('completed');
