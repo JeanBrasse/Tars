@@ -458,11 +458,9 @@ progress.
   nothing else.
 - **Don't add a shadow.** `scripts/design-lint.sh` fails on `shadow-sm|md|lg|xl|2xl`,
   and `globals.css` neutralises anything matching `[class*="shadow-"]` with
-  `box-shadow: none !important`. The dead `.card-hover` / `.hover-lift` /
-  `.shadow-elevated` utilities at the bottom of `globals.css` are pre-fork Dorothy
-  leftovers: `.card-hover` and `.card-accent` still carry its teal
-  (`rgba(61, 155, 148, …)`), while `.hover-lift` and `.shadow-elevated` carry a
-  warm brown shadow (`rgba(44, 36, 24, …)`). Unused, and not to be revived.
+  `box-shadow: none !important`. The pre-fork Dorothy utilities `.card-hover`,
+  `.card-accent`, `.hover-lift` and `.shadow-elevated`, with its teal and its warm
+  brown shadow, left `globals.css` on 2026-08-23 (a337e7a). Not to be revived.
 - **Don't use a gradient.** Lint fails on `bg-gradient`.
 - **Don't set a radius inline.** Lint fails on `style={{ borderRadius`. Radius
   comes from the theme: 2px on buttons, inputs, selects, and every `.rounded-*`
