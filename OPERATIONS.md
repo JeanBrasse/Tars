@@ -756,7 +756,9 @@ both behave identically. It:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
 3. types the message into the session (`mode: "message"`) when a CLI runs in the terminal,
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
-   at its prompt), or when the status is `running`/`waiting` (a session still starting), or
+   at its prompt). A session the API started counts from its spawn: its terminal was handed
+   `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
+   `waiting` over a bare shell had the message run as a command. Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
 
@@ -765,6 +767,15 @@ turn (`idle`) spawned over its CLI and threw its conversation away: the hooks lo
 `SESSION_END` of the agent's session followed within two seconds by a `SESSION_START` of a new
 one. `/message` follows the same rule; `/start` refuses with `409` (`cliRunning: true`) when a CLI
 is up.
+
+Until the same date a session the API started ran its CLI without `exec`, and the terminal named
+`bash` in front for the CLI's whole life: such an agent read as no CLI (`cliRunning: false`, a
+Start button on its panel) while claude worked, so the rule above did not protect it, and Start
+typed its launch line into claude's field. To see which shape a live agent has, read its CLI's
+parent without touching it: `ps -o pid,ppid,comm -p <claude pid>`. Under a build with the exec,
+an API-started claude is a child of Tars itself (`Electron` in a development run), with no shell
+in between; a claude started from the Dashboard runs under an interactive `/bin/bash -l`, as
+before. Under an older build the first has a `/bin/bash -l -c cd …` parent, and reads as no CLI.
 
 ---
 
