@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
 import type { AgentProvider } from '@/types/electron';
-import { Button, Dropdown, Input, PanelCaption, Textarea } from '@/components/ui';
+import { AgentMark, Button, Dropdown, Input, PanelCaption, Textarea } from '@/components/ui';
 import { ProviderAndModel } from './ProviderAndModel';
 import { OptionsRow } from './OptionsRow';
 import { AgentOptionsBody } from './AgentOptionsBody';
@@ -81,15 +81,20 @@ export function AgentPanel(props: {
           used to have nowhere to change its name: the state was prefilled and
           round-tripped straight back out, so an agent kept whatever it was
           called at creation for ever. Left empty it still falls back to the
-          generated name, which is what the placeholder shows. */}
+          generated name, which is what the placeholder shows. The mark beside
+          it is the one the name will draw everywhere else, redrawn as you
+          type, and orange once the Orchestrator row below is on. */}
       <div>
         <PanelCaption className="mb-1.5">Name</PanelCaption>
-        <Input
-          aria-label="Agent name"
-          value={props.name}
-          onChange={(e) => props.onNameChange(e.target.value)}
-          placeholder={props.namePlaceholder}
-        />
+        <div className="flex items-center gap-2.5">
+          <AgentMark name={props.name.trim() || props.namePlaceholder} orchestrator={props.isOrchestrator} size={24} />
+          <Input
+            aria-label="Agent name"
+            value={props.name}
+            onChange={(e) => props.onNameChange(e.target.value)}
+            placeholder={props.namePlaceholder}
+          />
+        </div>
       </div>
 
       {/* PROJECT beside OR / Choose a folder - the two ways to point an agent

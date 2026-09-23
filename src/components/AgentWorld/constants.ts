@@ -1,18 +1,4 @@
 import { createXtermTheme, getTerminalFontFamily, getTerminalMode } from '@/lib/terminal-theme';
-import type { AgentCharacter } from '@/types/electron';
-
-// Character emoji/icons mapping
-export const CHARACTER_FACES: Record<AgentCharacter, string> = {
-  robot: '🤖',
-  ninja: '🥷',
-  wizard: '🧙',
-  astronaut: '👨‍🚀',
-  knight: '⚔️',
-  pirate: '🏴‍☠️',
-  alien: '👽',
-  viking: '🪓',
-  frog: '🐸',
-};
 
 // Terminal themes live in src/lib/terminal-theme.ts, the single xterm source (R9).
 // The exports below are migration shims for the call sites that still read a theme

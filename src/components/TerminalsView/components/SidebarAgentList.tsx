@@ -2,7 +2,8 @@
 
 import { Play, Square } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { CHARACTER_FACES, STATUS_COLORS } from '../constants';
+import { STATUS_COLORS } from '../constants';
+import { AgentMark } from '@/components/ui';
 
 interface SidebarAgentListProps {
   agents: AgentStatus[];
@@ -30,9 +31,6 @@ export default function SidebarAgentList({
   return (
     <div className="p-2 space-y-0.5">
       {agents.map((agent, index) => {
-        const emoji = agent.name?.toLowerCase() === 'bitwonka'
-          ? '🐸'
-          : CHARACTER_FACES[agent.character || 'robot'] || '🤖';
         const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
         const projectName = agent.projectPath.split('/').pop() || '';
         const status = STATUS_COLORS[agent.status] || STATUS_COLORS.idle;
@@ -58,7 +56,7 @@ export default function SidebarAgentList({
 
             {/* Avatar */}
             <div className="relative">
-              <span className="text-sm">{emoji}</span>
+              <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} />
               {agent.status === 'running' ? (
                 <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2">
                   <span className=" absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
