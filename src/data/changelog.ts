@@ -7,6 +7,29 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 47,
+    version: '1.8.0',
+    date: '2026-09-23',
+    updates: [
+      'An agent launches on the model and effort you set for it, and a change of model, effort or permission mode takes effect by itself: Tars restarts its CLI on the same conversation once it is between turns, never during a turn, a permission question or something you are typing. A relaunch no longer comes back on the model its last session happened to use. This covers Claude and the providers that run on it; another CLI takes the change at its next start',
+      'A message to an agent whose CLI is running is typed into its session. Once a turn had ended, a message sent through Tars killed that session and started a fresh one that remembered nothing, and whatever you had typed in its field went with it; it happened to an orchestrator\'s own session. A message is never typed into a bare shell either: Tars starts the agent there instead',
+      'A message waiting behind a /model or /effort picker you answered by hand goes in by itself once the command finishes, where it used to wait until you pressed Ctrl+C. The Tars tools say HELD rather than Sent when a message waits, and every message Tars types into a terminal first names who sent it: an agent, Tars, Telegram, Slack or Hermes',
+      'The Orchestrator switch is the agent\'s role. A project has one orchestrator: switching it on for another agent asks first, naming the current one, then hands the role over and restarts both once they are free. Renaming an agent never changes its role, switching the role leaves its permission mode alone, and an orchestrator starts on the permission mode set for it, where Tars always put it in bypass',
+      'A Dashboard panel you come back to shows its terminal\'s whole screen again, where it could come back unreadable, and a new terminal starts at its panel\'s size',
+      'A panel whose Claude left fullscreen without telling the terminal says so on a line under its header, since the wheel cannot scroll it there, and offers to read the conversation from its history or to restart it',
+      'Usage: the timeframe, now in the page header, drives every figure on the page except the budget panel, which stays month to date. Today\'s cost follows as it grows instead of freezing until a new session, Claude keeps its budget row when another provider spent more this month, and Opus 5.5 is named Opus 5.5',
+      'Tars keeps claude and Amp up to date itself, one at a time, a few seconds after it opens and every half hour, so a model a new release brings reaches your agents without running claude update by hand. Sessions already running are not touched, and each result is written to ~/.dorothy/cli-updates.log',
+      'The Chat\'s composer is one card, like Claude\'s and ChatGPT\'s, in the rooms and with Hermes. Enter sends and Shift+Enter starts a new line, a picker chooses who the message is for, and a line across the top says when a message cannot go yet: a failed send, which keeps your text, a stopped agent, which you can start from there, or a busy one it will wait for',
+      'The hooks your agents\' CLIs report through now present that terminal\'s own key, so another process can no longer change an agent\'s status or take over its session. Their logs moved from /tmp to ~/.dorothy/logs, readable by you only, and the old ones in /tmp are deleted',
+      'The Slack bot answers only the members allowed in Settings > Slack, nobody while that list is empty, and tells anyone it refuses their Slack ID. Removing a Telegram chat in Settings cuts it off at once, and a file in ~/.tars-private can no longer reach the vault under another spelling of its path or through a hard link',
+      'The Posting switch in Settings > X (Twitter) is enforced: while it is off, which it is by default, agents cannot post, reply or delete on X',
+      'Run from source, npm run dev listens on this Mac only, and the web build\'s routes that could run commands are gone',
+      'After you change the Hermes connection, sign in or sign out, the Chat goes back to its live Hermes session instead of the slower path it kept until Tars restarted. Hermes errors read as Hermes wrote them, where some showed [object Object], and the Hermes page gives the webhook address on this Tars\'s own port',
+      'Tars runs on Electron 44 (Chromium 152) and needs macOS 13 or later',
+      'Extensions and skills get plain icons, and the install dialogs and the broadcast notice no longer blur what is behind them',
+    ],
+  },
+  {
     id: 46,
     version: '1.7.9',
     date: '2026-09-21',
