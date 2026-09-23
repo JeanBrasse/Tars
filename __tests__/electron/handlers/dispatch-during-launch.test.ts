@@ -680,4 +680,49 @@ describe('QA #158: every sender answered in time, and the link a refusal leaves'
 
     expect(agent.requestedBy?.agentId, 'a sender typed nothing, and took the note owed to the orchestrator').toBe('orch');
   });
+
+  // The same two, the other way round: which route comes second, and which is
+  // refused. Measured at the re-check: with only the tests above, /dispatch
+  // counting its 20 s from the lock again, and /message recording the link
+  // before its wait or never, all left the suite green.
+  it('answers a second sender that is a /dispatch, queued behind a /message, before its caller gives up', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const t0 = Date.now();
+    const at: number[] = [];
+    const first = send('orch', agent.id, 'ONE?', 'message').then(r => { at[0] = Date.now() - t0; return r; });
+    const second = send('qa', agent.id, 'TWO?').then(r => { at[1] = Date.now() - t0; return r; });
+    await vi.advanceTimersByTimeAsync(35_000);
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const answers = [await first, await second];
+
+    expect(answers[0].status).toBe(409);
+    expect(at[0]).toBeLessThan(30_000);
+    expect(at[1], `the second sender was answered ${JSON.stringify(answers[1])} after ${at[1]} ms`).toBeLessThan(30_000);
+  });
+
+  it('leaves the link alone when a /message is refused, and gives it to a /message once typed', async () => {
+    const { agent, terminal } = plannerBeingStarted();
+    await send('orch', agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const refused = send('qa', agent.id, 'WORD?', 'message');
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect((await refused).status).toBe(409);
+    expect(agent.requestedBy?.agentId, 'a refused /message took the note owed to the orchestrator').toBe('orch');
+
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const typed = send('qa', agent.id, 'WORD?', 'message');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await typed).status).toBe(200);
+    expect(agent.requestedBy?.agentId, 'a /message typed in did not become the requester').toBe('qa');
+  });
 });
