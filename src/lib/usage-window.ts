@@ -220,6 +220,10 @@ export function usageRows(days: TranscriptDay[] | undefined, ledger: LedgerDay[]
 export function recordsStart(days: TranscriptDay[] | undefined, ledgerOldest: string | null): string | null {
   let first = ledgerOldest;
   for (const day of days ?? []) {
+    // A legacy stats-cache.json day carries neither split nor price, and no
+    // figure on the page counts it (see usageRows), so it records nothing:
+    // counted here, it put "records start 3 Mar 2026" beside $0.00.
+    if (!day.breakdownByModel && !day.costByModel) continue;
     if (!first || day.date < first) first = day.date;
   }
   return first;

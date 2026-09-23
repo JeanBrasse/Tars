@@ -29,6 +29,27 @@ interface TokenStats {
   providerTotals?: Record<string, { in: number; out: number; cost: number; sessions: number }>;
 }
 
+/**
+ * The latest day of the transcripts, cheaply: its date, its cost and its
+ * tokens. A day's cost grows all day without moving the date the stats were
+ * computed for, the session counts or the rate windows, so a poll that compared
+ * only those kept the morning's figures until the next session started, and
+ * for good on an API key, which has no rate windows. The days come sorted by
+ * date, so the last is the newest.
+ */
+function latestDayOf(stats: ClaudeStats | null | undefined): string {
+  const days = stats?.dailyModelTokens;
+  const last = days?.[days.length - 1];
+  if (!last) return '';
+  const tokens = Object.values(last.tokensByModel ?? {}).reduce((sum, n) => sum + n, 0);
+  return `${last.date}|${last.costUSD ?? ''}|${tokens}`;
+}
+
+/** The same for token-stats.json, whose over-quota share the Usage page reads. */
+function tokenStatsOf(stats: TokenStats | null | undefined): string {
+  return stats ? `${stats.totalCostUsd}|${stats.extraCostUsd}|${stats.sessionCount}` : '';
+}
+
 interface ClaudeData {
   settings: ClaudeSettings | null;
   stats: ClaudeStats | null;
@@ -93,12 +114,16 @@ export function useClaude() {
               // And the figures themselves. Without this the poll kept the
               // first stats it ever saw for as long as no project or session
               // count moved, so a cost that grew, or a transcript that stopped
-              // being readable, never reached the page. Compared on the two
-              // fields the Usage page actually reads rather than the whole
-              // object, which carries a per-day array that is expensive to
-              // stringify every ten seconds.
+              // being readable, never reached the page. Compared on what the
+              // Usage page reads, cheaply, rather than on the whole object,
+              // which carries a per-day array that is expensive to stringify
+              // every ten seconds: the date, the unreadable count, and the
+              // latest day and token-stats.json as latestDayOf and
+              // tokenStatsOf sum them up.
               prev.stats?.lastComputedDate === (result.stats as ClaudeStats | null)?.lastComputedDate &&
-              prev.stats?.unreadable === (result.stats as ClaudeStats | null)?.unreadable;
+              prev.stats?.unreadable === (result.stats as ClaudeStats | null)?.unreadable &&
+              latestDayOf(prev.stats) === latestDayOf(result.stats as ClaudeStats | null) &&
+              tokenStatsOf(prev.tokenStats) === tokenStatsOf(result.tokenStats as TokenStats | null);
             // No significant changes
             if (unchanged) return prev;
 
