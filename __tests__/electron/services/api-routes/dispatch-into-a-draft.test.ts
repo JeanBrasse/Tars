@@ -41,8 +41,10 @@ vi.mock('../../../../electron/services/acp/delegate', () => ({
 
 const broadcasts: Array<{ channel: string; payload: unknown }> = [];
 
+import * as pty from 'node-pty';
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
 import { agents } from '../../../../electron/core/agent-manager';
+import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import {
   PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, ptyProcesses, resetTerminalInput, writeHumanInput,
 } from '../../../../electron/core/pty-manager';
@@ -54,7 +56,7 @@ const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-dispatch-draft-'));
 let routes: RouteApp;
 let ctx: RouteContext;
 let written: string[];
-let terminal: { write: (data: string) => void };
+let terminal: { write: (data: string) => void; process: string; onExit: () => { dispose(): void } };
 
 /** Calls a route the way the server does, and returns what it answered. */
 async function call(method: string, url: string, body: Record<string, unknown> = {}, caller?: string, internal = false) {
@@ -81,7 +83,12 @@ beforeEach(() => {
   ptyProcesses.clear();
   broadcasts.length = 0;
   written = [];
-  terminal = { write: (data: string) => { written.push(data); } };
+  // A CLI up in the worker's terminal, opened the way every agent terminal
+  // is: the routes type into a session only where cliRunningIn finds one.
+  // onExit: spawnAgentPty drops what a terminal held when it exits (#128).
+  terminal = { write: (data: string) => { written.push(data); }, process: '2.1.280', onExit: () => ({ dispose() {} }) };
+  vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
+  spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 80, rows: 24, env: {} });
   ptyProcesses.set('pty-worker', terminal as never);
 
   routes = {

@@ -7,6 +7,7 @@ import { SLACK_CHARACTER_FACES } from '../constants';
 import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
+import { cliRunningIn } from '../core/agent-pty';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
@@ -458,6 +459,27 @@ export async function handleSlackCommand(
         return;
       }
 
+      // A CLI already up in the terminal is a session between turns (every
+      // turn ends on `idle`, a failed one on `error`): the task goes in as a
+      // message. Typed as a launch command it landed in the CLI's own field.
+      if (cliRunningIn(ptyProcess)) {
+        const outcome = writeProgrammaticInput(ptyProcess, task, true, {
+          agentId: agent.id, from: 'Slack', sender: { kind: 'channel', channel: 'Slack' },
+        });
+        if (outcome === 'refused') {
+          await say(`:x: ${agent.name} has too many messages waiting for its terminal.`);
+          return;
+        }
+        agent.status = 'running';
+        agent.currentTask = task.slice(0, 100);
+        agent.lastActivity = new Date().toISOString();
+        saveAgents();
+        await say(outcome === 'held'
+          ? `:hourglass: ${agent.name}'s session is open but its field is in use: the task goes in once it is free.\n\nTask: ${task}`
+          : `:incoming_envelope: Sent to *${agent.name}*, whose session is open\n\nTask: ${task}`);
+        return;
+      }
+
       const slackAgentProvider = getProvider(agent.provider);
       let mcpConfigPath: string | undefined;
       if (slackAgentProvider.getMcpConfigStrategy() === 'flag') {
@@ -573,8 +595,10 @@ export async function sendToSuperAgentFromSlack(
       return;
     }
 
-    // If agent is running or waiting, send message to existing session
-    if (superAgent.status === 'running' || superAgent.status === 'waiting') {
+    // A CLI up in its terminal gets the message, whatever the status says. The
+    // status said `running` or `waiting` over a bare shell after a CLI died
+    // without its SessionEnd, and the message typed there ran as a command.
+    if (cliRunningIn(ptyProcess)) {
       superAgentSlackTask = true;
       superAgentSlackBuffer = [];
 
@@ -589,12 +613,8 @@ export async function sendToSuperAgentFromSlack(
       });
 
       await say(':crown: Super Agent is processing...');
-    } else if (
-      superAgent.status === 'idle' ||
-      superAgent.status === 'completed' ||
-      superAgent.status === 'error'
-    ) {
-      // No active session, start a new one
+    } else {
+      // No CLI in its terminal, whatever the status says: start one
       const workingPath = (superAgent.worktreePath || superAgent.projectPath).replace(
         /'/g,
         "'\\''",
@@ -654,8 +674,6 @@ export async function sendToSuperAgentFromSlack(
       armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
 
       await say(':crown: Super Agent is processing your request...');
-    } else {
-      await say(`:crown: Super Agent is in ${superAgent.status} state. Try again in a moment.`);
     }
   } catch (err) {
     console.error('Failed to send to Super Agent:', err);

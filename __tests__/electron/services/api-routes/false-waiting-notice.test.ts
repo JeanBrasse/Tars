@@ -36,13 +36,15 @@ type FakePty = {
   onExit: (cb: (e: { exitCode: number }) => void) => void;
   kill: ReturnType<typeof vi.fn>;
   write: ReturnType<typeof vi.fn>;
+  /** What node-pty names in front: first the file it spawned, then a CLI's name. */
+  process?: string;
 };
 
 function fakePty(): FakePty {
   return { onData: () => {}, onExit: () => {}, kill: vi.fn(), write: vi.fn() };
 }
 
-vi.mock('node-pty', () => ({ spawn: vi.fn(() => fakePty()) }));
+vi.mock('node-pty', () => ({ spawn: vi.fn((file: string) => ({ ...fakePty(), process: file })) }));
 let ptyCounter = 0;
 vi.mock('uuid', () => ({ v4: vi.fn(() => `pty-spawned-${++ptyCounter}`) }));
 vi.mock('electron', () => ({
@@ -72,6 +74,7 @@ import { registerAgentRoutes } from '../../../../electron/services/api-routes/ag
 import { registerHooksRoutes } from '../../../../electron/services/api-routes/hooks-routes';
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
+import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { delegateOverAcp } from '../../../../electron/services/acp/delegate';
 import { startAgentWatch, stopAgentWatch } from '../../../../electron/services/agent-watch';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
@@ -182,7 +185,12 @@ function putAgent(over: Partial<AgentStatus> & { id: string }): AgentStatus {
 }
 
 function liveTerminal(ptyId: string): FakePty {
-  const pty = fakePty();
+  // A CLI up in it, opened the way every agent terminal is: the routes type
+  // into a session only where cliRunningIn finds one.
+  const pty = spawnAgentPty({
+    binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 80, rows: 24, env: {},
+  }) as unknown as FakePty;
+  pty.process = '2.1.280';
   ptyProcesses.set(ptyId, pty as never);
   return pty;
 }
@@ -288,15 +296,16 @@ describe('the idle prompt of a rest that is already over', () => {
     await run.answered;
   });
 
-  it('cannot come through /dispatch: an agent at rest for less than a minute gets a new session, and the old one is buried', async () => {
+  it('does not either through /dispatch, which types into the session of an agent at rest for less than a minute', async () => {
     await oneDelegatedTaskEarlier();
     await pause(IDLE_PROMPT_AFTER_MS / 2);
 
-    // `idle`, not yet `waiting`: /dispatch has no live prompt to type into and
-    // spawns a session, which tombstones the one whose idle prompt is pending.
+    // `idle`, not yet `waiting`, its CLI at its prompt: /dispatch types into
+    // that session. It used to start a new one over it, which buried this one
+    // and its conversation with it.
     const answer = await dispatch('BotID');
-    expect((answer!.data as { mode: string }).mode).toBe('start');
-    expect(backend().lastKilledSessionId).toBe('sess-be');
+    expect((answer!.data as { mode: string }).mode).toBe('message');
+    expect(backend().currentSessionId).toBe('sess-be');
 
     await pause(IDLE_PROMPT_AFTER_MS / 2);
     await idlePrompt('sess-be');
@@ -538,7 +547,7 @@ describe('a note held while the orchestrator was busy', () => {
     expect(toldOrchestrator(), 'the end of the second task never reached the orchestrator').toHaveLength(1);
   });
 
-  it('is not handed over either when the new work came within the minute, as a new session', async () => {
+  it('is not handed over either when the new work came within the minute', async () => {
     await dispatch('task one');
     await pause(500);
     await turnStarts('task one');
@@ -547,9 +556,9 @@ describe('a note held while the orchestrator was busy', () => {
     await turnEnds('task one: done');
     await pause(20_000);
 
-    // Still `idle`: /dispatch starts a new session with the task.
+    // Still `idle`, its CLI at its prompt: /dispatch types the task into it.
     const answer = await dispatch('task two');
-    expect((answer!.data as { mode: string }).mode).toBe('start');
+    expect((answer!.data as { mode: string }).mode).toBe('message');
     await orchestratorStops();
     await pause(500);
 

@@ -17,8 +17,10 @@ import { EventEmitter } from 'events';
 const mockPtyInstances: { onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn> }[] = [];
 
 vi.mock('node-pty', () => ({
-  spawn: vi.fn(() => {
-    const inst = { onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn() };
+  // `process` as node-pty first reports it, the file it was asked to spawn:
+  // the session the first dispatch opens is readable, and starting.
+  spawn: vi.fn((file: string) => {
+    const inst = { onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn(), process: file };
     mockPtyInstances.push(inst);
     return inst;
   }),

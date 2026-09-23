@@ -24,6 +24,7 @@ interface TerminalGridProps {
   onRegisterContainer: (agentId: string, container: HTMLDivElement | null) => void;
   onStartAgent: (agentId: string) => void;
   onStopAgent: (agentId: string) => void;
+  onRestartAgent: (agentId: string) => void;
   onRemoveAgent: (agentId: string) => void;
   onClearTerminal: (agentId: string) => void;
   onFullscreenPanel: (agentId: string) => void;
@@ -54,6 +55,7 @@ function TerminalGrid({
   onRegisterContainer,
   onStartAgent,
   onStopAgent,
+  onRestartAgent,
   onRemoveAgent,
   onClearTerminal,
   onFullscreenPanel,
@@ -182,6 +184,7 @@ function TerminalGrid({
             onRegisterContainer={onRegisterContainer}
             onStart={onStartAgent}
             onStop={onStopAgent}
+            onRestart={onRestartAgent}
             onRemove={onRemoveAgent}
             onClear={onClearTerminal}
             onFullscreen={onFullscreenPanel}
@@ -223,6 +226,7 @@ function TerminalGrid({
                 onRegisterContainer={onRegisterContainer}
                 onStart={onStartAgent}
                 onStop={onStopAgent}
+                onRestart={onRestartAgent}
                 onRemove={onRemoveAgent}
                 onClear={onClearTerminal}
                 onFullscreen={onFullscreenPanel}

@@ -91,6 +91,7 @@ import { registerAgentRoutes } from '../../../../electron/services/api-routes/ag
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
 import { startAgentWatch, stopAgentWatch } from '../../../../electron/services/agent-watch';
+import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 import type { AgentTickItem } from '../../../../electron/utils/agents-tick';
@@ -190,6 +191,18 @@ function liveTerminal(ptyId: string): FakePty {
   return pty;
 }
 
+/** A session between turns: a CLI in front of the terminal's shell, and the
+ *  status `idle`, which is what every turn ends on. A message is typed into
+ *  it only because a CLI runs there: without one it would run as a command. */
+function liveCliTerminal(ptyId: string): FakePty {
+  const pty = spawnAgentPty({
+    binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30, env: {},
+  }) as unknown as FakePty & { process: string };
+  pty.process = '2.1.280';
+  ptyProcesses.set(ptyId, pty as never);
+  return pty;
+}
+
 /** The Chat page's rail: every agent:status this agent was announced with. */
 const railHeard = (id: string) => pushes
   .filter(p => p.channel === 'agent:status' && (p.payload as { agentId: string }).agentId === id)
@@ -279,7 +292,7 @@ describe('an agent changed over the API', () => {
   });
 
   it('shows as working when /dispatch types into its live session', async () => {
-    const terminal = liveTerminal('pty-live');
+    const terminal = liveCliTerminal('pty-live');
     putAgent({ id: 'a1', status: 'waiting', ptyId: 'pty-live', ptyCwd: project });
 
     const answer = await call('POST', '/api/agents/a1/dispatch', { message: 'carry on' });
@@ -291,7 +304,7 @@ describe('an agent changed over the API', () => {
   });
 
   it('shows as working when /message types into its live session', async () => {
-    const terminal = liveTerminal('pty-live');
+    const terminal = liveCliTerminal('pty-live');
     putAgent({ id: 'a1', status: 'idle', ptyId: 'pty-live', ptyCwd: project });
 
     await call('POST', '/api/agents/a1/message', { message: 'one more thing' });
