@@ -1482,9 +1482,13 @@ A turn can end with work still running in the background (Claude Code refuses a 
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
 
-A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+A restart that waits tells every window what it waits on (`agent:restart-pending`, and
+`agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
+panel shows it once the Frontend's part lands. Deleting the agent drops the wait and tells the
+windows it is over. A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
 CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
-vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+vendor included, and they continue their conversation too, found under the project's real path as
+well as the one Tars saved (a project reached through a symlink resumed nothing before); codex, gemini, grok, opencode, pi and
 amp never are: stop and start them. To see what a running CLI was actually launched with, read
 its argv (the model and effort are on the command line):
 

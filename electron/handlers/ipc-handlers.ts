@@ -34,7 +34,7 @@ import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchBegins, launchAbandoned, type AgentLauncher } from '../core/agent-launch';
-import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch } from '../core/agent-restart';
+import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
 import { assignRole, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
@@ -1204,6 +1204,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
 
     agents.delete(id);
+    forgetRestart(id);
 
     // Save agents to disk
     saveAgents();
@@ -1268,6 +1269,20 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
    * An agent absent from the list is holding nothing.
    */
   ipcMain.handle('agent:messagesWaiting', async () => ({ success: true, waiting: messagesWaiting() }));
+
+  /**
+   * The restarts waiting to apply a changed model, effort or other launch
+   * setting, and what each waits on. The same state `agent:restart-pending`
+   * pushes, for a window that opened after the wait began (core/agent-restart.ts).
+   */
+  ipcMain.handle('agent:pendingRestarts', async () => ({ success: true, pending: pendingRestarts() }));
+
+  /**
+   * Restart an agent's CLI now, continuing its conversation under a new
+   * session id. What the Dashboard's `restart` calls; a stop then a start
+   * begins a new conversation instead.
+   */
+  ipcMain.handle('agent:restart', async (_event, id: string) => restartAgent(id));
 
   // Resize agent PTY
   ipcMain.handle('agent:resize', async (_event, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
