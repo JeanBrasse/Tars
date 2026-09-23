@@ -69,7 +69,11 @@ export function Composer({
       onSubmit={onSend}
       placeholder={placeholder}
       canSubmit={!disabled && hasContent}
-      submitLabel={busy ? 'Queue: it goes when Hermes has answered' : 'Send to Hermes'}
+      // Off with Hermes out of reach, send and + say why themselves: faded
+      // under their usual names, they read as broken, and only the
+      // placeholder explained (QA's gate of #124).
+      submitLabel={disabled ? 'Nothing reaches Hermes until its connection works'
+        : busy ? 'Queue: it goes when Hermes has answered' : 'Send to Hermes'}
       notice={notice}
       attachments={attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2">
@@ -89,7 +93,8 @@ export function Composer({
       ) : null}
       controls={controls}
       onAttach={!disabled && !attaching ? onAttach : undefined}
-      attachLabel={attaching ? 'Uploading' : 'Attach files'}
+      attachLabel={disabled ? 'Files cannot reach Hermes until its connection works'
+        : attaching ? 'Uploading' : 'Attach files'}
     />
   );
 }

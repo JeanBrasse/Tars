@@ -76,6 +76,21 @@ export function MenuPicker<T extends string = string>({
   const ref = useRef<HTMLDivElement>(null);
   const current = options.find(o => o.value === value);
 
+  // Where the pointer last was, as the rows heard it: null until they hear of
+  // it. A row takes the highlight from the pointer only once the pointer has
+  // really moved. Chromium sends a mouseenter and a mousemove at the same spot
+  // when the panel opens under a pointer at rest, and the panel opens over the
+  // message field, which is where the pointer rests after a click in it. The
+  // row under it took the highlight with no movement at all, the arrows then
+  // stepped from that row, and Enter picked one the keys never chose (QA's
+  // gate of #124: 4 runs in 4).
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const pointerMoved = (e: React.MouseEvent) => {
+    const last = pointer.current;
+    pointer.current = { x: e.screenX, y: e.screenY };
+    return last !== null && (last.x !== e.screenX || last.y !== e.screenY);
+  };
+
   const close = useCallback(() => {
     setOpen(false);
     setActive(-1);
@@ -92,6 +107,7 @@ export function MenuPicker<T extends string = string>({
   // at once would otherwise step from nowhere and land on the first row, and
   // the Enter after it would pick that row instead of the one highlighted.
   const openMenu = useCallback(() => {
+    pointer.current = null;
     setActive(initialIndex(options, value));
     setOpen(true);
   }, [options, value]);
@@ -196,10 +212,15 @@ export function MenuPicker<T extends string = string>({
                 aria-selected={o.value === value}
                 data-index={i}
                 disabled={o.disabled}
-                onMouseEnter={() => setActive(i)}
+                onMouseEnter={e => { if (!pointer.current) pointer.current = { x: e.screenX, y: e.screenY }; }}
+                onMouseMove={e => { if (pointerMoved(e) && !o.disabled && i !== active) setActive(i); }}
                 onClick={() => commit(o)}
+                // One fill, the row Enter picks. The current choice is marked by
+                // its check, as the frame draws it: when both carried the fill,
+                // two rows looked highlighted and the keys could not tell which
+                // one Enter would take.
                 className={`w-full h-8 pl-2.5 pr-2 flex items-center gap-2 text-left transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                  o.value === value || i === active ? 'bg-secondary' : ''
+                  i === active ? 'bg-secondary' : ''
                 }`}
               >
                 <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center">{o.leading}</span>
