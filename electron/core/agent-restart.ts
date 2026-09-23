@@ -106,20 +106,57 @@ export function changedLaunchSettings(before: LaunchSettings, after: LaunchSetti
     .filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
 }
 
+/**
+ * What a restart is waiting on: the turn, a permission answer, a note owed to
+ * the agent, work left running in the background, its field (FieldInUse), or
+ * its CLI, which is still starting from the last restart (`launch`).
+ */
+export type RestartWait = 'turn' | 'permission' | 'note' | 'background' | 'launch' | FieldInUse;
+
 /** What became of a change, for the log and for whoever asked. */
 export type RestartOutcome =
   | { action: 'restarted' }
   | { action: 'next-launch'; why: string }
-  | { action: 'waiting'; for: 'turn' | 'permission' | 'note' | 'background' | FieldInUse };
+  | { action: 'waiting'; for: RestartWait };
 
 interface Pending {
   settings: Set<string>;
   timer?: ReturnType<typeof setTimeout>;
   /** The last thing logged, so a wait is said once and not on every key. */
   said?: string;
+  /** What it waits on, once decide() has looked. */
+  waitingFor?: RestartWait;
 }
 
 const pending = new Map<string, Pending>();
+
+/**
+ * A restart waiting to apply, as a window shows it: which settings, and what
+ * it waits on. Without it every wait looked like "I changed the effort and it
+ * answered on the old one", which is the report the restart exists to answer.
+ */
+export interface PendingRestart {
+  agentId: string;
+  settings: string[];
+  waitingFor: RestartWait;
+}
+
+/** What each agent's windows were last told, so a push goes out on a change and not on every key. */
+const shown = new Map<string, string>();
+
+/**
+ * Push `agent:restart-pending` when what a window should show for this agent
+ * changed: `pending` is null once the restart happened or has nothing to do.
+ */
+function show(agentId: string): void {
+  const entry = pending.get(agentId);
+  const now = entry?.waitingFor ? { settings: [...entry.settings], waitingFor: entry.waitingFor } : null;
+  const key = now ? JSON.stringify(now) : undefined;
+  if (shown.get(agentId) === key) return;
+  if (key) shown.set(agentId, key);
+  else shown.delete(agentId);
+  broadcastToAllWindows('agent:restart-pending', { agentId, pending: now });
+}
 const restarting = new Set<string>();
 
 /**
@@ -197,16 +234,28 @@ export function restartForSettings(agentId: string, changed: string[]): RestartO
   return decide(agentId);
 }
 
-/** The settings of an agent a restart is waiting to apply, if any. */
-export function pendingRestart(agentId: string): string[] | undefined {
-  const entry = pending.get(agentId);
-  return entry ? [...entry.settings] : undefined;
+/**
+ * Every restart waiting right now, for a window that opened after the wait
+ * began: `agent:restart-pending` only reaches a window already listening. An
+ * agent absent from the list has no restart waiting.
+ */
+export function pendingRestarts(): PendingRestart[] {
+  return [...pending.entries()]
+    .filter(([, entry]) => entry.waitingFor)
+    .map(([agentId, entry]) => ({ agentId, settings: [...entry.settings], waitingFor: entry.waitingFor! }));
 }
 
 function drop(agentId: string): void {
   const entry = pending.get(agentId);
   if (entry?.timer) clearTimeout(entry.timer);
   pending.delete(agentId);
+  show(agentId);
+}
+
+function waitingOn(agentId: string, entry: Pending, reason: RestartWait): RestartOutcome {
+  entry.waitingFor = reason;
+  show(agentId);
+  return { action: 'waiting', for: reason };
 }
 
 /** Look at the agent now: restart, wait, or let the next launch do it. */
@@ -224,11 +273,11 @@ function decide(agentId: string): RestartOutcome {
   if (ptyProcess && booting && !cliRunningIn(ptyProcess)) {
     say(agent, entry, `${settings} changed while its CLI restarts: restarting again once it is up`);
     lookAgain(agentId, 1000);
-    return { action: 'waiting', for: 'writing' };
+    return waitingOn(agentId, entry, 'launch');
   }
   if (restarting.has(agentId)) {
     lookAgain(agentId, 1000);
-    return { action: 'waiting', for: 'writing' };
+    return waitingOn(agentId, entry, 'launch');
   }
   if (!ptyProcess || !cliRunningIn(ptyProcess)) {
     drop(agentId);
@@ -246,10 +295,10 @@ function decide(agentId: string): RestartOutcome {
     return { action: 'next-launch', why: 'its CLI does not report the end of a turn' };
   }
 
-  const wait = (reason: 'turn' | 'permission' | 'note' | 'background' | FieldInUse, line: string, retryInMs?: number): RestartOutcome => {
+  const wait = (reason: RestartWait, line: string, retryInMs?: number): RestartOutcome => {
     say(agent, entry, `${settings} changed: restarting ${line}`);
     if (retryInMs !== undefined) lookAgain(agentId, retryInMs + 50);
-    return { action: 'waiting', for: reason };
+    return waitingOn(agentId, entry, reason);
   };
 
   if (agent.status === 'running') return wait('turn', 'when its turn ends');
@@ -277,8 +326,27 @@ function decide(agentId: string): RestartOutcome {
 
   drop(agentId);
   say(agent, undefined, `${settings} changed: restarting its CLI now`);
-  void restartNow(agent);
+  void restartNow(agent, 'settings');
   return { action: 'restarted' };
+}
+
+/**
+ * Restart an agent's CLI because somebody asked, continuing its conversation:
+ * the Dashboard's `restart` on a panel whose claude left fullscreen. The
+ * window's own stop then start began a new conversation, since a start only
+ * continues the last one once per app run.
+ *
+ * At once, whatever the agent is doing, as a stop would: the person asking is
+ * the one who sees the turn or the draft it ends. A restart waiting on new
+ * settings is done by this one, and nothing is left pending.
+ */
+export async function restartAgent(agentId: string): Promise<{ success: boolean; error?: string }> {
+  const agent = agents.get(agentId);
+  if (!agent) return { success: false, error: 'Agent not found' };
+  if (restarting.has(agentId)) return { success: false, error: 'This agent is already restarting' };
+  drop(agentId);
+  console.log(`[restart] ${agent.name || agent.id}: restarting its CLI, as asked`);
+  return restartNow(agent, 'asked');
 }
 
 async function settle(agentId: string): Promise<void> {
@@ -295,7 +363,7 @@ async function settle(agentId: string): Promise<void> {
  * under its own id it would be the tombstone, and every post of the restarted
  * session would be dropped as stale.
  */
-async function restartNow(agent: AgentStatus): Promise<void> {
+async function restartNow(agent: AgentStatus, cause: 'settings' | 'asked'): Promise<{ success: boolean; error?: string }> {
   restarting.add(agent.id);
   restartedAt.set(agent.id, Date.now());
   try {
@@ -316,17 +384,21 @@ async function restartNow(agent: AgentStatus): Promise<void> {
 
     const result = await launchAgent(agent.id, '', { resumeSessionId: conversation });
     if (!result.success) throw new Error(result.error);
+    return { success: true };
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     console.error(`[restart] ${agent.name || agent.id}: the restart failed: ${why}`);
     agent.status = 'error';
-    agent.error = `Tars restarted this agent to apply its new settings, and the restart failed: ${why}`;
+    agent.error = cause === 'settings'
+      ? `Tars restarted this agent to apply its new settings, and the restart failed: ${why}`
+      : `The restart asked for did not start the agent again: ${why}`;
     agent.lastActivity = new Date().toISOString();
     saveAgents();
     broadcastToAllWindows('agent:status', {
       type: 'status', agentId: agent.id, status: 'error', timestamp: agent.lastActivity,
     });
     scheduleTick();
+    return { success: false, error: why };
   } finally {
     restarting.delete(agent.id);
     // A change saved while this one ran is applied by another restart.
@@ -338,6 +410,7 @@ async function restartNow(agent: AgentStatus): Promise<void> {
 export function resetAgentRestarts(): void {
   for (const entry of pending.values()) if (entry.timer) clearTimeout(entry.timer);
   pending.clear();
+  shown.clear();
   restarting.clear();
   restartedAt.clear();
   stopListening?.();
