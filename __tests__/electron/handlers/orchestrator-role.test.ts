@@ -415,4 +415,45 @@ describe('two promotions at once', () => {
       expect(launchedAs(agent), agent.id).not.toContain('--append-system-prompt-file');
     }
   });
+
+  // The QA's scenarios on #123 (scen123/), red until #120 noted a launch with
+  // what its command carried: agent:start builds the command, gives a new
+  // shell half a second, then types it, and a save landing in between was
+  // noted as launched without being in the command.
+  it('leave no CLI on the flags of a role taken back while its restart was under way', async () => {
+    const { agent: current } = running('current', { role: 'orchestrator', orchestratorMode: true });
+    const { agent: first } = running('first', {});
+    const { agent: second } = running('second', {});
+
+    await update({ id: 'first', role: 'orchestrator' });
+    await vi.advanceTimersByTimeAsync(100);
+    await update({ id: 'second', role: 'orchestrator' });
+    for (let i = 0; i < 40; i++) {
+      cliUp();
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    expect([...agents.values()].filter(a => a.projectPath === project && a.role === 'orchestrator').map(a => a.id)).toEqual(['second']);
+    expect(launchedAs(second)).toContain(TOOL_BLOCK);
+    for (const agent of [current, first]) {
+      expect(launchedAs(agent), agent.id).not.toContain('--disallowed-tools');
+      expect(launchedAs(agent), agent.id).not.toContain('--append-system-prompt-file');
+    }
+  });
+
+  it('leave an orchestrator taken back and given again on the flags of its role', async () => {
+    const { agent: lead } = running('lead', { role: 'orchestrator', orchestratorMode: true });
+
+    await update({ id: 'lead', role: 'worker' });
+    await vi.advanceTimersByTimeAsync(100);
+    await update({ id: 'lead', role: 'orchestrator' });
+    for (let i = 0; i < 40; i++) {
+      cliUp();
+      await vi.advanceTimersByTimeAsync(500);
+    }
+
+    expect(lead.role).toBe('orchestrator');
+    expect(launchedAs(lead), 'an orchestrator whose CLI can edit').toContain(TOOL_BLOCK);
+    expect(launchedAs(lead)).toContain(instructions());
+  });
 });
