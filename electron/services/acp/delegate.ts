@@ -24,9 +24,22 @@ import { isSuperAgent } from '../../utils';
 export interface DelegationResult {
   ok: boolean;
   transport: 'acp';
+  /**
+   * Whether the task reached the agent. False only when the run could not
+   * start at all, which is the one case where typing the task into the
+   * agent's terminal instead does not run it twice.
+   */
+  started: boolean;
+  /** `turn_limit` when the run was stopped at its time limit, mid-work. */
   stopReason?: string;
   text: string;
   toolCalls: string[];
+  /**
+   * What the turn left running when it ended, stopped with the agent: a run
+   * is one turn, and nothing brings the agent back for it (backgroundOf, in
+   * client.ts).
+   */
+  backgroundStopped?: string[];
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   costUSD?: number;
   error?: string;
@@ -86,12 +99,12 @@ export async function delegateOverAcp(opts: {
   await loadAcpRegistry().catch(() => undefined);
   const launch = acpLaunchFor(agent.provider ?? 'claude');
   if (!launch) {
-    return { ok: false, transport: 'acp', text: '', toolCalls: [], error: 'provider has no ACP mode' };
+    return { ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'provider has no ACP mode' };
   }
 
   const cwd = agent.worktreePath || agent.projectPath;
   if (!cwd || !fs.existsSync(cwd)) {
-    return { ok: false, transport: 'acp', text: '', toolCalls: [], error: `working directory is missing: ${cwd}` };
+    return { ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: `working directory is missing: ${cwd}` };
   }
 
   const provider = getProvider(agent.provider ?? 'claude');
@@ -138,6 +151,7 @@ export async function delegateOverAcp(opts: {
     session.on('permission', p => onEvent({ type: 'permission', payload: p }));
   }
 
+  let started = false;
   try {
     await session.start();
     // The agent's own model and effort. A launch in a terminal puts them on the
@@ -153,7 +167,30 @@ export async function delegateOverAcp(opts: {
     if (effort && !(await session.setConfigOption('effort', effort))) {
       console.warn(`[acp] ${agent.name || agent.id}: this run is not at ${effort} effort, the agent did not take it`);
     }
-    const turn: TurnResult = await session.prompt(task, opts.timeoutMs);
+    started = true;
+    let turn: TurnResult;
+    try {
+      turn = await session.prompt(task, opts.timeoutMs);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/session\/prompt timed out/.test(message)) throw err;
+      // Stopped at its limit, mid-work: the stop below kills whatever command
+      // was running (QA and Database of the Parallel project, 2026-09-23, at
+      // exactly 3600 s). What it said and did by then is all there is.
+      const partial = session.partialTurn();
+      const seconds = Math.round((opts.timeoutMs ?? 0) / 1000);
+      return {
+        ok: false,
+        transport: 'acp',
+        started: true,
+        stopReason: 'turn_limit',
+        text: partial.text,
+        toolCalls: partial.toolCalls.map(t => t.title),
+        backgroundStopped: partial.background.length ? partial.background : undefined,
+        error: `stopped at the run's limit of ${seconds} s while the agent was still working; `
+          + 'what it said and did before the limit is above, and nothing after it was reported',
+      };
+    }
 
     // Every provider reports its tokens over ACP, which is the only place
     // non-Claude usage can be captured at all.
@@ -174,9 +211,11 @@ export async function delegateOverAcp(opts: {
     return {
       ok: turn.stopReason === 'end_turn',
       transport: 'acp',
+      started: true,
       stopReason: turn.stopReason,
       text: turn.text,
       toolCalls: turn.toolCalls.map(t => t.title),
+      backgroundStopped: turn.background.length ? turn.background : undefined,
       usage: turn.usage,
       costUSD: turn.costUSD,
     };
@@ -184,6 +223,7 @@ export async function delegateOverAcp(opts: {
     return {
       ok: false,
       transport: 'acp',
+      started,
       text: '',
       toolCalls: [],
       error: err instanceof Error ? err.message : String(err),
