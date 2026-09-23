@@ -179,3 +179,55 @@ describe('the wiring holds', () => {
     expect(command).toContain(` --resume '${SESSION}'`);
   });
 });
+
+/**
+ * A project reached through a symlink.
+ *
+ * Claude Code files a transcript under the real path of the directory it runs
+ * in; Tars looked under the path as it stored it. On a project reached through
+ * a symlink (anything under /tmp, which is /private/tmp on macOS, or a linked
+ * checkout) the two encode to different directories, so the first start after
+ * launch, the settings restart and agent.restart all silently started a new
+ * conversation (QA's gate of #138, seen in the app, and its unit test, here).
+ *
+ * How this can fail, written before the fix:
+ * 1. the transcript claude filed under the real path is not found through the symlinked path;
+ * 2. the saved spelling stops being looked under, and a transcript filed there is lost;
+ * 3. a saved path that no longer exists throws while it is resolved, and fails the start instead of starting fresh;
+ * 4. a worktree reached through a symlink, which is where such an agent ran, is not resolved either.
+ */
+describe('a project reached through a symlink', () => {
+  let real = '';
+  let link = '';
+
+  beforeEach(() => {
+    real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-real-')));
+    link = path.join(home, `project-link-${path.basename(real)}`);
+    fs.symlinkSync(real, link);
+  });
+
+  it('finds the transcript claude filed under the real path', () => {
+    writeTranscript(real, SESSION);
+    expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: real }, home), 'the real path').toBe(SESSION);
+    expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: link }, home), 'through the symlink').toBe(SESSION);
+  });
+
+  it('still finds a transcript filed under the saved spelling', () => {
+    writeTranscript(link, SESSION);
+    expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: link }, home)).toBe(SESSION);
+  });
+
+  it('starts fresh, without throwing, when the saved path no longer exists', () => {
+    writeTranscript(real, SESSION);
+    const gone = path.join(home, 'nothing-here');
+    expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: gone }, home)).toBeNull();
+  });
+
+  it('resolves a worktree reached through a symlink too', () => {
+    const worktreeReal = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-worktree-')));
+    const worktreeLink = path.join(home, `worktree-link-${path.basename(worktreeReal)}`);
+    fs.symlinkSync(worktreeReal, worktreeLink);
+    writeTranscript(worktreeReal, SESSION);
+    expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: link, worktreePath: worktreeLink }, home)).toBe(SESSION);
+  });
+});

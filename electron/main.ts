@@ -86,6 +86,7 @@ import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-man
 import { loadCatalog } from './services/model-catalog';
 import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
 import { assignRole } from './core/agent-role';
+import { forgetRestart } from './core/agent-restart';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -483,6 +484,7 @@ app.whenReady().then(async () => {
         }
         // Remove agent
         agents.delete(agentId);
+        forgetRestart(agentId);
         saveAgents();
         console.log(`Agent ${agentId} deleted`);
       }

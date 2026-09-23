@@ -258,14 +258,14 @@ describe('a terminal whose shell is still starting', () => {
     expect(terminal.write.mock.calls.map(call => String(call[0])).join('')).toContain(`cd '${project}' && `);
   });
 
-  it('agent:get creates the terminal of a stopped agent and says no CLI runs in it', async () => {
-    handlers.clear();
-    registerIpcHandlers(deps({ initAgentPty: (agent: AgentStatus) => initAgentPty(agent, null, vi.fn(), vi.fn()) }));
+  it('agent:get says no CLI runs in the terminal just opened for a stopped agent', async () => {
     const agent = {
       id: 'agent-stopped', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
       skills: [], output: [], lastActivity: new Date().toISOString(), ptyId: 'pty-killed-by-stop',
     } as AgentStatus;
     agents.set(agent.id, agent);
+    // Opened the way a start opens one: agent:get opens none.
+    agent.ptyId = await initAgentPty(agent, null, vi.fn(), vi.fn());
 
     const got = await handlers.get('agent:get')!({}, agent.id) as AgentStatus;
 
