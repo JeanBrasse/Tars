@@ -6,7 +6,8 @@ import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electr
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { RoomRow, RoomNotice } from './RoomRow';
 import { RoomComposer } from './RoomComposer';
-import type { ComposerTarget, SendMode } from './RoomComposer';
+import type { ComposerFailure, ComposerTarget } from './RoomComposer';
+import { agentStatusLabel, agentTone } from './TeamRail';
 import { currentThread, summarise, threadNotice, toRows } from './bus-view';
 
 /**
@@ -78,6 +79,7 @@ export function RoomView({
   agents,
   loading,
   onPost,
+  onStart,
 }: {
   room: BusRoom;
   threads: BusThread[];
@@ -86,11 +88,15 @@ export function RoomView({
   agents: RoomAgent[];
   loading: boolean;
   onPost: (text: string, mentions: string[]) => Promise<{ success: boolean; error?: string }>;
+  /** Starts agents the way the Dashboard's start does, and names the ones
+   *  that did not start. */
+  onStart?: (ids: string[]) => Promise<Array<{ id: string; error: string }>>;
 }) {
   const [draft, setDraft] = useState('');
   const [targetId, setTargetId] = useState('');
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [failure, setFailure] = useState<ComposerFailure | null>(null);
 
   const logRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -111,41 +117,41 @@ export function RoomView({
     busy: a.status === 'running' && !a.stopped,
     noTurnSignal: !a.hasEndOfTurn,
     stopped: a.stopped,
+    tone: agentTone(a),
+    state: agentStatusLabel(a),
+    detail: a.provider ?? 'claude',
   })), [agents]);
 
-  const target = targets.find(t => t.id === targetId);
-  // Stopped is a session that is gone, never a status word. This read `idle`,
-  // which is where Claude Code rests between every turn with its session open,
-  // so a room of agents answering each other said every one of them was stopped.
-  const everyoneStopped = agents.length > 0 && agents.every(a => a.stopped);
-
-  // The button says what pressing it will do. Nothing here writes into a turn
-  // that is running: a message for a busy agent is queued, and one for an
-  // agent whose CLI reports no turn end is held until you send it on.
-  const sendMode: SendMode = target?.noTurnSignal ? 'hold' : target?.busy ? 'queue' : 'send';
-
-  const hint = (() => {
-    if (target?.stopped) return `${target.label} is stopped`;
-    if (target?.noTurnSignal) return `${target.label} has no turn signal: you send it`;
-    if (target?.busy) return `${target.label} is mid-turn: this waits for its turn to end`;
-    const busy = targets.filter(t => t.busy).map(t => t.label);
-    const held = targets.filter(t => t.noTurnSignal).map(t => t.label);
-    if (!busy.length && !held.length) return undefined;
-    const parts: string[] = [];
-    if (busy.length) parts.push(`${busy.join(', ')} get it later`);
-    if (held.length) parts.push(`${held.join(', ')} waits for your send`);
-    return parts.join(' · ');
-  })();
-
+  // Nothing here writes into a turn that is running: a message for a busy
+  // agent is queued, and one for an agent whose CLI reports no turn end is
+  // held until you send it on. The composer says which, before you send.
   const send = async () => {
     const text = draft.trim();
     if (!text || sending) return;
     setSending(true);
-    setError(null);
-    const r = await onPost(text, targetId ? [targetId] : []);
+    setFailure(null);
+    // An agent that has left the room since it was picked is shown as
+    // Everyone, so the message goes to everyone rather than to a name that is
+    // no longer here.
+    const mentions = targetId && targets.some(t => t.id === targetId) ? [targetId] : [];
+    const r = await onPost(text, mentions);
     setSending(false);
+    // On a failure the words stay where they were typed, which is what the
+    // strip tells you: send again to retry.
     if (r.success) setDraft('');
-    else setError(r.error ?? 'The message was not accepted.');
+    else setFailure({ kind: 'send', message: r.error ?? '' });
+  };
+
+  const start = async (ids: string[]) => {
+    if (!onStart || starting) return;
+    setStarting(true);
+    setFailure(null);
+    const failed = await onStart(ids);
+    setStarting(false);
+    if (failed.length) {
+      const names = failed.map(f => targets.find(t => t.id === f.id)?.label ?? f.id);
+      setFailure({ kind: 'start', message: `Could not start ${names.join(', ')}: ${failed[0].error}` });
+    }
   };
 
   return (
@@ -186,10 +192,6 @@ export function RoomView({
 
       <QueueBand {...pending} />
 
-      {error && (
-        <p className="shrink-0 border border-danger/40 bg-card px-3 py-2 text-[11.5px] text-danger">{error}</p>
-      )}
-
       <RoomComposer
         value={draft}
         onChange={setDraft}
@@ -197,19 +199,11 @@ export function RoomView({
         targets={targets}
         targetId={targetId}
         onTargetChange={setTargetId}
-        disabled={agents.length === 0}
-        sendMode={sendMode}
-        hint={hint}
-        placeholder={
-          agents.length === 0
-            ? 'Add an agent before you write here.'
-            : everyoneStopped
-              // It also said "what you write waits until you start one", which
-              // nothing does on its own: a message to an agent with no session is
-              // recorded not sent, or dropped, and starting the agent sends none.
-              ? 'Every agent here is stopped. Nothing moves until you start one.'
-              : 'Write to the room, or pick who it is for.'
-        }
+        roomTitle={room.title}
+        sending={sending}
+        failure={failure}
+        onStart={onStart ? ids => { void start(ids); } : undefined}
+        starting={starting}
       />
     </div>
   );

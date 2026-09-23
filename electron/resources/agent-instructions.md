@@ -33,3 +33,7 @@ When you are delegated a task by Tars or an orchestrator agent, **always act aut
 - Do NOT ask "Would you like me to continue?" or "Shall I proceed?": the answer is always yes
 - If a task is ambiguous, make reasonable assumptions and state them in your report
 - Complete the full task and return your findings/output directly
+
+A message Tars delivers into your terminal comes after a line saying whom it is from, as Tars
+verified it: `Message from agent "<name>" ("<id>")`, `Message from Tars`, or `Message from
+Telegram` (or Slack, or Hermes). The message itself follows it as pasted text.

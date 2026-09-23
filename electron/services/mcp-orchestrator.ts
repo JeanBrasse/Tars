@@ -2,7 +2,8 @@ import { app, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { AppSettings } from '../types';
 import { getAllProviders } from '../providers';
 import { updateSharedJsonSync } from '../utils/shared-file';
@@ -359,6 +360,16 @@ export function setupOrchestratorStatusHandler(): void {
 }
 
 /**
+ * `claude` with an argv, never a shell string: the orchestrator's path went
+ * into the add command inside double quotes, where a `"` or a `$(...)` in it
+ * was shell. Asynchronous as well, so a slow `claude` does not hold the main
+ * process, and bounded, as the status check's `claude mcp list` is.
+ */
+// SIGKILL at the timeout: the default SIGTERM leaves a child that ignores it
+// running, and the setup waiting on it for good (the gate of #128).
+const runClaude = (args: string[]) => promisify(execFile)('claude', args, { encoding: 'utf-8', timeout: 15_000, killSignal: 'SIGKILL' });
+
+/**
  * Setup the MCP orchestrator using claude mcp add command
  * This handler allows manual configuration from the renderer process
  */
@@ -377,22 +388,22 @@ export function setupOrchestratorSetupHandler(): void {
 
       // First try to remove any existing config to avoid duplicates (from both user and project scope)
       try {
-        execSync('claude mcp remove -s user claude-mgr-orchestrator 2>&1', { encoding: 'utf-8', stdio: 'pipe' });
+        await runClaude(['mcp', 'remove', '-s', 'user', 'claude-mgr-orchestrator']);
       } catch {
         // Ignore errors if it doesn't exist
       }
       try {
-        execSync('claude mcp remove claude-mgr-orchestrator 2>&1', { encoding: 'utf-8', stdio: 'pipe' });
+        await runClaude(['mcp', 'remove', 'claude-mgr-orchestrator']);
       } catch {
         // Ignore errors if it doesn't exist in project scope
       }
 
       // Add the MCP server using claude mcp add with -s user for global scope
-      const addCommand = `claude mcp add -s user claude-mgr-orchestrator node "${orchestratorPath}"`;
-      console.log('Running:', addCommand);
+      const addArgs = ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', orchestratorPath];
+      console.log('Running: claude', addArgs.join(' '));
 
       try {
-        execSync(addCommand, { encoding: 'utf-8', stdio: 'pipe' });
+        await runClaude(addArgs);
         console.log('MCP orchestrator configured globally via claude mcp add -s user');
         return { success: true, method: 'claude-mcp-add-global' };
       } catch (addErr) {
@@ -421,7 +432,7 @@ export function setupOrchestratorRemoveHandler(): void {
     try {
       // Remove from global user scope
       try {
-        execSync('claude mcp remove -s user claude-mgr-orchestrator 2>&1', { encoding: 'utf-8', stdio: 'pipe' });
+        await runClaude(['mcp', 'remove', '-s', 'user', 'claude-mgr-orchestrator']);
       } catch {
         // Ignore errors if it doesn't exist
       }

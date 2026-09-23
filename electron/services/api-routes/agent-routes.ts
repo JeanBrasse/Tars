@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
+import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
@@ -423,8 +423,17 @@ function projectAgent(agent: AgentStatus) {
  *
  * One string, because two routes say it and a second copy would drift.
  */
-const HELD_REASON = 'Somebody is typing in that terminal, or has left something in it. '
-  + 'The message goes in as soon as that field is free.';
+const HELD_REASON = 'Somebody is typing in that terminal, has left something in its field, or has a '
+  + "command's panel open there. The message goes in by itself as soon as the field is free: "
+  + 'whoever is at that terminal can send or clear what is typed, or close the panel.';
+
+/** Who a message into an agent's terminal is from, as verified: the agent whose
+ *  token made the call, or Tars when it is Tars's own pass or the agent itself. */
+function senderOf(agent: AgentStatus, req: RouteRequest): MessageSender {
+  const callerId = resolveCallerId(req);
+  if (!callerId || callerId === agent.id) return { kind: 'tars' };
+  return { kind: 'agent', id: callerId, name: agents.get(callerId)?.name };
+}
 
 /** Who a message into an agent's terminal is from, as the panel names them. */
 function senderName(agent: AgentStatus, req: RouteRequest): string {
@@ -572,7 +581,7 @@ async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<
  */
 export async function performDispatch(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string },
+  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
@@ -581,7 +590,7 @@ export async function performDispatch(
 
 async function performDispatchLocked(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string },
+  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
@@ -617,6 +626,7 @@ async function performDispatchLocked(
     const outcome = writeProgrammaticInput(livePty, opts.message, true, {
       agentId: agent.id,
       from: opts.from ?? 'Tars',
+      sender: opts.sender ?? { kind: 'tars' },
     });
     agent.status = 'running';
     agent.waitingReason = undefined;
@@ -985,7 +995,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     recordRequester(agent, req);
 
-    await performDispatch(agent, { message, model, permissionMode, from: senderName(agent, req) }, ctx, sendJson);
+    await performDispatch(agent, { message, model, permissionMode, from: senderName(agent, req), sender: senderOf(agent, req) }, ctx, sendJson);
   });
 
   /**
@@ -1144,6 +1154,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         const outcome = writeProgrammaticInput(ptyProcess, message, true, {
           agentId: agent.id,
           from: senderName(agent, req),
+          sender: senderOf(agent, req),
         });
         agent.status = 'running';
         agent.waitingReason = undefined;

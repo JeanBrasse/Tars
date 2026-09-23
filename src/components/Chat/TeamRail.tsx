@@ -22,7 +22,7 @@ const RULES: Array<[string, string]> = [
   ['you', 'only you stop, add or change an agent'],
 ];
 
-function tone(agent: RoomAgent): StatusTone | 'none' {
+export function agentTone(agent: RoomAgent): StatusTone | 'none' {
   // An agent whose CLI never reports a turn end has no state Tars can vouch
   // for, so it gets no square rather than a green one that would claim work.
   if (!agent.hasEndOfTurn) return 'none';
@@ -36,11 +36,11 @@ function tone(agent: RoomAgent): StatusTone | 'none' {
 
 /** Stopped as the rail shows it. An error keeps its own word and its colour,
  *  since its reason says more than the absence of a session does. */
-function shownStopped(agent: RoomAgent): boolean {
+export function shownStopped(agent: RoomAgent): boolean {
   return agent.stopped && agent.status !== 'error';
 }
 
-function statusLabel(agent: RoomAgent): string {
+export function agentStatusLabel(agent: RoomAgent): string {
   if (!agent.hasEndOfTurn) return 'no turn signal';
   // Idle is an agent at rest between turns, still holding its session, so the
   // word is only replaced when there is no session to rest in.
@@ -109,7 +109,7 @@ export function TeamRail({
             </p>
           ) : agents.map(agent => {
             const waiting = pending[agent.id] ?? { queued: 0, notSent: 0 };
-            const t = tone(agent);
+            const t = agentTone(agent);
             return (
               <div key={agent.id} className="flex gap-2 px-2.5 py-[9px] border-b border-border last:border-b-0">
                 <span className="pt-1.5 shrink-0">
@@ -124,7 +124,7 @@ export function TeamRail({
                       {agent.provider ?? 'claude'}
                     </span>
                     <span className="flex-1" />
-                    <span className="font-mono text-[10.5px] shrink-0 text-muted-foreground">{statusLabel(agent)}</span>
+                    <span className="font-mono text-[10.5px] shrink-0 text-muted-foreground">{agentStatusLabel(agent)}</span>
                   </div>
                   {detail(agent) && (
                     <p className="text-[11px] leading-[1.45] text-muted-foreground line-clamp-2">{detail(agent)}</p>

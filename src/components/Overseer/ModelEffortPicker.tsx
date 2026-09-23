@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Check, Search } from 'lucide-react';
+import { pickerTriggerClass } from '@/components/ui';
 import type { OverseerModelProvider } from '@/types/electron';
 
 /**
@@ -84,12 +85,14 @@ export function ModelEffortPicker({
         onClick={() => { if (!off) setOpen(o => !o); }}
         aria-label="Overseer model and reasoning effort"
         title={disabledReason ?? 'Sets the model and the reasoning effort your Hermes gateway runs at, for everything that uses it, not only this chat'}
-        className="inline-flex items-center gap-1.5 h-[26px] max-w-[240px] px-2 rounded border border-border bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+        // The composer's picker trigger, as the recipient picker beside it in
+        // the room: borderless at rest, a box when open, never the accent.
+        className={pickerTriggerClass(open)}
       >
-        <span className="text-[11px] text-muted-foreground truncate">{model || 'model'}</span>
-        {effort && <span className="text-[11px] text-text-muted shrink-0">{effort}</span>}
+        <span className="truncate">{model || 'model'}</span>
+        {effort && <span className="font-normal text-text-muted shrink-0">{effort}</span>}
         <ChevronDown
-          className={`w-3 h-3 text-text-muted shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -142,7 +145,7 @@ export function ModelEffortPicker({
                 onClick={() => { onModel(m); setOpen(false); }}
                 className="w-full flex items-center gap-2 px-2.5 h-7 text-left text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
-                <Check className={`w-3 h-3 shrink-0 ${m === model ? 'text-primary' : 'opacity-0'}`} />
+                <Check className={`w-3 h-3 shrink-0 ${m === model ? 'text-foreground' : 'opacity-0'}`} />
                 <span className="truncate">{m}</span>
               </button>
             ))}

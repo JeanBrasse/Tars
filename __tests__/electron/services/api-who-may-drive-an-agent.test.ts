@@ -114,7 +114,8 @@ function liveTerminal(agent: AgentStatus): { written: string[] } {
   agent.ptyId = `pty-${agent.id}`;
   agent.status = 'running';
   agent.ptyCwd = agent.projectPath;
-  const terminal = { write: (d: string) => { written.push(d); }, process: '2.1.280' };
+  // onExit: spawnAgentPty drops what a terminal held when it exits (#128).
+  const terminal = { write: (d: string) => { written.push(d); }, process: '2.1.280', onExit: () => ({ dispose() {} }) };
   vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
   spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: agent.projectPath, cols: 80, rows: 24, env: {} });
   ptyProcesses.set(agent.ptyId, terminal as never);
