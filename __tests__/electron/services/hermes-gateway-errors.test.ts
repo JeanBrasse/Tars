@@ -10,7 +10,10 @@ import * as fs from 'node:fs';
  * eight others turned the array into a string, so the Schedules page, the
  * model picker, a memory write and the Chat itself said
  * "[object Object],[object Object]" where the gateway had said what was wrong.
- * Found while recording the D2 contract of hermes-client.
+ * Found while recording the D2 contract of hermes-client. The Audit then found
+ * a ninth, after #146: the Chat's effort picker (setReasoningEffort, in
+ * hermes-session.ts) still stringified the detail. It is held to the same
+ * list below, written before its fix.
  *
  * How this can fail, written before the fix:
  * 1. a validation error in FastAPI's shape reaches the page as "[object Object]", on any of the eight calls;
@@ -50,6 +53,12 @@ beforeAll(async () => {
         res.end(JSON.stringify({ detail: 'Not Found' }));
         return;
       }
+      // The effort picker reads the config before it writes it back.
+      if (req.method === 'GET' && req.url === '/api/config') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ agent: { reasoning_effort: 'medium' } }));
+        return;
+      }
       if (refusal === 'bare') {
         res.writeHead(500, { 'content-type': 'text/plain' });
         res.end('Internal Server Error');
@@ -75,9 +84,10 @@ afterAll(async () => {
 
 beforeEach(() => { refusal = 'validation'; });
 
-/** The eight calls that read `detail` themselves, each as the app makes it. */
+/** The calls that read `detail` themselves, each as the app makes it. */
 async function calls() {
   const c = await import('../../../electron/services/hermes-client');
+  const session = await import('../../../electron/services/hermes-session');
   const conn = { mode: 'local' as const, localPort: port, authMode: 'token' as const, token: 'tok' };
   return {
     signInHermes: () => c.signInHermes(conn, { username: 'noah', password: 'pw' }),
@@ -88,6 +98,7 @@ async function calls() {
     uploadHermesAttachment: () => c.uploadHermesAttachment(conn, { name: 'a.txt', mimeType: 'text/plain', base64: 'aGk=', bytes: 2 }),
     appendHermesMemory: () => c.appendHermesMemory(conn, 'a note'),
     setHermesMemoryProvider: () => c.setHermesMemoryProvider(conn, 'holographic'),
+    setReasoningEffort: () => session.setReasoningEffort(conn, 'high'),
   };
 }
 
@@ -105,7 +116,8 @@ describe('what a refused Hermes call says', () => {
     for (const [name, call] of Object.entries(await calls())) {
       const result = await call() as { error?: string; needsSignIn?: boolean };
       expect(result.error, name).toBe('Not signed in');
-      if (name !== 'signInHermes') expect(result.needsSignIn, name).toBe(true);
+      // Sign-in and the effort picker report no sign-in flag at all.
+      if (!['signInHermes', 'setReasoningEffort'].includes(name)) expect(result.needsSignIn, name).toBe(true);
     }
   });
 
@@ -116,10 +128,11 @@ describe('what a refused Hermes call says', () => {
     }
   });
 
-  it('keeps the 200-character cap of the upload and of the model picker', async () => {
+  it('keeps the 200-character cap of the upload, the model picker and the effort picker', async () => {
     refusal = 'long';
     const c = await calls();
     expect(errorOf(await c.uploadHermesAttachment())).toBe(LONG_MSG.slice(0, 200));
     expect(errorOf(await c.setHermesModel())).toBe(LONG_MSG.slice(0, 200));
+    expect(errorOf(await c.setReasoningEffort())).toBe(LONG_MSG.slice(0, 200));
   });
 });
