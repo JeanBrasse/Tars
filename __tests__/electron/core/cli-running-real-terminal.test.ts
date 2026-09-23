@@ -68,7 +68,10 @@ describe('the terminal spawnAgentSession opens', () => {
     expect(cliRunningIn(terminal)).toBe(true);
 
     await gone;
-    expect(terminal.process).toBeUndefined();
+    // Gone, node-pty names nothing on macOS; on Linux it falls back to the file
+    // it spawned, the shell. Neither reads as a CLI.
+    const after = terminal.process;
+    expect([undefined, 'bash']).toContain(after === undefined ? undefined : path.basename(after));
     expect(cliRunningIn(terminal)).toBe(false);
   }, 60_000);
 
