@@ -2,19 +2,26 @@ import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { ptyProcesses } from '../core/pty-manager';
 import { dialogShown } from '../core/agent-launch';
+import { lastInterruptAt } from './agent-truth';
 import { deliverBusMessages, queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
+import { forgetStaged, stagedFor, withAttachmentPaths } from './bus-files';
 import {
+  appendMessage,
   appendSystemMessage,
+  canInterrupt,
   cancelQueuedDeliveries,
+  deliveriesOf,
   getMessage,
   getThread,
   hasEndOfTurn,
+  listRooms,
   markDelivered,
   markDropped,
+  markHeld,
   notSentFor,
   recordDelivery,
 } from './bus-store';
-import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusSystemKind, BusThread } from '../types';
+import type { BusDelivery, BusDeliveryReason, BusMembersChanged, BusMessage, BusRoom, BusSystemKind, BusThread } from '../types';
 
 /**
  * What happens to a message once it has been published.
@@ -24,6 +31,20 @@ import type { BusDelivery, BusDeliveryReason, BusMessage, BusRoom, BusSystemKind
  * separately is how the two would end up disagreeing about who got what, and
  * a delivery row is the only thing the interface may show as proof.
  */
+
+/** A message as a target's queue holds it: its text, then the files it sends
+ *  named by their absolute paths, since an agent cannot read a file it is
+ *  only told about. */
+function queuedOf(message: BusMessage): QueuedBusMessage {
+  return {
+    messageId: message.id,
+    roomId: message.roomId,
+    threadId: message.threadId,
+    authorKind: message.authorKind,
+    authorName: message.authorName,
+    text: withAttachmentPaths(message.text, message.attachments),
+  };
+}
 
 /** Who a message is for: the agents it names, or every member of the room when
  *  it names nobody. Never its own author. */
@@ -47,14 +68,7 @@ export function fanOutDeliveries(message: BusMessage, room: BusRoom): BusDeliver
     const target = agents.get(targetAgentId);
     if (!target) continue;
     const reachable = hasEndOfTurn(target);
-    const queued = reachable && queueBusMessage(targetAgentId, {
-      messageId: message.id,
-      roomId: message.roomId,
-      threadId: message.threadId,
-      authorKind: message.authorKind,
-      authorName: message.authorName,
-      text: message.text,
-    });
+    const queued = reachable && queueBusMessage(targetAgentId, queuedOf(message));
     deliveries.push(recordDelivery({
       messageId: message.id,
       targetAgentId,
@@ -88,8 +102,9 @@ export function announceSystem(
   threadId: string,
   systemKind: BusSystemKind,
   text: string,
+  systemData?: BusMembersChanged,
 ): BusMessage {
-  const message = appendSystemMessage({ roomId, threadId, systemKind, text });
+  const message = appendSystemMessage({ roomId, threadId, systemKind, text, systemData });
   broadcastToAllWindows('bus:message', message);
   return message;
 }
@@ -120,14 +135,7 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
   for (const delivery of held) {
     const message = getMessage(delivery.messageId);
     if (!message) continue;
-    queued.push({
-      messageId: message.id,
-      roomId: message.roomId,
-      threadId: message.threadId,
-      authorKind: message.authorKind,
-      authorName: message.authorName,
-      text: message.text,
-    });
+    queued.push(queuedOf(message));
   }
   if (!queued.length) return { released: [] };
 
@@ -185,12 +193,12 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
  * Stop, a newer human message and a change of members all end a thread, and a
  * reply nobody is waiting for any more is not worth waking an agent for.
  */
-export function closeAndAnnounce(threadId: string, reasonCode: BusDeliveryReason, reason: string): void {
-  for (const dropped of cancelQueuedDeliveries(threadId, reasonCode, reason)) {
-    broadcastToAllWindows('bus:delivery', dropped);
-  }
+export function closeAndAnnounce(threadId: string, reasonCode: BusDeliveryReason, reason: string): number {
+  const dropped = cancelQueuedDeliveries(threadId, reasonCode, reason);
+  for (const delivery of dropped) broadcastToAllWindows('bus:delivery', delivery);
   const thread = getThread(threadId);
   if (thread) broadcastToAllWindows('bus:thread', thread);
+  return dropped.length;
 }
 
 /**
@@ -215,4 +223,122 @@ export function announceDelivered(targetAgentId: string, messageId: string): voi
 export function announceDropped(targetAgentId: string, messageId: string, reasonCode: BusDeliveryReason, reason: string): void {
   const dropped = markDropped(targetAgentId, messageId, reasonCode, reason);
   if (dropped) broadcastToAllWindows('bus:delivery', dropped);
+}
+
+/**
+ * A message its target's terminal took waits for a person's draft.
+ *
+ * Wired into agent-watch, which hears it from the terminal. The row says
+ * `held` with the draft as its reason, rather than `queued` like a message
+ * waiting for a turn to end: this wait ends only when that person sends or
+ * clears their field, and the page has to be able to say so.
+ */
+export function announceHeld(targetAgentId: string, messageId: string): void {
+  const held = markHeld(targetAgentId, messageId);
+  if (held) broadcastToAllWindows('bus:delivery', held);
+}
+
+/** How long send now waits for the interrupt to show in the transcript. */
+export const INTERRUPT_CONFIRM_MS = 5_000;
+/** An interrupt recorded this long before the Esc is still counted as its own:
+ *  the two clocks are the same machine's, so this only absorbs rounding. */
+const INTERRUPT_SLACK_MS = 100;
+
+export interface SendNowResult {
+  success: boolean;
+  messageId?: string;
+  threadId?: string;
+  interrupted: boolean;
+  deliveries?: BusDelivery[];
+  error?: string;
+}
+
+/**
+ * Send to one agent now, interrupting its turn if it is in one (#124's send
+ * now, Noah's choice B: a message queues by default, and this is the button
+ * that interrupts).
+ *
+ * Recorded as a human message to that agent, like postMessage. An agent at
+ * rest, or one Tars cannot interrupt, then gets it as any message would. A
+ * busy one that can be interrupted gets an Esc, and the message is typed only
+ * once its transcript records the interrupt: Claude Code sends no Stop hook
+ * for one, so the status cannot say the turn is over, and a message typed
+ * into a running turn is a queued steer, not "now". Typed through the same
+ * writer as everything else, so a draft in the field still holds it (`held`).
+ * An interrupt not on record within INTERRUPT_CONFIRM_MS leaves the message
+ * queued for the turn's end, and the answer says so. An Esc that took later
+ * than that ends the turn with no Stop, and the message then waits for the
+ * next rest Tars hears of (the idle prompt a minute on, at the latest).
+ */
+export async function sendNow(params: {
+  roomId?: unknown; agentId?: unknown; text?: unknown; attachments?: unknown;
+}): Promise<SendNowResult> {
+  const text = typeof params.text === 'string' ? params.text.trim() : '';
+  const room = listRooms().find(r => r.id === params.roomId);
+  if (!room) return { success: false, interrupted: false, error: 'Room not found' };
+  if (room.kind === 'global') {
+    return { success: false, interrupted: false, error: 'The global room is the super chat: send through overseer:send.' };
+  }
+  const agentId = typeof params.agentId === 'string' ? params.agentId : '';
+  const agent = agents.get(agentId);
+  if (!agent || !room.memberIds.includes(agentId)) {
+    return { success: false, interrupted: false, error: 'That agent is not a member of this room.' };
+  }
+  const files = stagedFor(room.id, params.attachments);
+  if ('error' in files) return { success: false, interrupted: false, error: files.error };
+  if (!text && !files.attachments.length) return { success: false, interrupted: false, error: 'A message needs text' };
+
+  const { message, thread, supersededThreadId } = appendMessage({
+    roomId: room.id, authorKind: 'human', authorId: 'human', authorName: 'Noah',
+    text, mentions: [agentId], attachments: files.attachments,
+  });
+  forgetStaged(files.attachments);
+  const closeSuperseded = () => {
+    if (supersededThreadId) closeAndAnnounce(supersededThreadId, 'thread_replaced', 'a newer message replaced this thread');
+  };
+
+  const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  if (agent.status !== 'running' || !canInterrupt(agent) || !ptyProcess) {
+    const deliveries = fanOutDeliveries(message, room);
+    broadcastPublication(message, thread, deliveries);
+    closeSuperseded();
+    return { success: true, messageId: message.id, threadId: thread.id, interrupted: false, deliveries };
+  }
+
+  const row = recordDelivery({ messageId: message.id, targetAgentId: agentId, state: 'queued', queuedAt: new Date().toISOString() });
+  broadcastPublication(message, thread, [row]);
+  closeSuperseded();
+
+  const escAt = Date.now();
+  try {
+    ptyProcess.write('\x1b');
+  } catch (err) {
+    console.warn('[bus] send now could not write the interrupt:', err);
+  }
+  const interrupted = await interruptOnRecord(agent, escAt - INTERRUPT_SLACK_MS);
+  const queued = queuedOf(message);
+
+  if (interrupted) {
+    const { refused } = await releaseBusMessagesNow(agentId, [queued], messageId => announceDelivered(agentId, messageId));
+    if (!refused) {
+      announceSystem(room.id, thread.id, 'turn_interrupted', `You interrupted ${agent.name || agentId}'s turn.`);
+      return { success: true, messageId: message.id, threadId: thread.id, interrupted: true, deliveries: deliveriesOf(message.id) };
+    }
+  }
+  // Not confirmed, or the terminal would not take it now: it waits for the
+  // turn's end like any other message, and the row says queued.
+  if (queueBusMessage(agentId, queued)) deliverBusMessages(agentId);
+  else announceDropped(agentId, message.id, 'no_live_session', 'the agent already has as many messages waiting as it can hold');
+  return { success: true, messageId: message.id, threadId: thread.id, interrupted: false, deliveries: deliveriesOf(message.id) };
+}
+
+/** Whether the transcript records an interrupt at or after `since`, within the bound. */
+async function interruptOnRecord(agent: Parameters<typeof lastInterruptAt>[0], since: number): Promise<boolean> {
+  const deadline = Date.now() + INTERRUPT_CONFIRM_MS;
+  for (;;) {
+    const at = lastInterruptAt(agent);
+    if (at !== undefined && at >= since) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
 }

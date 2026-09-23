@@ -620,7 +620,7 @@ export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 
 /** The name is used to build a path on the gateway, so it must not be able to
  *  climb out of the upload directory or contain a separator. */
-function safeUploadName(name: string): string {
+export function safeUploadName(name: string): string {
   const base = name.split(/[\\/]/).pop() || 'file';
   const cleaned = base.replace(/[\x00-\x1f]/g, '').replace(/^\.+/, '').trim();
   return cleaned.slice(0, 120) || 'file';

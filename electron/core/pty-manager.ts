@@ -239,6 +239,18 @@ export interface WriteOrigin {
    * the same lie whichever queue it is sitting in.
    */
   onWritten?: () => void;
+  /**
+   * Called once, if the message has to wait for a person: somebody is typing
+   * in the field, or left something there Tars cannot put back. Not when it
+   * only waits a moment for Tars's own previous write, which ends by itself.
+   */
+  onHeld?: () => void;
+  /**
+   * Called if the message is never written: it was waiting when its terminal
+   * exited, and a terminal that is gone takes nothing. Without this, whoever
+   * recorded the wait would go on saying the message was on its way.
+   */
+  onDropped?: () => void;
 }
 
 /** What became of a message handed to a terminal. */
@@ -250,6 +262,8 @@ interface Waiting {
   origin?: WriteOrigin;
   /** When it was first found to be waiting, and said so. */
   heldSince?: number;
+  /** Its caller has been told it waits for a person (WriteOrigin.onHeld). */
+  toldHeld?: boolean;
 }
 
 /**
@@ -339,9 +353,22 @@ export function terminalExited(ptyProcess: pty.IPty): void {
     const who = state.agentId ?? terminalOwner.get(ptyProcess) ?? 'an agent';
     console.log(`[pty] ${who}'s terminal exited with ${state.queue.length} message(s) held for it: dropped`);
   }
+  const dropped = state.queue;
   state.queue = [];
   state.held = null;
   announce(ptyProcess, state);
+  tellDropped(dropped);
+}
+
+/** Each caller whose message a dead terminal will never take is told so. */
+function tellDropped(dropped: Waiting[]): void {
+  for (const waiting of dropped) {
+    try {
+      waiting.origin?.onDropped?.();
+    } catch (err) {
+      console.error('[pty] a dropped message\'s hook failed:', err);
+    }
+  }
 }
 
 /** What Tars believes is in a terminal's field. Read by tests and by nothing else. */
@@ -461,6 +488,22 @@ function noteHeld(state: TerminalInput, why: string): void {
 }
 
 /**
+ * Tell each caller whose message now waits for a person, once. Every message
+ * in the queue, not only the first: they all wait on the same field.
+ */
+function tellHeld(state: TerminalInput): void {
+  for (const waiting of state.queue) {
+    if (waiting.toldHeld) continue;
+    waiting.toldHeld = true;
+    try {
+      waiting.origin?.onHeld?.();
+    } catch (err) {
+      console.error('[pty] a held message\'s hook failed:', err);
+    }
+  }
+}
+
+/**
  * Whether the field is empty although the draft model cannot vouch for it: a
  * local command finished after the last key anybody typed into it. Only after:
  * a key typed since may have put something in the field again, and that is
@@ -520,12 +563,14 @@ function pump(ptyProcess: pty.IPty): void {
   const left = pauseLeft(state);
   if (left > 0) {
     noteHeld(state, 'somebody is typing in it');
+    tellHeld(state);
     announce(ptyProcess, state);
     state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, left);
     return;
   }
   if (state.draft.state !== 'known' && !fieldProvenEmpty(ptyProcess, state)) {
     noteHeld(state, 'it holds a draft Tars cannot put back as it was');
+    tellHeld(state);
     announce(ptyProcess, state);
     // Look again later: a command's record comes a moment after its panel
     // closes, and no key or hook will come to say so. A key or a hook still
@@ -637,9 +682,11 @@ function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
     console.warn('[pty] terminal gone mid-write, dropping what was queued for it:', err);
     state.gone = true;
     state.held = null;
+    const dropped = state.queue;
     state.queue = [];
     if (state.timer) { clearTimeout(state.timer); state.timer = undefined; }
     announce(ptyProcess, state);
+    tellDropped(dropped);
   }
 }
 
