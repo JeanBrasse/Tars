@@ -80,7 +80,12 @@ describe('the command spawnAgentSession execs', () => {
   }, 60_000);
 
   it('leaves the shell in between without the exec, which is what the check above would see', async () => {
-    const answer = parentOf(`cd '${tmpDir}' && ${await commandOf('claude')}`);
+    // macOS's /bin/bash (3.2), which Tars runs agents under, stays between
+    // Tars and a command given without exec. A newer bash, as on a Linux CI
+    // runner, execs the last command of a -c list by itself, so there it takes
+    // a command after it to leave the shell in between.
+    const keepShell = process.platform === 'darwin' ? '' : '; :';
+    const answer = parentOf(`cd '${tmpDir}' && ${await commandOf('claude')}${keepShell}`);
 
     expect(answer).toMatch(/^PPID=\d+$/);
     expect(answer).not.toBe(`PPID=${process.pid}`);
