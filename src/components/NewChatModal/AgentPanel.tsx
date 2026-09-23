@@ -52,6 +52,8 @@ export function AgentPanel(props: {
   onBranchNameChange: (b: string) => void;
   isOrchestrator: boolean;
   onOrchestratorToggle: (v: boolean) => void;
+  /** Editing an agent that exists, which a save restarts to apply the role. */
+  editing?: boolean;
   cliPath: string;
   onCliPathChange: (p: string) => void;
 }) {
@@ -171,6 +173,7 @@ export function AgentPanel(props: {
           onBranchNameChange={props.onBranchNameChange}
           isOrchestrator={props.isOrchestrator}
           onOrchestratorToggle={props.onOrchestratorToggle}
+          editing={props.editing}
           cliPath={props.cliPath}
           onCliPathChange={props.onCliPathChange}
         />
