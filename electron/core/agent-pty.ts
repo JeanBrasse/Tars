@@ -4,6 +4,7 @@ import { managedCliEnv } from '../providers/cli-provider';
 import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner } from './pty-manager';
+import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 
 /** The shell each agent PTY was started with, as it was given to node-pty. */
 const shellOf = new WeakMap<pty.IPty, string>();
@@ -64,11 +65,15 @@ export function spawnAgentPty(opts: {
   // token. The shells that run no agent carry no id, and are meant to get no
   // token: the quick terminal, the skill and plugin runners, the installer.
   const agentId = opts.env.CLAUDE_AGENT_ID;
+  // The size the agent's panel last asked for, when one has: a PTY spawned at
+  // the caller's default kept it until the panel happened to change size. See
+  // rememberPanelSize.
+  const size = panelSizeOf(agentId) ?? { cols: opts.cols, rows: opts.rows };
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
-    cols: opts.cols,
-    rows: opts.rows,
+    cols: size.cols,
+    rows: size.rows,
     cwd: opts.cwd,
     env: {
       ...opts.env,
@@ -103,6 +108,13 @@ export function spawnAgentPty(opts: {
   // one function that spawns an agent's terminal, and a caller that has to
   // remember is a caller that will not.
   if (agentId) rememberTerminalOwner(spawned, agentId);
+  // Before any caller subscribes, so a chunk is in the mirror before it is
+  // broadcast. Here for the reason above: every agent terminal needs one. The
+  // left-fullscreen watch only for the claude binary, whose two renderers it
+  // was measured on.
+  if (agentId) {
+    attachTerminalMirror(spawned, { ...size, watchRepaint: opts.binaryName === 'claude', label: agentId });
+  }
   return spawned;
 }
 
