@@ -317,7 +317,9 @@ describe('agent-routes', () => {
       agent.status = 'waiting';
 
       // Simulate PTY exit
-      const exitHandler = mockPtyProcess.onExit.mock.calls[0][0] as (args: { exitCode: number }) => void;
+      // The route's own listener, registered last: spawnAgentPty's terminal
+      // mirror subscribes before any caller does.
+      const exitHandler = mockPtyProcess.onExit.mock.calls.at(-1)![0] as (args: { exitCode: number }) => void;
       exitHandler({ exitCode: 1 });
 
       // After the 1500ms delay, status should become 'error' not stay 'waiting'

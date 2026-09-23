@@ -4,6 +4,7 @@ import { broadcastToAllWindows } from './broadcast';
 import { extractStatusLine } from './ansi';
 import { ptyProcesses } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
+import { leftFullscreenIn } from '../core/terminal-mirror';
 import type { AgentStatus } from '../types';
 
 export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
@@ -21,6 +22,9 @@ export interface AgentTickItem {
   provider: string;
   /** A CLI runs in the agent's PTY, whatever its status says. See cliRunningIn. */
   cliRunning: boolean;
+  /** The CLI repaints inline on an alternate screen it never left, so the
+   *  wheel reaches nothing. See RepaintWatch in core/terminal-mirror.ts. */
+  leftFullscreen: boolean;
 }
 
 let tickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,6 +82,7 @@ function buildTickPayload(): AgentTickItem[] {
       lastActivity: a.lastActivity,
       provider: a.provider || 'claude',
       cliRunning: agentCliRunning(a),
+      leftFullscreen: leftFullscreenIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined),
     }))
     .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
 }

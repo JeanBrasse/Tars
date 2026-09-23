@@ -21,7 +21,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
-import { noteLaunch } from '../../core/agent-restart';
+import { noteLaunch, launchSettings } from '../../core/agent-restart';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
@@ -304,7 +304,7 @@ async function spawnAgentSession(
 
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
-  noteLaunch(ptyProcess, agent);
+  noteLaunch(ptyProcess, launchSettings(agent));
 
   agent.ptyId = ptyId;
   // The link recorded at the top of the route named the session that was live
