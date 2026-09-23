@@ -31,21 +31,42 @@ function render(props: Partial<Parameters<typeof Composer>[0]> = {}): string {
   );
 }
 
+/** The + button's opening tag, named by its aria-label since #124. */
+const attach = (html: string) => html.match(/<button[^>]*aria-label="(?:Attach files|Uploading)"[^>]*>/)?.[0];
+
 describe('Composer attachments', () => {
   it('offers the attach control when the page can handle it', () => {
-    expect(render({ onAttach: () => {} })).toContain('attach');
+    const button = attach(render({ onAttach: () => {} }));
+    expect(button).toContain('aria-label="Attach files"');
+    expect(button).not.toMatch(/\sdisabled=""/);
   });
 
-  it('leaves the control out entirely when the page cannot', () => {
-    // Not merely disabled: a composer with nowhere to send a file should not
-    // advertise that it takes them.
-    expect(render()).not.toContain('attach');
+  it('draws the control disabled when the page cannot take a file', () => {
+    // Since #124 the card always draws +, and disables it where nothing can take
+    // a file, instead of leaving it out.
+    const button = attach(render());
+    expect(button).toContain('aria-label="Attach files"');
+    expect(button).toMatch(/\sdisabled=""/);
   });
 
   it('says what it is doing while a file is going up', () => {
-    const html = render({ onAttach: () => {}, attaching: true });
-    expect(html).toContain('uploading');
-    expect(html).toContain('disabled');
+    const button = attach(render({ onAttach: () => {}, attaching: true }));
+    expect(button).toContain('aria-label="Uploading"');
+    expect(button).toMatch(/\sdisabled=""/);
+  });
+
+  it('says why + and send are off while Hermes cannot be reached', () => {
+    // The gate of #124: faded under their usual names they read as broken, and
+    // only the placeholder explained.
+    const html = render({ disabled: true, onAttach: () => {}, value: 'hello' });
+    const plus = 'Files cannot reach Hermes until its connection works';
+    const send = 'Nothing reaches Hermes until its connection works';
+    for (const label of [plus, send]) {
+      expect(html).toContain(`aria-label="${label}"`);
+      const button = html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))![0];
+      expect(button).toContain(`title="${label}"`);
+      expect(button).toMatch(/\sdisabled=""/);
+    }
   });
 
   it('shows a chip per staged file, naming it', () => {

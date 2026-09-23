@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, isValidOpenAIBaseUrl, orchestratorToolFlags, promptOperand, effortFlag } from './cli-provider';
+import { readAppSettingsFromDisk, isValidOpenAIBaseUrl, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -58,6 +58,8 @@ export class CustomOpenAIProvider implements CLIProvider {
     if (params.systemPromptFile && fs.existsSync(params.systemPromptFile)) {
       command += ` --append-system-prompt-file '${params.systemPromptFile.replace(/'/g, "'\\''")}'`;
     }
+
+    command += resumeFlags(params.resumeSessionId, params.forkSession);
 
     if (params.model && params.model !== 'default') {
       if (!/^[a-zA-Z0-9._:\/\-]+$/.test(params.model)) {

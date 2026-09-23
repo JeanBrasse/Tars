@@ -3,10 +3,14 @@ import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
 import { mintAgentToken } from './agent-tokens';
 import { API_PORT } from '../constants';
-import { rememberTerminalOwner } from './pty-manager';
+import { rememberTerminalOwner, terminalExited } from './pty-manager';
+import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 
-/** The shell each agent PTY was started with, as it was given to node-pty. */
-const shellOf = new WeakMap<pty.IPty, string>();
+/**
+ * How each agent PTY was started: the shell, as it was given to node-pty, and
+ * whether it was handed a command to run (`-c`) rather than left interactive.
+ */
+const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean }>();
 
 /** node-pty's own program, which takes the terminal and then executes the shell. */
 const NODE_PTY_HELPER = 'spawn-helper';
@@ -64,11 +68,15 @@ export function spawnAgentPty(opts: {
   // token. The shells that run no agent carry no id, and are meant to get no
   // token: the quick terminal, the skill and plugin runners, the installer.
   const agentId = opts.env.CLAUDE_AGENT_ID;
+  // The size the agent's panel last asked for, when one has: a PTY spawned at
+  // the caller's default kept it until the panel happened to change size. See
+  // rememberPanelSize.
+  const size = panelSizeOf(agentId) ?? { cols: opts.cols, rows: opts.rows };
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
-    cols: opts.cols,
-    rows: opts.rows,
+    cols: size.cols,
+    rows: size.rows,
     cwd: opts.cwd,
     env: {
       ...opts.env,
@@ -97,12 +105,22 @@ export function spawnAgentPty(opts: {
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
-  shellOf.set(spawned, opts.shell);
+  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.args.includes('-c') });
   // Whose terminal this is, so a message that has to wait for a draft in it
   // can name the agent whose panel should say so. Here because this is the
   // one function that spawns an agent's terminal, and a caller that has to
   // remember is a caller that will not.
   if (agentId) rememberTerminalOwner(spawned, agentId);
+  // And what it held goes when it does: a message queued for a terminal whose
+  // CLI has exited would be probed for, and later typed into nothing.
+  spawned.onExit(() => terminalExited(spawned));
+  // Before any caller subscribes, so a chunk is in the mirror before it is
+  // broadcast. Here for the reason above: every agent terminal needs one. The
+  // left-fullscreen watch only for the claude binary, whose two renderers it
+  // was measured on.
+  if (agentId) {
+    attachTerminalMirror(spawned, { ...size, watchRepaint: opts.binaryName === 'claude', label: agentId });
+  }
   return spawned;
 }
 
@@ -136,11 +154,26 @@ export function spawnAgentPty(opts: {
  * terminal and reads this at once, and said a CLI ran in a shell that had not
  * started. After a command exits the name is briefly undefined, until the
  * shell takes the terminal back.
+ *
+ * All of that is the interactive shell. A shell handed its command with `-c`,
+ * which is how spawnAgentSession starts every API-driven session, has no job
+ * control: the CLI stayed in the shell's process group and node-pty named
+ * `bash` for its whole life. Measured on 2026-09-23 by the Audit and the
+ * Frontend: every agent the API had started read false with claude alive, the
+ * orchestrator among them, so /dispatch and /start ended their sessions and a
+ * start from the Dashboard typed its launch line into claude's field.
+ * spawnAgentSession now execs the CLI, which names it; but from the spawn to
+ * the exec, while the shell reads its login files, the leader is still bash.
+ * Such a terminal exists for that one CLI: it never shows a prompt, what is
+ * typed into it waits for the CLI (a non-interactive shell does not read its
+ * terminal), and it closes when the CLI ends. So it counts for as long as it
+ * can be read, starting and then running, and an interactive shell never does
+ * at its prompt, where a typed line would run as a command.
  */
 export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   if (!ptyProcess) return false;
-  const shell = shellOf.get(ptyProcess);
-  if (!shell) return false;
+  const spawned = spawnedAs.get(ptyProcess);
+  if (!spawned) return false;
   let foreground: string | undefined;
   try {
     foreground = ptyProcess.process;
@@ -148,8 +181,9 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
     // The terminal is gone: nothing runs in it.
     return false;
   }
-  return !!foreground
-    && foreground !== path.basename(shell)
-    && foreground !== shell
+  if (!foreground) return false;
+  if (spawned.runsCommand) return true;
+  return foreground !== path.basename(spawned.shell)
+    && foreground !== spawned.shell
     && foreground !== NODE_PTY_HELPER;
 }

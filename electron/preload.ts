@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       id: string; name: string; character: string;
       status: string; displayStatus: string; statusLine: string;
       currentTask: string; projectName: string; lastActivity: string; provider: string;
+      leftFullscreen?: boolean;
     }>) => void) => {
       const listener = (_: unknown, data: unknown) => callback(data as Parameters<typeof callback>[0]);
       ipcRenderer.on('agents:tick', listener);

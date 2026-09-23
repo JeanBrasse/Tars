@@ -36,7 +36,8 @@ vi.mock('../../../../electron/core/pty-manager', () => ({
   writeProgrammaticInput: vi.fn(),
   rememberTerminalOwner: vi.fn(),
 }));
-vi.mock('../../../../electron/core/agent-restart', () => ({
+vi.mock('../../../../electron/core/agent-restart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../electron/core/agent-restart')>()),
   noteLaunch: vi.fn(),
   restartForSettings: vi.fn(),
 }));
@@ -172,14 +173,52 @@ describe('POST /api/agents', () => {
     expect(answer!.body.agent).toMatchObject({ role: 'worker', orchestratorMode: false });
   });
 
-  it("creates an orchestrator when asked, which takes the role from the project's current one", async () => {
+  // The QA's gate of #123: a worker's own token made itself a "Rogue"
+  // orchestrator, which demoted and restarted the current one, and with
+  // allowCrossProject did the same in another project, in bypass. Only the
+  // Agents page makes or unmakes an orchestrator.
+  it.each([
+    ['a worker', 'caller'],
+    ['the orchestrator itself', 'current'],
+  ])('refuses to make an orchestrator for %s, and the current one keeps the role', async (_who, caller) => {
+    agent('caller');
     const current = agent('current', { role: 'orchestrator', orchestratorMode: true });
 
-    const answer = await createAgent({ name: 'Lead', role: 'orchestrator' }, 'current');
+    const answer = await createAgent({ name: 'Rogue', role: 'orchestrator' }, caller);
 
-    expect(answer!.body.agent).toMatchObject({ role: 'orchestrator', orchestratorMode: true });
-    expect(current).toMatchObject({ role: 'worker', orchestratorMode: false });
-    expect(restartForSettings).toHaveBeenCalledWith('current', ['orchestrator']);
+    expect(answer!.status).toBe(403);
+    expect(String(answer!.body.error)).toContain('Agents page');
+    expect(agents.size, 'an agent was created').toBe(2);
+    expect(current).toMatchObject({ role: 'orchestrator', orchestratorMode: true });
+    expect(restartForSettings).not.toHaveBeenCalled();
+  });
+
+  it("refuses the toggle's old field the same way", async () => {
+    const current = agent('current', { role: 'orchestrator', orchestratorMode: true });
+    agent('caller');
+
+    const answer = await createAgent({ name: 'Rogue', orchestratorMode: true }, 'caller');
+
+    expect(answer!.status).toBe(403);
+    expect(agents.size).toBe(2);
+    expect(current.role).toBe('orchestrator');
+  });
+
+  it('refuses it in another project too, crossing on purpose and in bypass', async () => {
+    agent('caller');
+    const elsewhere = path.join(path.dirname(project), 'other-project');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    const theirs = agent('theirs', { projectPath: elsewhere, role: 'orchestrator', orchestratorMode: true });
+
+    const answer = await createAgent(
+      { name: 'Rogue3', role: 'orchestrator', projectPath: elsewhere, allowCrossProject: true, permissionMode: 'bypass' },
+      'caller',
+    );
+
+    expect(answer!.status).toBe(403);
+    expect(String(answer!.body.error)).toContain('Agents page');
+    expect(theirs.role).toBe('orchestrator');
+    expect(restartForSettings).not.toHaveBeenCalled();
   });
 
   it('refuses a role that is neither, and creates nothing', async () => {

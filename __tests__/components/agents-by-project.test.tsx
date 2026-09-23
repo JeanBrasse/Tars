@@ -291,6 +291,22 @@ describe('the Agents page', () => {
     expect(pickerRows().map(r => r[0])).toEqual(['all', TARS, CAPITAL]);
   });
 
+  it('does not bring the old pick back when a new agent later joins that project', () => {
+    // Added at the QA gate of #130: the pick was only ignored while its project
+    // had no agent, and came back by itself with the project's next agent.
+    open(seven());
+    pick(SAKARTVELO);
+    fleet.agents = fleet.agents.filter(a => a.projectPath !== SAKARTVELO);
+    page.rerender();
+    expect(picker().props.value).toBe('all');
+
+    fleet.agents = [...fleet.agents, agent('Newcomer', SAKARTVELO)];
+    page.rerender();
+
+    expect(picker().props.value).toBe('all');
+    expect(sections().map(s => s.path).sort()).toEqual([TARS, CAPITAL, SAKARTVELO].sort());
+  });
+
   it('clears the status, the search and the project together', () => {
     open(seven());
     pick(CAPITAL);

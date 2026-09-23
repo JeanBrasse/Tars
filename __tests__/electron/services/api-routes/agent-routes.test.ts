@@ -44,11 +44,26 @@ vi.mock('../../../../electron/utils/path-builder', () => ({
   buildFullPath: vi.fn(() => '/usr/bin'),
 }));
 
+import * as pty from 'node-pty';
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
 import { agents, saveAgents, killStalePty } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
+import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
+
+/**
+ * A terminal with a CLI up in it, opened the way every agent terminal is. The
+ * routes type into a session only where cliRunningIn finds a CLI, and it reads
+ * what spawnAgentPty recorded: a PTY that did not come from there runs nothing.
+ */
+function liveCliTerminal(ptyId: string) {
+  const terminal = { write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), process: '2.1.280' };
+  vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
+  spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: '/test/project', cols: 80, rows: 24, env: {} });
+  ptyProcesses.set(ptyId, terminal as never);
+  return terminal;
+}
 
 function makeRouteApp(): RouteApp {
   const app: RouteApp = {
@@ -302,7 +317,9 @@ describe('agent-routes', () => {
       agent.status = 'waiting';
 
       // Simulate PTY exit
-      const exitHandler = mockPtyProcess.onExit.mock.calls[0][0] as (args: { exitCode: number }) => void;
+      // The route's own listener, registered last: spawnAgentPty's terminal
+      // mirror subscribes before any caller does.
+      const exitHandler = mockPtyProcess.onExit.mock.calls.at(-1)![0] as (args: { exitCode: number }) => void;
       exitHandler({ exitCode: 1 });
 
       // After the 1500ms delay, status should become 'error' not stay 'waiting'
@@ -358,8 +375,7 @@ describe('agent-routes', () => {
 
   describe('POST /api/agents/:id/dispatch', () => {
     it('types into the live PTY when the agent is running and clears stale output', async () => {
-      const mockPty = { write: vi.fn() };
-      ptyProcesses.set('pty-1', mockPty as any);
+      const mockPty = liveCliTerminal('pty-1');
       const agent = makeAgent({ id: 'a1', name: 'Worker', status: 'running', ptyId: 'pty-1', lastCleanOutput: 'previous task result' });
       agents.set('a1', agent);
 
@@ -677,8 +693,7 @@ describe('agent-routes', () => {
 
   describe('POST /api/agents/:id/message', () => {
     it('sends message to agent PTY', async () => {
-      const mockPty = { write: vi.fn() };
-      ptyProcesses.set('pty-1', mockPty as any);
+      const mockPty = liveCliTerminal('pty-1');
       const agent = makeAgent({ id: 'a1', status: 'running', ptyId: 'pty-1' });
       agents.set('a1', agent);
 
@@ -717,8 +732,7 @@ describe('agent-routes', () => {
     });
 
     it('BUG 4: calls killStalePty before reusing existing PTY', async () => {
-      const mockPty = { write: vi.fn() };
-      ptyProcesses.set('pty-1', mockPty as any);
+      liveCliTerminal('pty-1');
       const agent = makeAgent({
         id: 'a1',
         status: 'running',

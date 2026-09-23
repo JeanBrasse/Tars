@@ -65,6 +65,10 @@ export interface AgentStatus {
    *  than its shell (cliRunningIn in core/agent-pty.ts). Never stored: set on
    *  the copies sent to the renderer by agent:list, agent:get and agents:tick. */
   cliRunning?: boolean;
+  /** True while the CLI in the agent's PTY repaints inline on an alternate
+   *  screen it never left, which leaves the wheel reaching nothing (RepaintWatch
+   *  in core/terminal-mirror.ts). Never stored, like cliRunning. */
+  leftFullscreen?: boolean;
   character?: AgentCharacter;
   name?: string;
   pathMissing?: boolean;

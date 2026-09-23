@@ -168,8 +168,14 @@ describe('the wiring holds', () => {
     }
   });
 
-  it('claude turns it into the flag its binary documents', () => {
-    const provider = read('electron/providers/claude-provider.ts');
-    expect(provider).toContain("command += ` --resume '${params.resumeSessionId}'`");
+  it('claude turns it into the flag its binary documents', async () => {
+    // Read off the command it builds, not off its source: the flag now comes
+    // from resumeFlags, shared by every provider on the claude binary
+    // (providers/resume-flags.test.ts holds all fourteen to it).
+    const { ClaudeProvider } = await import('../../electron/providers/claude-provider');
+    const command = new ClaudeProvider().buildInteractiveCommand({
+      binaryPath: '/usr/local/bin/claude', prompt: '', resumeSessionId: SESSION,
+    });
+    expect(command).toContain(` --resume '${SESSION}'`);
   });
 });

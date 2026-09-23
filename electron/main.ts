@@ -45,7 +45,9 @@ import {
   skillPtyProcesses,
   pluginPtyProcesses,
   killAllPty,
+  setFieldProbe,
 } from './core/pty-manager';
+import { lastLocalCommandAt } from './services/agent-truth';
 
 import { runShutdownSteps } from './core/shutdown';
 import { initTray, destroyTray } from './core/tray-manager';
@@ -105,6 +107,7 @@ import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-s
 import { startAgentWatch } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
+import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
@@ -610,6 +613,12 @@ app.whenReady().then(async () => {
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
   startAgentWatch();
+  // A message held behind a slash command typed by hand goes in once the
+  // command's record says the field emptied (core/pty-manager.ts).
+  setFieldProbe(agentId => {
+    const agent = agents.get(agentId);
+    return agent ? lastLocalCommandAt(agent) : undefined;
+  });
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk
@@ -644,6 +653,11 @@ app.whenReady().then(async () => {
     // Never hold the process open for a version check.
     timer.unref?.();
   }
+
+  // And the CLIs the agents run, which Tars keeps from updating themselves:
+  // claude and Amp, 5 s after launch and every half hour, logged to
+  // ~/.dorothy/cli-updates.log. See services/cli-updater.ts.
+  startCliUpdates(() => appSettings);
 
   console.log('App initialization complete');
 });
