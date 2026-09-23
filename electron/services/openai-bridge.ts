@@ -278,6 +278,16 @@ const STOP_REASON_MAP: Record<string, string> = {
   content_filter: 'end_turn',
 };
 
+/**
+ * The Anthropic stop reason for an OpenAI finish reason, read from the map's
+ * own keys. A plain lookup answers for the names every object has: a vendor
+ * saying `constructor` got Object's own function back, which JSON drops, and
+ * the reply reached the claude binary with no stop_reason at all.
+ */
+function stopReasonFor(finishReason: string): string {
+  return Object.hasOwn(STOP_REASON_MAP, finishReason) ? STOP_REASON_MAP[finishReason] : 'end_turn';
+}
+
 export function openAIResponseToAnthropic(json: Json, requestedModel: string): Record<string, unknown> {
   const choice = asObj(asArr(json.choices)[0]);
   const message = asObj(choice.message);
@@ -300,7 +310,7 @@ export function openAIResponseToAnthropic(json: Json, requestedModel: string): R
     role: 'assistant',
     model: asStr(json.model) || requestedModel,
     content,
-    stop_reason: STOP_REASON_MAP[asStr(choice.finish_reason)] || 'end_turn',
+    stop_reason: stopReasonFor(asStr(choice.finish_reason)),
     stop_sequence: null,
     usage: {
       input_tokens: asNum(asObj(json.usage).prompt_tokens),
@@ -407,7 +417,7 @@ async function streamOpenAIAsAnthropic(upstream: Response, res: http.ServerRespo
 
   sseWrite(res, 'message_delta', {
     type: 'message_delta',
-    delta: { stop_reason: STOP_REASON_MAP[finishReason || 'stop'] || 'end_turn', stop_sequence: null },
+    delta: { stop_reason: stopReasonFor(finishReason || 'stop'), stop_sequence: null },
     usage: { output_tokens: outputTokens },
   });
   sseWrite(res, 'message_stop', { type: 'message_stop' });

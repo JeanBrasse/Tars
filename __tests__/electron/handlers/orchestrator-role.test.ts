@@ -89,7 +89,7 @@ import type { AgentStatus, AppSettings } from '../../../electron/types';
 
 const project = path.join(tmpHome, 'tars');
 const otherProject = path.join(tmpHome, 'sakartvelo');
-const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
 
 function deps(): IpcHandlerDependencies {
   const fixed: Record<string, unknown> = {

@@ -15,6 +15,7 @@ import { cliRunningIn } from '../core/agent-pty';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
+import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
 
 // ============== Telegram Bot State ==============
 let telegramBot: TelegramBot | null = null;
@@ -758,6 +759,7 @@ export function initTelegramBot() {
         return;
       }
 
+      let launch: object | null = null;
       try {
         // Start the agent using the existing IPC mechanism
         const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
@@ -766,6 +768,11 @@ export function initTelegramBot() {
         killStalePty(agent);
 
         // Initialize PTY if needed
+        // A launch on its way owns the terminal until its CLI runs: wait for it.
+        await sessionStarted(agent);
+        // No CLI up there: this is a launch from now on, for every other sender.
+        launch = launchUnlessRunning(agent);
+
         if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
           const ptyId = await initAgentPty(agent);
           agent.ptyId = ptyId;
@@ -773,6 +780,7 @@ export function initTelegramBot() {
 
         const ptyProcess = ptyProcesses.get(agent.ptyId);
         if (!ptyProcess) {
+          if (launch) launchAbandoned(agent.id, launch);
           telegramBot?.sendMessage(msg.chat.id, '❌ Failed to initialize agent terminal.');
           return;
         }
@@ -846,6 +854,7 @@ export function initTelegramBot() {
           { parse_mode: 'Markdown' }
         );
       } catch (err) {
+        if (launch) launchAbandoned(agent.id, launch);
         console.error('Failed to start agent from Telegram:', err);
         telegramBot?.sendMessage(msg.chat.id, `❌ Failed to start agent: ${err}`);
       }
@@ -1280,12 +1289,18 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
   // Sanitize message - replace newlines with spaces for terminal compatibility
   const sanitizedMessage = fullMessage.replace(/\r?\n/g, ' ').trim();
 
+  let launch: object | null = null;
   try {
     // BUG 4 guard: if worktreePath changed since the PTY was spawned, its
     // cwd is stale: kill it so initAgentPty respawns in the right directory.
     killStalePty(superAgent);
 
     // Initialize PTY if needed
+    // A launch on its way owns the terminal until its CLI runs: wait for it.
+    await sessionStarted(superAgent);
+    // No CLI up there: this is a launch from now on, for every other sender.
+    launch = launchUnlessRunning(superAgent);
+
     if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
       const ptyId = await initAgentPty(superAgent);
       superAgent.ptyId = ptyId;
@@ -1293,6 +1308,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
     const ptyProcess = ptyProcesses.get(superAgent.ptyId);
     if (!ptyProcess) {
+      if (launch) launchAbandoned(superAgent.id, launch);
       telegramBot?.sendMessage(chatId, '❌ Failed to connect to Super Agent terminal.');
       return;
     }
@@ -1397,6 +1413,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
     }
   } catch (err) {
+    if (launch) launchAbandoned(superAgent.id, launch);
     console.error('Failed to send to Super Agent:', err);
     telegramBot?.sendMessage(chatId, `❌ Error: ${err}`);
   }

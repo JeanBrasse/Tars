@@ -5,7 +5,7 @@ import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
-import { emitAgentStatus } from '../agent-events';
+import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 
 /**
  * Session ownership contract:
@@ -247,6 +247,10 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // spawned with on the clock.
       noteSessionRegistered(agent);
       saveAgents();
+      // Not a status change, and so no `status:` event (a /wait answers
+      // those), but the fleet did change: what agent-watch held for this agent
+      // while its launch was on its way can go in now (agent-watch flush).
+      agentStatusEmitter.emit('fleet-change', agent.id);
       sendJson({ success: true, registered: true, agent: { id: agent.id, status: agent.status } });
       return;
     }

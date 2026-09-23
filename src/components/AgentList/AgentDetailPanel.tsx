@@ -10,7 +10,7 @@ import {
   Square,
   Play,
   Trash2,
-  Sparkles,
+  Blocks,
   Terminal as TerminalIcon,
 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
@@ -139,7 +139,7 @@ export function AgentDetailPanel({
       {/* Skills Bar */}
       {agent.skills.length > 0 && (
         <div className="px-5 py-2 border-b border-border-primary bg-bg-tertiary/50 flex items-center gap-2 overflow-x-auto">
-          <Sparkles className="w-4 h-4 text-text-muted shrink-0" />
+          <Blocks className="w-4 h-4 text-text-muted shrink-0" />
           <span className="text-xs text-text-muted shrink-0">Skills:</span>
           {agent.skills.map((skill) => (
             <span

@@ -879,7 +879,9 @@ both behave identically. It:
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
-   `waiting` over a bare shell had the message run as a command. Otherwise it
+   `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
+   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
 
