@@ -608,3 +608,35 @@ describe('a launch typed into a terminal the bot has just opened (gate of #155)'
     expect(typed).toContain(`cd '${project}' && `);
   }, 20_000);
 });
+
+describe('QA #166: the quiet counts from the last thing the shell printed', () => {
+  // Written by the QA at the gate of #166. A login shell can print more than
+  // once before its prompt (a profile's own line, the zsh notice, the prompt):
+  // counted from the first output, the 150 ms of quiet ran out while the shell
+  // was still talking, and the launch went back into canonical mode. Measured
+  // at the gate: with only the tests above, that mutant left them green.
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('types 150 ms after the last output, not the first', async () => {
+    vi.useFakeTimers();
+    shell.speaksAfterMs = 800;
+    agent({ id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator' });
+    const before = spawned.length;
+
+    const sent = sendToSuperAgent('42', 'Rebase onto main');
+    await vi.advanceTimersByTimeAsync(900);
+    const terminal = spawned[before];
+    const typed = () => terminal.write.mock.calls.map(call => String(call[0])).join('');
+    expect(typed(), 'typed 100 ms after the first output').toBe('');
+    // The shell spoke at 800 ms, and speaks again at 900 ms.
+    terminal.say('bash-3.2$ ');
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(typed(), 'typed 200 ms after the first output but 100 ms after the last').toBe('');
+
+    await vi.advanceTimersByTimeAsync(200);
+    await sent;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(typed()).toContain(`cd '${project}' && `);
+  });
+});
