@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   FolderKanban,
-  Sparkles,
+  Puzzle,
   Settings,
   Bot,
   BarChart2,
@@ -42,7 +42,7 @@ const navItems = [
   { href: '/logs', icon: ScrollText, label: 'Logs', shortcut: '6' },
   { href: '/vault', icon: Archive, label: 'Vault', shortcut: '7' },
   { href: '/projects', icon: FolderKanban, label: 'Projects', shortcut: '8' },
-  { href: '/skills', icon: Sparkles, label: 'Extensions', shortcut: '9' },
+  { href: '/skills', icon: Puzzle, label: 'Extensions', shortcut: '9' },
   { href: '/usage', icon: BarChart2, label: 'Usage', shortcut: '0' },
   { href: '/memory', icon: Brain, label: 'Brain' },
 ];

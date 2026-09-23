@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Search, GripVertical, Sparkles } from 'lucide-react';
+import { Search, GripVertical, Blocks } from 'lucide-react';
 import { useDraggable } from '@dnd-kit/core';
 
 function DraggableSkillItem({ skillName }: { skillName: string }) {
@@ -68,7 +68,7 @@ export default function SidebarSkillsPalette({ installedSkills }: SidebarSkillsP
         ))}
         {installedSkills.length === 0 && (
           <div className="p-4 text-center">
-            <Sparkles className="w-5 h-5 text-muted-foreground mx-auto mb-2" />
+            <Blocks className="w-5 h-5 text-muted-foreground mx-auto mb-2" />
             <p className="text-xs text-muted-foreground">No skills installed</p>
             <p className="text-[10px] text-muted-foreground mt-1">Install skills from the Skills page</p>
           </div>
