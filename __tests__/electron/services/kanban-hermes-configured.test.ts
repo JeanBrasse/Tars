@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -20,19 +20,23 @@ import * as path from 'node:path';
 const home = os.homedir(); // a throwaway HOME, per __tests__/setup/home-isolation.ts
 const file = path.join(home, '.dorothy', 'hermes-connection.json');
 
+let hermesKanban: () => unknown;
+// The routes bring half the main process with them: loaded once, with the time that takes.
+beforeAll(async () => {
+  ({ hermesKanban } = await import('../../../electron/services/api-routes/kanban-routes'));
+}, 120_000);
+
 beforeEach(() => fs.rmSync(file, { force: true }));
 
 describe('the Hermes the kanban writes to', () => {
-  it('is none when nobody configured one', async () => {
-    const { hermesKanban } = await import('../../../electron/services/api-routes/kanban-routes');
+  it('is none when nobody configured one', () => {
     expect(fs.existsSync(file)).toBe(false);
     expect(hermesKanban()).toBeNull();
   });
 
-  it('is the configured one when there is a connection file', async () => {
+  it('is the configured one when there is a connection file', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
-    const { hermesKanban } = await import('../../../electron/services/api-routes/kanban-routes');
     expect(hermesKanban()).not.toBeNull();
   });
 });
