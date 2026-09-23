@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The wheel over a Dashboard panel reaches a full-screen CLI as wheel reports.
@@ -22,7 +23,6 @@ import { launchSandboxed, seedSandbox } from './fixture.mjs';
  * and the same wheel then types arrows: the reports before were the guard's.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 /** Raw mode, no echo, every byte appended to `log`; the alternate screen, and the mouse request if asked. */
 function recorder(log: string, askForMouse: boolean): string {
@@ -76,7 +76,7 @@ test('a panel sends the wheel a full-screen CLI asked for as wheel reports, and 
   })), null, 2));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31489', DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31489), DOROTHY_E2E: '1' },
   });
 
   try {

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { test } from '@playwright/test';
 
 /**
  * What the sandboxed app has in it when we photograph it.
@@ -424,7 +425,13 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
     orion: path.join(home, REL_ORION),
   };
 
+  const fakeCli = writeFakeCli(home);
   const agents = AGENTS.map(a => ({
+    // Autostart runs these, and the machine's own claude, codex or gemini was
+    // what it ran until 2026-09-23: an agent read `running` or `idle` in a
+    // screenshot depending on what that CLI had done by then, and on which
+    // version the machine had installed. See writeFakeCli.
+    cliPath: fakeCli,
     ...a,
     projectPath: a.projectPath === REL_PROJECT ? PROJECT : SECOND,
     ...(a.worktreePath ? { worktreePath: path.join(PROJECT, '.worktrees', a.branchName) } : {}),
@@ -435,7 +442,7 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
   if (chatRooms) {
     for (const a of CHAT_AGENTS) {
       const { rel, ...rest } = a;
-      agents.push({ ...rest, projectPath: path.join(home, rel) });
+      agents.push({ cliPath: fakeCli, ...rest, projectPath: path.join(home, rel) });
     }
   }
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents, null, 2));
@@ -522,8 +529,19 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, ...opti
   const app = await electron.launch({
     ...options,
     args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`],
-    env: { ...process.env, ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
+    env: { ...inheritable(process.env), ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
   });
+  // What the app inherited, checked the way its folders are below: a run
+  // started by an agent inside Tars carries that agent's CLAUDE_MGR_API_URL
+  // (the live Tars, 31415) and its token, and handed them to the app until
+  // 2026-09-23. Anything of that family the app holds now came from the spec.
+  const leaked = await app.evaluate((_electron, { allowed, pattern }) => Object.keys(process.env)
+    .filter(name => new RegExp(pattern).test(name) && !allowed.includes(name)), { allowed: Object.keys(env), pattern: LEAKY.source });
+  if (leaked.length > 0) {
+    await app.close();
+    throw new Error(`the app inherited the caller's ${leaked.join(', ')}; launchSandboxed hands it nothing of that family`);
+  }
+  if (process.env.E2E_TRACE === 'on') await traceApp(app);
   const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries(
     names.map(name => {
       try {
@@ -544,4 +562,117 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, ...opti
     );
   }
   return app;
+}
+
+/**
+ * The environment the app is handed: the caller's, less what belongs to a Tars
+ * that may be running the suite. An agent inside Tars carries CLAUDE_AGENT_ID,
+ * CLAUDE_MGR_API_URL (the live Tars on 31415) and CLAUDE_MGR_API_TOKEN, and a
+ * shell may carry DOROTHY_* or ANTHROPIC_* of its own; a spec that wants one
+ * sets it in its env.
+ */
+const LEAKY = /^(CLAUDE|DOROTHY|ANTHROPIC)|^CLAUDECODE$/;
+function inheritable(env) {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !LEAKY.test(name)));
+}
+
+/**
+ * The CLI the seeded agents run: it draws one fixed screen and holds the
+ * terminal, with no model, no network and no hook, so an agent's status is
+ * whatever the suite set and stays so. The machine's own claude, which the
+ * sweep ran until 2026-09-23, registered its session within seconds and ran
+ * the seeded task on whatever login the sandbox lacked: the Logs page, the
+ * tray and Brain's project order came out `running` in one run and `idle`
+ * in the next.
+ */
+function writeFakeCli(home) {
+  const dir = path.join(home, 'bin');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'fake-cli.cjs');
+  fs.writeFileSync(file, [
+    `#!${process.execPath}`,
+    "process.stdout.write('\\x1b[2J\\x1b[Ha CLI of the E2E sandbox: no model, no network, no hook\\r\\n> ');",
+    'process.stdin.resume();',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  return file;
+}
+
+/**
+ * The statuses the sweep photographs: the four agents of the tars project
+ * that the Dashboard starts are running, the two of 1212-capital idle. It is
+ * what the references were recorded with, and loadAgents sets every agent
+ * idle on launch, so the suite sets them once their CLIs hold their terminals.
+ */
+export const SWEEP_STATUSES = { a1: 'running', a2: 'running', a3: 'running', a4: 'running', a5: 'idle', a6: 'idle' };
+
+/**
+ * Waits until every agent to be shown running has its CLI in its terminal,
+ * which is when autostart has done writing its status, then sets the
+ * statuses on the app's own agent map and pushes a tick, as a hook would.
+ */
+export async function settleFleet(app, { cwd = process.cwd(), statuses = SWEEP_STATUSES, timeout = 90_000 } = {}) {
+  const dist = path.resolve(cwd, 'electron', 'dist');
+  const started = Object.keys(statuses).filter(id => statuses[id] === 'running');
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const waiting = await app.evaluate((_electron, { dist, ids }) => {
+      const req = process.mainModule.require;
+      const { agents } = req(`${dist}/core/agent-manager.js`);
+      const { ptyProcesses } = req(`${dist}/core/pty-manager.js`);
+      const { cliRunningIn } = req(`${dist}/core/agent-pty.js`);
+      return ids.filter(id => {
+        const agent = agents.get(id);
+        return !(agent?.ptyId && cliRunningIn(ptyProcesses.get(agent.ptyId)));
+      });
+    }, { dist, ids: started });
+    if (waiting.length === 0) break;
+    if (Date.now() > deadline) throw new Error(`no CLI in the terminal of ${waiting.join(', ')} after ${timeout} ms`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  await app.evaluate((_electron, { dist, statuses }) => {
+    const req = process.mainModule.require;
+    const { agents } = req(`${dist}/core/agent-manager.js`);
+    for (const [id, status] of Object.entries(statuses)) {
+      const agent = agents.get(id);
+      if (agent) agent.status = status;
+    }
+    req(`${dist}/utils/agents-tick.js`).scheduleTick();
+  }, { dist, statuses });
+}
+
+/**
+ * The artefact of an E2E run, beside Playwright's own: the values a test
+ * asserted, merged into values.json, and a screenshot per step, both in the
+ * test's output folder, which is inside the run directory.
+ */
+export function recordValues(values) {
+  const file = test.info().outputPath('values.json');
+  const kept = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  fs.writeFileSync(file, JSON.stringify({ ...kept, ...values }, null, 2));
+}
+
+export async function stepShot(page, name) {
+  await page.screenshot({ path: test.info().outputPath(`${name}.png`) });
+}
+
+/**
+ * With E2E_TRACE=on, the app's own trace: its pages, clicks, DOM snapshots and
+ * screenshots, saved as app-trace.zip in the test's output folder when the app
+ * closes. Playwright's --trace records the runner's steps only: for an app
+ * started by _electron.launch its trace.zip held "Launch electron" and the
+ * hooks, 14 KB, and nothing of what the app did (measured 2026-09-23).
+ */
+async function traceApp(app) {
+  const context = app.context();
+  await context.tracing.start({ screenshots: true, snapshots: true });
+  const close = app.close.bind(app);
+  app.close = async () => {
+    try {
+      await context.tracing.stop({ path: test.info().outputPath('app-trace.zip') });
+    } catch (error) {
+      console.warn('[e2e] the app trace could not be saved:', error);
+    }
+    return close();
+  };
 }
