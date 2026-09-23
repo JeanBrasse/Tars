@@ -71,7 +71,10 @@ export function buildBudgetRows(opts: {
   for (const spend of opts.providerSpend) {
     const id = spend.provider;
     if (!id) continue;
-    if (id === 'claude' && rows.length > 0) continue; // already covered by its windows
+    // Already covered by its rate windows, when it has any. Not "any row so
+    // far": with no windows, Claude's row vanished whenever another provider
+    // had spent more this month and sorted first.
+    if (id === 'claude' && rows.some(r => r.providerId === 'claude')) continue;
     if (id === 'local' || id === 'tasmania') {
       // A model running on this machine has no bill and no rate window. Say so:
       // the cell used to hold a bare dash, which reads as missing data.
