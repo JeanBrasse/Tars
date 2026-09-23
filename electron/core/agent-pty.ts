@@ -14,6 +14,8 @@ const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean }>
 
 /** When each agent PTY last printed something, and whether it has at all. */
 const heardFrom = new WeakMap<pty.IPty, { lastAt: number }>();
+/** The agent PTYs whose output is listened to for that. */
+const listening = new WeakSet<pty.IPty>();
 
 /** A shell that has spoken and then been quiet this long is at its prompt. */
 export const SHELL_QUIET_MS = 150;
@@ -115,9 +117,6 @@ export function spawnAgentPty(opts: {
     } as { [key: string]: string },
   });
   spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.args.includes('-c') });
-  // What shellReady waits on: a launch typed before the shell has printed its
-  // prompt goes through the terminal's canonical mode (see shellReady).
-  spawned.onData(() => { heardFrom.set(spawned, { lastAt: Date.now() }); });
   // Whose terminal this is, so a message that has to wait for a draft in it
   // can name the agent whose panel should say so. Here because this is the
   // one function that spawns an agent's terminal, and a caller that has to
@@ -139,6 +138,10 @@ export function spawnAgentPty(opts: {
   // was measured on.
   if (agentId) {
     attachTerminalMirror(spawned, { ...size, watchRepaint: opts.binaryName === 'claude', label: agentId });
+    // What shellReady waits on: a launch typed before the shell has printed its
+    // prompt goes through the terminal's canonical mode (see shellReady).
+    listening.add(spawned);
+    spawned.onData(() => { heardFrom.set(spawned, { lastAt: Date.now() }); });
   }
   return spawned;
 }
@@ -227,7 +230,8 @@ export async function shellReady(ptyProcess: pty.IPty): Promise<void> {
     const heard = heardFrom.get(ptyProcess);
     const quietFor = heard ? Date.now() - heard.lastAt : 0;
     if (heard && quietFor >= SHELL_QUIET_MS) return;
-    if (!spawnedAs.has(ptyProcess)) return;
+    // A terminal nobody listens to, or one that has exited, has nothing to wait for.
+    if (!listening.has(ptyProcess) || !spawnedAs.has(ptyProcess)) return;
     const left = deadline - Date.now();
     if (left <= 0) {
       console.warn(`[agent-pty] a shell said nothing in ${SHELL_READY_MAX_MS / 1000} s: typing into it anyway`);
