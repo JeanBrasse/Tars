@@ -165,3 +165,73 @@ function handle(msg) {
     await expect(session.prompt('boom', 20_000)).rejects.toThrow(/exited/);
   });
 });
+
+describe('what a turn leaves behind when it ends (sessions that died while they waited, 2026-09-23)', () => {
+  // A delegated run is one turn: when it ends, Tars stops the agent, and what
+  // it left running goes with it. Measured on claude-agent-acp 0.70.0: a
+  // background command's own notice reads `<status>killed</status>` two seconds
+  // after the turn. And a run stopped at its turn limit answered nothing at
+  // all, however much it had said and done.
+  //
+  // How this fails, written before the code:
+  // 1. A background command, a Monitor or a ScheduleWakeup the turn started is
+  //    not reported, so whoever delegated reads "done" and waits for results
+  //    that were stopped.
+  // 2. The call's input arrives in a later tool_call_update than the call
+  //    itself (the adapter emits the call first), and only the first is read.
+  // 3. A foreground command is counted as left behind.
+  // 4. A turn stopped at its limit returns no text and no tools: what the
+  //    agent said and did before the limit is lost.
+  const agentWith = (updates: unknown[], answer = true) => fakeAgent(`${PRELUDE}
+function handle(msg) {
+  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 's1' } });
+  if (msg.method === 'session/prompt') {
+    for (const update of ${JSON.stringify(updates)}) send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 's1', update } });
+    ${answer ? "return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });" : ''}
+  }
+}
+`);
+
+  it('reports the background commands, monitors and wakeups the turn left running', async () => {
+    const session = track(new AcpSession(agentWith([
+      { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Terminal', kind: 'execute', rawInput: {} },
+      { sessionUpdate: 'tool_call_update', toolCallId: 't1', title: 'pnpm build', rawInput: { command: 'pnpm build', run_in_background: true } },
+      { sessionUpdate: 'tool_call', toolCallId: 't2', title: 'pnpm test', kind: 'execute', rawInput: { command: 'pnpm test' } },
+      { sessionUpdate: 'tool_call', toolCallId: 't3', title: 'Monitor', kind: 'other', rawInput: { command: 'tail -f build.log' } },
+      { sessionUpdate: 'tool_call', toolCallId: 't4', title: 'ScheduleWakeup', kind: 'other', rawInput: { delaySeconds: 1200 } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'builds are running' } },
+    ]), { cwd: tmp }));
+    await session.start();
+
+    const turn = await session.prompt('upgrade', 20_000);
+
+    expect(turn.background).toEqual(['pnpm build', 'Monitor', 'ScheduleWakeup']);
+    // Named by what it ran, not by the placeholder the adapter sends first
+    // ("Terminal", measured on claude-agent-acp 0.70.0).
+    expect(turn.toolCalls.map(t => t.title)).toEqual(['pnpm build', 'pnpm test', 'Monitor', 'ScheduleWakeup']);
+  });
+
+  it('reports nothing for a turn that waited for its own work', async () => {
+    const session = track(new AcpSession(agentWith([
+      { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'pnpm build', kind: 'execute', rawInput: { command: 'pnpm build', timeout: 600000 } },
+    ]), { cwd: tmp }));
+    await session.start();
+
+    expect((await session.prompt('build', 20_000)).background).toEqual([]);
+  });
+
+  it('keeps what a turn said and did when it is stopped at its limit', async () => {
+    const session = track(new AcpSession(agentWith([
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'three of five repos upgraded' } },
+      { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'pnpm build', kind: 'execute', rawInput: { command: 'pnpm build' } },
+    ], false), { cwd: tmp }));
+    await session.start();
+
+    await expect(session.prompt('upgrade', 1_500)).rejects.toThrow(/timed out/);
+    const partial = session.partialTurn();
+
+    expect(partial.text).toBe('three of five repos upgraded');
+    expect(partial.toolCalls.map(t => t.title)).toEqual(['pnpm build']);
+  });
+});

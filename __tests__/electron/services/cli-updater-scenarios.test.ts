@@ -249,7 +249,11 @@ describe('QA #119: Amp paths the PR tests do not reach', () => {
   it('Q5 holds an update back when it cannot tell whether Amp is running (no lsof)', async () => {
     const home = path.join(root, 'home');
     const amp = npmAmp(path.join(home, 'npm-global'), '0.0.1');
-    const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.0.2' }, [path.join(home, '.local', 'bin'), NODE_DIR, '/usr/bin', '/bin']));
+    // lsof is in /usr/sbin on macOS and in /usr/bin on Linux: every folder that
+    // holds one is left off, whichever machine this runs on.
+    const dirs = [path.join(home, '.local', 'bin'), NODE_DIR, '/usr/bin', '/bin'].filter(dir => !fs.existsSync(path.join(dir, 'lsof')));
+    expect(dirs, 'the folder that holds node was left off too: it holds an lsof').toContain(NODE_DIR);
+    const r = await updateCli('amp', amp, ctxFor(home, { FAKE_LATEST: '0.0.2' }, dirs));
     expect(r.outcome).toBe('deferred');
     expect(r.detail).toContain('could not be checked');
     expect(recorded().some(c => c[0] === 'npm-start' && c[2] === 'global')).toBe(false);
