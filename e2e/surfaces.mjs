@@ -225,7 +225,13 @@ export const VOLATILE = {
   },
   'fleet-status-lines': {
     surfaces: ['chat'],
-    selector: 'text=/^(running|waiting) (just now|<1m|\\d+m|\\d+h)/',
+    // The whole line under the agent's name: its status and the last line its
+    // terminal printed. Since #149 the status is a <span> of its own, and a text
+    // selector takes the smallest element, so it masked the word alone. The line
+    // stayed hidden only when it held the sandbox path, which it does in some
+    // runs and not in others. `[0-9]` and not a backslash-d: in a CSS string a
+    // backslash starts an escape, and the minutes and hours stopped matching.
+    selector: 'p:has(span:text-matches("^(running|waiting) (just now|<1m|[0-9]+m|[0-9]+h)"))',
     why: 'how long an agent has held its status, and the last line its terminal printed',
   },
   'changelog-body': {
