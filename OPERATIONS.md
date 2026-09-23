@@ -21,8 +21,8 @@ nvm use          # reads .nvmrc → 22
 node -v          # v22.x
 ```
 
-`package.json` declares `"engines": { "node": ">=20" }`, and CI (`.github/workflows/ci.yml`)
-runs the test job on Node 20. Both are true, but **Node 18 fails**, in two different ways:
+`package.json` declares `"engines": { "node": ">=22.12.0" }`, the floor Electron itself declares since 43, and CI
+(`.github/workflows/ci.yml`) runs the test job on Node 22. **Node 18 fails**, in two different ways:
 
 ```
 # npm test on Node 18.16
@@ -38,7 +38,7 @@ You are using Node.js 18.16.0. For Next.js, Node.js version ">=20.9.0" is requir
 ```
 
 `util.styleText` landed in Node 20.12, and Vitest 4 → Vite 8 → rolldown imports it
-unconditionally. Node 20.20.1 and 22.22.2 both run the full suite clean. If you see the
+unconditionally. Node 20.20.1 and 22.22.2 both ran the full suite clean before the floor moved to 22.12. If you see the
 `styleText` SyntaxError, you are on the wrong Node: nothing else is wrong.
 
 ### Install
@@ -47,7 +47,11 @@ unconditionally. Node 20.20.1 and 22.22.2 both run the full suite clean. If you 
 npm ci
 ```
 
-`bun.lock` is committed alongside `package-lock.json`; the npm lockfile is the one CI uses.
+`package-lock.json` is the only lockfile, and the one CI uses.
+
+Since Electron 44 the `electron` package has no install script: its binary is downloaded the first time
+something asks for it (`require('electron')`, `npx electron`, Playwright's launch), into
+`node_modules/electron/dist`. `npx install-electron` fetches it ahead of time, which a first E2E run wants.
 The seven MCP servers under `mcp-*/` have **their own** `package.json` and are installed
 separately by the build scripts (`cd mcp-memory && npm install && npm run build`, ×7). You do
 not need them installed to run `npm run dev` or `npm test`.
@@ -295,7 +299,7 @@ removed after measuring that nothing in the app listens for it.
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,
-Node 20, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
+Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 

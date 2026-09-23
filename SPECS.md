@@ -13,7 +13,7 @@ Nothing runs in the cloud. No account, no server, no telemetry. The state lives 
 ### Data Flow
 
 ```
-Electron main process (electron/, ~23k LOC)
+Electron 44 main process (Node 24.21, Chromium 152; electron/, ~23k LOC)
 ├── BrowserWindow  → Next.js 16.3 static export (src/, ~40k LOC)
 │                     contextIsolation, nodeIntegration off, app:// protocol
 │                     ↕ 162 IPC channels via contextBridge (electron/preload.ts)
@@ -746,7 +746,8 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | asarUnpack | `out/`, `hooks/`, `electron/resources/`, `better-sqlite3`, `node-pty` |
 | Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized via `@electron/notarize` |
 | Updates | `electron-updater` against `JeanBrasse/Tars` releases |
-| Node | ≥20, `.nvmrc` pinned |
+| Electron | 44.4 (Node 24.21, ABI 149, Chromium 152). Its `LSMinimumSystemVersion` is 13.0, so the app needs macOS 13 or later |
+| Node | ≥22.12, Electron's own floor; `.nvmrc` pins 22 |
 
 Tests: `vitest run` over `__tests__/**/*.test.ts` (node environment, `@` aliased to `src/`), with coverage scoped to `electron/{constants,utils,services,handlers,providers}` and the MCP server sources. Suites exist for the ACP client, the model catalogue, transcript usage, the memory hub, agent persistence, the PTY manager, four providers, delegation plumbing, and two dedicated security files.
 
@@ -770,7 +771,7 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **The API token is a single flat credential.** No per-agent scoping, no rotation UI.
 - **The webhook is the only surface designed to leave the machine**, and it needs an operator-provided tunnel; nothing in the app opens one.
 - **`installBundledSkills()` currently ships nothing.** Its only remaining job is deleting stale `world-builder` copies left by older versions, and only when the file content is recognizably ours.
-- **macOS only.** `electron-builder` targets `--mac`; `window-all-closed` quits on other platforms but nothing else is tested there.
+- **macOS 13 or later only.** Electron 44 declares 13.0 as its minimum, so a Mac on 12 cannot open the app, nor the update to it. `electron-builder` targets `--mac`; `window-all-closed` quits on other platforms but nothing else is tested there.
 - **An Amp update leaves `amp` missing for a few seconds.** npm removes the old package before the new one is unpacked: measured, 3.3 to 9.3 s with the tarballs already downloaded, which Tars makes sure of first, then under a second on a placeholder that prints "Amp native binary not installed". Tars waits for every running `amp` to end before it starts, but nothing holds a launch back during those seconds, and one that falls in them fails. A claude update has no such window.
 - **A claude session that outlives two newer releases can lose its binary file.** The native installer's cleanup keeps the two newest versions and any version whose lock is held, and only the first session on a version holds that lock. Measured: once that session had exited, the cleanup deleted the file under a second session on the same version, and that session's next turn still answered, but its Grep and Glob tools do not: native claude runs its embedded ripgrep by starting its own file again, as `rg`. With no `rg` on PATH every later search fails (`posix_spawn 'rg'`, ENOENT); with Homebrew's on PATH, as in a Tars terminal on Noah's machine, the first search fails with a misleading "ripgrep not found on PATH" and the next ones go through the system `rg`. A `claude` started from inside it fails too. A restart ends it. `USE_BUILTIN_RIPGREP=0`, with `rg` on PATH, kept Grep and Glob working when QA measured it, and is for a later change. The cleanup is claude's own: every session's housekeeping runs it, not only an update.
 - **Agents started before a claude update finishes stay on the version they started with** until they are restarted. The pass runs 5 s after launch and takes about 10 s, while the agents set to start with the app may already be starting.
