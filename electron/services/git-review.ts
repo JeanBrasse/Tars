@@ -38,8 +38,17 @@ export interface ReviewDiff {
   truncated: boolean;
 }
 
+/**
+ * `--no-optional-locks`: the Review page reads repositories agents are working
+ * in, and `git status` otherwise takes `index.lock` to rewrite the index as it
+ * reads, which makes an agent's own `git commit` in that moment fail with
+ * "index.lock exists". Measured on git 2.39: the flag keeps `status` off the
+ * index, not a diff that compares content (`git diff HEAD`, as before this
+ * cache), which still refreshes it. So the check a cached diff costs, a
+ * `status`, never writes; only a diff that has to be computed again can.
+ */
 async function git(cwd: string, args: string[], maxBuffer = 8 * 1024 * 1024): Promise<string> {
-  const { stdout } = await run('git', args, { cwd, maxBuffer, timeout: 30_000 });
+  const { stdout } = await run('git', ['--no-optional-locks', ...args], { cwd, maxBuffer, timeout: 30_000 });
   return stdout;
 }
 
@@ -86,20 +95,75 @@ function statusFromCode(code: string): ChangedFile['status'] {
  * comparing an agent's branch to its own remote copy shows nothing, when the
  * question is what the agent changed relative to the trunk it branched from.
  */
-async function detectBaseBranch(cwd: string, current: string): Promise<string | null> {
-  for (const candidate of ['main', 'master', 'develop']) {
-    if (candidate === current) continue;
-    const exists = await tryGit(cwd, ['rev-parse', '--verify', '--quiet', candidate]);
-    if (exists.trim()) return candidate;
-  }
+const BASE_CANDIDATES = ['main', 'master', 'develop'];
+
+/** What the choice below reads, asked all at once: it does not depend on the current branch. */
+async function baseCandidates(cwd: string): Promise<{ existing: string[]; upstream: string }> {
+  const [found, upstream] = await Promise.all([
+    Promise.all(BASE_CANDIDATES.map(candidate => tryGit(cwd, ['rev-parse', '--verify', '--quiet', candidate]))),
+    tryGit(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']),
+  ]);
+  return { existing: BASE_CANDIDATES.filter((_, i) => found[i].trim()), upstream: upstream.trim() };
+}
+
+function chooseBaseBranch({ existing, upstream }: { existing: string[]; upstream: string }, current: string): string | null {
+  const candidate = existing.find(name => name !== current);
+  if (candidate) return candidate;
 
   // The upstream is repo-controlled: a .git/config with `[remote "-evil"]`
   // makes this print `-evil/work`, which would reach the rev-range argv slot
   // with no caller involved. An unusable name is the same as no base branch.
-  const upstream = (await tryGit(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).trim();
   if (upstream && SAFE_REF.test(upstream) && !upstream.endsWith(`/${current}`)) return upstream;
 
   return null;
+}
+
+/**
+ * What the diff below depends on, cheaply: the head, the base's commit, and
+ * every path `git status` lists with its size and modification time. An agent
+ * editing a file it already changed leaves the status line as it was and moves
+ * the mtime, so the stat is part of it.
+ */
+async function worktreeState(repoPath: string, baseBranch: string | null): Promise<string> {
+  const [head, base, status] = await Promise.all([
+    tryGit(repoPath, ['rev-parse', 'HEAD']),
+    baseBranch ? tryGit(repoPath, ['rev-parse', '--verify', '--quiet', `${baseBranch}^{commit}`]) : Promise.resolve(''),
+    tryGit(repoPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+  ]);
+  const entries = status.split('\0');
+  const paths: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.length < 4) continue;
+    paths.push(entry.slice(3));
+    // A rename or a copy is followed by the path it came from.
+    if (entry[0] === 'R' || entry[0] === 'C') paths.push(entries[++i] ?? '');
+  }
+  const stats = await Promise.all(paths.map(async file => {
+    try {
+      const st = await fs.promises.stat(path.join(repoPath, file));
+      return `${st.size}:${st.mtimeMs}`;
+    } catch {
+      return 'gone';
+    }
+  }));
+  return JSON.stringify([head.trim(), base.trim(), status, stats]);
+}
+
+/**
+ * The last diff of each repository and base, and the state it was taken on.
+ *
+ * `review:diff` took 366 to 731 ms per branch (the Audit, 2026-09-23): nine git
+ * commands one after the other, run again on every visit to the same branch.
+ * The state above costs three, run together; when it is unchanged the diff is
+ * too. Kept for the last few repositories only.
+ */
+const diffs = new Map<string, { state: string; diff: ReviewDiff }>();
+const MAX_CACHED_DIFFS = 16;
+
+/** Test seam. */
+export function resetReviewCache(): void {
+  diffs.clear();
 }
 
 /**
@@ -110,35 +174,57 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
   if (!repoPath || !fs.existsSync(repoPath)) {
     throw new Error(`path does not exist: ${repoPath}`);
   }
-  const inside = (await tryGit(repoPath, ['rev-parse', '--is-inside-work-tree'])).trim();
-  if (inside !== 'true') throw new Error('not a git repository');
-
-  const branch = (await tryGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'HEAD';
   // A caller-supplied base is untrusted: it crosses IPC from the renderer.
-  const baseBranch = opts.baseBranch
-    ? assertSafeRef(opts.baseBranch)
-    : opts.baseBranch ?? await detectBaseBranch(repoPath, branch);
+  if (opts.baseBranch) assertSafeRef(opts.baseBranch);
+  // One round of git for what the base choice and the cache key need, then
+  // one for the state: a diff answered from the cache costs two, not five.
+  const [inside, head, candidates] = await Promise.all([
+    tryGit(repoPath, ['rev-parse', '--is-inside-work-tree']),
+    tryGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    opts.baseBranch === undefined ? baseCandidates(repoPath) : null,
+  ]);
+  if (inside.trim() !== 'true') throw new Error('not a git repository');
+
+  const branch = head.trim() || 'HEAD';
+  const baseBranch = opts.baseBranch ?? chooseBaseBranch(candidates!, branch);
+
+  const key = JSON.stringify([path.resolve(repoPath), branch, baseBranch]);
+  const state = await worktreeState(repoPath, baseBranch);
+  const cached = diffs.get(key);
+  if (cached?.state === state) return cached.diff;
+
+  const diff = await computeDiff(repoPath, branch, baseBranch);
+  diffs.delete(key);
+  diffs.set(key, { state, diff });
+  if (diffs.size > MAX_CACHED_DIFFS) diffs.delete(diffs.keys().next().value!);
+  return diff;
+}
+
+async function computeDiff(repoPath: string, branch: string, baseBranch: string | null): Promise<ReviewDiff> {
+  // Numstat covers committed work since the base plus the working tree. Every
+  // read below is independent of the others: they run together.
+  const range = baseBranch ? [`${baseBranch}...HEAD`] : [];
+  const [counts, numstatBase, numstatHead, nameBase, nameHead, untracked, patchBase, patchHead] = await Promise.all([
+    baseBranch ? tryGit(repoPath, ['rev-list', '--left-right', '--count', `${baseBranch}...HEAD`]) : Promise.resolve(''),
+    tryGit(repoPath, ['diff', '--numstat', ...range]),
+    tryGit(repoPath, ['diff', '--numstat', 'HEAD']),
+    tryGit(repoPath, ['diff', '--name-status', ...range]),
+    tryGit(repoPath, ['diff', '--name-status', 'HEAD']),
+    tryGit(repoPath, ['ls-files', '--others', '--exclude-standard']),
+    tryGit(repoPath, ['diff', ...range]),
+    tryGit(repoPath, ['diff', 'HEAD']),
+  ]);
 
   let ahead = 0;
   let behind = 0;
   if (baseBranch) {
-    const counts = (await tryGit(repoPath, ['rev-list', '--left-right', '--count', `${baseBranch}...HEAD`])).trim();
-    const [b, a] = counts.split(/\s+/).map(Number);
+    const [b, a] = counts.trim().split(/\s+/).map(Number);
     behind = Number.isFinite(b) ? b : 0;
     ahead = Number.isFinite(a) ? a : 0;
   }
 
-  // Numstat covers committed work since the base plus the working tree.
-  const range = baseBranch ? [`${baseBranch}...HEAD`] : [];
-  const numstat = [
-    await tryGit(repoPath, ['diff', '--numstat', ...range]),
-    await tryGit(repoPath, ['diff', '--numstat', 'HEAD']),
-  ].join('\n');
-
-  const nameStatus = [
-    await tryGit(repoPath, ['diff', '--name-status', ...range]),
-    await tryGit(repoPath, ['diff', '--name-status', 'HEAD']),
-  ].join('\n');
+  const numstat = [numstatBase, numstatHead].join('\n');
+  const nameStatus = [nameBase, nameHead].join('\n');
 
   const statusByPath = new Map<string, ChangedFile['status']>();
   for (const line of nameStatus.split('\n')) {
@@ -165,8 +251,7 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
   }
 
   // Untracked files never appear in a diff, and they are usually the point.
-  const untracked = (await tryGit(repoPath, ['ls-files', '--others', '--exclude-standard'])).trim();
-  for (const file of untracked.split('\n').filter(Boolean)) {
+  for (const file of untracked.trim().split('\n').filter(Boolean)) {
     if (files.has(file)) continue;
     let additions = 0;
     try {
@@ -178,10 +263,7 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
     files.set(file, { path: file, status: 'untracked', additions, deletions: 0 });
   }
 
-  let patch = [
-    await tryGit(repoPath, ['diff', ...range]),
-    await tryGit(repoPath, ['diff', 'HEAD']),
-  ].filter(Boolean).join('\n');
+  let patch = [patchBase, patchHead].filter(Boolean).join('\n');
 
   const truncated = patch.length > MAX_PATCH_BYTES;
   if (truncated) patch = `${patch.slice(0, MAX_PATCH_BYTES)}\n… patch truncated`;

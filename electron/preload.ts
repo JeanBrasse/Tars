@@ -167,6 +167,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agent:message-waiting', listener);
       return () => ipcRenderer.removeListener('agent:message-waiting', listener);
     },
+    /**
+     * Restart the agent's CLI now, continuing its conversation. What a panel's
+     * `restart` calls: a stop then a start begins a new conversation.
+     */
+    restart: (id: string) =>
+      ipcRenderer.invoke('agent:restart', id),
+    /**
+     * The restarts waiting to apply a changed launch setting, for a window that
+     * has just opened. An agent absent from the list has none waiting.
+     */
+    pendingRestarts: () =>
+      ipcRenderer.invoke('agent:pendingRestarts'),
+    /**
+     * A restart started or stopped waiting, or now waits on something else.
+     * `pending` is null once it happened or had nothing to do.
+     */
+    onRestartPending: (callback: (event: {
+      agentId: string;
+      pending: { settings: string[]; waitingFor: string } | null;
+    }) => void) => {
+      const listener = (_: unknown, data: unknown) => callback(data as Parameters<typeof callback>[0]);
+      ipcRenderer.on('agent:restart-pending', listener);
+      return () => ipcRenderer.removeListener('agent:restart-pending', listener);
+    },
   },
 
   // Skills management
@@ -689,8 +713,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   cliPaths: {
-    detect: () =>
-      ipcRenderer.invoke('cliPaths:detect'),
+    /** The last detection; `refresh: true` looks again (the Detect button). */
+    detect: (options?: { refresh?: boolean }) =>
+      ipcRenderer.invoke('cliPaths:detect', options),
     get: () =>
       ipcRenderer.invoke('cliPaths:get'),
     save: (paths: { amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string; additionalPaths: string[] }) =>

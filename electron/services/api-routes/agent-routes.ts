@@ -22,7 +22,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
-import { noteLaunch, launchSettings, restartForSettings } from '../../core/agent-restart';
+import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
@@ -352,9 +352,16 @@ async function spawnAgentSession(
     }
     agent.lastActivity = new Date().toISOString();
 
-    if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
-      ctx.mainWindow.webContents.send('agent:output', { agentId: agent.id, data });
-    }
+    // The event every other terminal sends, with the terminal it came from:
+    // a panel that filters on ptyId dropped this one's output, or took it for
+    // the terminal it replaced.
+    broadcastToAllWindows('agent:output', {
+      type: 'output',
+      agentId: agent.id,
+      ptyId,
+      data,
+      timestamp: new Date().toISOString(),
+    });
     // As initAgentPty does: the tick carries the line the cards show.
     scheduleTick();
   });
@@ -841,7 +848,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       lines.push(
         ``,
         `## Working rules`,
-        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`
+        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
 
@@ -1098,7 +1106,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       announceAgent(agent);
     }
 
-    sendJson(result, result.ok ? 200 : 502);
+    // A run that started is an answer, however it ended: 502 only when none
+    // did, which is when delegate_task may type the task into the terminal
+    // instead without running it twice.
+    sendJson(result, result.ok || result.started ? 200 : 502);
   });
 
   // POST /api/agents/:id/stop
@@ -1227,6 +1238,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       }
     }
     agents.delete(req.params.id);
+    forgetRestart(req.params.id);
     saveAgents();
     // Gone from the next tick, and the rail reloads a fleet without it.
     announceAgent(agent);

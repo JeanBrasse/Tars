@@ -18,7 +18,6 @@ import {
   StatusBadge,
   StatusSquare,
 } from '@/components/ui';
-import { providerBadgeClass } from '@/components/ui/ProviderBadge';
 
 type Tab = 'projects' | 'agents' | 'backends';
 
@@ -113,11 +112,7 @@ function ProjectRow({
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-medium truncate">{project.projectName}</span>
           {project.provider && project.provider !== 'claude' && (
-            <span className={`text-[9px] px-1 py-0.5 font-medium uppercase tracking-wider shrink-0 ${
-              providerBadgeClass(project.provider, 'bg-secondary text-muted-foreground')
-            }`}>
-              {project.provider}
-            </span>
+            <span className="font-mono text-[10px] text-muted-foreground shrink-0">{project.provider}</span>
           )}
         </div>
         {activeAgents > 0 && (

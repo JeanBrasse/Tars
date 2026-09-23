@@ -116,6 +116,9 @@ export function spawnAgentPty(opts: {
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {
     terminalExited(spawned);
+    // And what it was spawned as: gone, node-pty on Linux still names the
+    // shell it spawned, and a terminal handed a command read as a running CLI.
+    spawnedAs.delete(spawned);
     // And its token: a stopped CLI's stayed valid until the agent's next launch.
     if (agentId && token) revokeTerminalToken(agentId, token);
   });
@@ -155,9 +158,9 @@ export function spawnAgentPty(opts: {
  * the foreground. Then `spawn-helper`, node-pty's own program, which opens the
  * terminal and executes the shell. Measured with the real spawnAgentPty and
  * node-pty 1.1.0 under Electron's node, five spawns: `/bin/bash` for 3 to
- * 127 ms, `spawn-helper` for up to 7 ms, then `bash`. agent:get creates a
- * terminal and reads this at once, and said a CLI ran in a shell that had not
- * started. After a command exits the name is briefly undefined, until the
+ * 127 ms, `spawn-helper` for up to 7 ms, then `bash`. agent:get, which then
+ * created a terminal and read this at once, said a CLI ran in a shell that
+ * had not started. After a command exits the name is briefly undefined, until the
  * shell takes the terminal back.
  *
  * All of that is the interactive shell. A shell handed its command with `-c`,

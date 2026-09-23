@@ -89,7 +89,7 @@ orchestrator agent's CLI
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
 | 12 | `setupMcpOrchestrator()` (not awaited) | registering spawns CLIs; it used to hold the first paint |
 | 13 | `configureStatusHooks()` (awaited) | |
-| 14 | update check after 5 s | `electron-updater`, `autoCheckUpdates !== false` |
+| 14 | update check after 5 s, then every 30 min | `electron-updater`, `autoCheckUpdates !== false` read at each tick; the same switch governs the CLI updates |
 | 15 | `startCliUpdates()` | claude and Amp brought up to date 5 s after launch, then every 30 min, one at a time. §2 *Keeping the CLIs current* |
 
 `process.stdout` / `process.stderr` get an `EPIPE`-swallowing error handler at module load: a closed pipe from the launching shell would otherwise crash the app on the next `console.log`.
@@ -105,7 +105,7 @@ Four maps in `electron/core/pty-manager.ts`: `ptyProcesses` (agents), `quickPtyP
 
 It must never be used for keystroke passthrough from an xterm.js terminal.
 
-Every agent terminal also has a mirror, `electron/core/terminal-mirror.ts`: a headless xterm 5.3 (`xterm-headless` at the renderer's version, with the Dashboard's `convertEol`) that `spawnAgentPty` attaches before any caller subscribes, and that parses each chunk as it arrives. `agent:get` hands a panel `terminalSnapshot()` of it as its `output`, one chunk: RIS, both screens as the serialize addon writes them (the normal one with 1000 lines of history, then the alternate one when it is active), and what the addon leaves out: the SGR mouse encoding, the cursor's visibility, a scroll region, the cursor put back absolutely. A panel that remounts, back from another page or from another project's tab, is shown the screen itself instead of a replay of the kept chunks, which after a few minutes of a fullscreen turn held no frame: the Audit measured 856 visible characters in a panel before leaving the Dashboard and 37 after coming back, on 2026-09-23. One mirror per PTY, runtime only, nothing persisted. A terminal with no mirror falls back to the kept chunks.
+Every agent terminal also has a mirror, `electron/core/terminal-mirror.ts`: a headless xterm 5.3 (`xterm-headless` at the renderer's version, with the Dashboard's `convertEol`) that `spawnAgentPty` attaches before any caller subscribes, and that parses each chunk as it arrives. `agent:get` hands a panel `terminalSnapshot()` of it as its `output`, one chunk: RIS, both screens as the serialize addon writes them (the normal one with 1000 lines of history, then the alternate one when it is active), and what the addon leaves out: the SGR mouse encoding, the cursor's visibility, a scroll region, the cursor put back absolutely. A panel that remounts, back from another page or from another project's tab, is shown the screen itself instead of a replay of the kept chunks, which after a few minutes of a fullscreen turn held no frame: the Audit measured 856 visible characters in a panel before leaving the Dashboard and 37 after coming back, on 2026-09-23. One mirror per PTY, runtime only, nothing persisted. A terminal with no mirror falls back to the kept chunks. An agent with no terminal is handed nothing and no `ptyId`: `agent:get` opens no terminal. Until 2026-09-24 it opened a login shell for any agent looked at, whose banner ("The default interactive shell is now zsh.") went into the agent's output and read as its last line in the Chat's fleet list; the Dashboard shows such an agent as `(Session idle)`, and a start opens its terminal.
 
 `agent:resize` remembers each agent's panel size even when the agent has no PTY yet (`rememberPanelSize`), and `spawnAgentPty` spawns every new agent PTY at it rather than the caller's 120×30 or 120×40, which a PTY created after its panel's first fit used to keep.
 
@@ -199,7 +199,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 
 ### Keeping the CLIs current
 
-`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`.
+`electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`. A pass runs only while `autoCheckUpdates` is on, read at every pass: it is the one "Check for updates" switch, for Tars's own updates and the CLIs' (Noah, 2026-09-23). And it checks only the CLIs at least one agent runs, by each agent's provider (`clisInUse`): an agent with none, and the thirteen providers pointed at another vendor, run claude, so a fleet with no Amp agent never has Amp checked.
 
 | CLI, installed as | What Tars runs | When it holds back |
 |---|---|---|
@@ -210,7 +210,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 
 Nothing is updated when its own switch says not to: for claude, `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` in Tars's environment or in `~/.claude/settings.json`, or `autoUpdates: false` in `~/.claude.json` that the native installer did not write itself; for Amp, `amp.updates.mode: "disabled"` in `~/.config/amp/settings.json`. Nor is anything installed outside the home Tars runs in, which keeps a sandbox or a test run, whose `HOME` is a scratch folder, off the real CLIs, and nothing runs when `DOROTHY_E2E=1`.
 
-codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
+codex, gemini, grok, opencode and pi are not updated, and neither is claude or Amp installed another way (npm for claude, Homebrew, a copied binary): the first pass after launch names each one an agent runs and found on the machine in the log. None of the five was installed where this was measured, so no update path for them could be checked.
 
 ---
 
@@ -258,7 +258,7 @@ models.dev adds it → next `loadCatalog()` past the 6-hour TTL (or `models:refr
 | Delivery guarantee | the turn resolved or the call errored | bytes were written to a pty |
 | Deny-list enforcement | protocol-level, every provider | `--disallowed-tools`, Claude only |
 | Usage captured | yes, every provider | Claude only, after the fact from transcripts |
-| Session lifetime | one task, torn down after | persists at the CLI prompt |
+| Session lifetime | one turn, torn down after: what the turn left running in the background (a `run_in_background` command, a Monitor, a ScheduleWakeup) is stopped with it, and nothing brings the agent back for it; a turn still going at `timeoutSeconds` (at most one hour) is stopped mid-command | persists at the CLI prompt; a background job's notice starts a turn of its own |
 | Visible in the UI terminal | no | yes |
 
 ### The ACP layer: `electron/services/acp/`
@@ -304,8 +304,8 @@ Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` wh
 
 `delegate_task` in full:
 
-1. `POST /api/agents/:id/run-task` with `(timeoutSeconds + 60) * 1000` client timeout. If the response is not `retryWithDispatch` and has `ok` or `text`, return the agent's answer with a metadata line: `ended: <stopReason> | tools: … | <n> tokens | $<cost>`.
-2. Otherwise `POST /dispatch` → `GET /wait`.
+1. `POST /api/agents/:id/run-task` with `(timeoutSeconds + 60) * 1000` client timeout. While it waits it sends the caller an MCP progress notification every minute (`keepCallerListening`): Claude Code abandons an MCP call silent for 30 minutes ("sent no response or progress for 1811s; aborting", four delegations of the Parallel project on 2026-09-23), and progress resets that clock. The route answers 200 whenever the run started, `started: true`, however it ended, and 502 only when it could not start. For a run that started, return the agent's answer with a metadata line: `ended: <stopReason> | tools: … | <n> tokens | $<cost>`, then the reason when it failed (`turn_limit`: stopped at its limit, with what it said and did before it) and `stopped when the run ended: …` for the background work its turn left behind (`backgroundStopped`).
+2. When no run started (`retryWithDispatch`, a launch that failed), `POST /dispatch` → `GET /wait`. Never after a run that started, and never when this call's own wait ran out (the run may still be working): either one typed the same brief into the terminal as well, and the task ran twice.
 3. If the agent lands in `waiting` with `waitingReason: 'permission'`, stop. A blocking permission dialog expects arrow keys and Enter; a typed message cannot answer it and the delayed `\r` could *accept* the pending permission.
 4. Any other `waiting`: auto-reply *"Yes, continue. Do not ask for confirmation…"* once, then wait again with `max(timeout - 30, 60)`.
 5. On completion, fetch `lastCleanOutput` with 3 attempts 700 ms apart: the Stop hook posts output and status over separate HTTP calls, so the status event that resolves `/wait` can beat the output write.
@@ -362,6 +362,10 @@ A CLI reads its model, its effort, its permission flag, its orchestrator restric
 | between turns, field free | restarted at once |
 
 After the restart the agent is `idle` at its prompt. Each decision is one `[restart] <agent>: ...` line in the main process log. A launch notes the settings its command carried, read when it built the command: `agent:start` then waits half a second for a new shell before typing, and a change saved in that half second is not in the command, so it restarts the CLI again once it is up. Noted after the wait, the change passed for launched, and the CLI stayed on the old values (the QA's gate of #123: a role taken back and given again 100 ms apart left an orchestrator by role that could edit). Skills are not a launch setting (they only preface a task); the provider, the CLI path, the project and the worktree already end the terminal when they change.
+
+A restart that waits says so. `agent:restart-pending` is pushed to every window when an agent's restart starts waiting, waits on something else, or stops waiting (`pending: null`), with the settings it applies and what it waits on: `turn`, `permission`, `note`, `background`, `launch` (its CLI, restarted a moment ago, is still starting) or the field's `draft`, `typing`, `queued` and `writing`. `agent:pendingRestarts` answers the same state for a window that opened after the push. A restart that happens at once, or has nothing to restart, pushes nothing. Without it every wait looked like a change the agent had ignored.
+
+`agent:restart` restarts an agent's CLI when somebody asks, at once and whatever it is doing, through the same restart: the conversation continues under a new session id. It is what the Dashboard's `restart` calls (the notice of a panel whose claude left fullscreen). The window's stop then start it replaces began a new conversation, since a start continues the last one only once per app run. A restart waiting on new settings is done by it and stops waiting. If it cannot launch, it answers the reason and leaves the agent in `error` with it.
 
 A start with no task, which is every Dashboard start and autostart and every restart, leaves the agent `idle`. It used to set `running`, which nothing cleared until a turn the CLI never had came to an end, and agent-watch writes nothing to a `running` agent.
 
@@ -598,6 +602,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
 | `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock; anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
+| `skills-marketplace.json` | `{ skills, fetchedAt }`: the last skills.sh listing | `services/skills-marketplace.ts` | served at once to the Extensions page, fetched again behind it once an hour old; a failed fetch keeps it. Agents can write `~/.dorothy`, so every entry is checked on the way back as on the way in (`repo` is `owner/name` or `owner/name/skill`, no segment `.`, `..` or starting with `-`), and a file with no valid entry is fetched afresh |
 | `cli-updates.log` (+ `.1`) | one line per CLI update result: time, CLI, outcome, versions, what it said | `services/cli-updater.ts` | append-only, moved to `.1` past 256 KB. A check that changes nothing is written once, a failure every time |
 | `telegram-downloads/` | media from Telegram | Telegram bot | |
 | `CLAUDE.md` | Tars's own agent instructions | `ensureTarsClaudeMd()` | mounted read-write into every agent via `--add-dir` |
