@@ -22,7 +22,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
-import { noteLaunch, launchSettings, restartForSettings } from '../../core/agent-restart';
+import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
@@ -1234,6 +1234,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       }
     }
     agents.delete(req.params.id);
+    forgetRestart(req.params.id);
     saveAgents();
     // Gone from the next tick, and the rail reloads a fleet without it.
     announceAgent(agent);

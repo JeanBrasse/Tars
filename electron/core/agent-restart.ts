@@ -251,6 +251,18 @@ function drop(agentId: string): void {
   show(agentId);
 }
 
+/**
+ * An agent was deleted: the restart it waited for goes with it, and a window
+ * that was shown the wait is told it is over. Nothing else would do it: a wait
+ * on the turn has no timer, and no deletion sends the fleet change that makes
+ * decide() look again, so the agent stayed in pendingRestarts() and its panel
+ * went on waiting (QA's gate of #138). Called wherever an agent is deleted.
+ */
+export function forgetRestart(agentId: string): void {
+  drop(agentId);
+  restartedAt.delete(agentId);
+}
+
 function waitingOn(agentId: string, entry: Pending, reason: RestartWait): RestartOutcome {
   entry.waitingFor = reason;
   show(agentId);
