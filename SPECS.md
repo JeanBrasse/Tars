@@ -104,6 +104,12 @@ Four maps in `electron/core/pty-manager.ts`: `ptyProcesses` (agents), `quickPtyP
 
 It must never be used for keystroke passthrough from an xterm.js terminal.
 
+Every agent terminal also has a mirror, `electron/core/terminal-mirror.ts`: a headless xterm 5.3 (`xterm-headless` at the renderer's version, with the Dashboard's `convertEol`) that `spawnAgentPty` attaches before any caller subscribes, and that parses each chunk as it arrives. `agent:get` hands a panel `terminalSnapshot()` of it as its `output`, one chunk: RIS, both screens as the serialize addon writes them (the normal one with 1000 lines of history, then the alternate one when it is active), and what the addon leaves out: the SGR mouse encoding, the cursor's visibility, a scroll region, the cursor put back absolutely. A panel that remounts, back from another page or from another project's tab, is shown the screen itself instead of a replay of the kept chunks, which after a few minutes of a fullscreen turn held no frame: the Audit measured 856 visible characters in a panel before leaving the Dashboard and 37 after coming back, on 2026-09-23. One mirror per PTY, runtime only, nothing persisted. A terminal with no mirror falls back to the kept chunks.
+
+`agent:resize` remembers each agent's panel size even when the agent has no PTY yet (`rememberPanelSize`), and `spawnAgentPty` spawns every new agent PTY at it rather than the caller's 120×30 or 120×40, which a PTY created after its panel's first fit used to keep.
+
+The mirror of a `claude` PTY also watches how it is repainted. Fullscreen Claude Code positions absolutely (`CSI H`) and never moves the cursor up or back; inline, it climbs back over what it drew (`CSI A`, `CSI D`). An alternate screen repainted the second way over a window of 8 chunks is a CLI that left fullscreen without telling its terminal, which Claude Code 2.1.280 did twice among seventeen sessions on 2026-09-22: every panel kept the alternate screen and the mouse request, and the wheel reached nothing. The flag, `leftFullscreen`, rides on `agent:list`, `agent:get` and the tick, and clears when the terminal really leaves the alternate screen, when a program asks for it again, or with the PTY.
+
 ### Renderer
 
 Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `src/app/api` temporarily moved aside). React 19, Tailwind 4, Zustand, xterm 5.3, framer-motion. Served from `app://-/index.html` in production, `http://localhost:3000` in dev.
@@ -513,6 +519,18 @@ It also keeps `~/.dorothy/token-stats.json`, one entry per Claude session: `{ in
 
 For the Usage page the file is a label on part of the transcripts' spend, never more spend. Every session in it ran inside the claude binary, which writes a transcript, so its `cost` is already counted there, and adding `extraCost` to transcript or ledger cost counts it twice. It cannot be cut by day either: a session's whole running cost sits under its last day, and `extra` marks all of it once a quota passes 100 %.
 
+### On the page
+
+`src/app/usage/page.tsx` reads both sources per day and cuts them with one window, `usageWindow()` in `src/lib/usage-window.ts`: the last 14 days, the last 12 Sunday-to-Saturday weeks, or the last 12 calendar months, the last bar being the day, week or month that holds today. Every tile, provider row and bar is a sum over that window, so the total cost is the sum of the cost bars and of the provider rows, and the latest tile is today, this week or this month.
+
+- **Cost**: `costByModel` from the transcripts, plus the ledger's `daily` rows of every provider but `claude`. Nothing from `token-stats.json`: its over-quota spend is printed under the total as a part of it (`of which ~$X over quota`), summed over the window's days.
+- **Tokens**: in is input, cache reads and cache writes, out is output, for the tiles, the provider rows, the tokens chart and its card.
+- **Messages**: replies, which only the transcripts count.
+- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so.
+- **Where the records start**: the earliest transcript day or the ledger's `oldest`, whichever comes first. When the window starts before it, the header prints `records start <date>` beside the timeframe.
+
+A day of the legacy `stats-cache.json` shape, which the main process returns only when there is no transcript at all, carries no price and no cache, and adds nothing to these figures.
+
 ---
 
 ## §7 Persistence
@@ -566,7 +584,7 @@ Files Tars writes **outside** its own directory:
 
 `persistable()` strips `ptyId` and `pathMissing`, truncates `output` to the last 100 chunks, and demotes `running` to `idle`. `loadAgents()` additionally clears `ptyCwd`, `currentSessionId`, `lastKilledSessionId` and `waitingReason`, marks `pathMissing` for vanished directories, and runs two migrations: `skipPermissions: boolean → permissionMode`, and name-substring orchestrator detection → the persistent `role` field. `orchestratorMode` stays an independent tool-restriction toggle and must **not** promote an agent into the Telegram/Slack super-agent pool.
 
-Live output is bounded at 600 chunks, spliced back to 400 (`OUTPUT_CHUNK_CAP` / `OUTPUT_RETAIN`): five PTY handlers pushed into `agent.output` and none of them capped it, so a chatty CLI grew that array for the life of the app, once per agent. What is spliced off is read for the terminal modes it left set (alternate screen, mouse protocol and encoding, bracketed paste, focus events, application cursor keys, hidden cursor), and those go back in as the first chunk (`electron/utils/terminal-modes.ts`). Claude Code in fullscreen sets most of them once, at start: without that chunk, a panel mounted after a long turn replayed onto the normal screen with no mouse request and no bracketed paste. Fields mutated on every PTY chunk (`output`, `statusLine`, `lastActivity`) set a dirty flag flushed every 30 s, bounding what a crash loses.
+Live output is bounded at 600 chunks, spliced back to 400 (`OUTPUT_CHUNK_CAP` / `OUTPUT_RETAIN`): five PTY handlers pushed into `agent.output` and none of them capped it, so a chatty CLI grew that array for the life of the app, once per agent. What is spliced off is read for the terminal modes it left set (alternate screen, mouse protocol and encoding, bracketed paste, focus events, application cursor keys, hidden cursor), and those go back in as the first chunk (`electron/utils/terminal-modes.ts`). Claude Code in fullscreen sets most of them once, at start: without that chunk, a panel mounted after a long turn replayed onto the normal screen with no mouse request and no bracketed paste. The panels no longer replay these chunks: they are shown the terminal's mirror (§1), and the carry now serves a terminal with no mirror and the quick terminal's own buffer. What `output` feeds is text: the status line, log search, `get_agent_output`, the overseer and Telegram. So the 100 chunks written to disk are read back for those, and after a restart a panel shows the new terminal, not the old tail replayed onto it. Fields mutated on every PTY chunk (`output`, `statusLine`, `lastActivity`) set a dirty flag flushed every 30 s, bounding what a crash loses.
 
 ---
 
@@ -625,13 +643,13 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | Route | Name | What it is | Frame |
 |---|---|---|---|
 | `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown. A pane in error shows the reason in its header | `Dashboard · dark` / `· light`, `Agent error · reason` |
-| `/agents` | Agents | Roster with per-project filter tabs, sort by created/status/activity/name, management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agent error · reason` |
+| `/agents` | Agents | Roster grouped by project, in the order of the Dashboard's tabs: each project's name, path and agent count over its cards. A project picker narrows the page to one project, the status chips (All, Running, Waiting, Idle, Error) count within it, with a completed agent counted as idle as its card says, and a filter field matches name, branch, project and task. None of the three filters outlives the visit. Management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agents · one project`, `Agents · project picker open`, `Agent error · reason` |
 | `/projects` | Projects | Project registry (backed by `~/.dorothy/projects.json`), file browser, per-project agent view. 1153 lines | `Projects · dark` |
 | `/kanban` | Kanban | Two sources: the Hermes board (default, Hermes owns the task harness) and the local `kanban-tasks.json` board. Choice persisted in `localStorage` | `Kanban · dark` |
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
-| `/usage` | Usage | Cost and tokens: transcript-derived Claude figures merged with the cross-provider ledger, daily cost, token and message charts, per-model and per-provider tables, catalogue freshness. 1035 lines, the largest page | `Usage · dark` / `· light` / `· daily messages` |
+| `/usage` | Usage | Cost and tokens over one timeframe chosen in the header (14 days, 12 weeks, 12 months): four tiles, the provider rows, and cost, token and message charts on the same bars. Budget rows stay month to date and rate windows live. See §6, On the page | `Usage · dark` (14 days) / `· light` (12 months) / `· daily messages` |
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
@@ -647,7 +665,7 @@ Every data surface must show five states: loading (nothing under 400 ms, then th
 
 ### The tick
 
-`scheduleTick()` coalesces to one `agents:tick` broadcast per 500 ms carrying the whole roster: id, name, character, raw status, `displayStatus`, status line, current task, project name, last activity, provider. `displayStatus` derives `working | waiting | done | error` from status, and splits `idle` into `ready` (a PTY exists) or `stopped`. The tray badge lights when any agent is `waiting`.
+`scheduleTick()` coalesces to one `agents:tick` broadcast per 500 ms carrying the whole roster: id, name, character, raw status, `displayStatus`, status line, current task, project name, last activity, provider, whether a CLI runs in the terminal (`cliRunning`), and whether that CLI left fullscreen without telling its terminal (`leftFullscreen`, §1). `displayStatus` derives `working | waiting | done | error` from status, and splits `idle` into `ready` (a PTY exists) or `stopped`. The tray badge lights when any agent is `waiting`.
 
 Every path that changes an agent announces it on both channels, the interface's IPC handlers, the hooks and the API's agent routes alike: `agent:status` for the transition, and a tick. They are not interchangeable. The Chat page's rail reloads the fleet on `agent:status`; the Agents page and the Dashboard redraw from the tick. The API routes announced nothing until 1.7.5, so an agent the super chat started, gave a task or stopped did not change on an open page until it was reloaded.
 
@@ -749,6 +767,8 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **`pi` has no ACP fallback entry.** If the ACP registry has never been reachable, `pi` has no ACP mode at all.
 - **Some of Tars's own files are still written in place.** `templates.json` (after a backup copy), `team-templates.json` and `cli-paths.json`, and the caches and generated files. `agents.json`, `app-settings.json`, `hermes-connection.json`, `projects.json` and `kanban-tasks.json` are written to a temp file and renamed over. Claude's own files, `~/.claude.json`, `~/.claude/settings.json` and `~/.claude/mcp.json`, go through `updateSharedJsonSync`, which also keeps their mode and never writes over a file that is not JSON: `claude-files-writers.test.ts` fails if anything in the main process or the MCP servers writes them another way.
 - **`agent.output` retains 600 chunks live and 100 on disk.** `/logs` searches only what is retained; there is no persistent log store.
+- **A panel's history reaches back 1000 lines.** That is what a terminal's mirror keeps above the screen, where a panel that never unmounted keeps 10000. And a cursor parked past the last column (xterm waiting to wrap) comes back on the last column, since no cursor move reaches past it: 2 chunks in 4269 across twelve recordings of Claude Code, the content identical.
+- **The left-fullscreen flag is only watched for the `claude` binary.** Its signature was measured on Claude Code's two renderers; another fullscreen CLI that climbs its frame with `CSI A` in every chunk would be taken for inline, so none is watched. Tars reports the state and sends the program nothing: what a panel does about the wheel is the renderer's decision.
 - **The API token is a single flat credential.** No per-agent scoping, no rotation UI.
 - **The webhook is the only surface designed to leave the machine**, and it needs an operator-provided tunnel; nothing in the app opens one.
 - **`installBundledSkills()` currently ships nothing.** Its only remaining job is deleting stale `world-builder` copies left by older versions, and only when the file content is recognizably ours.

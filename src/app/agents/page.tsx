@@ -5,8 +5,9 @@ import { Bot } from 'lucide-react';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import { useClaude } from '@/hooks/useClaude';
-import { useAgentFiltering } from '@/hooks/useAgentFiltering';
+import { useAgentFiltering, groupByProject, projectLabels, projectName, tildePath } from '@/hooks/useAgentFiltering';
 import { useSuperAgent } from '@/hooks/useSuperAgent';
+import { useProjectTabOrder } from '@/components/TerminalsView/hooks/useProjectTabOrder';
 import type { AgentCharacter, AgentProvider } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
 import type { EditAgentData, CreationMode } from '@/components/NewChatModal/types';
@@ -17,8 +18,18 @@ import {
   AgentListHeader,
   AgentManagementCard,
 } from '@/components/AgentList';
-import { Chip, LoadingState } from '@/components/ui';
-import { STATUS_COLORS } from './constants';
+import { Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
+import { statusTone } from './constants';
+
+// The frame's four words, in its order. `completed` is not one of them: the
+// card prints it as idle, so the Idle filter is where it is found.
+const STATUS_FILTERS = ['running', 'waiting', 'idle', 'error'] as const;
+
+// The picker's "every project" row. Never a project: an agent's projectPath
+// is absolute.
+const ALL_PROJECTS = 'all';
+
+const agentCount = (n: number) => `${n} agent${n === 1 ? '' : 's'}`;
 
 export default function AgentsPage() {
   const {
@@ -44,6 +55,7 @@ export default function AgentsPage() {
   const [editAgentId, setEditAgentId] = useState<string | null>(null);  // edit dialog
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
 
 
   // Custom hooks
@@ -54,14 +66,38 @@ export default function AgentsPage() {
     onCreateNew: () => setShowNewChatModal(true),
   });
 
-  // No project narrowing any more: the filter field below covers it, so the
-  // hook keeps its project pass-through inert.
-  const { filteredAgents } = useAgentFiltering({
+  // A project whose last agent is gone has nothing to show, so the page falls
+  // back to every project rather than to an empty list under a stale name.
+  const project = projectFilter && agents.some(a => a.projectPath === projectFilter) ? projectFilter : null;
+
+  const { filteredAgents, uniqueProjects } = useAgentFiltering({
     agents,
-    projectFilter: null,
+    projectFilter: project,
     statusFilter,
     searchQuery,
   });
+
+  // Projects in the order of the Dashboard's tabs, so arranging them there
+  // arranges this page too. Read only: the order is changed on the Dashboard.
+  const projectPaths = useMemo(() => uniqueProjects.map(p => p.path), [uniqueProjects]);
+  const { orderedPaths } = useProjectTabOrder(projectPaths);
+  const groups = useMemo(() => groupByProject(filteredAgents, orderedPaths), [filteredAgents, orderedPaths]);
+
+  // The status counts describe the project on screen, so a count is always
+  // the number of cards its chip would show. The picker counts every agent of
+  // each project, whatever the status filter says.
+  const inProject = project ? agents.filter(a => a.projectPath === project) : agents;
+  const projectOptions: DropdownOption[] = useMemo(() => {
+    const labels = projectLabels(orderedPaths);
+    return [
+      { value: ALL_PROJECTS, label: 'All projects', hint: agentCount(agents.length) },
+      ...orderedPaths.map(path => ({
+        value: path,
+        label: labels.get(path) ?? path,
+        hint: agentCount(agents.filter(a => a.projectPath === path).length),
+      })),
+    ];
+  }, [agents, orderedPaths]);
 
   // Build edit agent data from editAgentId
   const editAgentData: EditAgentData | null = useMemo(() => {
@@ -230,14 +266,15 @@ export default function AgentsPage() {
         onManageTemplatesClick={() => setShowTemplatesDialog(true)}
       />
 
-      {/* One filter row: the status chips carry their own counts, and the
-          filter field on the right is what narrows by project or branch. */}
+      {/* One filter row, every control 26px: the status chips on the left,
+          counted within the project on screen, then the filter field and the
+          project picker on the right. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Chip active={!statusFilter} onClick={() => setStatusFilter(null)}>
-          All ({agents.length})
+          All ({inProject.length})
         </Chip>
-        {Object.keys(STATUS_COLORS).map((key) => {
-          const count = agents.filter(a => a.status === key).length;
+        {STATUS_FILTERS.map((key) => {
+          const count = inProject.filter(a => statusTone(a.status) === key).length;
           return (
             <Chip
               key={key}
@@ -250,30 +287,56 @@ export default function AgentsPage() {
           );
         })}
 
-        <input
-          type="text"
-          placeholder="filter by name or branch"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="ml-auto w-full max-w-xs h-7 px-2.5 text-sm border border-border bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-        />
+        <div className="ml-auto flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="filter by name or branch"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-[220px] h-[26px] px-2.5 text-sm border border-border bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+          <Dropdown
+            value={project ?? ALL_PROJECTS}
+            options={projectOptions}
+            onChange={(value) => setProjectFilter(value === ALL_PROJECTS ? null : value)}
+            size="sm"
+            align="right"
+            searchable={projectOptions.length > 12}
+            searchPlaceholder="filter projects"
+            ariaLabel="Show the agents of one project"
+            className="w-48"
+          />
+        </div>
       </div>
 
-      {/* Agent Grid */}
+      {/* The grid, one section per project in the Dashboard's tab order: its
+          name, its path and how many of its agents are shown, then its cards.
+          Picking a project leaves its section alone on the page. */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {filteredAgents.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 pb-4">
-            {filteredAgents.map((agent) => (
-              <AgentManagementCard
-                key={agent.id}
-                agent={agent}
-                onClick={() => setViewAgentId(agent.id)}
-                onEdit={() => setEditAgentId(agent.id)}
-                onStart={() => handleStartAgent(agent.id)}
-                onStop={() => stopAgent(agent.id)}
-                onDelete={() => handleRemoveAgent(agent.id)}
-                onSaveAsTemplate={() => handleSaveAsTemplate(agent.id)}
-              />
+        {groups.length > 0 ? (
+          <div className="flex flex-col gap-5 pb-4">
+            {groups.map((group) => (
+              <section key={group.path} className="flex flex-col gap-2">
+                <div className="flex items-baseline gap-2 min-w-0" title={group.path}>
+                  <h2 className="shrink-0 text-[13px] leading-[1.4] font-medium text-foreground">{projectName(group.path)}</h2>
+                  <span className="min-w-0 truncate font-mono text-[11px] text-text-muted">{tildePath(group.path)}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11px] text-text-muted">{agentCount(group.agents.length)}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {group.agents.map((agent) => (
+                    <AgentManagementCard
+                      key={agent.id}
+                      agent={agent}
+                      onClick={() => setViewAgentId(agent.id)}
+                      onEdit={() => setEditAgentId(agent.id)}
+                      onStart={() => handleStartAgent(agent.id)}
+                      onStop={() => stopAgent(agent.id)}
+                      onDelete={() => handleRemoveAgent(agent.id)}
+                      onSaveAsTemplate={() => handleSaveAsTemplate(agent.id)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : (
@@ -291,7 +354,7 @@ export default function AgentsPage() {
               </button>
             ) : (
               <button
-                onClick={() => { setStatusFilter(null); setSearchQuery(''); }}
+                onClick={() => { setStatusFilter(null); setSearchQuery(''); setProjectFilter(null); }}
                 className="text-primary text-sm hover:underline cursor-pointer"
               >
                 Clear filters

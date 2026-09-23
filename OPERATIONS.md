@@ -1206,9 +1206,10 @@ is skipped.
 
 ## Agents and PTYs
 
-Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`, 120×30,
+Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
-if that path is gone). Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
+API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
 
 The environment is `process.env` plus:
 
@@ -1241,6 +1242,22 @@ zsh -ilc 'echo $PATH' | tr ':' '\n'
 If a provider shows as unavailable but the binary works in your terminal, the difference is
 almost always a PATH entry added by a shell rc file that only runs for interactive **login**
 shells: set the path explicitly in Settings rather than fighting it.
+
+### What a panel shows
+
+A panel is handed its terminal's screen by `agent:get`, from the terminal's mirror
+(`electron/core/terminal-mirror.ts`): a headless xterm fed every byte of that PTY. It does
+not depend on how much output was kept, so a panel that comes back after a long turn is whole.
+Cost, measured with 20 PTYs replaying real Claude Code streams under Electron 43: 3.1 ms of
+main process CPU per second for all 20 (68 chunks a second), 0.3 MB per mirror at 180×45, a
+snapshot of 2 KB in 1 to 2 ms. A mirror with its 1000 lines of history full is 2.3 to 3.7 MB
+and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU per MB.
+
+| Symptom | Look for |
+|---|---|
+| a panel blank but for the spinner after coming back to the Dashboard | `[terminal-mirror] xterm-headless could not be loaded` at startup: without it the panels replay the kept chunks, as they did before the mirror. `[terminal-mirror] <agent id>: dropped after a parse failure`: that one terminal fell back |
+| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
+| Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
 
 ### Agent stuck in the wrong directory
 
@@ -1340,7 +1357,7 @@ wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # st
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
-| "extra usage" never shows | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
+| "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 
 ---
 

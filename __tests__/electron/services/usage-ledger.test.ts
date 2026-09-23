@@ -98,22 +98,27 @@ describe('dailyCost', () => {
   });
 
   it('keys a turn by its local calendar day, not its UTC calendar day', () => {
-    // Fixed instant chosen so UTC and a positive-offset local day disagree:
-    // 2026-08-23T22:30:00Z is still 2026-08-23 in UTC, but already
-    // 2026-08-24 for any timezone at UTC+2 or later (e.g. UTC+4).
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-08-23T22:30:00.000Z'));
-    ledger.recordUsage({ agentId: 'a', provider: 'claude', inputTokens: 1, outputTokens: 1, costUSD: 3, transport: 'acp' });
-    vi.useRealTimers();
+    // 2026-08-23T22:30:00Z is still the 23rd in UTC and already the 24th in
+    // Tbilisi, UTC+4. The zone is pinned so that this runs in CI too, which
+    // is UTC, where the two days never differ and the check used to sit
+    // behind an `if` that skipped it. The clock stays pinned through
+    // dailyCost() as well: its thirty days count back from now, and read on
+    // the real clock this turn left the window on 2026-09-22 at 22:30 UTC.
+    const zone = process.env.TZ;
+    process.env.TZ = 'Asia/Tbilisi';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-08-23T22:30:00.000Z'));
+      expect(new Date().getDate()).toBe(24); // the zone took
+      ledger.recordUsage({ agentId: 'a', provider: 'claude', inputTokens: 1, outputTokens: 1, costUSD: 3, transport: 'acp' });
 
-    const recordedAt = new Date(ledger.readLedger()[0].ts);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const localDay = `${recordedAt.getFullYear()}-${pad(recordedAt.getMonth() + 1)}-${pad(recordedAt.getDate())}`;
-    const utcDay = recordedAt.toISOString().slice(0, 10);
-
-    expect(ledger.dailyCost()[localDay]).toBeCloseTo(3, 6);
-    if (localDay !== utcDay) {
-      expect(ledger.dailyCost()[utcDay]).toBeUndefined();
+      const byDay = ledger.dailyCost();
+      expect(Object.keys(byDay)).toEqual(['2026-08-24']);
+      expect(byDay['2026-08-24']).toBeCloseTo(3, 6);
+    } finally {
+      vi.useRealTimers();
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
     }
   });
 });
