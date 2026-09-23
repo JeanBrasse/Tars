@@ -556,3 +556,40 @@ describe('a launch slower than CLI_BOOT_MS, as under load (Database Engineer, re
     expect(answer.status, 'a dead launch held the agent').not.toBe(409);
   });
 });
+
+describe('QA #158: CLI_UP_MS itself', () => {
+  // Written by the QA at the gate of #158. The test above holds a launch ten
+  // minutes and lets any bound under that pass: measured, CLI_UP_MS at 160 s
+  // or at ten minutes left the whole file green. A launch whose CLI runs is
+  // still held at 170 s, and let go by 186 s, at once.
+  it('holds a sender while the CLI runs up to CLI_UP_MS, and not a moment past it', async () => {
+    agents.set('orch', {
+      id: 'orch', name: 'Orchestrator', status: 'running', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus);
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    const terminal = () => newTerminal(0);
+
+    await dispatch(agent.id, 'Rebase onto main');
+    terminal().process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(150_000);
+    const held = dispatch(agent.id, 'EARLY?');
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect((await held).status, 'a CLI still booting at 170 s was let go').toBe(409);
+    expect(typedInto(terminal())).not.toContain('EARLY?');
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    const t1 = Date.now();
+    let lateAt = -1;
+    const late = dispatch(agent.id, 'LATE?').then(r => { lateAt = Date.now() - t1; return r; });
+    await vi.advanceTimersByTimeAsync(25_000);
+    const answer = await late;
+
+    expect(lateAt, 'a launch 186 s old still held its sender').toBeLessThan(1_000);
+    expect(answer.body.mode, JSON.stringify(answer.body)).toBe('message');
+  });
+});
