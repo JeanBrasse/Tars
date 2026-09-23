@@ -1168,7 +1168,8 @@ in `ps`.
 tail -f ~/.dorothy/logs/hooks.log          # session-start, prompts, stops
 tail -f ~/.dorothy/logs/hooks-debug.log    # on-stop, verbose
 # Until 2026-09-23 these were /tmp/dorothy-hooks.log and -debug.log, readable by
-# every user and shared by every Tars on the machine, a sandbox's included.
+# every user and shared by every Tars on the machine, a sandbox's included. Tars
+# removes those two at startup, when HOME is the user's own (never from a sandbox).
 
 # are they installed and pointing at a file that exists?
 jq -r '.hooks | to_entries[] | "\(.key)\t\(.value[0].hooks[0].command)"' ~/.claude/settings.json

@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
-import { mintAgentToken } from './agent-tokens';
+import { mintAgentToken, revokeTerminalToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
@@ -72,6 +72,7 @@ export function spawnAgentPty(opts: {
   // the caller's default kept it until the panel happened to change size. See
   // rememberPanelSize.
   const size = panelSizeOf(agentId) ?? { cols: opts.cols, rows: opts.rows };
+  const token = agentId ? mintAgentToken(agentId) : undefined;
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
@@ -101,7 +102,7 @@ export function spawnAgentPty(opts: {
       // a secret that has to reach every agent process cannot depend on each
       // of them remembering. Minted per spawn, so a restart invalidates the
       // token the previous process ran with.
-      ...(agentId ? { CLAUDE_MGR_API_TOKEN: mintAgentToken(agentId) } : {}),
+      ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
@@ -113,7 +114,11 @@ export function spawnAgentPty(opts: {
   if (agentId) rememberTerminalOwner(spawned, agentId);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
-  spawned.onExit(() => terminalExited(spawned));
+  spawned.onExit(() => {
+    terminalExited(spawned);
+    // And its token: a stopped CLI's stayed valid until the agent's next launch.
+    if (agentId && token) revokeTerminalToken(agentId, token);
+  });
   // Before any caller subscribes, so a chunk is in the mirror before it is
   // broadcast. Here for the reason above: every agent terminal needs one. The
   // left-fullscreen watch only for the claude binary, whose two renderers it

@@ -292,9 +292,10 @@ export interface AgentStatus {
   /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;
   /** The Orchestrator toggle, and nothing else: never read from the name.
-   *  An orchestrator gets the orchestration instructions, cannot edit files,
-   *  sits in the global room and answers Telegram and Slack. A project has
-   *  one at most. Always set on a record from the main process. */
+   *  An orchestrator gets the orchestration instructions, cannot edit files
+   *  and sits in the global room. Telegram and Slack talk to one of them only,
+   *  the fleet's first (getSuperAgent with no project). A project has one at
+   *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')

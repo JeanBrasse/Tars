@@ -11,7 +11,7 @@ import { API_PORT, API_TOKEN_FILE } from '../constants';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
-import { agentForToken, isInternalToken } from '../core/agent-tokens';
+import { agentForToken, isInternalToken, isTerminalToken } from '../core/agent-tokens';
 import { isWebhookSecret } from './hermes-webhook-secret';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
@@ -123,7 +123,9 @@ export function getApiToken(): string {
  *  when it is the main process calling its own API, Hermes when it presents
  *  the webhook secret on the webhook. */
 export type CallerResolution =
-  | { ok: true; agentId?: string; internal?: boolean; hermes?: boolean }
+  | { ok: true; agentId?: string; internal?: boolean; hermes?: boolean;
+    /** The token is the agent's terminal's, as it is now: not a delegated run's. */
+    terminal?: boolean }
   | { ok: false; status: number; error: string };
 
 /** The one route published off this machine, and the only one the webhook secret opens. */
@@ -191,7 +193,7 @@ export function resolveCaller(
           + 'An agent speaks as itself.',
       };
     }
-    return { ok: true, agentId };
+    return { ok: true, agentId, terminal: isTerminalToken(presented) };
   }
 
   if (presented && isInternalToken(presented)) {
@@ -370,16 +372,22 @@ export function startApiServer(
     // terminal's own token (CLAUDE_MGR_API_TOKEN, minted per spawn), and posts
     // for that agent and no other. The shared token, which every agent can
     // read, names nobody and is refused here, as are Tars's pass and the
-    // webhook secret. A CLI whose terminal was replaced holds a token that no
-    // longer maps to anyone: its late posts get the 401 above.
+    // webhook secret. A CLI whose terminal was replaced or has ended holds a
+    // token that no longer maps to anyone: its late posts get the 401 above.
+    // A delegated ACP run's token names its agent but is not its terminal's:
+    // a hook in that run posting a SessionStart took the agent from its live
+    // terminal (the Audit, gate of #135), so it is refused here too.
     if (pathname.startsWith('/api/hooks/')) {
       const posted = typeof body.agent_id === 'string' ? body.agent_id : undefined;
       const agentId = caller.ok ? caller.agentId : undefined;
-      if (!agentId || posted !== agentId) {
+      const fromTerminal = caller.ok && caller.terminal === true;
+      if (!agentId || posted !== agentId || !fromTerminal) {
         sendJson({
-          error: agentId
-            ? 'A hook posts for the agent whose CLI it runs in, with that CLI\'s own token.'
-            : 'Hook posts take the token of the agent\'s own CLI (CLAUDE_MGR_API_TOKEN).',
+          error: !agentId
+            ? 'Hook posts take the token of the agent\'s own CLI (CLAUDE_MGR_API_TOKEN).'
+            : !fromTerminal
+              ? 'A delegated run does not post hook events for its agent: only the CLI in the agent\'s terminal does.'
+              : 'A hook posts for the agent whose CLI it runs in, with that CLI\'s own token.',
         }, 403);
         return;
       }
