@@ -79,7 +79,7 @@ import {
   getClaudeSkills,
   getClaudeHistory,
 } from './services/claude-service';
-import { configureStatusHooks } from './services/hooks-manager';
+import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
 import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
 import { assignRole } from './core/agent-role';
@@ -633,6 +633,7 @@ app.whenReady().then(async () => {
     console.error('MCP registration failed:', err));
   setupMemoryBackends(appSettings);
   await configureStatusHooks();
+  removeLegacyHookLogs();
 
   // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
   initAutoUpdater(getMainWindow);

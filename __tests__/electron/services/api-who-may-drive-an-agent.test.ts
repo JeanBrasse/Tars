@@ -238,6 +238,78 @@ describe('the hook routes, which only an agent\'s own CLI posts to', () => {
   });
 });
 
+describe('the hook routes take the terminal\'s token and no other token its agent holds (gate of #135)', () => {
+  // How this fails, written before the fix:
+  // 1. A delegated run's token (mintRunToken) names its agent everywhere, and
+  //    the hook routes took it: a SessionStart posted from the run registered
+  //    a session over the live terminal's, whose every later post was then
+  //    refused as stale while it stayed `running`.
+  // 2. Refusing run tokens everywhere would cut an ACP run off from the MCP
+  //    routes it works through: the run's token must still open its agent's
+  //    other routes.
+  // 3. A terminal that has ended keeps a valid token until the agent's next
+  //    launch: a SessionStart posted with a stopped CLI's token changed which
+  //    session a restart would resume.
+  // 4. Revoking on exit revokes the wrong token: an old terminal that exits
+  //    after the agent was respawned must leave the new terminal's alone.
+  const post = (token: string, sessionId: string) =>
+    call('POST', '/api/hooks/status', bearer(token), { agent_id: ALPHA.id, session_id: sessionId, status: 'idle', source: 'startup' });
+
+  /** A terminal opened the way every agent terminal is, with its exit in the test's hands. */
+  function terminalOf(agentId: string): { token: string; exit: () => void } {
+    const exits: Array<(e: { exitCode: number }) => void> = [];
+    const terminal = {
+      process: '2.1.280', write: () => {},
+      onExit: (cb: (e: { exitCode: number }) => void) => { exits.push(cb); return { dispose() {} }; },
+      onData: () => ({ dispose() {} }),
+    };
+    vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
+    spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: ALPHA.projectPath, cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: agentId } });
+    const env = (vi.mocked(pty.spawn).mock.calls.at(-1)![2] as { env: Record<string, string> }).env;
+    return { token: env.CLAUDE_MGR_API_TOKEN, exit: () => { for (const cb of exits) cb({ exitCode: 0 }); } };
+  }
+
+  it('refuses a delegated run\'s token, and the live terminal keeps its session', async () => {
+    const live = terminalOf(ALPHA.id);
+    expect((await post(live.token, 'sess-live')).status).toBe(200);
+    const run = tokens.mintRunToken(ALPHA.id);
+
+    const fromRun = await post(run.token, 'sess-acp');
+
+    expect(fromRun.status, JSON.stringify(fromRun.body)).toBe(403);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe('sess-live');
+    run.revoke();
+  });
+
+  it('still lets a run\'s token open its agent\'s other routes', async () => {
+    const run = tokens.mintRunToken(ALPHA.id);
+
+    const { status } = await call('GET', '/api/agents', bearer(run.token));
+
+    expect(status).toBe(200);
+    run.revoke();
+  });
+
+  it('refuses the token of a terminal that has ended, before any new launch', async () => {
+    const ended = terminalOf(ALPHA.id);
+    ended.exit();
+
+    const late = await post(ended.token, 'sess-late');
+
+    expect(late.status).toBe(401);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('leaves a newer terminal\'s token alone when an older one ends after it', async () => {
+    const older = terminalOf(ALPHA.id);
+    const newer = terminalOf(ALPHA.id);
+    older.exit();
+
+    expect((await post(newer.token, 'sess-new')).status).toBe(200);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe('sess-new');
+  });
+});
+
 describe('the super chat, which is Noah driving every project', () => {
   it('reaches an agent of any project, through its own code and its own request', async () => {
     const beta = agents.get(BETA.id)!;
