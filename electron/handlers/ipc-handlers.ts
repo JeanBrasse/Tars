@@ -866,7 +866,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
    * session over it and lose the conversation.
    */
   const startAgentCli: AgentLauncher = async (id, prompt, options) => {
-    const launch = launchBegins(id);
+    const launch = launchBegins(id, { withTask: !!prompt?.trim() });
     try {
       const result = await launchInTerminal(id, prompt, options);
       if (!result.success) launchAbandoned(id, launch);

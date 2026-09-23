@@ -338,7 +338,7 @@ describe('a session started through the API, then a second message', () => {
     return agent;
   }
 
-  it('holds the second message until the new session has registered, then types it once', async () => {
+  it('holds the second message until the session has begun its task, then types it once', async () => {
     const agent = orchestratorAndIdleAgent();
     const before = spawned.length;
 
@@ -353,6 +353,12 @@ describe('a session started through the API, then a second message', () => {
     expect(typedInto(terminal), 'typed into a claude not yet reading keys').not.toContain('WORD?');
 
     hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    // Registered, and about to submit the task it was started with from its
+    // own field: a message typed now was lost once in five in the app.
+    expect(typedInto(terminal), 'typed between the SessionStart and the task').not.toContain('WORD?');
+
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', event: 'UserPromptSubmit' });
     await vi.advanceTimersByTimeAsync(1_000);
     const answer = await second;
 

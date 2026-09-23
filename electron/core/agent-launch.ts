@@ -61,8 +61,11 @@ export function launchAgent(agentId: string, prompt: string, options?: AgentLaun
  */
 export const CLI_BOOT_MS = 15_000;
 
-/** Launches under way, by agent: when each began. One per agent, the latest. */
-const launchesUnderWay = new Map<string, { since: number }>();
+/**
+ * Launches under way, by agent: when each began, and whether it carries a
+ * task for the CLI to start on. One per agent, the latest.
+ */
+const launchesUnderWay = new Map<string, { since: number; withTask: boolean }>();
 
 /**
  * A launch into an agent's terminal has begun: a start from a window, a
@@ -71,8 +74,8 @@ const launchesUnderWay = new Map<string, { since: number }>();
  * over it must wait instead (see sessionStarting). Returns the launch, for
  * launchAbandoned.
  */
-export function launchBegins(agentId: string): object {
-  const launch = { since: Date.now() };
+export function launchBegins(agentId: string, opts: { withTask?: boolean } = {}): object {
+  const launch = { since: Date.now(), withTask: !!opts.withTask };
   launchesUnderWay.set(agentId, launch);
   return launch;
 }
@@ -98,14 +101,16 @@ export function launchAbandoned(agentId: string, launch: object): void {
 export function sessionStarting(agent: StartingAgent): boolean {
   const launch = launchesUnderWay.get(agent.id);
   if (!launch) return false;
-  if (Date.now() - launch.since >= CLI_BOOT_MS || sessionUp(agent, launch.since)) {
+  if (Date.now() - launch.since >= CLI_BOOT_MS || sessionUp(agent, launch)) {
     launchesUnderWay.delete(agent.id);
     return false;
   }
   return true;
 }
 
-type StartingAgent = { id: string; ptyId?: string; provider?: AgentProvider; sessionRegisteredAt?: string };
+type StartingAgent = {
+  id: string; ptyId?: string; provider?: AgentProvider; sessionRegisteredAt?: string; lastTurnStartedAt?: string;
+};
 
 /**
  * Up, for a CLI on the claude binary, once a session has registered since the
@@ -114,12 +119,20 @@ type StartingAgent = { id: string; ptyId?: string; provider?: AgentProvider; ses
  * exec'd landed in its field and the Enter after it was lost, the CLI not yet
  * taking keys. The other CLIs send no SessionStart; for them the exec is all
  * there is to go on.
+ *
+ * A launch that carries a task is up once that task's turn has begun (its
+ * UserPromptSubmit), not at its SessionStart: in between, claude submits the
+ * prompt it was started with from its own field, and a message typed there in
+ * that moment was lost (measured in the app, /start then /dispatch at 0.3 s,
+ * once in five after the SessionStart wait). Typed once the turn runs, claude
+ * queues it and takes it after the turn.
  */
-function sessionUp(agent: StartingAgent, since: number): boolean {
+function sessionUp(agent: StartingAgent, launch: { since: number; withTask: boolean }): boolean {
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   if (!terminal || !cliRunningIn(terminal)) return false;
   if (getProvider(agent.provider).binaryName !== 'claude') return true;
-  return !!agent.sessionRegisteredAt && Date.parse(agent.sessionRegisteredAt) >= since;
+  const at = launch.withTask ? agent.lastTurnStartedAt : agent.sessionRegisteredAt;
+  return !!at && Date.parse(at) >= launch.since;
 }
 
 /**
@@ -132,7 +145,8 @@ function sessionUp(agent: StartingAgent, since: number): boolean {
  */
 export function launchUnlessRunning(agent: StartingAgent): object | null {
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  return terminal && cliRunningIn(terminal) ? null : launchBegins(agent.id);
+  // A bot's launch always starts the CLI on the message it was sent.
+  return terminal && cliRunningIn(terminal) ? null : launchBegins(agent.id, { withTask: true });
 }
 
 /** Wait for a session on its way to be up, or for its launch to be given up on. */

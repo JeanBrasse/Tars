@@ -299,7 +299,7 @@ async function spawnAgentSession(
   // takes no keys until its SessionStart. Unmarked, a /dispatch 0.1 to 0.3 s
   // after a /start typed its message into a claude not yet reading, and it was
   // lost 4 times in 5 while the caller heard 200 (the Audit, gate of #134).
-  const launch = launchBegins(agent.id);
+  const launch = launchBegins(agent.id, { withTask: !!prompt.trim() });
   let ptyProcess: ReturnType<typeof spawnAgentPty>;
   try {
     ptyProcess = spawnAgentPty({

@@ -210,10 +210,13 @@ describe('a session the API started', () => {
     const terminal = spawned[0];
     terminal.process = 'bash';
     agent.status = 'idle';
-    // Its SessionStart, as the hook route records it: until then the launch is
-    // on its way and a /dispatch waits for it (core/agent-launch.ts, #134).
+    // Its SessionStart, as the hook route records it, and then its first turn:
+    // until then the launch is on its way and a /dispatch waits for it
+    // (core/agent-launch.ts, #134).
     agent.currentSessionId = 'sess-started';
     agent.sessionRegisteredAt = new Date().toISOString();
+    // And its task's turn began (UserPromptSubmit): up, for a launch with one.
+    agent.lastTurnStartedAt = new Date().toISOString();
 
     const answer = await call('POST', '/api/agents/worker/dispatch', { message: 'which word?' }, 'orch');
     await vi.advanceTimersByTimeAsync(400);
