@@ -218,6 +218,35 @@ export async function markWhatsNewSeen(page, key, lastSeen) {
 }
 
 /**
+ * A fixed day in the documents loaded under `route`, and in those alone.
+ *
+ * The Usage page counts its window back from today and prints it: the span
+ * under TOTAL COST, the TODAY tile, the day under each bar. So its reference
+ * moved every day with nothing in the app changed. A clock fixed for the whole
+ * run would move every page that says how long ago something happened, so
+ * this shifts Date in the documents of one route: each surface is a goto, a
+ * new document, and the script looks at where it loaded. Time runs on from the
+ * fixed instant, so nothing that waits on a timer stalls.
+ */
+export async function pinDayOn(page, route, day) {
+  await page.addInitScript(([prefix, target]) => {
+    if (!location.pathname.startsWith(prefix)) return;
+    const RealDate = Date;
+    const offset = target - RealDate.now();
+    class PinnedDate extends RealDate {
+      constructor(...args) {
+        if (args.length === 0) super(RealDate.now() + offset);
+        else super(...args);
+      }
+      static now() {
+        return RealDate.now() + offset;
+      }
+    }
+    globalThis.Date = PinnedDate;
+  }, [route, day]);
+}
+
+/**
  * Everything the page says went wrong, in one list.
  *
  * `pageerror` is an uncaught exception, and until 2026-09-17 that was all three

@@ -233,30 +233,21 @@ export const VOLATILE = {
     selector: 'div.space-y-2:has(ul li)',
     why: 'every changelog entry, which is new text on this page at every release; the page frame stays compared',
   },
-  'usage-chart-window': {
-    surfaces: ['usage'],
-    // The rows, not the labels inside them. Masking each day label covered the
-    // right text and left its edges: a mask takes the box of what it covers,
-    // and a label's box follows its text. Measured on 2026-09-18, the day
-    // after these references were recorded: the sixth day of the window went
-    // from one digit to two, its box from 4 to 8 pixels wide, and `usage`
-    // failed by 28 pixels with nothing in the app changed. A row's box is the
-    // panel's width whatever the day says, so it holds.
-    //
-    // What this stops comparing, and it is not nothing: the three plot areas.
-    // In this sandbox they hold no usage at all, so the bars sit at their 2%
-    // floor with the accent on the latest one, and that is all that is lost
-    // today. The day the seed carries usage, the honest move is a fixed clock
-    // for this surface rather than a wider mask, and one re-record.
-    selector: 'div[class*="items-stretch"][class*="gap-1"], div[class*="items-center"][class*="justify-between"][class*="mt-1.5"]',
-    why: 'the fourteen day window under each chart, counted back from the day of the run, and the bars it labels',
-  },
   'marketplace-plugin-count': {
     surfaces: ['extensions-plugins'],
     selector: 'text=/\\d+ plugins/',
     why: 'how many plugins the marketplaces on GitHub are serving at the moment of the run',
   },
 };
+
+/**
+ * The day the Usage page is photographed on, whatever day the run is: local
+ * noon on 2026-09-16, far from midnight in any timezone the suite runs in. Its
+ * window, the span under TOTAL COST, the TODAY tile and the day under each bar
+ * all count back from it (e2e/fixture.mjs, pinDayOn). It replaces the mask the
+ * fourteen day labels needed, so the three plot areas are compared again.
+ */
+export const USAGE_DAY = new Date(2026, 8, 16, 12).getTime();
 
 /**
  * The masks for one surface, and the keys that actually matched something.

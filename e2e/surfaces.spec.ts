@@ -2,9 +2,9 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
+import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, USAGE_DAY, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, pinDayOn, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -45,6 +45,7 @@ test.beforeAll(async () => {
   page = await app.firstWindow();
   listenForErrors(page, pageErrors);
   await markWhatsNewSeen(page, WHATS_NEW_STORAGE_KEY, String(LATEST_RELEASE.id));
+  await pinDayOn(page, '/usage', USAGE_DAY);
   await stubSkillsSh(app);
 
   await page.setViewportSize({ width: 1440, height: 900 });
