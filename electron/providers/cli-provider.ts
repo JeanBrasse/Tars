@@ -35,7 +35,7 @@ export interface InteractiveCommandParams {
   skills?: string[];
   isSuperAgent?: boolean;
   chrome?: boolean;
-  /** Orchestrator mode: disable Edit/Write/MultiEdit/NotebookEdit so the agent
+  /** Orchestrator mode: disable Edit/Write/NotebookEdit/Task so the agent
    *  cannot do implementation work itself and must delegate. See BUG 5. */
   orchestratorMode?: boolean;
   /**
@@ -202,7 +202,11 @@ const EFFORT_VALUES = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
  */
 export function orchestratorToolFlags(orchestratorMode: boolean | undefined): string {
   if (!orchestratorMode) return '';
-  return ' --disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+  // No MultiEdit: claude has no tool by that name any more. 2.1.268, 2.1.273
+  // and 2.1.280 all print `Permission deny rule "MultiEdit" matches no known
+  // tool` at every orchestrator start (measured 2026-09-23), and Edit covers
+  // what it did.
+  return ' --disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
 }
 
 /**

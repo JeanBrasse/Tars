@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
-import { sessionStarted } from '../../core/agent-launch';
+import { sessionStarted, launchBegins, launchAbandoned } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -293,15 +293,28 @@ async function spawnAgentSession(
   // A session that never starts a turn must stop claiming to work. See
   // TASK_START_GRACE_MS below for what this catches and why it is checked
   // rather than assumed.
-  const ptyProcess = spawnAgentPty({
-    binaryName: cliProvider.binaryName,
-    shell,
-    args: ['-l', '-c', command],
-    cols: 120,
-    rows: 40,
-    cwd: rawWorkingDir,
-    env: spawnEnv,
-  });
+  //
+  // A launch, for every other sender, from before its terminal exists
+  // (core/agent-launch.ts): the CLI execs at once and counts as running, but
+  // takes no keys until its SessionStart. Unmarked, a /dispatch 0.1 to 0.3 s
+  // after a /start typed its message into a claude not yet reading, and it was
+  // lost 4 times in 5 while the caller heard 200 (the Audit, gate of #134).
+  const launch = launchBegins(agent.id);
+  let ptyProcess: ReturnType<typeof spawnAgentPty>;
+  try {
+    ptyProcess = spawnAgentPty({
+      binaryName: cliProvider.binaryName,
+      shell,
+      args: ['-l', '-c', command],
+      cols: 120,
+      rows: 40,
+      cwd: rawWorkingDir,
+      env: spawnEnv,
+    });
+  } catch (err) {
+    launchAbandoned(agent.id, launch);
+    throw err;
+  }
 
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
@@ -347,6 +360,9 @@ async function spawnAgentSession(
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    // A CLI that exits before its session came up is not coming up: nobody
+    // waits the rest of CLI_BOOT_MS for it.
+    launchAbandoned(agent.id, launch);
     // Remove from the live map IMMEDIATELY: node-pty write() on a dead PTY is
     // a silent no-op, so leaving it registered lets /dispatch and /message
     // "successfully" type a task into a corpse during the status-delay below.

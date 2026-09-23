@@ -429,8 +429,8 @@ function flush(requesterId: string): void {
   }
   if (requester.status === 'running') return;
   // A launch on its way: its terminal is a shell about to hand over, where a
-  // note would be pasted at a prompt. The session's start is a status change,
-  // and flushes again.
+  // note would be pasted at a prompt. Its SessionStart announces itself as a
+  // fleet change (hooks-routes), which flushes again.
   if (sessionStarting(requester)) return;
 
   // A write already in flight has not sent its carriage return yet. Adding a
@@ -442,6 +442,15 @@ function flush(requesterId: string): void {
   // authoritative, and an id sitting in lastKilledSessionId is a tombstone.
   // A killed and relaunched agent has a new pty and a new session, and it
   // never dispatched any of this and was never in that conversation.
+  // Held for a terminal whose session had not registered yet (a launch on
+  // its way, the only time one is held there): it is owed to the session that
+  // then registers in that same terminal, which is the one it was queued for.
+  // Bound to no session, it was dropped at that very registration, the first
+  // moment it could have gone in.
+  if (held.sessionId === undefined && requester.currentSessionId
+    && held.ptyId === requester.ptyId && requester.sessionPtyId === requester.ptyId) {
+    held.sessionId = requester.currentSessionId;
+  }
   const sameSession = held.ptyId === requester.ptyId
     && held.sessionId === requester.currentSessionId
     && (held.sessionId === undefined || held.sessionId !== requester.lastKilledSessionId);

@@ -122,6 +122,19 @@ function sessionUp(agent: StartingAgent, since: number): boolean {
   return !!agent.sessionRegisteredAt && Date.parse(agent.sessionRegisteredAt) >= since;
 }
 
+/**
+ * For a sender that launches an agent's CLI unless one already runs in its
+ * terminal (the Telegram and Slack bots): the launch is marked the moment it is
+ * known to be one, before its terminal is opened and its command typed, so no
+ * other sender takes the bare shell in between for an idle terminal. Null when
+ * a CLI is up there and the sender will type into it instead: marking that
+ * would make every other sender wait on a launch that never happens.
+ */
+export function launchUnlessRunning(agent: StartingAgent): object | null {
+  const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  return terminal && cliRunningIn(terminal) ? null : launchBegins(agent.id);
+}
+
 /** Wait for a session on its way to be up, or for its launch to be given up on. */
 export async function sessionStarted(agent: StartingAgent): Promise<void> {
   while (sessionStarting(agent)) await new Promise(resolve => setTimeout(resolve, 100));

@@ -59,7 +59,7 @@ vi.mock('node-telegram-bot-api', () => ({
 
 import { agents, initAgentPty } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
-import { resetLaunches } from '../../../electron/core/agent-launch';
+import { resetLaunches, launchBegins, sessionStarting } from '../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendToSuperAgent } from '../../../electron/services/telegram-bot';
 import { handleSlackCommand, sendToSuperAgentFromSlack } from '../../../electron/services/slack-bot';
@@ -150,7 +150,7 @@ describe('the role, on the launches the bots make', () => {
   // by the role alone already, and never attached the instructions: an
   // orchestrator started from a phone did the work itself.
   const INSTRUCTIONS = () => `--append-system-prompt-file '${getSuperAgentInstructionsPath()}'`;
-  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
 
   it('Telegram /start_agent launches an orchestrator with its instructions, and a worker called orchestrator as a worker', async () => {
     agent({ id: 'agent-o', name: 'Lead', role: 'orchestrator' });
@@ -200,7 +200,7 @@ describe("the super agent's cold start, from a message", () => {
   // since nobody is there to answer a permission question; a Slack message
   // starts it on its own mode (SPECS §4, The orchestrator role). Both with the
   // instructions and without the editing tools.
-  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
   const promptFile = (typed: string) => /--append-system-prompt-file '([^']+)'/.exec(typed)?.[1];
 
   it('from Telegram: the instructions, no editing tools, and bypass', async () => {
@@ -352,5 +352,59 @@ describe('Slack', () => {
 
     expect(typed).toContain(" --model 'claude-opus-5-5'");
     expect(typed).toContain(' --effort medium ');
+  });
+});
+
+describe('a launch on its way, and the bots (#134)', () => {
+  // Every bot entry point that can start a CLI: a launch already on its way
+  // (a restart, a start from a window) is waited for, and the bot's own
+  // launch is marked for every sender after it.
+  const entryPoints: Array<[string, boolean, () => Promise<unknown>]> = [
+    ['Telegram /start_agent', false, async () => {
+      const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+      const text = '/start_agent worker Rebase onto main';
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    }],
+    ['Telegram message to the super agent', true, () => sendToSuperAgent('42', 'Rebase onto main')],
+    ['Slack `start`', false, () => handleSlackCommand('start worker Rebase onto main', 'C1', async () => undefined, settings)],
+    ['Slack message to the super agent', true, () => sendToSuperAgentFromSlack('C1', 'Rebase onto main', async () => undefined, settings)],
+  ];
+  const record = (superAgent: boolean, fields: Partial<AgentStatus> = {}) => agent(superAgent
+    ? { id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator', ...fields }
+    : { ...fields });
+  const typed = (terminal: FakePty) => terminal.write.mock.calls.map(call => String(call[0])).join('');
+
+  it.each(entryPoints)('%s waits for a launch on its way, then types into the session it brought up', async (_name, superAgent, send) => {
+    const terminal = spawnAgentPty({
+      binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30,
+      env: { CLAUDE_AGENT_ID: superAgent ? 'agent-s' : 'agent-w' },
+    }) as unknown as FakePty;
+    terminal.process = 'bash';
+    ptyProcesses.set('pty-launching', terminal as never);
+    const target = record(superAgent, { ptyId: 'pty-launching', ptyCwd: project });
+    // A launch was typed there a moment ago; the shell has not handed over.
+    launchBegins(target.id);
+    const before = spawned.length;
+
+    const sent = send();
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(typed(terminal), 'typed over the launch before its CLI came up').toBe('');
+
+    terminal.process = '2.1.280';
+    target.sessionRegisteredAt = new Date().toISOString();
+    await sent;
+    await new Promise(resolve => setTimeout(resolve, 450));
+
+    expect(typed(terminal)).toContain('Rebase onto main');
+    expect(typed(terminal), 'launched a second CLI over the first').not.toContain("&& '");
+    expect(spawned.length).toBe(before);
+  });
+
+  it.each(entryPoints)('%s marks its own launch for the senders after it', async (_name, superAgent, send) => {
+    const target = record(superAgent);
+
+    await send();
+
+    expect(sessionStarting(target), 'a sender right after would take the new shell for an idle agent').toBe(true);
   });
 });

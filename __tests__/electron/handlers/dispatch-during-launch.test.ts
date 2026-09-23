@@ -104,7 +104,7 @@ import { resetAgentRestarts } from '../../../electron/core/agent-restart';
 import { resetLaunches, CLI_BOOT_MS } from '../../../electron/core/agent-launch';
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
 import { EventEmitter } from 'node:events';
-import { resetAgentWatch } from '../../../electron/services/agent-watch';
+import { resetAgentWatch, startAgentWatch, stopAgentWatch, queueBusMessage } from '../../../electron/services/agent-watch';
 import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks-routes';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
@@ -316,5 +316,145 @@ describe('a dispatch that lands while a restart launches the CLI', () => {
 
     expect(answer.body.mode).toBe('start');
     expect(spawned.length).toBe(before + 2);
+  });
+});
+
+describe('a session started through the API, then a second message', () => {
+  // The Audit's gate of #134: spawnAgentSession, which serves /start and the
+  // start branch of /dispatch and /message, did not mark its launch. Its CLI
+  // execs at once and counts as running, so a second message 0.1 to 0.3 s
+  // later was typed into a claude not yet reading keys: lost 4 times in 5,
+  // with a 200 `mode: message` to the caller.
+  function orchestratorAndIdleAgent(): AgentStatus {
+    agents.set('orch', {
+      id: 'orch', name: 'Orchestrator', status: 'running', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus);
+    const agent = {
+      id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+    } as AgentStatus;
+    agents.set(agent.id, agent);
+    return agent;
+  }
+
+  it('holds the second message until the new session has registered, then types it once', async () => {
+    const agent = orchestratorAndIdleAgent();
+    const before = spawned.length;
+
+    const first = await dispatch(agent.id, 'Rebase onto main');
+    expect(first.body.mode).toBe('start');
+    const terminal = newTerminal(before);
+    // The shell execs claude at once: node-pty names it by its version.
+    terminal.process = '2.1.280';
+    await vi.advanceTimersByTimeAsync(300);
+    const second = dispatch(agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(typedInto(terminal), 'typed into a claude not yet reading keys').not.toContain('WORD?');
+
+    hookStatus({ agent_id: agent.id, session_id: FORK, status: 'running', source: 'startup' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = await second;
+
+    expect(answer.body.mode, JSON.stringify(answer.body)).toBe('message');
+    expect(spawned.length, 'a second session was started').toBe(before + 1);
+    expect(typedInto(terminal).split('WORD?').length - 1).toBe(1);
+  });
+
+  it('does not hold anyone for a CLI that exited before its session came up', async () => {
+    const agent = orchestratorAndIdleAgent();
+    const before = spawned.length;
+    await dispatch(agent.id, 'Rebase onto main');
+    const terminal = newTerminal(before);
+    const onExit = terminal.onExit.mock.calls.at(-1)![0] as (e: { exitCode: number }) => void;
+    onExit({ exitCode: 1 });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const t0 = Date.now();
+    const answered = dispatch(agent.id, 'again');
+    await vi.advanceTimersByTimeAsync(600);
+    const answer = await answered;
+
+    expect(answer.body.mode).toBe('start');
+    expect(Date.now() - t0, 'waited on a launch that had ended').toBeLessThan(CLI_BOOT_MS);
+  });
+});
+
+describe('a launch that fails', () => {
+  it('lets the next sender through when a start is refused over a CLI already up', async () => {
+    // The Dashboard's start on an agent whose CLI runs: refused, nothing typed.
+    // Left marked, that launch made the next /dispatch wait CLI_BOOT_MS for a
+    // SessionStart no launch was going to send.
+    const { agent } = agentMidConversation();
+    const refused = await (handlers.get('agent:start')!({}, { id: agent.id, prompt: '' }) as Promise<{ success: boolean; cliRunning?: boolean }>);
+    expect(refused).toMatchObject({ success: false, cliRunning: true });
+
+    const t0 = Date.now();
+    const answered = dispatch(agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = await answered;
+
+    expect(answer.body.mode).toBe('message');
+    expect(Date.now() - t0, 'the refused start still held the agent').toBeLessThan(CLI_BOOT_MS);
+  });
+
+  it('lets the next sender through at once instead of after CLI_BOOT_MS', async () => {
+    const agent = agentMidConversation().agent;
+    agent.ptyId = undefined;
+    const pty = await import('node-pty');
+    vi.mocked(pty.spawn).mockImplementationOnce(() => { throw new Error('posix_spawnp failed.'); });
+
+    // The window's start: its launch is marked, and the terminal cannot open.
+    const started = (handlers.get('agent:start')!({}, { id: agent.id, prompt: '' }) as Promise<{ success: boolean }>)
+      .catch(() => ({ success: false }));
+    await vi.advanceTimersByTimeAsync(600);
+    expect((await started).success).toBe(false);
+
+    const t0 = Date.now();
+    const answered = dispatch(agent.id, 'WORD?');
+    await vi.advanceTimersByTimeAsync(600);
+    const answer = await answered;
+
+    expect(answer.body.mode).toBe('start');
+    expect(Date.now() - t0, 'the failed launch still held the agent').toBeLessThan(CLI_BOOT_MS);
+  });
+});
+
+describe('a room message held while its recipient launches', () => {
+  // agent-watch holds what it owes an agent whose launch is on its way (its
+  // terminal is a shell about to hand over). It then waited for a status
+  // change SessionStart never makes, and at that change dropped the message,
+  // bound to "no session" while the one that registered had an id.
+  it('goes in when the new session registers, not before and not never', async () => {
+    startAgentWatch();
+    try {
+      const agent = {
+        id: 'agent-a', name: 'Planner', status: 'idle', provider: 'claude', projectPath: project,
+        skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+      } as AgentStatus;
+      agents.set(agent.id, agent);
+      const before = spawned.length;
+      const started = handlers.get('agent:start')!({}, { id: agent.id, prompt: '' }) as Promise<{ success: boolean }>;
+      await vi.advanceTimersByTimeAsync(600);
+      expect((await started).success).toBe(true);
+      const terminal = newTerminal(before);
+
+      expect(queueBusMessage(agent.id, {
+        messageId: 'm1', roomId: 'project:/p', threadId: 't1',
+        authorKind: 'agent', authorName: 'QA', text: 'the gate is green',
+      })).toBe(true);
+      // The CLI execs; it takes no keys until its session is up. Past the
+      // writer's own pause after the launch (3 s), well inside CLI_BOOT_MS.
+      terminal.process = '2.1.280';
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(typedInto(terminal), 'pasted at a shell prompt or into a claude not yet reading').not.toContain('the gate is green');
+
+      hookStatus({ agent_id: agent.id, session_id: FORK, status: 'idle', source: 'startup' });
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(typedInto(terminal)).toContain('the gate is green');
+    } finally {
+      stopAgentWatch();
+    }
   });
 });
