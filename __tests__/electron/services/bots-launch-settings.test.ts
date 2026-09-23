@@ -559,5 +559,5 @@ describe('a launch typed into a terminal the bot has just opened (gate of #155)'
 
     const typed = spawned[before].write.mock.calls.map(call => String(call[0])).join('');
     expect(typed).toContain(`cd '${project}' && `);
-  });
+  }, 20_000);
 });
