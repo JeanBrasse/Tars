@@ -7,7 +7,7 @@ import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { RoomRow, RoomNotice } from './RoomRow';
 import { RoomComposer } from './RoomComposer';
 import type { ComposerFailure, ComposerTarget } from './RoomComposer';
-import { agentStatusLabel, agentTone } from './TeamRail';
+import { agentStatusLabel, agentTone } from './team-view';
 import { currentThread, summarise, threadNotice, toRows } from './bus-view';
 
 /**
@@ -15,27 +15,6 @@ import { currentThread, summarise, threadNotice, toRows } from './bus-view';
  * composer. Frames: `Chat · Room · agents at work`, `· you step in`,
  * `· limit reached`, `· all stopped`, `· no agents`, `· at rest or stopped`.
  */
-
-function MetaBar({ room, thread }: { room: BusRoom; thread: BusThread | null }) {
-  // The anchor's own counters, not a tally of the log: the bound is per anchor
-  // and the log holds every anchor the room has had.
-  const count = thread
-    ? thread.state === 'bounded'
-      ? `${thread.agentMessageCount} of 10 · paused`
-      : `${thread.agentMessageCount} of 10 agent messages since you spoke`
-    : 'nothing said yet';
-
-  return (
-    <div className="flex items-center gap-2 h-8 px-3 border-b border-border shrink-0">
-      <span className="text-[12.5px] font-medium text-foreground truncate">{room.title}</span>
-      {room.projectPath && (
-        <span className="font-mono text-[10.5px] text-muted-foreground truncate">{room.projectPath}</span>
-      )}
-      <span className="flex-1" />
-      <span className="font-mono text-[10.5px] text-muted-foreground shrink-0">{count}</span>
-    </div>
-  );
-}
 
 /** What is waiting, above the composer. A queue nobody can see is the silent
  *  failure this page had once already. */
@@ -80,6 +59,9 @@ export function RoomView({
   loading,
   onPost,
   onStart,
+  head,
+  targetId: controlledTarget,
+  onTargetChange,
 }: {
   room: BusRoom;
   threads: BusThread[];
@@ -91,9 +73,18 @@ export function RoomView({
   /** Starts agents the way the Dashboard's start does, and names the ones
    *  that did not start. */
   onStart?: (ids: string[]) => Promise<Array<{ id: string; error: string }>>;
+  /** The room's head, drawn across the top of the panel. Frame: the room head
+   *  of every `Chat · A · Room` page. */
+  head?: React.ReactNode;
+  /** Who the composer writes to, when the page owns it: a team row's `write`
+   *  picks its agent here. Uncontrolled when absent. */
+  targetId?: string;
+  onTargetChange?: (id: string) => void;
 }) {
   const [draft, setDraft] = useState('');
-  const [targetId, setTargetId] = useState('');
+  const [ownTarget, setOwnTarget] = useState('');
+  const targetId = controlledTarget ?? ownTarget;
+  const setTargetId = onTargetChange ?? setOwnTarget;
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
   const [failure, setFailure] = useState<ComposerFailure | null>(null);
@@ -157,7 +148,7 @@ export function RoomView({
   return (
     <div className="flex-1 min-w-0 flex flex-col gap-2.5 min-h-0">
       <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
-        <MetaBar room={room} thread={thread} />
+        {head}
         <div
           ref={logRef}
           onScroll={() => {

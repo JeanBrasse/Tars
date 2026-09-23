@@ -5,12 +5,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertCircle } from 'lucide-react';
 import { BrandSpinner, Button, PageHeader } from '@/components/ui';
-import { ConversationList } from '@/components/Chat/ConversationList';
-import type { ConversationSummary } from '@/components/Chat/ConversationList';
+import { ChatSidebar, ReachSection, TeamSection } from '@/components/Chat/ChatSidebar';
+import type { ConversationItem } from '@/components/Chat/ChatSidebar';
+import { RoomHead } from '@/components/Chat/RoomHead';
 import { RoomView } from '@/components/Chat/RoomView';
-import { TeamRail } from '@/components/Chat/TeamRail';
+import { currentThread } from '@/components/Chat/bus-view';
+import { lastSpoke, roomCounts, roomState, timeLabel } from '@/components/Chat/team-view';
+import type { RowActionId } from '@/components/Chat/team-view';
 import { useBusRoom, useBusRooms } from '@/hooks/useBus';
 import { useRoomAgents } from '@/hooks/useRoomAgents';
+import type { RoomAgent } from '@/hooks/useRoomAgents';
+import { useElectronAgents } from '@/hooks/useElectron';
 import { useDesktopApi } from '@/hooks/useDesktopApi';
 import { MessageCard } from '@/components/Overseer/MessageCard';
 import { EchoRun } from '@/components/Overseer/EchoRun';
@@ -113,78 +118,47 @@ function PendingTurn({ startedAt }: { startedAt: number }) {
   );
 }
 
+/** The composer's start and start all: the Dashboard's start, an empty prompt
+ *  resuming the last session, one agent after another as that button runs one
+ *  per click. A CLI still running in the terminal counts as started: nothing
+ *  was typed into it, and nothing needed to be. */
+async function startAgents(ids: string[]): Promise<Array<{ id: string; error: string }>> {
+  const failed: Array<{ id: string; error: string }> = [];
+  for (const id of ids) {
+    try {
+      const r = await window.electronAPI?.agent?.start({ id, prompt: '', options: { resume: true } });
+      if (!r) failed.push({ id, error: 'the app did not answer' });
+      else if (!r.success && !r.cliRunning) failed.push({ id, error: r.error ?? 'it did not start' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // IPC wraps the main-process message; keep only the part worth reading.
+      failed.push({ id, error: message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '') });
+    }
+  }
+  return failed;
+}
+
 /**
- * One project's room, with its own hooks.
- *
- * A sub-component rather than a branch inside the page: the room's snapshot,
- * its agents and its live subscriptions are hooks, and hooks cannot be called
- * only when a room happens to be selected.
+ * The open room, right of the left column: its panel under its head, then the
+ * composer. Frames: `Chat · A · Room · *`. The room's snapshot and agents come
+ * from the page, which also draws the team in the left column from them.
  */
-function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React.ReactNode) => void }) {
-  const router = useRouter();
-  const { snapshot, loading, error, post, stopThread, releaseHeld } = useBusRoom(roomId);
-  const agents = useRoomAgents(snapshot.members);
-  const pending = useMemo(() => {
-    const per: Record<string, { queued: number; notSent: number }> = {};
-    for (const d of snapshot.deliveries) {
-      const row = per[d.targetAgentId] ?? { queued: 0, notSent: 0 };
-      if (d.state === 'queued') row.queued += 1;
-      if (d.state === 'not_sent') row.notSent += 1;
-      per[d.targetAgentId] = row;
-    }
-    return per;
-  }, [snapshot.deliveries]);
-
-  // The open anchor is what Stop stops. Published to the page's header so the
-  // action sits with the room's state rather than inside the log.
+function ChatRoom({
+  bus,
+  agents,
+  recipient,
+  onRecipient,
+}: {
+  bus: ReturnType<typeof useBusRoom>;
+  agents: RoomAgent[];
+  recipient: string;
+  onRecipient: (id: string) => void;
+}) {
+  const { snapshot, loading, error, post, stopThread } = bus;
+  const thread = useMemo(() => currentThread(snapshot.threads), [snapshot.threads]);
+  const state = useMemo(() => roomState(agents, thread, snapshot.messages), [agents, thread, snapshot.messages]);
+  // The open anchor is what stop stops.
   const open = snapshot.threads.find(t => t.state === 'open') ?? null;
-
-  // The composer's start and start all: the Dashboard's start, an empty prompt
-  // resuming the last session, one agent after another as that button runs
-  // one per click. A CLI still running in the terminal counts as started:
-  // nothing was typed into it, and nothing needed to be.
-  const startAgents = useCallback(async (ids: string[]) => {
-    const failed: Array<{ id: string; error: string }> = [];
-    for (const id of ids) {
-      try {
-        const r = await window.electronAPI?.agent?.start({ id, prompt: '', options: { resume: true } });
-        if (!r) failed.push({ id, error: 'the app did not answer' });
-        else if (!r.success && !r.cliRunning) failed.push({ id, error: r.error ?? 'it did not start' });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        // IPC wraps the main-process message; keep only the part worth reading.
-        failed.push({ id, error: message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '') });
-      }
-    }
-    return failed;
-  }, []);
-
-  // The header needs one number out of the fleet, so it depends on that number
-  // and not on the list it came from. The fleet list is re-read on every status
-  // tick, and republishing the header each time is work nobody asked for even
-  // when the count has not moved.
-  const running = useMemo(() => agents.filter(a => a.status === 'running').length, [agents]);
-
-  useEffect(() => {
-    onHeader(
-      <>
-        <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
-          <span className={`w-1.5 h-1.5 shrink-0 ${running ? 'bg-status-running' : 'bg-status-idle'}`} />
-          <span className="font-mono text-[10.5px] text-muted-foreground">
-            {running ? 'relaying' : open ? 'open' : 'quiet'}
-          </span>
-        </div>
-        <Button
-          className="font-mono"
-          disabled={!open}
-          title={open ? 'Stop this exchange. Anything queued for it is cancelled.' : 'Nothing is running in this room.'}
-          onClick={() => { if (open) void stopThread(open.id); }}
-        >
-          stop
-        </Button>
-      </>,
-    );
-  }, [running, open, onHeader, stopThread]);
 
   if (!snapshot.room) {
     return (
@@ -205,29 +179,29 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
     );
   }
 
+  const room = snapshot.room;
   return (
-    <>
-      <RoomView
-        room={snapshot.room}
-        threads={snapshot.threads}
-        messages={snapshot.messages}
-        deliveries={snapshot.deliveries}
-        agents={agents}
-        loading={loading}
-        onPost={post}
-        onStart={startAgents}
-      />
-      <TeamRail
-        agents={agents}
-        pending={pending}
-        // The terminal an agent lives in is the Dashboard's, so `open` goes
-        // there rather than opening a second one here.
-        onOpen={() => router.push('/')}
-        onStop={agent => { void window.electronAPI?.agent?.stop?.(agent.id); }}
-        onSend={agent => { void releaseHeld(agent.id); }}
-        onAdd={() => router.push('/agents')}
-      />
-    </>
+    <RoomView
+      room={room}
+      threads={snapshot.threads}
+      messages={snapshot.messages}
+      deliveries={snapshot.deliveries}
+      agents={agents}
+      loading={loading}
+      onPost={post}
+      onStart={startAgents}
+      targetId={recipient}
+      onTargetChange={onRecipient}
+      head={(
+        <RoomHead
+          title={room.title}
+          path={room.projectPath ? room.projectPath.replace(/^\/Users\/[^/]+/, '~') : undefined}
+          state={state}
+          onStop={open ? () => { void stopThread(open.id); } : undefined}
+          stopTitle="Stop this exchange. Anything queued for it is cancelled."
+        />
+      )}
+    />
   );
 }
 
@@ -265,8 +239,29 @@ export default function ChatPage() {
   /** The global room is Hermes: the super chat that watches every project and
    *  is already what this page was. A project room is the other level. */
   const [selectedId, setSelectedId] = useState<string>(GLOBAL_ID);
-  const [roomHeader, setRoomHeader] = useState<React.ReactNode>(null);
   const { rooms, error: roomsError } = useBusRooms();
+  const router = useRouter();
+
+  // The open room's hooks live here, not in the room: the left column draws
+  // its team from them. A null room reads as empty, so Hermes costs nothing.
+  const roomId = selectedId !== GLOBAL_ID ? selectedId : null;
+  const bus = useBusRoom(roomId);
+  const roomAgents = useRoomAgents(bus.snapshot.members);
+  const { agents: fleetAgents } = useElectronAgents();
+  const [recipient, setRecipient] = useState('');
+  useEffect(() => { setRecipient(''); }, [roomId]);
+
+  const pending = useMemo(() => {
+    const per: Record<string, { queued: number; notSent: number }> = {};
+    for (const d of bus.snapshot.deliveries) {
+      const row = per[d.targetAgentId] ?? { queued: 0, notSent: 0 };
+      if (d.state === 'queued') row.queued += 1;
+      if (d.state === 'not_sent') row.notSent += 1;
+      per[d.targetAgentId] = row;
+    }
+    return per;
+  }, [bus.snapshot.deliveries]);
+  const spoke = useMemo(() => lastSpoke(bus.snapshot.messages), [bus.snapshot.messages]);
 
   const threadRef = useRef<HTMLDivElement>(null);
   const autoScroll = useRef(true);
@@ -352,54 +347,72 @@ export default function ChatPage() {
     : 'periodically';
 
   /**
-   * The list on the left. What it shows per room is what the bus actually
-   * carries: `listRooms` gives a title, a project and a membership, and no
-   * last message, unread count or activity. Those are not guessed here, so a
-   * room's line says what it is rather than inventing what happened in it.
+   * The list on the left. A room's line is counted from the fleet the app
+   * already reads (who needs you, who works, who is stopped) and its time is
+   * the room's last message. What waits in a room you are not in needs the
+   * bus's per-room figures, so queued and not sent are only given for the
+   * open room.
    */
-  const globalSummary: ConversationSummary = {
+  const lastHermes = messages.length ? messages[messages.length - 1].timestamp : undefined;
+  const hermesItem: ConversationItem = {
     id: GLOBAL_ID,
     name: 'Hermes',
     sub: 'overseer',
-    tone: paused ? 'idle' : 'running',
-    time: '',
-    preview: paused ? 'Watching is paused.' : `Watching every project, ${cadenceLabel}.`,
-    counts: [{ label: `${fleet?.agents.length ?? 0} agents` }],
+    tone: gatewayState === 'ok' || gatewayState === 'checking' ? (paused ? 'hollow' : 'running') : 'error',
+    time: timeLabel(lastHermes),
+    counts: [{
+      label: gatewayState !== 'ok' && gatewayState !== 'checking'
+        ? 'not connected'
+        : sending ? 'answering you' : paused ? 'paused' : `watching, ${cadenceLabel}`,
+      tone: gatewayState !== 'ok' && gatewayState !== 'checking' ? 'error' : undefined,
+    }],
   };
 
-  const roomSummaries: ConversationSummary[] = useMemo(
+  const roomItems: ConversationItem[] = useMemo(
     () => rooms
       .filter(room => room.kind !== 'global')
       .map(room => {
+        const members = new Set(room.memberIds);
+        const agentsHere = fleetAgents.filter(a => members.has(a.id));
+        const openHere = room.id === roomId;
+        const waiting = openHere
+          ? Object.values(pending).reduce((sum, p) => ({ queued: sum.queued + p.queued, notSent: sum.notSent + p.notSent }), { queued: 0, notSent: 0 })
+          : undefined;
+        const { tone, counts } = roomCounts(agentsHere, waiting);
         const parts = (room.projectPath ?? '').split('/').filter(Boolean);
-        const members = room.memberIds.length;
-
-        // A square that always said idle was an assertion the room list cannot
-        // support: listRooms carries membership, not activity, so a room whose
-        // agents were all working still read as quiet. The fleet listing is
-        // where activity lives, and when a member is missing from it, which the
-        // snapshot admits by truncating, no square at all beats claiming calm.
-        const states = room.memberIds.map(id => fleet?.agents.find(a => a.id === id)?.status);
-        const allKnown = states.every(s => s !== undefined);
-        const tone: ConversationSummary['tone'] = !members || !allKnown
-          ? 'none'
-          : states.some(s => s === 'running')
-            ? 'running'
-            : 'idle';
-
         return {
           id: room.id,
           name: room.title || parts[parts.length - 1] || room.id,
           tone,
-          time: '',
-          preview: members
-            ? 'Open the room to see what its agents are saying.'
-            : 'No agents in this project yet',
-          counts: [{ label: members ? `${members} ${members === 1 ? 'member' : 'members'}` : 'no agents' }],
+          time: timeLabel(room.lastMessageAt),
+          counts,
         };
       }),
-    [rooms, fleet],
+    [rooms, fleetAgents, roomId, pending],
   );
+
+  const openRoom = bus.snapshot.room;
+  const candidates = useMemo(
+    () => (openRoom?.projectPath
+      ? fleetAgents.filter(a => a.projectPath === openRoom.projectPath && !openRoom.memberIds.includes(a.id))
+      : []),
+    [fleetAgents, openRoom],
+  );
+
+  const onTeamAction = useCallback((action: RowActionId, agent: RoomAgent) => {
+    switch (action) {
+      // The terminal an agent lives in is the Dashboard's, so it opens there
+      // rather than as a second one here.
+      case 'open terminal': router.push('/'); break;
+      case 'start': void startAgents([agent.id]); break;
+      case 'write': setRecipient(agent.id); break;
+      case 'send it': void bus.releaseHeld(agent.id); break;
+      case 'stop': void window.electronAPI?.agent?.stop?.(agent.id); break;
+      case 'remove from room':
+        if (openRoom) void bus.setMembers(openRoom.memberIds.filter(id => id !== agent.id));
+        break;
+    }
+  }, [router, bus, openRoom]);
 
   // The fleet listing is what the approval block's "still reachable" check
   // and the rail both read - keep it fresh while the page is open.
@@ -578,7 +591,7 @@ export default function ChatPage() {
       <PageHeader
         title="Chat"
         subtitle="Hermes watches every project. Each project has a room where its agents talk to each other and to you."
-        actions={selectedId !== GLOBAL_ID ? roomHeader : (
+        actions={roomId ? undefined : (
           <>
             <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
               <span className={`w-1.5 h-1.5 shrink-0 ${paused ? 'bg-status-idle' : 'bg-status-running'}`} />
@@ -597,16 +610,31 @@ export default function ChatPage() {
         {/* Two levels in one page, not a replacement: the super chat that
             watches every project stays exactly what it was, and a room per
             project sits beside it. */}
-        <ConversationList
-          global={globalSummary}
-          rooms={roomSummaries}
+        <ChatSidebar
+          hermes={hermesItem}
+          rooms={roomItems}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          error={roomsError}
-        />
+          roomsError={roomsError}
+        >
+          {roomId ? (
+            <TeamSection
+              project={openRoom?.title || 'this room'}
+              agents={roomAgents}
+              pending={pending}
+              lastSpoke={spoke}
+              candidates={candidates}
+              onAction={onTeamAction}
+              onAdd={id => { if (openRoom) void bus.setMembers([...openRoom.memberIds, id]); }}
+              onNewAgent={() => router.push('/agents')}
+            />
+          ) : (
+            <ReachSection />
+          )}
+        </ChatSidebar>
 
-        {selectedId !== GLOBAL_ID ? (
-          <ChatRoom roomId={selectedId} onHeader={setRoomHeader} />
+        {roomId ? (
+          <ChatRoom bus={bus} agents={roomAgents} recipient={recipient} onRecipient={setRecipient} />
         ) : (
         <>
         {/* No max width: the rail is a fixed 332 and the frame's 830 is simply
