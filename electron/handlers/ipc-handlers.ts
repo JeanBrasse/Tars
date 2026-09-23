@@ -897,14 +897,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const agent = agents.get(id);
     if (!agent) return null;
 
-    // Initialize PTY if agent was restored from disk and doesn't have one
-    if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-      console.log(`Initializing PTY for agent ${id} on get`);
-      const ptyId = await initAgentPty(agent);
-      agent.ptyId = ptyId;
+    // Looking at an agent opens nothing. An agent with no terminal is shown
+    // as one: nothing to replay, since what it kept is the tail of a terminal
+    // gone with it, and no terminal named. This used to open a login shell,
+    // whose banner went into the agent's output and read as its last words in
+    // the Chat's fleet list; agent:start opens the terminal a launch needs.
+    const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+    if (!ptyProcess) {
+      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false };
     }
-
-    const ptyProcess = ptyProcesses.get(agent.ptyId);
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
     // no longer held a frame. See core/terminal-mirror.ts. Taken last, with

@@ -271,7 +271,8 @@ export interface AgentStatus {
   /** Empty from agent:list. From agent:get, what to write into a fresh terminal
    *  to show this agent: its terminal's screen as one chunk, opening with RIS
    *  (core/terminal-mirror.ts), or the kept tail of the stream when the
-   *  terminal has no mirror. */
+   *  terminal has no mirror. Empty, with no ptyId, for an agent with no
+   *  terminal: agent:get opens none. */
   output: string[];
   lastActivity: string;
   error?: string;
