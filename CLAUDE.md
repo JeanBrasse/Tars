@@ -8,7 +8,7 @@
 
 ## Stack
 
-- **Shell**: Electron 43, main process in `electron/` (~23k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
+- **Shell**: Electron 44 (Node 24.21, Chromium 152, macOS 13 or later), main process in `electron/` (~23k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
 - **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~39.5k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
 - **Terminals**: `node-pty` + `xterm` 5 / `xterm-addon-fit`
 - **State**: React hooks over IPC (`src/hooks/`), plus a small `zustand` store (`src/store/`) for sidebar/vault UI state
@@ -17,7 +17,7 @@
 - **Delegation**: two transports: keystrokes written into the PTY (`/dispatch`), and the Agent Client Protocol (`electron/services/acp/`), which actually returns a result
 - **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat and the Hermes webhook secret. `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI
 - **Tests**: `vitest` (unit, `__tests__/`), `@playwright/test` driving the real Electron app (`e2e/`)
-- **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` still declares a `>=20` floor and CI runs 20. Develop on 22
+- **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` declares `>=22.12.0`, Electron's own floor since 43, and CI runs 22
 
 ## Key Files
 
