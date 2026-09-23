@@ -567,6 +567,28 @@ describe('a CLI that left fullscreen without telling its terminal', () => {
       expect(leftFullscreenIn(pty as never)).toBe(false);
     });
 
+    it('counts CSI f and CSI d as positioning absolutely, as CSI H is', () => {
+      // Added at the QA gate of #127. A fullscreen CLI that places its rows with
+      // HVP (CSI row;col f) or VPA (CSI row d), climbing with CSI A in between,
+      // repaints fullscreen and is not flagged.
+      for (const absolute of ['\x1b[3;1f', '\x1b[3d']) {
+        const pty = watched();
+        for (let i = 0; i < 3 * REPAINT_WINDOW; i++) pty.emit('\x1b[1A'.repeat(4) + `${absolute}row ${i}`);
+        expect(leftFullscreenIn(pty as never), JSON.stringify(absolute)).toBe(false);
+      }
+    });
+
+    it('is cleared at once by a program asking for the alternate screen with ?1047 or ?47, as with ?1049', () => {
+      // Added at the QA gate of #127: the older two requests for the same screen.
+      for (const mode of ['1047', '47']) {
+        const pty = watched();
+        for (let i = 0; i < REPAINT_WINDOW; i++) pty.emit(inkFrame(i));
+        expect(leftFullscreenIn(pty as never)).toBe(true);
+        pty.emit(`\x1b[?${mode}h\x1b[H\x1b[2J`);
+        expect(leftFullscreenIn(pty as never), mode).toBe(false);
+      }
+    });
+
     it('is cleared by RIS', () => {
       const pty = watched();
       for (let i = 0; i < REPAINT_WINDOW; i++) pty.emit(inkFrame(i));
