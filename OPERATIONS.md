@@ -82,6 +82,18 @@ In dev the window loads `process.env.DOROTHY_DEV_URL || 'http://localhost:3000'`
 DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 `app://-/index.html` off the custom protocol, served from `<appPath>/out`.
 
+From the second launch on, the main process no longer compiles its JavaScript from source, and
+from the third the renderer does not either. The app:// scheme has Chromium's `codeCache`
+privilege, so V8 keeps what it compiled of the renderer bundle in the profile's `Code Cache/js`:
+Chromium writes it during the second launch and reads it from the third. The main process turns
+on Node's compile cache before it requires anything else (`electron/core/compile-cache.ts`), in
+the profile's `compile-cache/`, and flushes it once the window has loaded. Both are keyed by each
+file's content: an update is compiled once more. Deleting `compile-cache/` costs one slower
+launch, deleting `Code Cache` two. Measured on 2026-09-24 on packaged builds: the main process's
+compile work fell from 181 to 441 ms to 79 to 101 ms, and the renderer's main-thread compile from
+59 to 129 ms to 3 ms once its cache is read. `NODE_DEBUG_NATIVE=COMPILE_CACHE` in the app's
+environment prints each module the cache served.
+
 ### Run the renderer alone
 
 ```bash
@@ -665,6 +677,7 @@ work.
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
 | `~/.dorothy/cli-paths.json` | `electron/handlers/cli-paths-handlers.ts` | resolved binary paths, readable by MCP |
+| `~/.dorothy/skills-marketplace.json` | `electron/services/skills-marketplace.ts` | the last skills.sh listing, served first; delete it to fetch afresh |
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
@@ -891,7 +904,10 @@ both behave identically. It:
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
    `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
-   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   a start from a window, a bot's cold start) is waited for and never spawned over: 15 s, and
+   past that while its CLI runs, up to 180 s. The API waits 20 s at most, counted from the
+   request even for a sender queued behind another, then answers `409` with `starting: true`
+   and types nothing: send it again. A sender refused so does not become the agent's requester.
    Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
@@ -1485,9 +1501,13 @@ A turn can end with work still running in the background (Claude Code refuses a 
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
 
-A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+A restart that waits tells every window what it waits on (`agent:restart-pending`, and
+`agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
+panel shows it once the Frontend's part lands. Deleting the agent drops the wait and tells the
+windows it is over. A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
 CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
-vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+vendor included, and they continue their conversation too, found under the project's real path as
+well as the one Tars saved (a project reached through a symlink resumed nothing before); codex, gemini, grok, opencode, pi and
 amp never are: stop and start them. To see what a running CLI was actually launched with, read
 its argv (the model and effort are on the command line):
 
