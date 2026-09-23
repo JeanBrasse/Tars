@@ -842,7 +842,11 @@ export function initTelegramBot() {
         agent.status = 'running';
         agent.currentTask = task.slice(0, 100);
         agent.lastActivity = new Date().toISOString();
-        writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
+        // Typed plainly, as the Slack bot does: this is a shell prompt, not
+        // claude's field. Every agent terminal is /bin/bash, Apple's 3.2, which
+        // has no bracketed paste, and a command this long went in as one: bash
+        // ran `00~cd ...`, "command not found", and nothing started.
+        writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
         noteLaunch(ptyProcess, launchSettings(agent));
         saveAgents();
         // Started from a phone, and just as able to come up with no task.
@@ -1403,8 +1407,9 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       superAgentTelegramTask = true;
       superAgentOutputBuffer = [];
 
-      // Start new Claude session
-      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
+      // Start new Claude session. Typed plainly into the shell, as /start_agent
+      // above: pasted, bash 3.2 ran `00~cd` and the super agent never started.
+      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();
       // A cold start of the super agent carries a task like any other start.

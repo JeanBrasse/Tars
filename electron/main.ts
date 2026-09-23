@@ -9,6 +9,9 @@
  * - MCP orchestrator integration
  */
 
+// First: every module required after it is compiled from the cache it keeps.
+import './core/compile-cache';
+
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
