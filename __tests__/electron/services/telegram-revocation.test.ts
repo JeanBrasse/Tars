@@ -51,10 +51,13 @@ vi.mock('node-telegram-bot-api', () => ({
 
 import { agents } from '../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
-import { initTelegramBotService, initTelegramBot, stopTelegramBot } from '../../../electron/services/telegram-bot';
+import {
+  initTelegramBotService, initTelegramBot, stopTelegramBot, sendToSuperAgent, sendTelegramMessage,
+} from '../../../electron/services/telegram-bot';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
 let live: AppSettings;
+let superAgent: AgentStatus | undefined;
 const saved: AppSettings[] = [];
 const initAgentPty = vi.fn(async () => 'pty-new');
 
@@ -74,6 +77,7 @@ beforeEach(() => {
   bot.texts.length = 0;
   bot.sent.length = 0;
   saved.length = 0;
+  superAgent = undefined;
   initAgentPty.mockClear();
   agents.set('w1', {
     id: 'w1', name: 'Worker', status: 'idle', provider: 'claude', projectPath: path.join(tmpHome, 'project'),
@@ -84,7 +88,7 @@ beforeEach(() => {
     telegramAuthorizedChatIds: ['42'], telegramChatId: '42',
   } as AppSettings;
   initTelegramBotService(
-    agents, ptyProcesses, () => live, null, () => undefined, () => {}, async () => null,
+    agents, ptyProcesses, () => live, null, () => superAgent, () => {}, async () => null,
     initAgentPty, s => { saved.push(s); },
   );
   initTelegramBot();
@@ -117,5 +121,71 @@ describe('a token regenerated in Settings', () => {
     expect(live.telegramAuthorizedChatIds).toContain('77');
     // What is written is the live object, not the bot's old one with the old token.
     expect(saved.at(-1)?.telegramAuthToken).toBe('new-token');
+  });
+});
+
+/**
+ * The chat a reply goes to (the audit's gate of #137: lead #19's last path).
+ *
+ * The bot remembers the last chat that asked the super agent something and
+ * sends there everything that names no chat of its own: the super agent's
+ * reply, its error, and main's status notices. That chat was checked when it
+ * wrote in and never again, so a chat removed in Settings afterwards went on
+ * receiving all three until another chat wrote.
+ *
+ * How this can fail, written before the fix:
+ * 1. a chat removed after it asked still receives what is sent without a chat named;
+ * 2. the check reads the settings the bot started with, not the ones a save put in place;
+ * 3. an authorized chat that asked stops receiving its answers: the fix over-blocks;
+ * 4. what the removed chat would have received is lost, where the chats allowed now should get it;
+ * 5. a chat named by the caller skips the check;
+ * 6. the default chat of Settings, which the send route and mcp-telegram accept, is refused;
+ * 7. ids compared with the wrong type: Telegram hands the id over as a number.
+ */
+describe('the chat a reply goes to', () => {
+  beforeEach(() => {
+    superAgent = {
+      id: 's1', name: 'Super Agent', role: 'orchestrator', status: 'idle', provider: 'claude',
+      projectPath: path.join(tmpHome, 'project'), skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus;
+    agents.set('s1', superAgent);
+    live = { ...live, telegramAuthorizedChatIds: ['42', '77'], telegramChatId: '42' };
+  });
+
+  it('is the authorized chat that asked, for its answers and its errors', async () => {
+    await sendToSuperAgent('77', 'what is everyone doing?');
+    bot.sent.length = 0;
+
+    sendTelegramMessage('the answer');
+    sendTelegramMessage('Super Agent error: boom');
+
+    expect(bot.sent).toEqual([
+      { chatId: '77', text: 'the answer' },
+      { chatId: '77', text: 'Super Agent error: boom' },
+    ]);
+  });
+
+  it('is no longer a chat removed since it asked: what it would have received goes to the chats allowed now', async () => {
+    await sendToSuperAgent('77', 'what is everyone doing?');
+    // Removed in Settings: a save replaces the object the bot reads.
+    live = { ...live, telegramAuthorizedChatIds: ['42'] };
+    bot.sent.length = 0;
+
+    sendTelegramMessage('the answer');
+    sendTelegramMessage('Super Agent error: boom');
+
+    expect(bot.sent).toEqual([
+      { chatId: '42', text: 'the answer' },
+      { chatId: '42', text: 'Super Agent error: boom' },
+    ]);
+  });
+
+  it('refuses a chat the caller names when Settings does not allow it, and keeps the default chat', () => {
+    live = { ...live, telegramAuthorizedChatIds: ['77'], telegramChatId: '42' };
+
+    sendTelegramMessage('for a stranger', 'Markdown', '99');
+    sendTelegramMessage('for the default chat', 'Markdown', '42');
+
+    expect(bot.sent).toEqual([{ chatId: '42', text: 'for the default chat' }]);
   });
 });

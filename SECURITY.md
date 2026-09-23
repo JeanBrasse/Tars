@@ -351,7 +351,12 @@ list Noah keeps in Settings, and nobody when the list is empty.
   token regenerated kept working until a restart (the audit's lead #19). The
   app's own `/api/telegram/send*` go only to those chats, as mcp-telegram's do:
   `send_telegram`, in every agent, forwarded a chat id chosen by the model
-  (lead #20).
+  (lead #20). And what the bot sends of its own accord, the super agent's
+  replies and errors and the status notices, goes only to a chat Settings
+  allows at the moment it is sent: the chat that last asked was remembered and
+  never checked again, so a chat removed after asking kept receiving all three
+  (the audit's gate of #137). It is forgotten now, and what it would have
+  received goes to the chats that are allowed.
 - **Slack**: the member ids in Settings > Slack (`slackAllowedUserIds`). Before
   it, anyone who could mention or message the bot could list agents and project
   paths, start, stop and brief them, and move the channel agents post to

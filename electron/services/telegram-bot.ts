@@ -106,6 +106,14 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
     return;
   }
 
+  // A chat removed in Settings since it asked is forgotten here, and what it
+  // would have received goes where a notice goes. It was checked when it
+  // wrote in and never again, so it went on receiving the super agent's
+  // replies, its errors and main's notices (the audit's gate of #137).
+  if (currentResponseChatId && !sendableChats().has(currentResponseChatId)) {
+    currentResponseChatId = null;
+  }
+
   // If we have a current response chat (from an active Telegram task), send there
   if (currentResponseChatId) {
     sendToChat(currentResponseChatId, truncated, parseMode, text);
@@ -125,10 +133,26 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
 }
 
 /**
+ * The chats this bot may send to, as the settings are now: the ones Noah
+ * authorized and the default chat, the set the send route and mcp-telegram
+ * accept. Read at every send.
+ */
+function sendableChats(): Set<string> {
+  const settings = getSettings();
+  return new Set([settings.telegramChatId, ...(settings.telegramAuthorizedChatIds ?? [])].filter(Boolean).map(String));
+}
+
+/**
  * Helper to send to a specific chat with error handling
  */
 function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | 'HTML', originalText: string) {
   if (!telegramBot) return;
+  // Every send that is not a reply to a message passes here, so a chat
+  // Settings does not allow is refused here, whoever named it.
+  if (!sendableChats().has(String(chatId))) {
+    console.warn(`Telegram: not sending to chat ${chatId}, which Settings does not authorize`);
+    return;
+  }
   try {
     telegramBot.sendMessage(chatId, truncated, { parse_mode: parseMode });
   } catch (err) {
