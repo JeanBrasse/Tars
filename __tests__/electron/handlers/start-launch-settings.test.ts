@@ -931,3 +931,53 @@ describe('the output of a session started through the API', () => {
     expect(agent.ptyId).toBeTruthy();
   });
 });
+
+describe('QA #138: a wait said again when it changes, and a launch that is still starting', () => {
+  const payloads = () => broadcasts.filter(b => b.channel === 'agent:restart-pending').map(b => b.payload);
+
+  it('says a change saved while an asked restart runs waits on the launch', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+    const first = restart(agent.id);
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    expect(restartPushes()).toEqual(['launch']);
+    await settled(first);
+  });
+
+  it('says a change saved while the restarted CLI is still starting waits on the launch', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+    expect(await settled(restart(agent.id))).toEqual({ success: true });
+    // Its new terminal still runs the shell: claude has not started in it yet.
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    expect(restartPushes()).toEqual(['launch']);
+  });
+
+  it('says so when a second setting joins a restart that already waits', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', status: 'running', model: 'claude-opus-5' });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await update({ id: agent.id, effort: 'high' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(payloads()).toEqual([
+      { agentId: 'agent-a', pending: { settings: ['model'], waitingFor: 'turn' } },
+      { agentId: 'agent-a', pending: { settings: ['model', 'effort'], waitingFor: 'turn' } },
+    ]);
+  });
+
+  it('announces a second wait like the first, once the first is over', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', status: 'running', model: 'claude-opus-5' });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    agent.status = 'idle';
+    emitAgentStatus(agent.id);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(restartPushes()).toEqual(['turn', null]);
+
+    // The restarted claude is up and working, and the model goes back.
+    (spawned[spawned.length - 1] as { process: string }).process = '2.1.280';
+    agent.status = 'running';
+    await vi.advanceTimersByTimeAsync(30_000);
+    await update({ id: agent.id, model: 'claude-opus-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(restartPushes()).toEqual(['turn', null, 'turn']);
+  });
+});
