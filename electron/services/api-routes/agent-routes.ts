@@ -338,9 +338,16 @@ async function spawnAgentSession(
     }
     agent.lastActivity = new Date().toISOString();
 
-    if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
-      ctx.mainWindow.webContents.send('agent:output', { agentId: agent.id, data });
-    }
+    // The event every other terminal sends, with the terminal it came from:
+    // a panel that filters on ptyId dropped this one's output, or took it for
+    // the terminal it replaced.
+    broadcastToAllWindows('agent:output', {
+      type: 'output',
+      agentId: agent.id,
+      ptyId,
+      data,
+      timestamp: new Date().toISOString(),
+    });
     // As initAgentPty does: the tick carries the line the cards show.
     scheduleTick();
   });
