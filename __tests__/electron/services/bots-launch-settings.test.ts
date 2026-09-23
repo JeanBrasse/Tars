@@ -59,6 +59,7 @@ vi.mock('node-telegram-bot-api', () => ({
 
 import { agents, initAgentPty } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
+import { resetLaunches, launchBegins, sessionStarting } from '../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendToSuperAgent } from '../../../electron/services/telegram-bot';
 import { handleSlackCommand, sendToSuperAgentFromSlack } from '../../../electron/services/slack-bot';
@@ -96,6 +97,8 @@ async function typedAfter(launch: () => Promise<unknown>): Promise<string> {
 }
 
 beforeEach(() => {
+  // A cold start of one test is not a launch still on its way in the next.
+  resetLaunches();
   fs.rmSync(tmpHome, { recursive: true, force: true });
   fs.mkdirSync(project, { recursive: true });
   agents.clear();
@@ -147,7 +150,7 @@ describe('the role, on the launches the bots make', () => {
   // by the role alone already, and never attached the instructions: an
   // orchestrator started from a phone did the work itself.
   const INSTRUCTIONS = () => `--append-system-prompt-file '${getSuperAgentInstructionsPath()}'`;
-  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
 
   it('Telegram /start_agent launches an orchestrator with its instructions, and a worker called orchestrator as a worker', async () => {
     agent({ id: 'agent-o', name: 'Lead', role: 'orchestrator' });
@@ -197,7 +200,7 @@ describe("the super agent's cold start, from a message", () => {
   // since nobody is there to answer a permission question; a Slack message
   // starts it on its own mode (SPECS §4, The orchestrator role). Both with the
   // instructions and without the editing tools.
-  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "MultiEdit" "NotebookEdit" "Task"';
+  const TOOL_BLOCK = '--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"';
   const promptFile = (typed: string) => /--append-system-prompt-file '([^']+)'/.exec(typed)?.[1];
 
   it('from Telegram: the instructions, no editing tools, and bypass', async () => {
@@ -349,5 +352,143 @@ describe('Slack', () => {
 
     expect(typed).toContain(" --model 'claude-opus-5-5'");
     expect(typed).toContain(' --effort medium ');
+  });
+});
+
+describe('a launch on its way, and the bots (#134)', () => {
+  // Every bot entry point that can start a CLI: a launch already on its way
+  // (a restart, a start from a window) is waited for, and the bot's own
+  // launch is marked for every sender after it.
+  const entryPoints: Array<[string, boolean, () => Promise<unknown>]> = [
+    ['Telegram /start_agent', false, async () => {
+      const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+      const text = '/start_agent worker Rebase onto main';
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    }],
+    ['Telegram message to the super agent', true, () => sendToSuperAgent('42', 'Rebase onto main')],
+    ['Slack `start`', false, () => handleSlackCommand('start worker Rebase onto main', 'C1', async () => undefined, settings)],
+    ['Slack message to the super agent', true, () => sendToSuperAgentFromSlack('C1', 'Rebase onto main', async () => undefined, settings)],
+  ];
+  const record = (superAgent: boolean, fields: Partial<AgentStatus> = {}) => agent(superAgent
+    ? { id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator', ...fields }
+    : { ...fields });
+  const typed = (terminal: FakePty) => terminal.write.mock.calls.map(call => String(call[0])).join('');
+
+  it.each(entryPoints)('%s waits for a launch on its way, then types into the session it brought up', async (_name, superAgent, send) => {
+    const terminal = spawnAgentPty({
+      binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30,
+      env: { CLAUDE_AGENT_ID: superAgent ? 'agent-s' : 'agent-w' },
+    }) as unknown as FakePty;
+    terminal.process = 'bash';
+    ptyProcesses.set('pty-launching', terminal as never);
+    const target = record(superAgent, { ptyId: 'pty-launching', ptyCwd: project });
+    // A launch was typed there a moment ago; the shell has not handed over.
+    launchBegins(target.id);
+    const before = spawned.length;
+
+    const sent = send();
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(typed(terminal), 'typed over the launch before its CLI came up').toBe('');
+
+    terminal.process = '2.1.280';
+    target.sessionRegisteredAt = new Date().toISOString();
+    await sent;
+    await new Promise(resolve => setTimeout(resolve, 450));
+
+    expect(typed(terminal)).toContain('Rebase onto main');
+    expect(typed(terminal), 'launched a second CLI over the first').not.toContain("&& '");
+    expect(spawned.length).toBe(before);
+  });
+
+  it.each(entryPoints)('%s marks its own launch for the senders after it', async (_name, superAgent, send) => {
+    const target = record(superAgent);
+
+    await send();
+
+    expect(sessionStarting(target), 'a sender right after would take the new shell for an idle agent').toBe(true);
+  });
+});
+
+/**
+ * The launch command, as the bytes a bot types into a cold terminal.
+ *
+ * Every agent terminal is /bin/bash (initAgentPty), which on macOS is Apple's
+ * 3.2, and bash 3.2 has no bracketed paste. The Telegram bot typed its launch
+ * command as a paste: bash ran `00~cd ...` and answered "command not found",
+ * so neither /start_agent nor a message to the super agent ever started a cold
+ * agent (the re-gate of #134, seen in a sandbox with real claude; main did the
+ * same). The Slack bot types the same command plainly, and starts it.
+ *
+ * How this can fail, written before the fix:
+ * 1. a bot types its launch command into the shell as a bracketed paste;
+ * 2. the command goes in without its Enter, or in pieces, and sits at the prompt;
+ * 3. the fix reaches the other writes: a message into a claude that is already up loses its paste, which its field relies on;
+ * 4. the Slack launches, which already work, change.
+ */
+describe('the launch command a bot types into a cold terminal', () => {
+  const PASTE_START = '\x1b[200~';
+  const PASTE_END = '\x1b[201~';
+
+  /** The terminal a launch opened, and every write into it, in order. */
+  async function launchIn(launch: () => Promise<unknown>): Promise<{ terminal: FakePty; writes: string[] }> {
+    const before = spawned.length;
+    await launch();
+    // Long enough for a paste's Enter, which follows it by 300 ms.
+    await new Promise(resolve => setTimeout(resolve, 450));
+    const terminal = spawned[before];
+    expect(terminal, 'the launch opened no terminal').toBeDefined();
+    return { terminal, writes: terminal.write.mock.calls.map(call => String(call[0])) };
+  }
+
+  const launches: Array<[string, () => Promise<unknown>]> = [
+    ['Telegram /start_agent', async () => {
+      agent({});
+      const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+      const text = '/start_agent worker Rebase onto main';
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    }],
+    ['Telegram, a message to the super agent', async () => {
+      agent({ id: 'agent-s', name: 'Chief', role: 'orchestrator' });
+      await sendToSuperAgent('42', 'what is everyone doing');
+    }],
+    ['Slack start', async () => {
+      agent({});
+      await handleSlackCommand('start worker Rebase onto main', 'C1', async () => undefined, settings);
+    }],
+    ['Slack, a message to the super agent', async () => {
+      agent({ id: 'agent-s', name: 'Chief', role: 'orchestrator' });
+      await sendToSuperAgentFromSlack('C1', 'what is everyone doing', async () => undefined, settings);
+    }],
+  ];
+
+  it.each(launches)('%s: typed plainly, whole and submitted', async (_name, launch) => {
+    const { writes } = await launchIn(launch);
+
+    expect(writes, 'the launch command went in as more than one write').toHaveLength(1);
+    const [command] = writes;
+    expect(command, 'a bracketed paste, which the bash 3.2 of the terminal runs as "00~cd"').not.toContain(PASTE_START);
+    expect(command).not.toContain(PASTE_END);
+    expect(command.startsWith(`cd '${project}' && `), command.slice(0, 120)).toBe(true);
+    expect(command.endsWith('\r'), 'typed and never submitted').toBe(true);
+  });
+
+  it('keeps the paste for a message into a claude that is already up', async () => {
+    agent({ id: 'agent-s', name: 'Chief', role: 'orchestrator' });
+    const { terminal } = await launchIn(() => sendToSuperAgent('42', 'start on this'));
+    // Its claude is up and its launch is over.
+    terminal.process = '2.1.280';
+    resetLaunches();
+    terminal.write.mockClear();
+
+    // Past the 200 characters where the writer pastes rather than types.
+    const long = `and now this, for $HOME: ${'the whole plan '.repeat(20)}`;
+    await sendToSuperAgent('42', long);
+    await new Promise(resolve => setTimeout(resolve, 450));
+
+    const writes = terminal.write.mock.calls.map(call => String(call[0]));
+    expect(writes.join(''), 'the message went into claude without its paste').toContain(PASTE_START);
+    expect(writes.join('')).toContain(long.trim());
+    expect(writes.at(-1), 'the Enter did not follow the paste on its own').toBe('\r');
+    expect(spawned.at(-1), 'a second terminal was opened for a claude that was up').toBe(terminal);
   });
 });

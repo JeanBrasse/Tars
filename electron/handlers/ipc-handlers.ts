@@ -34,8 +34,8 @@ import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
-import { registerAgentLauncher, type AgentLauncher } from '../core/agent-launch';
-import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
+import { registerAgentLauncher, launchBegins, launchAbandoned, type AgentLauncher } from '../core/agent-launch';
+import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
 import { assignRole, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
@@ -505,7 +505,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // agent's CLI into its terminal: the handler below, the Kanban automation and
   // the restart that applies changed settings all come through here. See
   // core/agent-launch.ts.
-  const startAgentCli: AgentLauncher = async (id, prompt, options) => {
+  const launchInTerminal: AgentLauncher = async (id, prompt, options) => {
     const agent = agents.get(id);
     if (!agent) throw new Error('Agent not found');
 
@@ -859,6 +859,24 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     return { success: true };
   };
+  /**
+   * The launch, under way from its first line until its CLI runs in the
+   * terminal (sessionStarting, core/agent-launch.ts): a restart kills the old
+   * terminal, opens a new one, gives its shell half a second, then types. A
+   * sender that lands in that time waits for the CLI rather than start a
+   * session over it and lose the conversation.
+   */
+  const startAgentCli: AgentLauncher = async (id, prompt, options) => {
+    const launch = launchBegins(id, { withTask: !!prompt?.trim() });
+    try {
+      const result = await launchInTerminal(id, prompt, options);
+      if (!result.success) launchAbandoned(id, launch);
+      return result;
+    } catch (err) {
+      launchAbandoned(id, launch);
+      throw err;
+    }
+  };
   registerAgentLauncher(startAgentCli);
 
   ipcMain.handle('agent:start', async (_event, { id, prompt, options }: {
@@ -880,14 +898,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const agent = agents.get(id);
     if (!agent) return null;
 
-    // Initialize PTY if agent was restored from disk and doesn't have one
-    if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-      console.log(`Initializing PTY for agent ${id} on get`);
-      const ptyId = await initAgentPty(agent);
-      agent.ptyId = ptyId;
+    // Looking at an agent opens nothing. An agent with no terminal is shown
+    // as one: nothing to replay, since what it kept is the tail of a terminal
+    // gone with it, and no terminal named. This used to open a login shell,
+    // whose banner went into the agent's output and read as its last words in
+    // the Chat's fleet list; agent:start opens the terminal a launch needs.
+    const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+    if (!ptyProcess) {
+      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false };
     }
-
-    const ptyProcess = ptyProcesses.get(agent.ptyId);
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
     // no longer held a frame. See core/terminal-mirror.ts. Taken last, with
@@ -1187,6 +1206,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
 
     agents.delete(id);
+    forgetRestart(id);
 
     // Save agents to disk
     saveAgents();

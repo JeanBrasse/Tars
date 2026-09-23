@@ -326,10 +326,7 @@ export async function signInHermes(
       body: { provider, username: credentials.username, password: credentials.password, next: '/' },
     });
     if (status === 200 && hasHermesSession(baseUrl)) return { success: true };
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail)
-      : `HTTP ${status}`;
-    return { success: false, error: status === 200 ? 'Gateway accepted the login but set no session cookie.' : detail };
+    return { success: false, error: status === 200 ? 'Gateway accepted the login but set no session cookie.' : errorDetail(status, body) };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -350,9 +347,12 @@ const KANBAN = '/api/plugins/kanban';
  * `{ detail: "title is required" }` or `{ detail: [{ msg, loc, ... }] }`. Every
  * kanban call used to collapse that to a bare `HTTP 422`, so a task created
  * with no title told the user nothing they could act on. Read `detail` the
- * same way for every endpoint here, board included.
+ * same way for every Hermes call, here and in hermes-session.ts: eight more
+ * here, and the Chat's effort picker there, turned the array into a string,
+ * and the Schedules page, the model picker, a memory write and the Chat said
+ * "[object Object],[object Object]" instead.
  */
-function errorDetail(status: number, body: unknown): string {
+export function errorDetail(status: number, body: unknown): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === 'string') return detail;
@@ -424,9 +424,7 @@ export async function fetchHermesCrons(conn: HermesConnection) {
   const baseUrl = resolveHermesBaseUrl(conn);
   const { status, body } = await hermesRequest(baseUrl, '/api/cron/jobs?profile=all', { token: conn.token });
   if (status !== 200) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-    return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+    return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
   }
   return { success: true as const, jobs: body };
 }
@@ -475,9 +473,7 @@ export async function updateHermesCron(
     { method: 'PUT', body: { updates }, token: conn.token },
   );
   if (status < 300) return { success: true as const, job: body };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
 }
 
 export async function deleteHermesCron(conn: HermesConnection, jobId: string, profile?: string) {
@@ -572,9 +568,7 @@ export async function setHermesModel(
     body: { scope: 'main', provider: choice.provider, model: choice.model },
   });
   if (status < 300) return { success: true as const };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? JSON.stringify((body as { detail: unknown }).detail).slice(0, 200) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return { success: false as const, error: errorDetail(status, body).slice(0, 200), needsSignIn: status === 401 || status === 403 };
 }
 
 export async function createHermesCron(
@@ -602,9 +596,7 @@ export async function createHermesCron(
     },
   });
   if (status < 300) return { success: true as const, job: body as { id?: string; [key: string]: unknown } };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
 }
 
 /** A file that now lives on the gateway, ready to be named in a prompt. */
@@ -677,10 +669,7 @@ export async function uploadHermesAttachment(
     });
 
   if (status >= 300) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail).slice(0, 200)
-      : `HTTP ${status}`;
-    return { success: false, error: detail, needsSignIn: status === 401 || status === 403 };
+    return { success: false, error: errorDetail(status, body).slice(0, 200), needsSignIn: status === 401 || status === 403 };
   }
 
   const payload = (body ?? {}) as { path?: unknown; name?: unknown; bytes?: unknown };
@@ -876,9 +865,7 @@ export async function appendHermesMemory(
     },
   });
   if (status >= 300) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-    return { success: false, error: detail, needsSignIn: status === 401 || status === 403 };
+    return { success: false, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
   }
 
   const written = (body && typeof body === 'object' && 'path' in body)
@@ -995,9 +982,7 @@ export async function setHermesMemoryProvider(conn: HermesConnection, provider: 
     method: 'PUT', token: conn.token, body: { provider },
   });
   if (status < 300) return { success: true as const, body };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
 }
 
 export interface HermesSessionHit {

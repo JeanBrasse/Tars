@@ -90,14 +90,20 @@ another and got its conversation back through a restart (`--resume`), and a kill
 CLI's late SessionStart took its agent from the live session by accident. The hooks
 run inside the agent's CLI and inherit its `CLAUDE_MGR_API_TOKEN`, minted for that
 terminal: a post now carries it, and the route takes nothing else (not the shared
-token, not Tars's pass) and only for the `agent_id` it names. A terminal replaced by
-a restart or a new start takes its token with it: the old CLI's late posts are a 401.
+token, not Tars's pass, not the token of a delegated ACP run, which names the agent
+too) and only for the `agent_id` it names. The Audit's gate of #135 posted a
+SessionStart with a run's token: it registered a session over the live terminal's,
+which then had every post refused as stale. A terminal replaced by a restart or a new
+start, or one that has ended, takes its token with it: the old CLI's late posts are a
+401, where a stopped CLI's token used to last until the agent's next launch.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
 outlives the update, and each is relaunched with a token and the new scripts (they sit
 in the app bundle). One that survives anyway posts without a token, or with one this
 Tars never minted, and is refused: stop and start it from Tars. The hook logs moved
 from `/tmp` (readable by every user, shared by every Tars on the machine) to
-`~/.dorothy/logs/`, `0600`.
+`~/.dorothy/logs/`, `0600`, and Tars removes the two old files at startup
+(`removeLegacyHookLogs`): only regular files the user owns, and only when `HOME` is the
+user's own, so a sandbox never deletes the logs of a Tars still on 1.7.9 beside it.
 
 **What the webhook secret is.** The reach of Noah's own chat, handed to Hermes,
 so it lives where Noah's conversation lives, in `~/.tars-private`, and not in

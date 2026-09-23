@@ -74,6 +74,30 @@ export function mintRunToken(agentId: string): { token: string; revoke: () => vo
   return { token, revoke: () => { agentByToken.delete(token); } };
 }
 
+/**
+ * Whether this is the token of the agent's terminal as it is now: not a
+ * delegated run's, not a replaced or ended terminal's. The hook routes take
+ * this one alone. A run's token passed them as its agent's, and a SessionStart
+ * posted with it registered a session over the live terminal's, which then had
+ * every post refused as stale and stayed `running` (the Audit, gate of #135).
+ */
+export function isTerminalToken(token: string): boolean {
+  const agentId = agentByToken.get(token);
+  return !!agentId && tokenByAgent.get(agentId) === token;
+}
+
+/**
+ * The terminal this token was minted for has ended: its token ends with it,
+ * unless a newer terminal of the agent has already replaced it. It used to
+ * last until the agent's next launch, and a fake SessionStart with a stopped
+ * CLI's token changed which session a restart would resume.
+ */
+export function revokeTerminalToken(agentId: string, token: string): void {
+  if (tokenByAgent.get(agentId) !== token) return;
+  tokenByAgent.delete(agentId);
+  agentByToken.delete(token);
+}
+
 /** The agent this token was minted for, or undefined if it was not minted here. */
 export function agentForToken(token: string): string | undefined {
   return agentByToken.get(token);

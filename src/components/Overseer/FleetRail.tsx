@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
-import { StatusSquare } from '@/components/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { AgentMark } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
+import { isElectron } from '@/hooks/useElectron';
 import type { OverseerFleetAgent, OverseerFleetSnapshot } from '@/types/electron';
 
 /** Raw fleet status vocabulary folded onto the four the app draws everywhere. */
@@ -40,22 +41,51 @@ function statusLine(agent: OverseerFleetAgent): string {
   }
 }
 
-function whatItsOn(agent: OverseerFleetAgent): string {
-  const base = statusLine(agent);
-  const firstLine = agent.recentOutput.split('\n').map(l => l.trim()).find(Boolean);
-  return firstLine ? `${base} · ${firstLine}` : base;
-}
+/** The status word's colour: the tone's own, muted at rest. */
+const STATUS_INK: Partial<Record<StatusTone, string>> = {
+  running: 'text-status-running',
+  waiting: 'text-status-waiting',
+  error: 'text-status-error',
+};
 
-function FleetRow({ agent }: { agent: OverseerFleetAgent }) {
+function FleetRow({ agent, orchestrator }: { agent: OverseerFleetAgent; orchestrator: boolean }) {
+  const firstLine = agent.recentOutput.split('\n').map(l => l.trim()).find(Boolean);
   return (
     <div className="flex items-start gap-2 px-2.5 py-[9px] border-b border-border">
-      <StatusSquare tone={tone(agent.status)} className="mt-1.5" />
+      <AgentMark name={agent.name || agent.id} orchestrator={orchestrator} />
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <span className="text-[11.5px] text-foreground truncate">{agent.name}</span>
-        <p className="text-[10px] text-muted-foreground truncate">{whatItsOn(agent)}</p>
+        {/* The status in its colour, as the mark no longer carries it, then
+            the first line of what it printed. */}
+        <p className="text-[10px] text-muted-foreground truncate">
+          <span className={STATUS_INK[tone(agent.status)]}>{statusLine(agent)}</span>
+          {firstLine ? ` · ${firstLine}` : ''}
+        </p>
       </div>
     </div>
   );
+}
+
+/**
+ * The ids of the agents that hold an orchestrator role, for the one orange
+ * mark. Hermes's fleet snapshot carries no role, so it is read off the agent
+ * list, again on every status change, as the room's team reads it.
+ */
+function useOrchestratorIds(): ReadonlySet<string> {
+  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const api = window.electronAPI?.agent;
+    if (!isElectron() || !api?.list) return;
+    let live = true;
+    const load = async () => {
+      const all = await api.list();
+      if (live) setIds(new Set((all ?? []).filter(a => a.role === 'orchestrator').map(a => a.id)));
+    };
+    void load();
+    const off = api.onStatus?.(() => { void load(); });
+    return () => { live = false; off?.(); };
+  }, []);
+  return ids;
 }
 
 function ReachRow({ mode, children }: { mode: 'read' | 'write'; children: React.ReactNode }) {
@@ -77,6 +107,7 @@ function ReachRow({ mode, children }: { mode: 'read' | 'write'; children: React.
  */
 export function FleetRail({ fleet }: { fleet: OverseerFleetSnapshot | null }) {
   const agents = fleet?.agents ?? [];
+  const orchestrators = useOrchestratorIds();
 
   // Grouped by project, then by name. A flat list across three projects is a
   // list of names with nothing to orient by, which is what Review and Logs
@@ -112,7 +143,7 @@ export function FleetRail({ fleet }: { fleet: OverseerFleetSnapshot | null }) {
                     {projectLabel(a.projectPath).toUpperCase()}
                   </p>
                 )}
-                <FleetRow agent={a} />
+                <FleetRow agent={a} orchestrator={orchestrators.has(a.id)} />
               </div>
             ))
           )}

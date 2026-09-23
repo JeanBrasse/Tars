@@ -1,6 +1,7 @@
 export { Button } from './Button';
 export type { ButtonProps } from './Button';
 export { StatusBadge, StatusSquare, StatusDot } from './StatusBadge';
+export { AgentMark } from './AgentMark';
 export type { Tone, StatusTone, AnyTone } from './StatusBadge';
 export { Label, FieldError, Input, PasswordInput, Select, Textarea } from './Field';
 export { Dropdown } from './Dropdown';

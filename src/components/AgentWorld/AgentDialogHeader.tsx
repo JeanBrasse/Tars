@@ -1,7 +1,8 @@
 import { memo } from 'react';
 import type { AgentStatus } from '@/types/electron';
-import { Button, MetaChip, StatusSquare } from '@/components/ui';
+import { AgentMark, Button } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
+import { STATUS_COLORS } from '@/app/agents/constants';
 
 interface AgentDialogHeaderProps {
   agent: AgentStatus;
@@ -12,9 +13,8 @@ interface AgentDialogHeaderProps {
   onRestart?: () => void;
   onEdit?: () => void;
   onOpenInReview?: () => void;
-  /** @deprecated The design has no avatar, no Finder button and no fullscreen
-   *  toggle. Still accepted so the dialog keeps compiling while it is reworked. */
-  character?: string;
+  /** @deprecated The design has no Finder button and no fullscreen toggle.
+   *  Still accepted so the dialog keeps compiling while it is reworked. */
   isFullscreen?: boolean;
   hasSecondaryProject?: boolean;
   onOpenInFinder?: () => void;
@@ -39,28 +39,30 @@ export const AgentDialogHeader = memo(function AgentDialogHeader({
   onEdit,
   onOpenInReview,
 }: AgentDialogHeaderProps) {
-  // provider · model · branch · effort - the same four facts the agent cards show.
+  // provider · model · branch · effort, as plain words: the facts the agent
+  // cards write, and the effort only this window has room for.
   const model = agent.localModel || agent.model;
-  const meta = [
+  const facts = [
     isSuperAgentMode ? 'orchestrator' : agent.provider || 'claude',
     model,
     agent.branchName,
     agent.effort,
-  ].filter(Boolean) as string[];
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="h-12 px-4 border-b border-border bg-card flex items-center justify-between gap-4">
       <div className="flex items-center gap-2.5 min-w-0">
-        <StatusSquare tone={TONE[agent.status]} />
+        <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} size={24} />
         <span className="text-[12.5px] font-semibold truncate">{agent.name || 'Agent'}</span>
-        <div className="flex items-center gap-1.5 min-w-0">
-          {meta.map((value) => (
-            <MetaChip key={value} className="max-w-[160px] truncate">{value}</MetaChip>
-          ))}
-        </div>
+        <span className="font-mono text-[11px] text-muted-foreground truncate" title={facts}>{facts}</span>
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
+        {/* The status as a word, in its colour, where the frame puts it:
+            first of the row's actions. */}
+        <span className={`font-mono text-[11px] mr-1.5 ${STATUS_COLORS[agent.status].text}`}>
+          {TONE[agent.status]}
+        </span>
         <Button
           variant="ghost"
           size="sm"

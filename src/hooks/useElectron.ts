@@ -50,7 +50,9 @@ export function useElectronAgents() {
             prevAgent.ptyId !== agent.ptyId ||
             // Another agent's save can take this one's role, and a role
             // change moves nothing else on the record.
-            prevAgent.role !== agent.role
+            prevAgent.role !== agent.role ||
+            // A rename, which every agent row draws the mark from.
+            prevAgent.name !== agent.name
           );
         });
         return hasChanged ? list : prev;

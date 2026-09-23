@@ -28,7 +28,7 @@ export default function SkillInstallTerminal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-scrim backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-scrim z-[60] flex items-center justify-center p-4"
           onClick={onClose}
         >
           <motion.div

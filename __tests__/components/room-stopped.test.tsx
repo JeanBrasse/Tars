@@ -11,8 +11,10 @@ import type { BusRoom } from '../../src/types/electron';
  * It used to read `idle`, where Claude Code rests at the end of every turn with
  * its session open, so a room of two agents answering each other said "Every
  * agent here is stopped". These hold the room's two surfaces to `stopped` as
- * useRoomAgents computes it: the rail's word, detail, square and `stop`
- * button, and the composer's sentence. The rule itself, isStopped, is private
+ * useRoomAgents computes it: the rail's word and its colour, detail and `stop`
+ * button, and the composer's sentence. The rail's square gave way to the
+ * agent's mark on 2026-09-23 (frame `Chat · Room · at rest or stopped`): the
+ * word carries the state now, muted when stopped or at rest, red in error. The rule itself, isStopped, is private
  * to the hook and not reached from here.
  */
 
@@ -56,27 +58,28 @@ function room(agents: RoomAgent[]): string {
   );
 }
 
-const HOLLOW = 'border border-text-muted';
+const MARK = 'data-agent-mark="agent"';
+const word = (ink: string, w: string) => `${ink}">${w}<`;
 const ALL_STOPPED = 'Everyone in project is stopped. Nothing you write reaches an agent until one starts.';
 const START_TO_WRITE = 'Start an agent to write here';
 const WRITE = 'Write to everyone in project';
 
 describe('the team rail', () => {
-  it('says stopped, no live session, in the hollow square, with no stop to press', () => {
+  it('says stopped, muted, no live session, beside its mark, with no stop to press', () => {
     const html = rail(member({ stopped: true, currentTask: 'review the guard' }));
-    expect(html).toContain('>stopped<');
+    expect(html).toContain(word('text-muted-foreground', 'stopped'));
     expect(html).toContain('no live session');
     expect(html).not.toContain('review the guard');
-    expect(html).toContain(HOLLOW);
+    expect(html).toContain(MARK);
     expect(html).not.toContain('>stop<');
   });
 
   it('keeps an agent at rest, with its session, as idle and listening', () => {
     const html = rail(member({ stopped: false }));
-    expect(html).toContain('>idle<');
+    expect(html).toContain(word('text-muted-foreground', 'idle'));
     expect(html).toContain('listening');
     expect(html).not.toContain('no live session');
-    expect(html).not.toContain(HOLLOW);
+    expect(html).toContain(MARK);
   });
 
   it('offers no stop for an agent with no session, whatever its record says', () => {
@@ -87,10 +90,9 @@ describe('the team rail', () => {
 
   it('lets an error keep its own word and its reason, even with no session', () => {
     const html = rail(member({ status: 'error', stopped: true, error: 'Not logged in · Please run /login' }));
-    expect(html).toContain('>error<');
+    expect(html).toContain(word('text-status-error', 'error'));
     expect(html).toContain('Not logged in · Please run /login');
     expect(html).not.toContain('no live session');
-    expect(html).not.toContain(HOLLOW);
   });
 });
 

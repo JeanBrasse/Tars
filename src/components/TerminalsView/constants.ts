@@ -1,7 +1,7 @@
 import type { GridDefinition, LayoutPreset, KeyboardShortcut } from './types';
 
 // Re-export terminal theme/config from AgentWorld for consistency
-export { TERMINAL_THEME, TERMINAL_CONFIG, CHARACTER_FACES } from '@/components/AgentWorld/constants';
+export { TERMINAL_THEME, TERMINAL_CONFIG } from '@/components/AgentWorld/constants';
 
 // Layout preset definitions
 export const LAYOUT_PRESETS: Record<LayoutPreset, GridDefinition> = {

@@ -173,6 +173,10 @@ export function registerProtocolSchemes() {
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
+        // V8 keeps what it compiled of the renderer's bundle, in userData's
+        // Code Cache, and a later launch reads it instead of compiling the
+        // whole Next.js bundle again. Standard schemes only.
+        codeCache: true,
       },
     },
     {

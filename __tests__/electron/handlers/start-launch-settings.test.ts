@@ -92,6 +92,7 @@ import { ptyProcesses, writeHumanInput, resetTerminalInput } from '../../../elec
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { resetResumeTracking, encodeProjectDirName } from '../../../electron/utils/resume-session';
 import { resetAgentRestarts } from '../../../electron/core/agent-restart';
+import { resetLaunches } from '../../../electron/core/agent-launch';
 import { emitAgentStatus } from '../../../electron/services/agent-events';
 import { startAgentForTask } from '../../../electron/services/kanban-automation';
 import { resetAgentWatch, queueBusMessage, deliverBusMessages, startAgentWatch, stopAgentWatch, holdsFor } from '../../../electron/services/agent-watch';
@@ -221,6 +222,7 @@ beforeEach(() => {
   resetResumeTracking();
   resetAgentRestarts();
   resetAgentWatch();
+  resetLaunches();
   registerIpcHandlers(deps());
 });
 
@@ -929,5 +931,136 @@ describe('the output of a session started through the API', () => {
     // replaced and never sent it its size.
     expect(output?.payload).toMatchObject({ type: 'output', agentId: agent.id, ptyId: agent.ptyId, data: 'hello from the CLI' });
     expect(agent.ptyId).toBeTruthy();
+  });
+});
+
+describe('QA #138: a wait said again when it changes, and a launch that is still starting', () => {
+  const payloads = () => broadcasts.filter(b => b.channel === 'agent:restart-pending').map(b => b.payload);
+
+  it('says a change saved while an asked restart runs waits on the launch', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+    const first = restart(agent.id);
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    expect(restartPushes()).toEqual(['launch']);
+    await settled(first);
+  });
+
+  it('says a change saved while the restarted CLI is still starting waits on the launch', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+    expect(await settled(restart(agent.id))).toEqual({ success: true });
+    // Its new terminal still runs the shell: claude has not started in it yet.
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    expect(restartPushes()).toEqual(['launch']);
+  });
+
+  it('says so when a second setting joins a restart that already waits', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', status: 'running', model: 'claude-opus-5' });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await update({ id: agent.id, effort: 'high' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(payloads()).toEqual([
+      { agentId: 'agent-a', pending: { settings: ['model'], waitingFor: 'turn' } },
+      { agentId: 'agent-a', pending: { settings: ['model', 'effort'], waitingFor: 'turn' } },
+    ]);
+  });
+
+  it('announces a second wait like the first, once the first is over', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', status: 'running', model: 'claude-opus-5' });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    agent.status = 'idle';
+    emitAgentStatus(agent.id);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(restartPushes()).toEqual(['turn', null]);
+
+    // The restarted claude is up and working, and the model goes back.
+    (spawned[spawned.length - 1] as { process: string }).process = '2.1.280';
+    agent.status = 'running';
+    await vi.advanceTimersByTimeAsync(30_000);
+    await update({ id: agent.id, model: 'claude-opus-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(restartPushes()).toEqual(['turn', null, 'turn']);
+  });
+});
+
+describe('QA #138: what a window is told after the agent it concerns is gone', () => {
+  it('drops the restart of an agent deleted while it waits, and says so', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', status: 'running', model: 'claude-opus-5' });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(restartPushes()).toEqual(['turn']);
+
+    const removed = await handlers.get('agent:remove')!({}, agent.id);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(removed).toMatchObject({ success: true });
+    expect(agents.has(agent.id)).toBe(false);
+    expect(await pendingRestarts(), 'a deleted agent is still listed as waiting to restart').toEqual({ success: true, pending: [] });
+    expect(restartPushes(), 'no window was told the wait is over').toEqual(['turn', null]);
+  });
+});
+
+/**
+ * Every way an agent is deleted drops the restart it was waiting for.
+ *
+ * How this can fail, written before the fix:
+ * 1. deleted from its window (agent:remove): still listed as waiting, and no window told the wait is over (QA's test above);
+ * 2. deleted through the API (DELETE /api/agents/:id): the same;
+ * 3. deleting an agent that had no restart waiting sends the windows a wait's end they were never shown the start of.
+ *
+ * The third way in, the Kanban's cleanup of an agent made for a task
+ * (main.ts deleteAgent), has no harness here; it makes the same call.
+ */
+describe('a deleted agent and the restart it waited for, through every way in', () => {
+  function apiDelete(agentId: string): Promise<Record<string, unknown>> {
+    agents.set('orch', {
+      id: 'orch', name: 'Orchestrator', status: 'running', provider: 'claude', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(), role: 'orchestrator',
+    } as AgentStatus);
+    const app: RouteApp = {
+      routes: [],
+      add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
+      get(pattern, handler) { this.add('GET', pattern, handler); },
+      post(pattern, handler) { this.add('POST', pattern, handler); },
+      put(pattern, handler) { this.add('PUT', pattern, handler); },
+      delete(pattern, handler) { this.add('DELETE', pattern, handler); },
+    };
+    registerAgentRoutes(app, {
+      mainWindow: null, appSettings: {} as AppSettings, getAppSettings: () => ({} as AppSettings),
+      getTelegramBot: () => null, getSlackApp: () => null, slackResponseChannel: null, slackResponseThreadTs: null,
+      handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(),
+      initAgentPtyCallback: vi.fn(async () => 'unused'), agentStatusEmitter: new EventEmitter(),
+    } as unknown as RouteContext);
+    const pathname = `/api/agents/${agentId}`;
+    const route = app.routes.find(r => r.method === 'DELETE' && typeof r.pattern !== 'string' && r.pattern.test(pathname))!;
+    let answer: Record<string, unknown> = {};
+    return Promise.resolve(route.handler({
+      method: 'DELETE', pathname, url: new URL(`http://localhost${pathname}`), body: {},
+      raw: { headers: {}, on: () => {} }, res: {}, params: { id: agentId }, callerAgentId: 'orch',
+    } as unknown as RouteRequest, (json) => { answer = json as Record<string, unknown>; }, {} as RouteContext)).then(() => answer);
+  }
+
+  it('drops the restart of an agent deleted through the API while it waits, and says so', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', status: 'running', model: 'claude-opus-5' });
+    await update({ id: agent.id, model: 'claude-opus-5-5' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(restartPushes()).toEqual(['turn']);
+
+    expect(await apiDelete(agent.id)).toMatchObject({ success: true });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(agents.has(agent.id)).toBe(false);
+    expect(await pendingRestarts(), 'a deleted agent is still listed as waiting to restart').toEqual({ success: true, pending: [] });
+    expect(restartPushes(), 'no window was told the wait is over').toEqual(['turn', null]);
+  });
+
+  it('tells no window anything when the agent it deletes had no restart waiting', async () => {
+    const { agent } = agentWithTerminal({ foreground: '2.1.280', model: 'claude-opus-5' });
+
+    expect(await handlers.get('agent:remove')!({}, agent.id)).toMatchObject({ success: true });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(restartPushes()).toEqual([]);
   });
 });

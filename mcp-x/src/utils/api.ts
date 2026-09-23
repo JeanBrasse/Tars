@@ -6,27 +6,50 @@ import { generateOAuthHeader, type OAuthCredentials } from "./oauth.js";
 
 const X_API_HOST = "api.x.com";
 
-function getCredentials(): OAuthCredentials {
+/** Tars's settings as they are now, or null when the file cannot be read. */
+function readSettings(): Record<string, unknown> | null {
   const settingsPath = path.join(os.homedir(), ".dorothy", "app-settings.json");
   try {
-    if (fs.existsSync(settingsPath)) {
-      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-      if (
-        settings.xApiKey &&
-        settings.xApiSecret &&
-        settings.xAccessToken &&
-        settings.xAccessTokenSecret
-      ) {
-        return {
-          apiKey: settings.xApiKey,
-          apiSecret: settings.xApiSecret,
-          accessToken: settings.xAccessToken,
-          accessTokenSecret: settings.xAccessTokenSecret,
-        };
-      }
-    }
+    if (!fs.existsSync(settingsPath)) return null;
+    return JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
   } catch {
-    // Ignore read errors
+    return null;
+  }
+}
+
+/**
+ * Refuse unless Posting is on in Settings > X (Twitter), as the settings are
+ * at this call.
+ *
+ * The switch has been on that page, off by default, since this server shipped,
+ * and nothing read it: every agent handed these tools could publish and delete
+ * on the account whatever it said (the audit's lead #12), and the privacy
+ * policy says Tars posts only when Noah has turned it on. Only the switch's own
+ * `true` turns it on; a file with no value for it, or one that cannot be read,
+ * is off.
+ */
+export function assertPostingEnabled(): void {
+  if (readSettings()?.xPostingEnabled !== true) {
+    throw new Error(
+      "Posting is off in Tars Settings > X (Twitter), so nothing was sent. Noah turns it on there when agents may post, reply and delete."
+    );
+  }
+}
+
+function getCredentials(): OAuthCredentials {
+  const settings = readSettings();
+  if (
+    settings?.xApiKey &&
+    settings.xApiSecret &&
+    settings.xAccessToken &&
+    settings.xAccessTokenSecret
+  ) {
+    return {
+      apiKey: String(settings.xApiKey),
+      apiSecret: String(settings.xApiSecret),
+      accessToken: String(settings.xAccessToken),
+      accessTokenSecret: String(settings.xAccessTokenSecret),
+    };
   }
   throw new Error(
     "X API credentials not configured. Please add your API keys in Tars Settings > X (Twitter)."

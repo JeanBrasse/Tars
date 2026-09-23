@@ -479,7 +479,7 @@ describe('the schedule main.ts starts', () => {
     vi.useFakeTimers();
     process.env.DOROTHY_E2E = '1';
     try {
-      startCliUpdates(() => ({}) as AppSettings);
+      startCliUpdates(() => ({}) as AppSettings, () => ['claude']);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       delete process.env.DOROTHY_E2E;
@@ -495,7 +495,7 @@ describe('the schedule main.ts starts', () => {
     nativeClaude(home);
     process.env.FAKE_CALLS = calls;
     try {
-      startCliUpdates(() => ({ cliPaths: { claude: '', amp: '' } }) as unknown as AppSettings);
+      startCliUpdates(() => ({ cliPaths: { claude: '', amp: '' } }) as unknown as AppSettings, () => ['claude']);
       await vi.waitFor(() => {
         expect(fs.existsSync(CLI_UPDATES_LOG) && fs.readFileSync(CLI_UPDATES_LOG, 'utf8')).toContain('claude updated 1.0.0 to 1.0.1');
       }, { timeout: 30_000, interval: 250 });
