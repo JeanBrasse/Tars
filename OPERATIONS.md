@@ -901,7 +901,10 @@ both behave identically. It:
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
    `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
-   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   a start from a window, a bot's cold start) is waited for and never spawned over: 15 s, and
+   past that while its CLI runs, up to 180 s. The API waits 20 s at most, counted from the
+   request even for a sender queued behind another, then answers `409` with `starting: true`
+   and types nothing: send it again. A sender refused so does not become the agent's requester.
    Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
