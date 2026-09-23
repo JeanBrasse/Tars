@@ -139,6 +139,26 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
   // action sits with the room's state rather than inside the log.
   const open = snapshot.threads.find(t => t.state === 'open') ?? null;
 
+  // The composer's start and start all: the Dashboard's start, an empty prompt
+  // resuming the last session, one agent after another as that button runs
+  // one per click. A CLI still running in the terminal counts as started:
+  // nothing was typed into it, and nothing needed to be.
+  const startAgents = useCallback(async (ids: string[]) => {
+    const failed: Array<{ id: string; error: string }> = [];
+    for (const id of ids) {
+      try {
+        const r = await window.electronAPI?.agent?.start({ id, prompt: '', options: { resume: true } });
+        if (!r) failed.push({ id, error: 'the app did not answer' });
+        else if (!r.success && !r.cliRunning) failed.push({ id, error: r.error ?? 'it did not start' });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // IPC wraps the main-process message; keep only the part worth reading.
+        failed.push({ id, error: message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '') });
+      }
+    }
+    return failed;
+  }, []);
+
   // The header needs one number out of the fleet, so it depends on that number
   // and not on the list it came from. The fleet list is re-read on every status
   // tick, and republishing the header each time is work nobody asked for even
@@ -195,6 +215,7 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
         agents={agents}
         loading={loading}
         onPost={post}
+        onStart={startAgents}
       />
       <TeamRail
         agents={agents}
@@ -235,6 +256,9 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [sendStartedAt, setSendStartedAt] = useState<number | null>(null);
   const [sendError, setSendError] = useState<{ message: string; detail: string | null } | null>(null);
+  /** Files that could not be picked or uploaded. Not a failed send: the
+   *  message was never sent, so it has its own words in the composer. */
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
 
@@ -422,7 +446,7 @@ export default function ChatPage() {
    *  is the only side with the file: the renderer never sees its bytes. */
   const handleAttach = async () => {
     setAttaching(true);
-    setSendError(null);
+    setAttachError(null);
     try {
       const r = await window.electronAPI?.overseer?.attachFiles();
       if (!r) return;
@@ -435,9 +459,9 @@ export default function ChatPage() {
       }
       // An error alongside successful uploads is the partial case: some landed,
       // some did not, and the ones that did not are named.
-      if (r.error) setSendError({ message: r.error, detail: null });
+      if (r.error) setAttachError(r.error);
     } catch (err) {
-      setSendError({ message: err instanceof Error ? err.message : String(err), detail: null });
+      setAttachError(err instanceof Error ? err.message : String(err));
     } finally {
       setAttaching(false);
     }
@@ -460,6 +484,7 @@ export default function ChatPage() {
     setDraft('');
     setAttachments([]);
     setSendError(null);
+    setAttachError(null);
     setSending(true);
     setSendStartedAt(Date.now());
     // Shown straight away. The backend only records the user's turn once the
@@ -666,14 +691,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          {sendError && (
-            <div className="flex items-start gap-2 border border-danger/40 bg-card px-3 py-2 shrink-0">
-              <AlertCircle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
-              <p className="text-[11.5px] text-danger flex-1">{sendError.message}</p>
-              {sendError.detail && <p className="text-[10px] font-mono text-muted-foreground">{sendError.detail}</p>}
-            </div>
-          )}
-
           <Composer
             value={draft}
             onChange={setDraft}
@@ -681,7 +698,11 @@ export default function ChatPage() {
             // Only a broken gateway disables it now. A turn in flight does
             // not: what you write while Hermes is answering is queued.
             disabled={gatewayState !== 'ok'}
-            sendLabel={sending ? 'queue' : 'send'}
+            busy={sending}
+            // In the card now, as the room's is: the words and the files are
+            // put back in it, so the line that says so sits with them.
+            error={sendError ? (sendError.detail ? `${sendError.message} (${sendError.detail})` : sendError.message) : null}
+            attachError={attachError}
             attachments={attachments}
             onAttach={handleAttach}
             onRemoveAttachment={p => setAttachments(prev => prev.filter(a => a.path !== p))}
