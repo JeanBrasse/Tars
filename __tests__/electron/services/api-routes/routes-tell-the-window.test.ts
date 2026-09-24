@@ -85,6 +85,8 @@ vi.mock('../../../../electron/services/memory-hub', () => ({
 vi.mock('../../../../electron/services/acp/delegate', () => ({
   canDelegateOverAcp: () => true,
   delegateOverAcp: vi.fn(async () => ({ ok: true, transport: 'acp', text: 'done', toolCalls: [] })),
+  // Stop and delete end the agent's delegated runs too (#6): none run here.
+  stopAcpRuns: async () => 0,
 }));
 
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
