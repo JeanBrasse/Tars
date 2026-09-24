@@ -1,5 +1,224 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`Chats removed and /auth repeated, recorded before D1 part 3 > Telegram: /auth tried again and again: each wrong token refused, the right one saves the chat once 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "telegramAuthorizedChatIds": [
+        "42",
+        "99",
+      ],
+      "telegramChatId": "99",
+    },
+  ],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "❌ *Invalid token*
+
+_Check your token in Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "❌ *Invalid token*
+
+_Check your token in Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "❌ *Invalid token*
+
+_Check your token in Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "✅ *Authentication Successful!*
+
+Your chat ID \`99\` has been authorized.
+
+You can now use all bot commands. Type /help to see available commands.",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "✅ *Authentication Successful!*
+
+Your chat ID \`99\` has been authorized.
+
+You can now use all bot commands. Type /help to see available commands.",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "❌ *Invalid token*
+
+_Check your token in Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "📊 *Agents Status*
+
+🟢 *Running (2):*
+  👑 *Lead*
+      🛠 planning
+      💬 _Plan the release_
+  🤖 *Dune*
+      📁 \`atlas\` | 🛠 react, typescript...
+      💬 _Rebase onto main and fix the conflicts i..._
+
+🟡 *Waiting (1):*
+  🥷 *Dove*
+      📁 \`atlas\`
+
+🔴 *Error (1):*
+  🪓 *Err*
+      📁 \`orion\`
+
+⚪ *Idle (2):*
+  🐸 *Rest*
+      📁 \`orion\`
+  🤖 *Done*
+      📁 \`orion\`
+",
+      "to": "99",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Chats removed and /auth repeated, recorded before D1 part 3 > Telegram: a chat removed while the orchestrator works on its message is forgotten, and the answer goes where a notice goes 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "77",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "👑 Dune is rebasing onto main, Dove waits on you.",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "A notice from Tars.",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🔒 *Authentication Required*
+
+You are not authorized to use this bot.
+
+Use \`/auth <token>\` with your secret token to authenticate.
+
+_Get the token from Tars Settings → Telegram_",
+      "to": "77",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Telegram: [FROM TELEGRAM chat_id=77 - Use send_telegram MCP tool with chat_id="77" to respond!] what is everyone doing?
+",
+    },
+  ],
+}
+`;
+
 exports[`Files, launches and replies that fail, recorded before D1 > Slack: a reply that fails to post fails the start, and gives the launch up 1`] = `
 {
   "fleet": [

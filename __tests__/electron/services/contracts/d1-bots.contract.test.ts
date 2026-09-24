@@ -696,3 +696,35 @@ describe('Files, launches and replies that fail, recorded before D1', () => {
     expect(outcome()).toMatchSnapshot();
   });
 });
+
+// ── A chat removed mid-flight, and /auth again and again ─────────────────
+//
+// Asked by the Audit's gate of #176 before part 3 moves the adapters: two
+// guards the contract did not hold, recorded on main's bots like the rest.
+
+describe('Chats removed and /auth repeated, recorded before D1 part 3', () => {
+  it('Telegram: a chat removed while the orchestrator works on its message is forgotten, and the answer goes where a notice goes', async () => {
+    settings.telegramAuthorizedChatIds = ['42', '77'];
+    liveCli('agent-orch');
+    await telegram(dm('what is everyone doing?', 77));
+    // Noah removes chat 77 in Settings while the orchestrator works.
+    settings.telegramAuthorizedChatIds = ['42'];
+    const orch = agents.get('agent-orch')!;
+    orch.output = ['  ⎿  (MCP) 6 agents\n', 'Dune is rebasing onto main, Dove waits on you.\n'];
+    sendSuperAgentResponseToTelegram(orch);
+    sendTelegramMessage('A notice from Tars.');
+    await telegram(dm('and now?', 77));
+    await settle();
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Telegram: /auth tried again and again: each wrong token refused, the right one saves the chat once', async () => {
+    for (const token of ['wrong-1', 'wrong-2', 'wrong-3']) await telegram(dm(`/auth ${token}`, 99));
+    await telegram(dm('/auth', 99));
+    await telegram(dm('/auth tg-auth-token', 99));
+    await telegram(dm('/auth tg-auth-token', 99));
+    await telegram(dm('/auth wrong-4', 99));
+    await telegram(dm('/status', 99));
+    expect(outcome()).toMatchSnapshot();
+  });
+});
