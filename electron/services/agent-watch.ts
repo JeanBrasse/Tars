@@ -54,7 +54,8 @@ import { scheduleTick } from '../utils/agents-tick';
  * without a Stop, the idle prompt.
  */
 type News = {
-  kind: 'outcome' | 'wait' | 'ended';
+  /** `stopped`: its terminal went before the background work it left reported. */
+  kind: 'outcome' | 'wait' | 'ended' | 'stopped';
   status: AgentStatus['status'];
   reason?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
@@ -262,7 +263,33 @@ let interruptWatch: ReturnType<typeof setInterval> | undefined;
 
 /** Started by main.ts at startup, beside the dialog probe. */
 export function watchInterruptedTurns(): void {
-  if (!interruptWatch) interruptWatch = setInterval(endInterruptedTurns, INTERRUPT_WATCH_MS);
+  if (!interruptWatch) {
+    interruptWatch = setInterval(() => {
+      endInterruptedTurns();
+      settleBackgroundLinks();
+    }, INTERRUPT_WATCH_MS);
+  }
+}
+
+/**
+ * A link kept for background work whose terminal is gone: stopped, restarted,
+ * deleted or crashed before that work reported. The work ended with the
+ * terminal, and the requester, told "you will be told again", would otherwise
+ * never be (the Audit's gate of #152). Told now, and the link spent. Looked at
+ * on the same tick as interrupted turns, since a stop sends no event here.
+ */
+function settleBackgroundLinks(): void {
+  for (const child of agents.values()) {
+    const link = child.requestedBy;
+    if (!link?.backgroundLeft?.length) continue;
+    const live = !!link.ptyId && child.ptyId === link.ptyId && ptyProcesses.has(link.ptyId);
+    if (live) continue;
+    console.log(`[agent-watch] ${child.name || child.id} is gone before its background work reported: telling ${link.agentId}`);
+    child.requestedBy = undefined;
+    saveAgents();
+    if (link.agentId === child.id) continue;
+    handToRequester(link.agentId, child, { kind: 'stopped', status: child.status, background: link.backgroundLeft, handedAt: child.workHandedAt });
+  }
 }
 
 export function stopWatchingInterruptedTurns(): void {
@@ -372,15 +399,33 @@ function queueForRequester(child: AgentStatus, news: News): void {
   // at 18:55:59, back at 18:56:15, done at 18:56:52), and the link is what
   // tells its requester about the real end. That rest is reported as what it
   // is instead.
+  //
+  // Counted from the current session too, not only from the hand-over: a
+  // resumed session copies the earlier conversation with its old timestamps,
+  // and a background start from before it registered is not running in it
+  // (the Audit's gate of #152).
   if (news.kind === 'ended' && child.workHandedAt) {
-    const left = pendingBackgroundWork(child, Date.parse(child.workHandedAt));
+    const since = Math.max(...[child.workHandedAt, child.sessionRegisteredAt]
+      .map(t => (t ? Date.parse(t) : NaN)).filter(Number.isFinite));
+    const left = pendingBackgroundWork(child, since);
     if (left.length > 0) news = { ...news, background: left };
   }
   if (news.kind !== 'wait' && !news.background) {
     child.requestedBy = undefined;
     saveAgents();
+  } else if (news.background) {
+    // Kept, and marked: if the terminal goes before that work reports, the
+    // requester is told so (settleBackgroundLinks) instead of nothing.
+    child.requestedBy = { ...link, backgroundLeft: news.background };
+    saveAgents();
   }
 
+  handToRequester(link.agentId, child, news);
+}
+
+/** What a requester is owed about a child: held for it, and typed in when it is free. */
+function handToRequester(requesterId: string, child: AgentStatus, news: News): void {
+  const link = { agentId: requesterId };
   const requester = agents.get(link.agentId);
   if (!requester || !requester.ptyId) return;
 
@@ -638,6 +683,10 @@ function describeNews(news: News): string {
   if (news.kind === 'ended' && news.background?.length) {
     return `has ended its turn with background work still running (${news.background.map(envelopeValue).join(', ')}): `
       + 'it resumes when that work reports, and you will be told again when it is done';
+  }
+  if (news.kind === 'stopped') {
+    return `was stopped before its background work reported (${(news.background ?? []).map(envelopeValue).join(', ')}): `
+      + 'that work ended with its terminal, and there is nothing more to wait for';
   }
   if (news.kind === 'ended') return 'has finished its turn';
   if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';

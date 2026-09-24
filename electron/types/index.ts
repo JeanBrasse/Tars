@@ -128,7 +128,13 @@ export interface AgentStatus {
    * It is also consumed once delivered, so it can never speak for a later
    * piece of work. Read by services/agent-watch.ts.
    */
-  requestedBy?: { agentId: string; ptyId: string };
+  requestedBy?: {
+    agentId: string;
+    ptyId: string;
+    /** Set while the link is kept for work the agent left running in the
+     *  background: its requester is owed one more note (agent-watch). */
+    backgroundLeft?: string[];
+  };
   currentSessionId?: string;
   /**
    * The last session this agent ran, kept so it can be resumed.
