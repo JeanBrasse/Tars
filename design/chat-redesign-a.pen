@@ -19177,6 +19177,277 @@
         },
         {
           "type": "frame",
+          "id": "mipj2",
+          "name": "state SEND NOW, NOT INTERRUPTED",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Hpops",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "zN13C",
+                  "name": "baseline +1",
+                  "padding": [
+                    2,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Zn7Rn",
+                      "name": "cap",
+                      "fill": "$text-muted",
+                      "content": "SEND NOW, NOT INTERRUPTED",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "MHi3H",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "The turn went on: the message is in its queue like any other, and the strip says so until you write again or pick someone else.",
+                  "lineHeight": 1.3333333333333333,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "O885dg",
+              "name": "Composer",
+              "clip": true,
+              "width": "fill_container",
+              "fill": "$surface",
+              "cornerRadius": "$radius",
+              "stroke": "$border-strong",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "wf4kb",
+                  "name": "notice",
+                  "width": "fill_container",
+                  "height": 36,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24,
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "BZ6gv",
+                      "name": "status",
+                      "fill": "$status-running",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "zGAx7",
+                      "name": "words",
+                      "fill": "$text-secondary",
+                      "content": "backend’s turn was not interrupted, so this message went into its queue instead.",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f4I5U8",
+                  "name": "body",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    12,
+                    24,
+                    12,
+                    16
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "F3FWzK",
+                      "name": "field",
+                      "width": "fill_container",
+                      "height": 28,
+                      "padding": [
+                        4,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "a4pKZf",
+                          "name": "placeholder",
+                          "fill": "$text-muted",
+                          "content": "Write to backend",
+                          "lineHeight": 1.4285714285714286,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "cSfR8",
+                          "layoutPosition": "absolute",
+                          "x": 8,
+                          "y": 4,
+                          "name": "caret",
+                          "fill": "$text-primary",
+                          "width": 1,
+                          "height": 20
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xvVJ0",
+                      "name": "row",
+                      "width": "fill_container",
+                      "height": 32,
+                      "gap": 4,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "mMnjs",
+                          "name": "attach",
+                          "width": 32,
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "B3ajK",
+                              "name": "plus",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "XorIV",
+                          "name": "picker backend",
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "gap": 8,
+                          "padding": [
+                            0,
+                            8
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "mfyKm",
+                              "name": "status",
+                              "fill": "$status-running",
+                              "width": 8,
+                              "height": 8
+                            },
+                            {
+                              "type": "text",
+                              "id": "PazBA",
+                              "name": "label",
+                              "fill": "$text-primary",
+                              "content": "backend",
+                              "lineHeight": 1.3333333333333333,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "Oef6U",
+                              "name": "chevron-down",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "zRlbL",
+                          "name": "sp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "gZMRr",
+                          "name": "send",
+                          "opacity": 0.4,
+                          "width": 32,
+                          "height": 32,
+                          "fill": "$accent",
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "T7QUK",
+                              "name": "arrow-up",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "arrow-up",
+                              "library": "lucide",
+                              "fill": "$on-accent"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
           "id": "P0jeti",
           "name": "state ROOM STOPPED",
           "width": "fill_container",
@@ -22864,6 +23135,277 @@
                             {
                               "type": "icon",
                               "id": "h5zKB",
+                              "name": "arrow-up",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "arrow-up",
+                              "library": "lucide",
+                              "fill": "$on-accent"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "IaIwb",
+          "name": "state SEND NOW, NOT INTERRUPTED",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "JFx5z",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "qDii7",
+                  "name": "baseline +1",
+                  "padding": [
+                    2,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "jc2cn",
+                      "name": "cap",
+                      "fill": "$text-muted",
+                      "content": "SEND NOW, NOT INTERRUPTED",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "PLLPA",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "The turn went on: the message is in its queue like any other, and the strip says so until you write again or pick someone else.",
+                  "lineHeight": 1.3333333333333333,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "T92Ud",
+              "name": "Composer",
+              "clip": true,
+              "width": "fill_container",
+              "fill": "$surface",
+              "cornerRadius": "$radius",
+              "stroke": "$border-strong",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "IwRqP",
+                  "name": "notice",
+                  "width": "fill_container",
+                  "height": 36,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24,
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "H8Lxv",
+                      "name": "status",
+                      "fill": "$status-running",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "g4SRgg",
+                      "name": "words",
+                      "fill": "$text-secondary",
+                      "content": "backend’s turn was not interrupted, so this message went into its queue instead.",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "W2NI3J",
+                  "name": "body",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    12,
+                    24,
+                    12,
+                    16
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "iGl0E",
+                      "name": "field",
+                      "width": "fill_container",
+                      "height": 28,
+                      "padding": [
+                        4,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "tEy7s",
+                          "name": "placeholder",
+                          "fill": "$text-muted",
+                          "content": "Write to backend",
+                          "lineHeight": 1.4285714285714286,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "I0dztQ",
+                          "layoutPosition": "absolute",
+                          "x": 8,
+                          "y": 4,
+                          "name": "caret",
+                          "fill": "$text-primary",
+                          "width": 1,
+                          "height": 20
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "exjQy",
+                      "name": "row",
+                      "width": "fill_container",
+                      "height": 32,
+                      "gap": 4,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "M0R3oz",
+                          "name": "attach",
+                          "width": 32,
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "Ya8WE",
+                              "name": "plus",
+                              "width": 16,
+                              "height": 16,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "hTFLL",
+                          "name": "picker backend",
+                          "height": 32,
+                          "cornerRadius": "$radius",
+                          "gap": 8,
+                          "padding": [
+                            0,
+                            8
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "T5bRTD",
+                              "name": "status",
+                              "fill": "$status-running",
+                              "width": 8,
+                              "height": 8
+                            },
+                            {
+                              "type": "text",
+                              "id": "wW8QB",
+                              "name": "label",
+                              "fill": "$text-primary",
+                              "content": "backend",
+                              "lineHeight": 1.3333333333333333,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "V9iqz",
+                              "name": "chevron-down",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "f5AYOq",
+                          "name": "sp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "antNj",
+                          "name": "send",
+                          "opacity": 0.4,
+                          "width": 32,
+                          "height": 32,
+                          "fill": "$accent",
+                          "cornerRadius": "$radius",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "momI9",
                               "name": "arrow-up",
                               "width": 16,
                               "height": 16,
@@ -36335,7 +36877,7 @@
                                           "id": "fZxqU",
                                           "name": "note",
                                           "fill": "$text-muted",
-                                          "content": "delivered to orchestrator, backend, frontend and qa · not sent to audit",
+                                          "content": "not sent to audit · delivered to orchestrator, backend, frontend and qa",
                                           "lineHeight": 1.6666666666666667,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 12,
@@ -54296,7 +54838,7 @@
                                           "id": "LtubI",
                                           "name": "note",
                                           "fill": "$text-muted",
-                                          "content": "delivered to orchestrator, backend and qa · held for frontend · not sent to docs",
+                                          "content": "not sent to docs · held for frontend · delivered to orchestrator, backend and qa",
                                           "lineHeight": 1.6666666666666667,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 12,
@@ -70401,7 +70943,7 @@
                               "id": "PcgO6",
                               "name": "mono",
                               "fill": "$text-muted",
-                              "content": "listRooms: no answer in 10 s",
+                              "content": "bus:listRooms, no answer in 10 s",
                               "lineHeight": 1.4545454545454546,
                               "fontFamily": "$font-mono",
                               "fontSize": 11,
@@ -92462,7 +93004,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "A delivered line carries no tag. Your own line always lists its receipts, all of them.",
+              "content": "A delivered line carries no tag. Your own line always lists its receipts, all of them, what went wrong first; past four names, a list names three and counts the rest.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -105363,7 +105905,7 @@
                                           "id": "RhMqN",
                                           "name": "note",
                                           "fill": "$text-muted",
-                                          "content": "delivered to orchestrator, backend, frontend and qa · not sent to audit",
+                                          "content": "not sent to audit · delivered to orchestrator, backend, frontend and qa",
                                           "lineHeight": 1.6666666666666667,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 12,
@@ -123336,7 +123878,7 @@
                                           "id": "hc1Fi",
                                           "name": "note",
                                           "fill": "$text-muted",
-                                          "content": "delivered to orchestrator, backend and qa · held for frontend · not sent to docs",
+                                          "content": "not sent to docs · held for frontend · delivered to orchestrator, backend and qa",
                                           "lineHeight": 1.6666666666666667,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 12,
@@ -139456,7 +139998,7 @@
                               "id": "a9yrGA",
                               "name": "mono",
                               "fill": "$text-muted",
-                              "content": "listRooms: no answer in 10 s",
+                              "content": "bus:listRooms, no answer in 10 s",
                               "lineHeight": 1.4545454545454546,
                               "fontFamily": "$font-mono",
                               "fontSize": 11,
@@ -161710,7 +162252,7 @@
                               "id": "d3s1er",
                               "name": "note",
                               "fill": "$text-muted",
-                              "content": "delivered to orchestrator and backend · queued for qa · held for frontend · not sent to docs",
+                              "content": "not sent to docs · held for frontend · queued for qa · delivered to orchestrator and backend",
                               "lineHeight": 1.6666666666666667,
                               "fontFamily": "$font-ui",
                               "fontSize": 12,
@@ -163390,7 +163932,7 @@
                   "id": "osov1",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "Where an exchange ends without you: at its limit, or replaced by a newer message.",
+                  "content": "Where an exchange ends without you: at its limit, replaced by a newer message, or closed when the members changed.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -163535,6 +164077,71 @@
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
                           "content": "Late answers to the old exchange are refused, and say so.",
+                          "lineHeight": 1.6666666666666667,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "XUAhU",
+                  "name": "thread notice row",
+                  "width": "fill_container",
+                  "padding": [
+                    8,
+                    24,
+                    8,
+                    72
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "mqHc9",
+                      "name": "thread notice",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "oYoOI",
+                          "name": "baseline +1",
+                          "padding": [
+                            2,
+                            0,
+                            0,
+                            0
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "X6gki",
+                              "name": "PanelCaption",
+                              "fill": "$text-secondary",
+                              "content": "CLOSED WHEN THE MEMBERS CHANGED",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 10,
+                              "fontWeight": "normal",
+                              "letterSpacing": 0.8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "ml0xN",
+                          "name": "line",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "What was still queued for it was dropped, and late answers to it are refused. What you write starts a new exchange.",
                           "lineHeight": 1.6666666666666667,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -165329,7 +165936,7 @@
                               "id": "n64DhX",
                               "name": "note",
                               "fill": "$text-muted",
-                              "content": "delivered to orchestrator and backend · queued for qa · held for frontend · not sent to docs",
+                              "content": "not sent to docs · held for frontend · queued for qa · delivered to orchestrator and backend",
                               "lineHeight": 1.6666666666666667,
                               "fontFamily": "$font-ui",
                               "fontSize": 12,
@@ -167009,7 +167616,7 @@
                   "id": "raPhv",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "Where an exchange ends without you: at its limit, or replaced by a newer message.",
+                  "content": "Where an exchange ends without you: at its limit, replaced by a newer message, or closed when the members changed.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -167154,6 +167761,71 @@
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
                           "content": "Late answers to the old exchange are refused, and say so.",
+                          "lineHeight": 1.6666666666666667,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "b146k",
+                  "name": "thread notice row",
+                  "width": "fill_container",
+                  "padding": [
+                    8,
+                    24,
+                    8,
+                    72
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "LRZFz",
+                      "name": "thread notice",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pjAqs",
+                          "name": "baseline +1",
+                          "padding": [
+                            2,
+                            0,
+                            0,
+                            0
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "BtfGa",
+                              "name": "PanelCaption",
+                              "fill": "$text-secondary",
+                              "content": "CLOSED WHEN THE MEMBERS CHANGED",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 10,
+                              "fontWeight": "normal",
+                              "letterSpacing": 0.8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "re4ai",
+                          "name": "line",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "What was still queued for it was dropped, and late answers to it are refused. What you write starts a new exchange.",
                           "lineHeight": 1.6666666666666667,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
