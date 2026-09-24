@@ -21,6 +21,7 @@ export { GitSection } from './GitSection';
 export { NotificationsSection } from './NotificationsSection';
 export { TelegramSection } from './TelegramSection';
 export { SlackSection } from './SlackSection';
+export { DiscordSection } from './DiscordSection';
 export { SocialDataSection } from './SocialDataSection';
 export { TasmaniaSection } from './TasmaniaSection';
 export { TasmaniaIcon } from './TasmaniaIcon';
