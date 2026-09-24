@@ -1,9 +1,9 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ArrowRight, FileText, Hand, Image as ImageIcon, Send, Square, UserMinus, UserPlus, Users } from 'lucide-react';
+import { ArrowDown, ArrowRight, FileText, Hand, Image as ImageIcon, Send, Square, UserMinus, UserPlus, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { MetaChip } from '@/components/ui';
+import { Button, MetaChip } from '@/components/ui';
 import type { BusAttachment, BusSystemKind } from '@/types/electron';
 import { fileSize } from './bus-view';
 import type { DayItem, MessageItem, NoticeItem, SystemItem } from './bus-view';
@@ -19,7 +19,7 @@ import type { DayItem, MessageItem, NoticeItem, SystemItem } from './bus-view';
  * (the renderer puts both 4px under their line's centre).
  */
 
-function Time({ children }: { children: ReactNode }) {
+export function Time({ children }: { children: ReactNode }) {
   return <span className="w-9 shrink-0 font-mono text-[11px] leading-5 text-text-muted">{children}</span>;
 }
 
@@ -131,6 +131,21 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
           <p key={i} className="text-[12px] leading-5 text-text-secondary">{line}</p>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Under a thread while you read above its bottom: how many messages arrived
+ *  below, and the way back to them. The room's and Hermes's. */
+export function NewBelowBand({ count, onJump }: { count: number; onJump: () => void }) {
+  if (count <= 0) return null;
+  return (
+    <div className="h-10 shrink-0 flex items-center px-6 bg-secondary border-t border-border">
+      <span className="w-12 shrink-0 flex items-center"><ArrowDown className="w-3 h-3 text-foreground" /></span>
+      <span className="flex-1 min-w-0 text-[12px] leading-4 text-foreground">
+        {count} new message{count === 1 ? '' : 's'} below
+      </span>
+      <Button size="sm" onClick={onJump}>jump to latest</Button>
     </div>
   );
 }

@@ -1,28 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle } from 'lucide-react';
-import { BrandSpinner, Button, PageHeader } from '@/components/ui';
+import { BrandSpinner, PageHeader } from '@/components/ui';
 import { ChatSidebar, ReachSection, TeamSection } from '@/components/Chat/ChatSidebar';
 import type { ConversationItem } from '@/components/Chat/ChatSidebar';
 import { RoomHead } from '@/components/Chat/RoomHead';
 import { RoomView } from '@/components/Chat/RoomView';
+import { EchoRunRow, HermesBanner, HermesMessageRow, HermesView, PendingTurnRow } from '@/components/Chat/HermesView';
+import type { ActionState, GatewayState } from '@/components/Chat/HermesView';
 import { currentThread } from '@/components/Chat/bus-view';
 import { lastSpoke, needsRows, roomCounts, roomState, timeLabel } from '@/components/Chat/team-view';
-import type { RowActionId } from '@/components/Chat/team-view';
+import type { RoomState, RowActionId } from '@/components/Chat/team-view';
 import { useBusRoom, useBusRooms } from '@/hooks/useBus';
 import { useRoomAgents } from '@/hooks/useRoomAgents';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { useElectronAgents } from '@/hooks/useElectron';
 import { useDesktopApi } from '@/hooks/useDesktopApi';
-import { MessageCard } from '@/components/Overseer/MessageCard';
-import { EchoRun } from '@/components/Overseer/EchoRun';
 import { groupThread } from '@/components/Overseer/echo-runs';
-import { FleetRail } from '@/components/Overseer/FleetRail';
 import { Composer } from '@/components/Overseer/Composer';
-import { AttachmentChips } from '@/components/Overseer/AttachmentChips';
 import { WatchControls } from '@/components/Overseer/WatchControls';
 import { describeHermesFailure } from '@/components/KanbanBoard/hermes-error';
 import type { OverseerAction, OverseerAttachment, OverseerFleetSnapshot, OverseerMessage, OverseerSettings } from '@/types/electron';
@@ -32,6 +29,8 @@ import type { OverseerAction, OverseerAttachment, OverseerFleetSnapshot, Oversee
 interface PendingMessage {
   text: string;
   attachments: OverseerAttachment[];
+  /** When it was written, for its row's time. */
+  at: string;
 }
 
 /**
@@ -49,74 +48,9 @@ interface PendingMessage {
  * back by the backend - never a reconstructed one.
  */
 
-type GatewayState = 'checking' | 'ok' | 'not_configured' | 'needs_sign_in' | 'unreachable';
-
 /** The room id the contract gives the super chat. */
 const GLOBAL_ID = 'global';
 
-interface ActionState {
-  sending: boolean;
-  resolved: 'sent' | 'cancelled' | null;
-  error: string | null;
-}
-
-
-function GatewayBanner({ state, detail, onRetry }: { state: GatewayState; detail: string | null; onRetry: () => void }) {
-  if (state === 'ok' || state === 'checking') return null;
-  const copy: Record<Exclude<GatewayState, 'ok' | 'checking'>, { message: string; cta: string }> = {
-    not_configured: {
-      message: 'No Hermes gateway is configured yet, so Hermes cannot watch the fleet or answer here.',
-      cta: 'Set up Hermes',
-    },
-    needs_sign_in: {
-      message: 'Hermes needs you signed in before it can watch the fleet or answer here.',
-      cta: 'Sign in to Hermes',
-    },
-    unreachable: {
-      message: 'Hermes is not answering, so it cannot watch the fleet or answer here right now.',
-      cta: 'Open Hermes settings',
-    },
-  };
-  const { message, cta } = copy[state];
-  return (
-    <div className="flex items-start gap-2.5 border border-border bg-card px-3.5 py-3 mb-2.5 shrink-0">
-      <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-foreground">{message}</p>
-        {detail && <p className="mt-1 text-[10.5px] font-mono text-muted-foreground break-all">{detail}</p>}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <Link
-          href="/settings?section=hermes"
-          className="inline-flex items-center justify-center h-[26px] px-2.5 text-xs font-medium border border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          {cta}
-        </Link>
-        <Button size="sm" onClick={onRetry}>Retry</Button>
-      </div>
-    </div>
-  );
-}
-
-function PendingTurn({ startedAt }: { startedAt: number }) {
-  const [seconds, setSeconds] = useState(() => Math.round((Date.now() - startedAt) / 1000));
-  useEffect(() => {
-    const id = setInterval(() => setSeconds(Math.round((Date.now() - startedAt) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [startedAt]);
-  return (
-    <div className="border border-border bg-card px-3.5 py-3 flex items-center gap-3.5">
-      {/* 16px put the 4x4 mark's cells under four pixels each with sub-pixel
-          gaps, so the travelling square read as a smudge rather than the mark.
-          26 is the smallest size the grid stays legible at. */}
-      <BrandSpinner size={26} label="Hermes is checking the fleet and composing a reply" />
-      <p className="text-[11.5px] text-muted-foreground">
-        Hermes is checking the fleet and composing a reply. This usually takes about 30 seconds
-        {seconds > 0 && ` · ${seconds}s`}.
-      </p>
-    </div>
-  );
-}
 
 /** The composer's start and start all: the Dashboard's start, an empty prompt
  *  resuming the last session, one agent after another as that button runs one
@@ -244,6 +178,8 @@ export default function ChatPage() {
   const [attachError, setAttachError] = useState<string | null>(null);
 
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+  /** The runs of empty replies opened, by their key. */
+  const [openEchoes, setOpenEchoes] = useState<Set<string>>(() => new Set());
 
   /** The global room is Hermes: the super chat that watches every project and
    *  is already what this page was. A project room is the other level. */
@@ -275,8 +211,6 @@ export default function ChatPage() {
   const needs = useMemo(() => needsRows(roomAgents, bus.snapshot.deliveries), [roomAgents, bus.snapshot.deliveries]);
   const spoke = useMemo(() => lastSpoke(bus.snapshot.messages), [bus.snapshot.messages]);
 
-  const threadRef = useRef<HTMLDivElement>(null);
-  const autoScroll = useRef(true);
 
   // False for the pre-render and for the hydration pass, true right after: see useDesktopApi.
   const hasApi = useDesktopApi(api => api.overseer);
@@ -357,6 +291,20 @@ export default function ChatPage() {
         ? `every ${Math.round(settings.watchIntervalMs / 3600000)}h`
         : `every ${Math.round(settings.watchIntervalMs / 60000)} min`)
     : 'periodically';
+
+  // Hermes's head says its watch, as a room's says the room's state. Frame:
+  // `Chat · A · Hermes · states` > `THE WATCH`.
+  const lastAnswer = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'overseer') return timeLabel(messages[i].timestamp);
+    }
+    return '';
+  }, [messages]);
+  const hermesHead: RoomState = gatewayState === 'ok' || gatewayState === 'checking'
+    ? (paused
+        ? { tone: 'hollow', word: 'paused', detail: 'no check-ins until you resume', relaying: false }
+        : { tone: 'running', word: 'watching', detail: `checks in ${cadenceLabel}`, relaying: false })
+    : { tone: 'error', word: 'not connected', detail: lastAnswer ? `last answer at ${lastAnswer}` : undefined, relaying: false };
 
   /**
    * The list on the left. A room's line is counted from the fleet the app
@@ -448,17 +396,6 @@ export default function ChatPage() {
     });
   }, [hasApi]);
 
-  useEffect(() => {
-    if (!threadRef.current || !autoScroll.current) return;
-    threadRef.current.scrollTop = threadRef.current.scrollHeight;
-  }, [messages, sending]);
-
-  const handleThreadScroll = () => {
-    const el = threadRef.current;
-    if (!el) return;
-    autoScroll.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-  };
-
   const togglePause = async () => {
     setPauseBusy(true);
     try {
@@ -505,7 +442,7 @@ export default function ChatPage() {
     // disabled for the whole thirty seconds. It queues instead, and the queue
     // drains as soon as the turn in flight finishes.
     if (sending) {
-      setQueued(q => [...q, { text, attachments: staged }]);
+      setQueued(q => [...q, { text, attachments: staged, at: new Date().toISOString() }]);
       setDraft('');
       setAttachments([]);
       return;
@@ -519,7 +456,7 @@ export default function ChatPage() {
     // Shown straight away. The backend only records the user's turn once the
     // whole round trip finishes, which takes about thirty seconds, so what you
     // had just typed simply was not on screen until Hermes answered.
-    setPendingSend({ text, attachments: staged });
+    setPendingSend({ text, attachments: staged, at: new Date().toISOString() });
     const giveBack = () => { setDraft(text); setAttachments(staged); };
     try {
       const r = await window.electronAPI?.overseer?.send(text, staged);
@@ -564,9 +501,12 @@ export default function ChatPage() {
     if (!message?.action) return;
     setActionStates(prev => ({ ...prev, [actionId]: { sending: false, resolved: null, error: null } }));
     const r = await window.electronAPI?.overseer?.confirmAction({ action: message.action, approve: false });
+    const at = new Date().toISOString();
     setActionStates(prev => ({
       ...prev,
-      [actionId]: { sending: false, resolved: r?.success ? 'cancelled' : null, error: r?.success ? null : (r?.error ?? 'Could not cancel.') },
+      [actionId]: r?.success
+        ? { sending: false, resolved: 'cancelled', error: null, at }
+        : { sending: false, resolved: null, error: r?.error ?? 'Could not cancel.', failedOn: 'cancel', at },
     }));
   };
 
@@ -576,11 +516,12 @@ export default function ChatPage() {
     setActionStates(prev => ({ ...prev, [actionId]: { sending: true, resolved: null, error: null } }));
     const action: OverseerAction = message.action;
     const r = await window.electronAPI?.overseer?.confirmAction({ action, approve: true });
+    const at = new Date().toISOString();
     setActionStates(prev => ({
       ...prev,
       [actionId]: r?.success
-        ? { sending: false, resolved: 'sent', error: null }
-        : { sending: false, resolved: null, error: r?.error ?? 'Could not send.' },
+        ? { sending: false, resolved: 'sent', error: null, at }
+        : { sending: false, resolved: null, error: r?.error ?? 'Could not send.', failedOn: 'send', at },
     }));
     if (r?.success) void loadFleet();
   };
@@ -607,19 +548,6 @@ export default function ChatPage() {
       <PageHeader
         title="Chat"
         subtitle="Hermes watches every project. Each project has a room where its agents talk to each other and to you."
-        actions={roomId ? undefined : (
-          <>
-            <div className="h-8 flex items-center gap-1.5 border border-border px-2.5">
-              <span className={`w-1.5 h-1.5 shrink-0 ${paused ? 'bg-status-idle' : 'bg-status-running'}`} />
-              <span className="font-mono text-[10.5px] text-muted-foreground">
-                {paused ? 'paused' : 'watching'}
-              </span>
-            </div>
-            <Button className="font-mono" onClick={togglePause} disabled={pauseBusy}>
-              {paused ? 'resume' : 'pause'}
-            </Button>
-          </>
-        )}
       />
 
       <div className="flex-1 min-h-0 flex gap-2.5">
@@ -659,20 +587,33 @@ export default function ChatPage() {
             onOpenTerminal={() => router.push('/')}
           />
         ) : (
-        <>
-        {/* No max width: the rail is a fixed 332 and the frame's 830 is simply
-            what is left beside it at 1440. Capping the conversation as well
-            left a hole between the two on any wider window, so the rail
-            stopped meeting the right edge the header still reached. */}
         <div className="flex-1 min-w-0 flex flex-col gap-2.5 min-h-0">
-          <GatewayBanner state={gatewayState} detail={gatewayDetail} onRetry={checkGateway} />
-
-          <div ref={threadRef} onScroll={handleThreadScroll} className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5">
+          <HermesView
+            head={(
+              <RoomHead
+                title="Hermes"
+                path="overseer"
+                state={hermesHead}
+                rules={false}
+                action={gatewayState === 'ok' || gatewayState === 'checking'
+                  ? {
+                      label: paused ? 'resume' : 'pause',
+                      title: paused ? 'Hermes checks in again on its own.' : 'Hermes stops checking in until you resume it.',
+                      onClick: () => { void togglePause(); },
+                      disabled: pauseBusy,
+                    }
+                  : undefined}
+              />
+            )}
+            banner={<HermesBanner state={gatewayState} detail={gatewayDetail} onRetry={checkGateway} />}
+            messageCount={messages.length + queued.length + (pendingSend ? 1 : 0)}
+            rowCount={messages.length + queued.length + (pendingSend ? 1 : 0) + (sending ? 1 : 0)}
+          >
             {historyLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <BrandSpinner size={30} label="Loading the conversation" />
               </div>
-            ) : messages.length === 0 && agentCount === 0 ? (
+            ) : messages.length === 0 && !pendingSend && queued.length === 0 && agentCount === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
                 <p className="text-sm text-foreground">Hermes has nothing to watch yet.</p>
                 <p className="text-xs text-muted-foreground max-w-sm">
@@ -680,7 +621,7 @@ export default function ChatPage() {
                   what it sees here.
                 </p>
               </div>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && !pendingSend && queued.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
                 <p className="text-sm text-foreground">Nothing said yet.</p>
                 <p className="text-xs text-muted-foreground max-w-sm">
@@ -690,16 +631,29 @@ export default function ChatPage() {
             ) : (
               groupThread(messages).map(item => (
                 item.kind === 'echo' ? (
-                  <EchoRun
+                  <EchoRunRow
                     key={item.key}
-                    messages={item.messages}
-                    fleet={fleet}
-                    actionStates={actionStates}
-                    onCancelAction={handleCancelAction}
-                    onSendAction={handleSendAction}
-                  />
+                    count={item.messages.length}
+                    open={openEchoes.has(item.key)}
+                    onToggle={() => setOpenEchoes(prev => {
+                      const next = new Set(prev);
+                      if (next.has(item.key)) next.delete(item.key); else next.add(item.key);
+                      return next;
+                    })}
+                  >
+                    {item.messages.map(m => (
+                      <HermesMessageRow
+                        key={m.id}
+                        message={m}
+                        fleet={fleet}
+                        actionState={m.action ? actionStates[m.action.actionId] : undefined}
+                        onCancelAction={handleCancelAction}
+                        onSendAction={handleSendAction}
+                      />
+                    ))}
+                  </EchoRunRow>
                 ) : (
-                  <MessageCard
+                  <HermesMessageRow
                     key={item.message.id}
                     message={item.message}
                     fleet={fleet}
@@ -710,30 +664,22 @@ export default function ChatPage() {
                 )
               ))
             )}
-            {queued.map((m, i) => (
-              <div key={`q-${i}`} className="border border-border bg-card px-3.5 py-3 opacity-60">
-                <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you · queued</p>
-                {m.text && (
-                  <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
-                    {m.text}
-                  </p>
-                )}
-                <AttachmentChips attachments={m.attachments} />
-              </div>
-            ))}
             {pendingSend && (
-              <div className="border border-border bg-card px-3.5 py-3">
-                <p className="font-mono text-[10.5px] text-muted-foreground mb-1.5">you</p>
-                {pendingSend.text && (
-                  <p className="text-[12.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
-                    {pendingSend.text}
-                  </p>
-                )}
-                <AttachmentChips attachments={pendingSend.attachments} />
-              </div>
+              <HermesMessageRow
+                message={{ role: 'user', text: pendingSend.text, timestamp: pendingSend.at, attachments: pendingSend.attachments }}
+                fleet={fleet}
+              />
             )}
-            {sending && sendStartedAt && <PendingTurn startedAt={sendStartedAt} />}
-          </div>
+            {sending && sendStartedAt && <PendingTurnRow startedAt={sendStartedAt} />}
+            {queued.map((m, i) => (
+              <HermesMessageRow
+                key={`q-${i}`}
+                message={{ role: 'user', text: m.text, timestamp: m.at, attachments: m.attachments }}
+                fleet={fleet}
+                queued
+              />
+            ))}
+          </HermesView>
 
           {settingsError && (
             <div className="flex items-start gap-2 border border-warning/40 bg-card px-3 py-2 shrink-0">
@@ -767,9 +713,8 @@ export default function ChatPage() {
           />
         </div>
 
-        <FleetRail fleet={fleet} />
-        </>
         )}
+
       </div>
     </div>
   );

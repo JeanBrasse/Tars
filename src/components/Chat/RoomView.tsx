@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, Paperclip } from 'lucide-react';
-import { AttachmentTile, BrandSpinner, Button, ImageTile } from '@/components/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Paperclip } from 'lucide-react';
+import { AttachmentTile, BrandSpinner, ImageTile } from '@/components/ui';
 import type { BusAttachment, BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
-import { DayRow, MessageRow, NoticeRow, SystemRow } from './RoomRow';
+import { DayRow, MessageRow, NewBelowBand, NoticeRow, SystemRow } from './RoomRow';
+import { useFollowBottom } from '@/hooks/useFollowBottom';
 import { NeedsStrip } from './NeedsStrip';
 import { RoomComposer } from './RoomComposer';
 import type { ComposerFailure, ComposerTarget } from './RoomComposer';
@@ -81,13 +82,6 @@ export function RoomView({
   const picker = useRef<HTMLInputElement>(null);
   const previews = useRef<string[]>([]);
 
-  const logRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
-  /** Where the last scroll left the view, to tell a move up from a resize. */
-  const lastTop = useRef(0);
-  const seenCount = useRef(0);
-  const [unseen, setUnseen] = useState(0);
 
   const thread = useMemo(() => currentThread(threads), [threads]);
   const items = useMemo(
@@ -97,48 +91,9 @@ export function RoomView({
   const needs = useMemo(() => needsRows(agents, deliveries), [agents, deliveries]);
   const messageCount = messages.length;
 
-  // The thread starts under the head; once it is longer than the panel, the
-  // view follows the newest message, unless you scrolled up to read, in which
-  // case what arrived is counted in a band under the thread instead.
-  //
-  // A layout effect, before the browser paints and scrolls: a thread that
-  // first spans two days gains a day line at its top, the browser's scroll
-  // anchoring moves the view to keep its place, and the scroll event that
-  // follows used to find the view off the bottom and stop following it.
-  useLayoutEffect(() => {
-    const el = logRef.current;
-    const added = messageCount - seenCount.current;
-    seenCount.current = messageCount;
-    if (!el) return;
-    if (stickToBottom.current) {
-      el.scrollTop = el.scrollHeight;
-    } else if (added > 0) {
-      setUnseen(n => n + added);
-    }
-  }, [messageCount, items.length]);
-
-  // A new message is not the only thing that moves the bottom. A receipt
-  // arrives under your line after the line itself, the strip above gains a
-  // row, the window is resized: while you are at the bottom, any change to
-  // the thread's height or to its content's keeps you there.
-  useEffect(() => {
-    const el = logRef.current;
-    const content = contentRef.current;
-    if (!el || !content || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
-    });
-    observer.observe(el);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, []);
-
-  const jumpToLatest = () => {
-    const el = logRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    stickToBottom.current = true;
-    setUnseen(0);
-  };
+  // The thread starts under the head and follows the newest message once it
+  // is longer than the panel, unless you scrolled up to read.
+  const { box, content, onScroll, unseen, jumpToLatest } = useFollowBottom(messageCount, items.length);
 
   const onNeed = (action: NeedAction, agentId: string) => {
     if (action === 'send it') onRelease?.(agentId);
@@ -288,28 +243,17 @@ export function RoomView({
         <NeedsStrip rows={needs} onAction={onNeed} />
         <div className="relative flex-1 min-h-0 flex flex-col">
           <div
-            ref={logRef}
+            ref={box}
             data-thread
             // The hook e2e/chat-rooms-behaviour.spec.ts finds the thread by
             // (QA's test of #180).
             data-room-thread
-            onScroll={() => {
-              const el = logRef.current;
-              if (!el) return;
-              // Only you moving the view up stops the following. The view also
-              // scrolls when the thread changes size under it, and a scroll
-              // event that lands after the next change of size finds it off the
-              // bottom through no move of yours.
-              if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) stickToBottom.current = true;
-              else if (el.scrollTop < lastTop.current) stickToBottom.current = false;
-              lastTop.current = el.scrollTop;
-              if (stickToBottom.current && unseen) setUnseen(0);
-            }}
+            onScroll={onScroll}
             className="flex-1 min-h-0 overflow-y-auto flex flex-col"
           >
             {/* The content in a box of its own, so its growth can be observed:
                 the scrolling box above keeps its own size whatever it holds. */}
-            <div ref={contentRef} className="flex-1 flex flex-col pt-2 pb-3">
+            <div ref={content} className="flex-1 flex flex-col pt-2 pb-3">
               {loading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <BrandSpinner size={26} label="Reading the room" />
@@ -339,15 +283,7 @@ export function RoomView({
             </div>
           )}
         </div>
-        {unseen > 0 && (
-          <div className="h-10 shrink-0 flex items-center px-6 bg-secondary border-t border-border">
-            <span className="w-12 shrink-0 flex items-center"><ArrowDown className="w-3 h-3 text-foreground" /></span>
-            <span className="flex-1 min-w-0 text-[12px] leading-4 text-foreground">
-              {unseen} new message{unseen === 1 ? '' : 's'} below
-            </span>
-            <Button size="sm" onClick={jumpToLatest}>jump to latest</Button>
-          </div>
-        )}
+        <NewBelowBand count={unseen} onJump={jumpToLatest} />
       </div>
 
       <RoomComposer
