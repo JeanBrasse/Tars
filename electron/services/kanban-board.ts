@@ -37,6 +37,8 @@
 
 import * as fs from 'fs';
 import { writeAtomicSync } from '../utils/secret-file';
+import { envelopeValue } from '../utils/envelope-value';
+import type { MessageSender } from '../core/pty-manager';
 
 export const PARKED = 'scheduled';
 /** The lane a parked task sits on: Tars's, taken by no agent yet. */
@@ -445,6 +447,21 @@ export async function deleteTask(h: Conn, caller: KanbanCaller, idOrPrefix: stri
 
 // ── The local board, moved once ───────────────────────────────────────────
 
+/**
+ * Whether a task is still exactly as it was created: `ready` on the Tars lane,
+ * with no event but its creation (measured on Hermes 0.21.1: a fresh task has
+ * one event, `created`; a park, a claim or a drag each adds one). Null when the
+ * gateway could not say.
+ */
+async function asCreated(h: KanbanHermes, id: string): Promise<boolean | null> {
+  const r = await h.get(id);
+  if (!r.success) return null;
+  const detail = r.detail as { task?: HermesTask; events?: Array<{ kind?: string }> } | null;
+  if (!detail?.task || !Array.isArray(detail.events)) return null;
+  return detail.task.status === 'ready' && detail.task.assignee === TARS_LANE
+    && detail.events.length === 1 && detail.events[0]?.kind === 'created';
+}
+
 interface LocalTask {
   id: string;
   title: string;
@@ -493,8 +510,17 @@ export async function migrateLocalTasks(h: KanbanHermes, file: string, record: s
       if (!created.success) { out.errors.push(`${t.id}: ${created.error || 'refused'}`); continue; }
       const task = taskIn(created.task);
       if (task.status !== PARKED) {
-        const parked = await h.update(task.id, { status: PARKED });
-        if (!parked.success) { out.errors.push(`${t.id}: created as ${task.id} but not parked: ${parked.error || 'refused'}`); continue; }
+        // The key hands back the task a previous run created, whatever became
+        // of it since: claimed, run by Hermes, dragged back, done. Hermes would
+        // take `scheduled` from ready and running and clear the claim and the
+        // worker (the Backend's gate of #171, W1). Only a task still as it was
+        // created, with no event but `created`, is one this migration owes a park.
+        const untouched = await asCreated(h, task.id);
+        if (untouched === null) { out.errors.push(`${t.id}: created as ${task.id}, and Hermes did not say what became of it`); continue; }
+        if (untouched) {
+          const parked = await h.update(task.id, { status: PARKED });
+          if (!parked.success) { out.errors.push(`${t.id}: created as ${task.id} but not parked: ${parked.error || 'refused'}`); continue; }
+        }
       }
       moved[t.id] = task.id;
       out.moved++;
@@ -505,3 +531,52 @@ export async function migrateLocalTasks(h: KanbanHermes, file: string, record: s
   }
   return out;
 }
+
+// ── What is typed into an agent, and when ─────────────────────────────────
+
+/**
+ * A task handed to an agent, typed as the agent that handed it.
+ *
+ * Its title and description are an agent's words, not Tars's: typed under
+ * "Message from Tars:" they read as Tars's, which is the forged line #128's gate
+ * found (the Backend's gate of #171). So the sender is the agent whose token made
+ * the call, and the title, which shares a line with the words Tars adds, goes
+ * through envelopeValue and cannot start a line of its own. The writer strips
+ * every control character from the rest.
+ */
+export function handOffNote(task: AgentTask, by: KanbanCaller): { message: string; sender: MessageSender } {
+  return {
+    message: [
+      `Kanban task ${task.id} is yours, handed to you by ${envelopeValue(by.name || by.agentId)}: ${envelopeValue(task.title)}`,
+      task.description,
+      `Report progress with update_task_progress and finish with mark_task_done (task_id ${task.id}).`,
+    ].filter(Boolean).join('\n\n'),
+    sender: { kind: 'agent', id: by.agentId, name: by.name },
+  };
+}
+
+/** A task that landed on a project, told to its orchestrator as the agent that filed it. One line. */
+export function landingNote(filer: KanbanCaller, task: AgentTask): { message: string; sender: MessageSender } {
+  return {
+    message: `Filed a task on this project's Kanban board: ${envelopeValue(task.title)} (${task.id}). It is parked, and Hermes will not take it. Hand it to one of your agents with assign_task (task_id ${task.id}, agent_id), or leave it for Noah.`,
+    sender: { kind: 'agent', id: filer.agentId, name: filer.name },
+  };
+}
+
+/**
+ * When a hand-off (work) or a note may be typed into an agent.
+ *
+ * Never mid-turn and never into a permission dialog: both wait for the agent to
+ * rest. A stopped agent is started for work, as handing work to it means, and
+ * never for a note.
+ */
+export function whenToType(
+  agent: { cliRunning: boolean; status?: string; waitingReason?: string },
+  purpose: 'work' | 'note',
+): 'now' | 'at-rest' | 'start' | 'skip' {
+  if (!agent.cliRunning) return purpose === 'work' ? 'start' : 'skip';
+  if (agent.status === 'running') return 'at-rest';
+  if (agent.status === 'waiting' && agent.waitingReason === 'permission') return 'at-rest';
+  return 'now';
+}
+

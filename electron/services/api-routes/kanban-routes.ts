@@ -9,10 +9,13 @@ import {
   addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, updateHermesTask,
 } from '../hermes-client';
 import {
-  claimTask, completeTask, createParkedTask, deleteTask, getTask, listTasks, moveTask, reportProgress,
+  claimTask, completeTask, createParkedTask, deleteTask, getTask, handOffNote, landingNote, listTasks, moveTask,
+  reportProgress, whenToType,
   type AgentColumn, type AgentTask, type KanbanCaller, type KanbanHermes, type KanbanResult,
 } from '../kanban-board';
 import { performDispatch } from './agent-routes';
+import { agentStatusEmitter } from '../agent-events';
+import type { MessageSender } from '../../core/pty-manager';
 import type { AgentStatus } from '../../types';
 
 /**
@@ -54,41 +57,76 @@ function answer<T>(sendJson: SendJson, r: KanbanResult<T>, key: string): void {
 
 const COLUMNS: AgentColumn[] = ['backlog', 'planned', 'ongoing', 'done'];
 
+interface Owed { message: string; sender: MessageSender; purpose: 'work' | 'note'; what: string }
+
 /**
- * The task, typed into the agent it was handed to, as Tars: the line before it
- * says it is from Tars, which is who verified the hand-off. Only into a CLI
- * that runs: performDispatch starts a session otherwise, with the task as its
- * first prompt, which is what handing work to an agent means.
+ * What waits for an agent to rest: a hand-off or a note found it mid-turn or
+ * in a permission dialog, where nothing is typed (the Backend's gate of #171).
+ * Its next status change hands over one, as agent-watch hands over one note
+ * per pass, and the next the one after. Bounded, like every queue a person
+ * may have to act on before it moves.
  */
-function handOff(target: AgentStatus, task: AgentTask, by: KanbanCaller, ctx: RouteContext): void {
-  const message = [
-    `Kanban task ${task.id} is yours, handed to you by ${by.name || by.agentId}: ${task.title}`,
-    task.description,
-    `Report progress with update_task_progress and finish with mark_task_done (task_id ${task.id}).`,
-  ].filter(Boolean).join('\n\n');
+const owed = new Map<string, Owed[]>();
+const MAX_OWED = 20;
+
+function stateOf(agent: AgentStatus): { cliRunning: boolean; status?: string; waitingReason?: string } {
+  const pty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  return { cliRunning: cliRunningIn(pty), status: agent.status, waitingReason: agent.waitingReason };
+}
+
+/** Type it now, start the agent with it, hold it until the agent rests, or say nothing. */
+function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): void {
+  const when = whenToType(stateOf(agent), item.purpose);
+  if (when === 'skip') return;
+  if (when === 'at-rest') {
+    const list = owed.get(agent.id) ?? [];
+    if (list.length >= MAX_OWED) {
+      console.warn(`[kanban] ${agent.name || agent.id} already has ${MAX_OWED} kanban notes waiting; not holding ${item.what}`);
+      return;
+    }
+    list.push(item);
+    owed.set(agent.id, list);
+    return;
+  }
   let status = 0; let error = '';
-  void performDispatch(target, { message, from: 'Tars', sender: { kind: 'tars' } }, ctx, (data, code) => {
+  void performDispatch(agent, { message: item.message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender }, ctx, (data, code) => {
     status = code ?? 200;
     error = (data as { error?: string })?.error ?? '';
   }).then(() => {
-    if (status >= 400) console.warn(`[kanban] ${task.id} is claimed for ${target.name || target.id} but did not reach it: ${error}`);
-  }, err => console.warn(`[kanban] ${task.id} is claimed for ${target.name || target.id} but did not reach it:`, err));
+    if (status >= 400) console.warn(`[kanban] ${item.what} did not reach ${agent.name || agent.id}: ${error}`);
+  }, err => console.warn(`[kanban] ${item.what} did not reach ${agent.name || agent.id}:`, err));
+}
+
+let routeCtx: RouteContext | null = null;
+agentStatusEmitter.on('fleet-change', (agentId: string) => {
+  const list = owed.get(agentId);
+  if (!list?.length || !routeCtx) return;
+  const agent = agents.get(agentId);
+  if (!agent) { owed.delete(agentId); return; }
+  if (whenToType(stateOf(agent), list[0].purpose) !== 'now') return;
+  const item = list.shift()!;
+  if (!list.length) owed.delete(agentId);
+  typeInto(agent, item, routeCtx);
+});
+
+/** The task, handed to an agent of the same project: claimed on its lane, then typed as the agent that handed it. */
+function handOff(target: AgentStatus, task: AgentTask, by: KanbanCaller, ctx: RouteContext): void {
+  typeInto(target, { ...handOffNote(task, by), purpose: 'work', what: `kanban task ${task.id}, claimed for it,` }, ctx);
 }
 
 /**
  * A task that lands on a project is told to that project's orchestrator, whose
- * job is to hand work out: only one that runs now, never started for a note.
+ * job is to hand work out, as the agent that filed it: only one whose CLI runs,
+ * never started for a note, and never mid-turn.
  */
 function tellOrchestrator(creator: KanbanCaller, task: AgentTask, ctx: RouteContext): void {
   const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === creator.projectPath && a.id !== creator.agentId);
-  const pty = orchestrator?.ptyId ? ptyProcesses.get(orchestrator.ptyId) : undefined;
-  if (!orchestrator || !cliRunningIn(pty)) return;
-  const message = `${creator.name || creator.agentId} filed a task on this project's Kanban board: ${task.title} (${task.id}). It is parked, and Hermes will not take it. Hand it to one of your agents with assign_task (task_id ${task.id}, agent_id), or leave it for Noah.`;
-  void performDispatch(orchestrator, { message, from: 'Tars', sender: { kind: 'tars' } }, ctx, () => undefined)
-    .catch(err => console.warn('[kanban] the orchestrator was not told of a new task:', err));
+  if (!orchestrator) return;
+  typeInto(orchestrator, { ...landingNote(creator, task), purpose: 'note', what: `the note of kanban task ${task.id}` }, ctx);
 }
 
 export function registerKanbanRoutes(app: RouteApp, ctx: RouteContext): void {
+  routeCtx = ctx;
   // POST /api/kanban/generate
   app.post('/api/kanban/generate', async (req, sendJson) => {
     const { prompt, availableProjects } = req.body as {
