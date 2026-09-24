@@ -70943,7 +70943,7 @@
                               "id": "PcgO6",
                               "name": "mono",
                               "fill": "$text-muted",
-                              "content": "listRooms: no answer in 10 s",
+                              "content": "bus:listRooms, no answer in 10 s",
                               "lineHeight": 1.4545454545454546,
                               "fontFamily": "$font-mono",
                               "fontSize": 11,
@@ -139998,7 +139998,7 @@
                               "id": "a9yrGA",
                               "name": "mono",
                               "fill": "$text-muted",
-                              "content": "listRooms: no answer in 10 s",
+                              "content": "bus:listRooms, no answer in 10 s",
                               "lineHeight": 1.4545454545454546,
                               "fontFamily": "$font-mono",
                               "fontSize": 11,
@@ -163932,7 +163932,7 @@
                   "id": "osov1",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "Where an exchange ends without you: at its limit, or replaced by a newer message.",
+                  "content": "Where an exchange ends without you: at its limit, replaced by a newer message, or closed when the members changed.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -164077,6 +164077,71 @@
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
                           "content": "Late answers to the old exchange are refused, and say so.",
+                          "lineHeight": 1.6666666666666667,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "XUAhU",
+                  "name": "thread notice row",
+                  "width": "fill_container",
+                  "padding": [
+                    8,
+                    24,
+                    8,
+                    72
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "mqHc9",
+                      "name": "thread notice",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "oYoOI",
+                          "name": "baseline +1",
+                          "padding": [
+                            2,
+                            0,
+                            0,
+                            0
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "X6gki",
+                              "name": "PanelCaption",
+                              "fill": "$text-secondary",
+                              "content": "CLOSED WHEN THE MEMBERS CHANGED",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 10,
+                              "fontWeight": "normal",
+                              "letterSpacing": 0.8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "ml0xN",
+                          "name": "line",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "What was still queued for it was dropped, and late answers to it are refused. What you write starts a new exchange.",
                           "lineHeight": 1.6666666666666667,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -167551,7 +167616,7 @@
                   "id": "raPhv",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "Where an exchange ends without you: at its limit, or replaced by a newer message.",
+                  "content": "Where an exchange ends without you: at its limit, replaced by a newer message, or closed when the members changed.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -167696,6 +167761,71 @@
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
                           "content": "Late answers to the old exchange are refused, and say so.",
+                          "lineHeight": 1.6666666666666667,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "b146k",
+                  "name": "thread notice row",
+                  "width": "fill_container",
+                  "padding": [
+                    8,
+                    24,
+                    8,
+                    72
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "LRZFz",
+                      "name": "thread notice",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pjAqs",
+                          "name": "baseline +1",
+                          "padding": [
+                            2,
+                            0,
+                            0,
+                            0
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "BtfGa",
+                              "name": "PanelCaption",
+                              "fill": "$text-secondary",
+                              "content": "CLOSED WHEN THE MEMBERS CHANGED",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 10,
+                              "fontWeight": "normal",
+                              "letterSpacing": 0.8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "re4ai",
+                          "name": "line",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "What was still queued for it was dropped, and late answers to it are refused. What you write starts a new exchange.",
                           "lineHeight": 1.6666666666666667,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
