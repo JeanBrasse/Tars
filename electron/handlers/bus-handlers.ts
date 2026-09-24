@@ -1,16 +1,19 @@
 import { ipcMain } from 'electron';
 import { agents } from '../core/agent-manager';
 import { getOverseerHistory } from '../services/overseer';
-import { setBusDeliveredHook, setBusDroppedHook } from '../services/agent-watch';
+import { setBusDeliveredHook, setBusDroppedHook, setBusHeldHook } from '../services/agent-watch';
 import {
   announceDelivered,
   announceDropped,
+  announceHeld,
   announceSystem,
   broadcastPublication,
   closeAndAnnounce,
   fanOutDeliveries,
   releaseNotSent,
+  sendNow,
 } from '../services/bus-delivery';
+import { forgetStaged, stagedFor, stageFiles } from '../services/bus-files';
 import {
   appendMessage,
   closeThread,
@@ -25,7 +28,7 @@ import {
 import type { BusMessage } from '../types';
 
 /**
- * The bus over IPC: five calls and three pushes, exactly the contract.
+ * The bus over IPC: the calls below and three pushes, exactly the contract.
  *
  * The renderer never polls: a message, a delivery or a thread change is pushed
  * on the channel of that name, the same way every other live update in the app
@@ -48,10 +51,19 @@ export function registerBusHandlers(): void {
 
   // And the other half: a message the queue gives up on stops saying queued.
   // The session it was held for is gone, and its messages belong to it.
-  setBusDroppedHook((targetAgentId, messageId) => {
+  setBusDroppedHook((targetAgentId, messageId, cause) => {
+    if (cause === 'terminal_exited') {
+      announceDropped(targetAgentId, messageId, 'no_live_session',
+        'its terminal exited before the draft in its field was sent or cleared, so it never went in');
+      return;
+    }
     announceDropped(targetAgentId, messageId, 'session_replaced',
       'the session this was queued for is gone, so it was not handed to the one that replaced it');
   });
+
+  // Taken by the terminal but waiting behind somebody's draft: `held`, not
+  // `queued`, because only that person can end this wait.
+  setBusHeldHook(announceHeld);
 
   // The global room is the super chat, and stays where it already lives: read
   // from the overseer's own conversation, never copied into the bus journal.
@@ -89,18 +101,22 @@ export function registerBusHandlers(): void {
     }
   });
 
-  ipcMain.handle('bus:postMessage', async (_event, params: { roomId: string; text: string; mentions?: string[] }) => {
+  ipcMain.handle('bus:postMessage', async (_event, params: { roomId: string; text: string; mentions?: string[]; attachments?: string[] }) => {
     try {
       const text = (params?.text ?? '').trim();
-      if (!text) return { success: false, error: 'A message needs text' };
 
-      const room = listRooms().find(r => r.id === params.roomId);
+      const room = listRooms().find(r => r.id === params?.roomId);
       if (!room) return { success: false, error: 'Room not found' };
       if (room.kind === 'global') {
         // The super chat has its own send, with its own model and its own
         // rules. Posting there through the bus would be a second way in.
         return { success: false, error: 'The global room is the super chat: send through overseer:send.' };
       }
+      // Files staged for this room, by id: one nobody staged refuses the
+      // message rather than send it without the file it talks about.
+      const files = stagedFor(room.id, params.attachments);
+      if ('error' in files) return { success: false, error: files.error };
+      if (!text && !files.attachments.length) return { success: false, error: 'A message needs text' };
 
       const { message, thread, supersededThreadId } = appendMessage({
         roomId: params.roomId,
@@ -109,7 +125,9 @@ export function registerBusHandlers(): void {
         authorName: 'Noah',
         text,
         mentions: params.mentions,
+        attachments: files.attachments,
       });
+      forgetStaged(files.attachments);
 
       const deliveries = fanOutDeliveries(message, room);
       broadcastPublication(message, thread, deliveries);
@@ -121,6 +139,38 @@ export function registerBusHandlers(): void {
     } catch (err) {
       console.error('[bus] postMessage failed:', err);
       return { success: false, error: err instanceof Error ? err.message : 'Failed to post' };
+    }
+  });
+
+  // Files for a room: the bytes the composer has, written where every agent
+  // can read them, and handed back by id for the message to come.
+  ipcMain.handle('bus:stageFiles', async (_event, params: { roomId: string; files: unknown }) => {
+    try {
+      const room = listRooms().find(r => r.id === params?.roomId);
+      if (!room) return { success: false, attachments: [], error: 'Room not found' };
+      if (room.kind === 'global') {
+        return { success: false, attachments: [], error: 'The global room is the super chat: attach through overseer:attachData.' };
+      }
+      const { attachments, errors } = stageFiles(room.id, params.files);
+      // Partial success is the honest answer, as for Hermes's attachments.
+      return {
+        success: attachments.length > 0 || errors.length === 0,
+        attachments,
+        ...(errors.length ? { error: errors.join(' ') } : {}),
+      };
+    } catch (err) {
+      console.error('[bus] stageFiles failed:', err);
+      return { success: false, attachments: [], error: err instanceof Error ? err.message : 'Failed to stage files' };
+    }
+  });
+
+  // Send now: interrupt a busy agent's turn, then type the message.
+  ipcMain.handle('bus:sendNow', async (_event, params: { roomId: string; agentId: string; text: string; attachments?: string[] }) => {
+    try {
+      return await sendNow(params ?? {});
+    } catch (err) {
+      console.error('[bus] sendNow failed:', err);
+      return { success: false, interrupted: false, error: err instanceof Error ? err.message : 'Failed to send' };
     }
   });
 
@@ -164,21 +214,26 @@ export function registerBusHandlers(): void {
       // Changing the members closes the anchor in flight, and that close is a
       // thread change like any other: it goes out on bus:thread so the Chat
       // page never has to infer it from a room that looks different.
-      if (result.superseded) closeAndAnnounce(result.superseded.id, 'members_changed', 'the room members changed');
+      const dropped = result.superseded
+        ? closeAndAnnounce(result.superseded.id, 'members_changed', 'the room members changed')
+        : 0;
 
       // Name who joined and who left, on the anchor it concerns. A room with
       // no thread yet has nothing to draw this into, so nothing is written.
+      // The ids, their names as of now and the count dropped go with it as
+      // data, so the page never parses the sentence.
       const nameOf = (id: string) => agents.get(id)?.name || id;
       const after = result.room.memberIds;
-      const added = after.filter(id => !before.includes(id)).map(nameOf);
-      const removed = before.filter(id => !after.includes(id)).map(nameOf);
+      const added = after.filter(id => !before.includes(id));
+      const removed = before.filter(id => !after.includes(id));
       const anchor = result.superseded ?? latestThreadOf(roomId);
       if (anchor && (added.length || removed.length)) {
         const said = [
-          added.length ? `added ${added.join(', ')}` : '',
-          removed.length ? `removed ${removed.join(', ')}` : '',
+          added.length ? `added ${added.map(nameOf).join(', ')}` : '',
+          removed.length ? `removed ${removed.map(nameOf).join(', ')}` : '',
         ].filter(Boolean).join(' and ');
-        announceSystem(roomId, anchor.id, 'members_changed', `You ${said}.`);
+        const names = Object.fromEntries([...added, ...removed].map(id => [id, nameOf(id)]));
+        announceSystem(roomId, anchor.id, 'members_changed', `You ${said}.`, { added, removed, names, dropped });
       }
       return { success: true, room: result.room };
     } catch (err) {

@@ -46,6 +46,7 @@ export interface RowTag {
 const KIND_FOR_STATE: Record<BusDeliveryState, RowKind> = {
   delivered: 'say',
   queued: 'queued',
+  held: 'queued',
   not_sent: 'unsent',
   dropped: 'dropped',
 };
@@ -79,6 +80,7 @@ const REASON_TEXT: Record<BusDeliveryReason, string> = {
   thread_stopped: 'you stopped the thread, so it was never written.',
   thread_replaced: 'a newer message replaced the thread it belonged to.',
   members_changed: 'the members changed, which closed the thread it belonged to.',
+  draft: 'somebody has a draft in that field: it goes in once that is sent or cleared.',
 };
 
 export function reasonText(delivery: BusDelivery): string {

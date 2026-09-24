@@ -9,11 +9,14 @@ import { agents } from '../core/agent-manager';
 import { getProvider } from '../providers';
 import type {
   AgentStatus,
+  BusAttachment,
   BusDelivery,
   BusDeliveryReason,
   BusMember,
+  BusMembersChanged,
   BusMessage,
   BusRoom,
+  BusRoomPending,
   BusRoomSnapshot,
   BusSystemKind,
   BusThread,
@@ -230,12 +233,15 @@ function memberIdsFor(roomId: string, kind: 'global' | 'project', projectPath?: 
 export function listRooms(): BusRoom[] {
   loadBus();
   const createdAt = state.savedAt;
+  const pendingByRoom = pendingCounts();
+  const none = (): BusRoomPending => ({ queued: 0, held: 0, notSent: 0 });
   const rooms: BusRoom[] = [{
     id: GLOBAL_ROOM_ID,
     kind: 'global',
     title: 'All projects',
     memberIds: memberIdsFor(GLOBAL_ROOM_ID, 'global'),
     createdAt,
+    pending: none(),
   }];
 
   const projectPaths = Array.from(new Set(
@@ -260,9 +266,32 @@ export function listRooms(): BusRoom[] {
       createdAt,
       lastMessageAt: last?.createdAt,
       lastMessagePreview: last ? `${last.authorName}: ${last.text.slice(0, 120)}` : undefined,
+      pending: pendingByRoom.get(id) ?? none(),
     });
   }
   return rooms;
+}
+
+/**
+ * What is still waiting in each room, by delivery state: one pass over the
+ * journal already in memory, so the conversation list can show every room's
+ * counts without a getRoom each. `delivered` and `dropped` are over.
+ */
+function pendingCounts(): Map<string, BusRoomPending> {
+  const roomOf = new Map(state.messages.map(m => [m.id, m.roomId]));
+  const counts = new Map<string, BusRoomPending>();
+  for (const delivery of state.deliveries) {
+    const key = delivery.state === 'queued' ? 'queued'
+      : delivery.state === 'held' ? 'held'
+        : delivery.state === 'not_sent' ? 'notSent'
+          : undefined;
+    const roomId = key && roomOf.get(delivery.messageId);
+    if (!key || !roomId) continue;
+    let count = counts.get(roomId);
+    if (!count) { count = { queued: 0, held: 0, notSent: 0 }; counts.set(roomId, count); }
+    count[key] += 1;
+  }
+  return counts;
 }
 
 export function getRoom(roomId: string): BusRoom | undefined {
@@ -283,6 +312,7 @@ export function appendSystemMessage(input: {
   threadId: string;
   systemKind: BusSystemKind;
   text: string;
+  systemData?: BusMembersChanged;
 }): BusMessage {
   loadBus();
   const message: BusMessage = {
@@ -295,6 +325,7 @@ export function appendSystemMessage(input: {
     text: input.text,
     mentions: [],
     systemKind: input.systemKind,
+    ...(input.systemData ? { systemData: input.systemData } : {}),
     createdAt: new Date().toISOString(),
   };
   state.messages.push(message);
@@ -318,6 +349,7 @@ function membersOf(room: BusRoom): BusMember[] {
       name: agent?.name || id,
       provider: agent?.provider,
       hasEndOfTurn: agent ? hasEndOfTurn(agent) : false,
+      canInterrupt: agent ? canInterrupt(agent) : false,
     };
   });
 }
@@ -434,6 +466,7 @@ export function appendMessage(input: {
   authorName: string;
   text: string;
   mentions?: string[];
+  attachments?: BusAttachment[];
 }): { message: BusMessage; thread: BusThread; supersededThreadId?: string } {
   loadBus();
   const now = new Date().toISOString();
@@ -460,6 +493,7 @@ export function appendMessage(input: {
     authorName: input.authorName,
     text: input.text,
     mentions: input.mentions ?? [],
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     createdAt: now,
   };
   state.messages.push(message);
@@ -598,6 +632,21 @@ export function hasEndOfTurn(agent: AgentStatus): boolean {
   }
 }
 
+/**
+ * Whether Tars can interrupt this agent's turn: a CLI on the claude binary,
+ * where Esc stops a running turn and the transcript records it
+ * (`[Request interrupted by user]`), which is how bus:sendNow knows it took.
+ * The other CLIs record no such thing Tars reads, so an Esc sent to one would
+ * be a guess.
+ */
+export function canInterrupt(agent: AgentStatus): boolean {
+  try {
+    return getProvider(agent.provider).binaryName === 'claude' && hasEndOfTurn(agent);
+  } catch {
+    return false;
+  }
+}
+
 export function recordDelivery(delivery: BusDelivery): BusDelivery {
   state.deliveries.push(delivery);
   scheduleSaveBus();
@@ -630,7 +679,7 @@ export function notSentFor(targetAgentId: string): BusDelivery[] {
 export function markDelivered(targetAgentId: string, messageId: string): BusDelivery | undefined {
   const delivery = state.deliveries.find(
     d => d.messageId === messageId && d.targetAgentId === targetAgentId
-      && (d.state === 'queued' || d.state === 'not_sent'),
+      && (d.state === 'queued' || d.state === 'held' || d.state === 'not_sent'),
   );
   if (!delivery) return undefined;
   delivery.state = 'delivered';
@@ -641,12 +690,39 @@ export function markDelivered(targetAgentId: string, messageId: string): BusDeli
   delivery.reasonCode = undefined;
   delivery.reason = undefined;
   delivery.refusedAt = undefined;
+  delivery.heldAt = undefined;
+  scheduleSaveBus();
+  return delivery;
+}
+
+/**
+ * A message its target's terminal took, but that waits behind what somebody
+ * has typed in that field: Tars never types across a draft. From `queued`, or
+ * from `not_sent` when a person released it by hand into such a field, which
+ * also takes it off the not-sent list so a second press sends nothing twice.
+ * It turns `delivered` when it goes in, or `dropped` if the terminal exits
+ * first; only the person at that keyboard ends the wait.
+ */
+export function markHeld(targetAgentId: string, messageId: string): BusDelivery | undefined {
+  const delivery = state.deliveries.find(
+    d => d.messageId === messageId && d.targetAgentId === targetAgentId
+      && (d.state === 'queued' || d.state === 'not_sent'),
+  );
+  if (!delivery) return undefined;
+  delivery.state = 'held';
+  delivery.reasonCode = 'draft';
+  delivery.reason = 'somebody has something typed in that terminal\'s field: it goes in once that is sent or cleared';
+  delivery.heldAt = new Date().toISOString();
+  delivery.refusedAt = undefined;
   scheduleSaveBus();
   return delivery;
 }
 
 /** Mark every delivery still queued for a thread as dropped, with its reason:
- *  what Stop means for messages that had not gone out yet. */
+ *  what Stop means for messages that had not gone out yet. A `held` one is
+ *  left alone: its terminal has already taken it and will type it once the
+ *  field is free, so calling it dropped would be the lie in the other
+ *  direction. */
 export function cancelQueuedDeliveries(
   threadId: string,
   reasonCode: BusDeliveryReason,
@@ -682,7 +758,8 @@ export function markDropped(
   reason: string,
 ): BusDelivery | undefined {
   const delivery = state.deliveries.find(
-    d => d.messageId === messageId && d.targetAgentId === targetAgentId && d.state === 'queued',
+    d => d.messageId === messageId && d.targetAgentId === targetAgentId
+      && (d.state === 'queued' || d.state === 'held'),
   );
   if (!delivery) return undefined;
   delivery.state = 'dropped';

@@ -307,7 +307,7 @@ the first path nobody thought to list.
 
 | Path | Holds | Reachable by an agent |
 |---|---|---|
-| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's token (`hermes-connection.json`) | Yes, deliberately: it is in every agent's `--add-dir` |
+| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's token (`hermes-connection.json`), and the files staged for a room (`bus-files/`, a week, then removed) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
 | `~/.tars-private/` | Noah's conversation with the super chat, and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700` |
 
 So what the kanban tools let an agent do on the Hermes board (since #183, delete

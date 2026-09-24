@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
+import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS, type WriteOrigin } from '../core/pty-manager';
 import { agentStatusEmitter, emitAgentStatus } from './agent-events';
 import { sessionStarting } from '../core/agent-launch';
 import { envelopeValue } from '../utils/envelope-value';
@@ -174,12 +174,40 @@ export function setBusDeliveredHook(hook: BusDeliveredHook | undefined): void {
 }
 
 /** Called when a queued bus message is given up on, so the journal stops
- *  saying `queued` for something that will never move. */
-type BusDroppedHook = (targetAgentId: string, messageId: string) => void;
+ *  saying `queued` for something that will never move. `session_gone`: the
+ *  session it was queued for ended before it went out. `terminal_exited`: the
+ *  terminal had taken it, held behind a draft, and exited first. */
+export type BusDropCause = 'session_gone' | 'terminal_exited';
+type BusDroppedHook = (targetAgentId: string, messageId: string, cause: BusDropCause) => void;
 let onBusDropped: BusDroppedHook | undefined;
 
 export function setBusDroppedHook(hook: BusDroppedHook | undefined): void {
   onBusDropped = hook;
+}
+
+/** Called when a bus message its target's terminal took waits for a person,
+ *  so the journal can say `held` rather than `queued` or `not_sent`. */
+type BusHeldHook = (targetAgentId: string, messageId: string) => void;
+let onBusHeld: BusHeldHook | undefined;
+
+export function setBusHeldHook(hook: BusHeldHook | undefined): void {
+  onBusHeld = hook;
+}
+
+/** What the terminal says about a bus message it took, told to the journal. */
+function busOrigin(agentId: string, messageId: string, onWritten: () => void): Pick<WriteOrigin, 'onWritten' | 'onHeld' | 'onDropped'> {
+  const safely = (what: string, hook: () => void) => () => {
+    try {
+      hook();
+    } catch (err) {
+      console.error(`[agent-watch] bus ${what} hook failed:`, err);
+    }
+  };
+  return {
+    onWritten: safely('delivery', onWritten),
+    onHeld: safely('held', () => onBusHeld?.(agentId, messageId)),
+    onDropped: safely('dropped', () => onBusDropped?.(agentId, messageId, 'terminal_exited')),
+  };
 }
 
 /**
@@ -562,13 +590,9 @@ function flush(requesterId: string): void {
       agentId: requesterId,
       from: message.authorName,
       sender: { kind: 'tars' },
-      onWritten: () => {
-        try {
-          onBusDelivered?.(requesterId, message.messageId);
-        } catch (err) {
-          console.error('[agent-watch] bus delivery hook failed:', err);
-        }
-      },
+      // Delivered when it lands, held while it waits for a person's draft,
+      // dropped if the terminal exits first: the row follows the message.
+      ...busOrigin(requesterId, message.messageId, () => onBusDelivered?.(requesterId, message.messageId)),
     });
     // Refused means the terminal is holding all it can. What was not taken
     // stays here, under this queue's own cap, rather than disappearing
@@ -599,7 +623,7 @@ function flush(requesterId: string): void {
 function abandonBusMessages(recipientId: string, held: Pending): void {
   for (const message of held.bus) {
     try {
-      onBusDropped?.(recipientId, message.messageId);
+      onBusDropped?.(recipientId, message.messageId, 'session_gone');
     } catch (err) {
       console.error('[agent-watch] bus dropped hook failed:', err);
     }
@@ -725,8 +749,8 @@ export async function releaseBusMessagesNow(
         sender: { kind: 'tars' },
         // Reported as it lands, not when it was handed over: a human pressed
         // send, and if their own unfinished draft is in the way the message
-        // waits for them rather than being written across it.
-        onWritten: () => onWritten?.(message.messageId),
+        // waits for them rather than being written across it, and reads held.
+        ...busOrigin(agentId, message.messageId, () => onWritten?.(message.messageId)),
       });
       if (outcome === 'refused') break;
       // Two different things, and they used to be one. `written` said a
@@ -754,4 +778,5 @@ export function resetAgentWatch(): void {
   delivering.clear();
   onBusDelivered = undefined;
   onBusDropped = undefined;
+  onBusHeld = undefined;
 }

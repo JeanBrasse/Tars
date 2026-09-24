@@ -44,7 +44,11 @@ function fakePty(): FakePty {
 }
 const spawns: FakePty[] = [];
 vi.mock('node-pty', () => ({ spawn: vi.fn(() => { const p = fakePty(); spawns.push(p); return p; }) }));
-vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() }, BrowserWindow: vi.fn(), Notification: vi.fn() }));
+const ipcHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+vi.mock('electron', () => ({
+  app: { getPath: () => os.tmpdir() }, BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }), Notification: vi.fn(),
+  ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => { ipcHandlers.set(channel, handler); } },
+}));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../../../electron/utils/agents-tick', () => ({ scheduleTick: vi.fn() }));
 vi.mock('../../../electron/services/agent-events', () => ({ emitAgentStatus: vi.fn() }));
@@ -109,4 +113,33 @@ describe('a dialog on the screen', () => {
     expect((terminal as unknown as FakePty).write).not.toHaveBeenCalled();
     resetTerminalInput(terminal);
   });
+});
+
+describe('send now, in front of a dialog the status has not caught up with', () => {
+  // #169's sendNow sends Esc to a busy claude. In a dialog an Esc is "No":
+  // measured with claude 2.1.280 in #174's proof, it rejected the tool use.
+  // The status can still say running for 1 to 648 ms after the dialog is drawn.
+  it('sends no Esc when the screen shows a dialog while the status still says running', async () => {
+    wireDialogProbe();
+    const terminal = spawnAgentPty({
+      binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 120, rows: 30, env: { CLAUDE_AGENT_ID: 'sn' },
+    });
+    ptyProcesses.set('pty-sn', terminal);
+    agents.set('sn', {
+      id: 'sn', name: 'SN', status: 'running', provider: 'claude', projectPath: '/sn-project', skills: [], output: [],
+      lastActivity: new Date().toISOString(), ptyId: 'pty-sn',
+    } as AgentStatus);
+    spawns.at(-1)!.emit(screen(['Do you want to proceed?', '❯ 1. Yes', ' Esc to cancel · Tab to amend']));
+    const { registerBusHandlers } = await import('../../../electron/handlers/bus-handlers');
+    registerBusHandlers();
+
+    const result = await ipcHandlers.get('bus:sendNow')!(null, { roomId: 'project:/sn-project', agentId: 'sn', text: 'NOT-INTO-THE-DIALOG' }) as { success: boolean; interrupted: boolean; error?: string };
+
+    expect(result.success, result.error).toBe(true);
+    expect(result.interrupted).toBe(false);
+    const written = (terminal as unknown as FakePty).write.mock.calls.map(c => String(c[0])).join('');
+    expect(written).not.toContain('\x1b');
+    expect(written).not.toContain('NOT-INTO-THE-DIALOG');
+    resetTerminalInput(terminal);
+  }, 20_000);
 });

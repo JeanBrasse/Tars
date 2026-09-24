@@ -128,6 +128,48 @@ export function registerOverseerHandlers(): void {
     };
   });
 
+  /**
+   * The same upload, without the dialog: a file pasted or dropped on the page.
+   * The renderer has its bytes (File.arrayBuffer()) and no path, so they come
+   * over IPC, capped as the dialog's files are.
+   */
+  ipcMain.handle('overseer:attachData', async (_event, files: unknown) => {
+    const conn = usableHermesConnection();
+    if (!conn) return { success: false, attachments: [], error: 'Hermes is not configured. Set it up in Settings.' };
+
+    const attachments: OverseerAttachment[] = [];
+    const errors: string[] = [];
+    for (const file of Array.isArray(files) ? files : []) {
+      const f = (file ?? {}) as { name?: unknown; mimeType?: unknown; data?: unknown };
+      const name = path.basename(typeof f.name === 'string' && f.name ? f.name : 'file');
+      if (!(f.data instanceof Uint8Array)) {
+        errors.push(`${name} came without its bytes.`);
+        continue;
+      }
+      if (f.data.byteLength > MAX_ATTACHMENT_BYTES) {
+        errors.push(`${name} is larger than ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MB.`);
+        continue;
+      }
+      try {
+        const uploaded = await uploadHermesAttachment(conn, {
+          name,
+          mimeType: typeof f.mimeType === 'string' && f.mimeType ? f.mimeType : mimeTypeFor(name),
+          base64: Buffer.from(f.data.buffer, f.data.byteOffset, f.data.byteLength).toString('base64'),
+          bytes: f.data.byteLength,
+        });
+        if (uploaded.success) attachments.push(uploaded.attachment);
+        else errors.push(`${name}: ${uploaded.error}`);
+      } catch (err) {
+        errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return {
+      success: attachments.length > 0 || errors.length === 0,
+      attachments,
+      ...(errors.length ? { error: errors.join(' ') } : {}),
+    };
+  });
+
   ipcMain.handle('overseer:history', async () => ({
     messages: getOverseerHistory(),
     busy: isOverseerBusy(),
