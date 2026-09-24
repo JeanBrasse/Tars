@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
  * fullscreen without telling its terminal. agent:resize is remembered even
  * when the agent has no terminal yet, and the next terminal is spawned at it:
  * the Audit measured a panel at 179x41 in front of a PTY still at 120x30.
+ * agent:get opens no terminal: an agent with none is shown as one.
  */
 
 const { tmpHome } = vi.hoisted(() => ({
@@ -195,22 +196,49 @@ describe('agent:get', () => {
     expect((await get('agent-plain')).output).toEqual(['kept ', 'tail']);
   });
 
-  it('creates the terminal of a stopped agent and hands over that terminal\'s screen, not the stored tail', async () => {
-    // After an app restart every agent comes back idle with no terminal and
-    // the last hundred chunks of its old one. Replayed onto the new shell they
-    // drew a fullscreen tail on a normal screen (QA, 2026-09-23).
+  // How agent:get fails an agent with no terminal, written before the code
+  // (QA's final-e2e reconnaissance, 2026-09-24):
+  // 1. It opens one. A login bash printed its banner into the agent's output,
+  //    and the Chat's fleet list read "idle · The default interactive shell
+  //    is now zsh." for every idle agent anyone had looked at.
+  // 2. It hands over the stored tail of the terminal the agent had before:
+  //    after an app restart, fragments of a fullscreen turn that died with
+  //    the app, which drew garbage on a normal screen (QA, 2026-09-23).
+  // 3. Its copy names a terminal that is gone, so the Dashboard's panel takes
+  //    the agent for live and skips its "(Session idle)" line.
+  it('opens no terminal for an agent that has none, and hands over nothing to replay', async () => {
     agents.set('agent-restored', {
       id: 'agent-restored', name: 'restored', status: 'idle', provider: 'claude', projectPath: project,
       skills: [], output: ['\x1b[H\r\x1b[40C\x1b[24B7', 'fragments of a turn that died with the app'],
       lastActivity: new Date().toISOString(),
     } as AgentStatus);
+    const pty = await import('node-pty');
+    const spawnsBefore = vi.mocked(pty.spawn).mock.calls.length;
 
     const got = await get('agent-restored');
 
-    expect(got.ptyId).toBeDefined();
-    expect(got.output).toHaveLength(1);
-    expect(got.output[0]).not.toContain('fragments of a turn');
-    expect(panelFrom(got, 120, 30).every(line => line === '')).toBe(true);
+    expect(vi.mocked(pty.spawn).mock.calls.length, 'a terminal was opened').toBe(spawnsBefore);
+    expect(ptyProcesses.size).toBe(0);
+    expect(got).toMatchObject({ output: [], cliRunning: false, leftFullscreen: false });
+    expect(got.ptyId).toBeUndefined();
+    const stored = agents.get('agent-restored')!;
+    expect(stored.ptyId).toBeUndefined();
+    expect(stored.output).toEqual(['\x1b[H\r\x1b[40C\x1b[24B7', 'fragments of a turn that died with the app']);
+  });
+
+  it('says there is no terminal when the one the agent names has gone', async () => {
+    agents.set('agent-gone', {
+      id: 'agent-gone', name: 'gone', status: 'completed', provider: 'claude', projectPath: project,
+      skills: [], output: ['the last words'], lastActivity: new Date().toISOString(), ptyId: 'pty-exited',
+    } as AgentStatus);
+    const pty = await import('node-pty');
+    const spawnsBefore = vi.mocked(pty.spawn).mock.calls.length;
+
+    const got = await get('agent-gone');
+
+    expect(vi.mocked(pty.spawn).mock.calls.length, 'a terminal was opened').toBe(spawnsBefore);
+    expect(got.ptyId, 'names a terminal that is gone').toBeUndefined();
+    expect(got.output).toEqual([]);
   });
 });
 
@@ -241,18 +269,19 @@ describe('the left-fullscreen flag', () => {
 });
 
 describe('agent:resize', () => {
-  it('remembers the size of a panel whose agent has no terminal yet, and the terminal agent:get then creates has it', async () => {
+  it('remembers the size of a panel whose agent has no terminal yet, and the next terminal it gets has it', async () => {
     agents.set('agent-unsized', {
       id: 'agent-unsized', name: 'unsized', status: 'idle', provider: 'claude', projectPath: project,
       skills: [], output: [], lastActivity: new Date().toISOString(),
     } as AgentStatus);
 
-    // The Dashboard sizes its panel before it asks for the agent, and asking
-    // is what creates the terminal.
+    // The Dashboard sizes its panel before the agent has a terminal: the one
+    // a start then opens, through initAgentPty, is spawned at that size.
     expect(await resize('agent-unsized', 179, 41)).toMatchObject({ success: false, error: 'PTY not found' });
-    const got = await get('agent-unsized');
+    const agent = agents.get('agent-unsized')!;
+    agent.ptyId = await initAgentPty(agent, null, vi.fn(), vi.fn());
 
-    const terminal = ptyProcesses.get(got.ptyId!) as unknown as FakePty;
+    const terminal = ptyProcesses.get(agent.ptyId) as unknown as FakePty;
     expect([terminal.cols, terminal.rows]).toEqual([179, 41]);
     emit(terminal, 'x'.repeat(170) + '|');
     expect(panelFrom(await get('agent-unsized'), 179, 41)[0]).toBe('x'.repeat(170) + '|');
@@ -278,8 +307,8 @@ describe('agent:resize', () => {
     expect(await resize(agent.id, 80.5, 20)).toMatchObject({ success: false, error: 'Invalid size' });
     expect(terminal.resize).not.toHaveBeenCalled();
     ptyProcesses.delete(agent.ptyId!);
-    const got = await get(agent.id);
-    const respawned = ptyProcesses.get(got.ptyId!) as unknown as FakePty;
+    agent.ptyId = await initAgentPty(agent, null, vi.fn(), vi.fn());
+    const respawned = ptyProcesses.get(agent.ptyId) as unknown as FakePty;
     expect([respawned.cols, respawned.rows]).toEqual([120, 30]);
   });
 });

@@ -1,5 +1,5 @@
 import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
-import { hermesRequest } from './hermes-client';
+import { errorDetail, hermesRequest } from './hermes-client';
 
 /**
  * A live Hermes conversation, instead of a cron job.
@@ -316,8 +316,8 @@ export async function setReasoningEffort(
     timeoutMs: 20_000,
   });
   if (status < 300) return { success: true };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail).slice(0, 200)
-    : `HTTP ${status}`;
-  return { success: false, error: detail };
+  // Read as every other Hermes call reads it (errorDetail): a FastAPI list of
+  // errors was stringified here, and the Chat's effort picker showed
+  // "[object Object]" (the Audit, after #146).
+  return { success: false, error: errorDetail(status, body).slice(0, 200) };
 }

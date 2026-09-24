@@ -8,7 +8,8 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { rolesOnLoad } from './agent-role';
-import { ptyProcesses, writeProgrammaticInput } from './pty-manager';
+import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-manager';
+import { dialogOpen, dialogShown } from './agent-launch';
 import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
@@ -20,7 +21,63 @@ import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
 
-export const agents: Map<string, AgentStatus> = new Map();
+/**
+ * When each agent's current status began (`statusSince`), stamped where the
+ * status is written rather than by each writer.
+ *
+ * Forty lines assign `agent.status`, in the hooks, the routes, the bots and the
+ * handlers, and a "since" left to each of them is a "since" one of them
+ * forgets. So an agent put in the fleet has its `status` turned into an
+ * accessor over the same value: writing a different status stamps the time,
+ * writing the same one does not (a Stop hook posting `idle` on an idle agent
+ * does not restart "idle for 4m"). It stays an enumerable own property, so
+ * agents.json, a spread and JSON.stringify see a plain field. `lastActivity`
+ * could not do this: every repaint of the terminal moves it. `waitingOn` goes
+ * with the wait it describes, for the same reason: twelve lines clear
+ * `waitingReason` by hand.
+ */
+function watchStatus(agent: AgentStatus, previous: AgentStatus | undefined): void {
+  const descriptor = Object.getOwnPropertyDescriptor(agent, 'status');
+  if (descriptor?.get) return;
+  let value = agent.status;
+  // An object replaced in the map keeps its time while its status is the same.
+  agent.statusSince = previous && previous.status === value && previous.statusSince
+    ? previous.statusSince
+    : new Date().toISOString();
+  Object.defineProperty(agent, 'status', {
+    enumerable: true,
+    configurable: true,
+    get: () => value,
+    set: (next: AgentStatus['status']) => {
+      if (next === value) return;
+      value = next;
+      agent.statusSince = new Date().toISOString();
+      // What it waited on belongs to that wait, whichever line ended it.
+      if (next !== 'waiting') agent.waitingOn = undefined;
+    },
+  });
+}
+
+class AgentMap extends Map<string, AgentStatus> {
+  override set(id: string, agent: AgentStatus): this {
+    if (agent && typeof agent === 'object') watchStatus(agent, this.get(id));
+    return super.set(id, agent);
+  }
+}
+
+export const agents: Map<string, AgentStatus> = new AgentMap();
+
+/**
+ * The writer refuses to type into an open dialog (pty-manager.ts,
+ * setDialogProbe), and this map is where an agent's dialog is known. Called by
+ * main.ts at startup, beside the field probe.
+ */
+export function wireDialogProbe(): void {
+  setDialogProbe(agentId => {
+    const agent = agents.get(agentId);
+    return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+  });
+}
 
 /**
  * Pre-populate Claude Code's workspace trust record for a given directory.
@@ -357,6 +414,9 @@ function persistable(agent: AgentStatus): AgentStatus {
     pathMissing: undefined,
     output: agent.output.slice(-100),
     status: agent.status === 'running' ? 'idle' : agent.status,
+    // Runtime state, and the command a dialog asks about can carry a secret:
+    // agents.json is in every agent's --add-dir (the gate of #172).
+    waitingOn: undefined,
   } as AgentStatus;
 }
 
@@ -761,7 +821,7 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
     if (!ptyProcess) return;
     // A blocking permission dialog reads typed text as its answer, so a
     // redelivery there would accept the dialog rather than deliver anything.
-    if (live.status === 'waiting' && live.waitingReason === 'permission') return;
+    if (dialogOpen(live)) return;
 
     if (!pending.retried) {
       console.warn(

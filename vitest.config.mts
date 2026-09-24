@@ -14,7 +14,10 @@ export default defineConfig({
     // reads DOROTHY_API_PORT and computes DATA_DIR from the home directory at
     // module load, so anything later is too late. See each file for what it
     // removes, what it keeps, and where HOME now points.
-    setupFiles: ['./__tests__/setup/env-isolation.ts', './__tests__/setup/home-isolation.ts'],
+    // worktree-name.ts first: in a folder where vitest cannot load some
+    // built-in modules, it fails every file with the reason before any fails
+    // without one.
+    setupFiles: ['./__tests__/setup/worktree-name.ts', './__tests__/setup/env-isolation.ts', './__tests__/setup/home-isolation.ts'],
     // .tsx too: the overseer's text renderer is asserted through the markup
     // it produces, which needs the component itself.
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.test.tsx'],

@@ -167,6 +167,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agent:message-waiting', listener);
       return () => ipcRenderer.removeListener('agent:message-waiting', listener);
     },
+    /**
+     * Restart the agent's CLI now, continuing its conversation. What a panel's
+     * `restart` calls: a stop then a start begins a new conversation.
+     */
+    restart: (id: string) =>
+      ipcRenderer.invoke('agent:restart', id),
+    /**
+     * The restarts waiting to apply a changed launch setting, for a window that
+     * has just opened. An agent absent from the list has none waiting.
+     */
+    pendingRestarts: () =>
+      ipcRenderer.invoke('agent:pendingRestarts'),
+    /**
+     * A restart started or stopped waiting, or now waits on something else.
+     * `pending` is null once it happened or had nothing to do.
+     */
+    onRestartPending: (callback: (event: {
+      agentId: string;
+      pending: { settings: string[]; waitingFor: string } | null;
+    }) => void) => {
+      const listener = (_: unknown, data: unknown) => callback(data as Parameters<typeof callback>[0]);
+      ipcRenderer.on('agent:restart-pending', listener);
+      return () => ipcRenderer.removeListener('agent:restart-pending', listener);
+    },
   },
 
   // Skills management
@@ -341,6 +365,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('slack:test'),
     sendTest: () =>
       ipcRenderer.invoke('slack:sendTest'),
+  },
+
+  // Discord bot
+  discord: {
+    test: () =>
+      ipcRenderer.invoke('discord:test'),
+    sendTest: () =>
+      ipcRenderer.invoke('discord:sendTest'),
   },
 
   // JIRA
@@ -576,6 +608,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('overseer:send', message, attachments),
     attachFiles: () =>
       ipcRenderer.invoke('overseer:attachFiles'),
+    attachData: (files: Array<{ name: string; mimeType: string; data: Uint8Array }>) =>
+      ipcRenderer.invoke('overseer:attachData', files),
     effort: () =>
       ipcRenderer.invoke('overseer:effort'),
     setEffort: (effort: string) =>
@@ -689,8 +723,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   cliPaths: {
-    detect: () =>
-      ipcRenderer.invoke('cliPaths:detect'),
+    /** The last detection; `refresh: true` looks again (the Detect button). */
+    detect: (options?: { refresh?: boolean }) =>
+      ipcRenderer.invoke('cliPaths:detect', options),
     get: () =>
       ipcRenderer.invoke('cliPaths:get'),
     save: (paths: { amp: string; claude: string; codex: string; gemini: string; grok: string; qwencode: string; opencode: string; pi: string; gws: string; gcloud: string; gh: string; node: string; minimax: string; additionalPaths: string[] }) =>
@@ -774,7 +809,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('bus:listRooms'),
     getRoom: (roomId: string, params?: { limit?: number; before?: string }) =>
       ipcRenderer.invoke('bus:getRoom', roomId, params),
-    postMessage: (params: { roomId: string; text: string; mentions?: string[] }) =>
+    postMessage: (params: { roomId: string; text: string; mentions?: string[]; attachments?: string[] }) =>
       ipcRenderer.invoke('bus:postMessage', params),
     stopThread: (threadId: string) =>
       ipcRenderer.invoke('bus:stopThread', threadId),
@@ -782,6 +817,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('bus:setMembers', roomId, memberIds),
     releaseNotSent: (agentId: string) =>
       ipcRenderer.invoke('bus:releaseNotSent', agentId),
+    stageFiles: (params: { roomId: string; files: Array<{ name: string; mimeType: string; data: Uint8Array }> }) =>
+      ipcRenderer.invoke('bus:stageFiles', params),
+    sendNow: (params: { roomId: string; agentId: string; text: string; attachments?: string[] }) =>
+      ipcRenderer.invoke('bus:sendNow', params),
 
     // Pushed from the main process, so the Chat page never polls.
     onMessage: (callback: (message: unknown) => void) => {

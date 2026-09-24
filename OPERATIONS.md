@@ -6,7 +6,9 @@ the installed app.
 
 Target platform is macOS: `electron-builder` is invoked with `--mac` only, the code-signing
 config is `build/entitlements.mac.plist`, and the Tasmania integration reads a token out of
-`~/Library/Application Support/`.
+`~/Library/Application Support/`. The code stays Linux compatible all the same (Noah,
+2026-09-24): the CI runs the tests on ubuntu, and a macOS-only code path has a Linux one or
+fails cleanly.
 
 ---
 
@@ -79,6 +81,18 @@ The renderer hot-reloads normally.
 In dev the window loads `process.env.DOROTHY_DEV_URL || 'http://localhost:3000'` and opens
 DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 `app://-/index.html` off the custom protocol, served from `<appPath>/out`.
+
+From the second launch on, the main process no longer compiles its JavaScript from source, and
+from the third the renderer does not either. The app:// scheme has Chromium's `codeCache`
+privilege, so V8 keeps what it compiled of the renderer bundle in the profile's `Code Cache/js`:
+Chromium writes it during the second launch and reads it from the third. The main process turns
+on Node's compile cache before it requires anything else (`electron/core/compile-cache.ts`), in
+the profile's `compile-cache/`, and flushes it once the window has loaded. Both are keyed by each
+file's content: an update is compiled once more. Deleting `compile-cache/` costs one slower
+launch, deleting `Code Cache` two. Measured on 2026-09-24 on packaged builds: the main process's
+compile work fell from 181 to 441 ms to 79 to 101 ms, and the renderer's main-thread compile from
+59 to 129 ms to 3 ms once its cache is read. `NODE_DEBUG_NATIVE=COMPILE_CACHE` in the app's
+environment prints each module the cache served.
 
 ### Run the renderer alone
 
@@ -349,10 +363,11 @@ Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint,
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
-**And it has never run.** Measured on 2026-09-17: the workflow is listed as active, and
-`gh api repos/JeanBrasse/Tars/actions/runs` answers `total_count: 0`, PR #105 included. Actions
-stay off on a fork until somebody enables them in the repository's Actions tab. Until that click,
-every check is one you ran yourself, on your own machine, and nothing is checked on Linux.
+**It runs, and it is the only check made on Linux.** Measured on 2026-09-17, it had never run:
+Actions stay off on a fork until somebody enables them. They are on now, and
+`gh api repos/JeanBrasse/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
+part of every gate, because the code stays Linux compatible (Noah, 2026-09-24): a test that
+passes on your Mac and fails there is a finding, not noise.
 
 ---
 
@@ -517,7 +532,11 @@ a build of the version being released.
 
 `scripts/release.mjs` stops at the first thing that is not as it should be:
 
-1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean,
+1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean, the
+   Electron the build will package is the one `package.json` accepts and `package-lock.json`
+   locks, package and binary (`dist/version`), found where Node finds it from the checkout,
+   which from a worktree is the main checkout's `node_modules` (the Audit, 2026-09-24: 43.4.1
+   installed under a `^44.4.4`; the fix is `npm ci` then `npx install-electron`),
    `v<version>` exists on GitHub neither as a release nor as a tag, the top entry of the
    changelog is that version, and no newer version is published. A GitHub it cannot ask is a
    refusal, not a pass;
@@ -656,12 +675,14 @@ work.
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
-| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | board |
+| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
+| `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
 | `~/.dorothy/cli-paths.json` | `electron/handlers/cli-paths-handlers.ts` | resolved binary paths, readable by MCP |
+| `~/.dorothy/skills-marketplace.json` | `electron/services/skills-marketplace.ts` | the last skills.sh listing, served first; delete it to fetch afresh |
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
@@ -790,13 +811,28 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
-| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` |
+| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
 | POST | `/api/webhooks/hermes` |
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
 none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
 which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`; both read
 the settings as they are, so a change there counts without a restart (SECURITY §6).
+
+The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
+Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
+message only when it is mentioned, unless Require @mention is off (`discordRequireMention`); a
+direct message always. Its commands are Slack's words (`status`, `start <agent> <task>`...), and
+anything else goes to the orchestrator, which answers with `send_discord`. Nothing it posts can
+ping. Setting it up:
+
+1. In the Discord Developer Portal, create an application, then under Bot reset the token and
+   paste it in Settings > Discord. On the same page, switch on the **Message Content** intent,
+   or every message reaches the bot empty.
+2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=68608`
+   (view channels, send messages, read message history). "Test token" in Settings gives this link.
+3. Add your Discord user id (Developer Mode, then Copy User ID), and mention the bot or DM it:
+   that channel becomes the one Tars posts to.
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
 raises its own fetch timeout to 600 s for any path containing `/wait` so the client never
@@ -856,7 +892,7 @@ any process that reads `~/.dorothy/api-token` gets. `allowCrossProject: true` le
 through. The guard stops an orchestrator from acting on the wrong project by mistake; it does not
 stop an agent that means to.
 
-`mcp-kanban` is outside this: it never calls the API, it reads and writes the files directly.
+`mcp-kanban` presents the agent's own token too, since its tools moved to the Hermes board (`/api/kanban/*`). It acts on its own project's tasks and no other. It has no `allowCrossProject`: its schemas have no such field.
 
 Genuine cross-project denials read differently and are recoverable:
 
@@ -883,12 +919,17 @@ both behave identically. It:
 2. **refuses with `409`** if the agent is `waiting` on a permission dialog: a typed message
    cannot answer arrow-key UI, and the trailing `\r` could *accept* the pending permission:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
+   Every other writer (the bus, delegation notes, "send held", Telegram, Slack) is held by the
+   writer itself while a dialog is up, and its message goes in after the answer (SPECS §5).
 3. types the message into the session (`mode: "message"`) when a CLI runs in the terminal,
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
    `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
-   a start from a window, a bot's cold start) is waited for, up to 15 s, and never spawned over.
+   a start from a window, a bot's cold start) is waited for and never spawned over: 15 s, and
+   past that while its CLI runs, up to 180 s. The API waits 20 s at most, counted from the
+   request even for a sender queued behind another, then answers `409` with `starting: true`
+   and types nothing: send it again. A sender refused so does not become the agent's requester.
    Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
@@ -1173,6 +1214,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 | Symptom | Where to look |
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
 | an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1358,6 +1400,49 @@ secret sat in `~/.dorothy`, which every agent can read.
 Response mirrors `/dispatch` (`{success, mode, agent}`); poll `GET /api/agents/:id` for the
 result afterwards.
 
+### The agents' kanban
+
+The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`, `assign_task`,
+`update_task_progress`, `mark_task_done`, `move_task`, `delete_task`) work on the Hermes board,
+the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
+and never write a file. `electron/services/kanban-board.ts` decides where a task sits:
+
+| State | On the Hermes board | Who takes it |
+|---|---|---|
+| parked | `scheduled`, assignee `tars:unclaimed`, tenant = the project's path | nobody by itself: Hermes never dispatches `scheduled` |
+| claimed | `ready`, assignee `tars:<agent id>` | the agent that claimed it; Hermes skips it (`skipped_nonspawnable`: a lane with a colon can never be a Hermes profile) |
+| done | `done` | |
+
+Measured against Hermes 0.21.1's own kanban code: `todo` is promoted to `ready` by the
+dispatcher and `triage` is decomposed by the gateway's aux model (`kanban.auto_decompose`), so
+neither is a place to park.
+
+- **An agent files a task**: `create_task` parks it on the agent's own project. If the project
+  has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
+- **An agent takes one**: `assign_task` with no `agent_id`. A claim is atomic among Tars's
+  agents: a second one gets "already claimed by ...".
+- **An agent hands one to another**: `assign_task` with the other agent's id, same project only.
+  Tars claims it on that agent's lane and types it into it, as the agent that handed it.
+- **An agent cannot hand a task to Hermes**: `move_task` to `planned` is refused.
+- **An agent deletes only its own**: a task it filed that nobody claimed, or one it claimed, done
+  or not. A task Noah gave to a Hermes profile, one Hermes finished, another agent's, or one moved
+  from the local board is Noah's to delete, on the Kanban page. Who filed a task is the last line
+  of its body, `Filed by <name> (Tars agent <id>).`, which Tars writes after the agent's own
+  description: the gateway records every creation as `dashboard`.
+- **Noah hands a task to Hermes**: on the Kanban page, give it a Hermes profile and move it to
+  `ready`.
+- **The old local board** (`~/.dorothy/kanban-tasks.json`): its open tasks move to the Hermes
+  board once at launch, parked. `kanban-moved-to-hermes.json` records which, and a task left
+  behind is tried again at the next launch. The file itself is never written again: it is the
+  backup. The kanban-automation that matched an agent when a local task reached `planned` only
+  served that board, which no page shows.
+- **Nothing is written to a Hermes nobody configured**: without `hermes-connection.json`, the tools
+  answer "Hermes is not configured". With one that cannot be read, is not a JSON object, or names
+  no address for its mode (a `local` port, an `ssh` host, a `remote` or `cloud` URL), they say what
+  is wrong with it, and the old board is not moved. The default port is only a guess, and on this
+  machine it is a tunnel to a real gateway.
+- **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
+
 ---
 
 ## Tasmania (local models)
@@ -1399,7 +1484,8 @@ is skipped.
 Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
 if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
-API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+API-driven session) when no panel has. Free-standing terminals use `$SHELL`, or `/bin/zsh` on macOS
+and `/bin/bash` elsewhere when it is unset (`defaultShell`, `electron/utils/default-shell.ts`).
 
 The environment is `process.env` plus:
 
@@ -1481,9 +1567,13 @@ A turn can end with work still running in the background (Claude Code refuses a 
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
 
-A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+A restart that waits tells every window what it waits on (`agent:restart-pending`, and
+`agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
+panel shows it once the Frontend's part lands. Deleting the agent drops the wait and tells the
+windows it is over. A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
 CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
-vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+vendor included, and they continue their conversation too, found under the project's real path as
+well as the one Tars saved (a project reached through a symlink resumed nothing before). The same two spellings are read for the background work a restart waits for, the command that empties a field, the session's model and the Chat's transcript (`transcriptRoots`): read under the saved path alone, a restart on a linked project did not wait for the work its session had left running, and killed it; codex, gemini, grok, opencode, pi and
 amp never are: stop and start them. To see what a running CLI was actually launched with, read
 its argv (the model and effort are on the command line):
 

@@ -1,10 +1,13 @@
 import * as crypto from 'crypto';
 import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
-import { agentStatusEmitter } from './agent-events';
+import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS, type WriteOrigin } from '../core/pty-manager';
+import { agentStatusEmitter, emitAgentStatus } from './agent-events';
 import { sessionStarting } from '../core/agent-launch';
 import { envelopeValue } from '../utils/envelope-value';
+import { lastInterruptAt, pendingBackgroundWork } from './agent-truth';
+import { broadcastToAllWindows } from '../utils/broadcast';
+import { scheduleTick } from '../utils/agents-tick';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -56,6 +59,12 @@ type News = {
   reason?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
   handedAt?: string;
+  /**
+   * For `ended`: work the agent started and left running when its turn
+   * ended (pendingBackgroundWork). Its terminal session brings it back when
+   * that work reports, so the rest is not the end of the work handed to it.
+   */
+  background?: string[];
 };
 
 /**
@@ -165,12 +174,40 @@ export function setBusDeliveredHook(hook: BusDeliveredHook | undefined): void {
 }
 
 /** Called when a queued bus message is given up on, so the journal stops
- *  saying `queued` for something that will never move. */
-type BusDroppedHook = (targetAgentId: string, messageId: string) => void;
+ *  saying `queued` for something that will never move. `session_gone`: the
+ *  session it was queued for ended before it went out. `terminal_exited`: the
+ *  terminal had taken it, held behind a draft, and exited first. */
+export type BusDropCause = 'session_gone' | 'terminal_exited';
+type BusDroppedHook = (targetAgentId: string, messageId: string, cause: BusDropCause) => void;
 let onBusDropped: BusDroppedHook | undefined;
 
 export function setBusDroppedHook(hook: BusDroppedHook | undefined): void {
   onBusDropped = hook;
+}
+
+/** Called when a bus message its target's terminal took waits for a person,
+ *  so the journal can say `held` rather than `queued` or `not_sent`. */
+type BusHeldHook = (targetAgentId: string, messageId: string) => void;
+let onBusHeld: BusHeldHook | undefined;
+
+export function setBusHeldHook(hook: BusHeldHook | undefined): void {
+  onBusHeld = hook;
+}
+
+/** What the terminal says about a bus message it took, told to the journal. */
+function busOrigin(agentId: string, messageId: string, onWritten: () => void): Pick<WriteOrigin, 'onWritten' | 'onHeld' | 'onDropped'> {
+  const safely = (what: string, hook: () => void) => () => {
+    try {
+      hook();
+    } catch (err) {
+      console.error(`[agent-watch] bus ${what} hook failed:`, err);
+    }
+  };
+  return {
+    onWritten: safely('delivery', onWritten),
+    onHeld: safely('held', () => onBusHeld?.(agentId, messageId)),
+    onDropped: safely('dropped', () => onBusDropped?.(agentId, messageId, 'terminal_exited')),
+  };
 }
 
 /**
@@ -206,7 +243,58 @@ export function startAgentWatch(): void {
 export function stopAgentWatch(): void {
   agentStatusEmitter.off('fleet-change', onFleetChange);
   listening = false;
+  stopWatchingInterruptedTurns();
   resetAgentWatch();
+}
+
+/**
+ * A turn ended by Esc sends no hook: no Stop, and the idle prompt only a
+ * minute on. The agent read `running` until its next turn, and everything
+ * waiting for its rest (room messages, notes) waited with it (the Audit's
+ * re-check of #174, older than it). The transcript records the interrupt, so
+ * an interrupt recorded after the turn began, after work was last handed to
+ * the agent, and after its session registered, ends the turn here as its Stop
+ * would have: `idle`, announced
+ * like any status. Looked at every INTERRUPT_WATCH_MS, and only for agents
+ * that read `running`; the transcript is re-read only when it has changed.
+ */
+const INTERRUPT_WATCH_MS = 2000;
+let interruptWatch: ReturnType<typeof setInterval> | undefined;
+
+/** Started by main.ts at startup, beside the dialog probe. */
+export function watchInterruptedTurns(): void {
+  if (!interruptWatch) interruptWatch = setInterval(endInterruptedTurns, INTERRUPT_WATCH_MS);
+}
+
+export function stopWatchingInterruptedTurns(): void {
+  if (interruptWatch) { clearInterval(interruptWatch); interruptWatch = undefined; }
+}
+
+function endInterruptedTurns(): void {
+  for (const agent of agents.values()) {
+    if (agent.status !== 'running') continue;
+    // The session's own registration counts too: a session resumed with
+    // --fork-session copies the old conversation, old interruptions and their
+    // dates included, and until its first UserPromptSubmit the last turn known
+    // is the previous session's (the Audit's gate of #179).
+    const began = Math.max(...[agent.lastTurnStartedAt, agent.workHandedAt, agent.sessionRegisteredAt]
+      .map(at => (at ? Date.parse(at) : NaN)).filter(Number.isFinite));
+    if (!Number.isFinite(began)) continue;
+    let interrupted: number | undefined;
+    try {
+      interrupted = lastInterruptAt(agent);
+    } catch {
+      continue;
+    }
+    if (interrupted === undefined || interrupted <= began) continue;
+    console.log(`[agent-watch] ${agent.name || agent.id}'s turn was interrupted (transcript): idle`);
+    agent.status = 'idle';
+    agent.waitingReason = undefined;
+    agent.lastActivity = new Date().toISOString();
+    emitAgentStatus(agent.id);
+    broadcastToAllWindows('agent:status', { agentId: agent.id, status: agent.status });
+    scheduleTick();
+  }
 }
 
 function onFleetChange(agentId: string): void {
@@ -283,7 +371,17 @@ function queueForRequester(child: AgentStatus, news: News): void {
   // save it, nothing saved it being spent, and 26 of the 42 agents on this
   // machine carried one that had already been used. The file said work was
   // owed for agents that owed nothing.
-  if (news.kind !== 'wait') {
+  //
+  // Not spent, though, by a rest with work still running in the background:
+  // the agent comes back when that work reports (the Audit, 2026-09-23: rest
+  // at 18:55:59, back at 18:56:15, done at 18:56:52), and the link is what
+  // tells its requester about the real end. That rest is reported as what it
+  // is instead.
+  if (news.kind === 'ended' && child.workHandedAt) {
+    const left = pendingBackgroundWork(child, Date.parse(child.workHandedAt));
+    if (left.length > 0) news = { ...news, background: left };
+  }
+  if (news.kind !== 'wait' && !news.background) {
     child.requestedBy = undefined;
     saveAgents();
   }
@@ -497,13 +595,9 @@ function flush(requesterId: string): void {
       agentId: requesterId,
       from: message.authorName,
       sender: { kind: 'tars' },
-      onWritten: () => {
-        try {
-          onBusDelivered?.(requesterId, message.messageId);
-        } catch (err) {
-          console.error('[agent-watch] bus delivery hook failed:', err);
-        }
-      },
+      // Delivered when it lands, held while it waits for a person's draft,
+      // dropped if the terminal exits first: the row follows the message.
+      ...busOrigin(requesterId, message.messageId, () => onBusDelivered?.(requesterId, message.messageId)),
     });
     // Refused means the terminal is holding all it can. What was not taken
     // stays here, under this queue's own cap, rather than disappearing
@@ -534,7 +628,7 @@ function flush(requesterId: string): void {
 function abandonBusMessages(recipientId: string, held: Pending): void {
   for (const message of held.bus) {
     try {
-      onBusDropped?.(recipientId, message.messageId);
+      onBusDropped?.(recipientId, message.messageId, 'session_gone');
     } catch (err) {
       console.error('[agent-watch] bus dropped hook failed:', err);
     }
@@ -546,6 +640,10 @@ function abandonBusMessages(recipientId: string, held: Pending): void {
  *  worded like a finished turn, so an orchestrator could not tell a question
  *  from a result. */
 function describeNews(news: News): string {
+  if (news.kind === 'ended' && news.background?.length) {
+    return `has ended its turn with background work still running (${news.background.map(envelopeValue).join(', ')}): `
+      + 'it resumes when that work reports, and you will be told again when it is done';
+  }
   if (news.kind === 'ended') return 'has finished its turn';
   if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';
   return `is now ${news.status}`;
@@ -656,8 +754,8 @@ export async function releaseBusMessagesNow(
         sender: { kind: 'tars' },
         // Reported as it lands, not when it was handed over: a human pressed
         // send, and if their own unfinished draft is in the way the message
-        // waits for them rather than being written across it.
-        onWritten: () => onWritten?.(message.messageId),
+        // waits for them rather than being written across it, and reads held.
+        ...busOrigin(agentId, message.messageId, () => onWritten?.(message.messageId)),
       });
       if (outcome === 'refused') break;
       // Two different things, and they used to be one. `written` said a
@@ -685,4 +783,5 @@ export function resetAgentWatch(): void {
   delivering.clear();
   onBusDelivered = undefined;
   onBusDropped = undefined;
+  onBusHeld = undefined;
 }

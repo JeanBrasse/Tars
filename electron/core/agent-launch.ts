@@ -1,7 +1,9 @@
 import type { AgentPermissionMode, AgentProvider } from '../types';
 import { ptyProcesses } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
+import { dialogOnScreen } from './terminal-mirror';
 import { getProvider } from '../providers';
+import { lastInterruptAt } from '../services/agent-truth';
 
 /**
  * The launch of an agent's CLI in its terminal, reachable without a renderer.
@@ -62,10 +64,45 @@ export function launchAgent(agentId: string, prompt: string, options?: AgentLaun
 export const CLI_BOOT_MS = 15_000;
 
 /**
+ * How long a launch whose CLI runs still counts as starting, its session or
+ * its task not begun. Past CLI_BOOT_MS a CLI that never ran is given up, but
+ * one that runs is booting slowly: at a load average of 120 to 300, 5 of 18
+ * launches took longer than 15 s, and a sender released then typed into a
+ * claude not yet taking keys, answered "message", and the text was lost (the
+ * Database Engineer, re-gate of #134). SessionStart itself took 77 s once with
+ * the network down. Past this, it is not coming up.
+ */
+export const CLI_UP_MS = 180_000;
+
+/**
+ * The longest a sender answering an HTTP caller waits on a launch: the MCP
+ * tools give up on a call after 30 s (mcp-orchestrator/src/utils/api.ts), and
+ * an answer sent after that reaches nobody.
+ */
+export const SENDER_WAIT_MS = 20_000;
+
+/**
  * Launches under way, by agent: when each began, and whether it carries a
  * task for the CLI to start on. One per agent, the latest.
  */
 const launchesUnderWay = new Map<string, { since: number; withTask: boolean }>();
+
+/**
+ * Told when a launch begins or is abandoned, so the page can say `starting`
+ * (AgentStatus.launching) without a status change to carry it: a restart keeps
+ * `idle`. agents-tick listens, and watches the window until it closes by
+ * itself (sessionStarting drops a launch that came up or timed out).
+ */
+let launchListener: (() => void) | undefined;
+
+export function setLaunchListener(fn: (() => void) | undefined): void {
+  launchListener = fn;
+}
+
+/** The agents with a launch under way, as far as this map knows. */
+export function launchesPending(): string[] {
+  return [...launchesUnderWay.keys()];
+}
 
 /**
  * A launch into an agent's terminal has begun: a start from a window, a
@@ -77,12 +114,15 @@ const launchesUnderWay = new Map<string, { since: number; withTask: boolean }>()
 export function launchBegins(agentId: string, opts: { withTask?: boolean } = {}): object {
   const launch = { since: Date.now(), withTask: !!opts.withTask };
   launchesUnderWay.set(agentId, launch);
+  launchListener?.();
   return launch;
 }
 
 /** That launch failed or was refused: nothing is coming up. */
 export function launchAbandoned(agentId: string, launch: object): void {
-  if (launchesUnderWay.get(agentId) === launch) launchesUnderWay.delete(agentId);
+  if (launchesUnderWay.get(agentId) !== launch) return;
+  launchesUnderWay.delete(agentId);
+  launchListener?.();
 }
 
 /**
@@ -101,7 +141,11 @@ export function launchAbandoned(agentId: string, launch: object): void {
 export function sessionStarting(agent: StartingAgent): boolean {
   const launch = launchesUnderWay.get(agent.id);
   if (!launch) return false;
-  if (Date.now() - launch.since >= CLI_BOOT_MS || sessionUp(agent, launch)) {
+  const elapsed = Date.now() - launch.since;
+  const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  // Past CLI_BOOT_MS, only a CLI that runs is still starting: see CLI_UP_MS.
+  const booting = elapsed < CLI_BOOT_MS || (elapsed < CLI_UP_MS && !!terminal && cliRunningIn(terminal));
+  if (!booting || sessionUp(agent, launch)) {
     launchesUnderWay.delete(agent.id);
     return false;
   }
@@ -149,12 +193,77 @@ export function launchUnlessRunning(agent: StartingAgent): object | null {
   return terminal && cliRunningIn(terminal) ? null : launchBegins(agent.id, { withTask: true });
 }
 
-/** Wait for a session on its way to be up, or for its launch to be given up on. */
-export async function sessionStarted(agent: StartingAgent): Promise<void> {
-  while (sessionStarting(agent)) await new Promise(resolve => setTimeout(resolve, 100));
+/**
+ * Wait for a session on its way to be up, or for its launch to be given up
+ * on, for `maxWaitMs` at most. True when there is nothing left to wait for;
+ * false when it is still starting, and the caller must type nothing: typed
+ * now, it would land in a claude that is not taking keys.
+ */
+export async function sessionStarted(agent: StartingAgent, maxWaitMs = Infinity): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (sessionStarting(agent)) {
+    if (Date.now() >= deadline) return false;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return true;
 }
 
 /** Test seam. */
 export function resetLaunches(): void {
   launchesUnderWay.clear();
+}
+
+/**
+ * Why Tars may not type into an agent's CLI now, or null when it may. The one
+ * definition every writer asks, so a new writer cannot forget a case:
+ * - `dialog`: the CLI shows a dialog (the PermissionRequest hook said so:
+ *   `waiting`, `permission`). A permission, an AskUserQuestion (which fires
+ *   that hook in bypass too), an ExitPlanMode. Anything typed is read by the
+ *   dialog, and its Enter answers it: measured by the Audit on 2026-09-24 with
+ *   claude 2.1.280, a room post said Yes to "Do you want to proceed?" and
+ *   "Yes, delete it" to "Delete the build folder?". Enforced by the writer
+ *   itself (pty-manager.ts), at the moment it writes.
+ * - `no_cli`: no CLI runs in the terminal, which is a shell.
+ * - `launch`: a launch is on its way and its session is not up (sessionStarting).
+ * - `turn`: a turn runs. A room message and a note wait for its end
+ *   (agent-watch); /dispatch and /message type it as a queued steer.
+ * Only `dialog` is refused by the writer: the others are each caller's own
+ * decision, and they already make it.
+ */
+export type TypingRefusal = 'dialog' | 'no_cli' | 'launch' | 'turn';
+
+export function dialogOpen(agent: {
+  status?: string; waitingReason?: string; dialogSince?: string;
+  currentSessionId?: string; projectPath?: string; worktreePath?: string;
+}): boolean {
+  if (agent.status !== 'waiting' || agent.waitingReason !== 'permission') return false;
+  // Refused, with "No" or Esc: Claude Code sends no hook for it, and records
+  // "[Request interrupted by user" in the transcript. An interrupt recorded
+  // since the dialog opened closes it (the Audit's gate of #174: without this
+  // the agent stayed deaf until Noah typed in it). Without a time the dialog
+  // opened at, it stays open: the safe side.
+  const since = agent.dialogSince ? Date.parse(agent.dialogSince) : NaN;
+  if (!Number.isFinite(since)) return true;
+  const interrupted = lastInterruptAt(agent);
+  return interrupted === undefined || interrupted < since;
+}
+
+/**
+ * A dialog the hook reported, or one on the screen whose hook has not arrived
+ * yet (dialogOnScreen, terminal-mirror.ts). The screen only ever adds a
+ * dialog: it never takes away one the hook reported.
+ */
+export function dialogShown(agent: Parameters<typeof dialogOpen>[0], ptyProcess: import('node-pty').IPty | undefined): boolean {
+  return dialogOpen(agent) || dialogOnScreen(ptyProcess);
+}
+
+export function agentTakesTyping(
+  agent: StartingAgent & { status?: string; waitingReason?: string },
+  ptyProcess: import('node-pty').IPty | undefined,
+): TypingRefusal | null {
+  if (dialogShown(agent, ptyProcess)) return 'dialog';
+  if (!ptyProcess || !cliRunningIn(ptyProcess)) return 'no_cli';
+  if (sessionStarting(agent)) return 'launch';
+  if (agent.status === 'running') return 'turn';
+  return null;
 }

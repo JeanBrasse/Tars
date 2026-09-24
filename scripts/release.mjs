@@ -11,7 +11,8 @@
  * that is not as it should be:
  *
  *   1. refuse unless HEAD is origin/main after a fetch, the tracked tree is
- *      clean, v<version> exists on GitHub neither as a release nor as a tag,
+ *      clean, the electron installed is the one package.json and the lockfile
+ *      ask for (package and binary), v<version> exists on GitHub neither as a release nor as a tag,
  *      the top entry of src/data/changelog.ts is that version, and no newer
  *      version is already published;
  *   2. npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN, so
@@ -96,6 +97,73 @@ export function changelogTop(root) {
   return top;
 }
 
+/**
+ * Whether `version` (x.y.z) is in `range`, for the forms package.json uses:
+ * an exact version, `^x.y.z` and `~x.y.z`. Anything else is refused rather
+ * than guessed at.
+ */
+export function satisfies(version, range) {
+  const parse = v => /^(\d+)\.(\d+)\.(\d+)$/.exec(v)?.slice(1).map(Number);
+  const got = parse(version);
+  const [, op = '', base] = /^([\^~]?)(.*)$/.exec(range.trim());
+  const want = parse(base);
+  if (!got || !want) throw new Refusal(`cannot read electron's version range "${range}" in package.json, or the version ${version}`);
+  if (compareVersions(version, base) > 0) return false;
+  if (op === '') return compareVersions(version, base) === 0;
+  if (op === '~') return got[0] === want[0] && got[1] === want[1];
+  // ^: the leftmost non-zero part stays.
+  if (want[0] > 0) return got[0] === want[0];
+  if (want[1] > 0) return got[0] === 0 && got[1] === want[1];
+  return got[0] === 0 && got[1] === 0 && got[2] === want[2];
+}
+
+/**
+ * The Electron the build will package is the one package.json and the lockfile
+ * ask for. electron-builder packages whatever node_modules holds, found the way
+ * Node finds it from the checkout, which from a worktree is the main
+ * checkout's. Measured by the Audit on 24/09: that node_modules held Electron
+ * 43.4.1 while package.json asked ^44.4.4, and nothing looked, so a release
+ * from there would have shipped 43. The binary is checked too: since Electron
+ * 44 no postinstall downloads it, and `npx install-electron` is a step of its own.
+ */
+export function checkElectron(root) {
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const range = pkg.devDependencies?.electron ?? pkg.dependencies?.electron;
+  if (!range) throw new Refusal('package.json names no electron');
+  let locked;
+  try {
+    locked = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')).packages?.['node_modules/electron']?.version;
+  } catch {
+    throw new Refusal('package-lock.json cannot be read: run npm ci');
+  }
+  if (!locked) throw new Refusal('package-lock.json locks no electron: run npm install');
+
+  let manifest;
+  try {
+    manifest = createRequire(join(root, 'package.json')).resolve('electron/package.json');
+  } catch {
+    throw new Refusal('electron is not installed where this checkout finds it: run npm ci, then npx install-electron');
+  }
+  const installed = JSON.parse(readFileSync(manifest, 'utf8')).version;
+  const where = dirname(manifest);
+  if (!satisfies(installed, range)) {
+    throw new Refusal(`electron ${installed} is installed (${where}), and package.json asks ${range}: run npm ci, then npx install-electron`);
+  }
+  if (installed !== locked) {
+    throw new Refusal(`package-lock.json locks electron ${locked}, and ${installed} is installed (${where}): run npm ci, then npx install-electron`);
+  }
+  let binary;
+  try {
+    binary = readFileSync(join(where, 'dist', 'version'), 'utf8').trim();
+  } catch {
+    throw new Refusal(`no electron binary is installed in ${join(where, 'dist')}: run npx install-electron`);
+  }
+  if (binary !== installed) {
+    throw new Refusal(`the electron binary is ${binary} and its package ${installed} (${where}): run npx install-electron`);
+  }
+  return installed;
+}
+
 /** Step 1. Throws the first Refusal met, in the order a person would check. */
 export async function checkPreconditions({ root, repo, version }) {
   const fetched = await run('git', ['fetch', 'origin'], { cwd: root });
@@ -108,6 +176,8 @@ export async function checkPreconditions({ root, repo, version }) {
 
   const dirty = (await git(root, ['status', '--porcelain', '--untracked-files=no'])).trim();
   if (dirty) throw new Refusal(`tracked files differ from HEAD, so the build would not be the commit:\n${dirty}`);
+
+  const electron = checkElectron(root);
 
   const release = await run('gh', ['release', 'view', `v${version}`, '--repo', repo, '--json', 'tagName']);
   if (release.missing) throw new Refusal('gh is not installed');
@@ -135,7 +205,7 @@ export async function checkPreconditions({ root, repo, version }) {
     .sort(compareVersions);
   if (newer.length) throw new Refusal(`a newer version is already published on ${repo}: v${newer[0]}`);
 
-  return { head, top };
+  return { head, top, electron };
 }
 
 /** latest-mac.yml as electron-updater reads it. Anything else in it is refused, not skipped. */
@@ -357,8 +427,8 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
 
     log(`release: v${version} of ${repo}, from ${root}${inMainCheckout ? '' : ' (a worktree)'}${dryRun ? ', dry run' : ''}`);
 
-    const { head, top: entry } = await checkPreconditions({ root, repo, version });
-    log(`1. checks passed: HEAD ${head.slice(0, 7)} is origin/main, tracked tree clean, v${version} not on GitHub, changelog top entry ${version}, nothing newer published`);
+    const { head, top: entry, electron } = await checkPreconditions({ root, repo, version });
+    log(`1. checks passed: HEAD ${head.slice(0, 7)} is origin/main, tracked tree clean, electron ${electron} installed as locked, v${version} not on GitHub, changelog top entry ${version}, nothing newer published`);
 
     // Before anything is built, and in a dry run too, so that it says what the
     // real run would refuse. The build writes over the build release/ holds.

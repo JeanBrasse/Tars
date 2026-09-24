@@ -165,6 +165,33 @@ async function fetchCleanOutput(
   return { output: undefined, status: last?.agent.status ?? "unknown", name: last?.agent.name };
 }
 
+/**
+ * Sends the caller a progress notification every minute until stopped, when
+ * the call carries a progressToken (Claude Code 2.1.280 sends one with every
+ * call). Claude Code abandons an MCP call that sends nothing for 30 minutes,
+ * "sent no response or progress for 1811s; aborting", and a progress
+ * notification resets that clock: measured on a 150 s call with the limit
+ * lowered to seconds, silent it was aborted, with progress every 5 s it
+ * completed. Without this, a delegation longer than half an hour went on in
+ * the agent while the orchestrator that asked for it had stopped listening.
+ */
+export function keepCallerListening(
+  extra: { _meta?: { progressToken?: string | number }; sendNotification?: (n: never) => Promise<void> } | undefined,
+  everyMs = 60_000,
+): () => void {
+  const token = extra?._meta?.progressToken;
+  const send = extra?.sendNotification;
+  if (token === undefined || !send) return () => {};
+  let progress = 0;
+  const timer = setInterval(() => {
+    progress += 1;
+    send({ method: "notifications/progress", params: { progressToken: token, progress, message: "still waiting on the agent" } } as never)
+      .catch(() => { /* the caller has gone: nothing to keep */ });
+  }, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 export function registerAgentTools(server: McpServer): void {
   // Tool: Who am I (identity handshake for orchestrator sessions)
   server.tool(
@@ -719,131 +746,102 @@ export function registerAgentTools(server: McpServer): void {
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow delegating to an agent of ANOTHER project (normally rejected)"),
     },
-    async ({ id, prompt, model, timeoutSeconds = 300, allowCrossProject }) => {
+    async ({ id, prompt, model, timeoutSeconds = 300, allowCrossProject }, extra) => {
+      // Claude Code abandons an MCP call silent for 30 minutes; a delegation
+      // can last an hour. Progress while it waits keeps the caller listening.
+      const stopProgress = keepCallerListening(extra);
       try {
-        // Preferred path: run the task over the Agent Client Protocol, which
-        // returns the agent's actual answer, why the turn ended and what it
-        // cost. Falls back to the terminal dispatch below for CLIs that have
-        // no ACP mode, or when the run itself could not start.
         try {
-          const acp = (await apiRequest(
-            `/api/agents/${id}/run-task`,
-            "POST",
-            { task: prompt, timeoutSeconds },
-            (timeoutSeconds + 60) * 1000,
-          )) as {
-            ok?: boolean;
-            stopReason?: string;
-            text?: string;
-            toolCalls?: string[];
-            usage?: { totalTokens?: number };
-            costUSD?: number;
-            error?: string;
-            retryWithDispatch?: boolean;
-          };
-
-          if (acp && !acp.retryWithDispatch && (acp.ok || acp.text)) {
-            const meta = [
-              acp.stopReason ? `ended: ${acp.stopReason}` : "",
-              acp.toolCalls?.length ? `tools: ${acp.toolCalls.slice(0, 8).join(", ")}` : "",
-              acp.usage?.totalTokens ? `${acp.usage.totalTokens} tokens` : "",
-              typeof acp.costUSD === "number" ? `$${acp.costUSD.toFixed(4)}` : "",
-            ].filter(Boolean).join(" | ");
-
-            return {
-              content: [{
-                type: "text",
-                text: `${acp.text || "(the agent produced no text)"}\n\n---\n${meta}`,
-              }],
-              isError: !acp.ok,
+          // Preferred path: run the task over the Agent Client Protocol, which
+          // returns the agent's actual answer, why the turn ended and what it
+          // cost. Falls back to the terminal dispatch below for CLIs that have
+          // no ACP mode, or when the run itself could not start.
+          try {
+            const acp = (await apiRequest(
+              `/api/agents/${id}/run-task`,
+              "POST",
+              { task: prompt, timeoutSeconds },
+              (timeoutSeconds + 60) * 1000,
+            )) as {
+              ok?: boolean;
+              started?: boolean;
+              stopReason?: string;
+              text?: string;
+              toolCalls?: string[];
+              backgroundStopped?: string[];
+              usage?: { totalTokens?: number };
+              costUSD?: number;
+              error?: string;
+              retryWithDispatch?: boolean;
             };
-          }
-        } catch {
-          // ACP unavailable for this agent. The terminal path still works.
-        }
 
-        // Atomic dispatch: the server decides message-vs-spawn under its own
-        // lock, so a stale status can never route the prompt to a dead PTY.
-        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject);
-        const agentName = dispatched.agent.name || id;
+            // A run that started is the answer, however it ended. Falling back
+            // to the terminal after one typed the same brief into a second
+            // session: the task ran twice (Parallel project, 2026-09-23).
+            if (acp && !acp.retryWithDispatch && (acp.ok || acp.text || acp.started)) {
+              const meta = [
+                acp.stopReason ? `ended: ${acp.stopReason}` : "",
+                acp.toolCalls?.length ? `tools: ${acp.toolCalls.slice(0, 8).join(", ")}` : "",
+                acp.usage?.totalTokens ? `${acp.usage.totalTokens} tokens` : "",
+                typeof acp.costUSD === "number" ? `$${acp.costUSD.toFixed(4)}` : "",
+              ].filter(Boolean).join(" | ");
+              // A run is one turn: what the agent left running when it answered
+              // was stopped with it, and nothing brings it back for that work.
+              const left = acp.backgroundStopped?.length
+                ? `\nstopped when the run ended: ${acp.backgroundStopped.join(", ")}. Re-delegate what still needs doing.`
+                : "";
+              const why = !acp.ok && acp.error ? `\n${acp.error}` : "";
 
-        // Not typed yet: waiting here would wait on a turn that has not
-        // started, for as long as the field stays in use, and then report the
-        // agent as still running. Say it now; wait_for_agent follows it.
-        if (dispatched.held) {
-          return {
-            content: [{
-              type: "text",
-              text: heldText(agentName, "The task", dispatched.heldReason)
-                + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
-            }],
-          };
-        }
-
-        // Wait for completion via long-poll
-        let waitData = await waitForAgentStatus(id, timeoutSeconds);
-
-        if (waitData.status === "waiting") {
-          if (waitData.waitingReason === "permission") {
-            // A blocking permission dialog: typing text into it does nothing
-            // useful (it expects arrow keys/enter). Surface it instead.
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          // Agent asked for confirmation: auto-reply "continue" and wait
-          // again. A single retry only answers the FIRST question a task
-          // asks - a multi-step task that pauses to confirm several times
-          // used to fall back on the orchestrator to notice "still waiting"
-          // and manually nudge it again for every subsequent question. Loop
-          // instead, bounded so a truly stuck agent still surfaces rather
-          // than spinning forever.
-          const MAX_AUTO_CONTINUES = 8;
-          const deadline = Date.now() + timeoutSeconds * 1000;
-          let autoContinues = 0;
-
-          while (waitData.status === "waiting" && waitData.waitingReason !== "permission") {
-            if (autoContinues >= MAX_AUTO_CONTINUES) break;
-            const remainingMs = deadline - Date.now();
-            if (remainingMs <= 0) break;
-
-            autoContinues++;
-            let continued: DispatchResult;
-            try {
-              continued = await dispatchToAgent(
-                id,
-                "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
-                undefined,
-                allowCrossProject
-              );
-            } catch {
-              // Auto-continue itself failed (agent gone, network hiccup):
-              // stop looping and report the waiting state as-is below.
-              break;
-            }
-            // Held like the task itself can be: nothing was typed, and a wait
-            // now would run out on a turn that never began, then call the
-            // agent still running (the gate of #128).
-            if (continued.held) {
               return {
                 content: [{
                   type: "text",
-                  text: heldText(agentName, "The answer to its question", continued.heldReason)
-                    + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
+                  text: `${acp.text || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}`,
                 }],
+                isError: !acp.ok,
               };
             }
-            waitData = await waitForAgentStatus(id, Math.max(Math.floor(remainingMs / 1000), 30));
+          } catch (err) {
+            // This call's own wait ran out: the run it started may still be
+            // working, and typing the brief into the terminal as well would run
+            // the task twice.
+            if (err instanceof Error && err.name === "AbortError") {
+              return {
+                content: [{
+                  type: "text",
+                  text: `No answer from agent ${id} within ${timeoutSeconds + 60} s. The run may still be working: follow it with get_agent or wait_for_agent rather than delegating the task again.`,
+                }],
+                isError: true,
+              };
+            }
+            // No run started (this CLI has no ACP mode, or its launch failed).
+            // The terminal path still works.
           }
+
+          // Atomic dispatch: the server decides message-vs-spawn under its own
+          // lock, so a stale status can never route the prompt to a dead PTY.
+          const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject);
+          const agentName = dispatched.agent.name || id;
+
+          // Not typed yet: waiting here would wait on a turn that has not
+          // started, for as long as the field stays in use, and then report the
+          // agent as still running. Say it now; wait_for_agent follows it.
+          if (dispatched.held) {
+            return {
+              content: [{
+                type: "text",
+                text: heldText(agentName, "The task", dispatched.heldReason)
+                  + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
+              }],
+            };
+          }
+
+          // Wait for completion via long-poll
+          let waitData = await waitForAgentStatus(id, timeoutSeconds);
 
           if (waitData.status === "waiting") {
             if (waitData.waitingReason === "permission") {
+              // A blocking permission dialog: typing text into it does nothing
+              // useful (it expects arrow keys/enter). Surface it instead.
               return {
                 content: [
                   {
@@ -854,81 +852,141 @@ export function registerAgentTools(server: McpServer): void {
                 isError: true,
               };
             }
-            // Still waiting after every auto-continue: give up and let the
-            // orchestrator handle it.
-            const outputInfo = waitData.lastCleanOutput
-              ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
-              : "";
+            // Agent asked for confirmation: auto-reply "continue" and wait
+            // again. A single retry only answers the FIRST question a task
+            // asks - a multi-step task that pauses to confirm several times
+            // used to fall back on the orchestrator to notice "still waiting"
+            // and manually nudge it again for every subsequent question. Loop
+            // instead, bounded so a truly stuck agent still surfaces rather
+            // than spinning forever.
+            const MAX_AUTO_CONTINUES = 8;
+            const deadline = Date.now() + timeoutSeconds * 1000;
+            let autoContinues = 0;
+
+            while (waitData.status === "waiting" && waitData.waitingReason !== "permission") {
+              if (autoContinues >= MAX_AUTO_CONTINUES) break;
+              const remainingMs = deadline - Date.now();
+              if (remainingMs <= 0) break;
+
+              autoContinues++;
+              let continued: DispatchResult;
+              try {
+                continued = await dispatchToAgent(
+                  id,
+                  "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
+                  undefined,
+                  allowCrossProject
+                );
+              } catch {
+                // Auto-continue itself failed (agent gone, network hiccup):
+                // stop looping and report the waiting state as-is below.
+                break;
+              }
+              // Held like the task itself can be: nothing was typed, and a wait
+              // now would run out on a turn that never began, then call the
+              // agent still running (the gate of #128).
+              if (continued.held) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: heldText(agentName, "The answer to its question", continued.heldReason)
+                      + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
+                  }],
+                };
+              }
+              waitData = await waitForAgentStatus(id, Math.max(Math.floor(remainingMs / 1000), 30));
+            }
+
+            if (waitData.status === "waiting") {
+              if (waitData.waitingReason === "permission") {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`,
+                    },
+                  ],
+                  isError: true,
+                };
+              }
+              // Still waiting after every auto-continue: give up and let the
+              // orchestrator handle it.
+              const outputInfo = waitData.lastCleanOutput
+                ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
+                : "";
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Agent "${agentName}" is still waiting for input after ${autoContinues} auto-continue attempt(s).${outputInfo}\n\nUse send_message to respond.`,
+                  },
+                ],
+              };
+            }
+          }
+
+          if (waitData.timeout) {
             return {
               content: [
                 {
                   type: "text",
-                  text: `Agent "${agentName}" is still waiting for input after ${autoContinues} auto-continue attempt(s).${outputInfo}\n\nUse send_message to respond.`,
+                  text: `Agent "${agentName}" is still running after ${timeoutSeconds}s. Use wait_for_agent to continue waiting, or get_agent_output to check progress.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          if (waitData.status === "error") {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Agent "${agentName}" failed: ${waitData.error || "Unknown error"}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          // Completed or idle: fetch the clean output, retrying briefly since
+          // the Stop hook's output post can arrive just after the status event
+          // that resolved the long-poll.
+          const { output: fetchedOutput } = await fetchCleanOutput(id);
+          const output = fetchedOutput || waitData.lastCleanOutput;
+
+          if (output) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Agent "${agentName}" completed.\n\n${output}`,
                 },
               ],
             };
           }
-        }
 
-        if (waitData.timeout) {
           return {
             content: [
               {
                 type: "text",
-                text: `Agent "${agentName}" is still running after ${timeoutSeconds}s. Use wait_for_agent to continue waiting, or get_agent_output to check progress.`,
+                text: `Agent "${agentName}" finished (${waitData.status}) but no clean output was captured. Use get_agent_output to retry, or check the agent's terminal in the Tars UI.`,
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error delegating task: ${error instanceof Error ? error.message : String(error)}`,
               },
             ],
             isError: true,
           };
         }
-
-        if (waitData.status === "error") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" failed: ${waitData.error || "Unknown error"}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // Completed or idle: fetch the clean output, retrying briefly since
-        // the Stop hook's output post can arrive just after the status event
-        // that resolved the long-poll.
-        const { output: fetchedOutput } = await fetchCleanOutput(id);
-        const output = fetchedOutput || waitData.lastCleanOutput;
-
-        if (output) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" completed.\n\n${output}`,
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Agent "${agentName}" finished (${waitData.status}) but no clean output was captured. Use get_agent_output to retry, or check the agent's terminal in the Tars UI.`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error delegating task: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+      } finally {
+        stopProgress();
       }
     }
   );

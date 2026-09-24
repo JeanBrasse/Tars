@@ -1,4 +1,8 @@
 import { ipcMain, dialog, shell, app } from 'electron';
+import { stopAcpRuns } from '../services/acp/delegate';
+import { publishedWaitingOn } from '../utils/waiting-on';
+import { defaultShell } from '../utils/default-shell';
+import { openTerminal } from '../utils/open-terminal';
 import { checkForUpdates, downloadUpdate, quitAndInstall } from '../services/update-checker';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerObsidianHandlers } from './obsidian-handlers';
@@ -18,7 +22,8 @@ import { App as SlackApp, LogLevel } from '@slack/bolt';
 import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
-import { decodeProjectPath } from '../utils/decode-project-path';
+import { projectFolders } from '../services/project-index';
+import { marketplaceListing } from '../services/skills-marketplace';
 import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
@@ -33,8 +38,8 @@ import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
-import { registerAgentLauncher, launchBegins, launchAbandoned, type AgentLauncher } from '../core/agent-launch';
-import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch } from '../core/agent-restart';
+import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
+import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
 import { assignRole, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
@@ -81,6 +86,7 @@ export interface IpcHandlerDependencies {
   getMcpOrchestratorPath: () => string;
   initTelegramBot: () => void;
   initSlackBot: () => void;
+  initDiscordBot: () => void;
   getTelegramBot: () => TelegramBot | null;
   getSlackApp: () => SlackApp | null;
   getSuperAgentTelegramTask: () => boolean;
@@ -174,7 +180,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
   // Create a new PTY terminal
   ipcMain.handle('pty:create', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
     const id = uuidv4();
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
 
     const ptyProcess = pty.spawn(shell, ['-l'], {
       name: 'xterm-256color',
@@ -897,14 +903,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const agent = agents.get(id);
     if (!agent) return null;
 
-    // Initialize PTY if agent was restored from disk and doesn't have one
-    if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-      console.log(`Initializing PTY for agent ${id} on get`);
-      const ptyId = await initAgentPty(agent);
-      agent.ptyId = ptyId;
+    // Looking at an agent opens nothing. An agent with no terminal is shown
+    // as one: nothing to replay, since what it kept is the tail of a terminal
+    // gone with it, and no terminal named. This used to open a login shell,
+    // whose banner went into the agent's output and read as its last words in
+    // the Chat's fleet list; agent:start opens the terminal a launch needs.
+    const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+    if (!ptyProcess) {
+      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false, launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent) };
     }
-
-    const ptyProcess = ptyProcesses.get(agent.ptyId);
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
     // no longer held a frame. See core/terminal-mirror.ts. Taken last, with
@@ -916,6 +923,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: screen === undefined ? agent.output : [screen],
       cliRunning: cliRunningIn(ptyProcess),
       leftFullscreen: leftFullscreenIn(ptyProcess),
+      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
     };
   });
 
@@ -933,6 +941,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: [],
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
+      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
     }));
   });
 
@@ -1122,6 +1131,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // Stop an agent
   ipcMain.handle('agent:stop', async (_event, id: string) => {
     const agent = agents.get(id);
+    // A delegated run too, which has no terminal: an agent running only one
+    // was not stopped at all (the Audit's table, #6).
+    if (agent) await stopAcpRuns(agent.id, 'the agent was stopped');
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1177,6 +1189,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
+    if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1204,6 +1217,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
 
     agents.delete(id);
+    forgetRestart(id);
 
     // Save agents to disk
     saveAgents();
@@ -1268,6 +1282,20 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
    * An agent absent from the list is holding nothing.
    */
   ipcMain.handle('agent:messagesWaiting', async () => ({ success: true, waiting: messagesWaiting() }));
+
+  /**
+   * The restarts waiting to apply a changed model, effort or other launch
+   * setting, and what each waits on. The same state `agent:restart-pending`
+   * pushes, for a window that opened after the wait began (core/agent-restart.ts).
+   */
+  ipcMain.handle('agent:pendingRestarts', async () => ({ success: true, pending: pendingRestarts() }));
+
+  /**
+   * Restart an agent's CLI now, continuing its conversation under a new
+   * session id. What the Dashboard's `restart` calls; a stop then a start
+   * begins a new conversation instead.
+   */
+  ipcMain.handle('agent:restart', async (_event, id: string) => restartAgent(id));
 
   // Resize agent PTY
   ipcMain.handle('agent:resize', async (_event, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
@@ -1371,37 +1399,9 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
   });
 
   // Fetch skills marketplace from skills.sh (server-side to avoid CORS)
-  ipcMain.handle('skill:fetch-marketplace', async () => {
-    try {
-      const res = await fetch('https://skills.sh/', {
-        headers: { 'User-Agent': 'Tars/1.0' },
-      });
-      if (!res.ok) return { skills: null };
-
-      const html = await res.text();
-      const match = html.match(/initialSkills.*?(\[\{.*?\}\])/);
-      if (!match) return { skills: null };
-
-      const raw = match[1].replace(/\\"/g, '"');
-      const allSkills: { source: string; name: string; installs: number }[] = JSON.parse(raw);
-
-      // The directory publishes ~600 skills; the old 300 cap hid half of them
-      // behind a search box that only filters what was already downloaded.
-      const skills = allSkills.map((s, i) => ({
-        rank: i + 1,
-        name: s.name,
-        repo: s.source,
-        installs: s.installs >= 1000
-          ? `${(s.installs / 1000).toFixed(1).replace(/\.0$/, '')}K`
-          : String(s.installs),
-        installsNum: s.installs,
-      }));
-
-      return { skills };
-    } catch {
-      return { skills: null };
-    }
-  });
+  // skills.sh, served from the last listing and refreshed behind it
+  // (services/skills-marketplace.ts). `fetchedAt` says how old it is.
+  ipcMain.handle('skill:fetch-marketplace', async () => marketplaceListing());
 
   // Legacy install (kept for backwards compatibility)
   ipcMain.handle('skill:install', async (_event, repo: string) => {
@@ -1522,7 +1522,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const id = uuidv4();
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
 
     // If the command starts with /, it's a Claude CLI slash command - prefix with 'claude'
     const finalCommand = command.startsWith('/') ? `claude "${command}"` : command;
@@ -1848,6 +1848,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     saveAppSettings,
     initTelegramBot,
     initSlackBot,
+    initDiscordBot,
     getTelegramBot,
     getSlackApp
   } = deps;
@@ -1974,6 +1975,11 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
                            newSettings.slackBotToken !== undefined ||
                            newSettings.slackAppToken !== undefined;
 
+      // Who it answers and the mention rule are read at each message: only a
+      // new token, or switching it on or off, reconnects the bot.
+      const discordChanged = newSettings.discordEnabled !== undefined ||
+                             newSettings.discordBotToken !== undefined;
+
       const currentSettings = getAppSettings();
       const updatedSettings = { ...currentSettings, ...newSettings };
       setAppSettings(updatedSettings);
@@ -1987,6 +1993,10 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       // Reinitialize Slack bot if settings changed
       if (slackChanged) {
         initSlackBot();
+      }
+
+      if (discordChanged) {
+        initDiscordBot();
       }
 
       // Re-sync shared memory backend MCP registrations when their settings change
@@ -2317,26 +2327,21 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       const projects: Array<{ id: string; path: string; name: string; custom?: boolean }> = [];
       const seen = new Set<string>();
 
-      const push = (p: string, id: string, custom = false) => {
+      const push = async (p: string, id: string, custom = false) => {
         if (!p || p === '/' || p === os.homedir()) return;
-        if (seen.has(p) || !fs.existsSync(p)) return;
-        if (/\/\.?worktrees\//.test(p)) return;
+        if (seen.has(p) || /\/\.?worktrees\//.test(p)) return;
         seen.add(p);
+        if (!await fs.promises.access(p).then(() => true, () => false)) return;
         projects.push({ id, path: p, name: path.basename(p), ...(custom ? { custom: true } : {}) });
       };
 
       // Projects the user explicitly added (persisted here, not in the
       // renderer's localStorage, so they survive updates and are visible to
       // every surface: agent creation, team deployment, Brain).
-      for (const p of readCustomProjects()) push(p, `custom:${p}`, true);
+      for (const p of readCustomProjects()) await push(p, `custom:${p}`, true);
 
-      if (fs.existsSync(claudeDir)) {
-        for (const dir of fs.readdirSync(claudeDir)) {
-          const fullPath = path.join(claudeDir, dir);
-          if (!fs.statSync(fullPath).isDirectory()) continue;
-          push(decodeProjectPath(dir), dir);
-        }
-      }
+      // Decoded once per folder, without blocking (services/project-index.ts).
+      for (const folder of await projectFolders(claudeDir)) await push(folder.projectPath, folder.name);
 
       return projects;
     } catch (err) {
@@ -2435,12 +2440,9 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     }
 
     // Projects Claude Code has seen, same source as fs:list-projects.
-    try {
-      const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-      for (const dir of fs.readdirSync(claudeDir)) {
-        roots.push(decodeProjectPath(dir));
-      }
-    } catch { /* no Claude projects yet */ }
+    for (const folder of await projectFolders(path.join(os.homedir(), '.claude', 'projects'))) {
+      roots.push(folder.projectPath);
+    }
 
     // Skills can be symlinks out of ~/.claude/skills, so allow the real paths
     // the app resolved rather than only the directory they are linked from.
@@ -2759,7 +2761,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   const { quickPtyProcesses, getMainWindow } = deps;
 
   /**
-   * Open a directory in Terminal.app.
+   * Open a directory in a terminal: Terminal.app on macOS, the first one installed on Linux.
    *
    * This used to escape only single quotes in `cwd` and nothing at all in a
    * `command` parameter, then paste both into a double-quoted AppleScript
@@ -2774,24 +2776,14 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
    * So: no shell (execFile with an argv array), no `command` parameter (no
    * caller supplies one), and the directory is escaped for both layers it
    * crosses: shell quoting for the `cd` that `do script` runs, then
-   * AppleScript quoting for the string literal that holds it.
+   * AppleScript quoting for the string literal that holds it. On Linux, the
+   * first terminal installed, the directory as its cwd (utils/open-terminal.ts).
    */
   ipcMain.handle('shell:open-terminal', async (_event, { cwd }: { cwd: string; command?: string }) => {
-    const dir = String(cwd || '');
-    if (!dir || !fs.existsSync(dir)) return { success: false, error: 'no such directory' };
-
-    const shellQuoted = `'${dir.replace(/'/g, "'\\''")}'`;
-    const appleQuoted = `"${`cd ${shellQuoted}`.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-    const script = `tell application "Terminal" to do script ${appleQuoted}`;
-
-    try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      await promisify(execFile)('osascript', ['-e', script], { timeout: 15000 });
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    // macOS through Terminal.app, Linux through the first terminal installed,
+    // and a refusal elsewhere: utils/open-terminal.ts.
+    const r = await openTerminal(String(cwd || ''));
+    return r.success ? { success: true } : { success: false, error: r.error };
   });
 
   // Execute arbitrary command (uses PTY)
@@ -2923,7 +2915,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   // Start a new quick terminal PTY
   ipcMain.handle('shell:startPty', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
     const id = uuidv4();
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
 
     const ptyProcess = pty.spawn(shell, ['-l'], {
       name: 'xterm-256color',

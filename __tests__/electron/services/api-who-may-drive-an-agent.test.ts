@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as fs from 'node:fs';
@@ -393,6 +393,48 @@ describe('the super chat, which is Noah driving every project', () => {
   });
 });
 
+describe('the super chat, to an agent whose launch is slow (the Database Engineer, re-gate of #134)', () => {
+  // /dispatch holds a sender up to SENDER_WAIT_MS (20 s) on a launch whose CLI
+  // runs and has not started its session, as happens on a loaded machine.
+  //
+  // How this fails, written before the code:
+  // 1. The super chat gives up on its request before /dispatch answers, and
+  //    tells Noah the message failed while it is typed a moment later.
+  // 2. It reports a bare "timeout" where /dispatch said the CLI is still
+  //    starting and nothing was typed.
+  afterEach(async () => { (await import('../../../electron/core/agent-launch')).resetLaunches(); });
+
+  it('waits for a launch that comes up after 15 s, and says the message went in', async () => {
+    const { launchBegins } = await import('../../../electron/core/agent-launch');
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+    launchBegins(beta.id, { withTask: false });
+    const up = setTimeout(() => { beta.sessionRegisteredAt = new Date().toISOString(); }, 16_500);
+
+    try {
+      const result = await overseer.sendToAgent(BETA.id, 'ship the thing');
+
+      expect(result, JSON.stringify(result)).toEqual({ success: true, mode: 'message' });
+      expect(terminal.written.join('')).toContain('ship the thing');
+    } finally {
+      clearTimeout(up);
+    }
+  }, 60_000);
+
+  it('passes on that nothing was typed when the launch is still starting', async () => {
+    const { launchBegins } = await import('../../../electron/core/agent-launch');
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+    launchBegins(beta.id, { withTask: false });
+
+    const result = await overseer.sendToAgent(BETA.id, 'ship the thing');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/still starting.*nothing was typed/);
+    expect(terminal.written.join('')).not.toContain('ship the thing');
+  }, 60_000);
+});
+
 describe('Hermes, the one caller published off this machine', () => {
   const SECRET = 'f'.repeat(64);
   /** The file `provisionWebhookSecret()` leaves in the private directory, and Settings hands to Hermes. */
@@ -679,5 +721,26 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
     expect(vi.mocked(delegateOverAcp)).toHaveBeenCalledWith(expect.objectContaining({
       agent: agents.get(BETA.id), task: 'take this over',
     }));
+  });
+  // A run that started is an answer however it ended; 502 is what tells
+  // delegate_task it may type the task into the terminal instead, and after a
+  // run that started that runs it twice (sessions that died while they
+  // waited, 2026-09-23). Written before the route changed.
+  it('answers 200 for a run that started and was stopped at its limit, 502 only for one that never started', async () => {
+    putAgent({ id: 'agent-beta-3', projectPath: BETA.projectPath });
+    const sameProject = tokens.mintAgentToken('agent-beta-3');
+    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
+      ok: false, transport: 'acp', started: true, stopReason: 'turn_limit', text: 'half', toolCalls: ['pnpm build'],
+      error: "stopped at the run's limit of 3600 s while the agent was still working",
+    } as never);
+    const stopped = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
+      ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'spawn npx ENOENT',
+    } as never);
+    const neverStarted = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+
+    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+    expect(stopped.body).toMatchObject({ started: true, stopReason: 'turn_limit', text: 'half' });
+    expect(neverStarted.status).toBe(502);
   });
 });

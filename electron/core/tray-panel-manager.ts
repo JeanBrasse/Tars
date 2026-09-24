@@ -1,5 +1,5 @@
 import { BrowserWindow, screen } from 'electron';
-import { hardenWindow } from './window-manager';
+import { hardenWindow, isDevBuild, resolveDevUrl } from './window-manager';
 import * as path from 'path';
 
 let trayPanel: BrowserWindow | null = null;
@@ -39,9 +39,13 @@ export function createTrayPanel(): BrowserWindow {
 
   hardenWindow(trayPanel);
 
-  const isDev = process.env.NODE_ENV === 'development';
-  if (isDev) {
-    trayPanel.loadURL('http://localhost:3000/tray-panel');
+  // The main window's rule (window-manager.ts, isDevBuild and resolveDevUrl):
+  // the build decides, not NODE_ENV, which the launching shell sets. This
+  // window carries the same preload bridge, and read NODE_ENV until the
+  // Audit's table on a3d7c125 (#4): a shipped build launched from a shell with
+  // NODE_ENV=development loaded whatever answered on localhost:3000.
+  if (isDevBuild()) {
+    trayPanel.loadURL(`${resolveDevUrl().replace(/\/+$/, '')}/tray-panel`);
   } else {
     trayPanel.loadURL('app://-/tray-panel/index.html');
   }

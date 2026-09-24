@@ -7,6 +7,16 @@ import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
 import type { AppSettings } from './types';
 
+const ACTION = 'font-mono lowercase';
+
+/**
+ * A Slack member ID as the bot compares it: U, or W on Enterprise Grid, then
+ * capitals and digits. `isAllowedSlackUser` (electron/services/slack-bot.ts)
+ * matches it exactly, so a pasted lowercase ID is uppercased before it is
+ * kept, and anything else is refused here rather than saved to match nobody.
+ */
+const MEMBER_ID = /^[UW][A-Z0-9]{2,}$/;
+
 interface SlackSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
@@ -16,6 +26,27 @@ interface SlackSectionProps {
 export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: SlackSectionProps) => {
   const [testingSlack, setTestingSlack] = useState(false);
   const [slackTestResult, setSlackTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [newMember, setNewMember] = useState('');
+  const [memberError, setMemberError] = useState<string | null>(null);
+
+  // Who the bot answers (#137). Nobody while the list is empty, and the bot
+  // tells anyone it refuses their own ID, which is how an ID reaches this list.
+  const allowed = appSettings.slackAllowedUserIds ?? [];
+
+  const addMember = () => {
+    const id = newMember.trim().toUpperCase();
+    if (!MEMBER_ID.test(id)) {
+      setMemberError(`${newMember.trim()} is not a member ID: they start with U or W, then capitals and digits.`);
+      return;
+    }
+    if (allowed.includes(id)) {
+      setMemberError(`${id} is on the list already.`);
+      return;
+    }
+    onSaveAppSettings({ slackAllowedUserIds: [...allowed, id] });
+    setNewMember('');
+    setMemberError(null);
+  };
 
   const handleTestTokens = async () => {
     if (!window.electronAPI?.slack?.test) return;
@@ -117,6 +148,51 @@ export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSett
           />
         }
       />
+
+      <SettingsRow
+        label="Allowed members"
+        description={
+          memberError ? (
+            <span className="text-status-error">{memberError}</span>
+          ) : (
+            'Slack member IDs, U… or W…. An empty list answers nobody; a refused sender is told their ID.'
+          )
+        }
+        control={
+          <div className="flex items-center gap-2">
+            <Input
+              compact
+              mono
+              aria-label="Slack member ID"
+              value={newMember}
+              onChange={(e) => { setNewMember(e.target.value); setMemberError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') addMember(); }}
+              placeholder="U0123ABCDE"
+            />
+            <Button size="sm" className={ACTION} onClick={addMember} disabled={!newMember.trim()}>
+              add
+            </Button>
+          </div>
+        }
+      />
+
+      {/* One row per ID, as Telegram lists its chats: removing is the way back out. */}
+      {allowed.map(id => (
+        <SettingsRow
+          key={id}
+          label={<span className="font-mono">{id}</span>}
+          description="Answered"
+          control={
+            <Button
+              size="sm"
+              className={ACTION}
+              onClick={() => onSaveAppSettings({ slackAllowedUserIds: allowed.filter(member => member !== id) })}
+            >
+              remove
+            </Button>
+          }
+        />
+      ))}
 
       <SettingsRow
         label="Test"

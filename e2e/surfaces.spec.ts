@@ -2,9 +2,9 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
+import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, USAGE_DAY, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, pinDayOn, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -45,6 +45,7 @@ test.beforeAll(async () => {
   page = await app.firstWindow();
   listenForErrors(page, pageErrors);
   await markWhatsNewSeen(page, WHATS_NEW_STORAGE_KEY, String(LATEST_RELEASE.id));
+  await pinDayOn(page, '/usage', USAGE_DAY);
   await stubSkillsSh(app);
 
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -114,10 +115,20 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // VOLATILE in surfaces.mjs, and a locator that stops matching fails the run
     // in e2e/known-errors.spec.ts. The tolerance is the same in every spec and
     // is measured, not chosen: see SCREENSHOT_TOLERANCE.
-    await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      ...SCREENSHOT_TOLERANCE,
-      animations: 'disabled',
-      mask: masks,
-    });
+    try {
+      await expect(page).toHaveScreenshot(`${surface.name}.png`, {
+        ...SCREENSHOT_TOLERANCE,
+        animations: 'disabled',
+        mask: masks,
+      });
+    } finally {
+      // A mask counts for what the picture covered, which the screenshot above
+      // resolves when it is taken, after the count made at the settle. The CLI
+      // versions of settings-ai-providers arrive once the page's detection is
+      // done: measured in the final run of 1.8.0 at a load average of 80 to
+      // 110, after the count and before the picture, which masked them.
+      const late = (await volatileMasks(page, surface.name)).used.filter(key => !used.includes(key));
+      if (late.length > 0) recordPageErrors(test.info(), 'surfaces', surface.name, [], late);
+    }
   });
 }

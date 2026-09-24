@@ -5,6 +5,8 @@ import { AgentMark } from '@/components/ui';
 import { isSuperAgent } from './AgentDialogTypes';
 
 interface AgentDialogSuperAgentSidebarProps {
+  /** The orchestrator whose window this is. Every other agent is listed. */
+  agentId?: string;
   agents: AgentStatus[];
   projects: { path: string; name: string }[];
 }
@@ -22,10 +24,14 @@ const STATUS_BG_COLOR: Record<string, string> = {
 };
 
 export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentSidebar({
+  agentId,
   agents,
   projects,
 }: AgentDialogSuperAgentSidebarProps) {
-  const otherAgents = agents.filter(a => !isSuperAgent(a));
+  // Everyone but this window's own agent. Filtering on the role instead hid
+  // every orchestrator: since a project has one each, the others are agents
+  // this list owes a row, drawn with the orange mark like everywhere else.
+  const otherAgents = agents.filter(a => a.id !== agentId);
   const runningAgents = otherAgents.filter(a => a.status === 'running');
   const idleAgents = otherAgents.filter(a => a.status === 'idle' || a.status === 'completed');
   const errorAgents = otherAgents.filter(a => a.status === 'error');
@@ -51,7 +57,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
               <div className="space-y-1">
                 {runningAgents.map((agent) => (
                   <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 rounded-none bg-primary/10 border border-primary/20">
-                    <AgentMark name={agent.name || agent.id} />
+                    <AgentMark name={agent.name || agent.id} orchestrator={isSuperAgent(agent)} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{agent.name}</p>
                       <p className="text-[10px] text-text-muted truncate">
@@ -73,7 +79,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
               <div className="space-y-1">
                 {errorAgents.map((agent) => (
                   <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 rounded-none bg-accent-red/10 border border-accent-red/20">
-                    <AgentMark name={agent.name || agent.id} />
+                    <AgentMark name={agent.name || agent.id} orchestrator={isSuperAgent(agent)} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{agent.name}</p>
                       <p className="text-[10px] text-text-muted truncate">{agent.projectPath.split('/').pop()}</p>
@@ -92,7 +98,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
               <div className="space-y-1">
                 {idleAgents.map((agent) => (
                   <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 rounded-none hover:bg-bg-tertiary/50">
-                    <AgentMark name={agent.name || agent.id} className="opacity-60" />
+                    <AgentMark name={agent.name || agent.id} orchestrator={isSuperAgent(agent)} className="opacity-60" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-text-secondary truncate">{agent.name}</p>
                       <p className="text-[10px] text-text-muted truncate">{agent.projectPath.split('/').pop()}</p>
