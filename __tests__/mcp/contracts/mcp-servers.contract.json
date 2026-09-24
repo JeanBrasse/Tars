@@ -1098,7 +1098,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Error getting agent: This operation was aborted"
+                "text": "Error getting agent: Tars did not answer at http://127.0.0.1:<port>: no answer within 30 s"
               }
             ],
             "isError": true
@@ -2756,7 +2756,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Error waiting for agent: This operation was aborted"
+                "text": "Error waiting for agent: Tars did not answer at http://127.0.0.1:<port>: no answer within 31 s"
               }
             ],
             "isError": true
@@ -7468,7 +7468,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "This operation was aborted"
+                "text": "Tars did not answer at http://127.0.0.1:<port>: no answer within 30 s"
               }
             ],
             "isError": true
