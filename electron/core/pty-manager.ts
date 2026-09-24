@@ -1,4 +1,5 @@
 import * as pty from 'node-pty';
+import { defaultShell } from '../utils/default-shell';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { BrowserWindow } from 'electron';
@@ -802,7 +803,7 @@ export function createQuickPty(
   rows: number | undefined,
   mainWindow: BrowserWindow | null
 ): string {
-  const shell = process.env.SHELL || '/bin/zsh';
+  const shell = defaultShell();
 
   const ptyProcess = pty.spawn(shell, ['-l'], {
     name: 'xterm-256color',

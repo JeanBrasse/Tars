@@ -99,7 +99,10 @@ export function RoomView({
   const [failure, setFailure] = useState<ComposerFailure | null>(null);
 
   const logRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** Where the last scroll left the view, to tell a move up from a resize. */
+  const lastTop = useRef(0);
 
   const rows = useMemo(() => toRows(messages, deliveries, agents), [messages, deliveries, agents]);
   const thread = useMemo(() => currentThread(threads), [threads]);
@@ -110,6 +113,22 @@ export function RoomView({
     if (!logRef.current || !stickToBottom.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [rows.length, notice]);
+
+  // Now that the thread really scrolls, a new row is not the only thing that
+  // moves its bottom: a receipt arrives under your line after the line itself,
+  // the window is resized. While you are at the bottom, any change to the
+  // thread's height or to its content's keeps you there.
+  useEffect(() => {
+    const el = logRef.current;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   const targets: ComposerTarget[] = useMemo(() => agents.map(a => ({
     id: a.id,
@@ -160,33 +179,48 @@ export function RoomView({
         <MetaBar room={room} thread={thread} />
         <div
           ref={logRef}
+          data-room-thread
           onScroll={() => {
             const el = logRef.current;
-            if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            if (!el) return;
+            // Only you moving the view up stops the following. The view also
+            // scrolls when the thread changes size under it, and a scroll
+            // event that lands after that finds it off the bottom through no
+            // move of yours.
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) stickToBottom.current = true;
+            else if (el.scrollTop < lastTop.current) stickToBottom.current = false;
+            lastTop.current = el.scrollTop;
           }}
-          className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-end gap-[3px] px-3 py-2.5"
+          className="flex-1 min-h-0 overflow-y-auto"
         >
-          {loading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <BrandSpinner size={26} label="Reading the room" />
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
-              <p className="text-sm text-foreground">
-                {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
-              </p>
-              <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
-                {agents.length === 0
-                  ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
-                  : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
-              </p>
-            </div>
-          ) : (
-            <>
-              {rows.map(row => <RoomRow key={row.id} row={row} />)}
-              {notice && <RoomNotice caption={notice.caption} lines={notice.lines} />}
-            </>
-          )}
+          {/* The rows sit at the bottom while they fit, as they always did, from
+              a box at least as tall as the thread. The thread itself was that
+              box, a scroll box that was also justify-end: what overflowed went
+              above its top, where no scroll reaches, and a busy room kept its
+              last five messages in reach and the rest out of it. */}
+          <div ref={contentRef} className="min-h-full flex flex-col justify-end gap-[3px] px-3 py-2.5">
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <BrandSpinner size={26} label="Reading the room" />
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
+                <p className="text-sm text-foreground">
+                  {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
+                </p>
+                <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
+                  {agents.length === 0
+                    ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
+                    : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
+                </p>
+              </div>
+            ) : (
+              <>
+                {rows.map(row => <RoomRow key={row.id} row={row} />)}
+                {notice && <RoomNotice caption={notice.caption} lines={notice.lines} />}
+              </>
+            )}
+          </div>
         </div>
       </div>
 

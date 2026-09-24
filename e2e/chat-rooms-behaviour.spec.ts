@@ -21,6 +21,10 @@ import { splitPageErrors } from './surfaces.mjs';
  *    CLI reports its turns before it asked about an error, so an agent on grok
  *    whose session failed read "no turn signal" and "Tars sees its output, not
  *    its turns", and the reason it failed was nowhere on the page.
+ * 3. The older messages of a busy room are out of reach. The thread was a scroll
+ *    box that was also `justify-end`, so what overflowed went above its top,
+ *    where no scroll reaches: QA measured 30 messages in tars, the first 2584 px
+ *    above the thread and the wheel moving nothing.
  *
  * Same sandbox as chat-rooms.spec.ts: the seeded journal, nothing started. The
  * statuses a test needs are set on the app's own agent map and pushed with a
@@ -141,5 +145,36 @@ test('an error on a CLI that never reports its turns still says why', async () =
   expect.soft(shown.reason, 'the reason, in the team rail').toBe(1);
   expect.soft(shown.noTurnSignal, '"no turn signal" in place of the error').toBe(0);
   expect.soft(shown.outputNotTurns, 'the no-turn-signal line in place of the reason').toBe(0);
+  expect.soft(splitPageErrors(pageErrors.slice(errorsBefore)).fatal, 'page errors').toEqual([]);
+});
+
+
+test('an older message of a busy room can be scrolled back to', async () => {
+  // Held by the QA at the gate of #175, red on main (e16b7692) and on #175 alike.
+  // The thread is an `overflow-y-auto` box that is also `justify-end`: what
+  // overflows goes above its top, where no scroll reaches. Measured with 30
+  // messages in tars: the first sat at y = -2584 above a thread starting at
+  // y = 116, scrollHeight equalled clientHeight (616), and twenty turns of the
+  // wheel upward moved nothing. With rows about 110 px tall, a room keeps its
+  // last five or so messages on screen and the rest out of reach.
+  const errorsBefore = pageErrors.length;
+  await page.goto(DEV_URL + '/chat', { waitUntil: 'domcontentloaded' });
+  const tars = await page.evaluate(async () => (await window.electronAPI!.bus!.listRooms()).rooms.find(r => r.title === 'tars')?.id);
+  for (let i = 1; i <= 30; i++) {
+    await page.evaluate(async ([id, n]) => window.electronAPI!.bus!.postMessage({ roomId: id as string, text: `filler ${n}: a line long enough to take a row of the thread, and then some more words so it wraps.` }), [tars, i]);
+  }
+  await openRoom('tars', 'filler 30:');
+  const thread = page.locator('div.overflow-y-auto.justify-end, [data-room-thread]').first();
+  const box = (await thread.boundingBox())!;
+  // And a busy room still opens at its newest message, with the thread scrolled
+  // to its bottom rather than to its top.
+  const newest = (await page.getByText('filler 30:', { exact: false }).first().boundingBox())!;
+  expect.soft(newest.y + newest.height, 'the newest message in view when the room opens').toBeLessThanOrEqual(box.y + box.height + 1);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -400); await page.waitForTimeout(50); }
+  await page.waitForTimeout(500);
+  const first = (await page.getByText('filler 1:', { exact: false }).first().boundingBox())!;
+
+  expect.soft(first.y, 'the first message, after scrolling to the top').toBeGreaterThanOrEqual(box.y);
   expect.soft(splitPageErrors(pageErrors.slice(errorsBefore)).fatal, 'page errors').toEqual([]);
 });
