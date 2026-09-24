@@ -1442,6 +1442,28 @@ describe('send now, and the member that can be interrupted', () => {
     expect(store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.length).toBe(before);
   });
 
+  // Found at the gate of #169 and fixed by #174 for every writer: an Esc in a
+  // dialog is "No", and send now wrote one whatever the dialog.
+  it('sends no Esc to an agent at a dialog, and holds the message until it is answered', async () => {
+    const terminal = busy('asker');
+    const a = manager.agents.get('asker')!;
+    a.status = 'waiting';
+    a.waitingReason = 'permission';
+    manager.wireDialogProbe();
+
+    const result = await sendNow({ agentId: 'asker', text: 'do not answer my dialog' });
+
+    expect(result.interrupted).toBe(false);
+    expect(terminal.written, 'an Esc or the text went into the dialog').toEqual([]);
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('queued');
+
+    a.status = 'running';
+    a.waitingReason = undefined;
+    events.emitAgentStatus('asker');
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    expect(terminal.written.join('')).toContain('do not answer my dialog');
+  }, 15_000);
+
   it('keeps the draft guard after the interrupt: held, not typed across the draft', async () => {
     const terminal = busy('typist');
     ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-typist')!, '\t');
@@ -1498,6 +1520,57 @@ describe('files for a room', () => {
     expect(result.attachments.map(a => a.name)).toEqual(['ok.txt']);
     expect(result.error).toMatch(/big\.bin/);
     expect(result.error).toMatch(/text\.txt/);
+  });
+
+  // The Audit's Lows at the gate of #169.
+  it('takes DEL, C1 controls and direction overrides out of a name, on disk and in what the agent reads', async () => {
+    const terminal = attachTerminal('pty-reader');
+    putAgent({ id: 'reader', status: 'idle', ptyId: 'pty-reader' });
+    const { attachments } = await stage([{ name: 'a\x7fb\u009b31mc\u202Etxt.exe', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
+
+    expect(attachments[0].name).toBe('ab31mctxt.exe');
+    expect(path.basename(attachments[0].path)).toBe('ab31mctxt.exe');
+    await ipcHandlers.get('bus:postMessage')!(null, { roomId: ROOM, text: 'read', mentions: ['reader'], attachments: [attachments[0].id] });
+    expect(terminal.written.join('')).not.toMatch(/[\x7f-\x9f\u202a-\u202e\u2066-\u2069]/);
+  });
+
+  it('refuses to stage through a bus-files folder that is a link', async () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-elsewhere-'));
+    fs.rmSync(path.join(tmp, 'bus-files'), { recursive: true, force: true });
+    fs.symlinkSync(elsewhere, path.join(tmp, 'bus-files'));
+    try {
+      const result = await stage([{ name: 'a.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
+
+      expect(result.success).toBe(false);
+      expect(result.attachments).toEqual([]);
+      expect(fs.readdirSync(elsewhere)).toEqual([]);
+    } finally {
+      fs.rmSync(path.join(tmp, 'bus-files'), { force: true });
+    }
+  });
+
+  it('stages ten files at most in one call, and names the rest', async () => {
+    const files = Array.from({ length: 12 }, (_, i) => ({ name: `f${i}.txt`, mimeType: 'text/plain', data: new Uint8Array([i]) }));
+
+    const result = await stage(files);
+
+    expect(result.attachments).toHaveLength(10);
+    expect(result.error).toMatch(/f10\.txt/);
+    expect(result.error).toMatch(/f11\.txt/);
+  });
+
+  it('removes staged files older than a week, and keeps the others', async () => {
+    const old = path.join(tmp, 'bus-files', 'old-id');
+    fs.mkdirSync(old, { recursive: true });
+    fs.writeFileSync(path.join(old, 'stale.txt'), 'x');
+    const eightDays = (Date.now() - 8 * 24 * 3600 * 1000) / 1000;
+    fs.utimesSync(old, eightDays, eightDays);
+    const recent = await stage([{ name: 'kept.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
+    const second = await stage([{ name: 'next.txt', mimeType: 'text/plain', data: new Uint8Array([2]) }]);
+
+    expect(fs.existsSync(old)).toBe(false);
+    expect(fs.existsSync(recent.attachments[0].path)).toBe(true);
+    expect(fs.existsSync(second.attachments[0].path)).toBe(true);
   });
 
   it('refuses the global room, whose messages are the super chat', async () => {

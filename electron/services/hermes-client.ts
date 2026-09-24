@@ -622,7 +622,9 @@ export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
  *  climb out of the upload directory or contain a separator. */
 export function safeUploadName(name: string): string {
   const base = name.split(/[\\/]/).pop() || 'file';
-  const cleaned = base.replace(/[\x00-\x1f]/g, '').replace(/^\.+/, '').trim();
+  // Controls (C0, DEL, C1) and direction marks and overrides: a name is shown
+  // to a person and typed at an agent, and U+202E turns what follows around.
+  const cleaned = base.replace(/[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/^\.+/, '').trim();
   return cleaned.slice(0, 120) || 'file';
 }
 

@@ -55,6 +55,10 @@ export interface AgentStatus {
   skills: string[];
   currentTask?: string;
   output: string[];
+  /** When the dialog this agent waits on opened (the PermissionRequest hook's
+   *  `waiting`, `permission`). An interrupt the transcript records after it
+   *  means the dialog was refused and is gone (core/agent-launch.ts, dialogOpen). */
+  dialogSince?: string;
   lastActivity: string;
   error?: string;
   ptyId?: string;

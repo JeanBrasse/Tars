@@ -299,6 +299,10 @@ export interface AgentStatus {
    *  terminal has no mirror. Empty, with no ptyId, for an agent with no
    *  terminal: agent:get opens none. */
   output: string[];
+  /** When the dialog this agent waits on opened (the PermissionRequest hook's
+   *  `waiting`, `permission`). An interrupt the transcript records after it
+   *  means the dialog was refused and is gone (core/agent-launch.ts, dialogOpen). */
+  dialogSince?: string;
   lastActivity: string;
   error?: string;
   ptyId?: string;

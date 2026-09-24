@@ -1,6 +1,7 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { ptyProcesses } from '../core/pty-manager';
+import { dialogShown } from '../core/agent-launch';
 import { lastInterruptAt } from './agent-truth';
 import { deliverBusMessages, queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
 import { forgetStaged, stagedFor, withAttachmentPaths } from './bus-files';
@@ -161,10 +162,14 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
   // saying nothing, is the wrong answer to a person who just pressed send and
   // is owed one.
   if (!written.length && waiting?.length) {
+    const target = agents.get(agentId);
+    const dialog = !!target && dialogShown(target, target.ptyId ? ptyProcesses.get(target.ptyId) : undefined);
     return {
       released: [],
       reason: `${waiting.length} message${waiting.length > 1 ? 's are' : ' is'} waiting for that terminal: `
-        + 'somebody is typing in it. They go in as soon as that field is free.',
+        + (dialog
+          ? 'its CLI shows a dialog (a permission or a question). They go in once it is answered or refused.'
+          : 'somebody is typing in it. They go in as soon as that field is free.'),
     };
   }
   if (!written.length) {
@@ -293,7 +298,11 @@ export async function sendNow(params: {
   };
 
   const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  if (agent.status !== 'running' || !canInterrupt(agent) || !ptyProcess) {
+  // Never an Esc into a dialog, whatever the status says: there it means No
+  // (it rejected the tool use, in #174's proof), and the status can still read
+  // running for a moment after the dialog is drawn. The message then goes as
+  // any other, and the writer holds it until the dialog is gone.
+  if (agent.status !== 'running' || !canInterrupt(agent) || !ptyProcess || dialogShown(agent, ptyProcess)) {
     const deliveries = fanOutDeliveries(message, room);
     broadcastPublication(message, thread, deliveries);
     closeSuperseded();

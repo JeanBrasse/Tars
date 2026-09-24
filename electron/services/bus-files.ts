@@ -33,11 +33,57 @@ export interface StagedFiles {
   errors: string[];
 }
 
+/** Files in one call, and so in one message: a person drops a few, not a folder. */
+export const MAX_FILES_PER_STAGE = 10;
+/** How long a staged file is kept, sent or not: an agent reads it within its turn. */
+export const STAGED_FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The folder, made sure of: a real directory, not a link. Every agent can
+ * write under ~/.dorothy, and one that replaced bus-files with a link sent the
+ * next file wherever it pointed (the Audit, gate of #169). Null when it is not.
+ */
+function stagingRoot(): string | null {
+  const root = busFilesDir();
+  try {
+    const stat = fs.lstatSync(root);
+    return stat.isDirectory() && !stat.isSymbolicLink() ? root : null;
+  } catch {
+    fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    return root;
+  }
+}
+
+/** Staged files older than STAGED_FILE_TTL_MS go, each in its own folder. */
+function pruneStaged(root: string): void {
+  const cutoff = Date.now() - STAGED_FILE_TTL_MS;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name);
+    try {
+      if (fs.lstatSync(dir).mtimeMs < cutoff) {
+        fs.rmSync(dir, { recursive: true, force: true });
+        for (const [id, s] of staged) if (path.dirname(s.attachment.path) === dir) staged.delete(id);
+      }
+    } catch (err) {
+      console.warn('[bus] could not prune a staged file:', err);
+    }
+  }
+}
+
 /** Write each file, or name why it was refused. The same cap as Hermes's. */
 export function stageFiles(roomId: string, files: unknown): StagedFiles {
   const attachments: BusAttachment[] = [];
   const errors: string[] = [];
-  for (const file of Array.isArray(files) ? files : []) {
+  const root = stagingRoot();
+  if (!root) return { attachments, errors: [`${busFilesDir()} is not a plain folder (a link?): nothing was staged.`] };
+  pruneStaged(root);
+  const list = Array.isArray(files) ? files : [];
+  for (const extra of list.slice(MAX_FILES_PER_STAGE)) {
+    const name = (extra as { name?: unknown } | null)?.name;
+    errors.push(`${safeUploadName(typeof name === 'string' ? name : 'file')} was not staged: ${MAX_FILES_PER_STAGE} files at most at a time.`);
+  }
+  for (const file of list.slice(0, MAX_FILES_PER_STAGE)) {
     const f = (file ?? {}) as { name?: unknown; mimeType?: unknown; data?: unknown };
     const name = safeUploadName(typeof f.name === 'string' ? f.name : 'file');
     if (!(f.data instanceof Uint8Array)) {
@@ -49,11 +95,13 @@ export function stageFiles(roomId: string, files: unknown): StagedFiles {
       continue;
     }
     const id = uuidv4();
-    const dir = path.join(busFilesDir(), id);
+    const dir = path.join(root, id);
     const file_ = path.join(dir, name);
     try {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file_, f.data);
+      // A folder of its own, made here, and a file that must not exist yet: no
+      // link planted in advance is followed.
+      fs.mkdirSync(dir, { mode: 0o700 });
+      fs.writeFileSync(file_, f.data, { flag: 'wx' });
     } catch (err) {
       errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
       continue;

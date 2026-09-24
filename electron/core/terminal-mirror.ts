@@ -235,6 +235,32 @@ export function terminalSnapshot(pty: IPty | undefined): string | undefined {
 }
 
 /**
+ * True when the screen of `pty` ends on a dialog's footer: "Esc to cancel" in
+ * one of its last three non-blank rows. Both dialogs measured with claude
+ * 2.1.280 end on it: "Enter to select · ↑/↓ to navigate · Esc to cancel" (an
+ * AskUserQuestion) and " Esc to cancel · Tab to amend" (a permission); so do
+ * its pickers, which read keys the same way. A running turn ends on "esc to
+ * interrupt", and the input box on its own footer, so a sentence in the
+ * conversation above is never among those rows. Read from the cells, where a
+ * word drawn by a cursor move after the one before it still has its space.
+ *
+ * Only ever a reason to hold a message (the PermissionRequest hook came 3 to
+ * 648 ms after the dialog was drawn, in this PR's in-app proof), never a
+ * reason to type: a dialog the hook reported stays one whatever this says.
+ */
+export function dialogOnScreen(pty: IPty | undefined): boolean {
+  const mirror = pty && mirrors.get(pty);
+  if (!mirror) return false;
+  const buffer = mirror.term.buffer.active;
+  const rows: string[] = [];
+  for (let y = buffer.viewportY + mirror.term.rows - 1; y >= buffer.viewportY && rows.length < 3; y--) {
+    const text = buffer.getLine(y)?.translateToString(true).trim() ?? '';
+    if (text) rows.push(text);
+  }
+  return rows.some(row => /\bEsc\s+to\s+cancel\b/.test(row));
+}
+
+/**
  * True when the program in `pty` repaints inline on an alternate screen it
  * never left. See RepaintWatch.
  */
