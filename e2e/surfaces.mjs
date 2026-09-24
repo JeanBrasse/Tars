@@ -55,7 +55,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 16 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 17 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -68,6 +68,7 @@ const SETTINGS_TREE = [
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],
   ['slack', 'Integrations', 'Slack'],
+  ['discord', 'Integrations', 'Discord'],
   ['x-twitter', 'Integrations', 'X (Twitter)'],
   ['google-workspace', 'Integrations', 'Google Workspace'],
   ['skills-plugins', 'Extensions', 'Skills & Plugins'],
