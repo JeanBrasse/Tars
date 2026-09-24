@@ -29,8 +29,9 @@ composer and the room head, each dark and light, and two notes frames. Hermes is
 Draw anything for the Chat in `chat-redesign-a.pen`.
 
 A fourth document, `design/landing.pen`, holds the site in `landing/`:
-`Landing · desktop`, `Landing · 404`, and `Landing · social image`, the picture
-link previews show. It was forked from `tars-redesign.pen` on 2026-09-23 with
+`Landing · desktop`, `Landing · 404`, `Landing · privacy and terms` (the two
+legal pages, drawn once: they share one layout), and `Landing · social image`,
+the picture link previews show. It was forked from `tars-redesign.pen` on 2026-09-23 with
 only the landing kept, and the landing frame left the first two documents in the
 same change. Draw anything for the site in `landing.pen`.
 
