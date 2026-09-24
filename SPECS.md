@@ -343,6 +343,7 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 
 - A dispatch kills the old PTY, copies `currentSessionId` into `lastKilledSessionId` (the tombstone), and clears `currentSessionId`.
 - Only `session-start.sh` sends a `source` field. A post carrying `source` **registers** the session and never touches status: its startup `"idle"` would otherwise resolve the orchestrator's long-poll before the task began.
+- `/api/hooks/status` refuses with a 400 a `session_id` that is not a UUID, the shape Claude Code and Gemini CLI give their sessions: the registered id becomes a transcript file name and a `--resume` argument, and `../../x` was registered until 1.9.0. On the other hook routes such an id is no proof of ownership, so the post is stale wherever there is an owner.
 - Any post whose `session_id` equals `lastKilledSessionId` is dropped; any post whose `session_id` differs from the registered `currentSessionId` is dropped as stale. `currentSessionId` is *not* cleared on idle: the one-shot process is still alive at its prompt and its later hooks must keep matching.
 - Fallback: if `SessionStart` never arrived (API briefly down at boot), the first non-tombstoned session that reports in is adopted.
 - A restart for changed settings (below) kills the PTY and lays the tombstone the same way, then continues the conversation with `--resume <id> --fork-session`: the same conversation under a new session id. Every provider on the claude binary passes the flags (`resumeFlags` in `providers/cli-provider.ts`), the thirteen that point it at another vendor included: until the fix of #120 they had none, and a changed setting started them on a new conversation. Resumed under its own id, the restarted session would be the tombstone, and every one of its posts, registration included, would be dropped.
@@ -581,7 +582,7 @@ A day of the legacy `stats-cache.json` shape, which the main process returns onl
 
 ## §7 Persistence
 
-Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its agents are not handed, which lives under `~/.tars-private` (`PRIVATE_DIR`, table below). `~/.claude-manager` is migrated in on first run and then deleted.
+Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its agents are not handed, which lives under `~/.tars-private` (`PRIVATE_DIR`, table below). `~/.claude-manager` is migrated in on first run and then deleted. Each start closes `~/.dorothy` to the other accounts on the machine (`narrowDataDir`): the directory and its subdirectories `0700`, each file in it down to its owner's bits, so the data files are `0600`. It was `0755` with its files at `0644` until 1.9.0.
 
 | Path | Shape | Written by | Durability |
 |---|---|---|---|
@@ -622,7 +623,7 @@ Files Tars writes **outside** its own directory:
 
 | Path | Why |
 |---|---|
-| `~/.claude.json` → `projects[path].hasTrustDialogAccepted` | `--dangerously-skip-permissions` skips *runtime* prompts; Claude Code's workspace-trust dialog is a separate gate keyed on this flag. Pre-writing it is the only way a bypass-mode agent never sees it |
+| `~/.claude.json` → `projects[path].hasTrustDialogAccepted` | `--dangerously-skip-permissions` skips *runtime* prompts; Claude Code's workspace-trust dialog is a separate gate keyed on this flag. Pre-writing it is the only way a bypass-mode agent never sees it. Never written for the root, the home directory or a directory above it, by the path given or the one it resolves to: Claude Code reads the flag for every directory above its own, so on `$HOME` it trusted everything the account owns. Claude Code asks there instead |
 | `~/.claude.json` → `mcpServers.{gbrain,honcho}` | remote memory backends |
 | `~/.claude/settings.json` → `hooks`, `statusLine` | eight hook types, merged rather than replaced |
 | `~/.claude/mcp.json` | fallback when `claude mcp add` fails |
