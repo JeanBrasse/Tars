@@ -12,6 +12,7 @@ import {
   Cloud,
   Plug,
   Zap,
+  MessagesSquare,
 } from 'lucide-react';
 import { SlackIcon } from './SlackIcon';
 import { TasmaniaIcon } from './TasmaniaIcon';
@@ -74,6 +75,7 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     children: [
       { id: 'telegram', label: 'Telegram', description: 'Reach your agents from a Telegram chat.', icon: Send },
       { id: 'slack', label: 'Slack', description: 'Reach your agents from a Slack workspace.', icon: SlackIcon },
+      { id: 'discord', label: 'Discord', description: 'Same commands, in your server.', icon: MessagesSquare },
       { id: 'socialdata', label: 'X (Twitter)', description: 'Read and post on X with your own keys.', icon: Twitter },
       { id: 'google-workspace', label: 'Google Workspace', description: 'Gmail, Calendar and Drive, through your own account.', icon: Cloud },
     ],
@@ -120,6 +122,12 @@ export const DEFAULT_APP_SETTINGS = {
   slackSigningSecret: '',
   slackChannelId: '',
   slackAllowedUserIds: [],
+  // Main's own defaults (#193): off, no token, and a mention required.
+  discordEnabled: false,
+  discordBotToken: '',
+  discordChannelId: '',
+  discordAllowedUserIds: [] as string[],
+  discordRequireMention: true,
   socialDataEnabled: false,
   socialDataApiKey: '',
   xPostingEnabled: false,

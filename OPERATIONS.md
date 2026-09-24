@@ -280,10 +280,9 @@ Per surface the spec does two things:
 - `toHaveScreenshot()` against `e2e/__screenshots__/<name>.png` with
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
-The manifest is `e2e/surfaces.mjs`: **16 pages + 16 settings sections + 3 overlays = 35
-surfaces**. Note `e2e/__screenshots__/` holds **36** PNGs: `settings-obsidian.png` is an
-orphaned baseline with no manifest entry. Delete it or add the surface back; it is currently
-neither compared nor cleaned up.
+The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
+surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms and the
+two panel-history views that their own specs photograph.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings

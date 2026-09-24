@@ -54,14 +54,14 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
 
-## Settings (6 groups, 17 sections)
+## Settings (6 groups, 18 sections)
 
 | Group | Sections |
 |---|---|
 | General | Preferences, Terminal, Notifications, System |
 | AI & Providers | Providers, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules) |
-| Integrations | Telegram, Slack, X (Twitter), Google Workspace |
+| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
