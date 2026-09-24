@@ -26,6 +26,10 @@ import { spawn, execFileSync } from 'node:child_process';
  * 6. Over-reach: a process group that is not a run's, or Tars's own, is signalled.
  * 7. Without ps, nothing is ended, where the process Tars spawned still has to go.
  * 8. The quit never calls it.
+ * 9. (the Audit's gate of #199) A ps that hangs holds the quit for every read:
+ *    three reads at 2 s each stretched it to 6.5 s. One deadline bounds them all.
+ * 10. (same gate) With no run under way, ps is run anyway: the shortcut that
+ *    skips it had no test, and a mutant that removed it survived.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-quit-'));
@@ -93,6 +97,10 @@ vi.mock('../../../electron/services/usage-ledger', () => ({ recordUsage: vi.fn()
 
 /** ps, as the product runs it, unless a case takes it away. */
 const psBroken = { value: false };
+/** ps answers nothing until the caller's own timeout ends it. */
+const psHung = { value: false };
+/** How many times the product ran ps, while counted. */
+const psRuns = { counting: false, count: 0 };
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   return {
@@ -106,7 +114,12 @@ vi.mock('child_process', async (importOriginal) => {
       return (actual.execFile as (...a: unknown[]) => unknown)(file, ...rest);
     }) as typeof actual.execFile,
     execFileSync: ((file: string, ...rest: unknown[]) => {
+      if (psRuns.counting && file === 'ps') psRuns.count++;
       if (psBroken.value && file === 'ps') throw Object.assign(new Error('spawn ps ENOENT'), { code: 'ENOENT' });
+      if (psHung.value && file === 'ps') {
+        const options = rest.find(r => r && typeof r === 'object' && !Array.isArray(r)) as { timeout?: number } | undefined;
+        return (actual.execFileSync as (...a: unknown[]) => unknown)('sleep', ['30'], { timeout: options?.timeout ?? 30_000 });
+      }
       return (actual.execFileSync as (...a: unknown[]) => unknown)(file, ...rest);
     }) as typeof actual.execFileSync,
   };
@@ -131,6 +144,8 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
 const leftovers: number[] = [];
 afterEach(() => {
   psBroken.value = false;
+  psHung.value = false;
+  psRuns.counting = false;
   for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
 });
 
@@ -192,10 +207,26 @@ describe('quitting Tars with delegated runs under way', { timeout: 30_000 }, () 
     expect(alive(adapter)).toBe(false);
   });
 
-  it('returns at once when no run is under way', () => {
+  it('10. returns at once when no run is under way, without running ps', () => {
+    psRuns.counting = true;
+    psRuns.count = 0;
     const began = Date.now();
     expect(endAcpRunsOnQuit()).toBe(0);
     expect(Date.now() - began).toBeLessThan(100);
+    expect(psRuns.count, 'ps was run for no run').toBe(0);
+  });
+
+  it('9. holds the quit a bounded time when ps hangs, and still ends the process Tars spawned', async () => {
+    const { adapter } = await runStarted('hungps', true);
+    psHung.value = true;
+
+    const began = Date.now();
+    endAcpRunsOnQuit();
+    const took = Date.now() - began;
+    psHung.value = false;
+
+    expect(took, 'every read waited out its own timeout').toBeLessThan(2_500);
+    expect(alive(adapter)).toBe(false);
   });
 });
 

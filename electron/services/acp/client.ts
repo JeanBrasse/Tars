@@ -121,13 +121,25 @@ function lastWords(stderr: string): string {
 /** How long a stopped run's processes get to end on SIGTERM before SIGKILL. */
 const STOP_GRACE_MS = 2_000;
 
-type ProcessRow = { pid: number; ppid: number; pgid: number; zombie: boolean };
-const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,stat='];
+type ProcessRow = { pid: number; ppid: number; pgid: number; zombie: boolean; age?: number };
+const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,stat=,etime='];
 
-function parseProcessTable(out: string): ProcessRow[] {
+/** ps's elapsed time, `[[dd-]hh:]mm:ss`, in seconds; undefined when it gives none. */
+function ageOf(etime: string | undefined): number | undefined {
+  const match = etime?.match(/^(?:(\d+)-)?(?:(\d+):)?(?:(\d+):)?(\d+)$/);
+  if (!match) return undefined;
+  const [, days, a, b, seconds] = match;
+  // With two colons the fields are hh:mm:ss, with one mm:ss.
+  const [hours, minutes] = b !== undefined ? [a, b] : [undefined, a];
+  return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes ?? 0) * 60 + Number(seconds);
+}
+
+export function parseProcessTable(out: string): ProcessRow[] {
   return out.split('\n').map(line => line.trim().split(/\s+/))
     .filter(cols => cols.length >= 4 && cols.slice(0, 3).every(c => /^\d+$/.test(c)))
-    .map(([pid, ppid, pgid, stat]) => ({ pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), zombie: stat.startsWith('Z') }));
+    .map(([pid, ppid, pgid, stat, etime]) => ({
+      pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), zombie: stat.startsWith('Z'), age: ageOf(etime),
+    }));
 }
 
 /** Every process, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
@@ -137,10 +149,10 @@ function processTable(): Promise<ProcessRow[] | undefined> {
   });
 }
 
-/** The same, read while the caller waits: for the quit, which nothing outlives. */
-function processTableNow(): ProcessRow[] | undefined {
+/** The same, read while the caller waits, for at most `timeoutMs`: for the quit, which nothing outlives. */
+function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
   try {
-    return parseProcessTable(String(execFileSync('ps', PS_ARGS, { timeout: 2_000 })));
+    return parseProcessTable(String(execFileSync('ps', PS_ARGS, { timeout: timeoutMs })));
   } catch {
     return undefined;
   }
@@ -160,19 +172,40 @@ function processTableNow(): ProcessRow[] | undefined {
  * between. Tars's own group, and init's, are never signalled. With no ps, the
  * roots' own groups still are.
  */
-class ProcessTree {
+export class ProcessTree {
   private readonly known: Set<number>;
   private readonly groups: Set<number>;
   private ownGroup: number | undefined;
+  private firstReadAt: number | undefined;
 
   constructor(roots: number[]) {
     this.known = new Set(roots);
     this.groups = new Set(roots);
   }
 
-  grow(table: ProcessRow[] | undefined): void {
+  /**
+   * Adds what `table` shows under the processes already known. From the second
+   * read on, a known pid younger than the time since the first read, whose
+   * parent is not the run's, is another process that took the id since (the
+   * Audit's gate of #199): it is dropped, and a group of the run's whose id it
+   * took by leading one with it. (pid, ppid) pairs cannot tell: launchd is the
+   * parent of a reparented process and of many a new one. ps gives the age in
+   * whole seconds, so an id taken within a second of the first read passes.
+   */
+  grow(table: ProcessRow[] | undefined, now: number = Date.now()): void {
     if (!table) return;
     this.ownGroup = table.find(row => row.pid === process.pid)?.pgid;
+    if (this.firstReadAt === undefined) {
+      this.firstReadAt = now;
+    } else {
+      const elapsed = (now - this.firstReadAt) / 1000;
+      for (const row of table) {
+        if (!this.known.has(row.pid) || row.age === undefined || this.known.has(row.ppid)) continue;
+        if (row.age >= elapsed - 1) continue;
+        this.known.delete(row.pid);
+        if (row.pgid === row.pid) this.groups.delete(row.pgid);
+      }
+    }
     for (let grew = true; grew;) {
       grew = false;
       for (const row of table) {
@@ -182,7 +215,8 @@ class ProcessTree {
     for (const row of table) if (this.known.has(row.pid)) this.groups.add(row.pgid);
   }
 
-  private get targets(): number[] {
+  /** The groups a signal goes to: never Tars's own, nor init's. */
+  get targets(): number[] {
     return [...this.groups].filter(group => group > 1 && group !== this.ownGroup && group !== process.pid);
   }
 
@@ -214,6 +248,8 @@ async function endProcessTree(root: number): Promise<void> {
 
 /** How long the quit waits for delegated runs to end on SIGTERM before SIGKILL. */
 const QUIT_GRACE_MS = 1_000;
+/** And for the read of ps before the SIGKILL, past that. */
+const QUIT_LAST_READ_MS = 500;
 const QUIT_POLL_MS = 50;
 
 /**
@@ -221,19 +257,29 @@ const QUIT_POLL_MS = 50;
  * returns: SIGTERM, a wait of at most QUIT_GRACE_MS that ends as soon as
  * nothing is left, then SIGKILL. For the quit, where the stop's timer would
  * never fire (measured on #197: a wedged run was whole 14 s after the quit).
+ *
+ * Every read of ps shares one deadline, a second and a half from the start:
+ * each had its own 2 s timeout, and a ps that hangs held the quit 6.5 s (the
+ * Audit's gate of #199). A read that finds no time left is not made; the
+ * groups already known still get their signals.
  */
 export function endProcessTreesNow(roots: number[]): void {
   if (roots.length === 0) return;
+  const graceEnds = Date.now() + QUIT_GRACE_MS;
+  const deadline = graceEnds + QUIT_LAST_READ_MS;
+  const read = (until: number) => {
+    const left = Math.min(until, deadline) - Date.now();
+    return left > 20 ? processTableNow(left) : undefined;
+  };
   const tree = new ProcessTree(roots);
-  tree.grow(processTableNow());
+  tree.grow(read(graceEnds));
   tree.signal('SIGTERM');
-  const until = Date.now() + QUIT_GRACE_MS;
   const pause = new Int32Array(new SharedArrayBuffer(4));
-  while (Date.now() < until) {
-    if (!tree.anyLeft(processTableNow())) return;
+  while (Date.now() < graceEnds) {
+    if (!tree.anyLeft(read(graceEnds))) return;
     Atomics.wait(pause, 0, 0, QUIT_POLL_MS);
   }
-  tree.grow(processTableNow());
+  tree.grow(read(deadline));
   tree.signal('SIGKILL');
 }
 
