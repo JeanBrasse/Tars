@@ -62,6 +62,10 @@ typing into its terminal and hoping. The call returns the agent's answer, why
 the turn ended, which tools it used and what it cost. Where a CLI has no ACP
 mode, Tars falls back to the terminal path rather than pretending.
 
+**Your fleet from Telegram, Slack or Discord.** Each bot answers only the people
+you let in, and takes the same commands: the fleet's status, an agent started on a
+task, and messages to the orchestrator, which answers there.
+
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
 
@@ -184,7 +188,7 @@ completion hook, it simply has no screen of its own.
 | Screen | What it is for |
 |---|---|
 | **Dashboard** | The terminal grid. Every agent, live, grouped by project |
-| **Chat** | Hermes watching every project and asking before it acts, plus a room per project where that project's agents talk to each other and to you |
+| **Chat** | Hermes and a room per project, in one list. Hermes watches every project and asks before it acts; in a room, that project's agents talk to each other and to you, the thread first, the team beside it and what needs you on top |
 | **Agents** | Create, configure, start and stop, grouped by project or one project at a time. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |

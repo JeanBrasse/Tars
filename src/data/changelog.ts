@@ -7,6 +7,33 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 49,
+    version: '1.9.0',
+    date: '2026-09-24',
+    updates: [
+      'The Chat is redrawn. Hermes and every project\'s room share one list on the left, with what waits in each room said by count: who needs you, what is not sent or held, what is running, queued or stopped. The open room shows its thread first, its team folded beside it, and above the thread a strip of what needs you, each row with its button: open the terminal, send a held message, or start a stopped agent',
+      'Your own lines in a room say who has them and who does not, what went wrong first: dropped, not sent, held, queued, then delivered, with the names; a long list is summed up as "and 25 more". A change of members is its own line, "You removed QA from the room.", and says when it closed the exchange and what was dropped with it',
+      'A message for an agent that is busy waits for its turn to end, and the composer says so before you send. For an agent running Claude, send now interrupts the turn and delivers at once, after asking you, and the room records that you interrupted it; when it could only queue the message, the composer says that instead. A message behind something typed in the agent\'s own field is held until that is sent or cleared, and says so',
+      'Files dropped on a room, pasted or picked with + go with your message, each saved where every agent can read it; one over 12 MB is refused with its name and the limit. A failure the composer shows, such as a refused file or an agent that did not start, goes away as soon as you type again or pick another recipient',
+      'An agent in a room says since when it is in its state, "running 1m", what it waits on, a permission dialog or a question for you, and that it is starting while its session comes up. The head of a room says whether an exchange is under way and how many agent messages remain before it pauses, and, with none open, how many agents are still at work',
+      'The Chat\'s menus work from the keyboard: Enter opens one on its first item, the arrows move, Escape closes it and returns to its button, and a new message no longer closes a menu you have open. When the bus does not answer, the room list and the room say so with a retry, and the composer is off until it does',
+      'A room whose project sits at a long path keeps its name whole in the room\'s head and cuts the path instead, and how it runs stays on one line, where the name shrank to its first letters and the button wrapped out of its box',
+      'Tars has a Discord bot, beside Telegram and Slack, with the same commands, and the orchestrator answers there. Settings > Discord takes its token, copies the invite link made from it, shows the channel the bot detects when you mention it or write to it, and lists the members it answers; anyone else who writes to it directly or mentions it is told their Discord ID. In a server it reads only messages that mention it, unless you turn that off, and every message it posts tells Discord to notify nobody, even one where an agent wrote @everyone',
+      'The invite asks Discord only to see channels and send messages, in channels, threads and direct messages. It asked to read the channels\' history too, which the bot never does. When the token you type holds no bot id, Settings > Discord says so, where it asked you to set the token first',
+      'Importing a template shows everything it sets before anything is saved: its permissions, with Skip all checks in red and named again above the buttons, the folders it adds, its skills and its whole prompt, with any character that does not show written out and counted. A file Tars cannot show as it will be used is refused whole. Using a template sends its prompt only when you turn that on, and that starts off unless the template is a built-in one left as it ships, since an imported template looks like one you made and an edit is kept where any agent can write',
+      'Stopping or deleting an agent ends the task it was delegated, and every command its CLI started, even when that CLI no longer answers; the one who delegated it is told it was stopped. Quitting Tars ends them too, within about a second and a half, where a stuck one kept running after Tars had closed',
+      'The agents\' memory search no longer returns your conversations with Hermes in the Chat. Your own Brain page still finds everything',
+      'Telegram\'s /auth refuses a chat after five wrong tokens in fifteen minutes, and every new chat after twenty from all chats, and says at what time it can try again, or that turning Telegram off and on in Settings starts the count again',
+      '~/.dorothy is closed to the other accounts on your Mac at every start, its folders and files readable by you alone. Tars never marks your home folder, / or a folder above your home as trusted for Claude, however it is spelled, and the hooks accept only a real session id',
+      'Tars opens its own pages in the menu bar panel whatever NODE_ENV your shell sets. Launched from a shell with NODE_ENV=development, the panel loaded whatever answered on localhost:3000, with Tars\'s own bridge',
+      'An Escape that ends an agent\'s turn ends it in Tars too: the agent reads idle again and what waited for its rest goes in, where it stayed running until its next turn. A turn resumed on the same conversation is not ended by an interruption it copied from before',
+      'An agent may delete only a kanban task it filed or claimed, and a damaged Hermes connection file no longer sends the kanban to the default address',
+      'A project reached through a symbolic link keeps its restart waiting for the work its session left running, and the Chat reads its agent\'s conversation',
+      'An orchestrator waiting on an agent that is stopped or restarted before its background work reported is told so within seconds, instead of waiting for a message that never comes',
+      'When Tars does not answer one of its tools in time, the tool says "Tars did not answer" and after how long, such as "no answer within 30 s", where it said "This operation was aborted"',
+    ],
+  },
+  {
     id: 48,
     version: '1.8.1',
     date: '2026-09-24',
