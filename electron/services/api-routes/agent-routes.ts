@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
-import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -451,6 +451,15 @@ const HELD_REASON = 'Somebody is typing in that terminal, has left something in 
   + "command's panel open there. The message goes in by itself as soon as the field is free: "
   + 'whoever is at that terminal can send or clear what is typed, or close the panel.';
 
+/** The same, when what holds it is a dialog the CLI shows (a permission, a
+ *  question): the Enter would answer it. */
+const DIALOG_REASON = 'That agent\'s CLI shows a dialog (a permission or a question), and a typed Enter would answer it. '
+  + 'The message goes in by itself once the dialog is answered or refused.';
+
+function heldReasonFor(agent: AgentStatus): string {
+  return dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined) ? DIALOG_REASON : HELD_REASON;
+}
+
 /** Who a message into an agent's terminal is from, as verified: the agent whose
  *  token made the call, or Tars when it is Tars's own pass or the agent itself. */
 function senderOf(agent: AgentStatus, req: RouteRequest): MessageSender {
@@ -662,7 +671,7 @@ async function performDispatchLocked(
 
   const previousStatus = agent.status;
   const livePty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  if (livePty && agent.status === 'waiting' && agent.waitingReason === 'permission') {
+  if (livePty && dialogOpen(agent)) {
     // A blocking permission dialog expects arrow keys/enter, not text: a
     // typed message is useless and the delayed \r could ACCEPT the pending
     // permission. Refuse and surface the reason instead.
@@ -706,7 +715,7 @@ async function performDispatchLocked(
     // that had received nothing thirty seconds later.
     sendJson({
       success: true, mode: 'message', previousStatus,
-      ...(outcome === 'held' ? { held: true, heldReason: HELD_REASON } : {}),
+      ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}),
       agent: { id: agent.id, name: agent.name, status: agent.status },
     });
     return;
@@ -1215,7 +1224,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       killStalePty(agent);
 
       if (agent.ptyId && ptyProcesses.has(agent.ptyId) &&
-          agent.status === 'waiting' && agent.waitingReason === 'permission') {
+          dialogOpen(agent)) {
         // Same guard as /dispatch: never type into a blocking permission dialog.
         sendJson({
           error: `Agent "${agent.name || agent.id}" is blocked on a permission dialog; a typed message cannot answer it. Resolve it in the Tars UI, or stop the agent and re-dispatch.`,
@@ -1252,7 +1261,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         agent.lastActivity = new Date().toISOString();
         saveAgents();
         announceAgent(agent);
-        sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: HELD_REASON } : {}) });
+        sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}) });
         return;
       }
       sendJson({ error: 'Failed to send message - PTY not available' }, 500);

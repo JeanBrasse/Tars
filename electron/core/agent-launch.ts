@@ -1,7 +1,9 @@
 import type { AgentPermissionMode, AgentProvider } from '../types';
 import { ptyProcesses } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
+import { dialogOnScreen } from './terminal-mirror';
 import { getProvider } from '../providers';
+import { lastInterruptAt } from '../services/agent-truth';
 
 /**
  * The launch of an agent's CLI in its terminal, reachable without a renderer.
@@ -189,4 +191,59 @@ export async function sessionStarted(agent: StartingAgent, maxWaitMs = Infinity)
 /** Test seam. */
 export function resetLaunches(): void {
   launchesUnderWay.clear();
+}
+
+/**
+ * Why Tars may not type into an agent's CLI now, or null when it may. The one
+ * definition every writer asks, so a new writer cannot forget a case:
+ * - `dialog`: the CLI shows a dialog (the PermissionRequest hook said so:
+ *   `waiting`, `permission`). A permission, an AskUserQuestion (which fires
+ *   that hook in bypass too), an ExitPlanMode. Anything typed is read by the
+ *   dialog, and its Enter answers it: measured by the Audit on 2026-09-24 with
+ *   claude 2.1.280, a room post said Yes to "Do you want to proceed?" and
+ *   "Yes, delete it" to "Delete the build folder?". Enforced by the writer
+ *   itself (pty-manager.ts), at the moment it writes.
+ * - `no_cli`: no CLI runs in the terminal, which is a shell.
+ * - `launch`: a launch is on its way and its session is not up (sessionStarting).
+ * - `turn`: a turn runs. A room message and a note wait for its end
+ *   (agent-watch); /dispatch and /message type it as a queued steer.
+ * Only `dialog` is refused by the writer: the others are each caller's own
+ * decision, and they already make it.
+ */
+export type TypingRefusal = 'dialog' | 'no_cli' | 'launch' | 'turn';
+
+export function dialogOpen(agent: {
+  status?: string; waitingReason?: string; dialogSince?: string;
+  currentSessionId?: string; projectPath?: string; worktreePath?: string;
+}): boolean {
+  if (agent.status !== 'waiting' || agent.waitingReason !== 'permission') return false;
+  // Refused, with "No" or Esc: Claude Code sends no hook for it, and records
+  // "[Request interrupted by user" in the transcript. An interrupt recorded
+  // since the dialog opened closes it (the Audit's gate of #174: without this
+  // the agent stayed deaf until Noah typed in it). Without a time the dialog
+  // opened at, it stays open: the safe side.
+  const since = agent.dialogSince ? Date.parse(agent.dialogSince) : NaN;
+  if (!Number.isFinite(since)) return true;
+  const interrupted = lastInterruptAt(agent);
+  return interrupted === undefined || interrupted < since;
+}
+
+/**
+ * A dialog the hook reported, or one on the screen whose hook has not arrived
+ * yet (dialogOnScreen, terminal-mirror.ts). The screen only ever adds a
+ * dialog: it never takes away one the hook reported.
+ */
+export function dialogShown(agent: Parameters<typeof dialogOpen>[0], ptyProcess: import('node-pty').IPty | undefined): boolean {
+  return dialogOpen(agent) || dialogOnScreen(ptyProcess);
+}
+
+export function agentTakesTyping(
+  agent: StartingAgent & { status?: string; waitingReason?: string },
+  ptyProcess: import('node-pty').IPty | undefined,
+): TypingRefusal | null {
+  if (dialogShown(agent, ptyProcess)) return 'dialog';
+  if (!ptyProcess || !cliRunningIn(ptyProcess)) return 'no_cli';
+  if (sessionStarting(agent)) return 'launch';
+  if (agent.status === 'running') return 'turn';
+  return null;
 }

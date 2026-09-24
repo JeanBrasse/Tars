@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { defaultShell } from '../utils/default-shell';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -43,7 +44,7 @@ async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ amp: st
   try {
     // The user's shell as a file and its script as an argument: $SHELL is
     // never parsed by another shell.
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
     const { stdout } = await execFileAsync(shell, ['-ilc', 'echo $PATH'], { timeout: 5000 });
     if (stdout.trim()) {
       shellPath = stdout.trim();

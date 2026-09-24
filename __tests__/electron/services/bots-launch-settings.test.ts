@@ -65,7 +65,7 @@ vi.mock('node-telegram-bot-api', () => ({
   },
 }));
 
-import { agents, initAgentPty } from '../../../electron/core/agent-manager';
+import { agents, initAgentPty, wireDialogProbe } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { resetLaunches, launchBegins, sessionStarting } from '../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
@@ -105,6 +105,8 @@ async function typedAfter(launch: () => Promise<unknown>): Promise<string> {
 }
 
 beforeEach(() => {
+  // As main.ts wires it at startup.
+  wireDialogProbe();
   shell.speaksAfterMs = 20;
   // A cold start of one test is not a launch still on its way in the next.
   resetLaunches();
@@ -638,5 +640,63 @@ describe('QA #166: the quiet counts from the last thing the shell printed', () =
     await sent;
     await vi.advanceTimersByTimeAsync(500);
     expect(typed()).toContain(`cd '${project}' && `);
+  });
+});
+
+describe('an agent whose CLI shows a dialog (the Audit\'s census, 2026-09-24)', () => {
+  // Written by Backend before the fix. A permission dialog or an
+  // AskUserQuestion is up (the PermissionRequest hook said so: waiting,
+  // permission). The bots typed their message into it, and its Enter answered
+  // the dialog: "Yes", or the first option of the question.
+  const atDialog = (fields: Partial<AgentStatus> = {}) => {
+    const terminal = spawnAgentPty({
+      binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: project, cols: 120, rows: 30,
+      env: { CLAUDE_AGENT_ID: fields.id ?? 'agent-w' },
+    }) as unknown as FakePty;
+    terminal.process = '2.1.280';
+    ptyProcesses.set('pty-dialog', terminal as never);
+    agent({ status: 'waiting', waitingReason: 'permission', ptyId: 'pty-dialog', ptyCwd: project, ...fields });
+    return terminal;
+  };
+  const settle = () => new Promise(resolve => setTimeout(resolve, 1500));
+  const typed = (terminal: FakePty) => terminal.write.mock.calls.map(call => String(call[0])).join('');
+  const SUPER = { id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator' } as const;
+
+  it('Telegram /start_agent types nothing into it', async () => {
+    const terminal = atDialog();
+    const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+    const text = '/start_agent worker Rebase onto main';
+
+    await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    await settle();
+
+    expect(typed(terminal)).not.toContain('Rebase onto main');
+  });
+
+  it('a Telegram message to the super agent types nothing into it', async () => {
+    const terminal = atDialog(SUPER);
+
+    await sendToSuperAgent('42', 'what is everyone doing');
+    await settle();
+
+    expect(typed(terminal)).not.toContain('what is everyone doing');
+  });
+
+  it('Slack `start` types nothing into it', async () => {
+    const terminal = atDialog();
+
+    await handleSlackCommand('start worker Rebase onto main', 'C1', async () => undefined, settings);
+    await settle();
+
+    expect(typed(terminal)).not.toContain('Rebase onto main');
+  });
+
+  it('a Slack message to the super agent types nothing into it', async () => {
+    const terminal = atDialog(SUPER);
+
+    await sendToSuperAgentFromSlack('C1', 'what is everyone doing', async () => undefined, settings);
+    await settle();
+
+    expect(typed(terminal)).not.toContain('what is everyone doing');
   });
 });

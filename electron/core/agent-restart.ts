@@ -1,7 +1,7 @@
 import { agents, saveAgents } from './agent-manager';
 import { ptyProcesses, fieldInUse, onFieldChange, type FieldInUse } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
-import { launchAgent, CLI_BOOT_MS } from './agent-launch';
+import { launchAgent, CLI_BOOT_MS, dialogOpen } from './agent-launch';
 import { getProvider } from '../providers';
 import { agentStatusEmitter } from '../services/agent-events';
 import { holdsFor } from '../services/agent-watch';
@@ -313,7 +313,7 @@ function decide(agentId: string): RestartOutcome {
   };
 
   if (agent.status === 'running') return wait('turn', 'when its turn ends');
-  if (agent.status === 'waiting' && agent.waitingReason === 'permission') {
+  if (dialogOpen(agent)) {
     return wait('permission', 'once its permission question is answered and the turn ends');
   }
   if (holdsFor(agentId)) return wait('note', 'once what is owed to it has been typed in');

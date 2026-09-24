@@ -2,10 +2,12 @@ import * as crypto from 'crypto';
 import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS } from '../core/pty-manager';
-import { agentStatusEmitter } from './agent-events';
+import { agentStatusEmitter, emitAgentStatus } from './agent-events';
 import { sessionStarting } from '../core/agent-launch';
 import { envelopeValue } from '../utils/envelope-value';
-import { pendingBackgroundWork } from './agent-truth';
+import { lastInterruptAt, pendingBackgroundWork } from './agent-truth';
+import { broadcastToAllWindows } from '../utils/broadcast';
+import { scheduleTick } from '../utils/agents-tick';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -213,7 +215,53 @@ export function startAgentWatch(): void {
 export function stopAgentWatch(): void {
   agentStatusEmitter.off('fleet-change', onFleetChange);
   listening = false;
+  stopWatchingInterruptedTurns();
   resetAgentWatch();
+}
+
+/**
+ * A turn ended by Esc sends no hook: no Stop, and the idle prompt only a
+ * minute on. The agent read `running` until its next turn, and everything
+ * waiting for its rest (room messages, notes) waited with it (the Audit's
+ * re-check of #174, older than it). The transcript records the interrupt, so
+ * an interrupt recorded after the turn began, or after work was last handed
+ * to the agent, ends the turn here as its Stop would have: `idle`, announced
+ * like any status. Looked at every INTERRUPT_WATCH_MS, and only for agents
+ * that read `running`; the transcript is re-read only when it has changed.
+ */
+const INTERRUPT_WATCH_MS = 2000;
+let interruptWatch: ReturnType<typeof setInterval> | undefined;
+
+/** Started by main.ts at startup, beside the dialog probe. */
+export function watchInterruptedTurns(): void {
+  if (!interruptWatch) interruptWatch = setInterval(endInterruptedTurns, INTERRUPT_WATCH_MS);
+}
+
+export function stopWatchingInterruptedTurns(): void {
+  if (interruptWatch) { clearInterval(interruptWatch); interruptWatch = undefined; }
+}
+
+function endInterruptedTurns(): void {
+  for (const agent of agents.values()) {
+    if (agent.status !== 'running') continue;
+    const began = Math.max(...[agent.lastTurnStartedAt, agent.workHandedAt]
+      .map(at => (at ? Date.parse(at) : NaN)).filter(Number.isFinite));
+    if (!Number.isFinite(began)) continue;
+    let interrupted: number | undefined;
+    try {
+      interrupted = lastInterruptAt(agent);
+    } catch {
+      continue;
+    }
+    if (interrupted === undefined || interrupted <= began) continue;
+    console.log(`[agent-watch] ${agent.name || agent.id}'s turn was interrupted (transcript): idle`);
+    agent.status = 'idle';
+    agent.waitingReason = undefined;
+    agent.lastActivity = new Date().toISOString();
+    emitAgentStatus(agent.id);
+    broadcastToAllWindows('agent:status', { agentId: agent.id, status: agent.status });
+    scheduleTick();
+  }
 }
 
 function onFleetChange(agentId: string): void {

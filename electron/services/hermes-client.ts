@@ -386,8 +386,12 @@ export function errorDetail(status: number, body: unknown): string {
   return `HTTP ${status}`;
 }
 
-export async function fetchHermesBoard(conn: HermesConnection, board?: string) {
-  const query = board ? `?board=${encodeURIComponent(board)}` : '';
+/** The board, or one tenant of it: the agents' kanban files each project as a tenant. */
+export async function fetchHermesBoard(conn: HermesConnection, board?: string, tenant?: string) {
+  const params = new URLSearchParams();
+  if (board) params.set('board', board);
+  if (tenant) params.set('tenant', tenant);
+  const query = params.size ? `?${params.toString()}` : '';
   const { status, body } = await gatewayCall(conn, `${KANBAN}/board${query}`);
   if (status !== 200) return refused(status, errorDetail(status, body));
   return { success: true as const, board: body };

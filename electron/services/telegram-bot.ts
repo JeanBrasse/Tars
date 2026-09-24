@@ -796,7 +796,10 @@ export function initTelegramBot() {
             telegramBot?.sendMessage(msg.chat.id, `❌ ${agent.name} has too many messages waiting for its terminal.`);
             return;
           }
-          agent.status = 'running';
+          // Running once it is typed. Held, it is not: a dialog may be what
+          // holds it, and `running` here would erase the one record of that
+          // dialog, and the message would go into it (the Audit's census).
+          if (outcome === 'written') agent.status = 'running';
           agent.currentTask = task.slice(0, 100);
           agent.lastActivity = new Date().toISOString();
           saveAgents();

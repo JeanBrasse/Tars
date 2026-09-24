@@ -210,7 +210,26 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
         "method": "GET",
         "mode": "auth",
         "token": "tok",
-        "url": "/api/plugins/kanban/board?board=b%201",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "auth fetchHermesBoard tenant": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
       },
     ],
   },
@@ -768,7 +787,26 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
         "method": "GET",
         "mode": "fail",
         "token": "tok",
-        "url": "/api/plugins/kanban/board?board=b%201",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "fail fetchHermesBoard tenant": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
       },
     ],
   },
@@ -1326,7 +1364,26 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
         "method": "GET",
         "mode": "forbidden",
         "token": "tok",
-        "url": "/api/plugins/kanban/board?board=b%201",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "forbidden fetchHermesBoard tenant": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
       },
     ],
   },
@@ -1895,7 +1952,26 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
         "method": "GET",
         "mode": "missing",
         "token": "tok",
-        "url": "/api/plugins/kanban/board?board=b%201",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "missing fetchHermesBoard tenant": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
       },
     ],
   },
@@ -2490,7 +2566,37 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
         "method": "GET",
         "mode": "ok",
         "token": "tok",
-        "url": "/api/plugins/kanban/board?board=b%201",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "ok fetchHermesBoard tenant": {
+    "result": {
+      "board": {
+        "columns": [
+          {
+            "name": "todo",
+            "tasks": [
+              {
+                "id": "t1",
+                "title": "first",
+              },
+            ],
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
       },
     ],
   },
