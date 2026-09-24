@@ -1,0 +1,3091 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`hermes-client, as recorded before the D2 refactor > exports the same names 1`] = `
+[
+  "HERMES_KANBAN_COLUMNS",
+  "MAX_ATTACHMENT_BYTES",
+  "addHermesTaskComment",
+  "appendHermesMemory",
+  "clearHermesSession",
+  "createHermesCron",
+  "createHermesTask",
+  "deleteHermesCron",
+  "deleteHermesTask",
+  "errorDetail",
+  "fetchHermesBoard",
+  "fetchHermesCronRuns",
+  "fetchHermesCrons",
+  "fetchHermesMcpServers",
+  "fetchHermesMemoryFiles",
+  "fetchHermesMemoryProviders",
+  "fetchHermesMemoryState",
+  "fetchHermesModelOptions",
+  "fetchHermesSessionMessages",
+  "getHermesTask",
+  "hasHermesSession",
+  "hermesCronAction",
+  "hermesRequest",
+  "probeHermes",
+  "searchHermesSessions",
+  "setHermesMemoryProvider",
+  "setHermesModel",
+  "signInHermes",
+  "updateHermesCron",
+  "updateHermesTask",
+  "uploadHermesAttachment",
+]
+`;
+
+exports[`hermes-client, as recorded before the D2 refactor > sends and returns the same thing for every call, in every answer the gateway can give 1`] = `
+{
+  "auth addHermesTaskComment": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"body":"hello"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1/comments",
+      },
+    ],
+  },
+  "auth appendHermesMemory": {
+    "result": {
+      "error": "Sign in to Hermes to write to its memory",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+    ],
+  },
+  "auth appendHermesMemory empty": {
+    "result": {
+      "error": "Nothing to write",
+      "success": false,
+    },
+    "sent": [],
+  },
+  "auth createHermesCron": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"name":"n","schedule":"0 * * * *","prompt":"p","deliver":"local","enabled":true,"model":"m","provider":"pr"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs",
+      },
+    ],
+  },
+  "auth createHermesTask": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"title":"x","column":"todo"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks",
+      },
+    ],
+  },
+  "auth deleteHermesCron": {
+    "result": {
+      "error": "HTTP 401",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1",
+      },
+    ],
+  },
+  "auth deleteHermesCron profile": {
+    "result": {
+      "error": "HTTP 401",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "auth deleteHermesTask": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "auth fetchHermesBoard": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board",
+      },
+    ],
+  },
+  "auth fetchHermesBoard board": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "auth fetchHermesBoard tenant": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
+      },
+    ],
+  },
+  "auth fetchHermesCronRuns": {
+    "result": {
+      "error": "Sign in to Hermes",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/runs?limit=3&profile=prof",
+      },
+    ],
+  },
+  "auth fetchHermesCrons": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs?profile=all",
+      },
+    ],
+  },
+  "auth fetchHermesMcpServers": {
+    "result": {
+      "error": "Sign in to Hermes to list its MCP servers",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/mcp/servers",
+      },
+    ],
+  },
+  "auth fetchHermesMemoryFiles": {
+    "result": {
+      "error": "Sign in to Hermes to read its memory",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+    ],
+  },
+  "auth fetchHermesMemoryProviders": {
+    "result": {
+      "error": "Sign in to Hermes to read its memory settings",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "auth fetchHermesMemoryState": {
+    "result": {
+      "error": "Sign in to Hermes",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "auth fetchHermesModelOptions": {
+    "result": {
+      "error": "Sign in to Hermes to list its models",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/model/options",
+      },
+    ],
+  },
+  "auth fetchHermesSessionMessages": {
+    "result": {
+      "error": "Sign in to Hermes",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/sessions/s%201/messages",
+      },
+    ],
+  },
+  "auth getHermesTask": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t%201",
+      },
+    ],
+  },
+  "auth hermesCronAction pause": {
+    "result": {
+      "error": "HTTP 401",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/pause",
+      },
+    ],
+  },
+  "auth hermesCronAction trigger profile": {
+    "result": {
+      "error": "HTTP 401",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/trigger?profile=prof",
+      },
+    ],
+  },
+  "auth hermesRequest": {
+    "result": {
+      "body": {
+        "detail": "Not signed in",
+      },
+      "setCookies": [],
+      "status": 401,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"a":1}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/x?y=1",
+      },
+    ],
+  },
+  "auth probeHermes": {
+    "result": {
+      "authFlows": [],
+      "authProviders": [],
+      "authRequired": false,
+      "baseUrl": "http://127.0.0.1:<port>",
+      "reachable": true,
+      "signedIn": true,
+      "status": 401,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/status",
+      },
+    ],
+  },
+  "auth searchHermesSessions": {
+    "result": {
+      "error": "Sign in to Hermes to search its history",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/sessions/search?q=what&limit=5",
+      },
+    ],
+  },
+  "auth setHermesMemoryProvider": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"honcho"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/memory/provider",
+      },
+    ],
+  },
+  "auth setHermesModel": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"scope":"main","provider":"anthropic","model":"claude-opus-5-5"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/model/set",
+      },
+    ],
+  },
+  "auth signInHermes": {
+    "result": {
+      "error": "Not signed in",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"basic","username":"noah","password":"pw","next":"/"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": null,
+        "url": "/auth/password-login",
+      },
+    ],
+  },
+  "auth updateHermesCron": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"updates":{"prompt":"p"}}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "auth updateHermesTask": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"status":"done"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PATCH",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "auth uploadHermesAttachment": {
+    "result": {
+      "error": "Not signed in",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/uploads/a b.txt","data_url":"data:text/plain;base64,aGVsbG8=","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "auth",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+  "fail addHermesTaskComment": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"body":"hello"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1/comments",
+      },
+    ],
+  },
+  "fail appendHermesMemory": {
+    "result": {
+      "error": "Could not read MEMORY.md: HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+    ],
+  },
+  "fail appendHermesMemory empty": {
+    "result": {
+      "error": "Nothing to write",
+      "success": false,
+    },
+    "sent": [],
+  },
+  "fail createHermesCron": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"name":"n","schedule":"0 * * * *","prompt":"p","deliver":"local","enabled":true,"model":"m","provider":"pr"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs",
+      },
+    ],
+  },
+  "fail createHermesTask": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"title":"x","column":"todo"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks",
+      },
+    ],
+  },
+  "fail deleteHermesCron": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1",
+      },
+    ],
+  },
+  "fail deleteHermesCron profile": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "fail deleteHermesTask": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "fail fetchHermesBoard": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board",
+      },
+    ],
+  },
+  "fail fetchHermesBoard board": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "fail fetchHermesBoard tenant": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
+      },
+    ],
+  },
+  "fail fetchHermesCronRuns": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/runs?limit=3&profile=prof",
+      },
+    ],
+  },
+  "fail fetchHermesCrons": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs?profile=all",
+      },
+    ],
+  },
+  "fail fetchHermesMcpServers": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/mcp/servers",
+      },
+    ],
+  },
+  "fail fetchHermesMemoryFiles": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+    ],
+  },
+  "fail fetchHermesMemoryProviders": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "fail fetchHermesMemoryState": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "fail fetchHermesModelOptions": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/model/options",
+      },
+    ],
+  },
+  "fail fetchHermesSessionMessages": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/sessions/s%201/messages",
+      },
+    ],
+  },
+  "fail getHermesTask": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t%201",
+      },
+    ],
+  },
+  "fail hermesCronAction pause": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/pause",
+      },
+    ],
+  },
+  "fail hermesCronAction trigger profile": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/trigger?profile=prof",
+      },
+    ],
+  },
+  "fail hermesRequest": {
+    "result": {
+      "body": {
+        "detail": [
+          {
+            "msg": "boom",
+          },
+          {
+            "msg": "again",
+          },
+        ],
+      },
+      "setCookies": [],
+      "status": 500,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"a":1}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/x?y=1",
+      },
+    ],
+  },
+  "fail probeHermes": {
+    "result": {
+      "authFlows": [],
+      "authProviders": [],
+      "authRequired": false,
+      "baseUrl": "http://127.0.0.1:<port>",
+      "reachable": false,
+      "signedIn": true,
+      "status": 500,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/status",
+      },
+    ],
+  },
+  "fail searchHermesSessions": {
+    "result": {
+      "error": "HTTP 500",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/sessions/search?q=what&limit=5",
+      },
+    ],
+  },
+  "fail setHermesMemoryProvider": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"honcho"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/memory/provider",
+      },
+    ],
+  },
+  "fail setHermesModel": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"scope":"main","provider":"anthropic","model":"claude-opus-5-5"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/model/set",
+      },
+    ],
+  },
+  "fail signInHermes": {
+    "result": {
+      "error": "boom; again",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"basic","username":"noah","password":"pw","next":"/"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": null,
+        "url": "/auth/password-login",
+      },
+    ],
+  },
+  "fail updateHermesCron": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"updates":{"prompt":"p"}}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "fail updateHermesTask": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"status":"done"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PATCH",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "fail uploadHermesAttachment": {
+    "result": {
+      "error": "boom; again",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/uploads/a b.txt","data_url":"data:text/plain;base64,aGVsbG8=","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "fail",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+  "forbidden addHermesTaskComment": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"body":"hello"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1/comments",
+      },
+    ],
+  },
+  "forbidden appendHermesMemory": {
+    "result": {
+      "error": "Sign in to Hermes to write to its memory",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+    ],
+  },
+  "forbidden appendHermesMemory empty": {
+    "result": {
+      "error": "Nothing to write",
+      "success": false,
+    },
+    "sent": [],
+  },
+  "forbidden createHermesCron": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"name":"n","schedule":"0 * * * *","prompt":"p","deliver":"local","enabled":true,"model":"m","provider":"pr"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs",
+      },
+    ],
+  },
+  "forbidden createHermesTask": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"title":"x","column":"todo"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks",
+      },
+    ],
+  },
+  "forbidden deleteHermesCron": {
+    "result": {
+      "error": "HTTP 403",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1",
+      },
+    ],
+  },
+  "forbidden deleteHermesCron profile": {
+    "result": {
+      "error": "HTTP 403",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "forbidden deleteHermesTask": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "forbidden fetchHermesBoard": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board",
+      },
+    ],
+  },
+  "forbidden fetchHermesBoard board": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "forbidden fetchHermesBoard tenant": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
+      },
+    ],
+  },
+  "forbidden fetchHermesCronRuns": {
+    "result": {
+      "error": "Sign in to Hermes",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/runs?limit=3&profile=prof",
+      },
+    ],
+  },
+  "forbidden fetchHermesCrons": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs?profile=all",
+      },
+    ],
+  },
+  "forbidden fetchHermesMcpServers": {
+    "result": {
+      "error": "Sign in to Hermes to list its MCP servers",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/mcp/servers",
+      },
+    ],
+  },
+  "forbidden fetchHermesMemoryFiles": {
+    "result": {
+      "error": "Sign in to Hermes to read its memory",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+    ],
+  },
+  "forbidden fetchHermesMemoryProviders": {
+    "result": {
+      "error": "Sign in to Hermes to read its memory settings",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "forbidden fetchHermesMemoryState": {
+    "result": {
+      "error": "Sign in to Hermes",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "forbidden fetchHermesModelOptions": {
+    "result": {
+      "error": "Sign in to Hermes to list its models",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/model/options",
+      },
+    ],
+  },
+  "forbidden fetchHermesSessionMessages": {
+    "result": {
+      "error": "Sign in to Hermes",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/sessions/s%201/messages",
+      },
+    ],
+  },
+  "forbidden getHermesTask": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t%201",
+      },
+    ],
+  },
+  "forbidden hermesCronAction pause": {
+    "result": {
+      "error": "HTTP 403",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/pause",
+      },
+    ],
+  },
+  "forbidden hermesCronAction trigger profile": {
+    "result": {
+      "error": "HTTP 403",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/trigger?profile=prof",
+      },
+    ],
+  },
+  "forbidden hermesRequest": {
+    "result": {
+      "body": {
+        "detail": "Forbidden",
+      },
+      "setCookies": [],
+      "status": 403,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"a":1}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/x?y=1",
+      },
+    ],
+  },
+  "forbidden probeHermes": {
+    "result": {
+      "authFlows": [],
+      "authProviders": [],
+      "authRequired": false,
+      "baseUrl": "http://127.0.0.1:<port>",
+      "reachable": true,
+      "signedIn": true,
+      "status": 403,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/status",
+      },
+    ],
+  },
+  "forbidden searchHermesSessions": {
+    "result": {
+      "error": "Sign in to Hermes to search its history",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/sessions/search?q=what&limit=5",
+      },
+    ],
+  },
+  "forbidden setHermesMemoryProvider": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"honcho"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/memory/provider",
+      },
+    ],
+  },
+  "forbidden setHermesModel": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"scope":"main","provider":"anthropic","model":"claude-opus-5-5"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/model/set",
+      },
+    ],
+  },
+  "forbidden signInHermes": {
+    "result": {
+      "error": "Forbidden",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"basic","username":"noah","password":"pw","next":"/"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": null,
+        "url": "/auth/password-login",
+      },
+    ],
+  },
+  "forbidden updateHermesCron": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"updates":{"prompt":"p"}}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "forbidden updateHermesTask": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"status":"done"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PATCH",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "forbidden uploadHermesAttachment": {
+    "result": {
+      "error": "Forbidden",
+      "needsSignIn": true,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/uploads/a b.txt","data_url":"data:text/plain;base64,aGVsbG8=","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "forbidden",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+  "missing addHermesTaskComment": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"body":"hello"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1/comments",
+      },
+    ],
+  },
+  "missing appendHermesMemory": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/memories/MEMORY.md","data_url":"data:text/markdown;base64,YSBub3RlCg==","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+  "missing appendHermesMemory empty": {
+    "result": {
+      "error": "Nothing to write",
+      "success": false,
+    },
+    "sent": [],
+  },
+  "missing createHermesCron": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"name":"n","schedule":"0 * * * *","prompt":"p","deliver":"local","enabled":true,"model":"m","provider":"pr"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs",
+      },
+    ],
+  },
+  "missing createHermesTask": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"title":"x","column":"todo"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks",
+      },
+    ],
+  },
+  "missing deleteHermesCron": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1",
+      },
+    ],
+  },
+  "missing deleteHermesCron profile": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "missing deleteHermesTask": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "missing fetchHermesBoard": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board",
+      },
+    ],
+  },
+  "missing fetchHermesBoard board": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "missing fetchHermesBoard tenant": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
+      },
+    ],
+  },
+  "missing fetchHermesCronRuns": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/runs?limit=3&profile=prof",
+      },
+    ],
+  },
+  "missing fetchHermesCrons": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs?profile=all",
+      },
+    ],
+  },
+  "missing fetchHermesMcpServers": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/mcp/servers",
+      },
+    ],
+  },
+  "missing fetchHermesMemoryFiles": {
+    "result": {
+      "files": [],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FUSER.md",
+      },
+    ],
+  },
+  "missing fetchHermesMemoryProviders": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "missing fetchHermesMemoryState": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "missing fetchHermesModelOptions": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/model/options",
+      },
+    ],
+  },
+  "missing fetchHermesSessionMessages": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/sessions/s%201/messages",
+      },
+    ],
+  },
+  "missing getHermesTask": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t%201",
+      },
+    ],
+  },
+  "missing hermesCronAction pause": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/pause",
+      },
+    ],
+  },
+  "missing hermesCronAction trigger profile": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/trigger?profile=prof",
+      },
+    ],
+  },
+  "missing hermesRequest": {
+    "result": {
+      "body": "Not Found",
+      "setCookies": [],
+      "status": 404,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"a":1}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/x?y=1",
+      },
+    ],
+  },
+  "missing probeHermes": {
+    "result": {
+      "authFlows": [],
+      "authProviders": [],
+      "authRequired": false,
+      "baseUrl": "http://127.0.0.1:<port>",
+      "reachable": true,
+      "signedIn": true,
+      "status": 404,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/status",
+      },
+    ],
+  },
+  "missing searchHermesSessions": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/sessions/search?q=what&limit=5",
+      },
+    ],
+  },
+  "missing setHermesMemoryProvider": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"honcho"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/memory/provider",
+      },
+    ],
+  },
+  "missing setHermesModel": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"scope":"main","provider":"anthropic","model":"claude-opus-5-5"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/model/set",
+      },
+    ],
+  },
+  "missing signInHermes": {
+    "result": {
+      "error": "HTTP 404",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"basic","username":"noah","password":"pw","next":"/"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": null,
+        "url": "/auth/password-login",
+      },
+    ],
+  },
+  "missing updateHermesCron": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"updates":{"prompt":"p"}}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "missing updateHermesTask": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"status":"done"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PATCH",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "missing uploadHermesAttachment": {
+    "result": {
+      "error": "HTTP 404",
+      "needsSignIn": false,
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/uploads/a b.txt","data_url":"data:text/plain;base64,aGVsbG8=","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "missing",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+  "ok addHermesTaskComment": {
+    "result": {
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"body":"hello"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1/comments",
+      },
+    ],
+  },
+  "ok appendHermesMemory": {
+    "result": {
+      "path": "/uploads/a.txt",
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/memories/MEMORY.md","data_url":"data:text/markdown;base64,YSBub3RlCg==","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+  "ok appendHermesMemory empty": {
+    "result": {
+      "error": "Nothing to write",
+      "success": false,
+    },
+    "sent": [],
+  },
+  "ok createHermesCron": {
+    "result": {
+      "job": {
+        "jobs": [
+          {
+            "id": "j1",
+            "name": "Overseer",
+            "profile": "default",
+            "schedule": "0 * * * *",
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"name":"n","schedule":"0 * * * *","prompt":"p","deliver":"local","enabled":true,"model":"m","provider":"pr"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs",
+      },
+    ],
+  },
+  "ok createHermesTask": {
+    "result": {
+      "success": true,
+      "task": {
+        "id": "t1",
+        "status": "todo",
+        "title": "first",
+      },
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"title":"x","column":"todo"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks",
+      },
+    ],
+  },
+  "ok deleteHermesCron": {
+    "result": {
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1",
+      },
+    ],
+  },
+  "ok deleteHermesCron profile": {
+    "result": {
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "ok deleteHermesTask": {
+    "result": {
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "DELETE",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "ok fetchHermesBoard": {
+    "result": {
+      "board": {
+        "columns": [
+          {
+            "name": "todo",
+            "tasks": [
+              {
+                "id": "t1",
+                "title": "first",
+              },
+            ],
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board",
+      },
+    ],
+  },
+  "ok fetchHermesBoard board": {
+    "result": {
+      "board": {
+        "columns": [
+          {
+            "name": "todo",
+            "tasks": [
+              {
+                "id": "t1",
+                "title": "first",
+              },
+            ],
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1",
+      },
+    ],
+  },
+  "ok fetchHermesBoard tenant": {
+    "result": {
+      "board": {
+        "columns": [
+          {
+            "name": "todo",
+            "tasks": [
+              {
+                "id": "t1",
+                "title": "first",
+              },
+            ],
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/board?board=b+1&tenant=%2FUsers%2Fnoah%2Fmy+project",
+      },
+    ],
+  },
+  "ok fetchHermesCronRuns": {
+    "result": {
+      "runs": [
+        {
+          "id": "cron_j1_20260923_120000",
+          "startedAt": "2026-09-23T12:00:00Z",
+          "status": "ok",
+        },
+      ],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/runs?limit=3&profile=prof",
+      },
+    ],
+  },
+  "ok fetchHermesCrons": {
+    "result": {
+      "jobs": {
+        "jobs": [
+          {
+            "id": "j1",
+            "name": "Overseer",
+            "profile": "default",
+            "schedule": "0 * * * *",
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs?profile=all",
+      },
+    ],
+  },
+  "ok fetchHermesMcpServers": {
+    "result": {
+      "servers": [
+        {
+          "enabled": true,
+          "gatewayLocal": false,
+          "name": "tars",
+          "transport": null,
+          "url": null,
+        },
+      ],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/mcp/servers",
+      },
+    ],
+  },
+  "ok fetchHermesMemoryFiles": {
+    "result": {
+      "files": [],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FMEMORY.md",
+      },
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/files/read?path=~%2F.hermes%2Fmemories%2FUSER.md",
+      },
+    ],
+  },
+  "ok fetchHermesMemoryProviders": {
+    "result": {
+      "active": "",
+      "builtinBytes": 0,
+      "providers": [],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "ok fetchHermesMemoryState": {
+    "result": {
+      "state": {
+        "files": [
+          {
+            "content": "data:text/plain;base64,aGVsbG8=",
+            "name": "MEMORY.md",
+          },
+        ],
+        "ok": true,
+        "path": "memory/MEMORY.md",
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/memory",
+      },
+    ],
+  },
+  "ok fetchHermesModelOptions": {
+    "result": {
+      "model": "claude-opus-5-5",
+      "provider": "anthropic",
+      "providers": [
+        {
+          "isCurrent": true,
+          "models": [
+            "claude-opus-5-5",
+          ],
+          "name": "Anthropic",
+          "slug": "anthropic",
+        },
+      ],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/model/options",
+      },
+    ],
+  },
+  "ok fetchHermesSessionMessages": {
+    "result": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user",
+        },
+        {
+          "content": "hello",
+          "role": "assistant",
+        },
+      ],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/sessions/s%201/messages",
+      },
+    ],
+  },
+  "ok getHermesTask": {
+    "result": {
+      "detail": {
+        "id": "t1",
+        "status": "todo",
+        "title": "first",
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t%201",
+      },
+    ],
+  },
+  "ok hermesCronAction pause": {
+    "result": {
+      "job": {
+        "jobs": [
+          {
+            "id": "j1",
+            "name": "Overseer",
+            "profile": "default",
+            "schedule": "0 * * * *",
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/pause",
+      },
+    ],
+  },
+  "ok hermesCronAction trigger profile": {
+    "result": {
+      "job": {
+        "jobs": [
+          {
+            "id": "j1",
+            "name": "Overseer",
+            "profile": "default",
+            "schedule": "0 * * * *",
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1/trigger?profile=prof",
+      },
+    ],
+  },
+  "ok hermesRequest": {
+    "result": {
+      "body": {
+        "ok": true,
+      },
+      "setCookies": [],
+      "status": 200,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"a":1}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/x?y=1",
+      },
+    ],
+  },
+  "ok probeHermes": {
+    "result": {
+      "authFlows": [],
+      "authProviders": [],
+      "authRequired": false,
+      "baseUrl": "http://127.0.0.1:<port>",
+      "reachable": true,
+      "signedIn": true,
+      "status": 200,
+      "version": "0.9.0",
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/status",
+      },
+    ],
+  },
+  "ok searchHermesSessions": {
+    "result": {
+      "hits": [
+        {
+          "sessionId": "s1",
+          "snippet": "match",
+          "title": "A session",
+        },
+      ],
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "",
+        "contentType": "",
+        "cookie": null,
+        "method": "GET",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/sessions/search?q=what&limit=5",
+      },
+    ],
+  },
+  "ok setHermesMemoryProvider": {
+    "result": {
+      "body": {
+        "files": [
+          {
+            "content": "data:text/plain;base64,aGVsbG8=",
+            "name": "MEMORY.md",
+          },
+        ],
+        "ok": true,
+        "path": "memory/MEMORY.md",
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"honcho"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/memory/provider",
+      },
+    ],
+  },
+  "ok setHermesModel": {
+    "result": {
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"scope":"main","provider":"anthropic","model":"claude-opus-5-5"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/model/set",
+      },
+    ],
+  },
+  "ok signInHermes": {
+    "result": {
+      "error": "Gateway accepted the login but set no session cookie.",
+      "success": false,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"provider":"basic","username":"noah","password":"pw","next":"/"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": null,
+        "url": "/auth/password-login",
+      },
+    ],
+  },
+  "ok updateHermesCron": {
+    "result": {
+      "job": {
+        "jobs": [
+          {
+            "id": "j1",
+            "name": "Overseer",
+            "profile": "default",
+            "schedule": "0 * * * *",
+          },
+        ],
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"updates":{"prompt":"p"}}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PUT",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/cron/jobs/j1?profile=prof",
+      },
+    ],
+  },
+  "ok updateHermesTask": {
+    "result": {
+      "success": true,
+      "task": {
+        "id": "t1",
+        "status": "todo",
+        "title": "first",
+      },
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"status":"done"}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "PATCH",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/plugins/kanban/tasks/t1",
+      },
+    ],
+  },
+  "ok uploadHermesAttachment": {
+    "result": {
+      "attachment": {
+        "bytes": 5,
+        "isImage": false,
+        "name": "a b.txt",
+        "path": "/uploads/a.txt",
+      },
+      "success": true,
+    },
+    "sent": [
+      {
+        "authorization": null,
+        "body": "{"path":"~/.hermes/uploads/a b.txt","data_url":"data:text/plain;base64,aGVsbG8=","overwrite":true}",
+        "contentType": "application/json",
+        "cookie": null,
+        "method": "POST",
+        "mode": "ok",
+        "token": "tok",
+        "url": "/api/files/upload",
+      },
+    ],
+  },
+}
+`;
