@@ -5,6 +5,7 @@ import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
+import { waitingOnFrom } from '../../utils/waiting-on';
 import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 
 /**
@@ -196,6 +197,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
       agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
+      tool_name, tool_input,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -211,6 +213,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       error_message?: string;
       /** PermissionRequest only: when the dialog opened (ms), taken by the hook script. */
       opened_at?: number;
+      /** PermissionRequest only: the tool the dialog asks about, and its input. */
+      tool_name?: string;
+      tool_input?: unknown;
     };
 
     console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
@@ -334,6 +339,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // When the dialog opened: a refusal of it is read from the transcript,
       // after this moment (dialogOpen), since Claude Code sends no hook for one.
       agent.dialogSince = waiting_reason === 'permission' ? dialogOpenedAt(opened_at) : undefined;
+      // What the dialog asks, for the page to say (AgentStatus.waitingOn). The
+      // idle prompt waits on nobody in particular and has no text.
+      agent.waitingOn = waiting_reason === 'permission' ? waitingOnFrom(tool_name, tool_input) : undefined;
     } else if (status === 'idle') {
       agent.status = 'idle';
       agent.waitingReason = undefined;

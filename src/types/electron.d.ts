@@ -96,6 +96,12 @@ export interface AgentTickItem {
   currentTask: string;
   projectName: string;
   lastActivity: string;
+  /** When the current status began (ISO). See AgentStatus.statusSince. */
+  statusSince?: string;
+  /** What a waiting agent waits on. See AgentStatus.waitingOn. */
+  waitingOn?: AgentWaitingOn;
+  /** A launch is on its way. See AgentStatus.launching. Always set on agents:tick. */
+  launching?: boolean;
   provider: string;
   /** A CLI runs in the agent's terminal, whatever its status says: a turn that
    *  failed leaves claude alive, and done or idle agents keep their session.
@@ -284,6 +290,15 @@ export type AgentProvider =
   | 'ollama-cloud'
   | 'custom-openai';
 
+/** What a waiting agent waits on: the dialog its CLI shows. `permission` names
+ *  the command, file or tool asked about; `question` is an AskUserQuestion's
+ *  first question. One line, controls and direction overrides removed, at most
+ *  200 characters. */
+export interface AgentWaitingOn {
+  kind: 'permission' | 'question';
+  text: string;
+}
+
 export interface AgentStatus {
   id: string;
   status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
@@ -303,6 +318,20 @@ export interface AgentStatus {
    *  `waiting`, `permission`). An interrupt the transcript records after it
    *  means the dialog was refused and is gone (core/agent-launch.ts, dialogOpen). */
   dialogSince?: string;
+  /** When the current `status` began (ISO), stamped in the main process
+   *  whenever `status` changes, and when the agent joins the fleet. Not
+   *  `lastActivity`, which every repaint of the terminal moves. */
+  statusSince?: string;
+  /** Set while `status` is `waiting` on a dialog (a permission or a question),
+   *  from the hook that reports it; gone as soon as `status` changes. Not set
+   *  for the idle prompt. */
+  waitingOn?: AgentWaitingOn;
+  /** Set by agent:list, agent:get and agents:tick: a launch is on its way and
+   *  its session is not up yet (a restart, a start from a window, a bot's cold
+   *  start, a session the API starts). Main's own window (sessionStarting,
+   *  core/agent-launch.ts): 15 s for a CLI that never runs, up to 180 s for
+   *  one that runs, until its SessionStart (or, with a task, its first turn). */
+  launching?: boolean;
   lastActivity: string;
   error?: string;
   ptyId?: string;
