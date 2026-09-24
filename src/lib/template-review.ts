@@ -33,12 +33,13 @@ const KEYCAP_BASE = /^[#*0-9]$/;
 
 /**
  * Bidi and zero width controls, tag characters and the other format
- * characters, C0 and C1 controls (a tab and a newline aside), the line and
- * paragraph separators, variation selectors, and the blank fillers. A model
- * reads every one of them; a person reading the prompt sees none.
+ * characters, C0 and C1 controls (a tab and a newline aside, where the text
+ * keeps its lines), the line and paragraph separators, variation selectors,
+ * and the blank fillers. A model reads every one of them; a person reading the
+ * prompt sees none.
  */
-function hiddenCodePoint(cp: number): boolean {
-  if (cp === 0x09 || cp === 0x0a) return false;
+function hiddenCodePoint(cp: number, keepLines: boolean): boolean {
+  if (keepLines && (cp === 0x09 || cp === 0x0a)) return false;
   if (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f)) return true;
   if (cp === 0x2028 || cp === 0x2029) return true;
   if (cp === 0x034f || cp === 0x115f || cp === 0x1160 || cp === 0x3164 || cp === 0xffa0) return true;
@@ -67,21 +68,30 @@ function partOfEmoji(chars: string[], i: number, cp: number): boolean {
   return false;
 }
 
-/**
- * The text with every character that does not show written out as `[U+202E]`,
- * and how many there were. A Windows line end reads as the newline it is.
- */
-export function reveal(input: string): { text: string; hidden: number } {
-  const chars = Array.from(input.replace(/\r\n/g, '\n'));
+function revealWith(input: string, keepLines: boolean): { text: string; hidden: number } {
+  const chars = Array.from(keepLines ? input.replace(/\r\n/g, '\n') : input);
   let hidden = 0;
   const text = chars.map((ch, i) => {
     const cp = ch.codePointAt(0)!;
-    if (!hiddenCodePoint(cp) || partOfEmoji(chars, i, cp)) return ch;
+    if (!hiddenCodePoint(cp, keepLines) || partOfEmoji(chars, i, cp)) return ch;
     hidden += 1;
     return `[U+${cp.toString(16).toUpperCase().padStart(4, '0')}]`;
   }).join('');
   return { text, hidden };
 }
+
+/**
+ * The text with every character that does not show written out as `[U+202E]`,
+ * and how many there were. A Windows line end reads as the newline it is.
+ */
+export const reveal = (input: string) => revealWith(input, true);
+
+/**
+ * The same for a field that is one line (a name, a folder, a skill): its
+ * newlines, carriage returns and tabs are written out too, so it cannot split
+ * over two lines or hide a second one.
+ */
+export const revealLine = (input: string) => revealWith(input, false);
 
 // --- What a template sets ---------------------------------------------------
 
@@ -119,11 +129,11 @@ export function templateFacts(t: TemplateLike): TemplateFacts {
   const prompt = (t.savedPrompt ?? '').trim();
   const shown = reveal(prompt);
   return {
-    name: reveal(t.displayName).text,
+    name: revealLine(t.displayName).text,
     runs: [t.provider || 'claude', t.model || t.localModel].filter(Boolean).join(' · '),
     permissionMode: t.permissionMode ?? 'normal',
-    folders: (t.obsidianVaultPaths ?? []).map(folder => reveal(folder).text),
-    skills: (t.skills ?? []).map(skill => reveal(skill).text),
+    folders: (t.obsidianVaultPaths ?? []).map(folder => revealLine(folder).text),
+    skills: (t.skills ?? []).map(skill => revealLine(skill).text),
     prompt: prompt ? { text: shown.text, characters: Array.from(prompt).length, hidden: shown.hidden } : null,
   };
 }
@@ -156,7 +166,7 @@ function quoted(value: unknown): string {
     const chars = Array.from(s);
     return chars.length > QUOTE_LIMIT ? `${chars.slice(0, QUOTE_LIMIT).join('')}…` : s;
   };
-  if (typeof value === 'string') return `"${cut(reveal(value).text)}"`;
+  if (typeof value === 'string') return `"${cut(revealLine(value).text)}"`;
   return cut(JSON.stringify(value) ?? String(value));
 }
 
@@ -278,9 +288,10 @@ export function importButtonLabel(count: number): string {
 
 /**
  * Whether "Use" starts the new agent with the template's prompt before you
- * touch the switch. Only a built-in: once saved, an imported template looks
- * just like one you made.
+ * touch the switch. Only a built-in as it ships: once saved, an imported
+ * template looks just like one you made, and an edit to a built-in lives in
+ * ~/.dorothy/templates.json, which any agent can write.
  */
 export function startsWithPromptByDefault(template: { builtin: boolean; overridden?: boolean }): boolean {
-  return template.builtin;
+  return template.builtin && !template.overridden;
 }
