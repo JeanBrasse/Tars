@@ -298,7 +298,11 @@ export async function sendNow(params: {
   };
 
   const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  if (agent.status !== 'running' || !canInterrupt(agent) || !ptyProcess) {
+  // Never an Esc into a dialog, whatever the status says: there it means No
+  // (it rejected the tool use, in #174's proof), and the status can still read
+  // running for a moment after the dialog is drawn. The message then goes as
+  // any other, and the writer holds it until the dialog is gone.
+  if (agent.status !== 'running' || !canInterrupt(agent) || !ptyProcess || dialogShown(agent, ptyProcess)) {
     const deliveries = fanOutDeliveries(message, room);
     broadcastPublication(message, thread, deliveries);
     closeSuperseded();
