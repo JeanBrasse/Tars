@@ -23,8 +23,10 @@ Until then, draw a Chat room frame in `chat-design.pen` and anything else in
 A third document, `design/chat-redesign-a.pen`, holds the Chat page's redesign:
 direction A, which Noah chose on 2026-09-17 (the thread first, the team folded
 into the left column), with its composer, modeled on Claude's and ChatGPT's. It
-is what the next Chat TSX implements: the room and Hermes pages, dark and light,
-and every state of the composer. Until that lands, `chat-design.pen` still
+is what the next Chat TSX implements: the room and Hermes pages in every state a
+user can meet, sheets for the team, the thread, Hermes and the composer, each
+dark and light, and two notes frames. Hermes is the global room. Until that
+lands, `chat-design.pen` still
 describes the Chat as it ships. Draw anything for the redesign in
 `chat-redesign-a.pen`.
 
@@ -37,7 +39,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | Route | Name | Frame |
 |---|---|---|
 | `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Dashboard · panel history, Panel history · states, Agent error · reason, Message waiting · notice |
-| `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`: Chat · A · Room · agents at work, Chat · A · Hermes (each with its `· light`), Chat · A · Composer · states (with its `· light`), A · notes |
+| `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states and · Composer · states; each with its `· light`; A · notes and A · every state · notes |
 | `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |

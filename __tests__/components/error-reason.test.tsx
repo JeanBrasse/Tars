@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { errorReason } from '../../src/app/agents/constants';
 import { AgentManagementCard } from '../../src/components/AgentList/AgentManagementCard';
 import TerminalPanelHeader from '../../src/components/TerminalsView/components/TerminalPanelHeader';
-import { TeamRail } from '../../src/components/Chat/TeamRail';
+import { TeamSection } from '../../src/components/Chat/ChatSidebar';
 import type { AgentStatus } from '../../src/types/electron';
 import type { RoomAgent } from '../../src/hooks/useRoomAgents';
 
@@ -71,9 +71,18 @@ function header(a: AgentStatus): string {
 }
 
 function rail(a: AgentStatus, hasEndOfTurn = true): string {
-  const member: RoomAgent = { ...a, hasEndOfTurn };
+  const member: RoomAgent = { ...a, hasEndOfTurn, stopped: false };
   return renderToStaticMarkup(
-    <TeamRail agents={[member]} pending={{}} onOpen={noop} onStop={noop} onSend={noop} onAdd={noop} />,
+    <TeamSection
+      project="project"
+      agents={[member]}
+      pending={{}}
+      lastSpoke={{}}
+      candidates={[]}
+      onAction={noop}
+      onAdd={noop}
+      onNewAgent={noop}
+    />,
   );
 }
 
@@ -133,7 +142,7 @@ describe('the Dashboard panel header', () => {
   });
 });
 
-describe('the Chat team rail', () => {
+describe('the Chat team rows', () => {
   it('says why before what it was asked', () => {
     const html = rail(agent());
     expect(html).toContain(SENTENCE);
