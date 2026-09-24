@@ -50,6 +50,7 @@ function handle(msg) {
   if (msg.method === 'session/prompt') {
     const report = {
       process: process.env.CLAUDE_MGR_API_TOKEN || null,
+      instance: process.env.TARS_INSTANCE_ID || null,
       servers: servers.map(s => ({ name: s.name, token: (s.env.find(e => e.name === 'CLAUDE_MGR_API_TOKEN') || {}).value || null })),
     };
     send({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(report) } } } });
@@ -77,7 +78,7 @@ vi.mock('../../../electron/providers', () => ({
 vi.mock('../../../electron/services/usage-ledger', () => ({ recordUsage: vi.fn() }));
 
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
-import { agentForToken, mintAgentToken } from '../../../electron/core/agent-tokens';
+import { agentForToken, mintAgentToken, tarsInstanceId } from '../../../electron/core/agent-tokens';
 import type { AgentStatus } from '../../../electron/types';
 
 const AGENT = {
@@ -93,6 +94,7 @@ const AGENT = {
 
 interface Report {
   process: string | null;
+  instance: string | null;
   servers: { name: string; token: string | null }[];
 }
 
@@ -131,6 +133,8 @@ describe('a task delegated over ACP', () => {
 
     expect(result.ok, JSON.stringify(result)).toBe(true);
     expect(report.process, 'the CLI was started with no token').toMatch(/^[0-9a-f]{64}$/);
+    // And the id its hooks check the port with before they send that token (#11).
+    expect(report.instance).toBe(tarsInstanceId());
     expect(report.servers.map(s => s.name).sort()).toEqual(['claude-mgr-orchestrator', 'tars-memory']);
     for (const server of report.servers) {
       expect(server.token, `${server.name} was handed no token, and would call as nobody`).toBe(report.process);

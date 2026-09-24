@@ -7,7 +7,7 @@ import { safeEffort } from '../../providers/cli-provider';
 import type { AgentStatus, AppSettings } from '../../types';
 import * as fs from 'fs';
 import { recordUsage } from '../usage-ledger';
-import { mintRunToken } from '../../core/agent-tokens';
+import { mintRunToken, tarsInstanceId } from '../../core/agent-tokens';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { API_PORT } from '../../constants';
@@ -178,6 +178,8 @@ export async function delegateOverAcp(opts: {
       CLAUDE_AGENT_ID: agent.id,
       CLAUDE_PROJECT_PATH: agent.projectPath,
       CLAUDE_MGR_API_TOKEN: apiToken,
+      // What its hooks check the port with before they send that token (#11).
+      TARS_INSTANCE_ID: tarsInstanceId(),
       // Which Tars this run answers to, as spawnAgentPty gives every terminal
       // (agent-pty.ts). It was missing here, so the hooks of an ACP run posted
       // to 31415 whatever port this Tars was on: three posts from a sandbox on

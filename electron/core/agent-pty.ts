@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
-import { mintAgentToken, revokeTerminalToken } from './agent-tokens';
+import { mintAgentToken, revokeTerminalToken, tarsInstanceId } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
@@ -113,6 +113,8 @@ export function spawnAgentPty(opts: {
       // of them remembering. Minted per spawn, so a restart invalidates the
       // token the previous process ran with.
       ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
+      // What a hook checks the port with before it sends that token (#11).
+      TARS_INSTANCE_ID: tarsInstanceId(),
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
