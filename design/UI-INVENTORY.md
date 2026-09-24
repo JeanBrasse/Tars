@@ -11,24 +11,22 @@ room listed on the `/chat` line below: 86 in all. The first 74 share their ids
 and names across the two. The 75th, `Agent error · reason`, was drawn after the
 fork by one script run against both documents, so it has the same name and the
 same content in each but different ids. The room frames were drawn in the fork
-and exist nowhere else, so until the two are reconciled, `chat-design.pen` is
-the newer of the two and the only place the Chat room is specified.
+and exist nowhere else. They describe the Chat before its redesign: the Chat as
+it ships is specified in the third document below.
 
 Reconciling them means one document again, and it is deliberately not done here:
 a headless Pen session and the Pen desktop app writing the same `.pen` end with
 the last save erasing the other, so it waits for a moment when Pen is closed.
-Until then, draw a Chat room frame in `chat-design.pen` and anything else in
-`tars-redesign.pen`.
+Until then, draw anything for the Chat in `chat-redesign-a.pen` and anything
+else in `tars-redesign.pen`.
 
 A third document, `design/chat-redesign-a.pen`, holds the Chat page's redesign:
 direction A, which Noah chose on 2026-09-17 (the thread first, the team folded
-into the left column), with its composer, modeled on Claude's and ChatGPT's. It
-is what the next Chat TSX implements: the room and Hermes pages in every state a
-user can meet, sheets for the team, the thread, Hermes and the composer, each
-dark and light, and two notes frames. Hermes is the global room. Until that
-lands, `chat-design.pen` still
-describes the Chat as it ships. Draw anything for the redesign in
-`chat-redesign-a.pen`.
+into the left column), with its composer, modeled on Claude's and ChatGPT's. The
+Chat implements it since #165 (merged 2026-09-24): the room and Hermes pages in
+every state a user can meet, sheets for the team, the thread, Hermes and the
+composer, each dark and light, and two notes frames. Hermes is the global room.
+Draw anything for the Chat in `chat-redesign-a.pen`.
 
 Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,

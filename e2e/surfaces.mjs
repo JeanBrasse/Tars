@@ -379,8 +379,9 @@ export function readPageErrorRecords() {
 // how fast that CLI registers its session. There nothing starts, the
 // Orchestrator reads a transcript seeded on disk, and the Backend Engineer
 // runs codex, which writes none.
-// The Chat room, the six frames `design/chat-design.pen` specifies as states
-// of the page rather than as overlays. One room per state, because a room is
+// The Chat room in six states of the page rather than overlays, first
+// specified in `design/chat-design.pen` and drawn since #165 from
+// `design/chat-redesign-a.pen`. One room per state, because a room is
 // derived from a project and a journal can only put a given one in a single
 // state at a time.
 //

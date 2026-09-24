@@ -50,8 +50,8 @@
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
 | `design/tars-redesign.pen` | Pencil source of truth, 93 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
-| `design/chat-design.pen` | The same 75 frames (the first 74 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 86 in all. A fork, not a companion, and the newer of the two. Draw a Chat room frame here and anything else in `tars-redesign.pen`, until the two are reconciled with Pen closed |
-| `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes and the composer, dark and light. What the next Chat TSX implements; `chat-design.pen` describes the Chat as it ships until then |
+| `design/chat-design.pen` | The same 75 frames (the first 74 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 86 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
+| `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes and the composer, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
 | `e2e/surfaces.mjs` | Executable manifest: 18 pages, 16 settings sections, 3 overlays = 37 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
@@ -99,7 +99,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 ### Frontend Agent
 - **Owns**: `src/app/`, `src/components/`, `src/hooks/`, `src/lib/`, `src/store/`, `landing/`
 - **Never touches**: `electron/`, `mcp-*/`, `hooks/`, `__tests__/`, `e2e/`
-- **Design rule**: the frames in `design/tars-redesign.pen`, plus `design/chat-design.pen` for the Chat room and `design/chat-redesign-a.pen` for its redesign, and the tokens in `DESIGN.md` are the specification. Never invent a layout, a colour, or a control height. Controls are **26px** (small) or **32px** (standard), nothing else. The shell is identical on every page: sidebar 240 wide (72 collapsed), header 84 tall with padding `22/26/14/26`, content `0/26/22/26`
+- **Design rule**: the frames in `design/tars-redesign.pen`, plus `design/chat-redesign-a.pen` for the Chat, and the tokens in `DESIGN.md` are the specification. Never invent a layout, a colour, or a control height. Controls are **26px** (small) or **32px** (standard), nothing else. The shell is identical on every page: sidebar 240 wide (72 collapsed), header 84 tall with padding `22/26/14/26`, content `0/26/22/26`
 - **Never** mark an active state with an accent rule: no 2px orange line under a tab, beside a menu item, or under a button. Active is a **box**: tinted fill, or surface plus border
 - **Never** hardcode a hex or a raw Tailwind palette class outside `src/components/ui/`. `npm run lint:design` will catch you
 - The mark is the orange square grid (`public/icon.svg`, `src/components/Splash.tsx`), never a `>_` terminal prompt
@@ -147,7 +147,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 
 Every design or feature change goes through, in this order:
 
-1. **The Pencil document**: the frame exists and is correct before any TSX is written. `design/tars-redesign.pen`, except for the Chat room, whose eleven frames live only in `design/chat-design.pen`, and the Chat's redesign (direction A and its composer), drawn in `design/chat-redesign-a.pen`. Looking for them in the wrong file and finding nothing is how three passes of design nearly went unnoticed
+1. **The Pencil document**: the frame exists and is correct before any TSX is written. `design/tars-redesign.pen`, except for the Chat, whose frames (direction A and its composer) live in `design/chat-redesign-a.pen`; `design/chat-design.pen` keeps the room as it was before. Looking for them in the wrong file and finding nothing is how three passes of design nearly went unnoticed
 2. **The app**: `src/` implements the frame, not an approximation of it
 3. **The landing page**: `landing/` picks up the change
 4. **`README.md`**: last
