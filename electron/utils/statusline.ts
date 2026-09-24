@@ -134,7 +134,7 @@ GIT_CACHE="$GIT_CACHE_DIR/git\${PWD//\//_}"
 GIT_CACHE_TTL=5  # seconds
 BRANCH="?"
 if [ -f "$GIT_CACHE" ] && [ ! -L "$GIT_CACHE" ]; then
-  CACHE_AGE=$(( $(date +%s) - $(stat -f%m "$GIT_CACHE" 2>/dev/null || echo 0) ))
+  CACHE_AGE=$(( $(date +%s) - $(stat -f%m "$GIT_CACHE" 2>/dev/null || stat -c%Y "$GIT_CACHE" 2>/dev/null || echo 0) ))
   if [ "$CACHE_AGE" -lt "$GIT_CACHE_TTL" ]; then
     BRANCH=$(cat "$GIT_CACHE")
   fi

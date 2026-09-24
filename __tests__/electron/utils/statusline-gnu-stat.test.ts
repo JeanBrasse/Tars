@@ -1,0 +1,76 @@
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { spawnSync } from 'child_process';
+import { enableStatusLine } from '../../../electron/utils/statusline';
+
+/**
+ * The status line's git cache, on a GNU system (Linux).
+ *
+ * The script reads the cache's age with `stat -f%m`, BSD's form. GNU stat
+ * refuses it, the age read as "now minus 0", and the 5 s cache was never
+ * reused: `git rev-parse` ran on every render of every Claude session on
+ * Linux. The lock above it already falls back to GNU's `stat -c%Y`.
+ *
+ * How it fails, written before the code (2026-09-24):
+ * 1. On GNU stat, two renders within the TTL run git twice.
+ * 2. On BSD stat (macOS), the cache stops being reused.
+ *
+ * These run the installed script through bash, with a stand-in `stat` that
+ * answers as the named flavour does, and a `git` that counts its calls.
+ */
+
+let script: string;
+const dirs: string[] = [];
+
+beforeAll(() => {
+  const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
+  if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it');
+  enableStatusLine();
+  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+});
+
+afterEach(() => {
+  for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+});
+
+function bench(flavour: 'gnu' | 'bsd') {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), `tars-stat-${flavour}-`));
+  dirs.push(home);
+  fs.mkdirSync(path.join(home, '.dorothy'));
+  const bin = path.join(home, 'bin');
+  fs.mkdirSync(bin);
+  const calls = path.join(home, 'git-calls');
+  // A `stat` that knows only its own flavour's way of printing a file's mtime.
+  const accepted = flavour === 'gnu' ? '-c%Y' : '-f%m';
+  fs.writeFileSync(path.join(bin, 'stat'), [
+    `#!${process.execPath}`,
+    `const [flag, file] = process.argv.slice(2);`,
+    `if (flag !== ${JSON.stringify(accepted)}) { process.stderr.write('stat: invalid option\\n'); process.exit(1); }`,
+    `process.stdout.write(String(Math.floor(require('fs').statSync(file).mtimeMs / 1000)) + '\\n');`,
+  ].join('\n'), { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho x >> ${JSON.stringify(calls)}\necho main\n`, { mode: 0o755 });
+  const render = () => spawnSync('bash', [script], {
+    input: JSON.stringify({ session_id: 's1', model: { display_name: 'Opus 5' }, context_window: {}, cost: {} }),
+    cwd: home, encoding: 'utf-8', env: { PATH: `${bin}:${process.env.PATH}`, HOME: home },
+  });
+  const gitCalls = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf-8').trim().split('\n').length : 0);
+  return { render, gitCalls };
+}
+
+describe('the git cache of the status line', () => {
+  it('1. is reused within its TTL on GNU stat', () => {
+    const b = bench('gnu');
+    b.render();
+    b.render();
+    expect(b.gitCalls()).toBe(1);
+  });
+
+  it('2. is still reused on BSD stat', () => {
+    const b = bench('bsd');
+    b.render();
+    b.render();
+    expect(b.gitCalls()).toBe(1);
+  });
+});

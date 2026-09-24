@@ -1462,7 +1462,8 @@ is skipped.
 Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
 if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
-API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+API-driven session) when no panel has. Free-standing terminals use `$SHELL`, or `/bin/zsh` on macOS
+and `/bin/bash` elsewhere when it is unset (`defaultShell`, `electron/utils/default-shell.ts`).
 
 The environment is `process.env` plus:
 

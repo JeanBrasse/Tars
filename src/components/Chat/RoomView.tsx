@@ -290,6 +290,9 @@ export function RoomView({
           <div
             ref={logRef}
             data-thread
+            // The hook e2e/chat-rooms-behaviour.spec.ts finds the thread by
+            // (QA's test of #180).
+            data-room-thread
             onScroll={() => {
               const el = logRef.current;
               if (!el) return;
