@@ -8,6 +8,9 @@ import type { AppSettings } from '../types';
 import { getAllProviders } from '../providers';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
+import { mcpNodeCommand } from '../utils/mcp-node';
+import { writeAtomicSync } from '../utils/secret-file';
+import { DATA_DIR } from '../constants';
 
 /**
  * MCP Orchestrator Service
@@ -106,6 +109,25 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
 
     const providers = getAllProviders();
 
+    // The program the bundles run on (mcpNodeCommand). The registration check
+    // compares the server's path only, so a server registered on another
+    // program would be left on it: when the program changes, which the file
+    // below records, every server is registered again, once.
+    const nodeCommand = mcpNodeCommand();
+    // Which providers have every server on that program, recorded per
+    // provider: one that fails (a config file it cannot write) is tried again
+    // at the next start, and the others are not moved again (the Audit's gate
+    // of #201: 35 removals and 42 registrations per launch while codex failed,
+    // the claude CLI run on the main thread each time). Only a packaged Tars
+    // moves anything over: another names the launcher it found, or `node`.
+    const runtimeFile = path.join(DATA_DIR, 'mcp-servers-runtime.json');
+    let recorded: { command?: string; providers?: string[] } = {};
+    try { recorded = JSON.parse(fs.readFileSync(runtimeFile, 'utf-8')); } catch { /* none yet */ }
+    const movedBefore = new Set(recorded.command === nodeCommand && Array.isArray(recorded.providers) ? recorded.providers : []);
+    const mayMove = app.isPackaged === true;
+    const failed = new Set<string>();
+    let foundAny = false;
+
     // For each server × each provider: register if not already present
     for (const { name, serverPath } of mcpServers) {
       if (!fs.existsSync(serverPath)) {
@@ -113,22 +135,39 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
         continue;
       }
 
+      foundAny = true;
       const isTypeScript = serverPath.endsWith('.ts');
-      const command = isTypeScript ? 'npx' : 'node';
+      const command = isTypeScript ? 'npx' : nodeCommand;
       const args = isTypeScript ? ['tsx', serverPath] : [serverPath];
 
       for (const provider of providers) {
         try {
-          if (!provider.isMcpServerRegistered(name, serverPath)) {
+          const registered = provider.isMcpServerRegistered(name, serverPath);
+          const moveOver = mayMove && !isTypeScript && !movedBefore.has(provider.id);
+          if (!registered || moveOver) {
             // Registering spawns a CLI, and this is the main thread, the one
             // that paints the window and pumps every PTY. Yield between each
             // so the app stays answerable while it catches up.
             await new Promise(resolve => setImmediate(resolve));
+            // Removed and added again: the entry is Tars's, and whatever was
+            // added to it by hand (an env, say) is not kept.
+            if (registered) await provider.removeMcpServer(name);
             await provider.registerMcpServer(name, command, args);
           }
         } catch (err) {
+          failed.add(provider.id);
           console.error(`[${provider.id}] Failed to register ${name}:`, err);
         }
+      }
+    }
+    const moved = providers.map(p => p.id).filter(id => !failed.has(id));
+    const unchanged = recorded.command === nodeCommand
+      && moved.length === movedBefore.size && moved.every(id => movedBefore.has(id));
+    if (mayMove && foundAny && !unchanged) {
+      try {
+        writeAtomicSync(runtimeFile, JSON.stringify({ command: nodeCommand, providers: moved }));
+      } catch (err) {
+        console.warn('[mcp] could not record the program the MCP servers were registered on:', err);
       }
     }
 
@@ -399,7 +438,7 @@ export function setupOrchestratorSetupHandler(): void {
       }
 
       // Add the MCP server using claude mcp add with -s user for global scope
-      const addArgs = ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', orchestratorPath];
+      const addArgs = ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', mcpNodeCommand(), orchestratorPath];
       console.log('Running: claude', addArgs.join(' '));
 
       try {
@@ -412,7 +451,7 @@ export function setupOrchestratorSetupHandler(): void {
         // Fallback: write to mcp.json, through addMcpServerToJson, which fails
         // on a file that is not JSON rather than replacing it.
         const mcpConfigPath = path.join(os.homedir(), '.claude', 'mcp.json');
-        addMcpServerToJson(mcpConfigPath, 'claude-mgr-orchestrator', { command: 'node', args: [orchestratorPath] });
+        addMcpServerToJson(mcpConfigPath, 'claude-mgr-orchestrator', { command: mcpNodeCommand(), args: [orchestratorPath] });
         console.log('MCP orchestrator configured via mcp.json fallback');
         return { success: true, path: mcpConfigPath, method: 'mcp-json-fallback' };
       }

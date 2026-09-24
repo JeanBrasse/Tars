@@ -27,7 +27,7 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
-│     ├─◄ bundled MCP servers (stdio, node)   orchestration + memory tools
+│     ├─◄ bundled MCP servers (stdio, the app's Node)   orchestration + memory tools
 │     └─◄ Hermes gateway webhook              external scheduler → dispatch
 │
 ├── ACP layer (electron/services/acp/)
@@ -659,6 +659,8 @@ What the seven share is in `mcp-shared/`, which is not a server: the client to T
 Plus `tasmania` when `tasmaniaEnabled` and the configured path exists. `DOROTHY_MANAGED_MCPS` holds eight names: the six above plus `tasmania` and `google-workspace`; they are hidden from the Custom MCP settings UI. `tars-memory` is not in the set.
 
 Registration is idempotent: `isMcpServerRegistered(name, expectedServerPath)` compares the last argv element. The Claude implementation checks both `~/.claude.json` (where `claude mcp add -s user` actually writes) and `~/.claude/mcp.json`; checking only the latter meant the answer was always `false` and every server was re-registered by spawning the CLI, once per claude-family provider, on every boot. The registration loop yields with `setImmediate` between servers: it runs on the main thread, the one that paints the window and pumps every PTY.
+
+The program a server is registered with is not `node` but `~/.dorothy/bin/tars-mcp-node` (`mcpNodeCommand`, `electron/utils/mcp-node.ts`), a launcher Tars writes at each start, 0700, that runs the app's own binary with `ELECTRON_RUN_AS_NODE=1`: the servers run on the Node inside the app, whatever the machine has. Registered as `node`, the CLI looked it up on its PATH, and an agent's `/bin/bash -l` on macOS puts /etc/paths ahead of Tars's PATH (path_helper): measured on 2026-09-24, the live Tars's servers ran `/usr/local/bin/node`, Node 18.16, end of life, and a machine with no Node got no Tars tools. Only a packaged Tars at a lasting place writes the launcher, rewriting it when the app has moved: a dev run, a copy run from a disk image (`/Volumes/`) or translocated by macOS names the launcher already there and leaves it alone, or names `node` when there is none (a dev run on the real HOME had pointed every claude session's servers at a worktree's Electron, the Audit's gate of #201). On Linux it names the AppImage file (`$APPIMAGE`), not its mount point. The script falls back to the `node` on the PATH when the app it names is gone, and a symlinked `~/.dorothy/bin` or launcher is not written through. Since the registration check compares the server's path only, `~/.dorothy/mcp-servers-runtime.json` records the program and, per provider, which ones have every server on it; a packaged start removes and registers again the servers of any provider not recorded, so a provider that fails (a config file it cannot write) is tried again at the next start and the others are not. A move-over removes the entry and adds Tars's own again: whatever was added to a Tars server's entry by hand, an `env` say, is not kept. The delegated ACP runs get the same launcher. Windows keeps `node`. This relies on Electron's RunAsNode fuse, on by default and left on.
 
 ---
 
