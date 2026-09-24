@@ -161456,7 +161456,7 @@
                   "id": "RsDqy",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "A band across the room. It lists who has it, who is still waiting, and who will never get it.",
+                  "content": "A band across the room. It lists who has it, who is still waiting, and who will never get it, under the files it carries.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -161833,6 +161833,242 @@
                               "name": "note",
                               "fill": "$text-muted",
                               "content": "sending",
+                              "lineHeight": 1.6666666666666667,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "fPa50",
+                  "name": "message 09:58 you",
+                  "width": "fill_container",
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "top": 1,
+                    "bottom": 1
+                  },
+                  "gap": 12,
+                  "padding": [
+                    8,
+                    24
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "rajJe",
+                      "name": "time",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 36,
+                      "content": "09:58",
+                      "lineHeight": 1.8181818181818181,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "H4t6y",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "g0BR2D",
+                          "name": "who",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "g0KlTl",
+                              "name": "from",
+                              "fill": "$text-primary",
+                              "content": "you",
+                              "lineHeight": 1.5384615384615385,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "f1vdr9",
+                              "name": "arrow-right",
+                              "width": 12,
+                              "height": 12,
+                              "icon": "arrow-right",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            },
+                            {
+                              "type": "text",
+                              "id": "RRqQj",
+                              "name": "to",
+                              "fill": "$text-secondary",
+                              "content": "backend",
+                              "lineHeight": 1.5384615384615385,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "fcfpo",
+                          "name": "text",
+                          "fill": "$text-primary",
+                          "textGrowth": "fixed-width",
+                          "width": 720,
+                          "content": "The run that failed, and the queue as it looked when it did.",
+                          "lineHeight": 1.4285714285714286,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "OB51C",
+                          "name": "files",
+                          "gap": 6,
+                          "padding": [
+                            4,
+                            0,
+                            0,
+                            0
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "i1evR6",
+                              "name": "file drain.log",
+                              "height": 20,
+                              "fill": "$surface",
+                              "cornerRadius": "$radius",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                6
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "k3gxka",
+                                  "name": "file-text",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "file-text",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "US6gh",
+                                  "name": "name",
+                                  "fill": "$text-primary",
+                                  "content": "drain.log",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "XVOZ9",
+                                  "name": "size",
+                                  "fill": "$text-muted",
+                                  "content": "48 KB",
+                                  "lineHeight": 1.5238095238095237,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "XBOgh",
+                              "name": "file queue-row.png",
+                              "height": 20,
+                              "fill": "$surface",
+                              "cornerRadius": "$radius",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                6
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "uJw3E",
+                                  "name": "image",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "image",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "YiFwZ",
+                                  "name": "name",
+                                  "fill": "$text-primary",
+                                  "content": "queue-row.png",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "mv0iT",
+                                  "name": "size",
+                                  "fill": "$text-muted",
+                                  "content": "212 KB",
+                                  "lineHeight": 1.5238095238095237,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "N4VG7b",
+                          "name": "delivery",
+                          "gap": 8,
+                          "padding": [
+                            4,
+                            0,
+                            0,
+                            0
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "SRgMn",
+                              "name": "note",
+                              "fill": "$text-muted",
+                              "content": "delivered to backend",
                               "lineHeight": 1.6666666666666667,
                               "fontFamily": "$font-ui",
                               "fontSize": 12,
@@ -163037,6 +163273,64 @@
                           "name": "text",
                           "fill": "$text-secondary",
                           "content": "You sent 2 held messages to docs.",
+                          "lineHeight": 1.6666666666666667,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "acWZ3",
+                  "name": "system turn_interrupted",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "padding": [
+                    8,
+                    24
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "SeEPp",
+                      "name": "time",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 36,
+                      "content": "09:57",
+                      "lineHeight": 1.8181818181818181,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zG5jY",
+                      "name": "body",
+                      "width": "fill_container",
+                      "height": 20,
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "SM60s",
+                          "name": "hand",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "hand",
+                          "library": "lucide",
+                          "fill": "$text-muted"
+                        },
+                        {
+                          "type": "text",
+                          "id": "A66pp",
+                          "name": "text",
+                          "fill": "$text-secondary",
+                          "content": "You interrupted backend's turn.",
                           "lineHeight": 1.6666666666666667,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -164781,7 +165075,7 @@
                   "id": "dEgst",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "A band across the room. It lists who has it, who is still waiting, and who will never get it.",
+                  "content": "A band across the room. It lists who has it, who is still waiting, and who will never get it, under the files it carries.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -165158,6 +165452,242 @@
                               "name": "note",
                               "fill": "$text-muted",
                               "content": "sending",
+                              "lineHeight": 1.6666666666666667,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "xgfx2",
+                  "name": "message 09:58 you",
+                  "width": "fill_container",
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "top": 1,
+                    "bottom": 1
+                  },
+                  "gap": 12,
+                  "padding": [
+                    8,
+                    24
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "fi3JM",
+                      "name": "time",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 36,
+                      "content": "09:58",
+                      "lineHeight": 1.8181818181818181,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "g5frf",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "wyT0q",
+                          "name": "who",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "lNKby",
+                              "name": "from",
+                              "fill": "$text-primary",
+                              "content": "you",
+                              "lineHeight": 1.5384615384615385,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "OnJ1O",
+                              "name": "arrow-right",
+                              "width": 12,
+                              "height": 12,
+                              "icon": "arrow-right",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            },
+                            {
+                              "type": "text",
+                              "id": "rYono",
+                              "name": "to",
+                              "fill": "$text-secondary",
+                              "content": "backend",
+                              "lineHeight": 1.5384615384615385,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "IT4Qi",
+                          "name": "text",
+                          "fill": "$text-primary",
+                          "textGrowth": "fixed-width",
+                          "width": 720,
+                          "content": "The run that failed, and the queue as it looked when it did.",
+                          "lineHeight": 1.4285714285714286,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "dnM4z",
+                          "name": "files",
+                          "gap": 6,
+                          "padding": [
+                            4,
+                            0,
+                            0,
+                            0
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "v3YEDB",
+                              "name": "file drain.log",
+                              "height": 20,
+                              "fill": "$surface",
+                              "cornerRadius": "$radius",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                6
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "jjhrs",
+                                  "name": "file-text",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "file-text",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "tDmSr",
+                                  "name": "name",
+                                  "fill": "$text-primary",
+                                  "content": "drain.log",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "gG2FJ",
+                                  "name": "size",
+                                  "fill": "$text-muted",
+                                  "content": "48 KB",
+                                  "lineHeight": 1.5238095238095237,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "v5sRW",
+                              "name": "file queue-row.png",
+                              "height": 20,
+                              "fill": "$surface",
+                              "cornerRadius": "$radius",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                6
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "m66yy8",
+                                  "name": "image",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "image",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "KAY3M",
+                                  "name": "name",
+                                  "fill": "$text-primary",
+                                  "content": "queue-row.png",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "aaXMs",
+                                  "name": "size",
+                                  "fill": "$text-muted",
+                                  "content": "212 KB",
+                                  "lineHeight": 1.5238095238095237,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "g1TKHE",
+                          "name": "delivery",
+                          "gap": 8,
+                          "padding": [
+                            4,
+                            0,
+                            0,
+                            0
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "n3Hr8U",
+                              "name": "note",
+                              "fill": "$text-muted",
+                              "content": "delivered to backend",
                               "lineHeight": 1.6666666666666667,
                               "fontFamily": "$font-ui",
                               "fontSize": 12,
@@ -166362,6 +166892,64 @@
                           "name": "text",
                           "fill": "$text-secondary",
                           "content": "You sent 2 held messages to docs.",
+                          "lineHeight": 1.6666666666666667,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "gfjeS",
+                  "name": "system turn_interrupted",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "padding": [
+                    8,
+                    24
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "hV8Rp",
+                      "name": "time",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 36,
+                      "content": "09:57",
+                      "lineHeight": 1.8181818181818181,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "s7Fdr",
+                      "name": "body",
+                      "width": "fill_container",
+                      "height": 20,
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "b8bBK",
+                          "name": "hand",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "hand",
+                          "library": "lucide",
+                          "fill": "$text-muted"
+                        },
+                        {
+                          "type": "text",
+                          "id": "wZpFv",
+                          "name": "text",
+                          "fill": "$text-secondary",
+                          "content": "You interrupted backend's turn.",
                           "lineHeight": 1.6666666666666667,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
