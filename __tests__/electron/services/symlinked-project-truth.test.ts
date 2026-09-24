@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { encodeProjectDirName } from '../../../electron/utils/resume-session';
 import {
-  clearAgentTruthCache, lastLocalCommandAt, pendingBackgroundWork, sessionModel,
+  clearAgentTruthCache, lastInterruptAt, lastLocalCommandAt, pendingBackgroundWork, sessionModel,
 } from '../../../electron/services/agent-truth';
 import { readAgentTranscript } from '../../../electron/services/agent-transcript';
 
@@ -85,5 +85,18 @@ describe('a project reached through a symlink, its transcript under the real pat
     writeTranscript(LINK, RECORDS);
     writeTranscript(REAL, [RECORDS[0], { ...RECORDS[1], message: { ...RECORDS[1].message, model: 'claude-sonnet-5' } }]);
     expect(sessionModel(agent, home)).toBe('claude-opus-5');
+  });
+});
+
+describe('QA #184: the interrupt of a turn, on a project reached through a symlink', () => {
+  // Written by the QA at the gate of #184. lastInterruptAt read both spellings
+  // before #184 (#179) and reads transcriptRoots since, but nothing held it on a
+  // linked project: reading the saved spelling only left every test green.
+  it('finds the interrupt claude recorded under the real path', () => {
+    writeTranscript(REAL, [
+      ...RECORDS,
+      { type: 'user', uuid: 'u5', timestamp: at(5), message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+    ]);
+    expect(lastInterruptAt({ currentSessionId: SESSION, projectPath: LINK }, home)).toBe(Date.parse(at(5)));
   });
 });
