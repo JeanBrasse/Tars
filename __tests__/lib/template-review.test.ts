@@ -436,6 +436,11 @@ describe('one-line fields write out their line breaks and tabs (14)', () => {
     expect(facts.prompt).toEqual({ text: 'First line.\nSecond line.', characters: 24, hidden: 0 });
   });
 
+  it('writes out the line break in a value a refusal names, which the notice would fold into a space', () => {
+    expect(refusal(file([{ displayName: 'A', skills: ['copy\nwriting'] }])))
+      .toBe('Not imported: "A" names the skill "copy[U+000A]writing", which is not a skill name.');
+  });
+
   it('accepts a folder with a newline in it as the absolute path it is, written out in the review', () => {
     const review = accepted(file([{ displayName: 'A', obsidianVaultPaths: ['/Users/noah/evil\n/Users/noah/.ssh'] }]));
     expect(review.templates[0].facts.folders).toEqual(['/Users/noah/evil[U+000A]/Users/noah/.ssh']);
