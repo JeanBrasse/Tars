@@ -39,6 +39,9 @@ const gateway = vi.hoisted(() => ({ hits: [] as Array<Record<string, unknown>> }
 vi.mock('../../../electron/services/hermes-client', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../electron/services/hermes-client')>()),
   searchHermesSessions: async () => ({ success: true, hits: gateway.hits }),
+  // A reachable gateway, so the super chat's turn opens its live session.
+  probeHermes: async () => ({ baseUrl: 'http://127.0.0.1:1', reachable: true, authRequired: false, authFlows: [], authProviders: [], signedIn: true }),
+  createHermesCron: async () => ({ success: false as const, error: 'no cron in this test', needsSignIn: false }),
 }));
 
 type Handler = (req: unknown, sendJson: (body: unknown, status?: number) => void) => Promise<void>;
@@ -114,7 +117,9 @@ describe('memory_search, as an agent calls it', () => {
 
   it('remembers the super chat\'s live sessions across a restart of Tars', async () => {
     await overseer.askOverseer('And now?');
-    const saved = fs.readFileSync(path.join(os.homedir(), '.tars-private', 'overseer.json'), 'utf-8');
+    // A file of its own in the private directory: a turn saves the state it
+    // loaded when it began, which would drop an id recorded meanwhile.
+    const saved = fs.readFileSync(path.join(os.homedir(), '.tars-private', 'overseer-hermes-sessions.json'), 'utf-8');
     expect(saved).toContain('live-overseer-1');
     expect(saved).toContain('stored-overseer-1');
   });
