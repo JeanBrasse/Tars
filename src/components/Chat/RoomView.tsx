@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { BrandSpinner, Button } from '@/components/ui';
 import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
@@ -52,7 +52,7 @@ export function RoomView({
    *  picks its agent here. Uncontrolled when absent. */
   targetId?: string;
   onTargetChange?: (id: string) => void;
-  /** Sends what is held for an agent with no turn signal, oldest first. */
+  /** Sends what an agent holds unsent, oldest first, whatever it was refused for. */
   onRelease?: (agentId: string) => void;
   /** Where an agent's terminal is: the Dashboard's panel. */
   onOpenTerminal?: (agentId: string) => void;
@@ -66,7 +66,10 @@ export function RoomView({
   const [failure, setFailure] = useState<ComposerFailure | null>(null);
 
   const logRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** Where the last scroll left the view, to tell a move up from a resize. */
+  const lastTop = useRef(0);
   const seenCount = useRef(0);
   const [unseen, setUnseen] = useState(0);
 
@@ -97,6 +100,22 @@ export function RoomView({
       setUnseen(n => n + added);
     }
   }, [messageCount, items.length]);
+
+  // A new message is not the only thing that moves the bottom. A receipt
+  // arrives under your line after the line itself, the strip above gains a
+  // row, the window is resized: while you are at the bottom, any change to
+  // the thread's height or to its content's keeps you there.
+  useEffect(() => {
+    const el = logRef.current;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   const jumpToLatest = () => {
     const el = logRef.current;
@@ -174,27 +193,37 @@ export function RoomView({
           onScroll={() => {
             const el = logRef.current;
             if (!el) return;
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            // Only you moving the view up stops the following. The view also
+            // scrolls when the thread changes size under it, and a scroll
+            // event that lands after the next change of size finds it off the
+            // bottom through no move of yours.
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) stickToBottom.current = true;
+            else if (el.scrollTop < lastTop.current) stickToBottom.current = false;
+            lastTop.current = el.scrollTop;
             if (stickToBottom.current && unseen) setUnseen(0);
           }}
-          className="flex-1 min-h-0 overflow-y-auto flex flex-col pt-2 pb-3"
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col"
         >
-          {loading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <BrandSpinner size={26} label="Reading the room" />
-            </div>
-          ) : items.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
-              <p className="text-sm text-foreground">
-                {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
-              </p>
-              <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
-                {agents.length === 0
-                  ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
-                  : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
-              </p>
-            </div>
-          ) : items.map(renderItem)}
+          {/* The content in a box of its own, so its growth can be observed:
+              the scrolling box above keeps its own size whatever it holds. */}
+          <div ref={contentRef} className="flex-1 flex flex-col pt-2 pb-3">
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <BrandSpinner size={26} label="Reading the room" />
+              </div>
+            ) : items.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
+                <p className="text-sm text-foreground">
+                  {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
+                </p>
+                <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
+                  {agents.length === 0
+                    ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
+                    : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
+                </p>
+              </div>
+            ) : items.map(renderItem)}
+          </div>
         </div>
         {unseen > 0 && (
           <div className="h-10 shrink-0 flex items-center px-6 bg-secondary border-t border-border">

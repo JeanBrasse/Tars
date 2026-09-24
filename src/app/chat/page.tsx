@@ -184,6 +184,9 @@ function ChatRoom({
   const room = snapshot.room;
   return (
     <RoomView
+      // One view per room: a draft, an unread count, or a view scrolled up in
+      // one room is not carried into the next.
+      key={room.id}
       room={room}
       threads={snapshot.threads}
       messages={snapshot.messages}
