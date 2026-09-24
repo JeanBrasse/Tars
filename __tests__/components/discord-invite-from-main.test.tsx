@@ -11,7 +11,8 @@ vi.mock('react', async (importOriginal) => ({
 
 /**
  * Settings > Discord's invite link, from the main process (#200's contract:
- * `window.electronAPI.discord.inviteUrl(token)`, permissions 3072). The page
+ * `window.electronAPI.discord.inviteUrl(token)`, which decides the permissions:
+ * 3072 with #200, 274877910016 with #203's threads). The page
  * built its own link until then, with the permissions #200 took away (68608,
  * Read Message History included), so the link it offered and the one the bot's
  * own test returned asked for different things. Written before the section
