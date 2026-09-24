@@ -66,6 +66,9 @@ const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!({},
 beforeAll(async () => {
   overseer = await import('../../../electron/services/overseer');
   (await import('../../../electron/handlers/hermes-handlers')).registerHermesHandlers();
+  // A gateway is configured. With no connection file the Chat says Hermes is not
+  // configured and asks nothing; it used to take the default port, 127.0.0.1:9119.
+  (await import('../../../electron/services/hermes-config')).writeHermesConnection(CONNECTION);
   // Hermes Desktop's own file, which the import reads.
   const desktop = path.join(os.homedir(), 'Library', 'Application Support', 'Hermes', 'connection.json');
   fs.mkdirSync(path.dirname(desktop), { recursive: true });

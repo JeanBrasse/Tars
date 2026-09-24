@@ -79,10 +79,23 @@ export function configuredHermesConnection(): { conn: HermesConnection } | { unu
   }
 }
 
-/** A connection worth attempting: configured, and not the empty default. */
+let lastUnusable: string | null = null;
+
+/**
+ * A connection worth attempting: one a file names (configuredHermesConnection).
+ * It was readHermesConnection()'s answer, the default port for a file missing or
+ * broken: 127.0.0.1:9119, the SSH tunnel to Noah's Hermes on his machine, which a
+ * sandbox's overseer and memory hub reached (the Audit's gate of #183). What is
+ * wrong with a broken file is logged once, when it changes; its callers say
+ * Hermes is not configured.
+ */
 export function usableHermesConnection(): HermesConnection | null {
-  const conn = readHermesConnection();
-  if (conn.mode === 'local') return conn;
-  if (conn.mode === 'ssh') return conn.ssh?.host ? conn : null;
-  return conn.url ? conn : null;
+  const configured = configuredHermesConnection();
+  if (configured && 'unusable' in configured) {
+    if (configured.unusable !== lastUnusable) console.warn(`[hermes] ${configured.unusable}`);
+    lastUnusable = configured.unusable;
+    return null;
+  }
+  lastUnusable = null;
+  return configured ? configured.conn : null;
 }

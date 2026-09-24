@@ -671,6 +671,8 @@ Tars deliberately has no scheduler and no server-side task harness. Both live in
 | `ssh` | `http://127.0.0.1:<ssh.localPort ?? ssh.remotePort ?? 9119>` (tunnel) |
 | `remote` / `cloud` | the configured absolute URL |
 
+Only a connection saved in `~/.dorothy/hermes-connection.json`, readable and naming the address its mode needs, is called (`configuredHermesConnection`, `usableHermesConnection`); a missing or broken file is "not configured", never the default port.
+
 Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
 
 Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` in §5), `/api/plugins/kanban` (the board behind `/kanban`), and the cron endpoints behind `/crons`.
