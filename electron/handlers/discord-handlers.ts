@@ -1,14 +1,17 @@
 import { ipcMain } from 'electron';
 import type { AppSettings } from '../types';
-import { sendDiscordMessage, testDiscordToken } from '../services/discord-bot';
+import { inviteUrlFromToken, sendDiscordMessage, testDiscordToken } from '../services/discord-bot';
 
 /**
- * The two channels behind Settings > Discord's test row: "test token" asks
- * Discord who the token is (and hands back the invite link), "send test" posts
- * to the channel the bot detected.
+ * The channels behind Settings > Discord: "test token" asks Discord who the
+ * token is (and hands back the invite link), "send test" posts to the channel
+ * the bot detected, and the invite link shown as the token is typed is main's,
+ * made from that token without asking Discord.
  */
 export function registerDiscordHandlers(deps: { getAppSettings: () => AppSettings }): void {
   ipcMain.handle('discord:test', async () => testDiscordToken(deps.getAppSettings().discordBotToken));
+
+  ipcMain.handle('discord:inviteUrl', async (_event, token: unknown) => inviteUrlFromToken(token));
 
   ipcMain.handle('discord:sendTest', async () => {
     const settings = deps.getAppSettings();

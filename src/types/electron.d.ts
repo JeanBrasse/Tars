@@ -1306,6 +1306,8 @@ export interface ElectronAPI {
     test: () => Promise<{ success: boolean; botName?: string; inviteUrl?: string; error?: string }>;
     /** Posts a test message to the channel the bot detected. */
     sendTest: () => Promise<{ success: boolean; error?: string }>;
+    /** The link that invites the bot, made in main from a token as it is typed; null when it holds no bot id. */
+    inviteUrl: (token: string) => Promise<string | null>;
   };
 
   // JIRA

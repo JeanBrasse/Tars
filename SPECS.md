@@ -16,7 +16,7 @@ Nothing runs in the cloud. No account, no server, no telemetry. The state lives 
 Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
 ├── BrowserWindow  → Next.js 16.3 static export (src/, ~40k LOC)
 │                     contextIsolation, nodeIntegration off, app:// protocol
-│                     ↕ 162 IPC channels via contextBridge (electron/preload.ts)
+│                     ↕ 201 IPC channels via contextBridge (electron/preload.ts)
 │
 ├── PTY layer (node-pty)          agent PTYs · quick PTYs · skill PTYs · plugin PTYs
 │     └─ one shell per agent, cwd = worktreePath ?? projectPath
@@ -83,7 +83,7 @@ orchestrator agent's CLI
 | 5 | `loadAgents()` + `startAgentAutosave()` | 30 s dirty-flush timer, `unref`'d |
 | 6 | `setupProtocolHandler()` → `createWindow()` | `app://` and `local-file://` |
 | 7 | `initTray()` | menu-bar popover rendering `/tray-panel` |
-| 8 | IPC registration | 162 channels across 12 files: the 11 handler modules plus `mcp-orchestrator.ts` |
+| 8 | IPC registration | 201 channels across 16 files: the 15 handler modules plus `mcp-orchestrator.ts` |
 | 9 | `initVaultDb()` | better-sqlite3, WAL, foreign keys on |
 | 10 | Telegram + Slack + Discord + `startApiServer()` | |
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
@@ -749,7 +749,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### The IPC boundary
 
-`electron/preload.ts` (845 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 200 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `api:`. Every event subscription returns its own unsubscribe closure.
+`electron/preload.ts` (845 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 201 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `api:`. Every event subscription returns its own unsubscribe closure.
 
 ### What is validated where
 
