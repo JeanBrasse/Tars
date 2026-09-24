@@ -20,6 +20,10 @@ import * as fs from 'node:fs';
  * 6. misses spread over many chats escape a limit kept per chat;
  * 7. what is not a guess counts as one: `/auth` with no token, or /auth while
  *    Settings holds no auth token.
+ * 8. (gate of #200) the lock-out has no way out that anyone is told of: twenty
+ *    misses from anywhere shut out every new chat, Noah's too, and the refusal
+ *    names neither the time it lifts nor the one thing that lifts it sooner,
+ *    turning Telegram off and on in Settings, which restarts the bot.
  *
  * The bot and its handlers are the real ones; the Telegram client is a recorder
  * of the handlers the bot registers and of what it sends. Only Date is faked,
@@ -105,6 +109,7 @@ afterEach(() => {
 });
 
 const minutes = (n: number) => vi.setSystemTime(Date.now() + n * 60_000);
+const clock = (at: number) => new Date(at).toTimeString().slice(0, 5);
 
 describe('/auth, guessed', () => {
   it('stops comparing a chat\'s tokens after five misses, the right one included, and says the same to both', async () => {
@@ -132,7 +137,8 @@ describe('/auth, guessed', () => {
     // The first miss was five minutes ago: ten more to go.
     await send('99', `/auth ${TOKEN}`);
     expect(lastReply('99')).toMatch(REFUSED);
-    expect(lastReply('99')).toContain('10 minutes');
+    // At the minute the first miss is fifteen minutes old, on the clock of the Mac Tars runs on.
+    expect(lastReply('99')).toContain(`Try again at ${clock(Date.now() + 10 * 60_000)}`);
 
     minutes(10);
     await send('99', `/auth ${TOKEN}`);
@@ -160,6 +166,21 @@ describe('/auth, guessed', () => {
     minutes(15);
     await send('200', `/auth ${TOKEN}`);
     expect(enrolled('200')).toBe(true);
+  });
+
+  it('8. names the way out of a lock-out, and turning Telegram off and on in Settings is one', async () => {
+    for (let chat = 100; chat < 120; chat++) await send(String(chat), '/auth wrong');
+    await send('200', `/auth ${TOKEN}`);
+
+    expect(lastReply('200')).toMatch(REFUSED);
+    expect(lastReply('200')).toContain(`Try again at ${clock(Date.now() + 15 * 60_000)}`);
+    expect(lastReply('200')).toMatch(/turn Telegram off and on in Tars's Settings/);
+
+    // What the Settings toggle does: app:saveSettings stops the bot and starts it again.
+    stopTelegramBot();
+    initTelegramBot();
+    await send('200', `/auth ${TOKEN}`);
+    expect(enrolled('200'), 'the toggle did not clear the count').toBe(true);
   });
 
   it('counts only guesses: no token given, or no auth token in Settings, is no miss', async () => {

@@ -22,6 +22,11 @@ import * as path from 'node:path';
  *    2,000 characters;
  * 8. "test token" opens nothing but says nothing either, or gives no invite
  *    link; "send test" posts nowhere, or before a channel is known.
+ * 9. (gate of #200) a mention in a thread or a forum post is not answered in
+ *    that thread, or the invite does not ask for Send Messages in Threads,
+ *    without which Discord refuses the bot's channel.send there;
+ * 10. (gate of #200) discord:inviteUrl splits whatever the renderer sends: 50 MB
+ *    of dots held the main process 3.3 s.
  *
  * Written after the adapter, not before it, against the repo's rule: each
  * test was then shown to bite by a mutant of the code it holds (see the PR).
@@ -303,6 +308,20 @@ describe('what the Discord bot says', () => {
   });
 });
 
+describe('a thread or a forum post (gate of #200)', () => {
+  it('answers a mention in a thread in that thread, and send_discord can post there after (9)', async () => {
+    dc.channels.add('T-THREAD');
+    await discord({ content: mention('status'), channelId: 'T-THREAD' });
+
+    expect(said('T-THREAD').join('\n')).toMatch(/Lead/);
+    expect(said('C-TEAM')).toEqual([]);
+
+    const posted = await sendDiscordMessage('done in the thread', settings, 'T-THREAD');
+    expect(posted).toMatchObject({ ok: true });
+    expect(said('T-THREAD').at(-1)).toContain('done in the thread');
+  });
+});
+
 describe('what Tars posts to Discord on its own (send_discord)', () => {
   it('posts to the channel Settings keeps, and to one an allowed member wrote from', async () => {
     settings.discordChannelId = 'C-TEAM';
@@ -402,17 +421,29 @@ describe('Settings > Discord: the invite link, made in main', () => {
   const VIEW_CHANNEL = 1 << 10;
   const SEND_MESSAGES = 1 << 11;
   const READ_MESSAGE_HISTORY = 1 << 16;
+  // Past 31 bits: `1 << 38` would wrap, so it is spelled as a power.
+  const SEND_MESSAGES_IN_THREADS = 2 ** 38;
+  const ASKED = VIEW_CHANNEL + SEND_MESSAGES + SEND_MESSAGES_IN_THREADS;
   const b64url = (text: string) => Buffer.from(text, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const token = (id: string) => `${b64url(id)}.GhXyZa.secret-part_of-the-token`;
   const inviteFor = (value: unknown) => ipc.get('discord:inviteUrl')!({}, value) as Promise<string | null>;
 
   beforeEach(() => registerDiscordHandlers({ getAppSettings: () => settings }));
 
-  it('asks only for what the bot does: see a channel and send to it (1)', async () => {
+  it('asks only for what the bot does: see a channel and send to it, threads included (1, 9)', async () => {
     const url = await inviteFor(token('1187342155628118067'));
     const asked = Number(new URL(url!).searchParams.get('permissions'));
     expect(asked & READ_MESSAGE_HISTORY, 'asks for Read Message History, which the bot never uses').toBe(0);
-    expect(asked).toBe(VIEW_CHANNEL | SEND_MESSAGES);
+    expect(asked).toBe(ASKED);
+    expect(asked).toBe(274877910016);
+  });
+
+  it('refuses a value longer than any token before splitting it (10)', async () => {
+    expect(await inviteFor(`${token('1187342155628118067')}.${'x'.repeat(200)}`)).toBeNull();
+    const huge = '.'.repeat(50 * 1024 * 1024);
+    const began = Date.now();
+    expect(await inviteFor(huge)).toBeNull();
+    expect(Date.now() - began, 'the renderer can still hold the main process').toBeLessThan(1_000);
   });
 
   it('gives, from the token as it is typed, the link "test token" gives (2)', async () => {
@@ -434,7 +465,7 @@ describe('Settings > Discord: the invite link, made in main', () => {
 
   it('puts the id in it and nothing else of the token, and answers anything but a string with no link (5)', async () => {
     const url = await inviteFor(token('283746510293847561'));
-    expect(url).toBe(`https://discord.com/oauth2/authorize?client_id=283746510293847561&scope=bot&permissions=${VIEW_CHANNEL | SEND_MESSAGES}`);
+    expect(url).toBe(`https://discord.com/oauth2/authorize?client_id=283746510293847561&scope=bot&permissions=${ASKED}`);
     expect(url).not.toContain('secret');
     expect(url).not.toContain('GhXyZa');
     for (const value of [undefined, null, 42, { token: token('283746510293847561') }]) {
