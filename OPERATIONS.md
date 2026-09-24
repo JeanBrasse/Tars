@@ -971,6 +971,24 @@ Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and
 Plus `tasmania` when `appSettings.tasmaniaEnabled` and the configured
 `tasmaniaServerPath` exists on disk.
 
+Each server builds itself (`npm run build` in its folder): `tsc` checks the types, and esbuild
+bundles `src/index.ts` into `dist/bundle.js`, with `mcp-shared/` in it. That folder is what the
+seven share: the client to Tars, the tool table they register through, one request read whole,
+the settings file. It imports node's builtins only; a package imported from there would resolve
+from the repository's root, not from the server's own lock.
+
+What the seven answer is recorded in `__tests__/mcp/contracts/`. Before changing a server:
+
+```bash
+node __tests__/mcp/contracts/mcp-servers.contract.mjs            # builds the seven, compares
+node __tests__/mcp/contracts/mcp-servers.contract.mjs --only=x   # one server
+```
+
+It starts each bundle over stdio with an agent's environment, asks `tools/list`, then calls
+every tool along each of its answers against a fake Tars (SocialData, X and Telegram are
+faked too), and prints `identical` or the diff. `--record` rewrites the recording: only for a
+change meant to be seen, recorded on the code before the change.
+
 ### How registration works
 
 `setupMcpOrchestrator()` runs on `whenReady()`, un-awaited so it does not hold the first paint.

@@ -236,6 +236,24 @@ function systemMore(message: BusMessage): string | undefined {
   return `The exchange closed with it: ${dropped} message${dropped === 1 ? ' was' : 's were'} dropped.`;
 }
 
+/**
+ * A change of members in the frame's words, from the line's own data: "You
+ * added reviewer to the room.", "You removed audit from the room." The bus's
+ * sentence says less ("You removed audit."), and a line written before the bus
+ * gave its data keeps it.
+ */
+function systemText(message: BusMessage): string {
+  const data = message.systemData;
+  if (message.systemKind !== 'members_changed' || !data) return message.text;
+  const named = (ids: string[]) => list(ids.map(id => data.names?.[id] ?? id.slice(0, 8)));
+  const added = named(data.added);
+  const removed = named(data.removed);
+  if (added && removed) return `You added ${added} to the room and removed ${removed} from it.`;
+  if (added) return `You added ${added} to the room.`;
+  if (removed) return `You removed ${removed} from the room.`;
+  return message.text;
+}
+
 /** `today`, `yesterday`, then the weekday and date: the day lines' words. */
 export function dayLabel(iso: string, now: Date = new Date()): string {
   const at = new Date(iso);
@@ -274,7 +292,7 @@ export function threadItems(
         time: HHMM(message.createdAt),
         systemKind: message.systemKind,
         members: message.systemData,
-        text: message.text,
+        text: systemText(message),
         more: systemMore(message),
       });
       continue;

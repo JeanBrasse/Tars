@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { registerTools, text, tool } from "../../../mcp-shared/src/tools.js";
 import { socialDataRequest } from "../utils/api.js";
 
 interface TweetDetail {
@@ -84,50 +85,38 @@ function formatTweetDetail(tweet: TweetDetail): string {
 }
 
 export function registerTweetTools(server: McpServer): void {
-  server.tool(
-    "twitter_get_tweet",
-    "Get full details of a specific tweet by its ID. Returns engagement stats, media, mentions, hashtags, and author info.",
-    {
-      tweet_id: z
-        .string()
-        .describe("The numerical tweet ID (e.g. '1729591119699124560')"),
-    },
-    async ({ tweet_id }) => {
-      try {
+  registerTools(server, [
+    tool({
+      name: "twitter_get_tweet",
+      description: "Get full details of a specific tweet by its ID. Returns engagement stats, media, mentions, hashtags, and author info.",
+      schema: {
+        tweet_id: z
+          .string()
+          .describe("The numerical tweet ID (e.g. '1729591119699124560')"),
+      },
+      failure: "fetching tweet",
+      async run({ tweet_id }) {
         const tweet = (await socialDataRequest(
           "GET",
           `/twitter/tweets/${tweet_id}`
         )) as TweetDetail;
 
-        return {
-          content: [{ type: "text" as const, text: formatTweetDetail(tweet) }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error fetching tweet: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text(formatTweetDetail(tweet));
+      },
+    }),
 
-  server.tool(
-    "twitter_get_tweet_comments",
-    "Get replies/comments on a specific tweet. Returns up to ~20 comments per page with pagination.",
-    {
-      tweet_id: z.string().describe("The numerical tweet ID to get comments for"),
-      cursor: z
-        .string()
-        .optional()
-        .describe("Pagination cursor from a previous result's next_cursor"),
-    },
-    async ({ tweet_id, cursor }) => {
-      try {
+    tool({
+      name: "twitter_get_tweet_comments",
+      description: "Get replies/comments on a specific tweet. Returns up to ~20 comments per page with pagination.",
+      schema: {
+        tweet_id: z.string().describe("The numerical tweet ID to get comments for"),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor from a previous result's next_cursor"),
+      },
+      failure: "fetching comments",
+      async run({ tweet_id, cursor }) {
         const params: Record<string, string> = {};
         if (cursor) params.cursor = cursor;
 
@@ -141,11 +130,7 @@ export function registerTweetTools(server: McpServer): void {
         };
 
         if (!result.tweets || result.tweets.length === 0) {
-          return {
-            content: [
-              { type: "text" as const, text: "No comments found for this tweet." },
-            ],
-          };
+          return text("No comments found for this tweet.");
         }
 
         const formatted = result.tweets
@@ -155,26 +140,14 @@ export function registerTweetTools(server: McpServer): void {
           )
           .join("\n\n");
 
-        let text = `${result.tweets.length} comments:\n\n${formatted}`;
+        let found = `${result.tweets.length} comments:\n\n${formatted}`;
 
         if (result.next_cursor) {
-          text += `\n\n📄 More comments available. Use cursor: "${result.next_cursor}"`;
+          found += `\n\n📄 More comments available. Use cursor: "${result.next_cursor}"`;
         }
 
-        return {
-          content: [{ type: "text" as const, text }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error fetching comments: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text(found);
+      },
+    }),
+  ]);
 }

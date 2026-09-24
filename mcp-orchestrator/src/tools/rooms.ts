@@ -11,6 +11,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { registerTools, text, tool } from "../../../mcp-shared/src/tools.js";
 import { apiRequest } from "../utils/api.js";
 
 type PostResult = {
@@ -32,26 +33,22 @@ type ReadResult = {
 };
 
 export function registerRoomTools(server: McpServer): void {
-  // Tool: publish into the room
-  server.tool(
-    "room_post",
-    "Say something to your team in your project's room. Use it when you have a result, a blocker, or an answer someone asked you for: mention an agent by id to address it. Saying nothing is fine and costs nothing: reply with (pass) and it is not published. Do not post to acknowledge a message or to say you are starting; post when you have something.",
-    {
-      text: z.string().describe("What you want to say to the room"),
-      mentions: z.array(z.string()).optional().describe("Agent ids you are addressing. After the first round, only an agent another one mentioned gets a turn"),
-      room: z.string().optional().describe("Room id. Defaults to your own project's room, which is almost always what you want"),
-    },
-    async ({ text, mentions, room }) => {
-      try {
-        const data = await apiRequest("/api/bus/post", "POST", { text, mentions, room }) as PostResult;
+  registerTools(server, [
+    // Publish into the room
+    tool({
+      name: "room_post",
+      description: "Say something to your team in your project's room. Use it when you have a result, a blocker, or an answer someone asked you for: mention an agent by id to address it. Saying nothing is fine and costs nothing: reply with (pass) and it is not published. Do not post to acknowledge a message or to say you are starting; post when you have something.",
+      schema: {
+        text: z.string().describe("What you want to say to the room"),
+        mentions: z.array(z.string()).optional().describe("Agent ids you are addressing. After the first round, only an agent another one mentioned gets a turn"),
+        room: z.string().optional().describe("Room id. Defaults to your own project's room, which is almost always what you want"),
+      },
+      failure: "posting to the room",
+      async run({ text: said, mentions, room }) {
+        const data = await apiRequest("/api/bus/post", "POST", { text: said, mentions, room }) as PostResult;
 
         if (data.refused) {
-          return {
-            content: [{
-              type: "text",
-              text: `Not published (${data.refused}): ${data.message ?? "the room refused it"}`,
-            }],
-          };
+          return text(`Not published (${data.refused}): ${data.message ?? "the room refused it"}`);
         }
 
         const queued = (data.deliveries ?? []).filter(d => d.state === "queued").length;
@@ -66,26 +63,20 @@ export function registerRoomTools(server: McpServer): void {
         if (data.threadState === "bounded") {
           lines.push("This thread has reached its bounds: only a human message reopens it.");
         }
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: `Error posting to the room: ${error instanceof Error ? error.message : String(error)}` }],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text(lines.join("\n"));
+      },
+    }),
 
-  // Tool: catch up before answering
-  server.tool(
-    "room_read",
-    "Read the recent conversation in your project's room, so you answer what was actually said rather than guessing from the one line you were handed.",
-    {
-      room: z.string().optional().describe("Room id. Defaults to your own project's room"),
-      limit: z.number().optional().describe("How many recent messages to read. Defaults to 50"),
-    },
-    async ({ room, limit }) => {
-      try {
+    // Catch up before answering
+    tool({
+      name: "room_read",
+      description: "Read the recent conversation in your project's room, so you answer what was actually said rather than guessing from the one line you were handed.",
+      schema: {
+        room: z.string().optional().describe("Room id. Defaults to your own project's room"),
+        limit: z.number().optional().describe("How many recent messages to read. Defaults to 50"),
+      },
+      failure: "reading the room",
+      async run({ room, limit }) {
         const params = new URLSearchParams();
         if (room) params.set("room", room);
         if (limit) params.set("limit", String(limit));
@@ -94,20 +85,15 @@ export function registerRoomTools(server: McpServer): void {
 
         const messages = data.messages ?? [];
         if (messages.length === 0) {
-          return { content: [{ type: "text", text: "Nothing has been said in this room yet." }] };
+          return text("Nothing has been said in this room yet.");
         }
         const open = (data.threads ?? []).find(t => t.state === "open");
         const header = open
           ? `Room ${data.room?.title ?? ""}: thread ${open.id} is open, round ${open.round}, ${open.agentMessageCount} agent messages so far.`
           : `Room ${data.room?.title ?? ""}: no thread is open, so only a human message starts one.`;
         const body = messages.map(m => `[${m.createdAt}] ${m.authorName} (${m.authorKind}): ${m.text}`);
-        return { content: [{ type: "text", text: [header, "", ...body].join("\n") }] };
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: `Error reading the room: ${error instanceof Error ? error.message : String(error)}` }],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text([header, "", ...body].join("\n"));
+      },
+    }),
+  ]);
 }
