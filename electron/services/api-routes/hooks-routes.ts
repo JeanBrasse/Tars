@@ -127,6 +127,20 @@ function isStaleIdlePrompt(agent: AgentStatus, now = Date.now()): boolean {
     .some(age => age < IDLE_PROMPT_DELAY_MS);
 }
 
+/**
+ * When a dialog opened: the hook script's own time, not this post's arrival
+ * (the Audit's re-check of #174: a refusal made before a late post arrived
+ * read as older than the dialog, and the agent stayed deaf until its next
+ * turn). Bounded to the last minute and to now: a hook runs as the dialog
+ * appears, and a time outside that is a clock or a caller not to believe.
+ */
+const DIALOG_TIME_SLACK_MS = 60_000;
+function dialogOpenedAt(openedAt: unknown): string {
+  const now = Date.now();
+  const at = typeof openedAt === 'number' && Number.isFinite(openedAt) ? openedAt : now;
+  return new Date(at > now || at < now - DIALOG_TIME_SLACK_MS ? now : at).toISOString();
+}
+
 /** Long enough for any message the CLI writes in place of an answer, and short
  *  enough for the notification and the card that show it. */
 const TURN_FAILURE_TEXT_MAX = 500;
@@ -181,7 +195,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/hooks/status
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
-      agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message,
+      agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -195,6 +209,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       error_kind?: string;
       /** StopFailure only: what the CLI wrote in the terminal instead of an answer. */
       error_message?: string;
+      /** PermissionRequest only: when the dialog opened (ms), taken by the hook script. */
+      opened_at?: number;
     };
 
     console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
@@ -317,7 +333,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       agent.waitingReason = waiting_reason;
       // When the dialog opened: a refusal of it is read from the transcript,
       // after this moment (dialogOpen), since Claude Code sends no hook for one.
-      agent.dialogSince = waiting_reason === 'permission' ? new Date().toISOString() : undefined;
+      agent.dialogSince = waiting_reason === 'permission' ? dialogOpenedAt(opened_at) : undefined;
     } else if (status === 'idle') {
       agent.status = 'idle';
       agent.waitingReason = undefined;

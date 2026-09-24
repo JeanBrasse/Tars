@@ -675,7 +675,8 @@ work.
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
-| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | board |
+| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
+| `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
@@ -876,7 +877,7 @@ any process that reads `~/.dorothy/api-token` gets. `allowCrossProject: true` le
 through. The guard stops an orchestrator from acting on the wrong project by mistake; it does not
 stop an agent that means to.
 
-`mcp-kanban` is outside this: it never calls the API, it reads and writes the files directly.
+`mcp-kanban` presents the agent's own token too, since its tools moved to the Hermes board (`/api/kanban/*`). It acts on its own project's tasks and no other. It has no `allowCrossProject`: its schemas have no such field.
 
 Genuine cross-project denials read differently and are recoverable:
 
@@ -1384,6 +1385,42 @@ secret sat in `~/.dorothy`, which every agent can read.
 Response mirrors `/dispatch` (`{success, mode, agent}`); poll `GET /api/agents/:id` for the
 result afterwards.
 
+### The agents' kanban
+
+The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`, `assign_task`,
+`update_task_progress`, `mark_task_done`, `move_task`, `delete_task`) work on the Hermes board,
+the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
+and never write a file. `electron/services/kanban-board.ts` decides where a task sits:
+
+| State | On the Hermes board | Who takes it |
+|---|---|---|
+| parked | `scheduled`, assignee `tars:unclaimed`, tenant = the project's path | nobody by itself: Hermes never dispatches `scheduled` |
+| claimed | `ready`, assignee `tars:<agent id>` | the agent that claimed it; Hermes skips it (`skipped_nonspawnable`: a lane with a colon can never be a Hermes profile) |
+| done | `done` | |
+
+Measured against Hermes 0.21.1's own kanban code: `todo` is promoted to `ready` by the
+dispatcher and `triage` is decomposed by the gateway's aux model (`kanban.auto_decompose`), so
+neither is a place to park.
+
+- **An agent files a task**: `create_task` parks it on the agent's own project. If the project
+  has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
+- **An agent takes one**: `assign_task` with no `agent_id`. A claim is atomic among Tars's
+  agents: a second one gets "already claimed by ...".
+- **An agent hands one to another**: `assign_task` with the other agent's id, same project only.
+  Tars claims it on that agent's lane and types it into it, as Tars.
+- **An agent cannot hand a task to Hermes**: `move_task` to `planned` is refused.
+- **Noah hands a task to Hermes**: on the Kanban page, give it a Hermes profile and move it to
+  `ready`.
+- **The old local board** (`~/.dorothy/kanban-tasks.json`): its open tasks move to the Hermes
+  board once at launch, parked. `kanban-moved-to-hermes.json` records which, and a task left
+  behind is tried again at the next launch. The file itself is never written again: it is the
+  backup. The kanban-automation that matched an agent when a local task reached `planned` only
+  served that board, which no page shows.
+- **Nothing is written to a Hermes nobody configured**: without `hermes-connection.json`, the tools
+  answer "Hermes is not configured". The default port is only a guess, and on this machine it is
+  a tunnel to a real gateway.
+- **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
+
 ---
 
 ## Tasmania (local models)
@@ -1425,7 +1462,8 @@ is skipped.
 Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
 if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
-API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+API-driven session) when no panel has. Free-standing terminals use `$SHELL`, or `/bin/zsh` on macOS
+and `/bin/bash` elsewhere when it is unset (`defaultShell`, `electron/utils/default-shell.ts`).
 
 The environment is `process.env` plus:
 

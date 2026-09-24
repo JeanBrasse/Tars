@@ -15,12 +15,14 @@ import './core/compile-cache';
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
+import { defaultShell } from './utils/default-shell';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE } from './constants';
+import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE } from './constants';
 
 // Core modules
 import {
@@ -108,11 +110,13 @@ import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
-import { startAgentWatch } from './services/agent-watch';
+import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
+import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
+import { hermesKanban } from './services/api-routes/kanban-routes';
 import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
@@ -349,6 +353,24 @@ function initApiServer() {
   // See services/openai-bridge.ts for why this cannot just be another /api/*
   // route, and for the addressing scheme that lets one server serve both.
   startOpenAIBridgeServer();
+  moveLocalKanbanToHermes();
+}
+
+/**
+ * The agents' kanban is the Hermes board now (services/kanban-board.ts). The
+ * open tasks of the old local board, which no page shows, move there once,
+ * parked, on their project; ~/.dorothy/kanban-tasks.json stays as it is, the
+ * backup. Whatever Hermes did not take is tried again at the next launch.
+ */
+function moveLocalKanbanToHermes() {
+  setKanbanAgentDirectory(id => agents.get(id));
+  const hermes = hermesKanban();
+  if (!hermes) return;
+  void migrateLocalTasks(hermes, KANBAN_FILE, path.join(DATA_DIR, 'kanban-moved-to-hermes.json')).then(r => {
+    if (r.moved || r.errors.length) {
+      console.log(`[kanban] local board to Hermes: ${r.moved} moved, ${r.skipped} already there${r.errors.length ? `, ${r.errors.length} left for the next launch: ${r.errors.join('; ')}` : ''}`);
+    }
+  }, err => console.warn('[kanban] local board to Hermes: not attempted:', err));
 }
 
 // ============== App Initialization ==============
@@ -510,7 +532,7 @@ app.whenReady().then(async () => {
       const { v4: uuidv4 } = await import('uuid');
 
       const id = uuidv4();
-      const shell = process.env.SHELL || '/bin/zsh';
+      const shell = defaultShell();
       let cwd = config.projectPath;
 
       if (!fs.existsSync(cwd)) {
@@ -629,6 +651,8 @@ app.whenReady().then(async () => {
   // And nothing is typed into a dialog its CLI shows: a permission, an
   // AskUserQuestion. Its Enter would answer it (the Audit, 2026-09-24).
   wireDialogProbe();
+  // And a turn ended by Esc, which sends no hook, ends here from the transcript.
+  watchInterruptedTurns();
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk
