@@ -46,6 +46,7 @@ const REFUSED: Record<BusDeliveryReason, (name: string) => string> = {
   thread_stopped: name => `for ${name}: you stopped the exchange, so it was never written`,
   thread_replaced: name => `for ${name}: a newer message replaced the exchange it belonged to`,
   members_changed: name => `for ${name}: the members changed, which closed the exchange it belonged to`,
+  draft: name => `something is typed in ${name}’s field: it goes in once that is sent or cleared`,
 };
 
 /** The sentence a refused delivery prints. */
@@ -64,10 +65,12 @@ export function receipts(deliveries: BusDelivery[], agents: Array<Pick<AgentStat
   const parts: string[] = [];
   const delivered = by('delivered');
   const queued = by('queued');
+  const held = by('held');
   const notSent = by('not_sent');
   const dropped = by('dropped');
   if (delivered.length) parts.push(`delivered to ${list(delivered)}`);
   if (queued.length) parts.push(`queued for ${list(queued)}`);
+  if (held.length) parts.push(`held for ${list(held)}`);
   if (notSent.length) parts.push(`not sent to ${list(notSent)}`);
   if (dropped.length) parts.push(`dropped for ${list(dropped)}`);
   return parts.join(' · ');
@@ -77,6 +80,7 @@ export function receipts(deliveries: BusDelivery[], agents: Array<Pick<AgentStat
 const CHIP: Record<BusDeliveryState, string | null> = {
   delivered: null,
   queued: 'queued',
+  held: 'held',
   not_sent: 'not sent',
   dropped: 'dropped',
 };
@@ -91,7 +95,8 @@ export interface DeliveryTag {
 /**
  * The strongest thing that happened to an agent's message, in the order that
  * matters to a reader: something refused beats something waiting beats
- * delivered, which carries no tag at all.
+ * delivered, which carries no tag at all. Held waits on a person, so it beats
+ * queued, which only waits for a turn to end.
  */
 function agentTag(deliveries: BusDelivery[], agents: Array<Pick<AgentStatus, 'id' | 'name'>>): DeliveryTag | undefined {
   const dropped = deliveries.find(d => d.state === 'dropped');
@@ -101,6 +106,10 @@ function agentTag(deliveries: BusDelivery[], agents: Array<Pick<AgentStatus, 'id
   const notSent = deliveries.find(d => d.state === 'not_sent');
   if (notSent) {
     return { state: 'not_sent', label: CHIP.not_sent!, note: reasonText(notSent, nameOf(agents, notSent.targetAgentId)) };
+  }
+  const held = deliveries.find(d => d.state === 'held');
+  if (held) {
+    return { state: 'held', label: CHIP.held!, note: reasonText(held, nameOf(agents, held.targetAgentId)) };
   }
   const queued = deliveries.filter(d => d.state === 'queued');
   if (queued.length) {

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ArrowRight, Send, Square, Users } from 'lucide-react';
+import { ArrowRight, Hand, Send, Square, Users } from 'lucide-react';
 import { MetaChip } from '@/components/ui';
 import type { BusSystemKind } from '@/types/electron';
 import type { DayItem, MessageItem, NoticeItem, SystemItem } from './bus-view';
@@ -56,6 +56,8 @@ const SYSTEM_ICON: Record<BusSystemKind, ReactNode> = {
   members_changed: <Users className="w-3.5 h-3.5 shrink-0 text-text-muted" />,
   thread_stopped: <Square className="w-3.5 h-3.5 shrink-0 text-text-muted" />,
   queue_released: <Send className="w-3.5 h-3.5 shrink-0 text-text-muted" />,
+  // Send now's line (#169): the frame's raised hand.
+  turn_interrupted: <Hand className="w-3.5 h-3.5 shrink-0 text-text-muted" />,
 };
 
 /** A line the room writes about itself: a change of members, a stopped

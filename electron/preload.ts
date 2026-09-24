@@ -600,6 +600,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('overseer:send', message, attachments),
     attachFiles: () =>
       ipcRenderer.invoke('overseer:attachFiles'),
+    attachData: (files: Array<{ name: string; mimeType: string; data: Uint8Array }>) =>
+      ipcRenderer.invoke('overseer:attachData', files),
     effort: () =>
       ipcRenderer.invoke('overseer:effort'),
     setEffort: (effort: string) =>
@@ -799,7 +801,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('bus:listRooms'),
     getRoom: (roomId: string, params?: { limit?: number; before?: string }) =>
       ipcRenderer.invoke('bus:getRoom', roomId, params),
-    postMessage: (params: { roomId: string; text: string; mentions?: string[] }) =>
+    postMessage: (params: { roomId: string; text: string; mentions?: string[]; attachments?: string[] }) =>
       ipcRenderer.invoke('bus:postMessage', params),
     stopThread: (threadId: string) =>
       ipcRenderer.invoke('bus:stopThread', threadId),
@@ -807,6 +809,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('bus:setMembers', roomId, memberIds),
     releaseNotSent: (agentId: string) =>
       ipcRenderer.invoke('bus:releaseNotSent', agentId),
+    stageFiles: (params: { roomId: string; files: Array<{ name: string; mimeType: string; data: Uint8Array }> }) =>
+      ipcRenderer.invoke('bus:stageFiles', params),
+    sendNow: (params: { roomId: string; agentId: string; text: string; attachments?: string[] }) =>
+      ipcRenderer.invoke('bus:sendNow', params),
 
     // Pushed from the main process, so the Chat page never polls.
     onMessage: (callback: (message: unknown) => void) => {

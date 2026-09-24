@@ -380,6 +380,18 @@ export interface BusRoom {
    *  the overseer's own conversation and is not in this journal. */
   lastMessageAt?: string;
   lastMessagePreview?: string;
+  /** What is waiting in this room, by delivery state, so the conversation
+   *  list can show it without reading each room. Zero for the global room,
+   *  whose messages are not in this journal. */
+  pending: BusRoomPending;
+}
+
+/** Deliveries of a room's messages still waiting, by state. `delivered` and
+ *  `dropped` are over and not counted. */
+export interface BusRoomPending {
+  queued: number;
+  held: number;
+  notSent: number;
 }
 
 /**
@@ -415,7 +427,31 @@ export type BusMessageAuthorKind = 'human' | 'agent' | 'system';
  * There is deliberately no `passed`: an agent with nothing to add is refused
  * before anything is stored, so a silence has no row and no source of data.
  */
-export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released';
+export type BusSystemKind = 'thread_stopped' | 'members_changed' | 'queue_released' | 'turn_interrupted';
+
+/** What a `members_changed` line is about, as data: the page picks its icon
+ *  and names from this, never from the sentence. `added` and `removed` are
+ *  agent ids; `names` holds each one's name when the change was made, since a
+ *  removed agent may be gone by the time the row is drawn. `dropped` is how
+ *  many messages still queued in the thread the change closed were dropped. */
+export interface BusMembersChanged {
+  added: string[];
+  removed: string[];
+  names: Record<string, string>;
+  dropped: number;
+}
+
+/** A file staged for a room (`bus:stageFiles`): written under ~/.dorothy,
+ *  which is in every agent's `--add-dir`, and named by its absolute path in
+ *  what each target receives. */
+export interface BusAttachment {
+  id: string;
+  name: string;
+  /** Absolute, readable by the agents. */
+  path: string;
+  bytes: number;
+  isImage: boolean;
+}
 
 export interface BusMessage {
   id: string;
@@ -431,6 +467,10 @@ export interface BusMessage {
   mentions: string[];
   /** Set only when `authorKind` is `system`: which machine event this is. */
   systemKind?: BusSystemKind;
+  /** Set only on a `members_changed` line. */
+  systemData?: BusMembersChanged;
+  /** Files staged with `bus:stageFiles` and sent with it. */
+  attachments?: BusAttachment[];
   createdAt: string;
 }
 
@@ -446,7 +486,11 @@ export interface BusMessage {
  * moves only on an explicit human action. Never inferred from silence, which
  * is idleness detection and deliberately out of v1.
  */
-export type BusDeliveryState = 'queued' | 'not_sent' | 'delivered' | 'dropped';
+/** `held` is taken by the target's terminal but waits behind what somebody has
+ *  typed in its field (`reasonCode: 'draft'`, `heldAt`): Tars never types
+ *  across a draft, and it goes in by itself once that field is sent or
+ *  cleared, when it turns `delivered`. */
+export type BusDeliveryState = 'queued' | 'held' | 'not_sent' | 'delivered' | 'dropped';
 
 /**
  * Why a delivery is not going anywhere, as a value rather than a sentence.
@@ -466,7 +510,8 @@ export type BusDeliveryReason =
   | 'session_replaced'
   | 'thread_stopped'
   | 'thread_replaced'
-  | 'members_changed';
+  | 'members_changed'
+  | 'draft';
 
 export interface BusDelivery {
   messageId: string;
@@ -475,6 +520,8 @@ export interface BusDelivery {
   reasonCode?: BusDeliveryReason;
   reason?: string;
   queuedAt: string;
+  /** When it was found waiting behind a draft: set with `held`. */
+  heldAt?: string;
   deliveredAt?: string;
   /** When this stopped being on its way: set with `dropped` and with
    *  `not_sent`. Without it the page can say a message is refused but not
@@ -495,6 +542,9 @@ export interface BusMember {
   name: string;
   provider?: string;
   hasEndOfTurn: boolean;
+  /** Tars can interrupt this member's turn (`bus:sendNow`): a CLI on the claude
+   *  binary, where Esc stops the turn and the transcript records it. */
+  canInterrupt: boolean;
 }
 
 /** What `bus:getRoom` answers: the room and its journal, newest last. */
