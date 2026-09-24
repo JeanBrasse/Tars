@@ -20,8 +20,10 @@ const { tmpHome } = vi.hoisted(() => ({
   tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-bots-launch-${process.pid}-${Date.now()}`,
 }));
 
-type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
+type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn>; say: (data: string) => void };
 const spawned = vi.hoisted(() => [] as FakePty[]);
+/** When a fake shell prints its first output (its prompt) after it is spawned, as bash -l does. */
+const shell = vi.hoisted(() => ({ speaksAfterMs: 20 }));
 const bot = vi.hoisted(() => ({
   texts: [] as Array<{ pattern: RegExp; handler: (msg: Record<string, unknown>, match: RegExpExecArray | null) => unknown }>,
   sent: [] as string[],
@@ -33,8 +35,14 @@ vi.mock('os', async (importOriginal) => {
 });
 vi.mock('node-pty', () => ({
   spawn: vi.fn((file: string): FakePty => {
-    const terminal: FakePty = { pid: 7000 + spawned.length, process: file, write: vi.fn(), kill: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn() };
+    const listeners: Array<(data: string) => void> = [];
+    const terminal: FakePty = {
+      pid: 7000 + spawned.length, process: file, write: vi.fn(), kill: vi.fn(), resize: vi.fn(), onExit: vi.fn(),
+      onData: vi.fn((listener: (data: string) => void) => { listeners.push(listener); return { dispose() {} }; }),
+      say: (data: string) => { for (const listener of listeners) listener(data); },
+    };
     spawned.push(terminal);
+    setTimeout(() => terminal.say('bash-3.2$ '), shell.speaksAfterMs);
     return terminal;
   }),
 }));
@@ -97,6 +105,7 @@ async function typedAfter(launch: () => Promise<unknown>): Promise<string> {
 }
 
 beforeEach(() => {
+  shell.speaksAfterMs = 20;
   // A cold start of one test is not a launch still on its way in the next.
   resetLaunches();
   fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -537,5 +546,97 @@ describe('the launch command a bot types into a cold terminal', () => {
     expect(writes.join('')).toContain(long.trim());
     expect(writes.at(-1), 'the Enter did not follow the paste on its own').toBe('\r');
     expect(spawned.at(-1), 'a second terminal was opened for a claude that was up').toBe(terminal);
+  });
+});
+
+describe('a launch typed into a terminal the bot has just opened (gate of #155)', () => {
+  // Written by Backend after QA's gate of #155, before the fix. The four bots
+  // typed the launch a few milliseconds after /bin/bash -l was spawned, before
+  // the shell was at its prompt. Until then the line goes through the
+  // terminal's canonical mode, which on macOS holds about 1 KB: a launch
+  // carrying a long Telegram message was cut, and nothing started (QA: 995
+  // bytes typed at once run, 1095 do not; after the shell has spoken, 1495 do).
+  // So nothing is typed before the shell's first output, then 150 ms of quiet.
+  const entryPoints: Array<[string, boolean, () => Promise<unknown>]> = [
+    ['Telegram /start_agent', false, async () => {
+      const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+      const text = '/start_agent worker Rebase onto main';
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    }],
+    ['Telegram message to the super agent', true, () => sendToSuperAgent('42', 'Rebase onto main')],
+    ['Slack `start`', false, () => handleSlackCommand('start worker Rebase onto main', 'C1', async () => undefined, settings)],
+    ['Slack message to the super agent', true, () => sendToSuperAgentFromSlack('C1', 'Rebase onto main', async () => undefined, settings)],
+  ];
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each(entryPoints)('%s types nothing before the shell has spoken and gone quiet', async (_name, superAgent) => {
+    vi.useFakeTimers();
+    shell.speaksAfterMs = 800;
+    agent(superAgent ? { id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator' } : {});
+    const send = entryPoints.find(e => e[1] === superAgent && e[0] === _name)![2];
+    const before = spawned.length;
+
+    const sent = send();
+    await vi.advanceTimersByTimeAsync(700);
+    const terminal = spawned[before];
+    expect(terminal, 'the launch opened no terminal').toBeDefined();
+    const typed = () => terminal.write.mock.calls.map(call => String(call[0])).join('');
+    expect(typed(), 'typed before the shell had printed anything').toBe('');
+
+    // The prompt comes at 800 ms; 100 ms later the shell is not yet quiet long enough.
+    await vi.advanceTimersByTimeAsync(200);
+    expect(typed(), 'typed less than 150 ms after the shell spoke').toBe('');
+
+    await vi.advanceTimersByTimeAsync(200);
+    await sent;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(typed()).toContain(`cd '${project}' && `);
+  });
+
+  it('does not wait for ever on a shell that never speaks', async () => {
+    vi.useFakeTimers();
+    shell.speaksAfterMs = 60_000;
+    agent({});
+    const before = spawned.length;
+
+    const sent = entryPoints[0][2]();
+    await vi.advanceTimersByTimeAsync(6_000);
+    await sent;
+
+    const typed = spawned[before].write.mock.calls.map(call => String(call[0])).join('');
+    expect(typed).toContain(`cd '${project}' && `);
+  }, 20_000);
+});
+
+describe('QA #166: the quiet counts from the last thing the shell printed', () => {
+  // Written by the QA at the gate of #166. A login shell can print more than
+  // once before its prompt (a profile's own line, the zsh notice, the prompt):
+  // counted from the first output, the 150 ms of quiet ran out while the shell
+  // was still talking, and the launch went back into canonical mode. Measured
+  // at the gate: with only the tests above, that mutant left them green.
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('types 150 ms after the last output, not the first', async () => {
+    vi.useFakeTimers();
+    shell.speaksAfterMs = 800;
+    agent({ id: 'agent-s', name: 'Super Agent (Orchestrator)', role: 'orchestrator' });
+    const before = spawned.length;
+
+    const sent = sendToSuperAgent('42', 'Rebase onto main');
+    await vi.advanceTimersByTimeAsync(900);
+    const terminal = spawned[before];
+    const typed = () => terminal.write.mock.calls.map(call => String(call[0])).join('');
+    expect(typed(), 'typed 100 ms after the first output').toBe('');
+    // The shell spoke at 800 ms, and speaks again at 900 ms.
+    terminal.say('bash-3.2$ ');
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(typed(), 'typed 200 ms after the first output but 100 ms after the last').toBe('');
+
+    await vi.advanceTimersByTimeAsync(200);
+    await sent;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(typed()).toContain(`cd '${project}' && `);
   });
 });

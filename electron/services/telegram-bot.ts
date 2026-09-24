@@ -11,7 +11,7 @@ import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
-import { cliRunningIn } from '../core/agent-pty';
+import { cliRunningIn, shellReady } from '../core/agent-pty';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
@@ -846,6 +846,8 @@ export function initTelegramBot() {
         // claude's field. Every agent terminal is /bin/bash, Apple's 3.2, which
         // has no bracketed paste, and a command this long went in as one: bash
         // ran `00~cd ...`, "command not found", and nothing started.
+        // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+        await shellReady(ptyProcess);
         writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
         noteLaunch(ptyProcess, launchSettings(agent));
         saveAgents();
@@ -1409,6 +1411,8 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
       // Start new Claude session. Typed plainly into the shell, as /start_agent
       // above: pasted, bash 3.2 ran `00~cd` and the super agent never started.
+      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+      await shellReady(ptyProcess);
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();

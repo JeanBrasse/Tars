@@ -370,10 +370,21 @@ export default function TerminalsView() {
   // The way back offered to a panel whose claude left fullscreen: the header's
   // stop, then its start, so the new session opens fullscreen and the wheel
   // scrolls again. A start that fails says why, as it does from the header.
+  // A panel's `restart` (the left-fullscreen notice) continues the agent's
+  // conversation (#138). A stop then a start began a new one, since a start
+  // resumes only once per app run.
   const handleRestartAgent = useCallback(async (agentId: string) => {
-    await stopAgent(agentId);
-    await handleStartAgent(agentId);
-  }, [stopAgent, handleStartAgent]);
+    setStartError(null);
+    try {
+      const result = await window.electronAPI?.agent?.restart?.(agentId);
+      // A launch that fails, or a restart already running, answers why: on
+      // the line a failed start uses, rather than a click that did nothing.
+      if (result && !result.success) setStartError(result.error || 'The agent could not be restarted.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStartError(message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, ''));
+    }
+  }, []);
 
   // Remove from tab (custom tabs): stop agent + remove from tab membership
   //
