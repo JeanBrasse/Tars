@@ -10,8 +10,10 @@
  * Written before the function, as every way it can go wrong:
  * 1. no token: an empty or blank field has no bot to invite;
  * 2. a pasted token with spaces or a newline around it: the id is the same;
- * 3. base64url, not base64: `-` and `_` stand for `+` and `/`, and the
- *    padding is left off, so a plain `atob` refuses a valid first part;
+ * 3. base64url, not base64: the padding is left off, and `-` and `_` stand
+ *    for `+` and `/`. (Corrected after the function: atob's forgiving decode
+ *    takes the missing padding, and an id's encoding never holds `-` or `_`,
+ *    so a first part that does is no id: no link, and no throw);
  * 4. a first part that is not base64 at all: no link, rather than a throw that
  *    takes the Settings page down while you type;
  * 5. a first part that decodes to something other than digits (a token from
@@ -44,8 +46,9 @@ describe('discordInviteUrl', () => {
     const id = '12345678901234567';
     expect(b64url(id)).not.toMatch(/=$/);
     expect(discordInviteUrl(token(id))).toBe(link(id));
-    // A first part carrying `-` or `_` still decodes, to whatever it holds.
+    // A first part carrying `-` or `_` is no id.
     expect(() => discordInviteUrl('ab-_cd.x.y')).not.toThrow();
+    expect(discordInviteUrl('ab-_cd.x.y')).toBeNull();
   });
 
   it('gives no link, and does not throw, for a first part that is not base64 (4)', () => {
