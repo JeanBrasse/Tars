@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 93 root frames.
-`design/chat-design.pen` holds 75 of those, the other eighteen being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 97 root frames.
+`design/chat-design.pen` holds 75 of those, the other twenty-two being newer than the
 fork, plus the eleven frames of the Chat
 room listed on the `/chat` line below: 86 in all. The first 74 share their ids
 and names across the two. The 75th, `Agent error · reason`, was drawn after the
@@ -82,9 +82,17 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
   member). It names the agent that loses the role; Cancel goes back to the
   dialog. Frames: Overlay · Replace the orchestrator (and its light copy),
   Orchestrator role · states
-- Templates manager, Template form, Instantiate, Import - unchanged, but as of
-  the one-screen redesign they have no entry point left in the app (the
-  template-chip row they opened from is gone, and nothing else calls them)
+- Templates manager (the Templates button on the Agents page), with the
+  Template form, Instantiate and Import it opens. Import reviews a file before
+  saving anything: each template's permission mode, the folders it adds, its
+  skills and its whole prompt, with the characters that do not show written
+  out, and it refuses a file it cannot show as it will be used. Instantiate
+  shows the same facts and the prompt, and sends the prompt only while
+  "Start it with this prompt" is on (on for a built-in template, off for any
+  other). Frames: Overlay · Templates manager, Overlay · Template form,
+  Overlay · Instantiate template, Overlay · Import template, and the two drawn
+  for that review, Overlay · Instantiate template · prompt and Overlay · Import
+  template · review, each with its light copy
 - Agent terminal dialog: header, panel header, footer, sidebar, secondary project,
   super-agent sidebar
 - Start prompt (`StartPromptModal`)
