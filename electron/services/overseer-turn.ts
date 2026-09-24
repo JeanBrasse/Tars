@@ -15,7 +15,7 @@ import {
   fetchHermesSessionMessages,
 } from './hermes-client';
 import { HermesConnection } from '../types/hermes';
-import { loadState, saveState, type OverseerAttachment, type OverseerMessage, type OverseerState } from './overseer-store';
+import { loadState, rememberHermesSessions, saveState, type OverseerAttachment, type OverseerMessage, type OverseerState } from './overseer-store';
 import { buildFleetSnapshot } from './overseer-fleet';
 import { composeTurn } from './overseer-prompt';
 import { finishTurn } from './overseer-gate';
@@ -230,7 +230,10 @@ export async function askOverseer(
             const createdAt = runCreatedAtMs(r.id);
             return createdAt !== null && createdAt >= triggeredAt - 15_000;
           });
-          if (fresh) runId = fresh.id;
+          if (fresh) {
+            runId = fresh.id;
+            rememberHermesSessions(runId);
+          }
         }
         if (!runId) continue;
       }
@@ -299,6 +302,8 @@ async function askViaLiveSession(
       const opened = await createLiveSession(conn);
       liveSession = opened.session;
       liveControl = opened.control;
+      // Its turns are Noah's conversation: memory_search leaves them out.
+      rememberHermesSessions(opened.session.sessionId, opened.session.storedSessionId);
     }
   } catch (err) {
     console.error('[overseer] no live session, falling back to the cron transport:', err);
