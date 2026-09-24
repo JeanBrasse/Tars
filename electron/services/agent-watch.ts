@@ -252,8 +252,9 @@ export function stopAgentWatch(): void {
  * minute on. The agent read `running` until its next turn, and everything
  * waiting for its rest (room messages, notes) waited with it (the Audit's
  * re-check of #174, older than it). The transcript records the interrupt, so
- * an interrupt recorded after the turn began, or after work was last handed
- * to the agent, ends the turn here as its Stop would have: `idle`, announced
+ * an interrupt recorded after the turn began, after work was last handed to
+ * the agent, and after its session registered, ends the turn here as its Stop
+ * would have: `idle`, announced
  * like any status. Looked at every INTERRUPT_WATCH_MS, and only for agents
  * that read `running`; the transcript is re-read only when it has changed.
  */
@@ -272,7 +273,11 @@ export function stopWatchingInterruptedTurns(): void {
 function endInterruptedTurns(): void {
   for (const agent of agents.values()) {
     if (agent.status !== 'running') continue;
-    const began = Math.max(...[agent.lastTurnStartedAt, agent.workHandedAt]
+    // The session's own registration counts too: a session resumed with
+    // --fork-session copies the old conversation, old interruptions and their
+    // dates included, and until its first UserPromptSubmit the last turn known
+    // is the previous session's (the Audit's gate of #179).
+    const began = Math.max(...[agent.lastTurnStartedAt, agent.workHandedAt, agent.sessionRegisteredAt]
       .map(at => (at ? Date.parse(at) : NaN)).filter(Number.isFinite));
     if (!Number.isFinite(began)) continue;
     let interrupted: number | undefined;
