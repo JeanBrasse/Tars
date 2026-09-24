@@ -8,6 +8,8 @@ import { ChatSidebar, ReachSection, TeamSection } from '@/components/Chat/ChatSi
 import type { ConversationItem } from '@/components/Chat/ChatSidebar';
 import { RoomHead } from '@/components/Chat/RoomHead';
 import { RoomView } from '@/components/Chat/RoomView';
+import { ConversationEmpty } from '@/components/Chat/ConversationEmpty';
+import type { ComposerFailure } from '@/components/Chat/RoomComposer';
 import { EchoRunRow, HermesBanner, HermesMessageRow, HermesView, PendingTurnRow } from '@/components/Chat/HermesView';
 import type { ActionState, GatewayState } from '@/components/Chat/HermesView';
 import { currentThread } from '@/components/Chat/bus-view';
@@ -22,7 +24,7 @@ import { groupThread } from '@/components/Overseer/echo-runs';
 import { Composer } from '@/components/Overseer/Composer';
 import { WatchControls } from '@/components/Overseer/WatchControls';
 import { describeHermesFailure } from '@/components/KanbanBoard/hermes-error';
-import type { OverseerAction, OverseerAttachment, OverseerMessage, OverseerSettings } from '@/types/electron';
+import type { BusDelivery, BusMessage, BusRoom, BusThread, OverseerAction, OverseerAttachment, OverseerMessage, OverseerSettings } from '@/types/electron';
 
 /** A message on its way: typed, with whatever was staged beside it. Held
  *  together so a queued message keeps its own files. */
@@ -72,6 +74,29 @@ async function startAgents(ids: string[]): Promise<Array<{ id: string; error: st
   return failed;
 }
 
+/** Stable empties for a room drawn with nothing in it: one each, so a view
+ *  that watches them is not handed a new dependency on every render. */
+const NO_THREADS: BusThread[] = [];
+const NO_MESSAGES: BusMessage[] = [];
+const NO_DELIVERIES: BusDelivery[] = [];
+const NO_AGENTS: RoomAgent[] = [];
+
+/** Restart as the Dashboard's panel does (PR 138): its CLI again, on the
+ *  conversation it had. Says why it did not, or null when it did. */
+async function restartAgent(id: string): Promise<string | null> {
+  try {
+    const r = await window.electronAPI?.agent?.restart?.(id);
+    if (!r) return 'the app did not answer';
+    return r.success ? null : (r.error || 'it did not restart');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
+  }
+}
+
+/** A project's path as the head prints it, from the home folder on either system. */
+const shortPath = (p?: string) => (p ? p.replace(/^\/(Users|home)\/[^/]+/, '~') : undefined);
+
 /**
  * The open room, right of the left column: its panel under its head, then the
  * composer. Frames: `Chat · A · Room · *`. The room's snapshot and agents come
@@ -79,35 +104,66 @@ async function startAgents(ids: string[]): Promise<Array<{ id: string; error: st
  */
 function ChatRoom({
   bus,
+  listed,
   agents,
   recipient,
   onRecipient,
   onOpenTerminal,
+  onNewAgent,
+  rowFailure,
+  onClearRowFailure,
 }: {
   bus: ReturnType<typeof useBusRoom>;
+  /** The room as the list has it: its name and path when the room itself
+   *  could not be read. */
+  listed?: BusRoom;
   agents: RoomAgent[];
   recipient: string;
   onRecipient: (id: string) => void;
   onOpenTerminal: () => void;
+  onNewAgent: () => void;
+  rowFailure: ComposerFailure | null;
+  onClearRowFailure: () => void;
 }) {
-  const { snapshot, loading, error, post, stopThread, releaseHeld, stageFiles, sendNow } = bus;
+  const { snapshot, loading, error, reload, post, stopThread, releaseHeld, stageFiles, sendNow } = bus;
   const thread = useMemo(() => currentThread(snapshot.threads), [snapshot.threads]);
   const state = useMemo(() => roomState(agents, thread, snapshot.messages), [agents, thread, snapshot.messages]);
   // The open anchor is what stop stops.
   const open = snapshot.threads.find(t => t.state === 'open') ?? null;
 
   if (!snapshot.room) {
+    // A room that could not be read is not a room that is empty: the panel
+    // says what the bus said and offers retry, under the room's own head.
+    // Frame: `Chat · A · Room · the bus does not answer`.
+    if (!loading && error && listed) {
+      return (
+        <RoomView
+          room={listed}
+          threads={NO_THREADS}
+          messages={NO_MESSAGES}
+          deliveries={NO_DELIVERIES}
+          agents={NO_AGENTS}
+          loading={false}
+          onPost={post}
+          error={error}
+          onRetry={reload}
+          head={(
+            <RoomHead
+              title={listed.title}
+              path={shortPath(listed.projectPath)}
+              state={{ tone: 'error', word: 'not read', relaying: false }}
+              rules={false}
+            />
+          )}
+        />
+      );
+    }
     return (
       <div className="flex-1 min-w-0 flex items-center justify-center px-6">
         {loading ? (
           <BrandSpinner size={30} label="Opening the room" />
         ) : error ? (
-          // A room that could not be read is not a room that is empty. Saying
-          // "not available" for a bus that refused hides the refusal, which is
-          // the one thing this page exists to stop doing.
-          <p className="max-w-[440px] border border-danger/40 px-3 py-2 text-[11.5px] leading-[1.5] text-danger">
-            This room could not be read. {error}
-          </p>
+          <ConversationEmpty error title="Tars could not read this room." detail={error} action={{ label: 'retry', onClick: reload }} />
         ) : (
           <p className="text-sm text-muted-foreground">This room is not available.</p>
         )}
@@ -135,10 +191,13 @@ function ChatRoom({
       onTargetChange={onRecipient}
       onRelease={id => { void releaseHeld(id); }}
       onOpenTerminal={onOpenTerminal}
+      onNewAgent={onNewAgent}
+      rowFailure={rowFailure}
+      onClearRowFailure={onClearRowFailure}
       head={(
         <RoomHead
           title={room.title}
-          path={room.projectPath ? room.projectPath.replace(/^\/Users\/[^/]+/, '~') : undefined}
+          path={shortPath(room.projectPath)}
           state={state}
           onStop={open ? () => { void stopThread(open.id); } : undefined}
           stopTitle="Stop this exchange. Anything queued for it is cancelled."
@@ -183,7 +242,11 @@ export default function ChatPage() {
   /** The global room is Hermes: the super chat that watches every project and
    *  is already what this page was. A project room is the other level. */
   const [selectedId, setSelectedId] = useState<string>(GLOBAL_ID);
-  const { rooms, error: roomsError } = useBusRooms();
+  const { rooms, error: roomsError, reload: reloadRooms } = useBusRooms();
+  /** A start or restart from a team row that failed, said in the room's
+   *  composer until you act there again or open another room. */
+  const [rowFailure, setRowFailure] = useState<ComposerFailure | null>(null);
+  const selectRoom = useCallback((id: string) => { setSelectedId(id); setRowFailure(null); }, []);
   const router = useRouter();
 
   // The open room's hooks live here, not in the room: the left column draws
@@ -315,6 +378,10 @@ export default function ChatPage() {
    * open room.
    */
   const lastHermes = messages.length ? messages[messages.length - 1].timestamp : undefined;
+  // Nothing said yet, and nothing to watch on a first run: the frames' own
+  // states, once both reads are in, and only while a message could change them.
+  const nothingSaid = !historyLoading && messages.length === 0 && !pendingSend && queued.length === 0;
+  const nothingToWatch = nothingSaid && !fleetLoading && fleetAgents.length === 0;
   const hermesItem: ConversationItem = {
     id: GLOBAL_ID,
     name: 'Hermes',
@@ -322,9 +389,12 @@ export default function ChatPage() {
     tone: gatewayState === 'ok' || gatewayState === 'checking' ? (paused ? 'hollow' : 'running') : 'error',
     time: timeLabel(lastHermes),
     counts: [{
-      label: gatewayState !== 'ok' && gatewayState !== 'checking'
-        ? 'not connected'
-        : sending ? 'answering you' : paused ? 'paused' : `watching, ${cadenceLabel}`,
+      label: gatewayState !== 'ok' && gatewayState !== 'checking' ? 'not connected'
+        : sending ? 'answering you'
+          : paused ? 'paused'
+            : nothingToWatch ? 'nothing to watch yet'
+              : nothingSaid ? 'nothing said yet'
+                : `watching, ${cadenceLabel}`,
       tone: gatewayState !== 'ok' && gatewayState !== 'checking' ? 'error' : undefined,
     }],
   };
@@ -365,11 +435,25 @@ export default function ChatPage() {
   );
 
   const onTeamAction = useCallback((action: RowActionId, agent: RoomAgent) => {
+    const name = agent.name || agent.id.slice(0, 8);
     switch (action) {
       // The terminal an agent lives in is the Dashboard's, so it opens there
       // rather than as a second one here.
       case 'open terminal': router.push('/'); break;
-      case 'start': void startAgents([agent.id]); break;
+      // Either can fail (no CLI, a restart already running): the room's
+      // composer says why, on the line a failed start from there uses.
+      case 'start':
+        setRowFailure(null);
+        void startAgents([agent.id]).then(failed => {
+          if (failed.length) setRowFailure({ kind: 'start', message: `Could not start ${name}: ${failed[0].error}` });
+        });
+        break;
+      case 'restart':
+        setRowFailure(null);
+        void restartAgent(agent.id).then(why => {
+          if (why) setRowFailure({ kind: 'start', message: `Could not restart ${name}: ${why}` });
+        });
+        break;
       case 'write': setRecipient(agent.id); break;
       case 'send it': void bus.releaseHeld(agent.id); break;
       case 'stop': void window.electronAPI?.agent?.stop?.(agent.id); break;
@@ -526,7 +610,6 @@ export default function ChatPage() {
     );
   }
 
-  const agentCount = fleetAgents.length;
 
   return (
     // The gateway state is probed over IPC, so the banner appears a beat after
@@ -547,12 +630,16 @@ export default function ChatPage() {
           hermes={hermesItem}
           rooms={roomItems}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectRoom}
           roomsError={roomsError}
+          onRetryRooms={() => { void reloadRooms(); }}
         >
-          {roomId ? (
+          {/* The team is the room's, read with it: a room not read yet, or not
+              read at all, has no team to show, rather than a team of none.
+              Frame: `Chat · A · Room · the bus does not answer`. */}
+          {roomId ? openRoom && (
             <TeamSection
-              project={openRoom?.title || 'this room'}
+              project={openRoom.title || 'this room'}
               agents={roomAgents}
               pending={pending}
               lastSpoke={spoke}
@@ -570,7 +657,11 @@ export default function ChatPage() {
         {roomId ? (
           <ChatRoom
             bus={bus}
+            listed={rooms.find(r => r.id === roomId)}
             agents={roomAgents}
+            onNewAgent={() => router.push('/agents')}
+            rowFailure={rowFailure}
+            onClearRowFailure={() => setRowFailure(null)}
             recipient={recipient}
             onRecipient={setRecipient}
             // The terminal an agent lives in is the Dashboard's.
@@ -599,24 +690,26 @@ export default function ChatPage() {
             messageCount={messages.length + queued.length + (pendingSend ? 1 : 0)}
             rowCount={messages.length + queued.length + (pendingSend ? 1 : 0) + (sending ? 1 : 0)}
           >
-            {historyLoading ? (
+            {historyLoading || fleetLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <BrandSpinner size={30} label="Loading the conversation" />
               </div>
-            ) : messages.length === 0 && !pendingSend && queued.length === 0 && agentCount === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
-                <p className="text-sm text-foreground">Hermes has nothing to watch yet.</p>
-                <p className="text-xs text-muted-foreground max-w-sm">
-                  Start an agent from Agents or Kanban in any project, then come back: Hermes reports on
-                  what it sees here.
-                </p>
-              </div>
-            ) : messages.length === 0 && !pendingSend && queued.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
-                <p className="text-sm text-foreground">Nothing said yet.</p>
-                <p className="text-xs text-muted-foreground max-w-sm">
-                  Ask Hermes what the fleet is doing, or wait: it checks in on its own {cadenceLabel}.
-                </p>
+            ) : nothingSaid ? (
+              // Frames: `Chat · A · first run, nothing to watch` and `Chat · A ·
+              // Hermes · nothing said yet`.
+              <div className="flex-1 flex flex-col items-center justify-center px-6">
+                {nothingToWatch ? (
+                  <ConversationEmpty
+                    title="Hermes has nothing to watch yet"
+                    line="Start an agent from Agents or Kanban in any project, then come back: Hermes reports on what it sees here."
+                    action={{ label: 'new agent', onClick: () => router.push('/agents') }}
+                  />
+                ) : (
+                  <ConversationEmpty
+                    title="Nothing said yet"
+                    line={`Ask Hermes what the fleet is doing, or wait: it checks in on its own ${cadenceLabel}.`}
+                  />
+                )}
               </div>
             ) : (
               groupThread(messages).map(item => (

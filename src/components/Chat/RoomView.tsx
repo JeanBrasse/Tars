@@ -6,6 +6,7 @@ import { AttachmentTile, BrandSpinner, ImageTile } from '@/components/ui';
 import type { BusAttachment, BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { DayRow, MessageRow, NewBelowBand, NoticeRow, SystemRow } from './RoomRow';
+import { ConversationEmpty } from './ConversationEmpty';
 import { useFollowBottom } from '@/hooks/useFollowBottom';
 import { NeedsStrip } from './NeedsStrip';
 import { RoomComposer } from './RoomComposer';
@@ -17,8 +18,9 @@ import type { ThreadAgent, ThreadItem } from './bus-view';
 
 /**
  * One project's room: the log, what is still waiting under it, and the
- * composer. Frames: `Chat · Room · agents at work`, `· you step in`,
- * `· limit reached`, `· all stopped`, `· no agents`, `· at rest or stopped`.
+ * composer. Frames: every `Chat · A · Room · *` page, down to the room with no
+ * agents, the room where nothing is said yet, and the room the bus does not
+ * answer for.
  */
 
 export function RoomView({
@@ -37,6 +39,11 @@ export function RoomView({
   onTargetChange,
   onRelease,
   onOpenTerminal,
+  onNewAgent,
+  error,
+  onRetry,
+  rowFailure,
+  onClearRowFailure,
 }: {
   room: BusRoom;
   threads: BusThread[];
@@ -65,6 +72,15 @@ export function RoomView({
   onRelease?: (agentId: string) => void;
   /** Where an agent's terminal is: the Dashboard's panel. */
   onOpenTerminal?: (agentId: string) => void;
+  /** Where a new agent is made, from the room with none. */
+  onNewAgent?: () => void;
+  /** The room could not be read: what the bus said, and a way to try again. */
+  error?: string | null;
+  onRetry?: () => void;
+  /** An action taken from a team row that failed: said on the line a failed
+   *  start from here uses, until you act here again. */
+  rowFailure?: ComposerFailure | null;
+  onClearRowFailure?: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [ownTarget, setOwnTarget] = useState('');
@@ -186,6 +202,7 @@ export function RoomView({
     if ((!text && !files.length) || sending) return;
     setSending(true);
     setFailure(null);
+    onClearRowFailure?.();
     // An agent that has left the room since it was picked is shown as
     // Everyone, so the message goes to everyone rather than to a name that is
     // no longer here.
@@ -205,6 +222,7 @@ export function RoomView({
     if (!onSendNow || !target || (!text && !files.length) || sending) return;
     setSending(true);
     setFailure(null);
+    onClearRowFailure?.();
     const r = await onSendNow(target.id, text, files);
     setSending(false);
     if (!r.success) { setFailure({ kind: 'send', message: r.error ?? '' }); return; }
@@ -221,6 +239,7 @@ export function RoomView({
     if (!onStart || starting) return;
     setStarting(true);
     setFailure(null);
+    onClearRowFailure?.();
     const failed = await onStart(ids);
     setStarting(false);
     if (failed.length) {
@@ -278,16 +297,29 @@ export function RoomView({
                 <div className="flex-1 flex items-center justify-center">
                   <BrandSpinner size={26} label="Reading the room" />
                 </div>
-              ) : items.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
-                  <p className="text-sm text-foreground">
-                    {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
-                  </p>
-                  <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
-                    {agents.length === 0
-                      ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
-                      : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
-                  </p>
+              ) : error || items.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center px-6">
+                  {error ? (
+                    // A room that could not be read is not a room that is
+                    // empty: the refusal is the one thing to say.
+                    <ConversationEmpty
+                      error
+                      title="Tars could not read this room."
+                      detail={error}
+                      action={onRetry ? { label: 'retry', onClick: onRetry } : undefined}
+                    />
+                  ) : agents.length === 0 ? (
+                    <ConversationEmpty
+                      title="Nobody in this room yet"
+                      line="A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts."
+                      action={onNewAgent ? { label: 'new agent', onClick: onNewAgent } : undefined}
+                    />
+                  ) : (
+                    <ConversationEmpty
+                      title="Nothing said yet"
+                      line="Agents speak when they are named or when they hand back a job. Write to the room to start one."
+                    />
+                  )}
                 </div>
               ) : items.map(renderItem)}
             </div>
@@ -316,7 +348,8 @@ export function RoomView({
         notInterrupted={notInterrupted}
         roomTitle={room.title}
         sending={sending}
-        failure={failure}
+        failure={failure ?? rowFailure ?? null}
+        unreachable={!!error}
         onStart={onStart ? ids => { void start(ids); } : undefined}
         starting={starting}
         onSendNow={onSendNow ? () => { void sendNow(); } : undefined}

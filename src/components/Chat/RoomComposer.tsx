@@ -78,6 +78,7 @@ export function RoomComposer({
   attaching = false,
   onPasteFiles,
   notInterrupted,
+  unreachable = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -107,6 +108,9 @@ export function RoomComposer({
   /** Send now went through without interrupting this agent's turn: the
    *  message waits in its queue, and the strip says so until you move on. */
   notInterrupted?: string | null;
+  /** The bus could not read the room: nothing written here could reach it.
+   *  Frame: `Chat · A · Room · the bus does not answer`. */
+  unreachable?: boolean;
 }) {
   const target = targetId ? targets.find(t => t.id === targetId) : undefined;
   const noAgents = targets.length === 0;
@@ -114,7 +118,7 @@ export function RoomComposer({
   const targetStopped = !!target?.stopped;
   // Nobody would receive it: the field is off rather than letting a message be
   // written, recorded and delivered to nobody.
-  const blocked = noAgents || everyoneStopped || targetStopped;
+  const blocked = unreachable || noAgents || everyoneStopped || targetStopped;
   const mode: SendMode = target?.noTurnSignal ? 'hold' : target?.busy ? 'queue' : 'send';
   const hasText = value.trim().length > 0;
   const hasContent = hasText || hasFiles;
@@ -150,6 +154,9 @@ export function RoomComposer({
         : failure.kind === 'attach' ? `Not attached: ${failure.message.replace(/[.\s]+$/, '')}.`
           : failure.message,
     };
+  } else if (unreachable) {
+    // The panel above says what failed and offers retry: nothing to add here.
+    notice = null;
   } else if (everyoneStopped) {
     notice = {
       tone: 'idle',
@@ -212,15 +219,12 @@ export function RoomComposer({
     };
   }
 
-  const placeholder = noAgents
-    ? 'Add an agent before you write here.'
-    : everyoneStopped
-      ? 'Start an agent to write here'
-      : target && targetStopped
-        ? `Start ${target.label} to write to it`
-        : target
-          ? `Write to ${target.label}`
-          : `Write to everyone in ${roomTitle}`;
+  const placeholder = unreachable ? 'Tars cannot reach this room right now'
+    : noAgents ? 'Add an agent to write here'
+      : everyoneStopped ? 'Start an agent to write here'
+        : target && targetStopped ? `Start ${target.label} to write to it`
+          : target ? `Write to ${target.label}`
+            : `Write to everyone in ${roomTitle}`;
 
   const submitLabel = !target
     ? `Send to everyone in ${roomTitle}`
@@ -270,7 +274,7 @@ export function RoomComposer({
           options={options}
           onChange={onTargetChange}
           ariaLabel="Who this message is for"
-          disabled={noAgents || everyoneStopped}
+          disabled={unreachable || noAgents || everyoneStopped}
           label={target ? target.label : 'Everyone'}
           leading={target ? square(target) ?? undefined : <Users className="w-3.5 h-3.5 text-muted-foreground" />}
         />

@@ -313,7 +313,7 @@ export function threadItems(
       files,
     });
   }
-  const notice = threadNotice(thread);
+  const notice = threadNotice(thread, messages);
   if (notice && messages.length) items.push({ kind: 'notice', id: `notice:${thread!.id}`, ...notice });
   return items;
 }
@@ -327,9 +327,22 @@ export interface ThreadNotice {
  * What the open anchor says about itself. `bounded` is the limit the contract
  * fixes at three rounds or ten agent messages; `stopped` and `superseded` are
  * the two ways an anchor closes without reaching it.
+ *
+ * A change of members supersedes the exchange in flight too, with no newer
+ * message, and writes its line into that exchange (bus:setMembers): an anchor
+ * superseded with such a line in it was closed by the members, and says so
+ * rather than "replaced by a newer message", which nothing had done.
  */
-export function threadNotice(thread: BusThread | null): ThreadNotice | null {
+export function threadNotice(thread: BusThread | null, messages: BusMessage[] = []): ThreadNotice | null {
   if (!thread) return null;
+  const byMembers = thread.state === 'superseded'
+    && messages.some(m => m.threadId === thread.id && m.systemKind === 'members_changed');
+  if (byMembers) {
+    return {
+      caption: 'closed when the members changed',
+      lines: ['What was still queued for it was dropped, and late answers to it are refused. What you write starts a new exchange.'],
+    };
+  }
   switch (thread.state) {
     case 'bounded':
       return {

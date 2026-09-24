@@ -33,6 +33,27 @@ export function hasBus(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI?.bus;
 }
 
+/** How long a read of the bus is given before the page says it did not answer. */
+const BUS_READ_MS = 10_000;
+
+/**
+ * A read of the bus that says so when it does not come back. A main process
+ * that never answered left the room list empty and a room spinning for good,
+ * which reads as a fleet that has not spoken yet. Frame: `Chat · A · Room ·
+ * the bus does not answer` (`bus:getRoom, no answer in 10 s`).
+ */
+function busRead<T>(channel: string, call: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${channel}, no answer in ${BUS_READ_MS / 1000} s`)), BUS_READ_MS);
+  });
+  return Promise.race([call(), late]).finally(() => clearTimeout(timer));
+}
+
+/** What failed, without the wrapper IPC puts around the main process's words. */
+const readError = (err: unknown): string =>
+  (err instanceof Error ? err.message : String(err)).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
+
 export function useBusRooms() {
   const [rooms, setRooms] = useState<BusRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,10 +61,16 @@ export function useBusRooms() {
 
   const reload = useCallback(async () => {
     if (!hasBus()) { setLoading(false); return; }
-    const r = await window.electronAPI!.bus!.listRooms();
-    setRooms(r?.rooms ?? []);
-    setError(r?.error ?? null);
-    setLoading(false);
+    try {
+      const r = await busRead('bus:listRooms', () => window.electronAPI!.bus!.listRooms());
+      setRooms(r?.rooms ?? []);
+      setError(r?.error ?? null);
+    } catch (err) {
+      // The rooms already listed stay: the note says the list is not whole.
+      setError(readError(err));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { void reload(); }, [reload]);
@@ -91,17 +118,25 @@ export function useBusRoom(roomId: string | null) {
     let cancelled = false;
     setLoading(true);
     void (async () => {
-      const r = await window.electronAPI!.bus!.getRoom(roomId);
-      if (cancelled) return;
-      setSnapshot({
-        room: r?.room ?? null,
-        members: r?.members ?? [],
-        threads: r?.threads ?? [],
-        messages: r?.messages ?? [],
-        deliveries: r?.deliveries ?? [],
-      });
-      setError(r?.success ? null : (r?.error ?? 'The bus did not answer.'));
-      setLoading(false);
+      try {
+        const r = await busRead('bus:getRoom', () => window.electronAPI!.bus!.getRoom(roomId));
+        if (cancelled) return;
+        setSnapshot({
+          room: r?.room ?? null,
+          members: r?.members ?? [],
+          threads: r?.threads ?? [],
+          messages: r?.messages ?? [],
+          deliveries: r?.deliveries ?? [],
+        });
+        setError(r?.success ? null : (r?.error ?? 'The bus did not answer.'));
+      } catch (err) {
+        if (cancelled) return;
+        // Not the room before it, shown as if it were this one.
+        setSnapshot(EMPTY);
+        setError(readError(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [roomId, refreshToken]);

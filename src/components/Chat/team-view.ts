@@ -210,7 +210,7 @@ export function roomState(agents: RoomAgent[], thread: BusThread | null, message
   return { tone: 'idle', word: 'at rest', detail: 'every agent finished its turn', relaying: false };
 }
 
-export type RowActionId = 'open terminal' | 'start' | 'write' | 'send it' | 'stop' | 'remove from room';
+export type RowActionId = 'open terminal' | 'start' | 'write' | 'send it' | 'restart' | 'stop' | 'remove from room';
 
 export interface RowActions {
   /** The bordered button: what fits the agent's state. */
@@ -222,16 +222,19 @@ export interface RowActions {
 }
 
 /**
- * The actions an open team row offers. Frame: `Chat · A · Team rows · states`
- * > `UNFOLDED`. Stop is never offered to an agent Tars holds no session for,
- * whatever its record says.
+ * The actions an open team row offers. Frames: `Chat · A · Team rows · states`
+ * > `UNFOLDED` and `MORE`. Stop is never offered to an agent Tars holds no
+ * session for, whatever its record says. Restart (#138's, which keeps the
+ * conversation) is on the row of an agent in error, the frame's way back, and
+ * in the menu of one at work or at rest: a stopped agent has start instead.
  */
 export function rowActions(agent: RoomAgent, notSent: number): RowActions {
-  const stopped = shownStopped(agent);
-  const menu: RowActionId[] = [...(stopped ? [] : ['stop' as const]), 'remove from room'];
+  const live: RowActionId[] = agent.stopped ? [] : ['stop'];
   // Starting: the frame offers the terminal alone, and never start again.
-  if (agent.launching) return { primary: 'open terminal', secondary: null, menu };
-  if (stopped) return { primary: 'start', secondary: 'write', menu };
+  if (agent.launching) return { primary: 'open terminal', secondary: null, menu: [...live, 'remove from room'] };
+  if (agent.status === 'error') return { primary: 'open terminal', secondary: 'restart', menu: [...live, 'remove from room'] };
+  if (shownStopped(agent)) return { primary: 'start', secondary: 'write', menu: ['remove from room'] };
+  const menu: RowActionId[] = ['stop', 'restart', 'remove from room'];
   // Whatever it was refused for, a message not sent moves only when you send
   // it: an agent started again still holds what came while it was stopped.
   if (notSent > 0) return { primary: 'open terminal', secondary: 'send it', menu };

@@ -2,7 +2,7 @@
 
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronRight, Ellipsis, Eye, Pencil, Plus, Square, UserMinus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Ellipsis, Eye, Pencil, Plus, RotateCcw, Square, UserMinus } from 'lucide-react';
 import { AgentMark, Button, MetaChip, StatusSquare } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import type { AgentStatus } from '@/types/electron';
@@ -222,7 +222,14 @@ function MenuRule() {
 
 const ROW_MENU_ICON: Partial<Record<RowActionId, ReactNode>> = {
   stop: <Square className="w-3.5 h-3.5 text-text-secondary" />,
+  restart: <RotateCcw className="w-3.5 h-3.5 text-text-secondary" />,
   'remove from room': <UserMinus className="w-3.5 h-3.5 text-text-secondary" />,
+};
+
+/** The frame's hint beside an item, where the word alone could mislead:
+ *  restart is not a stop then a start, which begins a new conversation. */
+const ROW_MENU_HINT: Partial<Record<RowActionId, string>> = {
+  restart: 'keeps the conversation',
 };
 
 /**
@@ -306,7 +313,7 @@ export const TeamRow = memo(function TeamRow({
               {actions.menu.map(id => (
                 <Fragment key={id}>
                   {id === 'remove from room' && actions.menu.length > 1 && <MenuRule />}
-                  <MenuItem icon={ROW_MENU_ICON[id]} label={id} onSelect={() => act(id)} />
+                  <MenuItem icon={ROW_MENU_ICON[id]} label={id} hint={ROW_MENU_HINT[id]} onSelect={() => act(id)} />
                 </Fragment>
               ))}
             </div>
@@ -453,12 +460,19 @@ export function TeamSection({
 }
 
 /** A line of text in the column, in the text column, with an optional lead. */
-export function SidebarNote({ lead, children, actions }: { lead?: ReactNode; children: ReactNode; actions?: ReactNode }) {
+export function SidebarNote({ lead, children, detail, actions }: {
+  lead?: ReactNode;
+  children: ReactNode;
+  /** A failure's own words, in mono under the sentence. */
+  detail?: string;
+  actions?: ReactNode;
+}) {
   return (
     <div className="shrink-0 flex gap-2 px-3 pt-2 pb-[7px] border-b border-border">
       <Lead>{lead}</Lead>
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <p className="text-[12px] leading-4 text-text-muted">{children}</p>
+        {detail && <p className="font-mono text-[11px] leading-4 text-text-muted break-words">{detail}</p>}
         {actions && <div className="flex items-center gap-2 pt-0.5">{actions}</div>}
       </div>
     </div>
@@ -502,6 +516,7 @@ export function ChatSidebar({
   selectedId,
   onSelect,
   roomsError,
+  onRetryRooms,
   children,
 }: {
   hermes: ConversationItem;
@@ -511,6 +526,8 @@ export function ChatSidebar({
   /** The bus refused or failed to answer: a list that is not the whole truth
    *  says so, rather than looking like a fleet that has not spoken yet. */
   roomsError?: string | null;
+  /** Reads the list again, from the note that says it could not be read. */
+  onRetryRooms?: () => void;
   /** Under the rooms: the open room's team, or what Hermes can reach. */
   children?: ReactNode;
 }) {
@@ -520,9 +537,13 @@ export function ChatSidebar({
       <ConversationRow {...hermes} selected={selectedId === hermes.id} onSelect={() => onSelect(hermes.id)} />
       <SectionHead label="ROOMS" count={roomsError ? '?' : rooms.length} folded={folded} onFold={toggleFold} />
       {!folded && (roomsError ? (
-        <SidebarNote lead={<StatusSquare tone="error" />}>
+        // Frame: `Chat · A · Room · the bus does not answer` > `note bus error`.
+        <SidebarNote
+          lead={<StatusSquare tone="error" />}
+          detail={roomsError}
+          actions={onRetryRooms ? <Button size="sm" onClick={onRetryRooms}>retry</Button> : undefined}
+        >
           <span className="text-foreground">The bus did not answer, so this list is not the whole truth.</span>
-          <span className="block font-mono text-[11px] leading-4 text-text-muted">{roomsError}</span>
         </SidebarNote>
       ) : rooms.length === 0 ? (
         <SidebarNote>No project yet. A room appears for each project you add an agent to.</SidebarNote>
