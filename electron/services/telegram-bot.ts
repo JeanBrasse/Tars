@@ -24,6 +24,28 @@ let botUsername: string | null = null; // Cached bot username for mention detect
 let currentResponseChatId: string | null = null; // Track which chat to respond to
 
 /**
+ * How many wrong tokens /auth takes: five from one chat and twenty from all
+ * chats together in any fifteen minutes (the Audit's gate of #176). Past
+ * either, a token is neither compared nor counted: the refusal says the same
+ * to a right guess as to a wrong one, and the list never holds more than
+ * twenty misses. A restart of the bot starts the count again.
+ */
+const AUTH_WINDOW_MS = 15 * 60_000;
+const AUTH_MISSES_PER_CHAT = 5;
+const AUTH_MISSES_IN_ALL = 20;
+let authMisses: Array<{ chatId: string; at: number }> = [];
+
+/** Minutes before /auth compares this chat's token again, or 0 when it may now. */
+function authWait(chatId: string, now: number): number {
+  authMisses = authMisses.filter(m => now - m.at < AUTH_WINDOW_MS);
+  const mine = authMisses.filter(m => m.chatId === chatId);
+  const since = mine.length >= AUTH_MISSES_PER_CHAT ? mine[0].at
+    : authMisses.length >= AUTH_MISSES_IN_ALL ? authMisses[0].at
+    : undefined;
+  return since === undefined ? 0 : Math.max(1, Math.ceil((since + AUTH_WINDOW_MS - now) / 60_000));
+}
+
+/**
  * The settings as they are now. A getter, not the object the bot was started
  * with: app:saveSettings replaces main's object on every save, and the bot kept
  * checking chats and /auth tokens against the old one, so a chat removed or a
@@ -641,6 +663,8 @@ export function initTelegramBot() {
     return;
   }
 
+  authMisses = [];
+
   try {
     telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
     console.log('Telegram bot started');
@@ -674,6 +698,16 @@ export function initTelegramBot() {
         return;
       }
 
+      const wait = authWait(chatId, Date.now());
+      if (wait) {
+        telegramBot?.sendMessage(chatId,
+          '⛔ *Too many attempts*\n\n' +
+          `_Try again in ${wait} minute${wait === 1 ? '' : 's'}._`,
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+
       // Verify the token
       if (providedToken === live.telegramAuthToken) {
         // Add to authorized list if not already there. Onto the live settings:
@@ -697,6 +731,7 @@ export function initTelegramBot() {
           { parse_mode: 'Markdown' }
         );
       } else {
+        authMisses.push({ chatId, at: Date.now() });
         telegramBot?.sendMessage(chatId,
           '❌ *Invalid token*\n\n' +
           '_Check your token in Tars Settings → Telegram_',
