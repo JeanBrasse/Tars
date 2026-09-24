@@ -11,7 +11,7 @@ import { RoomView } from '@/components/Chat/RoomView';
 import { EchoRunRow, HermesBanner, HermesMessageRow, HermesView, PendingTurnRow } from '@/components/Chat/HermesView';
 import type { ActionState, GatewayState } from '@/components/Chat/HermesView';
 import { currentThread } from '@/components/Chat/bus-view';
-import { lastSpoke, needsRows, roomCounts, roomState, timeLabel } from '@/components/Chat/team-view';
+import { joinedSilent, lastSpoke, needsRows, roomCounts, roomState, timeLabel } from '@/components/Chat/team-view';
 import type { RoomState, RowActionId } from '@/components/Chat/team-view';
 import { useBusRoom, useBusRooms } from '@/hooks/useBus';
 import { useRoomAgents } from '@/hooks/useRoomAgents';
@@ -22,7 +22,7 @@ import { groupThread } from '@/components/Overseer/echo-runs';
 import { Composer } from '@/components/Overseer/Composer';
 import { WatchControls } from '@/components/Overseer/WatchControls';
 import { describeHermesFailure } from '@/components/KanbanBoard/hermes-error';
-import type { OverseerAction, OverseerAttachment, OverseerFleetSnapshot, OverseerMessage, OverseerSettings } from '@/types/electron';
+import type { OverseerAction, OverseerAttachment, OverseerMessage, OverseerSettings } from '@/types/electron';
 
 /** A message on its way: typed, with whatever was staged beside it. Held
  *  together so a queued message keeps its own files. */
@@ -151,7 +151,6 @@ function ChatRoom({
 export default function ChatPage() {
   const [messages, setMessages] = useState<OverseerMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [fleet, setFleet] = useState<OverseerFleetSnapshot | null>(null);
   const [paused, setPaused] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [settings, setSettings] = useState<OverseerSettings | null>(null);
@@ -192,7 +191,14 @@ export default function ChatPage() {
   const roomId = selectedId !== GLOBAL_ID ? selectedId : null;
   const bus = useBusRoom(roomId);
   const roomAgents = useRoomAgents(bus.snapshot.members);
-  const { agents: fleetAgents } = useElectronAgents();
+  // The fleet as the rest of the app reads it, kept current by the tick: the
+  // room list counts from it and an approval card checks its agent is still
+  // in it. The page used to read a second copy every 15 s beside it.
+  const { agents: fleetAgents, isLoading: fleetLoading } = useElectronAgents();
+  const fleetIds = useMemo(
+    () => (fleetLoading ? null : new Set(fleetAgents.map(a => a.id))),
+    [fleetAgents, fleetLoading],
+  );
   const [recipient, setRecipient] = useState('');
   useEffect(() => { setRecipient(''); }, [roomId]);
 
@@ -210,6 +216,7 @@ export default function ChatPage() {
   // What the open room's strip lists: its line in the list counts the same rows.
   const needs = useMemo(() => needsRows(roomAgents, bus.snapshot.deliveries), [roomAgents, bus.snapshot.deliveries]);
   const spoke = useMemo(() => lastSpoke(bus.snapshot.messages), [bus.snapshot.messages]);
+  const joined = useMemo(() => joinedSilent(bus.snapshot.messages), [bus.snapshot.messages]);
 
 
   // False for the pre-render and for the hydration pass, true right after: see useDesktopApi.
@@ -225,11 +232,6 @@ export default function ChatPage() {
       setSending(true);
       setSendStartedAt(prev => prev ?? Date.now());
     }
-  }, []);
-
-  const loadFleet = useCallback(async () => {
-    const r = await window.electronAPI?.overseer?.fleet();
-    if (r) setFleet(r);
   }, []);
 
   const checkGateway = useCallback(async () => {
@@ -280,11 +282,10 @@ export default function ChatPage() {
   useEffect(() => {
     if (!hasApi) return;
     void loadHistory();
-    void loadFleet();
     void loadWatchStatus();
     void loadSettings();
     void checkGateway();
-  }, [hasApi, loadHistory, loadFleet, loadWatchStatus, loadSettings, checkGateway]);
+  }, [hasApi, loadHistory, loadWatchStatus, loadSettings, checkGateway]);
 
   const cadenceLabel = settings
     ? (settings.watchIntervalMs >= 3600000
@@ -378,16 +379,6 @@ export default function ChatPage() {
     }
   }, [router, bus, openRoom]);
 
-  // The fleet listing is what the approval block's "still reachable" check
-  // and the rail both read - keep it fresh while the page is open.
-  useEffect(() => {
-    if (!hasApi) return;
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') void loadFleet();
-    }, 15_000);
-    return () => clearInterval(id);
-  }, [hasApi, loadFleet]);
-
   // Unprompted briefings land here the moment the watch timer produces one.
   useEffect(() => {
     if (!hasApi || !window.electronAPI?.overseer?.onBriefing) return;
@@ -468,7 +459,6 @@ export default function ChatPage() {
       }
       await loadHistory();
       setPendingSend(null);
-      void loadFleet();
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       const { message, detail } = describeHermesFailure(raw, null);
@@ -523,7 +513,6 @@ export default function ChatPage() {
         ? { sending: false, resolved: 'sent', error: null, at }
         : { sending: false, resolved: null, error: r?.error ?? 'Could not send.', failedOn: 'send', at },
     }));
-    if (r?.success) void loadFleet();
   };
 
   if (!hasApi) {
@@ -537,7 +526,7 @@ export default function ChatPage() {
     );
   }
 
-  const agentCount = fleet?.agents.length ?? 0;
+  const agentCount = fleetAgents.length;
 
   return (
     // The gateway state is probed over IPC, so the banner appears a beat after
@@ -567,6 +556,7 @@ export default function ChatPage() {
               agents={roomAgents}
               pending={pending}
               lastSpoke={spoke}
+              joined={joined}
               candidates={candidates}
               onAction={onTeamAction}
               onAdd={id => { if (openRoom) void bus.setMembers([...openRoom.memberIds, id]); }}
@@ -617,7 +607,7 @@ export default function ChatPage() {
               <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
                 <p className="text-sm text-foreground">Hermes has nothing to watch yet.</p>
                 <p className="text-xs text-muted-foreground max-w-sm">
-                  Start an agent from Agents or Kanban in any project, then come back - Hermes reports on
+                  Start an agent from Agents or Kanban in any project, then come back: Hermes reports on
                   what it sees here.
                 </p>
               </div>
@@ -625,7 +615,7 @@ export default function ChatPage() {
               <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
                 <p className="text-sm text-foreground">Nothing said yet.</p>
                 <p className="text-xs text-muted-foreground max-w-sm">
-                  Ask Hermes what the fleet is doing, or wait - it checks in on its own {cadenceLabel}.
+                  Ask Hermes what the fleet is doing, or wait: it checks in on its own {cadenceLabel}.
                 </p>
               </div>
             ) : (
@@ -645,7 +635,7 @@ export default function ChatPage() {
                       <HermesMessageRow
                         key={m.id}
                         message={m}
-                        fleet={fleet}
+                        fleetIds={fleetIds}
                         actionState={m.action ? actionStates[m.action.actionId] : undefined}
                         onCancelAction={handleCancelAction}
                         onSendAction={handleSendAction}
@@ -656,7 +646,7 @@ export default function ChatPage() {
                   <HermesMessageRow
                     key={item.message.id}
                     message={item.message}
-                    fleet={fleet}
+                    fleetIds={fleetIds}
                     actionState={item.message.action ? actionStates[item.message.action.actionId] : undefined}
                     onCancelAction={handleCancelAction}
                     onSendAction={handleSendAction}
@@ -667,7 +657,7 @@ export default function ChatPage() {
             {pendingSend && (
               <HermesMessageRow
                 message={{ role: 'user', text: pendingSend.text, timestamp: pendingSend.at, attachments: pendingSend.attachments }}
-                fleet={fleet}
+                fleetIds={fleetIds}
               />
             )}
             {sending && sendStartedAt && <PendingTurnRow startedAt={sendStartedAt} />}
@@ -675,7 +665,7 @@ export default function ChatPage() {
               <HermesMessageRow
                 key={`q-${i}`}
                 message={{ role: 'user', text: m.text, timestamp: m.at, attachments: m.attachments }}
-                fleet={fleet}
+                fleetIds={fleetIds}
                 queued
               />
             ))}

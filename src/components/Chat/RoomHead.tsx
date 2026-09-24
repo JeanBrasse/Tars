@@ -74,7 +74,7 @@ export function RoomHead({
           size="sm"
           variant="ghost"
           active={howOpen}
-          aria-haspopup="menu"
+          aria-haspopup="dialog"
           aria-expanded={howOpen}
           onClick={() => setHowOpen(o => !o)}
         >
@@ -82,7 +82,7 @@ export function RoomHead({
           how it runs
         </Button>
       )}
-      <AnchoredMenu anchor={how} open={rules && howOpen} onClose={() => setHowOpen(false)} align="right" width={400} label="How this room runs">
+      <AnchoredMenu anchor={how} open={rules && howOpen} onClose={() => setHowOpen(false)} align="right" width={400} label="How this room runs" role="dialog">
         <div className="pb-2">
           <div className="h-8 flex items-center px-3 border-b border-border">
             <span className="relative top-px text-[10px] leading-4 uppercase tracking-[0.08em] text-text-secondary">how this room runs</span>

@@ -32,13 +32,31 @@ const HHMM = (iso: string): string => {
   }
 };
 
-const nameOf = (agents: Array<Pick<AgentStatus, 'id' | 'name'>>, id: string): string =>
+/**
+ * What the thread reads of an agent: its name, and what a message queued for
+ * it waits on when that is not the end of its turn (#172): a dialog only a
+ * person can answer, or a session that is still starting.
+ */
+export type ThreadAgent = Pick<AgentStatus, 'id' | 'name'> & { waitsOn?: 'dialog' | 'start' };
+
+const nameOf = (agents: ThreadAgent[], id: string): string =>
   agents.find(a => a.id === id)?.name ?? id.slice(0, 8);
+
+const waitsOnOf = (agents: ThreadAgent[], id: string): ThreadAgent['waitsOn'] =>
+  agents.find(a => a.id === id)?.waitsOn;
 
 const list = (names: string[]): string =>
   names.length <= 1
     ? (names[0] ?? '')
     : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+/** A list as a receipt writes it: four names at most, then a count, so one
+ *  line of a thirty-agent room still says who is missing. */
+const SHOWN = 4;
+const some = (names: string[]): string =>
+  names.length <= SHOWN
+    ? list(names)
+    : `${names.slice(0, SHOWN - 1).join(', ')} and ${names.length - (SHOWN - 1)} more`;
 
 /** Why a message is not on its way, per target, in the room's words. */
 const REFUSED: Record<BusDeliveryReason, (name: string) => string> = {
@@ -60,21 +78,36 @@ export function reasonText(delivery: BusDelivery, name: string): string {
  * Your own line carries its receipts: who has it, who is still waiting, and
  * who will never get it. Showing only the delivered ones is the omission that
  * made the old Chat look healthy while nothing moved.
+ *
+ * What went wrong first, then what waits, then what arrived: in a room of
+ * thirty the delivered names ran on and the one not sent was never read.
+ * A queue that waits on a dialog or on a start says so, as the frame's
+ * `queued for reviewer: delivered once it has started`.
  */
-export function receipts(deliveries: BusDelivery[], agents: Array<Pick<AgentStatus, 'id' | 'name'>>): string {
-  const by = (state: BusDelivery['state']) =>
-    deliveries.filter(d => d.state === state).map(d => nameOf(agents, d.targetAgentId));
+export function receipts(deliveries: BusDelivery[], agents: ThreadAgent[]): string {
+  const by = (state: BusDelivery['state'], on?: ThreadAgent['waitsOn']) =>
+    deliveries
+      .filter(d => d.state === state && (state !== 'queued' || waitsOnOf(agents, d.targetAgentId) === on))
+      .map(d => nameOf(agents, d.targetAgentId));
   const parts: string[] = [];
-  const delivered = by('delivered');
-  const queued = by('queued');
-  const held = by('held');
-  const notSent = by('not_sent');
   const dropped = by('dropped');
-  if (delivered.length) parts.push(`delivered to ${list(delivered)}`);
-  if (queued.length) parts.push(`queued for ${list(queued)}`);
-  if (held.length) parts.push(`held for ${list(held)}`);
-  if (notSent.length) parts.push(`not sent to ${list(notSent)}`);
-  if (dropped.length) parts.push(`dropped for ${list(dropped)}`);
+  const notSent = by('not_sent');
+  const held = by('held');
+  const queued = by('queued');
+  const onDialog = by('queued', 'dialog');
+  const onStart = by('queued', 'start');
+  const delivered = by('delivered');
+  if (dropped.length) parts.push(`dropped for ${some(dropped)}`);
+  if (notSent.length) parts.push(`not sent to ${some(notSent)}`);
+  if (held.length) parts.push(`held for ${some(held)}`);
+  if (queued.length) parts.push(`queued for ${some(queued)}`);
+  if (onDialog.length) {
+    parts.push(`queued for ${some(onDialog)}: delivered once ${onDialog.length === 1 ? 'its dialog is' : 'their dialogs are'} answered`);
+  }
+  if (onStart.length) {
+    parts.push(`queued for ${some(onStart)}: delivered once ${onStart.length === 1 ? 'it has' : 'they have'} started`);
+  }
+  if (delivered.length) parts.push(`delivered to ${some(delivered)}`);
   return parts.join(' · ');
 }
 
@@ -100,7 +133,7 @@ export interface DeliveryTag {
  * delivered, which carries no tag at all. Held waits on a person, so it beats
  * queued, which only waits for a turn to end.
  */
-function agentTag(deliveries: BusDelivery[], agents: Array<Pick<AgentStatus, 'id' | 'name'>>): DeliveryTag | undefined {
+function agentTag(deliveries: BusDelivery[], agents: ThreadAgent[]): DeliveryTag | undefined {
   const dropped = deliveries.find(d => d.state === 'dropped');
   if (dropped) {
     return { state: 'dropped', label: CHIP.dropped!, note: reasonText(dropped, nameOf(agents, dropped.targetAgentId)) };
@@ -115,14 +148,25 @@ function agentTag(deliveries: BusDelivery[], agents: Array<Pick<AgentStatus, 'id
   }
   const queued = deliveries.filter(d => d.state === 'queued');
   if (queued.length) {
-    const names = queued.map(d => nameOf(agents, d.targetAgentId));
-    return {
-      state: 'queued',
-      label: CHIP.queued!,
-      note: names.length === 1
-        ? `delivered when ${names[0]} ends its turn`
-        : `delivered when ${list(names)} end their turns`,
-    };
+    // What each target's queue waits on: the end of its turn, a dialog only a
+    // person answers (the frame's `delivered once qa’s dialog is answered`),
+    // or a session still starting.
+    const on = (w: ThreadAgent['waitsOn']) =>
+      queued.filter(d => waitsOnOf(agents, d.targetAgentId) === w).map(d => nameOf(agents, d.targetAgentId));
+    const turn = on(undefined);
+    const dialog = on('dialog');
+    const start = on('start');
+    const notes: string[] = [];
+    if (turn.length) {
+      notes.push(turn.length === 1 ? `delivered when ${turn[0]} ends its turn` : `delivered when ${list(turn)} end their turns`);
+    }
+    if (dialog.length) {
+      notes.push(dialog.length === 1 ? `delivered once ${dialog[0]}’s dialog is answered` : `delivered once the dialogs of ${list(dialog)} are answered`);
+    }
+    if (start.length) {
+      notes.push(`delivered once ${list(start)} ${start.length === 1 ? 'has' : 'have'} started`);
+    }
+    return { state: 'queued', label: CHIP.queued!, note: notes.join('; ') };
   }
   return undefined;
 }
@@ -211,7 +255,7 @@ export function dayLabel(iso: string, now: Date = new Date()): string {
 export function threadItems(
   messages: BusMessage[],
   deliveries: BusDelivery[],
-  agents: Array<Pick<AgentStatus, 'id' | 'name'>>,
+  agents: ThreadAgent[],
   thread: BusThread | null,
   now: Date = new Date(),
 ): ThreadItem[] {

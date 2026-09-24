@@ -77,6 +77,7 @@ export function RoomComposer({
   onAttach,
   attaching = false,
   onPasteFiles,
+  notInterrupted,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -103,6 +104,9 @@ export function RoomComposer({
   /** Files on their way to the room: + is off until they are staged. */
   attaching?: boolean;
   onPasteFiles?: (files: File[]) => void;
+  /** Send now went through without interrupting this agent's turn: the
+   *  message waits in its queue, and the strip says so until you move on. */
+  notInterrupted?: string | null;
 }) {
   const target = targetId ? targets.find(t => t.id === targetId) : undefined;
   const noAgents = targets.length === 0;
@@ -140,7 +144,9 @@ export function RoomComposer({
     notice = {
       tone: 'error',
       emphasis: 'error',
-      text: failure.kind === 'send' ? notSentText(failure.message)
+      // The room's own words, the frame's: the main process's sentence is not
+      // relayed, as nowhere else on this page (bus-view.ts).
+      text: failure.kind === 'send' ? notSentText('the room did not accept the message')
         : failure.kind === 'attach' ? `Not attached: ${failure.message.replace(/[.\s]+$/, '')}.`
           : failure.message,
     };
@@ -175,6 +181,11 @@ export function RoomComposer({
           </Button>
         </>
       ),
+    };
+  } else if (notInterrupted) {
+    notice = {
+      tone: 'running',
+      text: `${notInterrupted}’s turn was not interrupted, so this message went into its queue instead.`,
     };
   } else if (target && mode === 'hold') {
     notice = {

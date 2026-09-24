@@ -1,9 +1,11 @@
 'use client';
 
+import { memo } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowDown, ArrowRight, FileText, Hand, Image as ImageIcon, Send, Square, UserMinus, UserPlus, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button, MetaChip } from '@/components/ui';
+import { sameProps } from '@/lib/same-props';
 import type { BusAttachment, BusSystemKind } from '@/types/electron';
 import { fileSize } from './bus-view';
 import type { DayItem, MessageItem, NoticeItem, SystemItem } from './bus-view';
@@ -17,13 +19,16 @@ import type { DayItem, MessageItem, NoticeItem, SystemItem } from './bus-view';
  * the needs-you strip, so no box adds an edge the rest do not share. Lines are
  * 20 high, and the 11px mono time sits on the same baseline as the 13px names
  * (the renderer puts both 4px under their line's centre).
+ *
+ * Each row is memoised on its item: the thread's items are built again on
+ * every delivery, and only the rows whose words moved have to be drawn.
  */
 
 export function Time({ children }: { children: ReactNode }) {
   return <span className="w-9 shrink-0 font-mono text-[11px] leading-5 text-text-muted">{children}</span>;
 }
 
-export function MessageRow({ item }: { item: MessageItem }) {
+export const MessageRow = memo(function MessageRow({ item }: { item: MessageItem }) {
   return (
     <div
       data-row-kind={item.you ? 'you' : item.tag?.state ?? 'delivered'}
@@ -47,15 +52,17 @@ export function MessageRow({ item }: { item: MessageItem }) {
           </div>
         )}
         {(item.tag || item.note) && (
-          <div className="flex items-center gap-2 pt-1 min-w-0">
-            {item.tag && <MetaChip>{item.tag.label}</MetaChip>}
-            <span className="text-[12px] leading-5 text-text-muted truncate">{item.tag?.note ?? item.note}</span>
+          // Wrapped, never cut: what went wrong comes first in the receipts,
+          // and the end of the line is still part of what happened.
+          <div className="flex items-start gap-2 pt-1 min-w-0">
+            {item.tag && <MetaChip className="shrink-0 whitespace-nowrap">{item.tag.label}</MetaChip>}
+            <span className="min-w-0 text-[12px] leading-5 text-text-muted break-words">{item.tag?.note ?? item.note}</span>
           </div>
         )}
       </div>
     </div>
   );
-}
+}, sameProps);
 
 /**
  * One file a message carried: its kind, its name and its size, in a 20px chip
@@ -94,7 +101,7 @@ function systemIcon(item: SystemItem): ReactNode {
 
 /** A line the room writes about itself: a change of members, a stopped
  *  exchange, a queue you sent on, a turn you interrupted. Its icon says which. */
-export function SystemRow({ item }: { item: SystemItem }) {
+export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem }) {
   return (
     <div data-row-kind="system" className="flex gap-3 px-6 py-2">
       <Time>{item.time}</Time>
@@ -105,10 +112,10 @@ export function SystemRow({ item }: { item: SystemItem }) {
       </div>
     </div>
   );
-}
+}, sameProps);
 
 /** A rule between two days, the day in its middle. */
-export function DayRow({ item }: { item: DayItem }) {
+export const DayRow = memo(function DayRow({ item }: { item: DayItem }) {
   return (
     <div className="h-9 flex items-center gap-3 px-6" role="separator" aria-label={item.label}>
       <span className="flex-1 border-t border-border" />
@@ -116,11 +123,11 @@ export function DayRow({ item }: { item: DayItem }) {
       <span className="flex-1 border-t border-border" />
     </div>
   );
-}
+}, sameProps);
 
 /** Where an exchange ended without you: paused at its limit, stopped, or
  *  replaced. A block in the body column, like a card in a message. */
-export function NoticeRow({ item }: { item: NoticeItem }) {
+export const NoticeRow = memo(function NoticeRow({ item }: { item: NoticeItem }) {
   return (
     <div className="py-2 pr-6 pl-[72px]">
       <div className="border border-border px-3 py-3 flex flex-col gap-1">
@@ -133,7 +140,7 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
       </div>
     </div>
   );
-}
+}, sameProps);
 
 /** Under a thread while you read above its bottom: how many messages arrived
  *  below, and the way back to them. The room's and Hermes's. */

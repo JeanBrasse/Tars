@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { CircleAlert, FileText, Image as ImageIcon } from 'lucide-react';
 import { BrandSpinner, Button, MetaChip, StatusSquare } from '@/components/ui';
 import { RichText } from '@/components/Overseer/RichText';
-import type { AgentStatus, OverseerAction, OverseerAttachment, OverseerFleetSnapshot, OverseerMessage } from '@/types/electron';
+import type { AgentStatus, OverseerAction, OverseerAttachment, OverseerMessage } from '@/types/electron';
 import { NewBelowBand, Time } from './RoomRow';
 import { shortModel } from './team-view';
 import { useFollowBottom } from '@/hooks/useFollowBottom';
@@ -114,13 +114,14 @@ function secondsAgo(iso: string): number {
  */
 export function ApprovalCard({
   action,
-  fleet,
+  fleetIds,
   state,
   onCancel,
   onSend,
 }: {
   action: OverseerAction;
-  fleet: OverseerFleetSnapshot | null;
+  /** The ids of the fleet as the app knows it now; null while it is read. */
+  fleetIds: ReadonlySet<string> | null;
   state?: ActionState;
   onCancel: () => void;
   onSend: () => void;
@@ -133,7 +134,7 @@ export function ApprovalCard({
     return () => clearInterval(id);
   }, [action.resolvedAt, settled]);
 
-  const stillInFleet = fleet ? fleet.agents.some(a => a.id === action.agentId) : true;
+  const stillInFleet = fleetIds ? fleetIds.has(action.agentId) : true;
   const failed = !!state?.error && state.failedOn !== 'cancel' && !state.sending;
   const phase = state?.sending ? 'writing'
     : state?.resolved === 'sent' ? 'sent'
@@ -214,14 +215,14 @@ function AttachedChip({ file }: { file: OverseerAttachment }) {
  */
 export function HermesMessageRow({
   message,
-  fleet,
+  fleetIds,
   actionState,
   onCancelAction,
   onSendAction,
   queued,
 }: {
   message: Pick<OverseerMessage, 'role' | 'text' | 'timestamp' | 'attachments'> & Partial<Pick<OverseerMessage, 'action' | 'isBriefing' | 'templateEcho'>>;
-  fleet: OverseerFleetSnapshot | null;
+  fleetIds: ReadonlySet<string> | null;
   actionState?: ActionState;
   onCancelAction?: (actionId: string) => void;
   onSendAction?: (actionId: string) => void;
@@ -261,7 +262,7 @@ export function HermesMessageRow({
           <div className="pt-2">
             <ApprovalCard
               action={message.action}
-              fleet={fleet}
+              fleetIds={fleetIds}
               state={actionState}
               onCancel={() => onCancelAction(message.action!.actionId)}
               onSend={() => onSendAction(message.action!.actionId)}

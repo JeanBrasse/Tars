@@ -1,14 +1,16 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronDown, ChevronRight, Ellipsis, Eye, Pencil, Plus, Square, UserMinus } from 'lucide-react';
 import { AgentMark, Button, MetaChip, StatusSquare } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import type { AgentStatus } from '@/types/electron';
+import { sameProps } from '@/lib/same-props';
 import { AnchoredMenu } from './AnchoredMenu';
 import {
   agentDetail,
+  agentDuration,
   agentStatusLabel,
   rowActions,
   shortModel,
@@ -197,8 +199,10 @@ function MenuItem({ icon, label, hint, onSelect }: { icon?: ReactNode; label: st
     <button
       type="button"
       role="menuitem"
+      // The menu moves the focus between its items: Tab leaves the menu.
+      tabIndex={-1}
       onClick={onSelect}
-      className="w-full h-8 flex items-center gap-2 px-2 text-left hover:bg-secondary cursor-pointer"
+      className="w-full h-8 flex items-center gap-2 px-2 text-left hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none cursor-pointer"
     >
       <Lead>{icon}</Lead>
       <span className="text-[12px] leading-4 font-medium text-foreground">{label}</span>
@@ -223,10 +227,14 @@ const ROW_MENU_ICON: Partial<Record<RowActionId, ReactNode>> = {
 
 /**
  * An agent in the open room. Folded: the mark and name, then what it is on,
- * with its state as a word in its colour and a chip for what waits for it.
- * A click opens it in place with its actions, one row at a time.
+ * with its state as a word in its colour, how long it has been in it, and a
+ * chip for what waits for it. A click opens it in place with its actions, one
+ * row at a time.
+ *
+ * Memoised on what it shows: the room's agents are joined again on every
+ * tick, and a row whose agent did not move has nothing new to draw.
  */
-export function TeamRow({
+export const TeamRow = memo(function TeamRow({
   agent,
   open,
   onToggle,
@@ -234,16 +242,22 @@ export function TeamRow({
   held,
   notSent,
   lastSpokeAt,
+  joinedAt,
+  duration,
   onAction,
 }: {
   agent: RoomAgent;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (agentId: string) => void;
   queued: number;
   /** Taken by its terminal, waiting on a draft in its field (PR 169). */
   held: number;
   notSent: number;
   lastSpokeAt?: string;
+  /** When it joined the room, while it has not spoken since. */
+  joinedAt?: string;
+  /** How long it has been in its state, `4m`: empty where the frame shows none. */
+  duration: string;
   onAction: (action: RowActionId, agent: RoomAgent) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -259,7 +273,7 @@ export function TeamRow({
     <div className={`shrink-0 flex flex-col gap-1 px-3 pt-2 pb-[7px] border-b border-border ${open ? 'bg-secondary' : ''}`}>
       <button
         type="button"
-        onClick={onToggle}
+        onClick={() => onToggle(agent.id)}
         aria-expanded={open}
         className="w-full flex flex-col gap-1 text-left cursor-pointer"
       >
@@ -269,16 +283,20 @@ export function TeamRow({
           <span className="font-mono text-[11px] leading-4 text-text-muted shrink-0">{shortModel(agent)}</span>
           <span className="flex-1" />
           <span className={`text-[12px] leading-4 shrink-0 ${statusInk(agent)}`}>{agentStatusLabel(agent)}</span>
+          {duration && <span className="font-mono text-[11px] leading-4 text-text-muted shrink-0">{duration}</span>}
         </span>
         <span className="w-full h-5 flex items-center justify-between gap-2 pl-6 min-w-0">
-          <span className="text-[12px] leading-4 text-text-muted truncate">{agentDetail(agent, lastSpokeAt, held)}</span>
-          {chip && <MetaChip raised={open}>{chip}</MetaChip>}
+          <span className="text-[12px] leading-4 text-text-muted truncate">{agentDetail(agent, lastSpokeAt, held, joinedAt)}</span>
+          {/* Whole, whatever the detail beside it: the detail is what gives way. */}
+          {chip && <MetaChip raised={open} className="shrink-0 whitespace-nowrap">{chip}</MetaChip>}
         </span>
       </button>
       {open && (
         <div className="flex items-center gap-2 pt-2 pb-0.5 pl-6">
           <Button size="sm" onClick={() => act(actions.primary)}>{actions.primary}</Button>
-          <Button size="sm" variant="ghost" onClick={() => act(actions.secondary)}>{actions.secondary}</Button>
+          {actions.secondary && (
+            <Button size="sm" variant="ghost" onClick={() => act(actions.secondary!)}>{actions.secondary}</Button>
+          )}
           <IconButton label={`More for ${name}`} open={menuOpen} buttonRef={more} onClick={() => setMenuOpen(o => !o)}>
             <Ellipsis className="w-3 h-3" />
           </IconButton>
@@ -296,6 +314,16 @@ export function TeamRow({
       )}
     </div>
   );
+}, sameProps);
+
+/** The time now, moved on every `everyMs`: what a row's duration counts to. */
+function useNow(everyMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(id);
+  }, [everyMs]);
+  return now;
 }
 
 /** Folds kept per viewer, as a remembered convenience and nothing more. */
@@ -322,6 +350,8 @@ export interface TeamSectionProps {
   pending: Record<string, { queued: number; held: number; notSent: number }>;
   /** Per agent, when it last spoke in this room. */
   lastSpoke: Record<string, string>;
+  /** Per agent, when it joined, while it has not spoken since. */
+  joined?: Record<string, string>;
   /** Agents of the project that are not in the room: what + can add. */
   candidates: AgentStatus[];
   onAction: (action: RowActionId, agent: RoomAgent) => void;
@@ -337,6 +367,7 @@ export function TeamSection({
   agents,
   pending,
   lastSpoke,
+  joined,
   candidates,
   onAction,
   onAdd,
@@ -347,6 +378,14 @@ export function TeamSection({
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const [adding, setAdding] = useState(false);
   const plus = useRef<HTMLButtonElement>(null);
+  // Half a minute: a duration reads in minutes, and is never more than that behind.
+  const now = useNow(30_000);
+  const toggle = useCallback((id: string) => setOpenId(open => (open === id ? null : id)), []);
+  // The page's callback is new on each of its renders; the rows keep one that
+  // calls the current one, so a render of the page redraws no row by itself.
+  const action = useRef(onAction);
+  useLayoutEffect(() => { action.current = onAction; });
+  const act = useCallback((id: RowActionId, agent: RoomAgent) => action.current(id, agent), []);
 
   const running = agents.filter(a => !a.stopped && a.status === 'running').length;
   const waiting = agents.filter(a => !a.stopped && a.status === 'waiting').length;
@@ -398,12 +437,14 @@ export function TeamSection({
           key={agent.id}
           agent={agent}
           open={openId === agent.id}
-          onToggle={() => setOpenId(id => (id === agent.id ? null : agent.id))}
+          onToggle={toggle}
           queued={pending[agent.id]?.queued ?? 0}
           held={pending[agent.id]?.held ?? 0}
           notSent={pending[agent.id]?.notSent ?? 0}
           lastSpokeAt={lastSpoke[agent.id]}
-          onAction={onAction}
+          joinedAt={joined?.[agent.id]}
+          duration={agentDuration(agent, now)}
+          onAction={act}
         />
       )))}
     </>

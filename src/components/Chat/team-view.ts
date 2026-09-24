@@ -23,6 +23,8 @@ export function agentTone(agent: RoomAgent): StatusTone | 'none' {
   // An error is something Tars saw happen (an exit, a start that failed, a
   // turn the CLI said failed), so it keeps its colour on any CLI.
   if (agent.status === 'error') return 'error';
+  // Starting: its session is not up yet, so it is neither at work nor at rest.
+  if (agent.launching) return 'idle';
   // An agent whose CLI never reports a turn end has no state Tars can vouch
   // for, so it gets no colour rather than a green one that would claim work.
   if (!agent.hasEndOfTurn) return 'none';
@@ -41,6 +43,9 @@ export function shownStopped(agent: RoomAgent): boolean {
 
 export function agentStatusLabel(agent: RoomAgent): string {
   if (agent.status === 'error') return 'error';
+  // A launch on its way (a restart, a start from a window, a bot's cold start):
+  // the frame's `starting`, never `stopped` with start offered again.
+  if (agent.launching) return 'starting';
   if (!agent.hasEndOfTurn) return 'no turn signal';
   // Idle is an agent at rest between turns, still holding its session, so the
   // word is only replaced when there is no session to rest in.
@@ -53,7 +58,7 @@ export function agentStatusLabel(agent: RoomAgent): string {
  *  word carries the state; the mark says who it is. */
 export function statusInk(agent: RoomAgent): string {
   const tone = agentTone(agent);
-  if (tone === 'none' || shownStopped(agent)) return 'text-text-muted';
+  if (tone === 'none' || shownStopped(agent) || agent.launching) return 'text-text-muted';
   if (tone === 'running') return 'text-status-running';
   if (tone === 'waiting') return 'text-status-waiting';
   if (tone === 'error') return 'text-status-error';
@@ -66,12 +71,15 @@ export function statusInk(agent: RoomAgent): string {
  * Not `statusLine`: that is the last raw line its terminal printed, which for
  * an idle CLI is its shell prompt. A prompt is not a description of work.
  */
-export function agentDetail(agent: RoomAgent, lastSpokeAt?: string, held = 0): string {
+export function agentDetail(agent: RoomAgent, lastSpokeAt?: string, held = 0, joinedAt?: string): string {
   // Why it stopped before what it was asked, on any CLI: an agent whose turn
   // failed still has its task set, and the reason is the part worth reading.
   const reason = errorReason(agent);
   if (reason) return reason;
   if (agent.status === 'error') return agent.currentTask || 'stopped on an error';
+  // The frame's `joined at 09:52` for a member added and not yet up; a restart
+  // of one already here has no join to name.
+  if (agent.launching) return joinedAt ? `joined at ${joinedAt}` : 'starting its session';
   // What is in the way right now: its terminal holds messages behind a draft.
   if (held > 0) return 'a draft in its field';
   if (!agent.hasEndOfTurn) return 'turns not visible';
@@ -80,9 +88,11 @@ export function agentDetail(agent: RoomAgent, lastSpokeAt?: string, held = 0): s
   if (agent.status === 'running' && agent.currentTask) return agent.currentTask;
   switch (agent.status) {
     case 'running': return 'working';
-    // What it waits on (a permission prompt, a question) is not on the record
-    // yet; its task is not the answer to that, so it is not shown here.
-    case 'waiting': return 'waiting on you';
+    // What it waits on, when it is a dialog its CLI shows (#172's waitingOn);
+    // the idle prompt carries none.
+    case 'waiting': return agent.waitingOn
+      ? (agent.waitingOn.kind === 'permission' ? 'permission dialog' : 'a question for you')
+      : 'waiting on you';
     case 'completed': return lastSpokeAt ? `last spoke at ${lastSpokeAt}` : 'finished its turn';
     default: return lastSpokeAt ? `last spoke at ${lastSpokeAt}` : 'listening';
   }
@@ -104,6 +114,28 @@ export function shortModel(agent: Pick<AgentStatus, 'model' | 'sessionModel' | '
   return agent.localModel?.toLowerCase() || model || 'claude';
 }
 
+/** How long, short: `4m`, `2h`, `3d`. Under a minute reads as `1m`. */
+export function elapsed(iso: string | undefined, now: number = Date.now()): string {
+  if (!iso) return '';
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return '';
+  const minutes = Math.max(1, Math.floor((now - at) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
+
+/**
+ * How long an agent has been working, waiting or in error, from #172's
+ * `statusSince`: the frame's mono `4m` after the status word. Not for rest,
+ * a stop or a start, where how long is not the point.
+ */
+export function agentDuration(agent: RoomAgent, now?: number): string {
+  if (agent.launching || shownStopped(agent) || (!agent.hasEndOfTurn && agent.status !== 'error')) return '';
+  if (agent.status !== 'running' && agent.status !== 'waiting' && agent.status !== 'error') return '';
+  return elapsed(agent.statusSince, now);
+}
+
 /** HH:MM for today, the weekday for this week, the day and month before. */
 export function timeLabel(iso: string | undefined, now: Date = new Date()): string {
   if (!iso) return '';
@@ -115,6 +147,23 @@ export function timeLabel(iso: string | undefined, now: Date = new Date()): stri
   }
   if (days < 6) return at.toLocaleDateString([], { weekday: 'short' });
   return at.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+/**
+ * When each agent joined the room, for the ones that have not spoken since:
+ * a member added and still starting says so. From the room's own log, as
+ * `lastSpoke` is.
+ */
+export function joinedSilent(messages: BusMessage[]): Record<string, string> {
+  const at: Record<string, string> = {};
+  for (const m of messages) {
+    if (m.authorKind === 'agent') delete at[m.authorId];
+    else if (m.systemKind === 'members_changed') {
+      for (const id of m.systemData?.added ?? []) at[id] = m.createdAt;
+      for (const id of m.systemData?.removed ?? []) delete at[id];
+    }
+  }
+  return Object.fromEntries(Object.entries(at).map(([id, iso]) => [id, timeLabel(iso)]));
 }
 
 /** When each author last spoke in a room, as HH:MM, from the room's own log. */
@@ -166,8 +215,8 @@ export type RowActionId = 'open terminal' | 'start' | 'write' | 'send it' | 'sto
 export interface RowActions {
   /** The bordered button: what fits the agent's state. */
   primary: RowActionId;
-  /** The ghost button beside it. */
-  secondary: RowActionId;
+  /** The ghost button beside it, when there is one. */
+  secondary: RowActionId | null;
   /** Behind the three dots: what changes the fleet, never on the row itself. */
   menu: RowActionId[];
 }
@@ -180,6 +229,8 @@ export interface RowActions {
 export function rowActions(agent: RoomAgent, notSent: number): RowActions {
   const stopped = shownStopped(agent);
   const menu: RowActionId[] = [...(stopped ? [] : ['stop' as const]), 'remove from room'];
+  // Starting: the frame offers the terminal alone, and never start again.
+  if (agent.launching) return { primary: 'open terminal', secondary: null, menu };
   if (stopped) return { primary: 'start', secondary: 'write', menu };
   // Whatever it was refused for, a message not sent moves only when you send
   // it: an agent started again still holds what came while it was stopped.
@@ -200,7 +251,7 @@ export interface RowCount {
  * per-room figures for its deliveries, so there only waiting agents count.
  */
 export function roomCounts(
-  agents: Array<Pick<AgentStatus, 'status' | 'cliRunning'>>,
+  agents: Array<Pick<AgentStatus, 'status' | 'cliRunning' | 'launching'>>,
   open?: { queued: number; needYou: number },
   /** The bus's count of what is queued in the room, for a room you are not in. */
   queuedElsewhere = 0,
@@ -210,8 +261,11 @@ export function roomCounts(
   const needYou = open ? open.needYou : waiting;
   const errors = agents.filter(a => a.status === 'error').length;
   const running = agents.filter(a => a.status === 'running').length;
-  const stopped = agents.filter(a => a.cliRunning === false && a.status !== 'running' && a.status !== 'waiting' && a.status !== 'error').length;
-  const idle = agents.length - running - stopped - errors - waiting;
+  // A launch on its way is neither stopped nor idle, and the frame's line does
+  // not count it: its row says `starting`.
+  const starting = agents.filter(a => a.launching).length;
+  const stopped = agents.filter(a => !a.launching && a.cliRunning === false && a.status !== 'running' && a.status !== 'waiting' && a.status !== 'error').length;
+  const idle = agents.length - running - stopped - errors - waiting - starting;
   const counts: RowCount[] = [];
   if (errors) counts.push({ label: `${errors} error`, tone: 'error' });
   if (needYou) counts.push({ label: `${needYou} need${needYou === 1 ? 's' : ''} you`, tone: 'waiting' });
@@ -238,9 +292,9 @@ export interface NeedRow {
   agentId: string;
   tone: RowTone;
   text: string;
-  /** When it began, when the room knows: a refused delivery carries its time;
-   *  a waiting agent's does not yet (#159, contract 4). Worded like the room
-   *  list's times, so one older than today says its day. */
+  /** When it began: a refused delivery's time, or when a waiting agent began
+   *  to wait (#172's statusSince). Worded like the room list's times, so one
+   *  older than today says its day. */
   since?: string;
   action: NeedAction;
   actionLabel: string;
@@ -277,8 +331,25 @@ export function needsRows(
       continue;
     }
     if (!agent.stopped && agent.status === 'waiting') {
-      rows.push({ rank: 1, id: `${agent.id}:waiting`, agentId: agent.id, tone: 'waiting', text: `${name} is waiting on you.`, action: 'open terminal', actionLabel: 'open terminal' });
+      const on = agent.waitingOn;
+      rows.push({
+        rank: 1,
+        id: `${agent.id}:waiting`,
+        agentId: agent.id,
+        tone: 'waiting',
+        // The dialog itself, from #172's waitingOn, in the frame's words:
+        // `qa is waiting on a permission dialog: allow npx playwright test?`.
+        text: !on ? `${name} is waiting on you.`
+          : on.kind === 'permission' ? `${name} is waiting on a permission dialog: allow ${on.text}?`
+            : `${name} is waiting on a question: ${on.text}`,
+        since: timeLabel(agent.statusSince) || undefined,
+        action: 'open terminal',
+        actionLabel: 'open terminal',
+      });
     }
+    // Starting: what was refused while it was stopped waits for its session,
+    // and is offered once the session is up.
+    if (agent.launching) continue;
     // Its terminal took them and types them once the field is free: only the
     // person at that terminal can send or clear what is in it.
     const held = deliveries.filter(d => d.targetAgentId === agent.id && d.state === 'held');

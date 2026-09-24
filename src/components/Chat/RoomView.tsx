@@ -13,7 +13,7 @@ import type { ComposerFailure, ComposerTarget } from './RoomComposer';
 import { agentStatusLabel, agentTone, needsRows } from './team-view';
 import type { NeedAction } from './team-view';
 import { currentThread, fileSize, threadItems } from './bus-view';
-import type { ThreadItem } from './bus-view';
+import type { ThreadAgent, ThreadItem } from './bus-view';
 
 /**
  * One project's room: the log, what is still waiting under it, and the
@@ -50,7 +50,7 @@ export function RoomView({
   onStage?: (files: File[]) => Promise<{ success: boolean; attachments: BusAttachment[]; error?: string }>;
   /** Send now to one agent: its turn interrupted first when it is busy and
    *  Tars can interrupt it. */
-  onSendNow?: (agentId: string, text: string, attachments?: string[]) => Promise<{ success: boolean; interrupted: boolean; error?: string }>;
+  onSendNow?: (agentId: string, text: string, attachments?: string[]) => Promise<{ success: boolean; interrupted: boolean; messageId?: string; deliveries?: BusDelivery[]; error?: string }>;
   /** Starts agents the way the Dashboard's start does, and names the ones
    *  that did not start. */
   onStart?: (ids: string[]) => Promise<Array<{ id: string; error: string }>>;
@@ -73,6 +73,8 @@ export function RoomView({
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
   const [failure, setFailure] = useState<ComposerFailure | null>(null);
+  /** Who send now went to without interrupting, until the next word or pick. */
+  const [notInterrupted, setNotInterrupted] = useState<string | null>(null);
   /** Files staged for the message being written; an image keeps a local URL
    *  of the bytes it was picked with, for its tile. */
   const [staged, setStaged] = useState<Array<{ file: BusAttachment; preview?: string }>>([]);
@@ -84,9 +86,21 @@ export function RoomView({
 
 
   const thread = useMemo(() => currentThread(threads), [threads]);
+  // What the thread reads of the agents: their names, and what a queue for
+  // each waits on. Keyed on those alone, so a tick that moved nothing the
+  // thread shows builds no thread again (the Audit's early look at #165).
+  const who = JSON.stringify(agents.map(a => [a.id, a.name ?? null, waitsOn(a) ?? null]));
+  const threadAgents = useMemo<ThreadAgent[]>(
+    () => (JSON.parse(who) as Array<[string, string | null, ThreadAgent['waitsOn'] | null]>).map(([id, name, on]) => ({
+      id,
+      name: name ?? undefined,
+      ...(on ? { waitsOn: on } : {}),
+    })),
+    [who],
+  );
   const items = useMemo(
-    () => threadItems(messages, deliveries, agents, thread),
-    [messages, deliveries, agents, thread],
+    () => threadItems(messages, deliveries, threadAgents, thread),
+    [messages, deliveries, threadAgents, thread],
   );
   const needs = useMemo(() => needsRows(agents, deliveries), [agents, deliveries]);
   const messageCount = messages.length;
@@ -193,8 +207,14 @@ export function RoomView({
     setFailure(null);
     const r = await onSendNow(target.id, text, files);
     setSending(false);
-    if (r.success) { setDraft(''); clearStaged(); }
-    else setFailure({ kind: 'send', message: r.error ?? '' });
+    if (!r.success) { setFailure({ kind: 'send', message: r.error ?? '' }); return; }
+    setDraft('');
+    clearStaged();
+    // Sent, but the turn went on: the message is in its queue like any other,
+    // which the strip says rather than leaving it to look interrupted. A turn
+    // that ended first took it at once, and its receipt says so.
+    const row = r.deliveries?.find(d => d.messageId === r.messageId && d.targetAgentId === target.id);
+    if (!r.interrupted && row?.state === 'queued') setNotInterrupted(target.label);
   };
 
   const start = async (ids: string[]) => {
@@ -288,11 +308,12 @@ export function RoomView({
 
       <RoomComposer
         value={draft}
-        onChange={setDraft}
-        onSend={send}
+        onChange={v => { setDraft(v); setNotInterrupted(null); }}
+        onSend={() => { setNotInterrupted(null); void send(); }}
         targets={targets}
         targetId={targetId}
-        onTargetChange={setTargetId}
+        onTargetChange={id => { setTargetId(id); setNotInterrupted(null); }}
+        notInterrupted={notInterrupted}
         roomTitle={room.title}
         sending={sending}
         failure={failure}
@@ -335,6 +356,13 @@ export function RoomView({
       />
     </div>
   );
+}
+
+/** What a message queued for an agent waits on, when not the end of a turn:
+ *  a launch on its way, or a dialog only a person answers (#172). */
+function waitsOn(agent: RoomAgent): ThreadAgent['waitsOn'] {
+  if (agent.launching) return 'start';
+  return agent.status === 'waiting' && agent.waitingOn ? 'dialog' : undefined;
 }
 
 /** A file's kind in its tile, as the frame writes it: its extension. */
