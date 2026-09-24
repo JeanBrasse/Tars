@@ -6,6 +6,7 @@ import { DATA_DIR } from '../constants';
 import { BUILTIN_TEMPLATES } from '../constants/builtin-templates';
 import { isValidProvider } from '../providers';
 import { skillsProblem } from '../utils/skill-name';
+import { quoted } from '../utils/reveal';
 import type {
   AgentTemplate,
   AgentTemplateInput,
@@ -143,7 +144,7 @@ const MODEL_NAME = /^[a-zA-Z0-9._:/[\]-]+$/;
 function templateProblem(t: unknown, patch = false): string | undefined {
   if (!t || typeof t !== 'object' || Array.isArray(t)) return 'a template must be an object';
   const f = t as Record<string, unknown>;
-  const name = typeof f.displayName === 'string' ? JSON.stringify(f.displayName) : 'a template';
+  const name = typeof f.displayName === 'string' ? quoted(f.displayName) : 'a template';
   if (!patch || f.displayName !== undefined) {
     if (typeof f.displayName !== 'string' || !f.displayName.trim()) return 'a template has no name';
   }

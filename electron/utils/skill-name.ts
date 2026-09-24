@@ -1,3 +1,5 @@
+import { quoted } from './reveal';
+
 /**
  * What a skill is called: a folder name, `copywriting` or `vercel:nextjs`,
  * never a sentence (the same rule as the template import review,
@@ -20,7 +22,5 @@ export function skillsProblem(skills: unknown): string | undefined {
   if (!Array.isArray(skills)) return 'skills must be a list of skill names';
   const at = skills.findIndex(skill => !isSkillName(skill));
   if (at === -1) return undefined;
-  const bad: unknown = skills[at];
-  const shown = typeof bad === 'string' ? JSON.stringify(bad.length > 60 ? `${bad.slice(0, 60)}...` : bad) : String(bad);
-  return `${shown} is not a skill name`;
+  return `${quoted(skills[at])} is not a skill name`;
 }

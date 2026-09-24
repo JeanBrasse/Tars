@@ -14,9 +14,9 @@ import { reveal as revealInReview } from '../../../src/lib/template-review';
  * belongs to an emoji and one that does not, a Windows line end, or a tab.
  */
 const CORPUS = [
-  'plain', 'Helper‮gnp.exe', 'a​b‌c‍d⁠e', 'tag\u{E0041}\u{E007F}', 'bell\u0007 c1\u0085',
-  'line para ', 'fillㅤerᅟ', 'var️sel', '❤️ ok', '#️⃣', '👩‍💻 dev', 'x‍💻',
-  'win\r\nline', 'tab\there\nnewline', 'soft­hyphen', 'bom﻿', 'mongol᠎', '👍🏽‍🔥', '',
+  'plain', 'Helper\u202Egnp.exe', 'a\u200Bb\u200Cc\u200Dd\u2060e', 'tag\u{E0041}\u{E007F}', 'bell\u0007 c1\u0085',
+  'line\u2028para\u2029', 'fill\u3164er\u115F', 'var\uFE0Fsel', '❤\uFE0F ok', '#\uFE0F⃣', '👩\u200D💻 dev', 'x\u200D💻',
+  'win\r\nline', 'tab\there\nnewline', 'soft\u00ADhyphen', 'bom\uFEFF', 'mongol\u180E', '👍🏽\u200D🔥', '',
 ];
 
 describe('reveal, in main and in the review', () => {
