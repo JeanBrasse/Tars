@@ -235,6 +235,83 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     pty.resetTerminalInput(ptyProcess);
   });
 
+  // The Audit's gate of #174: refusing a permission ("No" or Esc) sends no hook,
+  // neither Stop nor idle_prompt, so the agent stayed waiting/permission with
+  // its screen back at the input, and everything held for it stayed held until
+  // Noah typed there himself. The transcript records the refusal:
+  // "[Request interrupted by user for tool use]".
+  async function permissionPosted(id: string): Promise<void> {
+    const { registerHooksRoutes } = await import('../../../electron/services/api-routes/hooks-routes');
+    const routes: Array<{ pattern: unknown; handler: (...a: unknown[]) => unknown }> = [];
+    const app = {
+      add(_m: string, pattern: unknown, handler: (...a: unknown[]) => unknown) { routes.push({ pattern, handler }); },
+      get(p: unknown, h: (...a: unknown[]) => unknown) { this.add('GET', p, h); },
+      post(p: unknown, h: (...a: unknown[]) => unknown) { this.add('POST', p, h); },
+      put(p: unknown, h: (...a: unknown[]) => unknown) { this.add('PUT', p, h); },
+      delete(p: unknown, h: (...a: unknown[]) => unknown) { this.add('DELETE', p, h); },
+    };
+    const ctx = { mainWindow: null, appSettings: {}, getAppSettings: () => ({}), handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(), agentStatusEmitter: new EventEmitter() };
+    registerHooksRoutes(app as never, ctx as never);
+    await routes.find(r => r.pattern === '/api/hooks/status')!.handler({ body: {
+      agent_id: id, session_id: `sess-${id}`, status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash',
+    }, params: {} }, vi.fn(), ctx);
+  }
+
+  function interruptRecorded(id: string, at: Date): void {
+    const dir = path.join(os.homedir(), '.claude', 'projects', '-tars');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, `sess-${id}.jsonl`), JSON.stringify({
+      type: 'user', timestamp: at.toISOString(),
+      message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] },
+    }) + '\n');
+  }
+
+  it('9. lets what it held go once the transcript records the dialog was refused, which sends no hook', async () => {
+    const alpha = terminalFor('alpha');
+    putAgent({ id: 'alpha', status: 'running' });
+    await permissionPosted('alpha');
+    expect(manager.agents.get('alpha')!.status).toBe('waiting');
+    await noahWrites('After the refusal.', ['alpha']);
+    await settle(1500);
+    expect(alpha.typed).not.toContain('After the refusal.');
+
+    await settle(20);
+    interruptRecorded('alpha', new Date());
+    await settle(2500);
+
+    expect(alpha.typed).toContain('After the refusal.');
+  });
+
+  it('9. keeps holding while no refusal is recorded, and does not take one from before the dialog', async () => {
+    const alpha = terminalFor('alpha');
+    putAgent({ id: 'alpha', status: 'running' });
+    interruptRecorded('alpha', new Date(Date.now() - 60_000));
+    await permissionPosted('alpha');
+    await noahWrites('Not before the answer.', ['alpha']);
+    await settle(3000);
+
+    expect(alpha.typed).not.toContain('Not before the answer.');
+  });
+
+  it('10. holds the Enter of a message pasted just before a dialog opened, and lets a person answer it', async () => {
+    const alpha = terminalFor('alpha');
+    putAgent({ id: 'alpha', status: 'running' });
+    const ptyProcess = pty.ptyProcesses.get('pty-alpha')!;
+
+    expect(pty.writeProgrammaticInput(ptyProcess, 'pasted before the dialog', true, { agentId: 'alpha', from: 'QA' })).toBe('written');
+    dialogOpens('alpha');
+    await settle(pty.PROGRAMMATIC_SUBMIT_DELAY_MS + 700);
+    expect(alpha.written, 'the Enter answered the dialog').not.toContain('\r');
+
+    pty.writeHumanInput(ptyProcess, '4');
+    expect(alpha.written.at(-1), 'the person could not answer the dialog').toBe('4');
+
+    answered('alpha');
+    await settle(2000);
+    expect(alpha.written).toContain('\r');
+    pty.resetTerminalInput(ptyProcess);
+  });
+
   it('7. still passes a person\'s keys, and a launch typed into a bare shell', () => {
     const alpha = terminalFor('alpha');
     putAgent({ id: 'alpha', status: 'idle' });
