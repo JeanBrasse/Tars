@@ -18,7 +18,7 @@ npm run dev        # http://localhost:3000
 - **Fonts.** Roboto Condensed, Roboto Mono and Instrument Serif are self-hosted through `next/font`, so the page makes no request to Google.
 - **The picture under the hero.** `src/assets/dashboard.png` is a capture of the real app: a sandbox Tars running four real Claude Code sessions on one project. The model's answers were scripted for the capture.
 - **`/api/download`** resolves the latest release of `JeanBrasse/Tars` at request time and redirects to its macOS dmg, or to the releases page.
-- **The download counter.** `/api/stats` and the counter under the hero read Upstash Redis when `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set. Each download is then logged with its time, platform and User-Agent. Without those variables nothing is stored, and the counter stays hidden.
+- **The download counter.** `/api/stats` and the counter under the hero read GitHub's own `download_count` for the `.dmg` of every release (`src/lib/downloads.ts`), cached an hour by the server. The zip and `latest-mac.yml` are left out: installed apps fetch them to update. Nothing about a download is stored, and the counter stays hidden when GitHub does not answer.
 - **Analytics.** `@vercel/analytics`, cookieless, active only once the site runs on Vercel.
 
 ## Deploy
