@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
 import { API_PORT, DATA_DIR, dataPath } from '../constants';
-import { readHermesConnection, writeHermesConnection } from '../services/hermes-config';
+import { configuredHermesConnection, readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import { resetLiveSession } from '../services/overseer';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
@@ -46,6 +46,19 @@ const HERMES_DESKTOP_CONFIG = path.join(
 
 const readConnection = readHermesConnection;
 const writeConnection = writeHermesConnection;
+
+/**
+ * A call to the gateway, with the connection a file names: never the default
+ * port for a file that is missing or broken (configuredHermesConnection), which
+ * on Noah's machine is the SSH tunnel to his Hermes. The Settings form still
+ * shows the default, to be saved (hermes:connection:get).
+ */
+async function viaGateway<T>(call: (conn: HermesConnection) => Promise<T>): Promise<T | { success: false; error: string }> {
+  const configured = configuredHermesConnection();
+  if (!configured) return { success: false, error: 'Hermes is not configured. Set it up in Settings.' };
+  if ('unusable' in configured) return { success: false, error: configured.unusable };
+  return call(configured.conn);
+}
 
 /** Hermes Desktop's config shape -> ours (same vocabulary, nested differently). */
 function importDesktopConfig(): HermesConnection | null {
@@ -276,55 +289,55 @@ export function registerHermesHandlers(): void {
   });
 
   // ── Crons (schedules live in Hermes) ──
-  ipcMain.handle('hermes:crons:list', async () => fetchHermesCrons(readConnection()));
+  ipcMain.handle('hermes:crons:list', async () => viaGateway(fetchHermesCrons));
 
   ipcMain.handle('hermes:crons:action', async (_event, params: { action: 'pause' | 'resume' | 'trigger'; jobId: string; profile?: string }) =>
-    hermesCronAction(readConnection(), params.action, params.jobId, params.profile));
+    viaGateway(conn => hermesCronAction(conn, params.action, params.jobId, params.profile)));
 
   // Editing a schedule. The page could only run/pause/delete before this
   // channel existed, so there was nothing behind an edit control to call.
   ipcMain.handle('hermes:crons:update', async (_event, params: { jobId: string; updates: Record<string, unknown>; profile?: string }) =>
-    updateHermesCron(readConnection(), params.jobId, params.updates ?? {}, params.profile));
+    viaGateway(conn => updateHermesCron(conn, params.jobId, params.updates ?? {}, params.profile)));
 
   ipcMain.handle('hermes:crons:delete', async (_event, params: { jobId: string; profile?: string }) =>
-    deleteHermesCron(readConnection(), params.jobId, params.profile));
+    viaGateway(conn => deleteHermesCron(conn, params.jobId, params.profile)));
 
   // ── Kanban (the board lives in Hermes; Tars is a client) ──
   ipcMain.handle('hermes:kanban:board', async (_event, params: { board?: string } = {}) => {
-    return fetchHermesBoard(readConnection(), params?.board);
+    return viaGateway(conn => fetchHermesBoard(conn, params?.board));
   });
 
   ipcMain.handle('hermes:kanban:createTask', async (_event, task: Record<string, unknown>) => {
-    return createHermesTask(readConnection(), task);
+    return viaGateway(conn => createHermesTask(conn, task));
   });
 
   ipcMain.handle('hermes:kanban:updateTask', async (_event, params: { taskId: string; patch: Record<string, unknown> }) => {
-    return updateHermesTask(readConnection(), params.taskId, params.patch);
+    return viaGateway(conn => updateHermesTask(conn, params.taskId, params.patch));
   });
 
   ipcMain.handle('hermes:kanban:getTask', async (_event, params: { taskId: string }) => {
-    return getHermesTask(readConnection(), params.taskId);
+    return viaGateway(conn => getHermesTask(conn, params.taskId));
   });
 
   ipcMain.handle('hermes:kanban:deleteTask', async (_event, params: { taskId: string }) => {
-    return deleteHermesTask(readConnection(), params.taskId);
+    return viaGateway(conn => deleteHermesTask(conn, params.taskId));
   });
 
   ipcMain.handle('hermes:kanban:addComment', async (_event, params: { taskId: string; body: string }) => {
-    return addHermesTaskComment(readConnection(), params.taskId, params.body);
+    return viaGateway(conn => addHermesTaskComment(conn, params.taskId, params.body));
   });
 
   // ── MCP servers the gateway itself has registered (gbrain, pencil, …) ──
   // Distinct from Tars' own mcp-* fleet: this asks the gateway what it knows,
   // so Settings > Memory Backends can offer a found URL instead of an empty
   // field, and can say plainly when that URL is the gateway's own loopback.
-  ipcMain.handle('hermes:mcp:servers', async () => fetchHermesMcpServers(readConnection()));
+  ipcMain.handle('hermes:mcp:servers', async () => viaGateway(fetchHermesMcpServers));
 
   // ── Gateway's own pluggable memory provider (holographic, mem0, …) ──
-  ipcMain.handle('hermes:memory:providers', async () => fetchHermesMemoryProviders(readConnection()));
+  ipcMain.handle('hermes:memory:providers', async () => viaGateway(fetchHermesMemoryProviders));
 
   ipcMain.handle('hermes:memory:setProvider', async (_event, params: { provider: string }) =>
-    setHermesMemoryProvider(readConnection(), params.provider));
+    viaGateway(conn => setHermesMemoryProvider(conn, params.provider)));
 
   /**
    * Test a gateway URL, including whether the session it would use works.

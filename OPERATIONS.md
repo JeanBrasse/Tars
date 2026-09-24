@@ -1313,9 +1313,16 @@ Tars instead.
 
 | mode | base URL |
 |---|---|
-| `local` | `http://127.0.0.1:<localPort>`, default port **9119** |
+| `local` | `http://127.0.0.1:<localPort>`, which the Settings form offers as **9119** |
 | `ssh` | `http://127.0.0.1:<ssh.localPort ?? ssh.remotePort ?? 9119>` |
 | `remote` / `cloud` | `conn.url`, trailing slashes stripped |
+
+Tars calls a gateway only when this file names one: it reads, parses to an object, and gives the
+address its mode needs (a `local` port, an `ssh` host, a `remote` or `cloud` URL). Without it, or
+with a broken one, the Chat, the memory hub, the Kanban, Schedules and memory-provider pages and
+the agents' kanban say Hermes is not configured. Nothing falls back to 127.0.0.1:9119, which on a
+machine with an SSH tunnel to a real gateway is that gateway. A local Hermes on 9119 is reached
+once its connection is saved in Settings, Hermes.
 
 Two auth flavours, advertised by the gateway on `GET /api/status`:
 
