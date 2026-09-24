@@ -6,7 +6,7 @@ import { useElectronAgents, useElectronFS } from '@/hooks/useElectron';
 import { Button, DialogShell, Dropdown, Input, Label } from '@/components/ui';
 import type { DropdownOption } from '@/components/ui';
 import { Toggle } from '@/components/Settings/Toggle';
-import { startsWithPromptByDefault, templateFacts } from '@/lib/template-review';
+import { reveal, startsWithPromptByDefault, templateFacts } from '@/lib/template-review';
 import { PromptBlock, TemplateFactRows } from './TemplateReview';
 
 interface InstantiateDialogProps {
@@ -27,7 +27,9 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
   const { projects, openFolderDialog } = useElectronFS();
 
   const [projectPath, setProjectPath] = useState<string | null>(null);
-  const [name, setName] = useState(template.displayName);
+  // Written out like everything else the template says: an agent's name is
+  // shown all over the app, and a direction override in it turns the text around.
+  const [name, setName] = useState(() => reveal(template.displayName).text);
   const [sendPrompt, setSendPrompt] = useState(() => startsWithPromptByDefault(template));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
         projectPath,
         skills: template.skills,
         character: template.character,
-        name: name.trim() || template.displayName,
+        name: name.trim() || facts.name,
         permissionMode: template.permissionMode,
         effort: template.effort,
         provider: template.provider,
@@ -119,7 +121,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
             value={name}
             onChange={e => setName(e.target.value)}
             maxLength={40}
-            placeholder={template.displayName}
+            placeholder={facts.name}
           />
         </div>
 
