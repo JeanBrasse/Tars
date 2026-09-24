@@ -126,6 +126,9 @@ export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSe
 
       <SettingsRow
         label="Bot token"
+        // The intent is the part a cut line would lose: without it the bot
+        // reads every message as empty. The frame gives it two lines.
+        wrap
         description="From the Developer Portal: your application, Bot, Reset Token. Turn on the Message Content intent on the same page, or the bot reads every message as empty."
         control={
           <PasswordInput
