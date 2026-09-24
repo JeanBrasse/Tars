@@ -10,7 +10,7 @@ import type { ConversationItem } from '@/components/Chat/ChatSidebar';
 import { RoomHead } from '@/components/Chat/RoomHead';
 import { RoomView } from '@/components/Chat/RoomView';
 import { currentThread } from '@/components/Chat/bus-view';
-import { lastSpoke, roomCounts, roomState, timeLabel } from '@/components/Chat/team-view';
+import { lastSpoke, needsRows, roomCounts, roomState, timeLabel } from '@/components/Chat/team-view';
 import type { RowActionId } from '@/components/Chat/team-view';
 import { useBusRoom, useBusRooms } from '@/hooks/useBus';
 import { useRoomAgents } from '@/hooks/useRoomAgents';
@@ -265,6 +265,8 @@ export default function ChatPage() {
     }
     return per;
   }, [bus.snapshot.deliveries]);
+  // What the open room's strip lists: its line in the list counts the same rows.
+  const needs = useMemo(() => needsRows(roomAgents, bus.snapshot.deliveries), [roomAgents, bus.snapshot.deliveries]);
   const spoke = useMemo(() => lastSpoke(bus.snapshot.messages), [bus.snapshot.messages]);
 
   const threadRef = useRef<HTMLDivElement>(null);
@@ -378,11 +380,13 @@ export default function ChatPage() {
       .map(room => {
         const members = new Set(room.memberIds);
         const agentsHere = fleetAgents.filter(a => members.has(a.id));
-        const openHere = room.id === roomId;
-        const waiting = openHere
-          ? Object.values(pending).reduce((sum, p) => ({ queued: sum.queued + p.queued, notSent: sum.notSent + p.notSent }), { queued: 0, notSent: 0 })
+        const open = room.id === roomId
+          ? {
+              queued: Object.values(pending).reduce((sum, p) => sum + p.queued, 0),
+              needYou: needs.filter(n => n.tone !== 'error').length,
+            }
           : undefined;
-        const { tone, counts } = roomCounts(agentsHere, waiting);
+        const { tone, counts } = roomCounts(agentsHere, open);
         const parts = (room.projectPath ?? '').split('/').filter(Boolean);
         return {
           id: room.id,
@@ -392,7 +396,7 @@ export default function ChatPage() {
           counts,
         };
       }),
-    [rooms, fleetAgents, roomId, pending],
+    [rooms, fleetAgents, roomId, pending, needs],
   );
 
   const openRoom = bus.snapshot.room;

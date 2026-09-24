@@ -1,6 +1,6 @@
 import type { StatusTone } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
-import type { AgentStatus, BusMessage, BusThread } from '@/types/electron';
+import type { AgentStatus, BusDelivery, BusMessage, BusThread } from '@/types/electron';
 import { errorReason } from '@/app/agents/constants';
 
 /**
@@ -20,13 +20,15 @@ export const AGENT_MESSAGES_BEFORE_PAUSE = 10;
 export type RowTone = StatusTone | 'hollow' | 'none';
 
 export function agentTone(agent: RoomAgent): StatusTone | 'none' {
+  // An error is something Tars saw happen (an exit, a start that failed, a
+  // turn the CLI said failed), so it keeps its colour on any CLI.
+  if (agent.status === 'error') return 'error';
   // An agent whose CLI never reports a turn end has no state Tars can vouch
   // for, so it gets no colour rather than a green one that would claim work.
   if (!agent.hasEndOfTurn) return 'none';
   switch (agent.status) {
     case 'running': return 'running';
     case 'waiting': return 'waiting';
-    case 'error': return 'error';
     default: return 'idle';
   }
 }
@@ -38,6 +40,7 @@ export function shownStopped(agent: RoomAgent): boolean {
 }
 
 export function agentStatusLabel(agent: RoomAgent): string {
+  if (agent.status === 'error') return 'error';
   if (!agent.hasEndOfTurn) return 'no turn signal';
   // Idle is an agent at rest between turns, still holding its session, so the
   // word is only replaced when there is no session to rest in.
@@ -64,11 +67,12 @@ export function statusInk(agent: RoomAgent): string {
  * an idle CLI is its shell prompt. A prompt is not a description of work.
  */
 export function agentDetail(agent: RoomAgent, lastSpokeAt?: string): string {
-  if (!agent.hasEndOfTurn) return 'turns not visible';
-  // Why it stopped before what it was asked: an agent whose turn failed still
-  // has its task set, and the reason is the part worth reading.
+  // Why it stopped before what it was asked, on any CLI: an agent whose turn
+  // failed still has its task set, and the reason is the part worth reading.
   const reason = errorReason(agent);
   if (reason) return reason;
+  if (agent.status === 'error') return agent.currentTask || 'stopped on an error';
+  if (!agent.hasEndOfTurn) return 'turns not visible';
   // Before the task, which a stopped agent can still carry: it is on nothing.
   if (shownStopped(agent)) return 'no live session';
   if (agent.status === 'running' && agent.currentTask) return agent.currentTask;
@@ -77,7 +81,6 @@ export function agentDetail(agent: RoomAgent, lastSpokeAt?: string): string {
     // What it waits on (a permission prompt, a question) is not on the record
     // yet; its task is not the answer to that, so it is not shown here.
     case 'waiting': return 'waiting on you';
-    case 'error': return agent.currentTask || 'stopped on an error';
     case 'completed': return lastSpokeAt ? `last spoke at ${lastSpokeAt}` : 'finished its turn';
     default: return lastSpokeAt ? `last spoke at ${lastSpokeAt}` : 'listening';
   }
@@ -176,7 +179,9 @@ export function rowActions(agent: RoomAgent, notSent: number): RowActions {
   const stopped = shownStopped(agent);
   const menu: RowActionId[] = [...(stopped ? [] : ['stop' as const]), 'remove from room'];
   if (stopped) return { primary: 'start', secondary: 'write', menu };
-  if (!agent.hasEndOfTurn && notSent > 0) return { primary: 'open terminal', secondary: 'send it', menu };
+  // Whatever it was refused for, a message not sent moves only when you send
+  // it: an agent started again still holds what came while it was stopped.
+  if (notSent > 0) return { primary: 'open terminal', secondary: 'send it', menu };
   return { primary: 'open terminal', secondary: 'write', menu };
 }
 
@@ -187,25 +192,27 @@ export interface RowCount {
 
 /**
  * A room's line in the list: who needs you, who works, who is stopped,
- * counted from the fleet the app already reads. Queued and held counts for a
- * room you are not in need the bus's per-room figures, so they are only given
- * for the open room.
+ * counted from the fleet the app already reads. In the open room, what needs
+ * you is what its strip lists, errors apart since the line counts those
+ * itself, so the two never disagree. A room you are not in needs the bus's
+ * per-room figures for its deliveries, so there only waiting agents count.
  */
 export function roomCounts(
   agents: Array<Pick<AgentStatus, 'status' | 'cliRunning'>>,
-  pending?: { queued: number; notSent: number },
+  open?: { queued: number; needYou: number },
 ): { tone: RowTone; counts: RowCount[] } {
   if (agents.length === 0) return { tone: 'none', counts: [{ label: 'no agents yet' }] };
-  const needYou = agents.filter(a => a.status === 'waiting').length + (pending?.notSent ?? 0);
+  const waiting = agents.filter(a => a.status === 'waiting').length;
+  const needYou = open ? open.needYou : waiting;
   const errors = agents.filter(a => a.status === 'error').length;
   const running = agents.filter(a => a.status === 'running').length;
   const stopped = agents.filter(a => a.cliRunning === false && a.status !== 'running' && a.status !== 'waiting' && a.status !== 'error').length;
-  const idle = agents.length - running - stopped - errors - agents.filter(a => a.status === 'waiting').length;
+  const idle = agents.length - running - stopped - errors - waiting;
   const counts: RowCount[] = [];
   if (errors) counts.push({ label: `${errors} error`, tone: 'error' });
   if (needYou) counts.push({ label: `${needYou} need${needYou === 1 ? 's' : ''} you`, tone: 'waiting' });
   if (running) counts.push({ label: `${running} running` });
-  if (pending?.queued) counts.push({ label: `${pending.queued} queued` });
+  if (open?.queued) counts.push({ label: `${open.queued} queued` });
   if (!running && idle > 0) counts.push({ label: `${idle} idle` });
   if (stopped) counts.push({ label: `${stopped} stopped` });
   // Three at most, in the order a reader acts on: a fourth truncated every
@@ -242,13 +249,13 @@ const hhmm = (iso: string | undefined): string | undefined => {
 /**
  * What in this room needs you, one row per thing only you can do, most urgent
  * first: a turn that failed, an agent waiting on you, messages to a stopped
- * agent, messages to a CLI that cannot say when its turn ends. Frame: the
- * needs-you strip of `Chat · A · Room · *` and the sheet `Chat · A · Thread
- * rows · states` > `NEEDS YOU`.
+ * agent, then messages a live agent holds unsent. Frame: the needs-you strip
+ * of `Chat · A · Room · *` and the sheet `Chat · A · Thread rows · states` >
+ * `NEEDS YOU`.
  */
 export function needsRows(
   agents: RoomAgent[],
-  deliveries: Array<{ targetAgentId: string; state: string; queuedAt: string; refusedAt?: string }>,
+  deliveries: Array<Pick<BusDelivery, 'targetAgentId' | 'state' | 'reasonCode' | 'queuedAt' | 'refusedAt'>>,
 ): NeedRow[] {
   const rows: Array<NeedRow & { rank: number }> = [];
   for (const agent of agents) {
@@ -285,18 +292,24 @@ export function needsRows(
         // The slot is 96 wide: a long name would push the button out of it.
         actionLabel: name.length <= 8 ? `start ${name}` : 'start',
       });
-    } else if (!agent.hasEndOfTurn) {
-      rows.push({
-        rank: 3,
-        id: `${agent.id}:not-sent`,
-        agentId: agent.id,
-        tone: 'none',
-        text: `${name} cannot tell Tars when its turn ends, so ${n === 1 ? 'one message waits for you to send it' : `${n} messages wait for you to send them`}.`,
-        since: hhmm(oldest),
-        action: 'send it',
-        actionLabel: 'send it',
-      });
+      continue;
     }
+    // Live, and still holding what it was refused: `not_sent` moves only when
+    // you send it, so an agent started again keeps what came while it was
+    // stopped. The words follow the bus's reason, not the agent's CLI.
+    const noSession = notSent.every(d => d.reasonCode === 'no_live_session');
+    rows.push({
+      rank: 3,
+      id: `${agent.id}:not-sent`,
+      agentId: agent.id,
+      tone: 'none',
+      text: noSession
+        ? `${name} had no live session when ${n === 1 ? 'one message was' : `${n} messages were`} written to it, so ${n === 1 ? 'it waits for you to send it' : 'they wait for you to send them'}.`
+        : `${name} cannot tell Tars when its turn ends, so ${n === 1 ? 'one message waits for you to send it' : `${n} messages wait for you to send them`}.`,
+      since: hhmm(oldest),
+      action: 'send it',
+      actionLabel: 'send it',
+    });
   }
   rows.sort((a, b) => a.rank - b.rank);
   return rows.map(row => {
