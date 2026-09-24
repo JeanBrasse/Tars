@@ -151,9 +151,11 @@ describe('the wiring holds', () => {
     // Four call sites build the interactive command, and the failure mode for
     // this feature is a fifth one being added without it: everything keeps
     // working, and that agent quietly stops resuming.
+    // bot-core.ts holds the two builders the chat bots share since D1 (Slack
+    // asks them not to resume; the D1 contract pins that per bot).
     const callers = [
       'electron/handlers/ipc-handlers.ts',
-      'electron/services/telegram-bot.ts',
+      'electron/services/bot-core.ts',
       'electron/services/api-routes/agent-routes.ts',
     ];
     // Counted as calls rather than as one spelling of the argument: agent:start

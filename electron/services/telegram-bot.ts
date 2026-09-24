@@ -1,6 +1,5 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as https from 'https';
 import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
@@ -8,25 +7,22 @@ import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
 import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR, dataPath } from '../constants';
 import { redactSecrets } from '../utils/redact-secrets';
-import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
-import { getProvider } from '../providers';
-import { writeProgrammaticInput } from '../core/pty-manager';
-import { cliRunningIn, shellReady } from '../core/agent-pty';
-import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
-import { consumeResumeSessionId } from '../utils/resume-session';
-import { noteLaunch, launchSettings } from '../core/agent-restart';
-import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
+import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
+import {
+  findAgent, forwardToOrchestrator, projectsReport, startWithTask, statusReport, stopNow,
+  type BotFleet, type StatusGroup,
+} from './bot-core';
+
+/**
+ * The Telegram side of the chat bots: Telegram's commands, words and files,
+ * over the flows every bot shares (bot-core.ts).
+ */
 
 // ============== Telegram Bot State ==============
 let telegramBot: TelegramBot | null = null;
-let superAgentTelegramTask = false;
-let superAgentOutputBuffer: string[] = [];
 let botUsername: string | null = null; // Cached bot username for mention detection
 let currentResponseChatId: string | null = null; // Track which chat to respond to
 
-// References to external state (will be injected)
-let agents: Map<string, AgentStatus>;
-let ptyProcesses: Map<string, pty.IPty>;
 /**
  * The settings as they are now. A getter, not the object the bot was started
  * with: app:saveSettings replaces main's object on every save, and the bot kept
@@ -54,13 +50,10 @@ interface ClaudeStats {
   firstSessionDate?: string;
 }
 
+let fleet: BotFleet;
 let mainWindow: BrowserWindow | null;
-
-// References to external functions (will be injected)
 let getSuperAgent: () => AgentStatus | undefined;
-let saveAgents: () => void;
 let getClaudeStats: () => Promise<ClaudeStats | null>;
-let initAgentPty: (agent: AgentStatus) => Promise<string>;
 let saveAppSettings: (settings: AppSettings) => void;
 
 /**
@@ -77,14 +70,11 @@ export function initTelegramBotService(
   initAgentPtyFn: (agent: AgentStatus) => Promise<string>,
   saveAppSettingsFn: (settings: AppSettings) => void
 ) {
-  agents = agentsMap;
-  ptyProcesses = ptyMap;
+  fleet = { agents: agentsMap, ptyProcesses: ptyMap, settings, saveAgents: saveAgentsFn, initAgentPty: initAgentPtyFn };
   getSettings = settings;
   mainWindow = window;
   getSuperAgent = getSuperAgentFn;
-  saveAgents = saveAgentsFn;
   getClaudeStats = getClaudeStatsFn;
-  initAgentPty = initAgentPtyFn;
   saveAppSettings = saveAppSettingsFn;
 }
 
@@ -171,10 +161,7 @@ function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | '
  * Extract meaningful response from Super Agent output and send to Telegram
  */
 export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
-  // Use the captured output buffer if available, otherwise use agent output
-  const rawOutput = superAgentOutputBuffer.length > 0
-    ? superAgentOutputBuffer.join('')
-    : agent.output.slice(-100).join('');
+  const rawOutput = agent.output.slice(-100).join('');
 
   // Remove ANSI escape codes, then take the secrets out.
   //
@@ -193,29 +180,17 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
 
   const lines = cleanOutput.split('\n');
 
-  // Find the actual response content - it usually comes after tool results
-  // Look for text that's NOT:
-  // - Tool use indicators (MCP, ⎿, ●, ⏺)
-  // - System messages (---, ctrl+, claude-mgr)
-  // - Empty lines at the edges
-
+  // The response usually comes after the tool results: collect the lines that
+  // follow one, leaving out the TUI's own (tool markers, rules, prompts, boxes).
   const responseLines: string[] = [];
   let foundToolResult = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (const line of lines) {
     const trimmed = line.trim();
-
-    // Skip empty
     if (!trimmed) continue;
-
-    // Track when we've seen tool results
     if (trimmed.includes('⎿') || trimmed.includes('(MCP)')) {
       foundToolResult = true;
       continue;
     }
-
-    // Skip system indicators
     if (trimmed.startsWith('●') || trimmed.startsWith('⏺') ||
         trimmed.includes('ctrl+') || trimmed.startsWith('---') ||
         trimmed.startsWith('>') || trimmed.startsWith('$') ||
@@ -223,28 +198,19 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
         trimmed.includes('│') && trimmed.length < 5) {
       continue;
     }
-
-    // After tool results, collect the response text
-    if (foundToolResult && trimmed.length > 3) {
-      responseLines.push(trimmed);
-    }
+    if (foundToolResult && trimmed.length > 3) responseLines.push(trimmed);
   }
 
-  // If we found response lines, send them
   if (responseLines.length > 0) {
-    // Get the most relevant parts (last portion, likely the summary)
-    const response = responseLines.slice(-40).join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-
+    // The last portion, likely the summary.
+    const response = responseLines.slice(-40).join('\n').replace(/\n{3,}/g, '\n\n').trim();
     if (response.length > 10) {
       sendTelegramMessage(`👑 ${response}`);
-      superAgentOutputBuffer = [];
       return;
     }
   }
 
-  // Fallback: just send the last meaningful text we can find
+  // Fallback: the last meaningful lines we can find
   const fallbackLines = lines
     .map(l => l.trim())
     .filter(l => l.length > 10 &&
@@ -260,8 +226,6 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
   } else {
     sendTelegramMessage(`✅ Super Agent completed the task.`);
   }
-
-  superAgentOutputBuffer = [];
 }
 
 /**
@@ -355,15 +319,6 @@ function sendUnauthorizedMessage(chatId: string | number) {
 }
 
 /**
- * Ensure telegram downloads directory exists
- */
-function ensureDownloadsDir(): void {
-  if (!fs.existsSync(TELEGRAM_DOWNLOADS_DIR)) {
-    fs.mkdirSync(TELEGRAM_DOWNLOADS_DIR, { recursive: true });
-  }
-}
-
-/**
  * Download a file from Telegram servers
  */
 async function downloadTelegramFile(fileId: string, fileName: string): Promise<string> {
@@ -371,7 +326,9 @@ async function downloadTelegramFile(fileId: string, fileName: string): Promise<s
     throw new Error('Telegram bot not initialized');
   }
 
-  ensureDownloadsDir();
+  if (!fs.existsSync(TELEGRAM_DOWNLOADS_DIR)) {
+    fs.mkdirSync(TELEGRAM_DOWNLOADS_DIR, { recursive: true });
+  }
 
   // Get file info from Telegram
   const file = await telegramBot.getFile(fileId);
@@ -445,6 +402,296 @@ function getFileTypeDescription(mimeType?: string, fileName?: string): string {
   }
   return 'file';
 }
+
+// ============== Telegram's words ==============
+//
+// Every send gets an options object of its own: the SDK writes chat_id and
+// text into the one it is given, so a shared one would carry the last send's.
+
+const DOTS: Record<StatusGroup, string> = { running: '🟢', waiting: '🟡', error: '🔴', idle: '⚪' };
+const face = (a: AgentStatus) => TG_CHARACTER_FACES[a.character || ''] || '🤖';
+const faceOrCrown = (a: AgentStatus) => isSuperAgent(a) ? '👑' : face(a);
+
+const WELCOME =
+  `👑 *Tars Bot Connected!*\n\n` +
+  `I'll help you manage your agents remotely.\n\n` +
+  `*Commands:*\n` +
+  `/status - Show all agents status\n` +
+  `/agents - List agents with details\n` +
+  `/projects - List all projects\n` +
+  `/start\\_agent <name> <task> - Start an agent\n` +
+  `/stop\\_agent <name> - Stop an agent\n` +
+  `/ask <message> - Send to Super Agent\n` +
+  `/usage - Show usage & cost stats\n` +
+  `/help - Show this help message\n\n` +
+  `Or just type a message to talk to the Super Agent!`;
+
+const HELP =
+  `📖 *Available Commands*\n\n` +
+  `/status - Quick overview of all agents\n` +
+  `/agents - Detailed list of all agents\n` +
+  `/projects - List all projects with their agents\n` +
+  `/start\\_agent <name> <task> - Start an agent with a task\n` +
+  `/stop\\_agent <name> - Stop a running agent\n` +
+  `/ask <message> - Send a message to Super Agent\n` +
+  `/usage - Show usage & cost stats\n` +
+  `/help - Show this help message\n\n` +
+  `💡 *Tips:*\n` +
+  `• Just type a message to talk directly to Super Agent\n` +
+  `• Super Agent can manage other agents for you\n` +
+  `• Use /status to monitor progress`;
+
+/** One line of /status: the agent, its project and skills, and its task while it runs. */
+function statusLine(a: AgentStatus): string {
+  const isSuper = isSuperAgent(a);
+  const skills = a.skills.length > 0 ? a.skills.slice(0, 2).join(', ') + (a.skills.length > 2 ? '...' : '') : '';
+  let line = `  ${faceOrCrown(a)} *${a.name}*\n`;
+  // Don't show project for Super Agent
+  if (!isSuper) {
+    const project = a.projectPath.split('/').pop() || 'Unknown';
+    line += `      📁 \`${project}\``;
+    if (skills) line += ` | 🛠 ${skills}`;
+  } else if (skills) {
+    line += `      🛠 ${skills}`;
+  }
+  if (a.currentTask && a.status === 'running') {
+    line += `\n      💬 _${a.currentTask.slice(0, 40)}${a.currentTask.length > 40 ? '...' : ''}_`;
+  }
+  return line + '\n';
+}
+
+// ============== /usage, with Telegram's own price table ==============
+
+// Token pricing per million tokens (MTok) - same as frontend
+const MODEL_PRICING: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitsPerMTok: number; cache5mWritePerMTok: number }> = {
+  'claude-opus-4-5-20251101': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
+  'claude-opus-4-5': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
+  'claude-opus-4-1-20250501': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-opus-4-1': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-opus-4-20250514': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-opus-4': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-sonnet-4-5-20251022': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-sonnet-4-20250514': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-sonnet-4': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-3-7-sonnet-20250219': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-haiku-4-5-20251022': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
+  'claude-haiku-4-5': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
+  'claude-3-5-haiku-20241022': { inputPerMTok: 0.80, outputPerMTok: 4, cacheHitsPerMTok: 0.08, cache5mWritePerMTok: 1 },
+};
+
+/** A model's family, as the price table and the report name it, from any spelling of its id. */
+const FAMILIES: Array<[RegExp, string, string]> = [
+  [/opus-4-5|opus-4\.5/, 'claude-opus-4-5', 'Opus 4.5'],
+  [/opus-4-1|opus-4\.1/, 'claude-opus-4-1', 'Opus 4.1'],
+  [/opus-4|opus4/, 'claude-opus-4', 'Opus 4'],
+  [/sonnet-4-5|sonnet-4\.5/, 'claude-sonnet-4-5', 'Sonnet 4.5'],
+  [/sonnet-4|sonnet4/, 'claude-sonnet-4', 'Sonnet 4'],
+  [/sonnet-3|sonnet3/, 'claude-3-7-sonnet-20250219', 'Sonnet 3.7'],
+  [/haiku-4-5|haiku-4\.5/, 'claude-haiku-4-5', 'Haiku 4.5'],
+  [/haiku-3-5|haiku-3\.5/, 'claude-3-5-haiku-20241022', 'Haiku 3.5'],
+];
+const familyOf = (modelId: string) => FAMILIES.find(([pattern]) => pattern.test(modelId.toLowerCase()));
+
+function modelCost(modelId: string, input: number, output: number, cacheRead: number, cacheWrite: number): number {
+  const pricing = MODEL_PRICING[modelId] ?? MODEL_PRICING[familyOf(modelId)?.[1] ?? 'claude-sonnet-4'];
+  return (input / 1_000_000) * pricing.inputPerMTok +
+         (output / 1_000_000) * pricing.outputPerMTok +
+         (cacheRead / 1_000_000) * pricing.cacheHitsPerMTok +
+         (cacheWrite / 1_000_000) * pricing.cache5mWritePerMTok;
+}
+
+function usageReport(stats: ClaudeStats): string {
+  let totalCost = 0;
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCacheRead = 0;
+  const modelBreakdown: Array<{ name: string; cost: number }> = [];
+  Object.entries(stats.modelUsage ?? {}).forEach(([modelId, usage]) => {
+    const input = usage.inputTokens || 0;
+    const output = usage.outputTokens || 0;
+    const cacheRead = usage.cacheReadInputTokens || 0;
+    const cacheWrite = usage.cacheCreationInputTokens || 0;
+    totalInput += input;
+    totalOutput += output;
+    totalCacheRead += cacheRead;
+    const cost = modelCost(modelId, input, output, cacheRead, cacheWrite);
+    totalCost += cost;
+    modelBreakdown.push({ name: familyOf(modelId)?.[2] ?? modelId.split('-').slice(0, 3).join(' '), cost });
+  });
+  modelBreakdown.sort((a, b) => b.cost - a.cost);
+
+  let text = `📊 *Usage & Cost Summary*\n\n`;
+  text += `💰 *Total Cost:* $${totalCost.toFixed(2)}\n`;
+  text += `🔢 *Total Tokens:* ${((totalInput + totalOutput) / 1_000_000).toFixed(2)}M\n`;
+  text += `📥 Input: ${(totalInput / 1_000_000).toFixed(2)}M\n`;
+  text += `📤 Output: ${(totalOutput / 1_000_000).toFixed(2)}M\n`;
+  text += `💾 Cache: ${(totalCacheRead / 1_000_000).toFixed(2)}M read\n\n`;
+  if (modelBreakdown.length > 0) {
+    text += `*By Model:*\n`;
+    modelBreakdown.slice(0, 5).forEach(m => {
+      const emoji = m.name.includes('Opus') ? '🟣' : m.name.includes('Sonnet') ? '🔵' : '🟢';
+      text += `${emoji} ${m.name}: $${m.cost.toFixed(2)}\n`;
+    });
+  }
+  if (stats.totalSessions || stats.totalMessages) {
+    text += `\n*Activity:*\n`;
+    if (stats.totalSessions) text += `📝 ${stats.totalSessions} sessions\n`;
+    if (stats.totalMessages) text += `💬 ${stats.totalMessages} messages\n`;
+  }
+  if (stats.firstSessionDate) {
+    text += `\n_Since ${new Date(stats.firstSessionDate).toLocaleDateString()}_`;
+  }
+  return text;
+}
+
+// ============== The commands ==============
+
+type Command = (msg: TelegramBot.Message, match: RegExpExecArray | null, chatId: string) => unknown;
+
+async function startAgentCommand(msg: TelegramBot.Message, match: RegExpExecArray | null): Promise<void> {
+  if (!match) return;
+  const input = match[1].trim();
+  const firstSpaceIndex = input.indexOf(' ');
+  if (firstSpaceIndex === -1) {
+    telegramBot?.sendMessage(msg.chat.id, '⚠️ Usage: /start\\_agent <agent name> <task>', { parse_mode: 'Markdown' });
+    return;
+  }
+  const agentName = input.substring(0, firstSpaceIndex).toLowerCase();
+  const task = input.substring(firstSpaceIndex + 1).trim();
+  const agent = findAgent(fleet.agents, agentName);
+  if (!agent) {
+    telegramBot?.sendMessage(msg.chat.id, `❌ Agent "${agentName}" not found.`);
+    return;
+  }
+  if (agent.status === 'running') {
+    telegramBot?.sendMessage(msg.chat.id, `⚠️ ${agent.name} is already running.`);
+    return;
+  }
+  try {
+    await startWithTask(fleet, agent, task, 'Telegram', {
+      resume: true,
+      reply: outcome => {
+        if (outcome === 'no-terminal') telegramBot?.sendMessage(msg.chat.id, '❌ Failed to initialize agent terminal.');
+        else if (outcome === 'refused') telegramBot?.sendMessage(msg.chat.id, `❌ ${agent.name} has too many messages waiting for its terminal.`);
+        else if (outcome === 'held') telegramBot?.sendMessage(msg.chat.id, `⏳ ${agent.name}'s session is open but its field is in use: the task goes in once it is free.\n\nTask: ${task}`);
+        else if (outcome === 'written') telegramBot?.sendMessage(msg.chat.id, `📨 Sent to ${agent.name}, whose session is open.\n\nTask: ${task}`);
+        else telegramBot?.sendMessage(msg.chat.id, `🚀 Started *${agent.name}*\n\n${faceOrCrown(agent)} Task: ${task}`, { parse_mode: 'Markdown' });
+      },
+    });
+  } catch (err) {
+    console.error('Failed to start agent from Telegram:', err);
+    telegramBot?.sendMessage(msg.chat.id, `❌ Failed to start agent: ${err}`);
+  }
+}
+
+function stopAgentCommand(msg: TelegramBot.Message, match: RegExpExecArray | null): void {
+  if (!match) return;
+  const agentName = match[1].trim().toLowerCase();
+  const agent = findAgent(fleet.agents, agentName);
+  if (!agent) {
+    telegramBot?.sendMessage(msg.chat.id, `❌ Agent "${agentName}" not found.`);
+    return;
+  }
+  if (agent.status !== 'running' && agent.status !== 'waiting') {
+    telegramBot?.sendMessage(msg.chat.id, `⚠️ ${agent.name} is not running.`);
+    return;
+  }
+  stopNow(fleet, agent);
+  telegramBot?.sendMessage(msg.chat.id, `🛑 Stopped *${agent.name}*`, { parse_mode: 'Markdown' });
+}
+
+async function usageCommand(msg: TelegramBot.Message): Promise<void> {
+  try {
+    const stats = await getClaudeStats();
+    if (!stats) {
+      telegramBot?.sendMessage(msg.chat.id, '📊 No usage data available yet.');
+      return;
+    }
+    telegramBot?.sendMessage(msg.chat.id, usageReport(stats), { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error('Error getting usage stats:', err);
+    telegramBot?.sendMessage(msg.chat.id, `❌ Error fetching usage data: ${err}`);
+  }
+}
+
+/** Every command but /auth, in the order they are registered: several can match one message, and all do. */
+const COMMANDS: Array<[RegExp, Command]> = [
+  [/\/start$/, (_msg, _match, chatId) => telegramBot?.sendMessage(chatId, WELCOME, { parse_mode: 'Markdown' })],
+  [/\/help/, msg => telegramBot?.sendMessage(msg.chat.id, HELP, { parse_mode: 'Markdown' })],
+  [/\/projects/, msg => {
+    const text = projectsReport(fleet.agents, { title: `📂 *Projects*\n\n`, folder: '📁', indent: '   ', people: '👥', face, dot: DOTS });
+    if (!text) telegramBot?.sendMessage(msg.chat.id, '📭 No projects with agents yet.');
+    else telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
+  }],
+  [/\/status/, msg => {
+    const list = Array.from(fleet.agents.values());
+    if (list.length === 0) telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
+    else telegramBot?.sendMessage(msg.chat.id, statusReport(list, { title: `📊 *Agents Status*\n\n`, dot: DOTS, item: statusLine, orchestratorFirst: true }), { parse_mode: 'Markdown' });
+  }],
+  [/\/agents/, msg => {
+    const list = Array.from(fleet.agents.values());
+    if (list.length === 0) telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
+    else telegramBot?.sendMessage(msg.chat.id, `🤖 *All Agents*\n\n` + list.map(a => formatAgentStatus(a) + '\n\n').join(''), { parse_mode: 'Markdown' });
+  }],
+  [/\/start_agent\s+(.+)/, startAgentCommand],
+  [/\/stop_agent\s+(.+)/, stopAgentCommand],
+  [/\/usage/, usageCommand],
+  [/\/ask\s+(.+)/, async (_msg, match, chatId) => {
+    if (!match) return;
+    await sendToSuperAgent(chatId, match[1].trim());
+  }],
+];
+
+/** The files Telegram sends, each downloaded and handed to the orchestrator with what it is. */
+const FILES: Array<{
+  event: 'photo' | 'document' | 'video' | 'audio';
+  file: (msg: TelegramBot.Message) => { id: string; name: string; downloading: string; kind: string } | undefined;
+  missing: string;
+  failure: string;
+}> = [
+  {
+    event: 'photo',
+    file: msg => {
+      const photo = msg.photo?.[msg.photo.length - 1];
+      const name = `photo_${msg.message_id}.jpg`;
+      return photo && { id: photo.file_id, name, downloading: '📥 Downloading image...', kind: getFileTypeDescription(undefined, name) };
+    },
+    missing: 'Please analyze or use this image as needed.',
+    failure: 'image',
+  },
+  {
+    event: 'document',
+    file: msg => {
+      const doc = msg.document;
+      if (!doc) return undefined;
+      const name = doc.file_name || `document_${msg.message_id}`;
+      return { id: doc.file_id, name, downloading: `📥 Downloading ${doc.file_name || 'document'}...`, kind: `${getFileTypeDescription(doc.mime_type, name)} "${name}"` };
+    },
+    missing: 'Please analyze or use this file as needed.',
+    failure: 'document',
+  },
+  {
+    event: 'video',
+    file: msg => {
+      const video = msg.video;
+      const name = (video as { file_name?: string } | undefined)?.file_name || `video_${msg.message_id}.mp4`;
+      return video && { id: video.file_id, name, downloading: '📥 Downloading video...', kind: `video "${name}"` };
+    },
+    missing: 'A video file has been downloaded for reference.',
+    failure: 'video',
+  },
+  {
+    event: 'audio',
+    file: msg => {
+      const audio = msg.audio;
+      const name = (audio as { file_name?: string } | undefined)?.file_name || `audio_${msg.message_id}.mp3`;
+      return audio && { id: audio.file_id, name, downloading: '📥 Downloading audio...', kind: `audio "${name}"` };
+    },
+    missing: 'An audio file has been downloaded for reference.',
+    failure: 'audio',
+  },
+];
 
 /**
  * Initialize Telegram bot and set up handlers
@@ -530,668 +777,40 @@ export function initTelegramBot() {
       }
     });
 
-    // Handle /start command
-    telegramBot.onText(/\/start$/, (msg) => {
-      const chatId = msg.chat.id.toString();
-
-      // Check authorization
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      telegramBot?.sendMessage(chatId,
-        `👑 *Tars Bot Connected!*\n\n` +
-        `I'll help you manage your agents remotely.\n\n` +
-        `*Commands:*\n` +
-        `/status - Show all agents status\n` +
-        `/agents - List agents with details\n` +
-        `/projects - List all projects\n` +
-        `/start\\_agent <name> <task> - Start an agent\n` +
-        `/stop\\_agent <name> - Stop an agent\n` +
-        `/ask <message> - Send to Super Agent\n` +
-        `/usage - Show usage & cost stats\n` +
-        `/help - Show this help message\n\n` +
-        `Or just type a message to talk to the Super Agent!`,
-        { parse_mode: 'Markdown' }
-      );
-    });
-
-    // Handle /help command
-    telegramBot.onText(/\/help/, (msg) => {
-      const chatId = msg.chat.id.toString();
-
-      // Check authorization
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      telegramBot?.sendMessage(msg.chat.id,
-        `📖 *Available Commands*\n\n` +
-        `/status - Quick overview of all agents\n` +
-        `/agents - Detailed list of all agents\n` +
-        `/projects - List all projects with their agents\n` +
-        `/start\\_agent <name> <task> - Start an agent with a task\n` +
-        `/stop\\_agent <name> - Stop a running agent\n` +
-        `/ask <message> - Send a message to Super Agent\n` +
-        `/usage - Show usage & cost stats\n` +
-        `/help - Show this help message\n\n` +
-        `💡 *Tips:*\n` +
-        `• Just type a message to talk directly to Super Agent\n` +
-        `• Super Agent can manage other agents for you\n` +
-        `• Use /status to monitor progress`,
-        { parse_mode: 'Markdown' }
-      );
-    });
-
-    // Handle /projects command
-    telegramBot.onText(/\/projects/, (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      const agentList = Array.from(agents.values()).filter(a => !isSuperAgent(a));
-
-      if (agentList.length === 0) {
-        telegramBot?.sendMessage(msg.chat.id, '📭 No projects with agents yet.');
-        return;
-      }
-
-      // Group agents by project path
-      const projectsMap = new Map<string, AgentStatus[]>();
-      agentList.forEach(agent => {
-        const path = agent.projectPath;
-        if (!projectsMap.has(path)) {
-          projectsMap.set(path, []);
-        }
-        projectsMap.get(path)!.push(agent);
-      });
-
-      let text = `📂 *Projects*\n\n`;
-
-      projectsMap.forEach((projectAgents, path) => {
-        const projectName = path.split('/').pop() || 'Unknown';
-        text += `📁 *${projectName}*\n`;
-        text += `   \`${path}\`\n`;
-        text += `   👥 Agents: ${projectAgents.map(a => {
-          const emoji = TG_CHARACTER_FACES[a.character || ''] || '🤖';
-          const status = a.status === 'running' ? '🟢' : a.status === 'waiting' ? '🟡' : a.status === 'error' ? '🔴' : '⚪';
-          return `${emoji}${a.name}${status}`;
-        }).join(', ')}\n\n`;
-      });
-
-      telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
-    });
-
-    // Handle /status command
-    telegramBot.onText(/\/status/, (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      const agentList = Array.from(agents.values());
-      if (agentList.length === 0) {
-        telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
-        return;
-      }
-
-      // Helper to format agent info
-      const formatAgent = (a: AgentStatus) => {
-        const isSuper = isSuperAgent(a);
-        const emoji = isSuper ? '👑' : (TG_CHARACTER_FACES[a.character || ''] || '🤖');
-        const skills = a.skills.length > 0 ? a.skills.slice(0, 2).join(', ') + (a.skills.length > 2 ? '...' : '') : '';
-        let line = `  ${emoji} *${a.name}*\n`;
-        // Don't show project for Super Agent
-        if (!isSuper) {
-          const project = a.projectPath.split('/').pop() || 'Unknown';
-          line += `      📁 \`${project}\``;
-          if (skills) line += ` | 🛠 ${skills}`;
-        } else if (skills) {
-          line += `      🛠 ${skills}`;
-        }
-        if (a.currentTask && a.status === 'running') {
-          line += `\n      💬 _${a.currentTask.slice(0, 40)}${a.currentTask.length > 40 ? '...' : ''}_`;
-        }
-        return line;
-      };
-
-      // Sort to put Super Agent first
-      const sortSuperFirst = (agents: AgentStatus[]) =>
-        [...agents].sort((a, b) => (isSuperAgent(b) ? 1 : 0) - (isSuperAgent(a) ? 1 : 0));
-
-      const running = sortSuperFirst(agentList.filter(a => a.status === 'running'));
-      const waiting = sortSuperFirst(agentList.filter(a => a.status === 'waiting'));
-      const idle = sortSuperFirst(agentList.filter(a => a.status === 'idle' || a.status === 'completed'));
-      const error = sortSuperFirst(agentList.filter(a => a.status === 'error'));
-
-      let text = `📊 *Agents Status*\n\n`;
-      if (running.length > 0) {
-        text += `🟢 *Running (${running.length}):*\n`;
-        running.forEach(a => {
-          text += formatAgent(a) + '\n';
-        });
-        text += '\n';
-      }
-      if (waiting.length > 0) {
-        text += `🟡 *Waiting (${waiting.length}):*\n`;
-        waiting.forEach(a => {
-          text += formatAgent(a) + '\n';
-        });
-        text += '\n';
-      }
-      if (error.length > 0) {
-        text += `🔴 *Error (${error.length}):*\n`;
-        error.forEach(a => {
-          text += formatAgent(a) + '\n';
-        });
-        text += '\n';
-      }
-      if (idle.length > 0) {
-        text += `⚪ *Idle (${idle.length}):*\n`;
-        idle.forEach(a => {
-          text += formatAgent(a) + '\n';
-        });
-      }
-
-      telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
-    });
-
-    // Handle /agents command (detailed list)
-    telegramBot.onText(/\/agents/, (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      const agentList = Array.from(agents.values());
-      if (agentList.length === 0) {
-        telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
-        return;
-      }
-
-      let text = `🤖 *All Agents*\n\n`;
-      agentList.forEach(a => {
-        text += formatAgentStatus(a) + '\n\n';
-      });
-
-      telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
-    });
-
-    // Handle /start_agent command
-    telegramBot.onText(/\/start_agent\s+(.+)/, async (msg, match) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      if (!match) return;
-      const input = match[1].trim();
-      const firstSpaceIndex = input.indexOf(' ');
-
-
-
-      if (firstSpaceIndex === -1) {
-        telegramBot?.sendMessage(msg.chat.id, '⚠️ Usage: /start\\_agent <agent name> <task>', { parse_mode: 'Markdown' });
-        return;
-      }
-
-      const agentName = input.substring(0, firstSpaceIndex).toLowerCase();
-      const task = input.substring(firstSpaceIndex + 1).trim();
-
-      const agent = Array.from(agents.values()).find(a =>
-        a.name?.toLowerCase().includes(agentName) || a.id === agentName
-      );
-
-      if (!agent) {
-        telegramBot?.sendMessage(msg.chat.id, `❌ Agent "${agentName}" not found.`);
-        return;
-      }
-
-      if (agent.status === 'running') {
-        telegramBot?.sendMessage(msg.chat.id, `⚠️ ${agent.name} is already running.`);
-        return;
-      }
-
-      let launch: object | null = null;
-      try {
-        // Start the agent using the existing IPC mechanism
-        const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
-
-        // BUG 4 guard: kill PTY if its cwd is stale before reusing it.
-        killStalePty(agent);
-
-        // Initialize PTY if needed
-        // A launch on its way owns the terminal until its CLI runs: wait for it.
-        await sessionStarted(agent);
-        // No CLI up there: this is a launch from now on, for every other sender.
-        launch = launchUnlessRunning(agent);
-
-        if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-          const ptyId = await initAgentPty(agent);
-          agent.ptyId = ptyId;
-        }
-
-        const ptyProcess = ptyProcesses.get(agent.ptyId);
-        if (!ptyProcess) {
-          if (launch) launchAbandoned(agent.id, launch);
-          telegramBot?.sendMessage(msg.chat.id, '❌ Failed to initialize agent terminal.');
+    // Every other command answers an authorized chat only.
+    for (const [pattern, run] of COMMANDS) {
+      telegramBot.onText(pattern, (msg, match) => {
+        const chatId = msg.chat.id.toString();
+        if (!isAuthorized(chatId)) {
+          sendUnauthorizedMessage(chatId);
           return;
         }
+        return run(msg, match, chatId);
+      });
+    }
 
-        // A CLI already up in the terminal is a session between turns (every
-        // turn ends on `idle`, a failed one on `error`): the task goes in as a
-        // message. Typed as a launch command it landed in the CLI's own field.
-        if (cliRunningIn(ptyProcess)) {
-          const outcome = writeProgrammaticInput(ptyProcess, task, true, {
-            agentId: agent.id, from: 'Telegram', sender: { kind: 'channel', channel: 'Telegram' },
-          });
-          if (outcome === 'refused') {
-            telegramBot?.sendMessage(msg.chat.id, `❌ ${agent.name} has too many messages waiting for its terminal.`);
-            return;
-          }
-          agent.status = 'running';
-          agent.currentTask = task.slice(0, 100);
-          agent.lastActivity = new Date().toISOString();
-          saveAgents();
-          telegramBot?.sendMessage(msg.chat.id, outcome === 'held'
-            ? `⏳ ${agent.name}'s session is open but its field is in use: the task goes in once it is free.\n\nTask: ${task}`
-            : `📨 Sent to ${agent.name}, whose session is open.\n\nTask: ${task}`);
+    for (const { event, file: fileOf, missing, failure } of FILES) {
+      telegramBot.on(event, async (msg) => {
+        const chatId = msg.chat.id.toString();
+        if (!isAuthorized(chatId)) {
+          sendUnauthorizedMessage(chatId);
           return;
         }
-
-        // Build command using the shared provider interface (same as agent:start in ipc-handlers)
-        const cliProvider = getProvider(agent.provider);
-        const binaryPath = cliProvider.resolveBinaryPath(getSettings());
-
-        // Resolve MCP config path if provider uses flag strategy
-        let mcpConfigPath: string | undefined;
-        if (cliProvider.getMcpConfigStrategy() === 'flag') {
-          const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
-          if (fs.existsSync(possibleMcpPath)) {
-            mcpConfigPath = possibleMcpPath;
-          }
+        // Check if we should respond (mention required in groups)
+        if (!shouldRespondToMessage(msg)) return;
+        try {
+          const file = fileOf(msg);
+          if (!file) return;
+          telegramBot?.sendMessage(chatId, file.downloading);
+          const localPath = await downloadTelegramFile(file.id, file.name);
+          const caption = removeBotMention(msg.caption || '');
+          await sendToSuperAgent(chatId, `[FILE ATTACHED - ${file.kind} saved to: ${localPath}] ${caption || missing}`, [localPath]);
+        } catch (err) {
+          console.error(`Failed to download ${event}:`, err);
+          telegramBot?.sendMessage(chatId, `❌ Failed to download ${failure}: ${err}`);
         }
-
-        const command = cliProvider.buildInteractiveCommand({
-          resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
-          binaryPath,
-          prompt: task,
-          model: agent.model,
-          permissionMode: agent.permissionMode ?? (agent.skipPermissions ? 'bypass' : 'normal'),
-          effort: agent.effort,
-          secondaryProjectPath: agent.secondaryProjectPath,
-          obsidianVaultPaths: agent.obsidianVaultPaths,
-          mcpConfigPath,
-          // An orchestrator starts with its instructions from here too, as from
-          // the Dashboard and the API: without them it does the work itself.
-          systemPromptFile: isSuperAgent(agent) && fs.existsSync(getSuperAgentInstructionsPath())
-            ? getSuperAgentInstructionsPath()
-            : undefined,
-          skills: [...new Set(agent.skills || [])],
-          isSuperAgent: isSuperAgent(agent),
-          orchestratorMode: isSuperAgent(agent),
-        });
-
-        agent.status = 'running';
-        agent.currentTask = task.slice(0, 100);
-        agent.lastActivity = new Date().toISOString();
-        // Typed plainly, as the Slack bot does: this is a shell prompt, not
-        // claude's field. Every agent terminal is /bin/bash, Apple's 3.2, which
-        // has no bracketed paste, and a command this long went in as one: bash
-        // ran `00~cd ...`, "command not found", and nothing started.
-        // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
-        await shellReady(ptyProcess);
-        writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-        noteLaunch(ptyProcess, launchSettings(agent));
-        saveAgents();
-        // Started from a phone, and just as able to come up with no task.
-        armTaskStartWatch(agent, agent.ptyId, task);
-
-        const emoji = isSuperAgent(agent) ? '👑' : (TG_CHARACTER_FACES[agent.character || ''] || '🤖');
-        telegramBot?.sendMessage(msg.chat.id,
-          `🚀 Started *${agent.name}*\n\n${emoji} Task: ${task}`,
-          { parse_mode: 'Markdown' }
-        );
-      } catch (err) {
-        if (launch) launchAbandoned(agent.id, launch);
-        console.error('Failed to start agent from Telegram:', err);
-        telegramBot?.sendMessage(msg.chat.id, `❌ Failed to start agent: ${err}`);
-      }
-    });
-
-    // Handle /stop_agent command
-    telegramBot.onText(/\/stop_agent\s+(.+)/, (msg, match) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      if (!match) return;
-      const agentName = match[1].trim().toLowerCase();
-
-      const agent = Array.from(agents.values()).find(a =>
-        a.name?.toLowerCase().includes(agentName) || a.id === agentName
-      );
-
-      if (!agent) {
-        telegramBot?.sendMessage(msg.chat.id, `❌ Agent "${agentName}" not found.`);
-        return;
-      }
-
-      if (agent.status !== 'running' && agent.status !== 'waiting') {
-        telegramBot?.sendMessage(msg.chat.id, `⚠️ ${agent.name} is not running.`);
-        return;
-      }
-
-      // Stop the agent
-      if (agent.ptyId) {
-        const ptyProcess = ptyProcesses.get(agent.ptyId);
-        if (ptyProcess) {
-          ptyProcess.write('\x03'); // Ctrl+C
-        }
-      }
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-      saveAgents();
-
-      telegramBot?.sendMessage(msg.chat.id, `🛑 Stopped *${agent.name}*`, { parse_mode: 'Markdown' });
-    });
-
-    // Handle /usage command (show usage and cost stats)
-    telegramBot.onText(/\/usage/, async (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      try {
-        const stats = await getClaudeStats();
-
-        if (!stats) {
-          telegramBot?.sendMessage(msg.chat.id, '📊 No usage data available yet.');
-          return;
-        }
-
-        // Token pricing per million tokens (MTok) - same as frontend
-        const MODEL_PRICING: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitsPerMTok: number; cache5mWritePerMTok: number }> = {
-          'claude-opus-4-5-20251101': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
-          'claude-opus-4-5': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
-          'claude-opus-4-1-20250501': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-          'claude-opus-4-1': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-          'claude-opus-4-20250514': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-          'claude-opus-4': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-          'claude-sonnet-4-5-20251022': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-          'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-          'claude-sonnet-4-20250514': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-          'claude-sonnet-4': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-          'claude-3-7-sonnet-20250219': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-          'claude-haiku-4-5-20251022': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
-          'claude-haiku-4-5': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
-          'claude-3-5-haiku-20241022': { inputPerMTok: 0.80, outputPerMTok: 4, cacheHitsPerMTok: 0.08, cache5mWritePerMTok: 1 },
-        };
-
-        const getModelPricing = (modelId: string) => {
-          if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
-          const lower = modelId.toLowerCase();
-          if (lower.includes('opus-4-5') || lower.includes('opus-4.5')) return MODEL_PRICING['claude-opus-4-5'];
-          if (lower.includes('opus-4-1') || lower.includes('opus-4.1')) return MODEL_PRICING['claude-opus-4-1'];
-          if (lower.includes('opus-4') || lower.includes('opus4')) return MODEL_PRICING['claude-opus-4'];
-          if (lower.includes('sonnet-4-5') || lower.includes('sonnet-4.5')) return MODEL_PRICING['claude-sonnet-4-5'];
-          if (lower.includes('sonnet-4') || lower.includes('sonnet4')) return MODEL_PRICING['claude-sonnet-4'];
-          if (lower.includes('sonnet-3') || lower.includes('sonnet3')) return MODEL_PRICING['claude-3-7-sonnet-20250219'];
-          if (lower.includes('haiku-4-5') || lower.includes('haiku-4.5')) return MODEL_PRICING['claude-haiku-4-5'];
-          if (lower.includes('haiku-3-5') || lower.includes('haiku-3.5')) return MODEL_PRICING['claude-3-5-haiku-20241022'];
-          return MODEL_PRICING['claude-sonnet-4'];
-        };
-
-        const getModelDisplayName = (modelId: string): string => {
-          const lower = modelId.toLowerCase();
-          if (lower.includes('opus-4-5') || lower.includes('opus-4.5')) return 'Opus 4.5';
-          if (lower.includes('opus-4-1') || lower.includes('opus-4.1')) return 'Opus 4.1';
-          if (lower.includes('opus-4') || lower.includes('opus4')) return 'Opus 4';
-          if (lower.includes('sonnet-4-5') || lower.includes('sonnet-4.5')) return 'Sonnet 4.5';
-          if (lower.includes('sonnet-4') || lower.includes('sonnet4')) return 'Sonnet 4';
-          if (lower.includes('sonnet-3') || lower.includes('sonnet3')) return 'Sonnet 3.7';
-          if (lower.includes('haiku-4-5') || lower.includes('haiku-4.5')) return 'Haiku 4.5';
-          if (lower.includes('haiku-3-5') || lower.includes('haiku-3.5')) return 'Haiku 3.5';
-          return modelId.split('-').slice(0, 3).join(' ');
-        };
-
-        const calculateModelCost = (modelId: string, input: number, output: number, cacheRead: number, cacheWrite: number) => {
-          const pricing = getModelPricing(modelId);
-          return (input / 1_000_000) * pricing.inputPerMTok +
-                 (output / 1_000_000) * pricing.outputPerMTok +
-                 (cacheRead / 1_000_000) * pricing.cacheHitsPerMTok +
-                 (cacheWrite / 1_000_000) * pricing.cache5mWritePerMTok;
-        };
-
-        // Calculate totals
-        let totalCost = 0;
-        let totalInput = 0;
-        let totalOutput = 0;
-        let totalCacheRead = 0;
-        let totalCacheWrite = 0;
-        const modelBreakdown: Array<{ name: string; cost: number; tokens: number }> = [];
-
-        if (stats.modelUsage) {
-          Object.entries(stats.modelUsage).forEach(([modelId, usage]) => {
-            const input = usage.inputTokens || 0;
-            const output = usage.outputTokens || 0;
-            const cacheRead = usage.cacheReadInputTokens || 0;
-            const cacheWrite = usage.cacheCreationInputTokens || 0;
-
-            totalInput += input;
-            totalOutput += output;
-            totalCacheRead += cacheRead;
-            totalCacheWrite += cacheWrite;
-
-            const cost = calculateModelCost(modelId, input, output, cacheRead, cacheWrite);
-            totalCost += cost;
-
-            modelBreakdown.push({
-              name: getModelDisplayName(modelId),
-              cost,
-              tokens: input + output,
-            });
-          });
-        }
-
-        // Sort by cost
-        modelBreakdown.sort((a, b) => b.cost - a.cost);
-
-        // Format message
-        let text = `📊 *Usage & Cost Summary*\n\n`;
-        text += `💰 *Total Cost:* $${totalCost.toFixed(2)}\n`;
-        text += `🔢 *Total Tokens:* ${((totalInput + totalOutput) / 1_000_000).toFixed(2)}M\n`;
-        text += `📥 Input: ${(totalInput / 1_000_000).toFixed(2)}M\n`;
-        text += `📤 Output: ${(totalOutput / 1_000_000).toFixed(2)}M\n`;
-        text += `💾 Cache: ${(totalCacheRead / 1_000_000).toFixed(2)}M read\n\n`;
-
-        if (modelBreakdown.length > 0) {
-          text += `*By Model:*\n`;
-          modelBreakdown.slice(0, 5).forEach(m => {
-            const emoji = m.name.includes('Opus') ? '🟣' : m.name.includes('Sonnet') ? '🔵' : '🟢';
-            text += `${emoji} ${m.name}: $${m.cost.toFixed(2)}\n`;
-          });
-        }
-
-        if (stats.totalSessions || stats.totalMessages) {
-          text += `\n*Activity:*\n`;
-          if (stats.totalSessions) text += `📝 ${stats.totalSessions} sessions\n`;
-          if (stats.totalMessages) text += `💬 ${stats.totalMessages} messages\n`;
-        }
-
-        if (stats.firstSessionDate) {
-          text += `\n_Since ${new Date(stats.firstSessionDate).toLocaleDateString()}_`;
-        }
-
-        telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
-      } catch (err) {
-        console.error('Error getting usage stats:', err);
-        telegramBot?.sendMessage(msg.chat.id, `❌ Error fetching usage data: ${err}`);
-      }
-    });
-
-    // Handle /ask command (send to Super Agent)
-    telegramBot.onText(/\/ask\s+(.+)/, async (msg, match) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      if (!match) return;
-      const message = match[1].trim();
-      await sendToSuperAgent(chatId, message);
-    });
-
-    // Handle photo messages
-    telegramBot.on('photo', async (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      // Check if we should respond (mention required in groups)
-      if (!shouldRespondToMessage(msg)) {
-        return;
-      }
-
-      try {
-        // Get the largest photo (last in array)
-        const photos = msg.photo;
-        if (!photos || photos.length === 0) return;
-        const photo = photos[photos.length - 1];
-
-        telegramBot?.sendMessage(chatId, '📥 Downloading image...');
-
-        const fileName = `photo_${msg.message_id}.jpg`;
-        const localPath = await downloadTelegramFile(photo.file_id, fileName);
-
-        const caption = removeBotMention(msg.caption || '');
-        const message = caption
-          ? `[FILE ATTACHED - ${getFileTypeDescription(undefined, fileName)} saved to: ${localPath}] ${caption}`
-          : `[FILE ATTACHED - ${getFileTypeDescription(undefined, fileName)} saved to: ${localPath}] Please analyze or use this image as needed.`;
-
-        await sendToSuperAgent(chatId, message, [localPath]);
-      } catch (err) {
-        console.error('Failed to download photo:', err);
-        telegramBot?.sendMessage(chatId, `❌ Failed to download image: ${err}`);
-      }
-    });
-
-    // Handle document messages (PDFs, files, etc.)
-    telegramBot.on('document', async (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      // Check if we should respond (mention required in groups)
-      if (!shouldRespondToMessage(msg)) {
-        return;
-      }
-
-      try {
-        const doc = msg.document;
-        if (!doc) return;
-
-        telegramBot?.sendMessage(chatId, `📥 Downloading ${doc.file_name || 'document'}...`);
-
-        const fileName = doc.file_name || `document_${msg.message_id}`;
-        const localPath = await downloadTelegramFile(doc.file_id, fileName);
-        const fileType = getFileTypeDescription(doc.mime_type, fileName);
-
-        const caption = removeBotMention(msg.caption || '');
-        const message = caption
-          ? `[FILE ATTACHED - ${fileType} "${fileName}" saved to: ${localPath}] ${caption}`
-          : `[FILE ATTACHED - ${fileType} "${fileName}" saved to: ${localPath}] Please analyze or use this file as needed.`;
-
-        await sendToSuperAgent(chatId, message, [localPath]);
-      } catch (err) {
-        console.error('Failed to download document:', err);
-        telegramBot?.sendMessage(chatId, `❌ Failed to download document: ${err}`);
-      }
-    });
-
-    // Handle video messages
-    telegramBot.on('video', async (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      // Check if we should respond (mention required in groups)
-      if (!shouldRespondToMessage(msg)) {
-        return;
-      }
-
-      try {
-        const video = msg.video;
-        if (!video) return;
-
-        telegramBot?.sendMessage(chatId, '📥 Downloading video...');
-
-        const fileName = (video as { file_name?: string }).file_name || `video_${msg.message_id}.mp4`;
-        const localPath = await downloadTelegramFile(video.file_id, fileName);
-
-        const caption = removeBotMention(msg.caption || '');
-        const message = caption
-          ? `[FILE ATTACHED - video "${fileName}" saved to: ${localPath}] ${caption}`
-          : `[FILE ATTACHED - video "${fileName}" saved to: ${localPath}] A video file has been downloaded for reference.`;
-
-        await sendToSuperAgent(chatId, message, [localPath]);
-      } catch (err) {
-        console.error('Failed to download video:', err);
-        telegramBot?.sendMessage(chatId, `❌ Failed to download video: ${err}`);
-      }
-    });
-
-    // Handle audio/voice messages
-    telegramBot.on('audio', async (msg) => {
-      const chatId = msg.chat.id.toString();
-      if (!isAuthorized(chatId)) {
-        sendUnauthorizedMessage(chatId);
-        return;
-      }
-
-      // Check if we should respond (mention required in groups)
-      if (!shouldRespondToMessage(msg)) {
-        return;
-      }
-
-      try {
-        const audio = msg.audio;
-        if (!audio) return;
-
-        telegramBot?.sendMessage(chatId, '📥 Downloading audio...');
-
-        const fileName = (audio as { file_name?: string }).file_name || `audio_${msg.message_id}.mp3`;
-        const localPath = await downloadTelegramFile(audio.file_id, fileName);
-
-        const caption = removeBotMention(msg.caption || '');
-        const message = caption
-          ? `[FILE ATTACHED - audio "${fileName}" saved to: ${localPath}] ${caption}`
-          : `[FILE ATTACHED - audio "${fileName}" saved to: ${localPath}] An audio file has been downloaded for reference.`;
-
-        await sendToSuperAgent(chatId, message, [localPath]);
-      } catch (err) {
-        console.error('Failed to download audio:', err);
-        telegramBot?.sendMessage(chatId, `❌ Failed to download audio: ${err}`);
-      }
-    });
+      });
+    }
 
     // Handle voice messages
     telegramBot.on('voice', async (msg) => {
@@ -1201,10 +820,9 @@ export function initTelegramBot() {
         return;
       }
 
-      // Voice messages in groups don't have captions for mentions, so we check reply-to
-      // For now, voice messages always trigger in groups (can't easily @mention with voice)
+      // Voice messages carry no caption to mention the bot in: in a group that
+      // requires a mention, they are ignored.
       if (msg.chat.type !== 'private' && getSettings().telegramRequireMention) {
-        // In groups with require mention, voice messages are ignored unless replying to bot
         return;
       }
 
@@ -1295,137 +913,51 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
   // Sanitize message - replace newlines with spaces for terminal compatibility
   const sanitizedMessage = fullMessage.replace(/\r?\n/g, ' ').trim();
 
-  let launch: object | null = null;
   try {
-    // BUG 4 guard: if worktreePath changed since the PTY was spawned, its
-    // cwd is stale: kill it so initAgentPty respawns in the right directory.
-    killStalePty(superAgent);
-
-    // Initialize PTY if needed
-    // A launch on its way owns the terminal until its CLI runs: wait for it.
-    await sessionStarted(superAgent);
-    // No CLI up there: this is a launch from now on, for every other sender.
-    launch = launchUnlessRunning(superAgent);
-
-    if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
-      const ptyId = await initAgentPty(superAgent);
-      superAgent.ptyId = ptyId;
-    }
-
-    const ptyProcess = ptyProcesses.get(superAgent.ptyId);
-    if (!ptyProcess) {
-      if (launch) launchAbandoned(superAgent.id, launch);
-      telegramBot?.sendMessage(chatId, '❌ Failed to connect to Super Agent terminal.');
-      return;
-    }
-
-    // A CLI up in its terminal gets the message, whatever the status says. The
-    // status said `running` or `waiting` over a bare shell after a CLI died
-    // without its SessionEnd, and the message typed there ran as a command.
-    if (cliRunningIn(ptyProcess)) {
-      // Track that this input came from Telegram
-      superAgentTelegramTask = true;
-      superAgentOutputBuffer = [];
-
-      superAgent.currentTask = sanitizedMessage.slice(0, 100);
-      superAgent.lastActivity = new Date().toISOString();
-      saveAgents();
-
-      // Include Telegram context in the message with the chat ID for proper routing
-      const telegramMessage = `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!] ${sanitizedMessage}`;
-
-      writeProgrammaticInput(ptyProcess, telegramMessage, true, {
-        agentId: superAgent.id, from: 'Telegram', sender: { kind: 'channel', channel: 'Telegram' },
-      });
-
-      telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
-    } else {
-      // No CLI in its terminal, whatever the status says: start one
-      const workingPath = (superAgent.worktreePath || superAgent.projectPath).replace(/'/g, "'\\''");
-
-      // Build command using the shared provider interface
-      const cliProvider = getProvider(superAgent.provider || 'claude');
-      const binaryPath = cliProvider.resolveBinaryPath(getSettings());
-
-      // Resolve MCP config path
-      let mcpConfigPath: string | undefined;
-      if (cliProvider.getMcpConfigStrategy() === 'flag') {
-        const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
-        if (fs.existsSync(possibleMcpPath)) {
-          mcpConfigPath = possibleMcpPath;
-        }
-      }
-
-      // Build a combined system prompt file (super agent + telegram instructions)
-      // Using a file avoids fragile inline shell escaping of large instruction blocks.
-      let systemPromptFile: string | undefined;
-      const superAgentInstructionsPath = getSuperAgentInstructionsPath();
-      if (fs.existsSync(superAgentInstructionsPath)) {
-        systemPromptFile = superAgentInstructionsPath;
-      }
-
-      // If there are Telegram-specific instructions, create a combined temp file
-      const telegramInstructions = getTelegramInstructions();
-      if (telegramInstructions) {
-        const superAgentInstructions = getSuperAgentInstructions();
-        const combined = [superAgentInstructions, telegramInstructions].filter(Boolean).join('\n\n');
-        // In the data directory of this Tars, which follows HOME. Electron's
-        // home does not on macOS, so a sandboxed Tars wrote this into the
-        // real ~/.dorothy.
-        const combinedPath = dataPath('telegram-combined-prompt.md');
-        try {
-          fs.mkdirSync(path.dirname(combinedPath), { recursive: true });
-          fs.writeFileSync(combinedPath, combined, 'utf-8');
-          systemPromptFile = combinedPath;
-        } catch {
-          // Fall back to super agent instructions file only
-        }
-      }
-
-      // Build prompt with Telegram context
-      const userPrompt = `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!] ${sanitizedMessage}`;
-
-      const command = cliProvider.buildInteractiveCommand({
-        resumeSessionId: consumeResumeSessionId(superAgent) ?? undefined,
-        binaryPath,
-        prompt: userPrompt,
-        model: superAgent.model,
-        permissionMode: 'bypass',
-        effort: superAgent.effort,
-        secondaryProjectPath: superAgent.secondaryProjectPath,
-        obsidianVaultPaths: superAgent.obsidianVaultPaths,
-        mcpConfigPath,
-        systemPromptFile,
-        skills: [...new Set(superAgent.skills || [])],
-        isSuperAgent: true,
-        orchestratorMode: true,
-      });
-
-      superAgent.status = 'running';
-      superAgent.currentTask = sanitizedMessage.slice(0, 100);
-      superAgent.lastActivity = new Date().toISOString();
-
-      // Track that this task came from Telegram
-      superAgentTelegramTask = true;
-      superAgentOutputBuffer = [];
-
-      // Start new Claude session. Typed plainly into the shell, as /start_agent
-      // above: pasted, bash 3.2 ran `00~cd` and the super agent never started.
-      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
-      await shellReady(ptyProcess);
-      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-      noteLaunch(ptyProcess, launchSettings(superAgent));
-      saveAgents();
-      // A cold start of the super agent carries a task like any other start.
-      armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
-
-      telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
-    }
+    await forwardToOrchestrator(fleet, superAgent, 'Telegram', {
+      message: sanitizedMessage,
+      context: `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!]`,
+      // Started from a phone, nobody is there to answer a permission question.
+      permissionMode: 'bypass',
+      resume: true,
+      systemPromptFile: telegramSystemPromptFile,
+      reply: outcome => {
+        if (outcome === 'no-terminal') telegramBot?.sendMessage(chatId, '❌ Failed to connect to Super Agent terminal.');
+        else if (outcome === 'typed') telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
+        else telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
+      },
+    });
   } catch (err) {
-    if (launch) launchAbandoned(superAgent.id, launch);
     console.error('Failed to send to Super Agent:', err);
     telegramBot?.sendMessage(chatId, `❌ Error: ${err}`);
   }
+}
+
+/**
+ * The orchestrator's instructions for a launch from Telegram, as a file: its
+ * own, with Telegram's appended when there are any, in a file of this Tars's
+ * data folder (which follows HOME; Electron's home does not on macOS, so a
+ * sandboxed Tars wrote it into the real ~/.dorothy).
+ */
+function telegramSystemPromptFile(): string | undefined {
+  let systemPromptFile: string | undefined;
+  const superAgentInstructionsPath = getSuperAgentInstructionsPath();
+  if (fs.existsSync(superAgentInstructionsPath)) {
+    systemPromptFile = superAgentInstructionsPath;
+  }
+  const telegramInstructions = getTelegramInstructions();
+  if (telegramInstructions) {
+    const combined = [getSuperAgentInstructions(), telegramInstructions].filter(Boolean).join('\n\n');
+    const combinedPath = dataPath('telegram-combined-prompt.md');
+    try {
+      fs.mkdirSync(path.dirname(combinedPath), { recursive: true });
+      fs.writeFileSync(combinedPath, combined, 'utf-8');
+      systemPromptFile = combinedPath;
+    } catch {
+      // Fall back to super agent instructions file only
+    }
+  }
+  return systemPromptFile;
 }
 
 /**
@@ -1444,39 +976,4 @@ export function stopTelegramBot() {
  */
 export function getTelegramBot(): TelegramBot | null {
   return telegramBot;
-}
-
-/**
- * Get super agent Telegram task flag
- */
-export function isSuperAgentTelegramTask(): boolean {
-  return superAgentTelegramTask;
-}
-
-/**
- * Set super agent Telegram task flag
- */
-export function setSuperAgentTelegramTask(value: boolean) {
-  superAgentTelegramTask = value;
-}
-
-/**
- * Get super agent output buffer
- */
-export function getSuperAgentOutputBuffer(): string[] {
-  return superAgentOutputBuffer;
-}
-
-/**
- * Append to super agent output buffer
- */
-export function appendSuperAgentOutputBuffer(text: string) {
-  superAgentOutputBuffer.push(text);
-}
-
-/**
- * Clear super agent output buffer
- */
-export function clearSuperAgentOutputBuffer() {
-  superAgentOutputBuffer = [];
 }
