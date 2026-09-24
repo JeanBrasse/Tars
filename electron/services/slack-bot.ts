@@ -10,6 +10,7 @@ import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn, shellReady } from '../core/agent-pty';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
+import { getClaudeStats as readClaudeStats } from './claude-service';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
 import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
 
@@ -757,57 +758,28 @@ export function stopSlackBot(): void {
   }
 }
 
-// Helper function to get Claude stats - provided by caller
-let getClaudeStatsRef: (() => Promise<
-  | {
-      modelUsage?: Record<
-        string,
-        {
-          inputTokens: number;
-          outputTokens: number;
-          cacheReadInputTokens?: number;
-          cacheCreationInputTokens?: number;
-        }
-      >;
-    }
-  | undefined
->) | null = null;
+/** The part of Claude's stats `usage` reads, each field of it defensively. */
+interface SlackClaudeStats {
+  modelUsage?: Record<string, {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+  }>;
+}
 
-export function setGetClaudeStatsRef(
-  fn: () => Promise<
-    | {
-        modelUsage?: Record<
-          string,
-          {
-            inputTokens: number;
-            outputTokens: number;
-            cacheReadInputTokens?: number;
-            cacheCreationInputTokens?: number;
-          }
-        >;
-      }
-    | undefined
-  >
-): void {
+// Another reader of Claude's stats, for tests; the app uses the Usage page's own.
+let getClaudeStatsRef: (() => Promise<SlackClaudeStats | undefined>) | null = null;
+
+export function setGetClaudeStatsRef(fn: () => Promise<SlackClaudeStats | undefined>): void {
   getClaudeStatsRef = fn;
 }
 
-async function getClaudeStats(): Promise<
-  | {
-      modelUsage?: Record<
-        string,
-        {
-          inputTokens: number;
-          outputTokens: number;
-          cacheReadInputTokens?: number;
-          cacheCreationInputTokens?: number;
-        }
-      >;
-    }
-  | undefined
-> {
+async function getClaudeStats(): Promise<SlackClaudeStats | undefined> {
   if (!getClaudeStatsRef) {
-    return undefined;
+    // The stats the Usage page and Telegram's /usage read. Nothing in the app
+    // set a reader, and `usage` said "No usage data" whatever the data (#176).
+    return ((await readClaudeStats()) ?? undefined) as SlackClaudeStats | undefined;
   }
   return getClaudeStatsRef();
 }
