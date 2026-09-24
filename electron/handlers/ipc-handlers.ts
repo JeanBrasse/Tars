@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell, app } from 'electron';
+import { stopAcpRuns } from '../services/acp/delegate';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -1130,6 +1131,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // Stop an agent
   ipcMain.handle('agent:stop', async (_event, id: string) => {
     const agent = agents.get(id);
+    // A delegated run too, which has no terminal: an agent running only one
+    // was not stopped at all (the Audit's table, #6).
+    if (agent) await stopAcpRuns(agent.id, 'the agent was stopped');
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1185,6 +1189,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
+    if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
