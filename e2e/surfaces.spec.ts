@@ -115,10 +115,20 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // VOLATILE in surfaces.mjs, and a locator that stops matching fails the run
     // in e2e/known-errors.spec.ts. The tolerance is the same in every spec and
     // is measured, not chosen: see SCREENSHOT_TOLERANCE.
-    await expect(page).toHaveScreenshot(`${surface.name}.png`, {
-      ...SCREENSHOT_TOLERANCE,
-      animations: 'disabled',
-      mask: masks,
-    });
+    try {
+      await expect(page).toHaveScreenshot(`${surface.name}.png`, {
+        ...SCREENSHOT_TOLERANCE,
+        animations: 'disabled',
+        mask: masks,
+      });
+    } finally {
+      // A mask counts for what the picture covered, which the screenshot above
+      // resolves when it is taken, after the count made at the settle. The CLI
+      // versions of settings-ai-providers arrive once the page's detection is
+      // done: measured in the final run of 1.8.0 at a load average of 80 to
+      // 110, after the count and before the picture, which masked them.
+      const late = (await volatileMasks(page, surface.name)).used.filter(key => !used.includes(key));
+      if (late.length > 0) recordPageErrors(test.info(), 'surfaces', surface.name, [], late);
+    }
   });
 }
