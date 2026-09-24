@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown } from 'lucide-react';
-import { BrandSpinner, Button } from '@/components/ui';
-import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
+import { ArrowDown, Paperclip } from 'lucide-react';
+import { AttachmentTile, BrandSpinner, Button, ImageTile } from '@/components/ui';
+import type { BusAttachment, BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
 import { DayRow, MessageRow, NoticeRow, SystemRow } from './RoomRow';
 import { NeedsStrip } from './NeedsStrip';
@@ -11,7 +11,7 @@ import { RoomComposer } from './RoomComposer';
 import type { ComposerFailure, ComposerTarget } from './RoomComposer';
 import { agentStatusLabel, agentTone, needsRows } from './team-view';
 import type { NeedAction } from './team-view';
-import { currentThread, threadItems } from './bus-view';
+import { currentThread, fileSize, threadItems } from './bus-view';
 import type { ThreadItem } from './bus-view';
 
 /**
@@ -29,6 +29,8 @@ export function RoomView({
   loading,
   onPost,
   onStart,
+  onStage,
+  onSendNow,
   head,
   targetId: controlledTarget,
   onTargetChange,
@@ -41,7 +43,13 @@ export function RoomView({
   deliveries: BusDelivery[];
   agents: RoomAgent[];
   loading: boolean;
-  onPost: (text: string, mentions: string[]) => Promise<{ success: boolean; error?: string }>;
+  onPost: (text: string, mentions: string[], attachments?: string[]) => Promise<{ success: boolean; error?: string }>;
+  /** Puts files where the room's agents can read them, for the message being
+   *  written. What the room refused is named in `error`, the rest staged. */
+  onStage?: (files: File[]) => Promise<{ success: boolean; attachments: BusAttachment[]; error?: string }>;
+  /** Send now to one agent: its turn interrupted first when it is busy and
+   *  Tars can interrupt it. */
+  onSendNow?: (agentId: string, text: string, attachments?: string[]) => Promise<{ success: boolean; interrupted: boolean; error?: string }>;
   /** Starts agents the way the Dashboard's start does, and names the ones
    *  that did not start. */
   onStart?: (ids: string[]) => Promise<Array<{ id: string; error: string }>>;
@@ -64,6 +72,14 @@ export function RoomView({
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
   const [failure, setFailure] = useState<ComposerFailure | null>(null);
+  /** Files staged for the message being written; an image keeps a local URL
+   *  of the bytes it was picked with, for its tile. */
+  const [staged, setStaged] = useState<Array<{ file: BusAttachment; preview?: string }>>([]);
+  const [attaching, setAttaching] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const picker = useRef<HTMLInputElement>(null);
+  const previews = useRef<string[]>([]);
 
   const logRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -144,29 +160,85 @@ export function RoomView({
     label: a.name ?? a.id.slice(0, 8),
     busy: a.status === 'running' && !a.stopped,
     noTurnSignal: !a.hasEndOfTurn,
+    canInterrupt: a.canInterrupt && !a.stopped,
     stopped: a.stopped,
     tone: agentTone(a),
     state: agentStatusLabel(a),
     detail: a.provider ?? 'claude',
   })), [agents]);
 
+  // The local URLs die with the view, whatever was still staged in it.
+  useEffect(() => () => { for (const url of previews.current) URL.revokeObjectURL(url); }, []);
+
+  const clearStaged = () => {
+    for (const { preview } of staged) if (preview) URL.revokeObjectURL(preview);
+    setStaged([]);
+  };
+
+  const removeStaged = (id: string) => {
+    const gone = staged.find(s => s.file.id === id);
+    if (gone?.preview) URL.revokeObjectURL(gone.preview);
+    setStaged(prev => prev.filter(s => s.file.id !== id));
+  };
+
+  const target = targetId ? targets.find(t => t.id === targetId) : undefined;
+  // Files go where a message could: not into a room nobody here can read.
+  const canAttach = !!onStage && targets.length > 0 && !targets.every(t => t.stopped) && !target?.stopped;
+
+  const addFiles = async (files: File[]) => {
+    if (!onStage || !canAttach || files.length === 0 || attaching) return;
+    setAttaching(true);
+    setFailure(f => (f?.kind === 'attach' ? null : f));
+    const r = await onStage(files);
+    setAttaching(false);
+    // Each staged file finds the file it came from, by name and then by
+    // order, for an image's tile: the bus makes a name safe to write, which
+    // can change it.
+    const unused = [...files];
+    const added = r.attachments.map(file => {
+      const at = unused.findIndex(f => f.name === file.name);
+      const source = unused.splice(at >= 0 ? at : 0, 1)[0];
+      const preview = file.isImage && source ? URL.createObjectURL(source) : undefined;
+      if (preview) previews.current.push(preview);
+      return { file, preview };
+    });
+    if (added.length) setStaged(prev => [...prev, ...added]);
+    if (r.error) setFailure({ kind: 'attach', message: r.error });
+  };
+
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
+
   // Nothing here writes into a turn that is running: a message for a busy
   // agent is queued, and one for an agent whose CLI reports no turn end is
   // held until you send it on. The composer says which, before you send.
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    const files = staged.map(s => s.file.id);
+    if ((!text && !files.length) || sending) return;
     setSending(true);
     setFailure(null);
     // An agent that has left the room since it was picked is shown as
     // Everyone, so the message goes to everyone rather than to a name that is
     // no longer here.
     const mentions = targetId && targets.some(t => t.id === targetId) ? [targetId] : [];
-    const r = await onPost(text, mentions);
+    const r = await onPost(text, mentions, files);
     setSending(false);
-    // On a failure the words stay where they were typed, which is what the
-    // strip tells you: send again to retry.
-    if (r.success) setDraft('');
+    // On a failure the words and the files stay where they were, which is
+    // what the strip tells you: send again to retry.
+    if (r.success) { setDraft(''); clearStaged(); }
+    else setFailure({ kind: 'send', message: r.error ?? '' });
+  };
+
+  // Asked once in the strip before it is called: it stops the agent's turn.
+  const sendNow = async () => {
+    const text = draft.trim();
+    const files = staged.map(s => s.file.id);
+    if (!onSendNow || !target || (!text && !files.length) || sending) return;
+    setSending(true);
+    setFailure(null);
+    const r = await onSendNow(target.id, text, files);
+    setSending(false);
+    if (r.success) { setDraft(''); clearStaged(); }
     else setFailure({ kind: 'send', message: r.error ?? '' });
   };
 
@@ -183,47 +255,86 @@ export function RoomView({
   };
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col gap-2.5 min-h-0">
-      <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
+    // Files dropped anywhere in the room join the message being written: the
+    // thread shows where they will land while they are over it.
+    <div
+      className="flex-1 min-w-0 flex flex-col gap-2.5 min-h-0"
+      onDragEnter={e => {
+        if (!hasFiles(e) || !canAttach) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+      }}
+      onDragOver={e => {
+        if (!hasFiles(e) || !canAttach) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }}
+      onDragLeave={e => {
+        if (!hasFiles(e)) return;
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDrop={e => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        void addFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      <div data-room-panel className="flex-1 min-h-0 flex flex-col border border-border bg-card">
         {head}
         <NeedsStrip rows={needs} onAction={onNeed} />
-        <div
-          ref={logRef}
-          data-thread
-          onScroll={() => {
-            const el = logRef.current;
-            if (!el) return;
-            // Only you moving the view up stops the following. The view also
-            // scrolls when the thread changes size under it, and a scroll
-            // event that lands after the next change of size finds it off the
-            // bottom through no move of yours.
-            if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) stickToBottom.current = true;
-            else if (el.scrollTop < lastTop.current) stickToBottom.current = false;
-            lastTop.current = el.scrollTop;
-            if (stickToBottom.current && unseen) setUnseen(0);
-          }}
-          className="flex-1 min-h-0 overflow-y-auto flex flex-col"
-        >
-          {/* The content in a box of its own, so its growth can be observed:
-              the scrolling box above keeps its own size whatever it holds. */}
-          <div ref={contentRef} className="flex-1 flex flex-col pt-2 pb-3">
-            {loading ? (
-              <div className="flex-1 flex items-center justify-center">
-                <BrandSpinner size={26} label="Reading the room" />
-              </div>
-            ) : items.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
-                <p className="text-sm text-foreground">
-                  {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
-                </p>
-                <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
-                  {agents.length === 0
-                    ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
-                    : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
-                </p>
-              </div>
-            ) : items.map(renderItem)}
+        <div className="relative flex-1 min-h-0 flex flex-col">
+          <div
+            ref={logRef}
+            data-thread
+            onScroll={() => {
+              const el = logRef.current;
+              if (!el) return;
+              // Only you moving the view up stops the following. The view also
+              // scrolls when the thread changes size under it, and a scroll
+              // event that lands after the next change of size finds it off the
+              // bottom through no move of yours.
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) stickToBottom.current = true;
+              else if (el.scrollTop < lastTop.current) stickToBottom.current = false;
+              lastTop.current = el.scrollTop;
+              if (stickToBottom.current && unseen) setUnseen(0);
+            }}
+            className="flex-1 min-h-0 overflow-y-auto flex flex-col"
+          >
+            {/* The content in a box of its own, so its growth can be observed:
+                the scrolling box above keeps its own size whatever it holds. */}
+            <div ref={contentRef} className="flex-1 flex flex-col pt-2 pb-3">
+              {loading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <BrandSpinner size={26} label="Reading the room" />
+                </div>
+              ) : items.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-1.5 text-center px-6">
+                  <p className="text-sm text-foreground">
+                    {agents.length === 0 ? 'Nobody in this room yet' : 'Nothing said yet'}
+                  </p>
+                  <p className="max-w-[440px] text-xs leading-[1.5] text-text-secondary">
+                    {agents.length === 0
+                      ? 'A room is the agents of one project talking to each other and to you. Add one and it joins the moment it starts.'
+                      : 'Agents speak when they are named or when they hand back a job. Write to the room to start one.'}
+                  </p>
+                </div>
+              ) : items.map(renderItem)}
+            </div>
           </div>
+          {dragging && (
+            // Frame: `Chat · A · Composer · states` > `FILES OVER THE THREAD`.
+            <div className="absolute inset-0 p-3 pointer-events-none">
+              <div className="h-full flex flex-col items-center justify-center gap-2 rounded border border-border-accent bg-secondary">
+                <Paperclip className="w-5 h-5 text-foreground" />
+                <p className="text-[14px] leading-5 text-foreground">Drop to attach to your message</p>
+                <p className="text-[12px] leading-4 text-text-secondary">images and files, anywhere on the thread</p>
+              </div>
+            </div>
+          )}
         </div>
         {unseen > 0 && (
           <div className="h-10 shrink-0 flex items-center px-6 bg-secondary border-t border-border">
@@ -248,7 +359,47 @@ export function RoomView({
         failure={failure}
         onStart={onStart ? ids => { void start(ids); } : undefined}
         starting={starting}
+        onSendNow={onSendNow ? () => { void sendNow(); } : undefined}
+        hasFiles={staged.length > 0}
+        attaching={attaching}
+        onAttach={onStage ? () => picker.current?.click() : undefined}
+        onPasteFiles={onStage ? files => { void addFiles(files); } : undefined}
+        attachments={staged.length ? (
+          <div className="flex flex-wrap gap-2">
+            {staged.map(({ file, preview }) => preview ? (
+              <ImageTile key={file.id} src={preview} name={file.name} title={file.path} onRemove={() => removeStaged(file.id)} />
+            ) : (
+              <AttachmentTile
+                key={file.id}
+                name={file.name}
+                meta={`${kindOf(file.name)} · ${fileSize(file.bytes)}`}
+                isImage={file.isImage}
+                // Where the agents will read it: worth reading, too long for the tile.
+                title={file.path}
+                onRemove={() => removeStaged(file.id)}
+              />
+            ))}
+          </div>
+        ) : undefined}
+      />
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        hidden
+        onChange={e => {
+          const files = Array.from(e.target.files ?? []);
+          // Cleared, so picking the same file again is a change.
+          e.target.value = '';
+          void addFiles(files);
+        }}
       />
     </div>
   );
+}
+
+/** A file's kind in its tile, as the frame writes it: its extension. */
+function kindOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : 'file';
 }

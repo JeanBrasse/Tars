@@ -77,7 +77,7 @@ const SYSTEM_ICON: Record<BusSystemKind, LucideIcon> = {
   members_changed: Users,
   thread_stopped: Square,
   queue_released: Send,
-  // Send now's line (#169): the frame's raised hand.
+  // Send now's line (PR 169): the frame's raised hand.
   turn_interrupted: Hand,
 };
 

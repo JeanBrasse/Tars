@@ -156,7 +156,7 @@ function ChatRoom({
   onRecipient: (id: string) => void;
   onOpenTerminal: () => void;
 }) {
-  const { snapshot, loading, error, post, stopThread, releaseHeld } = bus;
+  const { snapshot, loading, error, post, stopThread, releaseHeld, stageFiles, sendNow } = bus;
   const thread = useMemo(() => currentThread(snapshot.threads), [snapshot.threads]);
   const state = useMemo(() => roomState(agents, thread, snapshot.messages), [agents, thread, snapshot.messages]);
   // The open anchor is what stop stops.
@@ -195,6 +195,8 @@ function ChatRoom({
       loading={loading}
       onPost={post}
       onStart={startAgents}
+      onStage={stageFiles}
+      onSendNow={sendNow}
       targetId={recipient}
       onTargetChange={onRecipient}
       onRelease={id => { void releaseHeld(id); }}
@@ -391,7 +393,7 @@ export default function ChatPage() {
             }
           : undefined;
         // A room you are not in has the bus's own count of what is queued in
-        // it (#169); who needs you there waits for its strip, when it opens.
+        // it (PR 169); who needs you there waits for its strip, when it opens.
         const { tone, counts } = roomCounts(agentsHere, open, room.pending?.queued ?? 0);
         const parts = (room.projectPath ?? '').split('/').filter(Boolean);
         return {

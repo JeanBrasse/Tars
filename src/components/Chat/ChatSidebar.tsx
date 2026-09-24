@@ -240,7 +240,7 @@ export function TeamRow({
   open: boolean;
   onToggle: () => void;
   queued: number;
-  /** Taken by its terminal, waiting on a draft in its field (#169). */
+  /** Taken by its terminal, waiting on a draft in its field (PR 169). */
   held: number;
   notSent: number;
   lastSpokeAt?: string;

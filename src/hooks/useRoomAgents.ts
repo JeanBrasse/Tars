@@ -19,6 +19,9 @@ const NONE: RoomAgent[] = [];
  */
 export interface RoomAgent extends AgentStatus {
   hasEndOfTurn: boolean;
+  /** Tars can interrupt its turn for send now: a CLI on the claude binary
+   *  with hooks. From the room, like `hasEndOfTurn` (PR 169). */
+  canInterrupt: boolean;
   /**
    * Tars holds no live session for it, so nothing reaches it until it starts.
    *
@@ -113,7 +116,7 @@ export function useRoomAgents(members: BusMember[]): RoomAgent[] {
       .map(m => {
         const agent = byId.get(m.id);
         return agent
-          ? { ...agent, hasEndOfTurn: m.hasEndOfTurn, stopped: isStopped(agent, liveness[m.id]) }
+          ? { ...agent, hasEndOfTurn: m.hasEndOfTurn, canInterrupt: !!m.canInterrupt, stopped: isStopped(agent, liveness[m.id]) }
           : null;
       })
       .filter((a): a is RoomAgent => !!a);

@@ -142,9 +142,14 @@ export function useBusRoom(roomId: string | null) {
     return () => { offMessage(); offDelivery(); offThread(); };
   }, [roomId]);
 
-  const post = useCallback(async (text: string, mentions: string[]) => {
+  const post = useCallback(async (text: string, mentions: string[], attachments: string[] = []) => {
     if (!roomId || !hasBus()) return { success: false, error: 'The bus is not available.' };
-    const r = await window.electronAPI!.bus!.postMessage({ roomId, text, mentions });
+    const r = await window.electronAPI!.bus!.postMessage({
+      roomId,
+      text,
+      mentions,
+      ...(attachments.length ? { attachments } : {}),
+    });
     // The message itself arrives on bus:message; the deliveries come back from
     // the call, so the receipts under your own line appear with it.
     if (r?.success && r.deliveries?.length) {
@@ -184,6 +189,41 @@ export function useBusRoom(roomId: string | null) {
     return r ?? { success: false, error: 'The bus did not answer.' };
   }, []);
 
+  // Files for the message being written, put where every agent in the room
+  // can read them. What the bus refused is named in `error`; the rest are
+  // staged and sent by id with the message.
+  const stageFiles = useCallback(async (files: File[]) => {
+    if (!roomId || !hasBus()) return { success: false, attachments: [], error: 'The bus is not available.' };
+    const payload = await Promise.all(files.map(async file => ({
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      data: new Uint8Array(await file.arrayBuffer()),
+    })));
+    const r = await window.electronAPI!.bus!.stageFiles({ roomId, files: payload });
+    return r ?? { success: false, attachments: [], error: 'The bus did not answer.' };
+  }, [roomId]);
+
+  // Send now: recorded as a post is, the agent's turn interrupted first when
+  // it is busy and can be. The deliveries come back from the call the way
+  // they do from `post`.
+  const sendNow = useCallback(async (agentId: string, text: string, attachments: string[] = []) => {
+    if (!roomId || !hasBus()) return { success: false, interrupted: false, error: 'The bus is not available.' };
+    const r = await window.electronAPI!.bus!.sendNow({
+      roomId,
+      agentId,
+      text,
+      ...(attachments.length ? { attachments } : {}),
+    });
+    if (r?.success && r.deliveries?.length) {
+      const fresh = r.deliveries;
+      setSnapshot(prev => {
+        const keys = new Set(fresh.map(deliveryKey));
+        return { ...prev, deliveries: [...prev.deliveries.filter(d => !keys.has(deliveryKey(d))), ...fresh] };
+      });
+    }
+    return r ?? { success: false, interrupted: false, error: 'The bus did not answer.' };
+  }, [roomId]);
+
   const setMembers = useCallback(async (memberIds: string[]) => {
     if (!roomId || !hasBus()) return { success: false, error: 'The bus is not available.' };
     const r = await window.electronAPI!.bus!.setMembers(roomId, memberIds);
@@ -193,5 +233,5 @@ export function useBusRoom(roomId: string | null) {
     return r ?? { success: false, error: 'The bus did not answer.' };
   }, [roomId, reload]);
 
-  return { snapshot, loading, error, reload, post, stopThread, setMembers, releaseHeld };
+  return { snapshot, loading, error, reload, post, stopThread, setMembers, releaseHeld, stageFiles, sendNow };
 }

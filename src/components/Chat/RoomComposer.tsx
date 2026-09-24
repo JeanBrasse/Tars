@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Users } from 'lucide-react';
 import { Button, ComposerCard, MenuPicker, StatusSquare, notSentText } from '@/components/ui';
 import type { ComposerNotice, MenuPickerOption, StatusTone } from '@/components/ui';
@@ -30,6 +31,8 @@ export interface ComposerTarget {
   busy: boolean;
   /** Its CLI never reports a turn end, so nothing reaches it on its own. */
   noTurnSignal: boolean;
+  /** Tars can interrupt its turn: what send now needs (PR 169). */
+  canInterrupt: boolean;
   /** Tars holds no live session for it: nothing reaches it until it starts.
    *  Not the same as at rest, which is where an idle agent waits between turns. */
   stopped: boolean;
@@ -42,8 +45,8 @@ export interface ComposerTarget {
   detail?: string;
 }
 
-/** Why the strip is red: the last send, or starting agents. */
-export type ComposerFailure = { kind: 'send' | 'start'; message: string };
+/** Why the strip is red: the last send, starting agents, or files the room refused. */
+export type ComposerFailure = { kind: 'send' | 'start' | 'attach'; message: string };
 
 const STATE_INK: Record<StatusTone, string> = {
   running: 'text-status-running',
@@ -69,6 +72,11 @@ export function RoomComposer({
   onStart,
   starting = false,
   onSendNow,
+  attachments,
+  hasFiles = false,
+  onAttach,
+  attaching = false,
+  onPasteFiles,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -83,9 +91,18 @@ export function RoomComposer({
   /** Starts the named agents, the way the Dashboard's start does. */
   onStart?: (ids: string[]) => void;
   starting?: boolean;
-  /** Interrupts a busy agent's turn and delivers the message at once. Absent
-   *  until the bus can do it, which leaves send now drawn and off. */
+  /** Interrupts a busy agent's turn and delivers the message at once. Offered
+   *  only for an agent whose turn Tars can interrupt. */
   onSendNow?: () => void;
+  /** The staged files' tiles, above the text. */
+  attachments?: ReactNode;
+  /** A file alone is a message: send is on without words. */
+  hasFiles?: boolean;
+  /** Opens the file picker. */
+  onAttach?: () => void;
+  /** Files on their way to the room: + is off until they are staged. */
+  attaching?: boolean;
+  onPasteFiles?: (files: File[]) => void;
 }) {
   const target = targetId ? targets.find(t => t.id === targetId) : undefined;
   const noAgents = targets.length === 0;
@@ -96,13 +113,15 @@ export function RoomComposer({
   const blocked = noAgents || everyoneStopped || targetStopped;
   const mode: SendMode = target?.noTurnSignal ? 'hold' : target?.busy ? 'queue' : 'send';
   const hasText = value.trim().length > 0;
+  const hasContent = hasText || hasFiles;
+  const canSendNow = !!onSendNow && !!target?.canInterrupt;
 
   // Send now asks once: it stops the agent mid-turn. The question is about one
   // recipient in one state, so it lapses by itself when either changes, or
   // when the text it would send is gone.
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const confirmKey = `${targetId}|${mode}`;
-  const confirming = confirmFor === confirmKey && hasText;
+  const confirming = confirmFor === confirmKey && hasContent;
 
   const stoppedIds = targets.filter(t => t.stopped).map(t => t.id);
   const startButton = (ids: string[], label: string) => (
@@ -121,7 +140,9 @@ export function RoomComposer({
     notice = {
       tone: 'error',
       emphasis: 'error',
-      text: failure.kind === 'send' ? notSentText(failure.message) : failure.message,
+      text: failure.kind === 'send' ? notSentText(failure.message)
+        : failure.kind === 'attach' ? `Not attached: ${failure.message.replace(/[.\s]+$/, '')}.`
+          : failure.message,
     };
   } else if (everyoneStopped) {
     notice = {
@@ -162,21 +183,21 @@ export function RoomComposer({
   } else if (target && mode === 'queue') {
     notice = {
       tone: 'running',
-      text: onSendNow
+      // Send now only where Tars can interrupt the turn: a CLI that cannot be
+      // interrupted gets the queue and no button that could never work.
+      text: canSendNow
         ? `${target.label} is working, so this message will wait in its queue until the turn ends. Send now interrupts that turn.`
         : `${target.label} is working, so this message will wait in its queue until the turn ends.`,
-      actions: (
+      actions: canSendNow ? (
         <Button
           size="sm"
-          disabled={!onSendNow || !hasText || sending}
-          title={onSendNow
-            ? `Interrupt ${target.label}'s turn and deliver this now. You are asked once first.`
-            : `Send now would interrupt ${target.label}'s turn and deliver this at once. Tars cannot interrupt a turn yet, so it stays off until it can.`}
+          disabled={!hasContent || sending}
+          title={`Interrupt ${target.label}'s turn and deliver this now. You are asked once first.`}
           onClick={() => setConfirmFor(confirmKey)}
         >
           send now
         </Button>
-      ),
+      ) : undefined,
     };
   }
 
@@ -224,12 +245,14 @@ export function RoomComposer({
       onSubmit={onSend}
       placeholder={placeholder}
       disabled={blocked}
-      canSubmit={!blocked && hasText && !sending && !confirming}
+      canSubmit={!blocked && hasContent && !sending && !confirming && !attaching}
       submitLabel={submitLabel}
       notice={notice}
-      // No file reaches an agent in a room yet: the bus carries text. Drawn,
-      // and off until it can.
-      attachLabel="Files cannot reach agents in a room yet"
+      attachments={attachments}
+      onAttach={!blocked && !attaching ? onAttach : undefined}
+      onPasteFiles={!blocked ? onPasteFiles : undefined}
+      attachLabel={blocked ? 'Files reach an agent only once one here can read them'
+        : attaching ? 'Staging the files for this room' : 'Attach files'}
       controls={
         <MenuPicker
           value={targetId}
