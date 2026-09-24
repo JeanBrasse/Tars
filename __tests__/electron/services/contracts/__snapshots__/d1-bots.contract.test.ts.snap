@@ -1,0 +1,1823 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Slack, as recorded before D1 > a mention and a direct message go to the orchestrator whose CLI is up 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "plan tomorrow please",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+    {
+      "slackChannelId": "D1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":crown: Super Agent is processing...",
+    },
+    {
+      "in": "D1",
+      "text": ":crown: Super Agent is processing...",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Slack: [FROM SLACK - Use send_slack MCP tool to respond!] what is everyone doing?
+Message from Slack: [FROM SLACK - Use send_slack MCP tool to respond!] plan tomorrow please
+",
+    },
+  ],
+}
+`;
+
+exports[`Slack, as recorded before D1 > a message cold-starts the orchestrator when its CLI is not up 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "D1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "D1",
+      "text": ":crown: Super Agent is processing your request...",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/atlas' && '/opt/tars-contract/bin/claude' --append-system-prompt-file '<REPO>/electron/resources/super-agent-instructions.md' --model 'claude-opus-5-5' --dangerously-skip-permissions --disallowed-tools "Edit" "Write" "NotebookEdit" "Task" --effort medium --add-dir '<HOME>/.dorothy' -- '[FROM SLACK - Use send_slack MCP tool to respond!] what is everyone doing?'
+",
+    },
+  ],
+}
+`;
+
+exports[`Slack, as recorded before D1 > a message with no orchestrator in the fleet 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "D1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "D1",
+      "text": ":crown: No Super Agent found.
+
+Create one in Tars first, or use \`start <agent> <task>\` to start a specific agent.",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > help, and the channel it answers from saved 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":crown: *Tars Bot*
+
+*Commands:*
+• \`status\` - Show all agents status
+• \`agents\` - List agents with details
+• \`projects\` - List all projects
+• \`start <agent> <task>\` - Start an agent
+• \`stop <agent>\` - Stop an agent
+• \`usage\` - Show usage & cost stats
+• \`help\` - Show this help message
+
+Or just send a message to talk to the Super Agent!",
+    },
+    {
+      "in": "C1",
+      "text": ":crown: *Tars Bot*
+
+*Commands:*
+• \`status\` - Show all agents status
+• \`agents\` - List agents with details
+• \`projects\` - List all projects
+• \`start <agent> <task>\` - Start an agent
+• \`stop <agent>\` - Stop an agent
+• \`usage\` - Show usage & cost stats
+• \`help\` - Show this help message
+
+Or just send a message to talk to the Super Agent!",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > start: a cold start types the launch command 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":rocket: Started *Rest*
+
+:robot_face: Task: Measure the Usage page",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+",
+    },
+  ],
+}
+`;
+
+exports[`Slack, as recorded before D1 > start: an agent whose CLI is up gets the task as a message 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":incoming_envelope: Sent to *Rest*, whose session is open
+
+Task: Measure the Usage page",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Slack: Measure the Usage page
+",
+    },
+  ],
+}
+`;
+
+exports[`Slack, as recorded before D1 > start: no task, unknown, already running 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":x: Usage: \`start <agent> <task>\`",
+    },
+    {
+      "in": "C1",
+      "text": ":x: Agent "nobody" not found.",
+    },
+    {
+      "in": "C1",
+      "text": ":warning: Dune is already running.",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > status, agents and projects on a fleet of six 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":bar_chart: *Agents Status*
+
+:large_green_circle: *Running (2):*
+:crown: *Lead* :large_green_circle:
+    :wrench: planning
+    :speech_balloon: _Plan the release_
+:robot_face: *Dune* :large_green_circle:
+    :file_folder: \`atlas\`
+    :wrench: react, typescript, testing
+    :speech_balloon: _Rebase onto main and fix the conflicts i..._
+
+:large_yellow_circle: *Waiting (1):*
+:ninja: *Dove* :large_yellow_circle:
+    :file_folder: \`atlas\`
+
+:red_circle: *Error (1):*
+:axe: *Err* :red_circle:
+    :file_folder: \`orion\`
+
+:white_circle: *Idle (2):*
+:robot_face: *Rest* :white_circle:
+    :file_folder: \`orion\`
+:robot_face: *Done* :white_circle:
+    :file_folder: \`orion\`
+",
+    },
+    {
+      "in": "C1",
+      "text": ":robot_face: *All Agents*
+
+:crown: *Lead* :large_green_circle:
+    :wrench: planning
+    :speech_balloon: _Plan the release_
+
+:robot_face: *Dune* :large_green_circle:
+    :file_folder: \`atlas\`
+    :wrench: react, typescript, testing
+    :speech_balloon: _Rebase onto main and fix the conflicts i..._
+
+:ninja: *Dove* :large_yellow_circle:
+    :file_folder: \`atlas\`
+
+:robot_face: *Rest* :white_circle:
+    :file_folder: \`orion\`
+
+:axe: *Err* :red_circle:
+    :file_folder: \`orion\`
+
+:robot_face: *Done* :white_circle:
+    :file_folder: \`orion\`
+
+",
+    },
+    {
+      "in": "C1",
+      "text": ":file_folder: *Projects*
+
+:open_file_folder: *atlas*
+    \`<HOME>/projects/atlas\`
+    :busts_in_silhouette: Agents: :robot_face:Dune:large_green_circle:, :ninja:Dove:large_yellow_circle:
+
+:open_file_folder: *orion*
+    \`<HOME>/projects/orion\`
+    :busts_in_silhouette: Agents: :robot_face:Rest:white_circle:, :axe:Err:red_circle:, :robot_face:Done:white_circle:
+
+",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > status, agents and projects on an empty fleet 1`] = `
+{
+  "fleet": [],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":package: No agents created yet.",
+    },
+    {
+      "in": "C1",
+      "text": ":package: No agents created yet.",
+    },
+    {
+      "in": "C1",
+      "text": ":package: No projects with agents yet.",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > stop: running, not running, unknown 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dune",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":octagonal_sign: Stopped *Dune*",
+    },
+    {
+      "in": "C1",
+      "text": ":warning: Rest is not running.",
+    },
+    {
+      "in": "C1",
+      "text": ":x: Agent "nobody" not found.",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "",
+    },
+  ],
+}
+`;
+
+exports[`Slack, as recorded before D1 > usage, with stats and without 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":bar_chart: *Usage Stats*
+
+Input Tokens: 2,405,000
+Output Tokens: 521,000
+Total Cost: $25.56
+",
+    },
+    {
+      "in": "C1",
+      "text": ":bar_chart: No usage data available yet.",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > what Tars sends on its own, cut at 3900 characters 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [
+    {
+      "channel": "C0",
+      "mrkdwn": true,
+      "text": ":crown: A notice from Tars.",
+    },
+    {
+      "channel": "C7",
+      "mrkdwn": true,
+      "text": ":crown: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+
+_(truncated)_",
+    },
+  ],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Slack, as recorded before D1 > who may command: a mention and a direct message from users not allowed, and a channel message 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":no_entry: This bot only answers the Slack users allowed in Tars Settings > Slack. Your Slack user ID is U9.",
+    },
+    {
+      "in": "D1",
+      "text": ":no_entry: This bot only answers the Slack users allowed in Tars Settings > Slack. Your Slack user ID is U9.",
+    },
+    {
+      "in": "C3",
+      "text": ":no_entry: This bot only answers the Slack users allowed in Tars Settings > Slack. Your Slack user ID is U9.",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /start and /help 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "👑 *Tars Bot Connected!*
+
+I'll help you manage your agents remotely.
+
+*Commands:*
+/status - Show all agents status
+/agents - List agents with details
+/projects - List all projects
+/start\\_agent <name> <task> - Start an agent
+/stop\\_agent <name> - Stop an agent
+/ask <message> - Send to Super Agent
+/usage - Show usage & cost stats
+/help - Show this help message
+
+Or just type a message to talk to the Super Agent!",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "📖 *Available Commands*
+
+/status - Quick overview of all agents
+/agents - Detailed list of all agents
+/projects - List all projects with their agents
+/start\\_agent <name> <task> - Start an agent with a task
+/stop\\_agent <name> - Stop a running agent
+/ask <message> - Send a message to Super Agent
+/usage - Show usage & cost stats
+/help - Show this help message
+
+💡 *Tips:*
+• Just type a message to talk directly to Super Agent
+• Super Agent can manage other agents for you
+• Use /status to monitor progress",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /start_agent: a cold start types the launch command 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🚀 Started *Rest*
+
+🐸 Task: Measure the Usage page",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+",
+    },
+  ],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /start_agent: an agent whose CLI is up gets the task as a message 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "📨 Sent to Rest, whose session is open.
+
+Task: Measure the Usage page",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Telegram: Measure the Usage page
+",
+    },
+  ],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /start_agent: no task, unknown, already running 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "⚠️ Usage: /start\\_agent <agent name> <task>",
+      "to": "42",
+    },
+    {
+      "text": "❌ Agent "nobody" not found.",
+      "to": "42",
+    },
+    {
+      "text": "⚠️ Dune is already running.",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /status, /agents and /projects on a fleet of six 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "📊 *Agents Status*
+
+🟢 *Running (2):*
+  👑 *Lead*
+      🛠 planning
+      💬 _Plan the release_
+  🤖 *Dune*
+      📁 \`atlas\` | 🛠 react, typescript...
+      💬 _Rebase onto main and fix the conflicts i..._
+
+🟡 *Waiting (1):*
+  🥷 *Dove*
+      📁 \`atlas\`
+
+🔴 *Error (1):*
+  🪓 *Err*
+      📁 \`orion\`
+
+⚪ *Idle (2):*
+  🐸 *Rest*
+      📁 \`orion\`
+  🤖 *Done*
+      📁 \`orion\`
+",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🤖 *All Agents*
+
+👑 *Lead* 🟢
+   Status: running
+   Task: Plan the release
+
+
+🤖 *Dune* 🟢
+   Status: running
+   Task: Rebase onto main and fix the conflicts in the sett...
+   Project: \`atlas\`
+
+🥷 *Dove* 🟡
+   Status: waiting
+   Project: \`atlas\`
+
+🐸 *Rest* ⚪
+   Status: idle
+   Project: \`orion\`
+
+🪓 *Err* 🔴
+   Status: error
+   Project: \`orion\`
+
+🤖 *Done* ✅
+   Status: completed
+   Project: \`orion\`
+
+",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "📂 *Projects*
+
+📁 *atlas*
+   \`<HOME>/projects/atlas\`
+   👥 Agents: 🤖Dune🟢, 🥷Dove🟡
+
+📁 *orion*
+   \`<HOME>/projects/orion\`
+   👥 Agents: 🐸Rest⚪, 🪓Err🔴, 🤖Done⚪
+
+",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /status, /agents and /projects on an empty fleet 1`] = `
+{
+  "fleet": [],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "📭 No agents created yet.",
+      "to": "42",
+    },
+    {
+      "text": "📭 No agents created yet.",
+      "to": "42",
+    },
+    {
+      "text": "📭 No projects with agents yet.",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /stop_agent: running, not running, unknown 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dune",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🛑 Stopped *Dune*",
+      "to": "42",
+    },
+    {
+      "text": "⚠️ Rest is not running.",
+      "to": "42",
+    },
+    {
+      "text": "❌ Agent "nobody" not found.",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "",
+    },
+  ],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > /usage, with stats and without 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "📊 *Usage & Cost Summary*
+
+💰 *Total Cost:* $27.05
+🔢 *Total Tokens:* 2.93M
+📥 Input: 2.40M
+📤 Output: 0.52M
+💾 Cache: 7.41M read
+
+*By Model:*
+🟣 Opus 4.5: $17.82
+🔵 Sonnet 4.5: $5.59
+🟣 Opus 4.1: $3.11
+🟢 Haiku 4.5: $0.50
+🟢 mystery model x: $0.03
+
+*Activity:*
+📝 42 sessions
+💬 1234 messages
+",
+      "to": "42",
+    },
+    {
+      "text": "📊 No usage data available yet.",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > a message and /ask go to the orchestrator whose CLI is up 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "plan tomorrow",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Telegram: [FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] what is everyone doing?
+Message from Telegram: [FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] plan tomorrow
+",
+    },
+  ],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > a message cold-starts the orchestrator when its CLI is not up 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "👑 Super Agent is processing your request...",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/atlas' && '/opt/tars-contract/bin/claude' --append-system-prompt-file '<HOME>/.dorothy/telegram-combined-prompt.md' --model 'claude-opus-5-5' --dangerously-skip-permissions --disallowed-tools "Edit" "Write" "NotebookEdit" "Task" --effort medium --add-dir '<HOME>/.dorothy' -- '[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] what is everyone doing?'
+",
+    },
+  ],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > a message with no orchestrator in the fleet 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "👑 No Super Agent found.
+
+Create one in Tars first, or use /start\\_agent to start a specific agent.",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > files: a photo, a document, a video, an audio and a voice message 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "📥 Downloading image...",
+      "to": "42",
+    },
+    {
+      "text": "❌ Failed to download image: Error: no file in the contract",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading report.pdf...",
+      "to": "42",
+    },
+    {
+      "text": "❌ Failed to download document: Error: no file in the contract",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading video...",
+      "to": "42",
+    },
+    {
+      "text": "❌ Failed to download video: Error: no file in the contract",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading audio...",
+      "to": "42",
+    },
+    {
+      "text": "❌ Failed to download audio: Error: no file in the contract",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading voice message...",
+      "to": "42",
+    },
+    {
+      "text": "❌ Failed to download voice message: Error: no file in the contract",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > in a group: without a mention nothing, with one the message without it 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "status of the release?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Telegram: [FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] status of the release?
+",
+    },
+  ],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > what Tars sends on its own: to the authorized chats, cut at 4000 characters 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "A notice from Tars.",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+_(truncated)_",
+      "to": "42",
+    },
+  ],
+  "typed": [],
+}
+`;
+
+exports[`Telegram, as recorded before D1 > who may command: an unknown chat, then /auth wrong and right 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "telegramAuthorizedChatIds": [
+        "42",
+        "99",
+      ],
+      "telegramChatId": "99",
+    },
+  ],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🔒 *Authentication Required*
+
+You are not authorized to use this bot.
+
+Use \`/auth <token>\` with your secret token to authenticate.
+
+_Get the token from Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🔒 *Authentication Required*
+
+You are not authorized to use this bot.
+
+Use \`/auth <token>\` with your secret token to authenticate.
+
+_Get the token from Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "❌ *Invalid token*
+
+_Check your token in Tars Settings → Telegram_",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "✅ *Authentication Successful!*
+
+Your chat ID \`99\` has been authorized.
+
+You can now use all bot commands. Type /help to see available commands.",
+      "to": "99",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "📊 *Agents Status*
+
+🟢 *Running (2):*
+  👑 *Lead*
+      🛠 planning
+      💬 _Plan the release_
+  🤖 *Dune*
+      📁 \`atlas\` | 🛠 react, typescript...
+      💬 _Rebase onto main and fix the conflicts i..._
+
+🟡 *Waiting (1):*
+  🥷 *Dove*
+      📁 \`atlas\`
+
+🔴 *Error (1):*
+  🪓 *Err*
+      📁 \`orion\`
+
+⚪ *Idle (2):*
+  🐸 *Rest*
+      📁 \`orion\`
+  🤖 *Done*
+      📁 \`orion\`
+",
+      "to": "99",
+    },
+  ],
+  "typed": [],
+}
+`;
