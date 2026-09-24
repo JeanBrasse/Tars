@@ -18,6 +18,7 @@ import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
 import { writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn, shellReady } from '../core/agent-pty';
+import { stopAcpRuns } from './acp/delegate';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
@@ -229,9 +230,12 @@ export async function startWithTask(
   }
 }
 
-/** Ctrl+C into the agent's terminal, and the agent idle. */
+/** Ctrl+C into the agent's terminal, its delegated run stopped, and the agent idle. */
 export function stopNow(fleet: BotFleet, agent: AgentStatus): void {
   if (agent.ptyId) fleet.ptyProcesses.get(agent.ptyId)?.write('\x03');
+  // A run it was delegated goes too (the Audit's table, #6): it has no
+  // terminal for the Ctrl+C to reach.
+  void stopAcpRuns(agent.id, 'the agent was stopped from a chat');
   agent.status = 'idle';
   agent.currentTask = undefined;
   fleet.saveAgents();
