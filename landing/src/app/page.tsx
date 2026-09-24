@@ -1,7 +1,11 @@
 'use client';
 
+import Image from 'next/image';
 import { Download, Github } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import dashboard from '@/assets/dashboard.png';
+import { SiteFooter } from '@/components/SiteFooter';
+import { SiteNav } from '@/components/SiteNav';
 
 const FEATURES = [
   {
@@ -14,7 +18,7 @@ const FEATURES = [
   },
   {
     title: 'Delegation that reports back',
-    body: 'An orchestrator hands work over the Agent Client Protocol, not by typing into a terminal and hoping. Every task returns a stop reason and what it cost.',
+    body: 'An orchestrator hands work over the Agent Client Protocol, and every task comes back with a stop reason, the tools it used and what it cost.',
   },
   {
     title: 'Deploy a whole team',
@@ -26,7 +30,7 @@ const FEATURES = [
   },
   {
     title: 'One memory, five sources',
-    body: 'Project files, the session ledger, your Hermes gateway, gbrain and Honcho behind one interface, reachable by every CLI, not just the ones with hooks.',
+    body: 'Project files, the session ledger, your Hermes gateway, gbrain and Honcho behind one interface that every CLI can reach.',
   },
   {
     title: 'See what they actually did',
@@ -43,26 +47,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-bg text-ink">
-      <nav className="max-w-[1040px] mx-auto px-6 py-6 flex items-center justify-between">
-        <a href="#" className="flex items-center gap-2.5">
-          <span className="inline-block w-2.5 h-2.5 bg-accent" />
-          <span className="font-display text-xl">Tars</span>
-        </a>
-        <div className="hidden md:flex items-center gap-8 text-[13px] text-ink-soft">
-          <a href="#features" className="hover:text-ink transition-colors">Features</a>
-          <a href="#how" className="hover:text-ink transition-colors">How it works</a>
-          <a href="#download" className="hover:text-ink transition-colors">Download</a>
-        </div>
-        <div className="flex items-center gap-4">
-          <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" className="text-ink-soft hover:text-ink transition-colors">
-            <Github className="w-[18px] h-[18px]" />
-          </a>
-          <a href="#download" className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-accent text-bg text-[13px] font-medium hover:bg-accent-deep transition-colors">
-            <Download className="w-3.5 h-3.5" />
-            Download
-          </a>
-        </div>
-      </nav>
+      <SiteNav home />
 
       {/* Hero */}
       <section className="max-w-[1040px] mx-auto px-6 pt-16 pb-20 border-b border-line">
@@ -72,10 +57,11 @@ export default function Home() {
         </h1>
         <p className="text-ink-soft text-[15px] leading-relaxed max-w-xl mb-9">
           Tars puts every agent in one place: parallel terminals per project, teams you deploy in a
-          click, one memory they all share, and delegation that reports back instead of hoping.
+          click, one memory they all share, and delegation that comes back with what each task did and
+          what it cost.
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <a href="#download" className="flex items-center gap-2 px-5 py-2.5 bg-accent text-bg text-sm font-medium hover:bg-accent-deep transition-colors">
+          <a href="/api/download" className="flex items-center gap-2 px-5 py-2.5 bg-accent text-bg text-sm font-medium hover:bg-accent-deep transition-colors">
             <Download className="w-4 h-4" />
             Download for Mac
           </a>
@@ -83,40 +69,25 @@ export default function Home() {
             <Github className="w-4 h-4" />
             Source
           </a>
-          {count !== null && (
+          {/* GitHub's own count of .dmg downloads (src/lib/downloads.ts).
+              Nothing while there is none, or when GitHub did not answer. */}
+          {count !== null && count > 0 && (
             <span className="font-mono text-xs text-ink-muted">{count.toLocaleString()} downloads</span>
           )}
         </div>
       </section>
 
-      {/* Terminal sketch */}
-      <section className="max-w-[1040px] mx-auto px-6 py-16 border-b border-line">
-        <div className="border border-line bg-surface">
-          <div className="flex items-center gap-3 px-4 py-2.5 border-b border-line">
-            <span className="font-mono text-xs text-ink">Tars</span>
-            <span className="font-mono text-xs text-ink-muted">1212-Capital</span>
-            <span className="font-mono text-xs text-ink-muted">sakartvelo</span>
-            <span className="ml-auto font-mono text-xs text-ink-muted">2x2</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-line">
-            {[
-              { name: 'orchestrator', tone: 'text-ok', lines: ['delegate_task frontend \u00ab fix the scroll lock \u00bb', '\u2192 frontend  running   feat/frontend', '\u2713 backend   merged  \u2192 main', 'acp  stopReason=end_turn  $0.42'] },
-              { name: 'frontend', tone: 'text-accent', lines: ['vitest run --changed', '184 passed (184)', 'apply patch to TerminalGrid.tsx? (y/n)', ''] },
-              { name: 'backend', tone: 'text-ok', lines: ['npm run build', 'electron  tsc clean', 'bundling  mcp-memory \u2192 dist/bundle.js', 'watching\u2026'] },
-              { name: 'qa', tone: 'text-ink-muted', lines: ['733 passed (733) in 4.3s', 'coverage  87.3%', '', ''] },
-            ].map(p => (
-              <div key={p.name} className="bg-surface p-4">
-                <div className="flex items-center gap-2 mb-2.5">
-                  <span className={`inline-block w-1.5 h-1.5 ${p.tone === 'text-ok' ? 'bg-ok' : p.tone === 'text-accent' ? 'bg-accent' : 'bg-ink-muted'}`} />
-                  <span className="font-mono text-xs text-ink">{p.name}</span>
-                </div>
-                {p.lines.map((l, i) => (
-                  <p key={i} className="font-mono text-[11px] text-ink-soft leading-relaxed">{l}</p>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* The product itself: the Dashboard of a real Tars, four Claude Code
+          sessions on one project, one of them in the middle of a turn. It
+          replaced a hand-drawn terminal whose output was invented. */}
+      <section className="max-w-[1040px] mx-auto px-6 py-14 border-b border-line">
+        <Image
+          src={dashboard}
+          alt="The Tars Dashboard: four Claude Code agents working side by side on one project, one of them in the middle of a turn."
+          priority
+          sizes="(min-width: 1040px) 992px, 100vw"
+          className="w-full h-auto border border-line"
+        />
       </section>
 
       {/* Features */}
@@ -138,7 +109,7 @@ export default function Home() {
         <ol className="space-y-6">
           {[
             ['Point it at a folder', 'Add your project. Tars finds the CLIs already installed on your machine.'],
-            ['Create an agent, or a team', 'One agent from a template, or a full engineering team with one worktree branch each.'],
+            ['Create an agent, or a team', 'One agent from a template, or a full engineering team with a worktree branch each.'],
             ['Let them work', 'Terminals stream live. The orchestrator delegates and gets an answer. Nothing starts without you asking.'],
             ['Wire in Hermes', 'Your own gateway schedules the recurring work, and its kanban board drives what the team picks up next.'],
           ].map(([t, d], i) => (
@@ -165,17 +136,7 @@ export default function Home() {
         </a>
       </section>
 
-      <footer className="border-t border-line">
-        <div className="max-w-[1040px] mx-auto px-6 py-8 flex items-center justify-between">
-          <span className="flex items-center gap-2.5">
-            <span className="inline-block w-2 h-2 bg-accent" />
-            <span className="font-display text-base">Tars</span>
-          </span>
-          <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-ink-muted hover:text-ink transition-colors">
-            github
-          </a>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

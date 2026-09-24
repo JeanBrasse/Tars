@@ -1,36 +1,26 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tars landing site
 
-## Getting Started
+The one-page site for Tars: what it is, and a button that downloads the latest
+macOS build from this repository's GitHub releases.
 
-First, run the development server:
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd landing
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## What it is made of
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Pages.** One page (`src/app/page.tsx`), its 404 (`src/app/not-found.tsx`), `robots.txt` and `sitemap.xml` (`src/app/robots.ts`, `src/app/sitemap.ts`), and the picture link previews show (`src/app/opengraph-image.png`).
+- **Design.** The design is `design/landing.pen` at the repository root: the page, the 404 and the preview picture. Draw a change there first.
+- **Fonts.** Roboto Condensed, Roboto Mono and Instrument Serif are self-hosted through `next/font`, so the page makes no request to Google.
+- **The picture under the hero.** `src/assets/dashboard.png` is a capture of the real app: a sandbox Tars running four real Claude Code sessions on one project. The model's answers were scripted for the capture.
+- **`/api/download`** resolves the latest release of `JeanBrasse/Tars` at request time and redirects to its macOS dmg, or to the releases page.
+- **The download counter.** `/api/stats` and the counter under the hero read GitHub's own `download_count` for the `.dmg` of every release (`src/lib/downloads.ts`), cached an hour by the server. The zip and `latest-mac.yml` are left out: installed apps fetch them to update. Nothing about a download is stored, and the counter stays hidden when GitHub does not answer.
+- **Analytics.** `@vercel/analytics`, cookieless, active only once the site runs on Vercel.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploy
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Not deployed yet. On Vercel, it needs a project with Root Directory `landing/` and production branch `main`. The absolute URLs (the preview picture, `robots.txt`, the sitemap) come from `src/lib/site.ts`: the `VERCEL_PROJECT_PRODUCTION_URL` that Vercel provides, or localhost. Once the domain is known it can be written there.
