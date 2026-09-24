@@ -55,7 +55,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 16 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 17 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -68,6 +68,7 @@ const SETTINGS_TREE = [
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],
   ['slack', 'Integrations', 'Slack'],
+  ['discord', 'Integrations', 'Discord'],
   ['x-twitter', 'Integrations', 'X (Twitter)'],
   ['google-workspace', 'Integrations', 'Google Workspace'],
   ['skills-plugins', 'Extensions', 'Skills & Plugins'],
@@ -379,8 +380,9 @@ export function readPageErrorRecords() {
 // how fast that CLI registers its session. There nothing starts, the
 // Orchestrator reads a transcript seeded on disk, and the Backend Engineer
 // runs codex, which writes none.
-// The Chat room, the six frames `design/chat-design.pen` specifies as states
-// of the page rather than as overlays. One room per state, because a room is
+// The Chat room in six states of the page rather than overlays, first
+// specified in `design/chat-design.pen` and drawn since #165 from
+// `design/chat-redesign-a.pen`. One room per state, because a room is
 // derived from a project and a journal can only put a given one in a single
 // state at a time.
 //

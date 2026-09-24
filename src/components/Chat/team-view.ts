@@ -1,6 +1,6 @@
 import type { StatusTone } from '@/components/ui';
 import type { RoomAgent } from '@/hooks/useRoomAgents';
-import type { AgentStatus, BusDelivery, BusMessage, BusThread } from '@/types/electron';
+import type { AgentStatus, BusDelivery, BusMessage, BusRoomPending, BusThread } from '@/types/electron';
 import { errorReason } from '@/app/agents/constants';
 
 /**
@@ -197,7 +197,7 @@ export function roomState(agents: RoomAgent[], thread: BusThread | null, message
     return { tone: 'idle', word: 'paused', detail: `${thread.agentMessageCount} agent messages without you`, relaying: false };
   }
   if (messages.length === 0) return { tone: 'idle', word: 'quiet', detail: 'nothing said yet', relaying: false };
-  const working = agents.some(a => !a.stopped && a.status === 'running');
+  const working = agents.filter(a => !a.stopped && a.status === 'running').length;
   if (thread?.state === 'open' && working) {
     const left = Math.max(0, AGENT_MESSAGES_BEFORE_PAUSE - thread.agentMessageCount);
     return {
@@ -206,6 +206,11 @@ export function roomState(agents: RoomAgent[], thread: BusThread | null, message
       detail: `pauses after ${left} more agent message${left === 1 ? '' : 's'}`,
       relaying: true,
     };
+  }
+  // No exchange in flight, but an agent can be at work on something else:
+  // "every agent finished its turn" is only said when it is true.
+  if (working) {
+    return { tone: 'idle', word: 'at rest', detail: `no exchange open, ${working} ${working === 1 ? 'agent' : 'agents'} at work`, relaying: false };
   }
   return { tone: 'idle', word: 'at rest', detail: 'every agent finished its turn', relaying: false };
 }
@@ -256,8 +261,8 @@ export interface RowCount {
 export function roomCounts(
   agents: Array<Pick<AgentStatus, 'status' | 'cliRunning' | 'launching'>>,
   open?: { queued: number; needYou: number },
-  /** The bus's count of what is queued in the room, for a room you are not in. */
-  queuedElsewhere = 0,
+  /** The bus's counts of what waits in a room you are not in, by delivery. */
+  elsewhere?: Pick<BusRoomPending, 'queued' | 'held' | 'notSent'>,
 ): { tone: RowTone; counts: RowCount[] } {
   if (agents.length === 0) return { tone: 'none', counts: [{ label: 'no agents yet' }] };
   const waiting = agents.filter(a => a.status === 'waiting').length;
@@ -272,8 +277,15 @@ export function roomCounts(
   const counts: RowCount[] = [];
   if (errors) counts.push({ label: `${errors} error`, tone: 'error' });
   if (needYou) counts.push({ label: `${needYou} need${needYou === 1 ? 's' : ''} you`, tone: 'waiting' });
+  // A room you are not in has no strip to count rows from: what waits on you
+  // there is said by delivery, as the bus counts it. Losing it was the line
+  // saying less closed than open.
+  const notSent = open ? 0 : elsewhere?.notSent ?? 0;
+  const held = open ? 0 : elsewhere?.held ?? 0;
+  if (notSent) counts.push({ label: `${notSent} not sent`, tone: 'waiting' });
+  if (held) counts.push({ label: `${held} held`, tone: 'waiting' });
   if (running) counts.push({ label: `${running} running` });
-  const queued = open ? open.queued : queuedElsewhere;
+  const queued = open ? open.queued : elsewhere?.queued ?? 0;
   if (queued) counts.push({ label: `${queued} queued` });
   if (!running && idle > 0) counts.push({ label: `${idle} idle` });
   if (stopped) counts.push({ label: `${stopped} stopped` });
@@ -281,7 +293,7 @@ export function roomCounts(
   // count in 208px instead of leaving one out.
   counts.splice(3);
   const tone: RowTone = errors ? 'error'
-    : needYou ? 'waiting'
+    : needYou || notSent || held ? 'waiting'
     : running ? 'running'
     : stopped === agents.length ? 'hollow'
     : 'idle';
@@ -322,12 +334,18 @@ export function needsRows(
     const oldest = notSent.map(d => d.refusedAt ?? d.queuedAt).sort()[0];
     if (agent.status === 'error') {
       const reason = errorReason(agent)?.replace(/[.\s]+$/, '');
+      // A turn that fails leaves its CLI at its prompt, the session open. With
+      // no session left (a start that failed, a CLI that exited) no turn is
+      // what failed: it stopped on an error.
+      const sessionOpen = !agent.stopped && agent.cliRunning !== false;
       rows.push({
         rank: 0,
         id: `${agent.id}:error`,
         agentId: agent.id,
         tone: 'error',
-        text: `${name}’s turn failed${reason ? `: ${reason}` : ''}.${agent.stopped ? '' : ' Its session is still open.'}`,
+        text: sessionOpen
+          ? `${name}’s turn failed${reason ? `: ${reason}` : ''}. Its session is still open.`
+          : `${name} stopped on an error${reason ? `: ${reason}` : ''}.`,
         action: 'open terminal',
         actionLabel: 'open terminal',
       });

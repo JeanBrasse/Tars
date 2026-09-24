@@ -15,6 +15,7 @@ import {
   NotificationsSection,
   TelegramSection,
   SlackSection,
+  DiscordSection,
   SocialDataSection,
   TasmaniaSection,
   GoogleWorkspaceSection,
@@ -60,6 +61,7 @@ const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActio
   hermes: { label: 'Test connection', kind: 'unwired' },
   telegram: { label: 'Test', kind: 'unwired' },
   slack: { label: 'Test', kind: 'unwired' },
+  discord: { label: 'Test', kind: 'unwired' },
   memory: { label: 'Check', kind: 'unwired' },
   mcp: { label: '+ Server', kind: 'unwired' },
   system: { label: 'Refresh', kind: 'refresh' },
@@ -131,6 +133,14 @@ function SettingsPageInner() {
       case 'slack':
         return (
           <SlackSection
+            appSettings={appSettings}
+            onSaveAppSettings={handleSaveAppSettings}
+            onUpdateLocalSettings={updateLocalAppSettings}
+          />
+        );
+      case 'discord':
+        return (
+          <DiscordSection
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
