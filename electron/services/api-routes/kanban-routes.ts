@@ -3,15 +3,14 @@ import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { agents } from '../../core/agent-manager';
 import { ptyProcesses } from '../../core/pty-manager';
 import { cliRunningIn } from '../../core/agent-pty';
-import * as fs from 'fs';
-import { HERMES_CONNECTION_FILE, usableHermesConnection } from '../hermes-config';
+import { configuredHermesConnection } from '../hermes-config';
 import {
   addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, updateHermesTask,
 } from '../hermes-client';
 import {
   claimTask, completeTask, createParkedTask, deleteTask, getTask, handOffNote, landingNote, listTasks, moveTask,
   reportProgress, whenToType,
-  type AgentColumn, type AgentTask, type KanbanCaller, type KanbanHermes, type KanbanResult,
+  type AgentColumn, type AgentTask, type HermesUnusable, type KanbanCaller, type KanbanHermes, type KanbanResult,
 } from '../kanban-board';
 import { performDispatch } from './agent-routes';
 import { agentStatusEmitter } from '../agent-events';
@@ -19,17 +18,19 @@ import type { MessageSender } from '../../core/pty-manager';
 import type { AgentStatus } from '../../types';
 
 /**
- * The Hermes board through hermes-client, or null when nobody configured one.
+ * The Hermes board through hermes-client, null when nobody configured one, and
+ * why not when the connection file is there but cannot be used.
  *
- * Configured means the connection file exists. Without it, readHermesConnection()
- * answers the default port, which on Noah's machine is an SSH tunnel to his real
- * Hermes: a sandbox or a test home with a kanban-tasks.json and no connection of
- * its own would have moved its tasks onto that board at launch.
+ * Configured means a connection file that reads and names an address. Without
+ * one, readHermesConnection() answers the default port, which on Noah's machine
+ * is an SSH tunnel to his real Hermes: a sandbox or a test home with a
+ * kanban-tasks.json and no connection of its own, or a broken one, would have
+ * moved its tasks onto that board at launch.
  */
-export function hermesKanban(): KanbanHermes | null {
-  if (!fs.existsSync(HERMES_CONNECTION_FILE)) return null;
-  const conn = usableHermesConnection();
-  if (!conn) return null;
+export function hermesKanban(): KanbanHermes | HermesUnusable | null {
+  const configured = configuredHermesConnection();
+  if (!configured || 'unusable' in configured) return configured;
+  const { conn } = configured;
   return {
     board: tenant => fetchHermesBoard(conn, undefined, tenant),
     get: id => getHermesTask(conn, id),
