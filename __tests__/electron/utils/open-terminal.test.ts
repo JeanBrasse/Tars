@@ -133,3 +133,39 @@ describe('opening a terminal in a directory', () => {
     expect(deps.executed).toEqual([]);
   });
 });
+
+describe('QA #177: the real launcher, with a stand-in terminal that records what it was given', () => {
+  // Written by the QA at the gate of #177. The tests above hand openTerminal a
+  // fake launcher, so the `shell: false` of the real one was never exercised:
+  // `options.shell` is never set by openTerminal, and a real launcher that ran a
+  // shell left them green. This goes through nodeLaunch, with a PATH that holds
+  // only a stand-in gnome-terminal, so no real terminal can start, here or on
+  // the CI. A shell anywhere on the way would run the `$(...)` and the backtick
+  // in the directory's name, and leave a PWNED file.
+  it('starts the program itself, in the directory, the directory one argument, and runs nothing it names', async () => {
+    const { nodeLaunch, nodeExecFile } = await import('../../../electron/utils/open-terminal');
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'qa177-bin-'));
+    const log = path.join(bin, 'argv.json');
+    fs.writeFileSync(path.join(bin, 'gnome-terminal'),
+      `#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));\n`,
+      { mode: 0o755 });
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), "qa177 'q' $(touch PWNED) `touch PWNED` "));
+    const saved = process.env.PATH;
+    process.env.PATH = bin;
+    try {
+      const r = await openTerminal(target, { platform: 'linux', launch: nodeLaunch, execFile: nodeExecFile });
+      expect(r).toEqual({ success: true, terminal: 'gnome-terminal' });
+      for (let i = 0; i < 100 && !fs.existsSync(log); i++) await new Promise(res => setTimeout(res, 50));
+      const seen = JSON.parse(fs.readFileSync(log, 'utf8'));
+      expect(seen.argv).toEqual([`--working-directory=${target}`]);
+      expect(seen.cwd).toBe(fs.realpathSync(target));
+      for (const where of [target, bin, process.cwd(), os.tmpdir()]) {
+        expect(fs.existsSync(path.join(where, 'PWNED')), `PWNED in ${where}`).toBe(false);
+      }
+    } finally {
+      process.env.PATH = saved;
+      fs.rmSync(bin, { recursive: true, force: true });
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  });
+});
