@@ -1,0 +1,691 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the overseer, as recorded before the D2 refactor > builds the same fleet snapshot and composes the same prompt > briefing 1`] = `
+"You are the Overseer: a Hermes agent embedded in Tars, watching every coding agent in every project for Noah.
+Your job is to report what the fleet is doing, the decisions in flight, challenge choices that look wrong, and propose next steps. You talk to orchestrator agents as a peer would, through Noah.
+
+Rules:
+- You never claim to have done anything yourself. You only report, challenge, and propose.
+- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.
+- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.
+- Reply with EXACTLY one JSON object and nothing else, before or after it.
+- The object has two keys. "say" is a string: what you are telling Noah, in plain text or light markdown, written by you about the snapshot below. "action" is null.
+- Only when you are proposing to message one specific agent, "action" is instead an object with three keys: "kind", which is always the string message_agent; "agent_id", an id copied from the snapshot; and "text", the exact message you propose sending. If no agent in the snapshot is the right target, "action" stays null.
+- There is no specimen of that object written here, deliberately. Three times now a model has answered by returning the example it was shown rather than filling it in, once for a whole day, and the shape of the example made no difference: a blank one was copied, then a filled in one was copied, and the filled in one was worse because it read like a real observation. Build the object from what you can actually see below.
+- Look at the FLEET SNAPSHOT below before you write. It is the fleet as it is right now; the conversation above it is only what was already said, and some of it is hours old. Never repeat an earlier answer of yours: if nothing has changed since it, say that briefly instead of saying the same thing again.
+
+=== CONVERSATION SO FAR (what was already said; the older lines may be hours old) ===
+(nothing yet, this is the first turn)
+
+=== FLEET SNAPSHOT (the fleet as it is right now, taken this second) ===
+Fleet snapshot taken at 2026-09-23T12:00:00.000Z.
+
+PROJECTS:
+- /tars | branch unknown | clean | 1 agent(s)
+- /tars-b | branch unknown | clean | 1 agent(s)
+
+AGENTS:
+- id: a1
+  name: Frontend
+  project: /tars
+  provider/model: claude/claude-opus-5-5
+  status: running, in this status for just now
+  recent output: Drew the notice.
+- id: b1
+  name: Backend
+  project: /tars-b
+  provider/model: codex
+  status: waiting, in this status for just now
+
+=== AUTOMATIC CHECK-IN (Tars' watch timer, not a message from Noah) ===
+
+This is an unprompted check-in triggered by a fleet change, not a question. If something is worth flagging, say it concisely; otherwise say something minimal like "Nothing worth flagging.""
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > builds the same fleet snapshot and composes the same prompt > snapshot 1`] = `
+{
+  "agents": [
+    {
+      "currentTask": "Draw the notice",
+      "id": "a1",
+      "model": "claude-opus-5-5",
+      "name": "Frontend",
+      "outputTruncated": false,
+      "projectPath": "/tars",
+      "provider": "claude",
+      "recentOutput": "Drew the notice.",
+      "status": "running",
+      "statusDurationMs": 0,
+    },
+    {
+      "id": "b1",
+      "name": "Backend",
+      "outputTruncated": false,
+      "projectPath": "/tars-b",
+      "provider": "codex",
+      "recentOutput": "",
+      "status": "waiting",
+      "statusDurationMs": 0,
+    },
+  ],
+  "agentsOmitted": 0,
+  "projects": [
+    {
+      "agentCount": 1,
+      "branch": "unknown",
+      "dirty": false,
+      "path": "/tars",
+    },
+    {
+      "agentCount": 1,
+      "branch": "unknown",
+      "dirty": false,
+      "path": "/tars-b",
+    },
+  ],
+  "takenAt": "2026-09-23T12:00:00.000Z",
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > builds the same fleet snapshot and composes the same prompt > turn 1`] = `
+"You are the Overseer: a Hermes agent embedded in Tars, watching every coding agent in every project for Noah.
+Your job is to report what the fleet is doing, the decisions in flight, challenge choices that look wrong, and propose next steps. You talk to orchestrator agents as a peer would, through Noah.
+
+Rules:
+- You never claim to have done anything yourself. You only report, challenge, and propose.
+- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.
+- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.
+- Reply with EXACTLY one JSON object and nothing else, before or after it.
+- The object has two keys. "say" is a string: what you are telling Noah, in plain text or light markdown, written by you about the snapshot below. "action" is null.
+- Only when you are proposing to message one specific agent, "action" is instead an object with three keys: "kind", which is always the string message_agent; "agent_id", an id copied from the snapshot; and "text", the exact message you propose sending. If no agent in the snapshot is the right target, "action" stays null.
+- There is no specimen of that object written here, deliberately. Three times now a model has answered by returning the example it was shown rather than filling it in, once for a whole day, and the shape of the example made no difference: a blank one was copied, then a filled in one was copied, and the filled in one was worse because it read like a real observation. Build the object from what you can actually see below.
+- Look at the FLEET SNAPSHOT below before you write. It is the fleet as it is right now; the conversation above it is only what was already said, and some of it is hours old. Never repeat an earlier answer of yours: if nothing has changed since it, say that briefly instead of saying the same thing again.
+
+=== CONVERSATION SO FAR (what was already said; the older lines may be hours old) ===
+NOAH: What is everyone doing?
+OVERSEER: Frontend draws the notice; Backend waits.
+
+=== FLEET SNAPSHOT (the fleet as it is right now, taken this second) ===
+Fleet snapshot taken at 2026-09-23T12:00:00.000Z.
+
+PROJECTS:
+- /tars | branch unknown | clean | 1 agent(s)
+- /tars-b | branch unknown | clean | 1 agent(s)
+
+AGENTS:
+- id: a1
+  name: Frontend
+  project: /tars
+  provider/model: claude/claude-opus-5-5
+  status: running, in this status for just now
+  recent output: Drew the notice.
+- id: b1
+  name: Backend
+  project: /tars-b
+  provider/model: codex
+  status: waiting, in this status for just now
+
+=== NOAH ===
+And now?"
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > exports the same names > overseer 1`] = `
+[
+  "DEFAULT_WATCH_INTERVAL_MS",
+  "MAX_WATCH_INTERVAL_MS",
+  "MIN_WATCH_INTERVAL_MS",
+  "applyOverseerModel",
+  "askOverseer",
+  "buildFleetSnapshot",
+  "clearOverseerHistory",
+  "composeTurn",
+  "confirmPendingAction",
+  "getLastWatchFailure",
+  "getOverseerHistory",
+  "getOverseerSettings",
+  "isOverseerBusy",
+  "isOverseerWatchPaused",
+  "isSameThingSaidAgain",
+  "isTemplateEcho",
+  "migrateOverseerOutOfAgentReach",
+  "parseEnvelope",
+  "pauseOverseerWatch",
+  "resetLiveSession",
+  "resolveTarget",
+  "resumeOverseerWatch",
+  "sendToAgent",
+  "setOverseerSettings",
+  "startOverseerWatch",
+  "stopOverseerWatch",
+  "watchTick",
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > exports the same names > overseer-auto 1`] = `
+[
+  "AUTO_ACTION_RULES",
+  "findAutoRule",
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > exports the same names > overseer-runs 1`] = `
+[
+  "clearRunEvents",
+  "readRunEvents",
+  "recordRunEvents",
+  "summariseRuns",
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same file on disk: read, cleared, and after a whole turn > dispatched 1`] = `[]`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same file on disk: read, cleared, and after a whole turn > file after a turn 1`] = `
+{
+  "jobId": "job-1",
+  "longRunningReported": [],
+  "messages": [
+    {
+      "action": null,
+      "id": "<uuid 1>",
+      "role": "user",
+      "text": "What next?",
+      "timestamp": "2026-09-23T12:00:00.000Z",
+    },
+    {
+      "action": null,
+      "id": "<uuid 2>",
+      "role": "overseer",
+      "text": "Frontend is drawing the notice; Backend is idle.",
+      "timestamp": "2026-09-23T12:00:00.000Z",
+    },
+  ],
+  "paused": false,
+  "previousSnapshot": null,
+  "settings": {
+    "autoActions": [],
+    "model": "",
+    "provider": "",
+    "watchIntervalMs": 300000,
+  },
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same file on disk: read, cleared, and after a whole turn > file after clear 1`] = `
+"{
+  "jobId": "job-1",
+  "messages": [],
+  "previousSnapshot": null,
+  "longRunningReported": [],
+  "paused": false,
+  "settings": {
+    "watchIntervalMs": 300000,
+    "model": "",
+    "provider": "",
+    "autoActions": []
+  }
+}"
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same file on disk: read, cleared, and after a whole turn > history read 1`] = `
+[
+  {
+    "action": null,
+    "id": "seed-0",
+    "role": "user",
+    "text": "hello",
+    "timestamp": "2026-09-23T11:00:00.000Z",
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same file on disk: read, cleared, and after a whole turn > turn result 1`] = `
+{
+  "message": {
+    "action": null,
+    "id": "<uuid 1>",
+    "role": "overseer",
+    "text": "Frontend is drawing the notice; Backend is idle.",
+    "timestamp": "2026-09-23T12:00:00.000Z",
+  },
+  "ok": true,
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same file on disk: read, cleared, and after a whole turn > what reached Hermes 1`] = `
+[
+  {
+    "call": "probeHermes",
+  },
+  {
+    "call": "updateHermesCron",
+    "id": "job-1",
+    "patch": {
+      "prompt": "You are the Overseer: a Hermes agent embedded in Tars, watching every coding agent in every project for Noah.
+Your job is to report what the fleet is doing, the decisions in flight, challenge choices that look wrong, and propose next steps. You talk to orchestrator agents as a peer would, through Noah.
+
+Rules:
+- You never claim to have done anything yourself. You only report, challenge, and propose.
+- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.
+- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.
+- Reply with EXACTLY one JSON object and nothing else, before or after it.
+- The object has two keys. "say" is a string: what you are telling Noah, in plain text or light markdown, written by you about the snapshot below. "action" is null.
+- Only when you are proposing to message one specific agent, "action" is instead an object with three keys: "kind", which is always the string message_agent; "agent_id", an id copied from the snapshot; and "text", the exact message you propose sending. If no agent in the snapshot is the right target, "action" stays null.
+- There is no specimen of that object written here, deliberately. Three times now a model has answered by returning the example it was shown rather than filling it in, once for a whole day, and the shape of the example made no difference: a blank one was copied, then a filled in one was copied, and the filled in one was worse because it read like a real observation. Build the object from what you can actually see below.
+- Look at the FLEET SNAPSHOT below before you write. It is the fleet as it is right now; the conversation above it is only what was already said, and some of it is hours old. Never repeat an earlier answer of yours: if nothing has changed since it, say that briefly instead of saying the same thing again.
+
+=== CONVERSATION SO FAR (what was already said; the older lines may be hours old) ===
+NOAH: What next?
+
+=== FLEET SNAPSHOT (the fleet as it is right now, taken this second) ===
+Fleet snapshot taken at 2026-09-23T12:00:00.000Z.
+
+PROJECTS:
+- /tars | branch unknown | clean | 1 agent(s)
+- /tars-b | branch unknown | clean | 1 agent(s)
+
+AGENTS:
+- id: a1
+  name: Frontend
+  project: /tars
+  provider/model: claude/claude-opus-5-5
+  status: running, in this status for just now
+  recent output: Drew the notice.
+- id: b1
+  name: Backend
+  project: /tars-b
+  provider/model: codex
+  status: waiting, in this status for just now
+
+=== NOAH ===
+What next?",
+    },
+  },
+  {
+    "action": "trigger",
+    "call": "hermesCronAction",
+    "id": "job-1",
+  },
+  {
+    "call": "fetchHermesSessionMessages",
+    "id": "cron_job-1_20260923_120001",
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same settings > paused 1`] = `false`;
+
+exports[`the overseer, as recorded before the D2 refactor > keeps the same settings > settings 1`] = `
+{
+  "autoActions": [],
+  "model": "",
+  "provider": "",
+  "watchIntervalMs": 300000,
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > reads replies the same way > envelopes 1`] = `
+[
+  {
+    "action": null,
+    "say": "All quiet.",
+  },
+  {
+    "action": null,
+    "say": "Frontend is done.",
+  },
+  {
+    "action": null,
+    "say": "with prose",
+  },
+  {
+    "action": null,
+    "say": "broken json,",
+  },
+  {
+    "action": null,
+    "say": "<what you tell Noah, plain text or light markdown>",
+  },
+  {
+    "action": null,
+    "say": "",
+  },
+  {
+    "action": null,
+    "say": "no json at all, just words",
+  },
+  {
+    "action": null,
+    "say": "nested {braces} and "quotes"",
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > reads replies the same way > repetition 1`] = `
+[
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > reads replies the same way > template echo 1`] = `
+[
+  true,
+  false,
+  true,
+  false,
+  false,
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > resolves targets the same way > targets 1`] = `
+[
+  {
+    "ok": true,
+    "target": {
+      "agent": {
+        "currentTask": "Draw the notice",
+        "id": "a1",
+        "lastActivity": "2026-09-23T11:58:00.000Z",
+        "lastCleanOutput": "Drew the notice.",
+        "model": "claude-opus-5-5",
+        "name": "Frontend",
+        "output": [
+          "[32mbuilding[0m the panel
+",
+        ],
+        "projectPath": "/tars",
+        "provider": "claude",
+        "role": "orchestrator",
+        "status": "running",
+      },
+      "agentName": "Frontend",
+      "model": "claude-opus-5-5",
+      "pane": "no live pane, a fresh session will start",
+      "projectPath": "/tars",
+      "provider": "claude",
+    },
+  },
+  {
+    "ok": true,
+    "target": {
+      "agent": {
+        "currentTask": "",
+        "id": "b1",
+        "lastActivity": "2026-09-23T11:00:00.000Z",
+        "name": "Backend",
+        "output": [],
+        "projectPath": "/tars-b",
+        "provider": "codex",
+        "role": "worker",
+        "status": "waiting",
+        "waitingReason": "idle",
+      },
+      "agentName": "Backend",
+      "pane": "no live pane, a fresh session will start",
+      "projectPath": "/tars-b",
+      "provider": "codex",
+    },
+  },
+  {
+    "error": "No agent with id "zz" in the current fleet. It may have been removed or renamed.",
+    "ok": false,
+  },
+  {
+    "error": "No agent id given.",
+    "ok": false,
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > sends through the same gate: an approval, a repeat, a stranger, a refusal, an echo > dispatched 1`] = `
+[
+  {
+    "body": "{"message":"Pick up the review"}",
+    "url": "/api/agents/b1/dispatch",
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > sends through the same gate: an approval, a repeat, a stranger, a refusal, an echo > outcomes 1`] = `
+[
+  {
+    "mode": "pty",
+    "success": true,
+  },
+  {
+    "error": "This action was already resolved.",
+    "success": false,
+  },
+  {
+    "error": "That proposal is not in the conversation, so it cannot be sent.",
+    "success": false,
+  },
+  {
+    "success": true,
+  },
+  {
+    "error": "This action was already resolved.",
+    "success": false,
+  },
+  {
+    "error": "That proposal came from a reply that was the format template rather than an answer, so it will not be sent.",
+    "success": false,
+  },
+  {
+    "error": "Malformed action.",
+    "success": false,
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > watches the same way: a first look, a change, a pause, and a rule that sends on its own > auto dispatched 1`] = `
+[
+  {
+    "body": "{"message":"Carry on"}",
+    "url": "/api/agents/b1/dispatch",
+  },
+]
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > watches the same way: a first look, a change, a pause, and a rule that sends on its own > auto result 1`] = `
+{
+  "message": {
+    "action": null,
+    "id": "<uuid 1>",
+    "role": "overseer",
+    "text": "Backend has waited an hour.
+
+_Sent automatically to Backend: nudge an agent that is waiting for you._",
+    "timestamp": "2026-09-23T12:00:00.000Z",
+  },
+  "ok": true,
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > watches the same way: a first look, a change, a pause, and a rule that sends on its own > auto settings 1`] = `
+{
+  "autoActions": [
+    "nudge-waiting",
+  ],
+  "model": "",
+  "provider": "",
+  "watchIntervalMs": 300000,
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > watches the same way: a first look, a change, a pause, and a rule that sends on its own > file after the watch 1`] = `
+{
+  "jobId": "job-1",
+  "longRunningReported": [],
+  "messages": [
+    {
+      "action": null,
+      "id": "<uuid 1>",
+      "isBriefing": true,
+      "role": "overseer",
+      "text": "Frontend errored.",
+      "timestamp": "2026-09-23T12:00:00.000Z",
+    },
+    {
+      "action": null,
+      "id": "<uuid 2>",
+      "role": "user",
+      "text": "Anyone stuck?",
+      "timestamp": "2026-09-23T12:00:00.000Z",
+    },
+    {
+      "action": null,
+      "id": "<uuid 3>",
+      "role": "overseer",
+      "text": "Backend has waited an hour.
+
+_Sent automatically to Backend: nudge an agent that is waiting for you._",
+      "timestamp": "2026-09-23T12:00:00.000Z",
+    },
+  ],
+  "paused": false,
+  "previousSnapshot": {
+    "agents": [
+      {
+        "currentTask": "Draw the notice",
+        "id": "a1",
+        "model": "claude-opus-5-5",
+        "name": "Frontend",
+        "outputTruncated": false,
+        "projectPath": "/tars",
+        "provider": "claude",
+        "recentOutput": "Drew the notice.",
+        "status": "error",
+        "statusDurationMs": 0,
+      },
+      {
+        "id": "b1",
+        "name": "Backend",
+        "outputTruncated": false,
+        "projectPath": "/tars-b",
+        "provider": "codex",
+        "recentOutput": "",
+        "status": "waiting",
+        "statusDurationMs": 0,
+      },
+    ],
+    "agentsOmitted": 0,
+    "projects": [
+      {
+        "agentCount": 1,
+        "branch": "unknown",
+        "dirty": false,
+        "path": "/tars",
+      },
+      {
+        "agentCount": 1,
+        "branch": "unknown",
+        "dirty": false,
+        "path": "/tars-b",
+      },
+    ],
+    "takenAt": "2026-09-23T12:00:00.000Z",
+  },
+  "settings": {
+    "autoActions": [
+      "nudge-waiting",
+    ],
+    "model": "",
+    "provider": "",
+    "watchIntervalMs": 300000,
+  },
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > watches the same way: a first look, a change, a pause, and a rule that sends on its own > ticks 1`] = `
+{
+  "failure": null,
+  "paused": true,
+  "ticks": [
+    null,
+    {
+      "action": null,
+      "id": "<uuid 1>",
+      "isBriefing": true,
+      "role": "overseer",
+      "text": "Frontend errored.",
+      "timestamp": "2026-09-23T12:00:00.000Z",
+    },
+    null,
+  ],
+}
+`;
+
+exports[`the overseer, as recorded before the D2 refactor > watches the same way: a first look, a change, a pause, and a rule that sends on its own > what reached Hermes on the watch 1`] = `
+[
+  {
+    "call": "probeHermes",
+  },
+  {
+    "call": "createHermesCron",
+    "job": {
+      "name": "tars-overseer",
+      "prompt": "(idle - Tars overwrites this prompt before every trigger)",
+      "schedule": "0 3 1 1 *",
+    },
+  },
+  {
+    "call": "updateHermesCron",
+    "id": "job-1",
+    "patch": {
+      "prompt": "You are the Overseer: a Hermes agent embedded in Tars, watching every coding agent in every project for Noah.
+Your job is to report what the fleet is doing, the decisions in flight, challenge choices that look wrong, and propose next steps. You talk to orchestrator agents as a peer would, through Noah.
+
+Rules:
+- You never claim to have done anything yourself. You only report, challenge, and propose.
+- You may name an agent to message ONLY by an "id" value that literally appears in the FLEET SNAPSHOT below. Never invent an id, and never substitute a name for an id.
+- You never send anything directly. Tars shows Noah exactly what you propose to write, and to which agent, before anything is sent; nothing happens until he approves it.
+- Reply with EXACTLY one JSON object and nothing else, before or after it.
+- The object has two keys. "say" is a string: what you are telling Noah, in plain text or light markdown, written by you about the snapshot below. "action" is null.
+- Only when you are proposing to message one specific agent, "action" is instead an object with three keys: "kind", which is always the string message_agent; "agent_id", an id copied from the snapshot; and "text", the exact message you propose sending. If no agent in the snapshot is the right target, "action" stays null.
+- There is no specimen of that object written here, deliberately. Three times now a model has answered by returning the example it was shown rather than filling it in, once for a whole day, and the shape of the example made no difference: a blank one was copied, then a filled in one was copied, and the filled in one was worse because it read like a real observation. Build the object from what you can actually see below.
+- Look at the FLEET SNAPSHOT below before you write. It is the fleet as it is right now; the conversation above it is only what was already said, and some of it is hours old. Never repeat an earlier answer of yours: if nothing has changed since it, say that briefly instead of saying the same thing again.
+
+=== CONVERSATION SO FAR (what was already said; the older lines may be hours old) ===
+(nothing yet, this is the first turn)
+
+=== THE LAST DAY (what these agents have been doing, not just where they are now)
+- "Frontend" (/tars): 1 error
+
+=== FLEET SNAPSHOT (the fleet as it is right now, taken this second) ===
+Fleet snapshot taken at 2026-09-23T12:00:00.000Z.
+
+PROJECTS:
+- /tars | branch unknown | clean | 1 agent(s)
+- /tars-b | branch unknown | clean | 1 agent(s)
+
+AGENTS:
+- id: a1
+  name: Frontend
+  project: /tars
+  provider/model: claude/claude-opus-5-5
+  status: error, in this status for just now
+  recent output: Drew the notice.
+- id: b1
+  name: Backend
+  project: /tars-b
+  provider/model: codex
+  status: waiting, in this status for just now
+
+=== AUTOMATIC CHECK-IN (Tars' watch timer, not a message from Noah) ===
+Fleet change since the last check: "Frontend" (a1) errored in /tars.
+This is an unprompted check-in triggered by a fleet change, not a question. If something is worth flagging, say it concisely; otherwise say something minimal like "Nothing worth flagging."",
+    },
+  },
+  {
+    "action": "trigger",
+    "call": "hermesCronAction",
+    "id": "job-1",
+  },
+  {
+    "call": "fetchHermesSessionMessages",
+    "id": "cron_job-1_20260923_120001",
+  },
+]
+`;

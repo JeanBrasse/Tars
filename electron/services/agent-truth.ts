@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import { execFile } from 'child_process';
-import { spellingsOf, transcriptPath } from '../utils/resume-session';
+import { transcriptPath, transcriptRoots } from '../utils/resume-session';
 
 /**
  * What an agent is actually on, as opposed to what Tars last wrote down.
@@ -109,7 +109,7 @@ export function sessionModel(
   if (hit && now - hit.at < TTL_MS) return hit.value;
 
   let found: string | null = null;
-  for (const root of [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p)) {
+  for (const root of transcriptRoots(agent.worktreePath, agent.projectPath)) {
     const file = transcriptPath(root, sessionId, homeDir);
     if (!fs.existsSync(file)) continue;
     found = lastAssistantModel(file);
@@ -157,7 +157,7 @@ export function lastLocalCommandAt(
 ): number | undefined {
   const sessionId = agent.currentSessionId?.trim();
   if (!sessionId) return undefined;
-  for (const root of [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p)) {
+  for (const root of transcriptRoots(agent.worktreePath, agent.projectPath)) {
     const file = transcriptPath(root, sessionId, homeDir);
     let fd: number | undefined;
     try {
@@ -243,7 +243,7 @@ export function pendingBackgroundWork(
   const sessionId = agent.currentSessionId?.trim();
   if (!sessionId) return [];
   let raw: string | undefined;
-  for (const root of [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p)) {
+  for (const root of transcriptRoots(agent.worktreePath, agent.projectPath)) {
     try {
       raw = fs.readFileSync(transcriptPath(root, sessionId, homeDir), 'utf-8');
       break;
@@ -356,7 +356,7 @@ export function lastInterruptAt(
 ): number | undefined {
   const sessionId = agent.currentSessionId?.trim();
   if (!sessionId) return undefined;
-  const roots = [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p).flatMap(spellingsOf);
+  const roots = transcriptRoots(agent.worktreePath, agent.projectPath);
   let latest: number | undefined;
   for (const root of roots) {
     const file = transcriptPath(root, sessionId, homeDir);

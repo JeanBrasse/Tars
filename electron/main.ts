@@ -110,7 +110,7 @@ import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
-import { startAgentWatch } from './services/agent-watch';
+import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
@@ -366,6 +366,10 @@ function moveLocalKanbanToHermes() {
   setKanbanAgentDirectory(id => agents.get(id));
   const hermes = hermesKanban();
   if (!hermes) return;
+  if ('unusable' in hermes) {
+    console.warn(`[kanban] local board not moved to Hermes: ${hermes.unusable}`);
+    return;
+  }
   void migrateLocalTasks(hermes, KANBAN_FILE, path.join(DATA_DIR, 'kanban-moved-to-hermes.json')).then(r => {
     if (r.moved || r.errors.length) {
       console.log(`[kanban] local board to Hermes: ${r.moved} moved, ${r.skipped} already there${r.errors.length ? `, ${r.errors.length} left for the next launch: ${r.errors.join('; ')}` : ''}`);
@@ -651,6 +655,8 @@ app.whenReady().then(async () => {
   // And nothing is typed into a dialog its CLI shows: a permission, an
   // AskUserQuestion. Its Enter would answer it (the Audit, 2026-09-24).
   wireDialogProbe();
+  // And a turn ended by Esc, which sends no hook, ends here from the transcript.
+  watchInterruptedTurns();
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk

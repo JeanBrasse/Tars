@@ -1407,8 +1407,13 @@ neither is a place to park.
 - **An agent takes one**: `assign_task` with no `agent_id`. A claim is atomic among Tars's
   agents: a second one gets "already claimed by ...".
 - **An agent hands one to another**: `assign_task` with the other agent's id, same project only.
-  Tars claims it on that agent's lane and types it into it, as Tars.
+  Tars claims it on that agent's lane and types it into it, as the agent that handed it.
 - **An agent cannot hand a task to Hermes**: `move_task` to `planned` is refused.
+- **An agent deletes only its own**: a task it filed that nobody claimed, or one it claimed, done
+  or not. A task Noah gave to a Hermes profile, one Hermes finished, another agent's, or one moved
+  from the local board is Noah's to delete, on the Kanban page. Who filed a task is the last line
+  of its body, `Filed by <name> (Tars agent <id>).`, which Tars writes after the agent's own
+  description: the gateway records every creation as `dashboard`.
 - **Noah hands a task to Hermes**: on the Kanban page, give it a Hermes profile and move it to
   `ready`.
 - **The old local board** (`~/.dorothy/kanban-tasks.json`): its open tasks move to the Hermes
@@ -1417,8 +1422,10 @@ neither is a place to park.
   backup. The kanban-automation that matched an agent when a local task reached `planned` only
   served that board, which no page shows.
 - **Nothing is written to a Hermes nobody configured**: without `hermes-connection.json`, the tools
-  answer "Hermes is not configured". The default port is only a guess, and on this machine it is
-  a tunnel to a real gateway.
+  answer "Hermes is not configured". With one that cannot be read, is not a JSON object, or names
+  no address for its mode (a `local` port, an `ssh` host, a `remote` or `cloud` URL), they say what
+  is wrong with it, and the old board is not moved. The default port is only a guess, and on this
+  machine it is a tunnel to a real gateway.
 - **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
 
 ---
@@ -1462,7 +1469,8 @@ is skipped.
 Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
 if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
-API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+API-driven session) when no panel has. Free-standing terminals use `$SHELL`, or `/bin/zsh` on macOS
+and `/bin/bash` elsewhere when it is unset (`defaultShell`, `electron/utils/default-shell.ts`).
 
 The environment is `process.env` plus:
 
@@ -1550,7 +1558,7 @@ panel shows it once the Frontend's part lands. Deleting the agent drops the wait
 windows it is over. A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
 CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
 vendor included, and they continue their conversation too, found under the project's real path as
-well as the one Tars saved (a project reached through a symlink resumed nothing before); codex, gemini, grok, opencode, pi and
+well as the one Tars saved (a project reached through a symlink resumed nothing before). The same two spellings are read for the background work a restart waits for, the command that empties a field, the session's model and the Chat's transcript (`transcriptRoots`): read under the saved path alone, a restart on a linked project did not wait for the work its session had left running, and killed it; codex, gemini, grok, opencode, pi and
 amp never are: stop and start them. To see what a running CLI was actually launched with, read
 its argv (the model and effort are on the command line):
 

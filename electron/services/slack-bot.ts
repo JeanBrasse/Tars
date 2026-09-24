@@ -6,6 +6,7 @@ import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstr
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
+import { getClaudeStats as readClaudeStats } from './claude-service';
 import {
   findAgent, forwardToOrchestrator, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type StatusGroup,
@@ -239,6 +240,7 @@ const HELP =
 
 // ============== `usage`, with Slack's own price table ==============
 
+/** The part of Claude's stats `usage` reads, each field of it defensively. */
 interface SlackClaudeStats {
   modelUsage?: Record<string, {
     inputTokens: number;
@@ -248,7 +250,7 @@ interface SlackClaudeStats {
   }>;
 }
 
-// Helper function to get Claude stats - provided by caller
+// Another reader of Claude's stats, for tests; the app uses the Usage page's own.
 let getClaudeStatsRef: (() => Promise<SlackClaudeStats | undefined>) | null = null;
 
 export function setGetClaudeStatsRef(fn: () => Promise<SlackClaudeStats | undefined>): void {
@@ -257,7 +259,9 @@ export function setGetClaudeStatsRef(fn: () => Promise<SlackClaudeStats | undefi
 
 async function getClaudeStats(): Promise<SlackClaudeStats | undefined> {
   if (!getClaudeStatsRef) {
-    return undefined;
+    // The stats the Usage page and Telegram's /usage read. Nothing in the app
+    // set a reader, and `usage` said "No usage data" whatever the data (#176).
+    return ((await readClaudeStats()) ?? undefined) as SlackClaudeStats | undefined;
   }
   return getClaudeStatsRef();
 }

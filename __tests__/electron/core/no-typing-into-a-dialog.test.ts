@@ -110,9 +110,13 @@ beforeEach(async () => {
   manager.wireDialogProbe();
   pty.ptyProcesses.clear();
   store.resetBusStore();
+  // The transcripts the refusal tests write: each test starts with none.
+  fs.rmSync(path.join(os.homedir(), '.claude', 'projects', '-tars'), { recursive: true, force: true });
   fs.rmSync(path.join(tmp, 'bus.json'), { force: true });
   watch.resetAgentWatch();
   watch.startAgentWatch();
+  // As main.ts starts it.
+  watch.watchInterruptedTurns();
   ipcHandlers.clear();
   const { registerBusHandlers } = await import('../../../electron/handlers/bus-handlers');
   registerBusHandlers();
@@ -240,7 +244,7 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
   // its screen back at the input, and everything held for it stayed held until
   // Noah typed there himself. The transcript records the refusal:
   // "[Request interrupted by user for tool use]".
-  async function permissionPosted(id: string): Promise<void> {
+  async function permissionPosted(id: string, extra: Record<string, unknown> = {}): Promise<void> {
     const { registerHooksRoutes } = await import('../../../electron/services/api-routes/hooks-routes');
     const routes: Array<{ pattern: unknown; handler: (...a: unknown[]) => unknown }> = [];
     const app = {
@@ -253,7 +257,7 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     const ctx = { mainWindow: null, appSettings: {}, getAppSettings: () => ({}), handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(), agentStatusEmitter: new EventEmitter() };
     registerHooksRoutes(app as never, ctx as never);
     await routes.find(r => r.pattern === '/api/hooks/status')!.handler({ body: {
-      agent_id: id, session_id: `sess-${id}`, status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash',
+      agent_id: id, session_id: `sess-${id}`, status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', ...extra,
     }, params: {} }, vi.fn(), ctx);
   }
 
@@ -291,6 +295,58 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     await settle(3000);
 
     expect(alpha.typed).not.toContain('Not before the answer.');
+  });
+
+  // The Audit's re-check of #174: dialogSince was the post's arrival, so a
+  // refusal made before a late post arrived read as older than the dialog.
+  it('11. dates the dialog from the hook script\'s own time, so a refusal before a late post still closes it', async () => {
+    const alpha = terminalFor('alpha');
+    putAgent({ id: 'alpha', status: 'running' });
+    const openedAt = Date.now() - 4000;
+    interruptRecorded('alpha', new Date(openedAt + 1000));
+    await permissionPosted('alpha', { opened_at: openedAt });
+
+    expect(manager.agents.get('alpha')!.dialogSince).toBe(new Date(openedAt).toISOString());
+    await noahWrites('After the early refusal.', ['alpha']);
+    await settle(2500);
+    expect(alpha.typed).toContain('After the early refusal.');
+  });
+
+  it('11. does not take a time from the future, nor from long before, for the dialog\'s opening', async () => {
+    putAgent({ id: 'alpha', status: 'running' });
+    await permissionPosted('alpha', { opened_at: Date.now() + 3_600_000 });
+    const future = Date.parse(manager.agents.get('alpha')!.dialogSince!);
+    expect(future).toBeLessThanOrEqual(Date.now());
+
+    putAgent({ id: 'beta', status: 'running' });
+    await permissionPosted('beta', { opened_at: Date.now() - 3_600_000 });
+    expect(Date.now() - Date.parse(manager.agents.get('beta')!.dialogSince!)).toBeLessThanOrEqual(60_000);
+  });
+
+  // An Esc on a running turn ends it with no hook: no Stop, and the idle
+  // prompt only a minute on. The transcript records it.
+  it('12. reads an interruption recorded during a turn as the turn\'s end, and delivers what waited for it', async () => {
+    const alpha = terminalFor('alpha');
+    putAgent({ id: 'alpha', status: 'running', lastTurnStartedAt: new Date(Date.now() - 10_000).toISOString() });
+    const id = await noahWrites('After the Esc.', ['alpha']);
+    await settle(500);
+    expect(alpha.typed).not.toContain('After the Esc.');
+
+    interruptRecorded('alpha', new Date());
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('idle');
+    expect(alpha.typed).toContain('After the Esc.');
+    expect(store.deliveriesOf(id)[0].state).toBe('delivered');
+  });
+
+  it('12. does not end a turn on an interruption from before it began', async () => {
+    terminalFor('alpha');
+    interruptRecorded('alpha', new Date(Date.now() - 20_000));
+    putAgent({ id: 'alpha', status: 'running', lastTurnStartedAt: new Date(Date.now() - 10_000).toISOString() });
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('running');
   });
 
   it('10. holds the Enter of a message pasted just before a dialog opened, and lets a person answer it', async () => {

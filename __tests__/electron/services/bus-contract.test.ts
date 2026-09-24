@@ -776,7 +776,9 @@ describe('sending what was never sent', () => {
     expect(result.released).toHaveLength(0);
     expect(result.reason, 'the release reported nothing at all').toMatch(/waiting for that terminal/i);
     expect(terminal.written.join('')).not.toContain(HELD[0]);
-    expect(store.notSentFor('cx')).toHaveLength(3);
+    // Held behind that draft, and off the not-sent list: a second press has
+    // nothing to send twice (#159, the held delivery).
+    expect(store.notSentFor('cx')).toHaveLength(0);
 
     // And they go in by themselves once the field is free.
     ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-cx')!, '\x03');
@@ -1149,5 +1151,455 @@ describe('the note on a room message', () => {
     expect(note.body).toEqual(['hello']);
     expect(note.after).toHaveLength(1);
     expect(note.before[0].startsWith('[Tars] "x\\n[Tars]')).toBe(true);
+  });
+});
+
+/**
+ * The contracts the Chat's direction A draws (#159, "Contracts these frames
+ * need beyond today's", 1 to 3).
+ *
+ * How they fail, written before the code (2026-09-24):
+ * 1. A message waiting behind somebody's draft reads `queued`, the same as
+ *    one waiting for a turn to end, so the page cannot say "held: somebody is
+ *    typing in that field", which is the one state only a person can end.
+ * 2. A held message that goes in stays `held`, or turns `delivered` before it
+ *    was written.
+ * 3. A held message whose terminal exits reads `held` for ever: the terminal's
+ *    own queue drops it and tells nobody.
+ * 4. Released by hand into a field with a draft, a message stays `not_sent`,
+ *    and a second press sends it again.
+ * 5. A change of members names who came and went only in a sentence, so the
+ *    row cannot pick its icon or names without parsing English, and does not
+ *    say how many messages the change dropped.
+ * 6. The conversation list cannot show what is waiting in a room without
+ *    reading every room's whole journal.
+ */
+describe('a message held behind a draft', () => {
+  let pushed: BusDelivery[];
+
+  beforeEach(() => {
+    pushed = [];
+    vi.mocked(broadcast.broadcastToAllWindows).mockImplementation((channel: string, payload: unknown) => {
+      if (channel === 'bus:delivery') pushed.push(JSON.parse(JSON.stringify(payload)) as BusDelivery);
+    });
+  });
+
+  const rowsOf = (messageId: string, agentId: string) =>
+    pushed.filter(p => p.messageId === messageId && p.targetAgentId === agentId);
+
+  async function noahWrites(text: string, mentions: string[]): Promise<{ messageId: string; deliveries: BusDelivery[] }> {
+    const result = await ipcHandlers.get('bus:postMessage')!(null, { roomId: ROOM, text, mentions }) as
+      { success: boolean; error?: string; messageId: string; deliveries: BusDelivery[] };
+    expect(result.success, result.error).toBe(true);
+    return result;
+  }
+
+  /** An agent at rest with something in its field Tars will not write across. */
+  function atRestWithDraft(id: string): FakeTerminal {
+    const terminal = attachTerminal(`pty-${id}`);
+    putAgent({ id, status: 'idle', ptyId: `pty-${id}` });
+    ptyManager.rememberTerminalOwner(ptyManager.ptyProcesses.get(`pty-${id}`)!, id);
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get(`pty-${id}`)!, '\t');
+    return terminal;
+  }
+
+  it('reads held, with the draft as its reason and when, and delivered once it goes in', async () => {
+    const terminal = atRestWithDraft('typist');
+
+    const { messageId } = await noahWrites('when you have a second', ['typist']);
+
+    expect(terminal.written.join('')).not.toContain('when you have a second');
+    const held = store.deliveriesOf(messageId)[0];
+    expect(held).toMatchObject({ state: 'held', reasonCode: 'draft' });
+    expect(Date.parse(held.heldAt!)).not.toBeNaN();
+    expect(rowsOf(messageId, 'typist').at(-1)).toMatchObject({ state: 'held', reasonCode: 'draft' });
+
+    // The person clears the field; the message goes in by itself.
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-typist')!, '\x03');
+    await new Promise(resolve => setTimeout(resolve, ptyManager.TYPING_PAUSE_MS + 3000));
+
+    expect(terminal.written.join('')).toContain('when you have a second');
+    expect(store.deliveriesOf(messageId)[0]).toMatchObject({ state: 'delivered' });
+    expect(store.deliveriesOf(messageId)[0].reasonCode).toBeUndefined();
+    expect(rowsOf(messageId, 'typist').at(-1)?.state).toBe('delivered');
+    ptyManager.resetTerminalInput(ptyManager.ptyProcesses.get('pty-typist')!);
+  }, 30_000);
+
+  it('is dropped, not held for ever, when its terminal exits before it goes in', async () => {
+    atRestWithDraft('leaver');
+    const { messageId } = await noahWrites('before you go', ['leaver']);
+    expect(store.deliveriesOf(messageId)[0].state).toBe('held');
+
+    ptyManager.terminalExited(ptyManager.ptyProcesses.get('pty-leaver')!);
+
+    expect(store.deliveriesOf(messageId)[0]).toMatchObject({ state: 'dropped' });
+    expect(store.deliveriesOf(messageId)[0].reason).toBeTruthy();
+    expect(rowsOf(messageId, 'leaver').at(-1)?.state).toBe('dropped');
+  });
+
+  it('reads held, not not_sent, when released by hand into a field with a draft, and goes once', async () => {
+    const terminal = attachTerminal('pty-cx');
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-cx' });
+    const { message } = human('held for codex', ['cx']);
+    delivery.fanOutDeliveries(message, room());
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-cx')!, '\t');
+
+    await delivery.releaseNotSent('cx');
+
+    expect(store.deliveriesOf(message.id)[0]).toMatchObject({ state: 'held', reasonCode: 'draft' });
+    expect(store.notSentFor('cx')).toHaveLength(0);
+    // A second press has nothing left to send.
+    expect((await delivery.releaseNotSent('cx')).released).toHaveLength(0);
+
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-cx')!, '\x03');
+    await new Promise(resolve => setTimeout(resolve, ptyManager.TYPING_PAUSE_MS + 3000));
+    expect(terminal.written.join('').split('held for codex').length - 1).toBe(1);
+    expect(store.deliveriesOf(message.id)[0].state).toBe('delivered');
+    ptyManager.resetTerminalInput(ptyManager.ptyProcesses.get('pty-cx')!);
+  }, 30_000);
+});
+
+describe('who joined or left, as data', () => {
+  it('carries the ids and names added and removed, and how many messages the change dropped', async () => {
+    putAgent({ id: 'a', name: 'Alpha', status: 'running' });
+    putAgent({ id: 'b', name: 'Beta', status: 'running' });
+    putAgent({ id: 'c', name: 'Gamma', status: 'running' });
+    const setMembers = ipcHandlers.get('bus:setMembers')!;
+    await setMembers(null, ROOM, ['a', 'b']);
+    const { message } = human('talk among yourselves', ['a', 'b']);
+    delivery.fanOutDeliveries(message, room());
+
+    const result = await setMembers(null, ROOM, ['a', 'c']) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const line = store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.filter(m => m.systemKind === 'members_changed').at(-1)!;
+    expect(line.systemData).toEqual({ added: ['c'], removed: ['b'], names: { c: 'Gamma', b: 'Beta' }, dropped: 2 });
+  });
+});
+
+describe('what is waiting in each room', () => {
+  it('is counted per room, by state, without reading a room', async () => {
+    const other = 'project:/elsewhere';
+    attachTerminal('pty-busy');
+    putAgent({ id: 'busy', status: 'running', ptyId: 'pty-busy' });
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-cx' });
+    attachTerminal('pty-typist');
+    putAgent({ id: 'typist', status: 'idle', ptyId: 'pty-typist' });
+    putAgent({ id: 'far', status: 'idle', projectPath: '/elsewhere', ptyId: 'pty-far' });
+    attachTerminal('pty-rest');
+    putAgent({ id: 'rest', status: 'idle', ptyId: 'pty-rest' });
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-typist')!, '\t');
+
+    const post = ipcHandlers.get('bus:postMessage')!;
+    await post(null, { roomId: ROOM, text: 'everyone, this', mentions: ['busy', 'cx', 'typist', 'rest'] });
+
+    const rooms = store.listRooms();
+    expect(rooms.find(r => r.id === ROOM)!.pending).toEqual({ queued: 1, held: 1, notSent: 1 });
+    expect(rooms.find(r => r.id === other)!.pending).toEqual({ queued: 0, held: 0, notSent: 0 });
+    ptyManager.resetTerminalInput(ptyManager.ptyProcesses.get('pty-typist')!);
+  });
+});
+
+/**
+ * What the composer still owed (#124, "IPC contracts for the backend"): send
+ * now, files for a room, and the member that can be interrupted.
+ *
+ * How they fail, written before the code (2026-09-24):
+ * 1. Send now types the message into a busy claude without interrupting it:
+ *    it lands mid-turn, as a queued steer, and nothing was sent "now".
+ * 2. It writes the message before the interrupt has taken: the Esc and the
+ *    text arrive together and the Esc clears the text it was meant to make
+ *    room for.
+ * 3. It takes any interrupt record as its own: an Esc Noah pressed an hour
+ *    ago confirms an interrupt that never happened, and the message is typed
+ *    into the running turn.
+ * 4. An interrupt that is never confirmed loses the message, or types it
+ *    anyway: it has to wait for the turn's end like any other, and say so.
+ * 5. Send now to an agent at rest sends an Esc nobody needed, which clears
+ *    whatever that person had typed.
+ * 6. Send now to a CLI Tars cannot interrupt (codex) writes an Esc it has
+ *    no reason to believe does anything.
+ * 7. Send now to an agent outside the room records a message for nobody.
+ * 8. The draft guard is skipped on the "now" path: the message is typed
+ *    across somebody's draft.
+ * 9. A staged file is written outside ~/.dorothy, or its name climbs out of
+ *    its folder, or it is too large to hand an agent.
+ * 10. A message naming a staged file does not tell the agent where the file
+ *     is: the agent receives a sentence about a file it cannot read.
+ * 11. A message naming an id nobody staged is published without it.
+ */
+describe('send now, and the member that can be interrupted', () => {
+  let transcripts: string;
+
+  beforeEach(() => {
+    transcripts = path.join(os.homedir(), '.claude', 'projects', '-tars');
+    fs.mkdirSync(transcripts, { recursive: true });
+  });
+
+  /** What claude writes into its transcript when a turn is interrupted. */
+  function interruptRecorded(agentId: string, at: Date): void {
+    fs.appendFileSync(path.join(transcripts, `sess-${agentId}.jsonl`), JSON.stringify({
+      type: 'user',
+      sessionId: `sess-${agentId}`,
+      timestamp: at.toISOString(),
+      message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] },
+    }) + '\n');
+  }
+
+  function busy(id: string): FakeTerminal {
+    const terminal = attachTerminal(`pty-${id}`);
+    putAgent({ id, status: 'running', ptyId: `pty-${id}` });
+    ptyManager.rememberTerminalOwner(ptyManager.ptyProcesses.get(`pty-${id}`)!, id);
+    return terminal;
+  }
+
+  const sendNow = (params: Record<string, unknown>) =>
+    ipcHandlers.get('bus:sendNow')!(null, { roomId: ROOM, ...params }) as Promise<{
+      success: boolean; error?: string; messageId?: string; threadId?: string; interrupted: boolean; deliveries?: BusDelivery[];
+    }>;
+
+  it('interrupts a busy claude, then types the message once the interrupt is on record', async () => {
+    const terminal = busy('worker');
+    const sent = sendNow({ agentId: 'worker', text: 'stop, use main instead' });
+
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(terminal.written).toEqual(['\x1b']);
+    interruptRecorded('worker', new Date());
+    const result = await sent;
+
+    expect(result.success, result.error).toBe(true);
+    expect(result.interrupted).toBe(true);
+    expect(terminal.written.join('')).toContain('stop, use main instead');
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('delivered');
+    const said = store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.filter(m => m.systemKind === 'turn_interrupted');
+    expect(said.at(-1)?.text).toBe("You interrupted WORKER's turn.");
+  }, 15_000);
+
+  it('does not take an older interrupt for its own', async () => {
+    const terminal = busy('worker');
+    interruptRecorded('worker', new Date(Date.now() - 60 * 60 * 1000));
+
+    const result = await sendNow({ agentId: 'worker', text: 'not across the turn' });
+
+    expect(result.interrupted).toBe(false);
+    expect(terminal.written.join('')).not.toContain('not across the turn');
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('queued');
+  }, 15_000);
+
+  it('queues, and says so, when the interrupt is not confirmed; the turn end delivers it', async () => {
+    const terminal = busy('worker');
+
+    const result = await sendNow({ agentId: 'worker', text: 'when you can' });
+
+    expect(result.success).toBe(true);
+    expect(result.interrupted).toBe(false);
+    expect(result.deliveries?.[0]).toMatchObject({ state: 'queued', targetAgentId: 'worker' });
+    expect(terminal.written.join('')).not.toContain('when you can');
+
+    manager.agents.get('worker')!.status = 'idle';
+    events.emitAgentStatus('worker');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    expect(terminal.written.join('')).toContain('when you can');
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('delivered');
+  }, 15_000);
+
+  it('sends no Esc to an agent at rest, and delivers as any message', async () => {
+    const terminal = attachTerminal('pty-rest');
+    putAgent({ id: 'rest', status: 'idle', ptyId: 'pty-rest' });
+
+    const result = await sendNow({ agentId: 'rest', text: 'at rest' });
+
+    expect(result.interrupted).toBe(false);
+    expect(terminal.written).not.toContain('\x1b');
+    expect(terminal.written.join('')).toContain('at rest');
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('delivered');
+  });
+
+  it('sends no Esc to a CLI it cannot interrupt, and says who can be', async () => {
+    const terminal = attachTerminal('pty-cx');
+    putAgent({ id: 'cx', provider: 'codex' as AgentStatus['provider'], status: 'running', ptyId: 'pty-cx' });
+    putAgent({ id: 'cl', status: 'running' });
+
+    const result = await sendNow({ agentId: 'cx', text: 'for codex' });
+
+    expect(result.interrupted).toBe(false);
+    expect(terminal.written).toEqual([]);
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('not_sent');
+    const members = store.getRoomSnapshot(ROOM)!.members;
+    expect(members.find(m => m.id === 'cx')?.canInterrupt).toBe(false);
+    expect(members.find(m => m.id === 'cl')?.canInterrupt).toBe(true);
+  });
+
+  it('records nothing for an agent outside the room', async () => {
+    putAgent({ id: 'member', status: 'idle' });
+    putAgent({ id: 'far', status: 'running', projectPath: '/elsewhere' });
+    const before = store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.length;
+
+    const result = await sendNow({ agentId: 'far', text: 'hello' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+    expect(store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.length).toBe(before);
+  });
+
+  // Found at the gate of #169 and fixed by #174 for every writer: an Esc in a
+  // dialog is "No", and send now wrote one whatever the dialog.
+  it('sends no Esc to an agent at a dialog, and holds the message until it is answered', async () => {
+    const terminal = busy('asker');
+    const a = manager.agents.get('asker')!;
+    a.status = 'waiting';
+    a.waitingReason = 'permission';
+    manager.wireDialogProbe();
+
+    const result = await sendNow({ agentId: 'asker', text: 'do not answer my dialog' });
+
+    expect(result.interrupted).toBe(false);
+    expect(terminal.written, 'an Esc or the text went into the dialog').toEqual([]);
+    expect(store.deliveriesOf(result.messageId!)[0].state).toBe('queued');
+
+    a.status = 'running';
+    a.waitingReason = undefined;
+    events.emitAgentStatus('asker');
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    expect(terminal.written.join('')).toContain('do not answer my dialog');
+  }, 15_000);
+
+  it('keeps the draft guard after the interrupt: held, not typed across the draft', async () => {
+    const terminal = busy('typist');
+    ptyManager.writeHumanInput(ptyManager.ptyProcesses.get('pty-typist')!, '\t');
+    terminal.written.length = 0;
+    const sent = sendNow({ agentId: 'typist', text: 'mind your draft' });
+    await new Promise(resolve => setTimeout(resolve, 300));
+    interruptRecorded('typist', new Date());
+
+    const result = await sent;
+
+    expect(result.interrupted).toBe(true);
+    expect(terminal.written.join('')).not.toContain('mind your draft');
+    expect(store.deliveriesOf(result.messageId!)[0]).toMatchObject({ state: 'held', reasonCode: 'draft' });
+    ptyManager.resetTerminalInput(ptyManager.ptyProcesses.get('pty-typist')!);
+  }, 15_000);
+});
+
+describe('files for a room', () => {
+  // A project room exists while an agent works in its project.
+  beforeEach(() => { putAgent({ id: 'member', status: 'idle', ptyId: 'pty-none' }); });
+
+  const stage = (files: Array<{ name: string; mimeType: string; data: unknown }>, roomId = ROOM) =>
+    ipcHandlers.get('bus:stageFiles')!(null, { roomId, files }) as Promise<{
+      success: boolean; error?: string; attachments: Array<{ id: string; name: string; path: string; bytes: number; isImage: boolean }>;
+    }>;
+
+  it('writes the bytes under ~/.dorothy, where every agent can read them', async () => {
+    const result = await stage([{ name: 'shot.png', mimeType: 'image/png', data: new Uint8Array([1, 2, 3]) }]);
+
+    expect(result.success, result.error).toBe(true);
+    const [file] = result.attachments;
+    expect(file).toMatchObject({ name: 'shot.png', bytes: 3, isImage: true });
+    expect(path.isAbsolute(file.path)).toBe(true);
+    expect(file.path.startsWith(tmp + path.sep)).toBe(true);
+    expect([...fs.readFileSync(file.path)]).toEqual([1, 2, 3]);
+  });
+
+  it('keeps a name that climbs inside its folder', async () => {
+    const result = await stage([{ name: '../../../../etc/evil', mimeType: 'text/plain', data: new Uint8Array([7]) }]);
+
+    const [file] = result.attachments;
+    expect(file.path.startsWith(tmp + path.sep)).toBe(true);
+    expect(path.basename(file.path)).toBe('evil');
+  });
+
+  it('refuses what is too large or not bytes, names it, and keeps the rest', async () => {
+    const result = await stage([
+      { name: 'big.bin', mimeType: 'application/octet-stream', data: new Uint8Array(12 * 1024 * 1024 + 1) },
+      { name: 'text.txt', mimeType: 'text/plain', data: 'not bytes' },
+      { name: 'ok.txt', mimeType: 'text/plain', data: new Uint8Array([104, 105]) },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.attachments.map(a => a.name)).toEqual(['ok.txt']);
+    expect(result.error).toMatch(/big\.bin/);
+    expect(result.error).toMatch(/text\.txt/);
+  });
+
+  // The Audit's Lows at the gate of #169.
+  it('takes DEL, C1 controls and direction overrides out of a name, on disk and in what the agent reads', async () => {
+    const terminal = attachTerminal('pty-reader');
+    putAgent({ id: 'reader', status: 'idle', ptyId: 'pty-reader' });
+    const { attachments } = await stage([{ name: 'a\x7fb\u009b31mc\u202Etxt.exe', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
+
+    expect(attachments[0].name).toBe('ab31mctxt.exe');
+    expect(path.basename(attachments[0].path)).toBe('ab31mctxt.exe');
+    await ipcHandlers.get('bus:postMessage')!(null, { roomId: ROOM, text: 'read', mentions: ['reader'], attachments: [attachments[0].id] });
+    expect(terminal.written.join('')).not.toMatch(/[\x7f-\x9f\u202a-\u202e\u2066-\u2069]/);
+  });
+
+  it('refuses to stage through a bus-files folder that is a link', async () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-elsewhere-'));
+    fs.rmSync(path.join(tmp, 'bus-files'), { recursive: true, force: true });
+    fs.symlinkSync(elsewhere, path.join(tmp, 'bus-files'));
+    try {
+      const result = await stage([{ name: 'a.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
+
+      expect(result.success).toBe(false);
+      expect(result.attachments).toEqual([]);
+      expect(fs.readdirSync(elsewhere)).toEqual([]);
+    } finally {
+      fs.rmSync(path.join(tmp, 'bus-files'), { force: true });
+    }
+  });
+
+  it('stages ten files at most in one call, and names the rest', async () => {
+    const files = Array.from({ length: 12 }, (_, i) => ({ name: `f${i}.txt`, mimeType: 'text/plain', data: new Uint8Array([i]) }));
+
+    const result = await stage(files);
+
+    expect(result.attachments).toHaveLength(10);
+    expect(result.error).toMatch(/f10\.txt/);
+    expect(result.error).toMatch(/f11\.txt/);
+  });
+
+  it('removes staged files older than a week, and keeps the others', async () => {
+    const old = path.join(tmp, 'bus-files', 'old-id');
+    fs.mkdirSync(old, { recursive: true });
+    fs.writeFileSync(path.join(old, 'stale.txt'), 'x');
+    const eightDays = (Date.now() - 8 * 24 * 3600 * 1000) / 1000;
+    fs.utimesSync(old, eightDays, eightDays);
+    const recent = await stage([{ name: 'kept.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
+    const second = await stage([{ name: 'next.txt', mimeType: 'text/plain', data: new Uint8Array([2]) }]);
+
+    expect(fs.existsSync(old)).toBe(false);
+    expect(fs.existsSync(recent.attachments[0].path)).toBe(true);
+    expect(fs.existsSync(second.attachments[0].path)).toBe(true);
+  });
+
+  it('refuses the global room, whose messages are the super chat', async () => {
+    const result = await stage([{ name: 'a.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }], 'global');
+    expect(result.success).toBe(false);
+    expect(result.attachments).toEqual([]);
+  });
+
+  it('names each staged file by its absolute path in what the agent receives', async () => {
+    const terminal = attachTerminal('pty-reader');
+    putAgent({ id: 'reader', status: 'idle', ptyId: 'pty-reader' });
+    const { attachments } = await stage([{ name: 'notes.md', mimeType: 'text/markdown', data: new Uint8Array([35]) }]);
+
+    const posted = await ipcHandlers.get('bus:postMessage')!(null, {
+      roomId: ROOM, text: 'read this', mentions: ['reader'], attachments: [attachments[0].id],
+    }) as { success: boolean; error?: string; messageId: string };
+
+    expect(posted.success, posted.error).toBe(true);
+    expect(store.getMessage(posted.messageId)!.attachments).toEqual([attachments[0]]);
+    expect(terminal.written.join('')).toContain(attachments[0].path);
+  });
+
+  it('publishes nothing that names a file nobody staged', async () => {
+    const before = store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.length;
+    const posted = await ipcHandlers.get('bus:postMessage')!(null, {
+      roomId: ROOM, text: 'read this', attachments: ['no-such-id'],
+    }) as { success: boolean; error?: string };
+
+    expect(posted.success).toBe(false);
+    expect(store.getRoomSnapshot(ROOM, { limit: 200 })!.messages.length).toBe(before);
   });
 });

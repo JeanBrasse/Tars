@@ -26,6 +26,8 @@
  * - claimed: `ready` on the claiming agent's lane (`tars:<agent id>`), set in one
  *   PATCH whose assignee lands first, so the task is never `ready` on no lane.
  * - done: `done`, from the claim.
+ * - deleted: by the agent that claimed it, or by the one that filed it while
+ *   nobody has; the rest is another agent's, Hermes's or Noah's.
  *
  * Claims are atomic among Tars's agents, which all come through this process: a
  * claim reads and writes a task under that task's own lock. Hermes has no
@@ -165,7 +167,12 @@ function toAgentTask(t: HermesTask, caller: KanbanCaller): AgentTask {
   };
 }
 
-type Conn = KanbanHermes | null;
+/** A connection file that is there and cannot be used, with why (hermes-config's configuredHermesConnection). */
+export interface HermesUnusable {
+  unusable: string;
+}
+
+type Conn = KanbanHermes | HermesUnusable | null;
 
 /**
  * The task in a create or a patch answer. The gateway sends `{ "task": {...} }`
@@ -222,9 +229,10 @@ async function fresh(h: KanbanHermes, id: string): Promise<KanbanResult<{ task: 
   return { ok: true, value: { task: detail.task, comments: (detail.comments ?? []).map(c => String(c.body ?? '')) } };
 }
 
-/** Runs `fn` with the connection, turning "none" and a transport failure into answers. */
+/** Runs `fn` with the connection, turning "none", a broken one and a transport failure into answers. */
 async function withHermes<T>(h: Conn, fn: (h: KanbanHermes) => Promise<KanbanResult<T>>): Promise<KanbanResult<T>> {
   if (!h) return notConfigured();
+  if ('unusable' in h) return fail(503, `The Hermes connection cannot be used: ${h.unusable} Until it can, the kanban has no board, and nothing was written.`);
   try {
     return await fn(h);
   } catch (err) {
@@ -255,6 +263,33 @@ function heldElsewhere(t: HermesTask, caller: KanbanCaller): string | null {
     return `Task ${t.id} is Hermes's (${t.status}${t.assignee && t.assignee !== TARS_LANE ? `, ${t.assignee}` : ''}): only Noah moves it back.`;
   }
   return null;
+}
+
+/**
+ * The agent that filed a task, from the line Tars writes last in its body:
+ * "Filed by <name> (Tars agent <id>)." The gateway records every creation as
+ * "dashboard", so this line is the only record of who filed a task, and written
+ * after the agent's own description it cannot be put there by the agent. Null
+ * for a task nobody filed through Tars: made on the board, or moved from the
+ * local one.
+ */
+function filerOf(t: HermesTask): string | null {
+  const signed = /\(Tars agent ([^()\s]+)\)\.$/.exec((t.body ?? '').trimEnd());
+  return signed ? signed[1] : null;
+}
+
+/**
+ * Why the caller may not delete a task, or null. An agent deletes a task it
+ * claimed, done or not, or one it filed that nobody took. heldElsewhere let any
+ * parked or done task through, whoever it was: a scheduled task Noah gave to a
+ * Hermes profile, one Hermes finished, another agent's (the Backend's gate of
+ * #171, W2). Noah deletes those on the Kanban page.
+ */
+function whyNotDeletable(t: HermesTask, caller: KanbanCaller): string | null {
+  if (t.assignee === laneOf(caller.agentId)) return null;
+  if (t.assignee === TARS_LANE && filerOf(t) === caller.agentId) return null;
+  return heldElsewhere(t, caller)
+    ?? `Task ${t.id} is not yours to delete: an agent deletes a task it filed and nobody claimed, or one it claimed. Noah deletes the others on the Kanban page.`;
 }
 
 // ── The tools ─────────────────────────────────────────────────────────────
@@ -436,7 +471,7 @@ export async function deleteTask(h: Conn, caller: KanbanCaller, idOrPrefix: stri
     return underTaskLock(found.value.id, async () => {
       const now = await fresh(h, found.value.id);
       if (!now.ok) return now;
-      const why = heldElsewhere(now.value.task, caller);
+      const why = whyNotDeletable(now.value.task, caller);
       if (why) return fail(409, why);
       const r = await h.remove(found.value.id);
       if (!r.success) return refused(r);
