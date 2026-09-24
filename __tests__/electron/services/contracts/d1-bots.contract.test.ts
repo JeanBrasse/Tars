@@ -96,7 +96,8 @@ vi.mock('node-telegram-bot-api', () => ({
 import { agents, initAgentPty } from '../../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { resetLaunches } from '../../../../electron/core/agent-launch';
-import { ptyProcesses } from '../../../../electron/core/pty-manager';
+import { ptyProcesses, writeHumanInput, terminalExited } from '../../../../electron/core/pty-manager';
+import { transcriptPath, resetResumeTracking } from '../../../../electron/utils/resume-session';
 import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendTelegramMessage, sendSuperAgentResponseToTelegram } from '../../../../electron/services/telegram-bot';
 import { initSlackBot, stopSlackBot, setGetClaudeStatsRef, sendSlackMessage } from '../../../../electron/services/slack-bot';
 import { getSuperAgent } from '../../../../electron/utils';
@@ -470,6 +471,127 @@ describe('Slack, as recorded before D1', () => {
   it('what Tars sends on its own, cut at 3900 characters', async () => {
     await sendSlackMessage('A notice from Tars.', settings);
     await sendSlackMessage('y'.repeat(4000), settings, 'C7');
+    expect(outcome()).toMatchSnapshot();
+  });
+});
+
+// ── What sets the two bots apart ──────────────────────────────────────────
+//
+// Added before the refactor too, and recorded on the same code: where the two
+// bots' copies of a flow differed, the shared flow takes a parameter, and each
+// difference is pinned here so that a parameter given to the wrong bot shows.
+
+const WORKER_SESSION = '0b7f3c1e-5d2a-4e8b-9c6f-1a2b3c4d5e6f';
+const ORCHESTRATOR_SESSION = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b';
+
+/**
+ * A conversation Claude Code could resume: its id on the agent, its transcript
+ * on disk, and this the agent's first start in the run (a later one starts a
+ * new conversation, and earlier scenarios started every agent already).
+ */
+function resumable(agentId: string, sessionId: string): void {
+  resetResumeTracking();
+  const agent = agents.get(agentId)!;
+  agent.resumableSessionId = sessionId;
+  const transcript = transcriptPath(agent.projectPath, sessionId);
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.writeFileSync(transcript, '{"type":"user"}\n');
+}
+
+/** A worker with a conversation to resume, a permission mode of its own, in a worktree whose path has a quote. */
+function workerWithHistory(): void {
+  const rest = agents.get('agent-rest')!;
+  rest.worktreePath = path.join(tmpHome, 'projects', "o'rion-wt");
+  fs.mkdirSync(rest.worktreePath, { recursive: true });
+  rest.permissionMode = 'auto';
+  resumable('agent-rest', WORKER_SESSION);
+}
+
+/** The orchestrator with a conversation to resume and a permission mode that is not bypass. */
+function orchestratorWithHistory(): void {
+  agents.get('agent-orch')!.permissionMode = 'normal';
+  resumable('agent-orch', ORCHESTRATOR_SESSION);
+}
+
+/** A second terminal whose process has exited: whatever is written to it is refused. */
+function goneCli(agentId: string): void {
+  const terminal = liveCli(agentId);
+  writeHumanInput(terminal as never, 'b');
+  terminalExited(terminal as never);
+}
+
+describe('What sets the two bots apart, recorded before D1', () => {
+  it('the orchestrator last in the fleet: Telegram lists it first in its group, Slack in fleet order', async () => {
+    const orch = agents.get('agent-orch')!;
+    agents.delete('agent-orch');
+    agents.set('agent-orch', orch);
+    await telegram(dm('/status'));
+    await slackMention('U1', 'status');
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Telegram: a worker cold-started resumes its conversation, in its own mode, from its worktree', async () => {
+    workerWithHistory();
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Slack: a worker cold-started begins a new conversation, in its own mode, from its worktree, and leaves the old one to resume', async () => {
+    workerWithHistory();
+    await slackMention('U1', 'start rest Measure the Usage page');
+    // Slack did not take the conversation: the next start, from Telegram, still resumes it.
+    agents.get('agent-rest')!.status = 'idle';
+    resetLaunches();
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Telegram: the orchestrator cold-started by a message resumes its conversation, in bypass', async () => {
+    orchestratorWithHistory();
+    await telegram(dm('what is everyone doing?'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Slack: the orchestrator cold-started by a message begins a new conversation, in its own mode, and leaves the old one to resume', async () => {
+    orchestratorWithHistory();
+    await slackMessage('U1', 'what is everyone doing?');
+    // No CLI came up in its terminal: the next message, from Telegram, starts it again and resumes.
+    resetLaunches();
+    await telegram(dm('what is everyone doing?'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Telegram: /start_agent on the orchestrator itself starts it with its instructions', async () => {
+    agents.get('agent-orch')!.status = 'idle';
+    await telegram(dm('/start_agent lead Plan the release'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Slack: start on the orchestrator itself starts it with its instructions', async () => {
+    agents.get('agent-orch')!.status = 'idle';
+    await slackMention('U1', 'start lead Plan the release');
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Telegram: a task held while somebody types, and one refused by a terminal that exited', async () => {
+    const terminal = liveCli('agent-rest');
+    writeHumanInput(terminal as never, 'a');
+    goneCli('agent-err');
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    await telegram(dm('/start_agent err Read the logs'));
+    // The held task would go in once the typing pauses: dropped here, so that
+    // nothing of this scenario is written after it.
+    terminalExited(terminal as never);
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Slack: a task held while somebody types, and one refused by a terminal that exited', async () => {
+    const terminal = liveCli('agent-rest');
+    writeHumanInput(terminal as never, 'a');
+    goneCli('agent-err');
+    await slackMention('U1', 'start rest Measure the Usage page');
+    await slackMention('U1', 'start err Read the logs');
+    terminalExited(terminal as never);
     expect(outcome()).toMatchSnapshot();
   });
 });
