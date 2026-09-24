@@ -31,13 +31,15 @@ const TONES: Record<AnyTone, { text: string; fill: string; word: StatusTone }> =
  * no live session for. It reads as a state that is absent rather than as one
  * more colour. Frames: `Chat · Room · all stopped`, `· at rest or stopped`.
  */
-export function StatusSquare({ tone = 'idle', hollow = false, className = '' }: {
+export function StatusSquare({ tone = 'idle', hollow = false, size = 6, className = '' }: {
   tone?: AnyTone;
   hollow?: boolean;
+  /** 6 in a row, 8 in a strip across a card, as the composer's notice draws it. */
+  size?: 6 | 8;
   className?: string;
 }) {
   const ink = hollow ? 'border border-text-muted' : TONES[tone].fill;
-  return <span className={`inline-block w-1.5 h-1.5 shrink-0 ${ink} ${className}`} />;
+  return <span className={`inline-block ${size === 8 ? 'w-2 h-2' : 'w-1.5 h-1.5'} shrink-0 ${ink} ${className}`} />;
 }
 
 /**

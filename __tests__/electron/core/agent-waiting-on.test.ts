@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { sid } from '../../fixtures/session-id';
 
 /**
  * AgentStatus.waitingOn: what a waiting agent waits on (#159, "allow npx
@@ -51,10 +52,10 @@ beforeEach(async () => {
   manager.agents.clear();
   // The transcript a refusal test writes: each test starts with none.
   const { transcriptPath } = await import('../../../electron/utils/resume-session');
-  fs.rmSync(transcriptPath(tmp, 'sess-1'), { force: true });
+  fs.rmSync(transcriptPath(tmp, sid('sess-1')), { force: true });
   manager.agents.set('a1', {
     id: 'a1', name: 'Worker', status: 'running', projectPath: tmp, output: [], skills: [], provider: 'claude',
-    lastActivity: new Date().toISOString(), currentSessionId: 'sess-1',
+    lastActivity: new Date().toISOString(), currentSessionId: sid('sess-1'),
   } as AgentStatus);
   const { registerHooksRoutes } = await import('../../../electron/services/api-routes/hooks-routes');
   const app: RouteApp = {
@@ -72,7 +73,7 @@ beforeEach(async () => {
   } as unknown as RouteContext;
   registerHooksRoutes(app, ctx);
   const route = app.routes.find(r => r.pattern === '/api/hooks/status')!;
-  post = async body => { await route.handler({ body: { agent_id: 'a1', session_id: 'sess-1', ...body }, params: {} } as never, vi.fn(), ctx); };
+  post = async body => { await route.handler({ body: { agent_id: 'a1', session_id: sid('sess-1'), ...body }, params: {} } as never, vi.fn(), ctx); };
 });
 
 afterEach(() => {
@@ -142,7 +143,7 @@ describe('what a waiting agent waits on', { timeout: 20_000 }, () => {
   it('is not published once the dialog is refused, which the transcript records', async () => {
     await post({ status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', tool_input: { command: 'npx playwright test' } });
     const { transcriptPath } = await import('../../../electron/utils/resume-session');
-    const file = transcriptPath(tmp, 'sess-1');
+    const file = transcriptPath(tmp, sid('sess-1'));
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify({ type: 'user', timestamp: new Date(Date.now() + 1000).toISOString(), message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } }) + '\n');
     pushed.length = 0;

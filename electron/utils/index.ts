@@ -21,7 +21,8 @@ export function getAppBasePath(): string {
 
 export function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // Readable by its owner alone; narrowDataDir closes an older install's.
+    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   }
 }
 

@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { sid } from '../../fixtures/session-id';
 
 /**
  * Nothing Tars types goes into a dialog its CLI shows.
@@ -68,7 +69,7 @@ function terminalFor(id: string): FakeTerminal {
 function putAgent(over: Partial<AgentStatus> & { id: string }): AgentStatus {
   const agent = {
     name: over.id.toUpperCase(), status: 'idle', provider: 'claude', projectPath: '/tars', skills: [], output: [],
-    ptyId: `pty-${over.id}`, currentSessionId: `sess-${over.id}`, lastActivity: new Date().toISOString(), ...over,
+    ptyId: `pty-${over.id}`, currentSessionId: sid(`sess-${over.id}`), lastActivity: new Date().toISOString(), ...over,
   } as AgentStatus;
   manager.agents.set(agent.id, agent);
   return agent;
@@ -211,7 +212,7 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     };
     registerHooksRoutes(app as never, ctx as never);
     await routes.find(r => r.pattern === '/api/hooks/status')!.handler({ body: {
-      agent_id: 'alpha', session_id: 'sess-alpha', status: 'waiting', waiting_reason: 'permission', tool_name: 'AskUserQuestion',
+      agent_id: 'alpha', session_id: sid('sess-alpha'), status: 'waiting', waiting_reason: 'permission', tool_name: 'AskUserQuestion',
     }, params: {} }, vi.fn(), ctx);
 
     await noahWrites('Keep going.', ['alpha']);
@@ -257,14 +258,14 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     const ctx = { mainWindow: null, appSettings: {}, getAppSettings: () => ({}), handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(), agentStatusEmitter: new EventEmitter() };
     registerHooksRoutes(app as never, ctx as never);
     await routes.find(r => r.pattern === '/api/hooks/status')!.handler({ body: {
-      agent_id: id, session_id: `sess-${id}`, status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', ...extra,
+      agent_id: id, session_id: sid(`sess-${id}`), status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', ...extra,
     }, params: {} }, vi.fn(), ctx);
   }
 
   function interruptRecorded(id: string, at: Date): void {
     const dir = path.join(os.homedir(), '.claude', 'projects', '-tars');
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, `sess-${id}.jsonl`), JSON.stringify({
+    fs.appendFileSync(path.join(dir, `${sid(`sess-${id}`)}.jsonl`), JSON.stringify({
       type: 'user', timestamp: at.toISOString(),
       message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] },
     }) + '\n');
