@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell, app } from 'electron';
+import { openTerminal } from '../utils/open-terminal';
 import { checkForUpdates, downloadUpdate, quitAndInstall } from '../services/update-checker';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerObsidianHandlers } from './obsidian-handlers';
@@ -2740,7 +2741,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   const { quickPtyProcesses, getMainWindow } = deps;
 
   /**
-   * Open a directory in Terminal.app.
+   * Open a directory in a terminal: Terminal.app on macOS, the first one installed on Linux.
    *
    * This used to escape only single quotes in `cwd` and nothing at all in a
    * `command` parameter, then paste both into a double-quoted AppleScript
@@ -2755,24 +2756,14 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
    * So: no shell (execFile with an argv array), no `command` parameter (no
    * caller supplies one), and the directory is escaped for both layers it
    * crosses: shell quoting for the `cd` that `do script` runs, then
-   * AppleScript quoting for the string literal that holds it.
+   * AppleScript quoting for the string literal that holds it. On Linux, the
+   * first terminal installed, the directory as its cwd (utils/open-terminal.ts).
    */
   ipcMain.handle('shell:open-terminal', async (_event, { cwd }: { cwd: string; command?: string }) => {
-    const dir = String(cwd || '');
-    if (!dir || !fs.existsSync(dir)) return { success: false, error: 'no such directory' };
-
-    const shellQuoted = `'${dir.replace(/'/g, "'\\''")}'`;
-    const appleQuoted = `"${`cd ${shellQuoted}`.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-    const script = `tell application "Terminal" to do script ${appleQuoted}`;
-
-    try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      await promisify(execFile)('osascript', ['-e', script], { timeout: 15000 });
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    // macOS through Terminal.app, Linux through the first terminal installed,
+    // and a refusal elsewhere: utils/open-terminal.ts.
+    const r = await openTerminal(String(cwd || ''));
+    return r.success ? { success: true } : { success: false, error: r.error };
   });
 
   // Execute arbitrary command (uses PTY)
