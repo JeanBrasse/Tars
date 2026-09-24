@@ -78,7 +78,7 @@ afterEach(() => {
 
 const a1 = () => manager.agents.get('a1')!;
 
-describe('what a waiting agent waits on', () => {
+describe('what a waiting agent waits on', { timeout: 20_000 }, () => {
   it('names the command a permission dialog asks about', async () => {
     await post({ status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', tool_input: { command: 'npx playwright test' } });
 

@@ -98,6 +98,8 @@ export interface AgentTickItem {
   lastActivity: string;
   /** When the current status began (ISO). See AgentStatus.statusSince. */
   statusSince?: string;
+  /** What a waiting agent waits on. See AgentStatus.waitingOn. */
+  waitingOn?: AgentWaitingOn;
   provider: string;
   /** A CLI runs in the agent's terminal, whatever its status says: a turn that
    *  failed leaves claude alive, and done or idle agents keep their session.
@@ -286,6 +288,15 @@ export type AgentProvider =
   | 'ollama-cloud'
   | 'custom-openai';
 
+/** What a waiting agent waits on: the dialog its CLI shows. `permission` names
+ *  the command, file or tool asked about; `question` is an AskUserQuestion's
+ *  first question. One line, controls and direction overrides removed, at most
+ *  200 characters. */
+export interface AgentWaitingOn {
+  kind: 'permission' | 'question';
+  text: string;
+}
+
 export interface AgentStatus {
   id: string;
   status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
@@ -309,6 +320,10 @@ export interface AgentStatus {
    *  whenever `status` changes, and when the agent joins the fleet. Not
    *  `lastActivity`, which every repaint of the terminal moves. */
   statusSince?: string;
+  /** Set while `status` is `waiting` on a dialog (a permission or a question),
+   *  from the hook that reports it; gone as soon as `status` changes. Not set
+   *  for the idle prompt. */
+  waitingOn?: AgentWaitingOn;
   lastActivity: string;
   error?: string;
   ptyId?: string;

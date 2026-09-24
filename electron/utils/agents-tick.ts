@@ -5,7 +5,7 @@ import { extractStatusLine } from './ansi';
 import { ptyProcesses } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
 import { leftFullscreenIn } from '../core/terminal-mirror';
-import type { AgentStatus } from '../types';
+import type { AgentStatus, AgentWaitingOn } from '../types';
 
 export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
 
@@ -21,6 +21,8 @@ export interface AgentTickItem {
   lastActivity: string;
   /** When the current status began. See AgentStatus.statusSince. */
   statusSince?: string;
+  /** What a waiting agent waits on. See AgentStatus.waitingOn. */
+  waitingOn?: AgentWaitingOn;
   provider: string;
   /** A CLI runs in the agent's PTY, whatever its status says. See cliRunningIn. */
   cliRunning: boolean;
@@ -83,6 +85,7 @@ function buildTickPayload(): AgentTickItem[] {
       projectName: a.projectPath ? path.basename(a.projectPath) : '',
       lastActivity: a.lastActivity,
       statusSince: a.statusSince,
+      waitingOn: a.waitingOn,
       provider: a.provider || 'claude',
       cliRunning: agentCliRunning(a),
       leftFullscreen: leftFullscreenIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined),

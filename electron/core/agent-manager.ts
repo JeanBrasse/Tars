@@ -32,7 +32,9 @@ import { emitAgentStatus } from '../services/agent-events';
  * writing the same one does not (a Stop hook posting `idle` on an idle agent
  * does not restart "idle for 4m"). It stays an enumerable own property, so
  * agents.json, a spread and JSON.stringify see a plain field. `lastActivity`
- * could not do this: every repaint of the terminal moves it.
+ * could not do this: every repaint of the terminal moves it. `waitingOn` goes
+ * with the wait it describes, for the same reason: twelve lines clear
+ * `waitingReason` by hand.
  */
 function watchStatus(agent: AgentStatus, previous: AgentStatus | undefined): void {
   const descriptor = Object.getOwnPropertyDescriptor(agent, 'status');
@@ -50,6 +52,8 @@ function watchStatus(agent: AgentStatus, previous: AgentStatus | undefined): voi
       if (next === value) return;
       value = next;
       agent.statusSince = new Date().toISOString();
+      // What it waited on belongs to that wait, whichever line ended it.
+      if (next !== 'waiting') agent.waitingOn = undefined;
     },
   });
 }
