@@ -186,7 +186,12 @@ export async function startWithTask(
         await opts.reply('refused');
         return;
       }
-      markRunning(agent, task);
+      // Running once it is typed. Held, it is not: a dialog may be what
+      // holds it, and `running` here would erase the one record of that
+      // dialog, and the message would go into it (the Audit's census).
+      if (outcome === 'written') agent.status = 'running';
+      agent.currentTask = task.slice(0, 100);
+      agent.lastActivity = new Date().toISOString();
       fleet.saveAgents();
       await opts.reply(outcome);
       return;

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import { execFile } from 'child_process';
-import { transcriptPath } from '../utils/resume-session';
+import { spellingsOf, transcriptPath } from '../utils/resume-session';
 
 /**
  * What an agent is actually on, as opposed to what Tars last wrote down.
@@ -337,3 +337,74 @@ export function clearAgentTruthCache(): void {
   modelCache.clear();
 }
 
+
+/**
+ * When the session's turn was last interrupted, or undefined.
+ *
+ * Claude Code records an interrupt in its transcript as a user entry whose text
+ * begins `[Request interrupted by user` (`... for tool use]` when a tool was
+ * waiting on the user), and sends no hook for it: no Stop, and no idle prompt
+ * in the 90 s the Audit waited. Refusing a permission, with "No" or with Esc,
+ * writes that entry (the Audit's gate of #174), and it is the only sign that
+ * the dialog is gone. Read under both spellings of the project path, and
+ * again only when the file has changed: the writer asks every second while a
+ * message waits on a dialog.
+ */
+export function lastInterruptAt(
+  agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string },
+  homeDir = os.homedir(),
+): number | undefined {
+  const sessionId = agent.currentSessionId?.trim();
+  if (!sessionId) return undefined;
+  const roots = [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p).flatMap(spellingsOf);
+  let latest: number | undefined;
+  for (const root of roots) {
+    const file = transcriptPath(root, sessionId, homeDir);
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(file, 'r');
+      const { size, mtimeMs } = fs.fstatSync(fd);
+      const known = interruptReadOf.get(file);
+      let at: number | undefined;
+      if (known && known.size === size && known.mtimeMs === mtimeMs) {
+        at = known.at;
+      } else {
+        const length = Math.min(size, LOCAL_COMMAND_TAIL);
+        const tail = Buffer.alloc(length);
+        fs.readSync(fd, tail, 0, length, size - length);
+        at = latestInterrupt(tail.toString('utf-8'));
+        interruptReadOf.set(file, { size, mtimeMs, at });
+      }
+      if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+    } catch {
+      // not in this root
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+  }
+  return latest;
+}
+
+const interruptReadOf = new Map<string, { size: number; mtimeMs: number; at: number | undefined }>();
+
+function latestInterrupt(lines: string): number | undefined {
+  let latest: number | undefined;
+  for (const line of lines.split('\n')) {
+    if (!line.includes('[Request interrupted by user')) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry.type !== 'user') continue;
+    const content = (entry.message as { content?: unknown } | undefined)?.content;
+    const text = typeof content === 'string'
+      ? content
+      : Array.isArray(content) ? content.map(b => (typeof b?.text === 'string' ? b.text : '')).join('') : '';
+    if (!text.trimStart().startsWith('[Request interrupted by user')) continue;
+    const at = Date.parse(String(entry.timestamp ?? ''));
+    if (Number.isFinite(at) && (latest === undefined || at > latest)) latest = at;
+  }
+  return latest;
+}

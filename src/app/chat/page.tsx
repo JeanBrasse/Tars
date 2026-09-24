@@ -208,6 +208,9 @@ function ChatRoom({ roomId, onHeader }: { roomId: string; onHeader: (node: React
   return (
     <>
       <RoomView
+        // One view per room. This component outlives a change of room, and so
+        // did the view's draft: typed in one room, it was sent from the next.
+        key={snapshot.room.id}
         room={snapshot.room}
         threads={snapshot.threads}
         messages={snapshot.messages}

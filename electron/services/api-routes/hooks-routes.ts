@@ -315,6 +315,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // showing why it had stopped. Only `running` clears it.
       agent.status = 'waiting';
       agent.waitingReason = waiting_reason;
+      // When the dialog opened: a refusal of it is read from the transcript,
+      // after this moment (dialogOpen), since Claude Code sends no hook for one.
+      agent.dialogSince = waiting_reason === 'permission' ? new Date().toISOString() : undefined;
     } else if (status === 'idle') {
       agent.status = 'idle';
       agent.waitingReason = undefined;

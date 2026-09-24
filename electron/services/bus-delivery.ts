@@ -1,5 +1,7 @@
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
+import { ptyProcesses } from '../core/pty-manager';
+import { dialogShown } from '../core/agent-launch';
 import { deliverBusMessages, queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
 import {
   appendSystemMessage,
@@ -152,10 +154,14 @@ export async function releaseNotSent(agentId: string): Promise<{ released: BusDe
   // saying nothing, is the wrong answer to a person who just pressed send and
   // is owed one.
   if (!written.length && waiting?.length) {
+    const target = agents.get(agentId);
+    const dialog = !!target && dialogShown(target, target.ptyId ? ptyProcesses.get(target.ptyId) : undefined);
     return {
       released: [],
       reason: `${waiting.length} message${waiting.length > 1 ? 's are' : ' is'} waiting for that terminal: `
-        + 'somebody is typing in it. They go in as soon as that field is free.',
+        + (dialog
+          ? 'its CLI shows a dialog (a permission or a question). They go in once it is answered or refused.'
+          : 'somebody is typing in it. They go in as soon as that field is free.'),
     };
   }
   if (!written.length) {
