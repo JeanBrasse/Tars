@@ -23,13 +23,15 @@ const RULES: Array<[string, string]> = [
 ];
 
 export function agentTone(agent: RoomAgent): StatusTone | 'none' {
+  // An error is something Tars saw happen (an exit, a start that failed, a
+  // turn the CLI said failed), so it keeps its colour on any CLI.
+  if (agent.status === 'error') return 'error';
   // An agent whose CLI never reports a turn end has no state Tars can vouch
   // for, so it gets no square rather than a green one that would claim work.
   if (!agent.hasEndOfTurn) return 'none';
   switch (agent.status) {
     case 'running': return 'running';
     case 'waiting': return 'waiting';
-    case 'error': return 'error';
     default: return 'idle';
   }
 }
@@ -50,6 +52,7 @@ const STATUS_INK: Partial<Record<StatusTone, string>> = {
 };
 
 export function agentStatusLabel(agent: RoomAgent): string {
+  if (agent.status === 'error') return 'error';
   if (!agent.hasEndOfTurn) return 'no turn signal';
   // Idle is an agent at rest between turns, still holding its session, so the
   // word is only replaced when there is no session to rest in.
@@ -64,12 +67,14 @@ export function agentStatusLabel(agent: RoomAgent): string {
  *  description of work, and putting one here told the reader nothing while
  *  looking like it did. */
 function detail(agent: RoomAgent): string {
-  if (!agent.hasEndOfTurn) return 'Tars sees its output, not its turns';
-  // Why it stopped before what it was asked. An agent whose turn failed still
-  // has its task set, and the task came first here, so the reason this rail
-  // was written to show only ever appeared for an agent that had no task.
+  // Why it stopped before what it was asked, on any CLI. An agent whose turn
+  // failed still has its task set, and the task came first here, so the reason
+  // this rail was written to show only ever appeared for an agent that had no
+  // task. The CLI's turn signal came first too, which hid it on grok and codex.
   const reason = errorReason(agent);
   if (reason) return reason;
+  if (agent.status === 'error') return agent.currentTask || 'stopped on an error';
+  if (!agent.hasEndOfTurn) return 'Tars sees its output, not its turns';
   // Before the task, which a stopped agent can still carry: it is on nothing.
   // And never `listening`, the word below for idle, which is exactly what an
   // agent with no session cannot do.
@@ -78,7 +83,6 @@ function detail(agent: RoomAgent): string {
   switch (agent.status) {
     case 'running': return 'working';
     case 'waiting': return 'waiting on you';
-    case 'error': return 'stopped on an error';
     case 'completed': return 'finished its turn';
     default: return 'listening';
   }
