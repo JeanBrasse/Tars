@@ -147,7 +147,7 @@ async function fleet(): Promise<{ orch: string[]; w: AgentStatus }> {
 
 describe('background work, counted from the launch of the CLI now running', { timeout: 20_000 }, () => {
   it('C. a compaction in the same CLI does not hide the job it left running', async () => {
-    const { orch, w } = await fleet();
+    const { orch } = await fleet();
     transcript(FIRST, backgroundStart(now(), 'bgalive'));
     await settle(15);
     // Claude compacts, in the same process and the same session: SessionStart, source compact.
