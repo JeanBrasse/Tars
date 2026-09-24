@@ -384,8 +384,9 @@ list Noah keeps in Settings, and nobody when the list is empty.
   enrolled are not affected). Kept for 1.9.0 on purpose (the Audit's gate of
   #200), with its way out said in the refusal itself: "Try again at HH:MM, or
   turn Telegram off and on in Tars's Settings". The toggle restarts the bot,
-  which starts the count again. Nothing outside Settings can: no API route
-  restarts the bot and nothing watches app-settings.json.
+  which starts the count again. Only toggling Telegram in Settings or
+  restarting Tars clears it: the count lives in memory, no API route restarts
+  the bot and nothing watches app-settings.json.
 - **Slack**: the member ids in Settings > Slack (`slackAllowedUserIds`). Before
   it, anyone who could mention or message the bot could list agents and project
   paths, start, stop and brief them, and move the channel agents post to
