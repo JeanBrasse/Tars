@@ -1636,6 +1636,82 @@ exports[`Telegram, as recorded before D1 > in a group: without a mention nothing
 }
 `;
 
+exports[`Telegram, as recorded before D1 > the orchestrator's answer, sent back to the chat that asked, with every way it is read 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "👑 Dune is rebasing onto main.
+ANTHROPIC_API_KEY=sk-a[redacted]6789
+Dove waits on a question from you.",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "👑 Nothing is running right now, everyone is idle.",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "✅ Super Agent completed the task.",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Telegram: [FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] what is everyone doing?
+",
+    },
+  ],
+}
+`;
+
 exports[`Telegram, as recorded before D1 > what Tars sends on its own: to the authorized chats, cut at 4000 characters 1`] = `
 {
   "fleet": [

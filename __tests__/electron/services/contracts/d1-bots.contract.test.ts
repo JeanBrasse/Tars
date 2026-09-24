@@ -97,7 +97,7 @@ import { agents, initAgentPty } from '../../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { resetLaunches } from '../../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
-import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendTelegramMessage } from '../../../../electron/services/telegram-bot';
+import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendTelegramMessage, sendSuperAgentResponseToTelegram } from '../../../../electron/services/telegram-bot';
 import { initSlackBot, stopSlackBot, setGetClaudeStatsRef, sendSlackMessage } from '../../../../electron/services/slack-bot';
 import { getSuperAgent } from '../../../../electron/utils';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -356,6 +356,23 @@ describe('Telegram, as recorded before D1', () => {
     await telegram(dm('/auth wrong-token', 99));
     await telegram(dm('/auth tg-auth-token', 99));
     await telegram(dm('/status', 99));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it("the orchestrator's answer, sent back to the chat that asked, with every way it is read", async () => {
+    liveCli('agent-orch');
+    await telegram(dm('what is everyone doing?'));
+    const orch = agents.get('agent-orch')!;
+    // After a tool result: the lines that follow it, without the TUI's own.
+    orch.output = ['\x1b[1m● \x1b[0mcalling list_agents\n', '  ⎿  (MCP) 6 agents\n', 'Dune is rebasing onto main.\n', 'ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\n', 'Dove waits on a question from you.\n'];
+    sendSuperAgentResponseToTelegram(orch);
+    // No tool result: the last long lines.
+    orch.output = ['● thinking\n', 'Nothing is running right now, everyone is idle.\n'];
+    sendSuperAgentResponseToTelegram(orch);
+    // Nothing worth reading.
+    orch.output = ['● \n', 'ok\n'];
+    sendSuperAgentResponseToTelegram(orch);
+    await settle();
     expect(outcome()).toMatchSnapshot();
   });
 
