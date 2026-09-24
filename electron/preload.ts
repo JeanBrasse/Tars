@@ -373,6 +373,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('discord:test'),
     sendTest: () =>
       ipcRenderer.invoke('discord:sendTest'),
+    inviteUrl: (token: string) =>
+      ipcRenderer.invoke('discord:inviteUrl', token),
   },
 
   // JIRA
