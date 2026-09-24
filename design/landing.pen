@@ -1060,15 +1060,46 @@
               ]
             },
             {
-              "type": "text",
-              "id": "EGtVu",
-              "name": "gh",
-              "fill": "$text-muted",
-              "content": "github",
-              "lineHeight": 1.45,
-              "fontFamily": "$font-mono",
-              "fontSize": 11.5,
-              "fontWeight": "normal"
+              "type": "frame",
+              "id": "Qs8CT",
+              "name": "links",
+              "gap": 24,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "xjnCP",
+                  "name": "privacy",
+                  "fill": "$text-muted",
+                  "content": "privacy",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "oYiPl",
+                  "name": "terms",
+                  "fill": "$text-muted",
+                  "content": "terms",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "aIhGj",
+                  "name": "github",
+                  "fill": "$text-muted",
+                  "content": "github",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                }
+              ]
             }
           ]
         }
@@ -1364,15 +1395,46 @@
               ]
             },
             {
-              "type": "text",
-              "id": "indDH",
-              "name": "gh",
-              "fill": "$text-muted",
-              "content": "github",
-              "lineHeight": 1.45,
-              "fontFamily": "$font-mono",
-              "fontSize": 11.5,
-              "fontWeight": "normal"
+              "type": "frame",
+              "id": "U8w8E",
+              "name": "links",
+              "gap": 24,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Yk0FG",
+                  "name": "privacy",
+                  "fill": "$text-muted",
+                  "content": "privacy",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "y2Z5bS",
+                  "name": "terms",
+                  "fill": "$text-muted",
+                  "content": "terms",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "LO5nC",
+                  "name": "github",
+                  "fill": "$text-muted",
+                  "content": "github",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                }
+              ]
             }
           ]
         }
@@ -1486,6 +1548,828 @@
           },
           "stroke": "$border",
           "strokeWidth": 1
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "KIIPr",
+      "x": 4380,
+      "y": 0,
+      "name": "Landing · privacy and terms",
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "pHmCv",
+          "name": "Nav",
+          "width": "fill_container",
+          "padding": [
+            24,
+            200
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "tDOwd",
+              "name": "brand",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "zw90v",
+                  "name": "mark",
+                  "fill": "$accent",
+                  "width": 11,
+                  "height": 11
+                },
+                {
+                  "type": "text",
+                  "id": "p8IOSO",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 21,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qd2gI",
+              "name": "links",
+              "gap": 32,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "CUXqu",
+                  "name": "Features",
+                  "fill": "#9B9B9B",
+                  "content": "Features",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ok91P",
+                  "name": "How it works",
+                  "fill": "#9B9B9B",
+                  "content": "How it works",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Zdv38",
+                  "name": "Download",
+                  "fill": "#9B9B9B",
+                  "content": "Download",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "L9dq8I",
+              "name": "right",
+              "gap": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "R4bVls",
+                  "name": "gh",
+                  "fill": "#9B9B9B",
+                  "width": 16,
+                  "height": 16
+                },
+                {
+                  "type": "frame",
+                  "id": "cB2pL",
+                  "name": "nav dl",
+                  "height": 34,
+                  "fill": "$accent",
+                  "stroke": "$accent",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "Fgrpo",
+                      "name": "ic",
+                      "fill": "#121212",
+                      "width": 11,
+                      "height": 11
+                    },
+                    {
+                      "type": "text",
+                      "id": "L0wVf",
+                      "name": "l",
+                      "fill": "#121212",
+                      "content": "Download",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "aKbZL",
+          "name": "Body",
+          "width": "fill_container",
+          "layout": "vertical",
+          "padding": [
+            72,
+            200,
+            120,
+            200
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "oY0FW",
+              "name": "h1",
+              "fill": "$text-primary",
+              "content": "Tars Privacy Policy",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 44,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "M9lsr",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 14
+            },
+            {
+              "type": "text",
+              "id": "fz0nB",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 720,
+              "content": "Last updated: 2026-09-24.",
+              "lineHeight": 1.7,
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "kSS27",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 12
+            },
+            {
+              "type": "text",
+              "id": "G8xgj",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 720,
+              "content": "This policy covers two things: the Tars desktop app, and the website that offers it for download.",
+              "lineHeight": 1.7,
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "sfcJj",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 36
+            },
+            {
+              "type": "text",
+              "id": "gZAPE",
+              "name": "h2",
+              "fill": "$text-primary",
+              "content": "The short version",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "jXrAc",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 14
+            },
+            {
+              "type": "frame",
+              "id": "V8cOUJ",
+              "name": "list",
+              "width": 720,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "rFEyS",
+                  "name": "li",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Y03MFv",
+                      "name": "bullet",
+                      "padding": [
+                        11,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "c8WRwt",
+                          "name": "sq",
+                          "fill": "$text-muted",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "beiSD",
+                      "name": "text",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 704,
+                      "content": "Tars is a desktop app that runs on your Mac. There is no Tars server and no Tars account, and the app collects no analytics or telemetry.",
+                      "lineHeight": 1.7,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "I6jMwh",
+                  "name": "li",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "w2i1RM",
+                      "name": "bullet",
+                      "padding": [
+                        11,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "TGhhI",
+                          "name": "sq",
+                          "fill": "$text-muted",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "CRZsX",
+                      "name": "text",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 704,
+                      "content": "What Tars stores, it stores in folders in your home directory, on your machine.",
+                      "lineHeight": 1.7,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "I00l8",
+                  "name": "li",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "RiFr4",
+                      "name": "bullet",
+                      "padding": [
+                        11,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "KAbLd",
+                          "name": "sq",
+                          "fill": "$text-muted",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "A8bf7",
+                      "name": "text",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 704,
+                      "content": "Data leaves your machine only toward services you connect yourself: the AI providers whose command-line tools or API keys you use, and integrations such as Telegram, Slack or Discord that you turn on. Each of them receives data under its own terms, not ours.",
+                      "lineHeight": 1.7,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "vlmfj",
+                  "name": "li",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "jfxMC",
+                      "name": "bullet",
+                      "padding": [
+                        11,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "RMG9F",
+                          "name": "sq",
+                          "fill": "$text-muted",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "p14g8",
+                      "name": "text",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 704,
+                      "content": "The website uses Vercel Web Analytics, which sets no cookies, and counts downloads from GitHub's own release figures.",
+                      "lineHeight": 1.7,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "dFSfF",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 36
+            },
+            {
+              "type": "text",
+              "id": "S02jNX",
+              "name": "h2",
+              "fill": "$text-primary",
+              "content": "Who runs what",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "ncdYT",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 14
+            },
+            {
+              "type": "text",
+              "id": "duz8a",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 720,
+              "content": "Tars is open-source software published by Cooper Labs (contact@cooperlabs.xyz). When you run Tars, you run it: the app, the agents it starts and the data they handle are on your computer, under your macOS account. Nobody operating this project receives your prompts, your code, your files, your keys or your usage. We have no server that could receive them.",
+              "lineHeight": 1.7,
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "q4GTe",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 36
+            },
+            {
+              "type": "text",
+              "id": "jPIte",
+              "name": "h2",
+              "fill": "$text-primary",
+              "content": "What stays on your machine",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "qcBVo",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 14
+            },
+            {
+              "type": "text",
+              "id": "mBf3c",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 720,
+              "content": "Tars keeps its data in these places:",
+              "lineHeight": 1.7,
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "Nw3pm",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 12
+            },
+            {
+              "type": "frame",
+              "id": "QLPwy",
+              "name": "list",
+              "width": 720,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "qOL8e",
+                  "name": "li",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "QfDDg",
+                      "name": "bullet",
+                      "padding": [
+                        11,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "QgfoF",
+                          "name": "sq",
+                          "fill": "$text-muted",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "JhNOw",
+                      "name": "item",
+                      "width": 704,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "dOgIu",
+                          "name": "line",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jh8hY",
+                              "name": "strong code",
+                              "fill": "$text-primary",
+                              "content": "~/.dorothy/",
+                              "lineHeight": 1.889,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 13.5,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "text",
+                              "id": "ozFPA",
+                              "name": "run",
+                              "fill": "$text-secondary",
+                              "content": " (the folder keeps the project's former name). It holds:",
+                              "lineHeight": 1.7,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 15,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "S4ZvJu",
+                          "name": "list",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "rkZhb",
+                              "name": "li",
+                              "width": "fill_container",
+                              "gap": 12,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "pJB8s",
+                                  "name": "bullet",
+                                  "padding": [
+                                    11,
+                                    0,
+                                    0,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "rectangle",
+                                      "id": "a5xmC",
+                                      "name": "sq",
+                                      "fill": "$text-muted",
+                                      "width": 4,
+                                      "height": 4
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "x3wUk1",
+                                  "name": "line",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "Uj1Xl",
+                                      "name": "run",
+                                      "fill": "$text-secondary",
+                                      "content": "your settings, including the API keys, bot tokens and passwords you enter (",
+                                      "lineHeight": 1.7,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 15,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "cmsWR",
+                                      "name": "code",
+                                      "fill": "$text-primary",
+                                      "content": "app-settings.json",
+                                      "lineHeight": 1.889,
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 13.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "VDjrQ",
+                                      "name": "run",
+                                      "fill": "$text-secondary",
+                                      "content": ");",
+                                      "lineHeight": 1.7,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 15,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "o8291K",
+                              "name": "li",
+                              "width": "fill_container",
+                              "gap": 12,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "JKKVv",
+                                  "name": "bullet",
+                                  "padding": [
+                                    11,
+                                    0,
+                                    0,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "rectangle",
+                                      "id": "BnL0x",
+                                      "name": "sq",
+                                      "fill": "$text-muted",
+                                      "width": 4,
+                                      "height": 4
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "dOIJr",
+                                  "name": "line",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "jvCaI",
+                                      "name": "run",
+                                      "fill": "$text-secondary",
+                                      "content": "your agents and the last part of each agent's terminal output (",
+                                      "lineHeight": 1.7,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 15,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "bSVGI",
+                                      "name": "code",
+                                      "fill": "$text-primary",
+                                      "content": "agents.json",
+                                      "lineHeight": 1.889,
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 13.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "DlHW2",
+                                      "name": "run",
+                                      "fill": "$text-secondary",
+                                      "content": ", with a backup copy);",
+                                      "lineHeight": 1.7,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 15,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "IcJgh",
+          "name": "Footer",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "top": 1
+          },
+          "padding": [
+            28,
+            200
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "NZjWi",
+              "name": "brand",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "CVpKG",
+                  "name": "m",
+                  "fill": "$accent",
+                  "width": 9,
+                  "height": 9
+                },
+                {
+                  "type": "text",
+                  "id": "YMPuf",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "E7i2W",
+              "name": "links",
+              "gap": 24,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "N95UA",
+                  "name": "privacy",
+                  "fill": "$text-muted",
+                  "content": "privacy",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "X2G6r",
+                  "name": "terms",
+                  "fill": "$text-muted",
+                  "content": "terms",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "rCBHv",
+                  "name": "github",
+                  "fill": "$text-muted",
+                  "content": "github",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11.5,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
         }
       ]
     }
