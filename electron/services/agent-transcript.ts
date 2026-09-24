@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
-import { transcriptPath } from '../utils/resume-session';
+import { transcriptPath, transcriptRoots } from '../utils/resume-session';
 
 /**
  * An agent's real conversation, read from the journal Claude Code already
@@ -329,7 +329,9 @@ export async function readAgentTranscript(params: {
   // An agent with a worktree ran there, so that is where its transcript was
   // written; both are tried because an agent can be moved onto a worktree
   // after the session being read.
-  const candidates = [params.worktreePath, params.projectPath].filter((p): p is string => !!p);
+  // Each under its saved spelling, then its real path: claude files a transcript
+  // under the real path of the directory it runs in (QA's re-check of #138).
+  const candidates = transcriptRoots(params.worktreePath, params.projectPath);
   for (const projectPath of candidates) {
     const file = transcriptPath(projectPath, sessionId, homeDir);
     const resolved = path.resolve(file);
