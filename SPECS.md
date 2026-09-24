@@ -592,7 +592,8 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `projects.json` | `string[]` | `writeCustomProjects()` | also the allowlist for `local-file://` |
 | `templates.json` / `templates.backup.json` | `{ user: AgentTemplate[], overrides }` | template handlers | backup pair |
 | `team-templates.json` | `{ user: TeamTemplate[] }` | team-template handlers | builtins are code, not data |
-| `kanban-tasks.json` | `KanbanTask[]` | kanban handlers | local board only; the Hermes board is remote |
+| `kanban-tasks.json` | `KanbanTask[]` | kanban handlers | the old local board, which no page shows: its open tasks move to the Hermes board once at launch, parked, and it stays as the backup |
+| `kanban-moved-to-hermes.json` | `{ [localId]: hermesId }` | `services/kanban-board.ts` | which local tasks moved; atomic |
 | `bus.json` | `{ version: 1, savedAt, memberOverrides, threads[], messages[], deliveries[] }` | `services/bus-store.ts` | **Atomic**: the shared `writeAtomicSync`. Rooms are not stored: they are a view over the fleet, and the global room reads the overseer's own conversation rather than copying it |
 | `vault.db` + `vault/` | SQLite (WAL, FK on) + `vault/attachments/` | better-sqlite3 | transactional |
 | `usage-ledger.jsonl` | one `UsageEntry` per line | `recordUsage()` | append-only, self-trimming at 20 000 → 12 000 |
@@ -645,7 +646,7 @@ Seven servers ship in `extraResources` as `<name>/dist/bundle.js` and are regist
 | `mcp-orchestrator` | `claude-mgr-orchestrator` | agent lifecycle + delegation + messaging |
 | `mcp-memory` | `tars-memory` | the four memory tools of §5 |
 | `mcp-telegram` | `claude-mgr-telegram` | Telegram send (text/photo/video/document) |
-| `mcp-kanban` | `claude-mgr-kanban` | task board |
+| `mcp-kanban` | `claude-mgr-kanban` | the Hermes board, through Tars (`/api/kanban/*`, the agent's own token): an agent's task arrives parked, one agent claims it at a time |
 | `mcp-vault` | `claude-mgr-vault` | documents, folders, search, attachments |
 | `mcp-socialdata` | `dorothy-socialdata` | X/Twitter read |
 | `mcp-x` | `dorothy-x` | X/Twitter post |
@@ -693,7 +694,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown. A pane in error shows the reason in its header | `Dashboard · dark` / `· light`, `Agent error · reason` |
 | `/agents` | Agents | Roster grouped by project, in the order of the Dashboard's tabs: each project's name, path and agent count over its cards. A project picker narrows the page to one project, the status chips (All, Running, Waiting, Idle, Error) count within it, with a completed agent counted as idle as its card says, and a filter field matches name, branch, project and task. None of the three filters outlives the visit. Management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agents · one project`, `Agents · project picker open`, `Agent error · reason` |
 | `/projects` | Projects | Project registry (backed by `~/.dorothy/projects.json`), file browser, per-project agent view. 1153 lines | `Projects · dark` |
-| `/kanban` | Kanban | Two sources: the Hermes board (default, Hermes owns the task harness) and the local `kanban-tasks.json` board. Choice persisted in `localStorage` | `Kanban · dark` |
+| `/kanban` | Kanban | The Hermes board, in Hermes's own eight columns. The agents' tasks sit there too: parked in `scheduled` on the Tars lane, claimed in `ready` on their agent's lane (OPERATIONS.md, "The agents' kanban") | `Kanban · dark` |
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |

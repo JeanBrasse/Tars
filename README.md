@@ -211,7 +211,7 @@ Everything is a file in your home directory. Nothing is uploaded.
 | `api-token` | Bearer token for the local API. `0600` |
 | `hermes-connection.json` | Gateway address and session token. `0600` |
 | `projects.json` | The folders you added by hand |
-| `kanban-tasks.json` | The local board |
+| `kanban-tasks.json` | The old local board, kept as a backup: its open tasks moved to the Hermes board |
 | `vault.db` | Vault documents |
 | `observations/` | The per-project session ledger |
 | `model-catalog.json` | Cached model and price catalogue |
