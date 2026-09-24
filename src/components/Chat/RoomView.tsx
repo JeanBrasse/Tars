@@ -191,6 +191,14 @@ export function RoomView({
     if (r.error) setFailure({ kind: 'attach', message: r.error });
   };
 
+  // A failure is about what you last did: once you write again or pick
+  // another recipient it has lapsed, and the strip goes back to saying what
+  // sending would do now (a queue, send now). It hid them until the next send.
+  const clearFailure = () => {
+    setFailure(null);
+    onClearRowFailure?.();
+  };
+
   const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
 
   // Nothing here writes into a turn that is running: a message for a busy
@@ -340,11 +348,11 @@ export function RoomView({
 
       <RoomComposer
         value={draft}
-        onChange={v => { setDraft(v); setNotInterrupted(null); }}
+        onChange={v => { setDraft(v); setNotInterrupted(null); clearFailure(); }}
         onSend={() => { setNotInterrupted(null); void send(); }}
         targets={targets}
         targetId={targetId}
-        onTargetChange={id => { setTargetId(id); setNotInterrupted(null); }}
+        onTargetChange={id => { setTargetId(id); setNotInterrupted(null); clearFailure(); }}
         notInterrupted={notInterrupted}
         roomTitle={room.title}
         sending={sending}

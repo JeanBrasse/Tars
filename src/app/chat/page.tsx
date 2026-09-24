@@ -388,6 +388,8 @@ export default function ChatPage() {
     sub: 'overseer',
     tone: gatewayState === 'ok' || gatewayState === 'checking' ? (paused ? 'hollow' : 'running') : 'error',
     time: timeLabel(lastHermes),
+    // A broken gateway is said by the square; the line stays muted, as the
+    // frame `Chat · A · Hermes · not connected` draws it.
     counts: [{
       label: gatewayState !== 'ok' && gatewayState !== 'checking' ? 'not connected'
         : sending ? 'answering you'
@@ -395,7 +397,6 @@ export default function ChatPage() {
             : nothingToWatch ? 'nothing to watch yet'
               : nothingSaid ? 'nothing said yet'
                 : `watching, ${cadenceLabel}`,
-      tone: gatewayState !== 'ok' && gatewayState !== 'checking' ? 'error' : undefined,
     }],
   };
 
@@ -411,9 +412,9 @@ export default function ChatPage() {
               needYou: needs.filter(n => n.tone !== 'error').length,
             }
           : undefined;
-        // A room you are not in has the bus's own count of what is queued in
-        // it (PR 169); who needs you there waits for its strip, when it opens.
-        const { tone, counts } = roomCounts(agentsHere, open, room.pending?.queued ?? 0);
+        // A room you are not in has the bus's own counts of what waits in it
+        // (PR 169), by delivery: its strip's rows wait for it to open.
+        const { tone, counts } = roomCounts(agentsHere, open, room.pending);
         const parts = (room.projectPath ?? '').split('/').filter(Boolean);
         return {
           id: room.id,
