@@ -45,6 +45,7 @@ export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSe
   // The invite link is main's, made from the token as it is typed (#200): the
   // permissions it asks for are decided there. An answer for a token that has
   // since been typed over is dropped, and there is no link until main answers.
+  // A call that fails is no answer: nothing is known about the token then.
   const [inviteAnswer, setInviteAnswer] = useState<{ token: string; url: string | null } | null>(null);
   useEffect(() => {
     const inviteUrl = window.electronAPI?.discord?.inviteUrl;
@@ -52,10 +53,13 @@ export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSe
     let current = true;
     inviteUrl(token)
       .then(url => { if (current) setInviteAnswer({ token, url }); })
-      .catch(() => { if (current) setInviteAnswer({ token, url: null }); });
+      .catch(() => {});
     return () => { current = false; };
   }, [token]);
-  const invite = inviteAnswer?.token === token ? inviteAnswer.url : null;
+  const answered = inviteAnswer?.token === token ? inviteAnswer : null;
+  const invite = answered?.url ?? null;
+  // Main looked at a token that is there and found no bot in it.
+  const noBotId = !!answered && answered.url === null && token.trim() !== '';
 
   const saveToken = () => {
     if (token === savedToken.current) return;
@@ -157,7 +161,9 @@ export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSe
         label="Invite"
         description={invite
           ? 'Adds the bot to a server of yours, allowed to see channels and send messages, in channels, threads and direct messages.'
-          : 'Set the bot token first: the link is made from it.'}
+          : noBotId
+            ? 'This token holds no bot id.'
+            : 'Set the bot token first: the link is made from it.'}
         control={
           <Button size="sm" className={ACTION} onClick={copyInvite} disabled={!invite}>
             {copied ? 'copied' : 'copy invite link'}
