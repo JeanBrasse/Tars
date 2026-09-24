@@ -94,7 +94,13 @@ function checkout({ changelogTop = VERSION } = {}) {
     // What a build would leave behind, if a dry run ever started one.
     scripts: { 'electron:build': "node -e \"require('fs').writeFileSync('BUILD_RAN', '')\"" },
     build: { publish: { provider: 'github', owner: 'acme', repo: 'tars' } },
+    devDependencies: { electron: '^44.4.4' },
   }, null, 2));
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), lockfile('44.4.4'));
+  // Above the checkout, where Node's resolution finds it from the checkout and
+  // from a worktree beside it, as a worktree of the real repo finds the main
+  // checkout's node_modules.
+  installElectron(root, '44.4.4');
   fs.writeFileSync(path.join(dir, 'src', 'data', 'changelog.ts'), changelog(changelogTop));
   fs.writeFileSync(path.join(dir, 'README.md'), 'tars\n');
   fs.writeFileSync(path.join(dir, '.gitignore'), 'release/\n');
@@ -103,6 +109,23 @@ function checkout({ changelogTop = VERSION } = {}) {
   git(dir, 'remote', 'add', 'origin', origin);
   git(dir, 'push', '-q', '-u', 'origin', 'main');
   return { root, dir };
+}
+
+/** package-lock.json as npm writes it, with the electron it locked. */
+function lockfile(electron: string): string {
+  return JSON.stringify({
+    name: 'tars', version: VERSION, lockfileVersion: 3,
+    packages: { '': { name: 'tars', version: VERSION }, 'node_modules/electron': { version: electron, dev: true } },
+  }, null, 2);
+}
+
+/** node_modules/electron as npm and its install script leave it: the package, and the binary's own version file. */
+function installElectron(root: string, version: string, { binary = version }: { binary?: string | null } = {}) {
+  const electron = path.join(root, 'node_modules', 'electron');
+  fs.mkdirSync(path.join(electron, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(electron, 'package.json'), JSON.stringify({ name: 'electron', version }));
+  if (binary === null) fs.rmSync(path.join(electron, 'dist', 'version'), { force: true });
+  else fs.writeFileSync(path.join(electron, 'dist', 'version'), binary);
 }
 
 const base64Sha512 = (content: Buffer | string) => createHash('sha512').update(content).digest('base64');
@@ -225,6 +248,50 @@ describe('npm run release, before anything is built', () => {
 
     expect(code).toBe(1);
     expect(out).toContain('tracked files differ from HEAD');
+  });
+
+  // The Audit's release check (24/09): the main checkout's node_modules held
+  // Electron 43.4.1 while package.json asked ^44.4.4, and nothing looked, so a
+  // release from there would have shipped 43.
+  it('refuses an installed electron that package.json does not accept', async () => {
+    const { root, dir } = checkout();
+    installElectron(root, '43.4.1');
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(code).toBe(1);
+    expect(out).toContain('electron 43.4.1 is installed');
+    expect(out).toContain('^44.4.4');
+  });
+
+  it('refuses an installed electron that is not the one package-lock.json locked', async () => {
+    const { root, dir } = checkout();
+    installElectron(root, '44.5.0');
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(code).toBe(1);
+    expect(out).toContain('package-lock.json locks electron 44.4.4');
+  });
+
+  it('refuses an electron binary that is not its package, as after an install that never ran', async () => {
+    const { root, dir } = checkout();
+    installElectron(root, '44.4.4', { binary: '43.4.1' });
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(code).toBe(1);
+    expect(out).toContain('the electron binary is 43.4.1');
+  });
+
+  it('refuses when no electron binary is installed at all', async () => {
+    const { root, dir } = checkout();
+    installElectron(root, '44.4.4', { binary: null });
+
+    const { code, out } = await release(dir, '--dry-run');
+
+    expect(code).toBe(1);
+    expect(out).toContain('npx install-electron');
   });
 
   it('refuses a version already published', async () => {
