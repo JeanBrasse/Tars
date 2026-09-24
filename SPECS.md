@@ -704,11 +704,11 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
-| `/settings` | Settings | 6 groups, 17 sections (see below) | 17 frames |
+| `/settings` | Settings | 6 groups, 18 sections (see below) | 18 frames |
 | `/whats-new` | What's new | `src/data/changelog.ts`; marks itself seen in `localStorage` and fires a `whats-new-seen` event the sidebar listens for | `What's new · dark` |
 | `/tray-panel` | Tray panel | Rendered inside the menu-bar popover window, fed by the `agents:tick` broadcast. Overrides xterm's viewport scrollbar so it overlays instead of stealing columns | `Tray panel` |
 
-Settings groups: **General** (Preferences, Terminal, Notifications, System) · **AI & Providers** (Providers, CLI Paths, Permissions) · **Hermes** (Connection) · **Integrations** (Telegram, Slack, X, Google Workspace) · **Extensions** (Skills & Plugins, Custom MCP, Tasmania) · **Workspace** (Git, Memory Backends).
+Settings groups: **General** (Preferences, Terminal, Notifications, System) · **AI & Providers** (Providers, CLI Paths, Permissions) · **Hermes** (Connection) · **Integrations** (Telegram, Slack, Discord, X, Google Workspace) · **Extensions** (Skills & Plugins, Custom MCP, Tasmania) · **Workspace** (Git, Memory Backends).
 
 14 overlays are inventoried separately: New agent (4 steps), Deploy team, the four template dialogs, three kanban dialogs, Start prompt, Agent terminal, Plugin install, Install terminal.
 

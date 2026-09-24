@@ -33,11 +33,12 @@ export const SettingsRow = ({
   secondaryControl,
   className = '',
 }: SettingsRowProps) => (
-  <div className={`h-[57px] shrink-0 px-4 flex items-center gap-4 ${className}`}>
+  // The data hooks let a spec read a sub-page as rows, whatever its section.
+  <div data-settings-row className={`h-[57px] shrink-0 px-4 flex items-center gap-4 ${className}`}>
     <div className="min-w-0 flex-1">
-      <p className="text-[12.5px] leading-tight text-foreground truncate">{label}</p>
+      <p data-settings-label className="text-[12.5px] leading-tight text-foreground truncate">{label}</p>
       {description && (
-        <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground truncate">{description}</p>
+        <p data-settings-hint className="mt-0.5 text-[11px] leading-tight text-muted-foreground truncate">{description}</p>
       )}
     </div>
 

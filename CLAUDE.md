@@ -53,7 +53,7 @@
 | `design/chat-design.pen` | The same 75 frames (the first 74 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 86 in all. A fork, not a companion, and the newer of the two. Draw a Chat room frame here and anything else in `tars-redesign.pen`, until the two are reconciled with Pen closed |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages, dark and light, and every composer state. What the next Chat TSX implements; `chat-design.pen` describes the Chat as it ships until then |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
-| `e2e/surfaces.mjs` | Executable manifest: 18 pages, 16 settings sections, 3 overlays = 37 surfaces |
+| `e2e/surfaces.mjs` | Executable manifest: 18 pages, 17 settings sections, 3 overlays = 38 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
@@ -231,7 +231,7 @@ npm test                                 # vitest, __tests__/**/*.test.ts
 npm run lint                             # eslint
 npm run lint:design                      # radius / shadows / gradients / raw palette / hex
 npm run e2e:guard                        # every inventory page is covered by the manifest
-npm run e2e                              # Playwright drives the real Electron app, 37 surfaces
+npm run e2e                              # Playwright drives the real Electron app, 38 surfaces
 ```
 
 `npm run e2e` boots Electron in a sandbox through `launchSandboxed` (`e2e/fixture.mjs`). `HOME` pointed at a temp dir moves `~/.dorothy` and `~/.claude` and nothing else: Electron finds its profile through macOS, so until 2026-09-16 every run opened `~/Library/Application Support/tars`, the installed Tars's own profile. `--user-data-dir` and `CFFIXED_USER_HOME` move it now, and the launch fails if the app reports any of its folders outside the sandbox. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process. `npm test` runs in a throwaway `HOME` too (`__tests__/setup/home-isolation.ts`), and fails a file that writes into the real one.
