@@ -1558,7 +1558,7 @@ panel shows it once the Frontend's part lands. Deleting the agent drops the wait
 windows it is over. A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
 CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
 vendor included, and they continue their conversation too, found under the project's real path as
-well as the one Tars saved (a project reached through a symlink resumed nothing before); codex, gemini, grok, opencode, pi and
+well as the one Tars saved (a project reached through a symlink resumed nothing before). The same two spellings are read for the background work a restart waits for, the command that empties a field, the session's model and the Chat's transcript (`transcriptRoots`): read under the saved path alone, a restart on a linked project did not wait for the work its session had left running, and killed it; codex, gemini, grok, opencode, pi and
 amp never are: stop and start them. To see what a running CLI was actually launched with, read
 its argv (the model and effort are on the command line):
 
