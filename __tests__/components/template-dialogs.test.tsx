@@ -2,9 +2,10 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { mount, settle, elements, ofType, textOf, type Mount } from './hook-runtime';
 import { ImportDialog } from '../../src/components/Templates/ImportDialog';
 import { InstantiateDialog } from '../../src/components/Templates/InstantiateDialog';
+import { TemplatesManagerDialog } from '../../src/components/Templates/TemplatesManagerDialog';
 import { FactRow, PromptBlock, TemplateFactRows } from '../../src/components/Templates/TemplateReview';
 import { Toggle } from '../../src/components/Settings/Toggle';
-import { Button, Dropdown } from '../../src/components/ui';
+import { Button, DialogShell, Dropdown, Input } from '../../src/components/ui';
 import { reviewTemplateFile, templateFacts } from '../../src/lib/template-review';
 import type { AgentTemplate } from '../../src/types/electron';
 
@@ -21,6 +22,23 @@ vi.mock('../../src/hooks/useElectron', () => ({
     startAgent: async (...args: unknown[]) => { started.push(args); },
   }),
   useElectronFS: () => ({ projects: [{ path: '/Users/noah/tars', name: 'tars' }], openFolderDialog: async () => null }),
+  useElectronSkills: () => ({ installedSkills: [] }),
+}));
+
+const listed: { templates: AgentTemplate[] } = { templates: [] };
+vi.mock('../../src/hooks/useElectronTemplates', () => ({
+  useElectronTemplates: () => ({
+    builtinTemplates: listed.templates.filter(t => t.builtin),
+    userTemplates: listed.templates.filter(t => !t.builtin),
+    isLoading: false,
+    refresh: () => {},
+    create: async () => ({ success: true }),
+    update: async () => ({ success: true }),
+    remove: async () => ({ success: true }),
+    duplicate: async () => ({ success: true }),
+    exportTemplates: async () => ({ success: true }),
+    importTemplates: async () => ({ success: true }),
+  }),
 }));
 
 /**
@@ -42,7 +60,10 @@ vi.mock('../../src/hooks/useElectron', () => ({
  * 7. the switch is off for a built-in template, or the button does not say
  *    which of Create agent and Create and start is about to happen;
  * 8. a template without a prompt shows an empty prompt and a switch that
- *    does nothing.
+ *    does nothing;
+ * 9. a saved template's name or description still hides what does not
+ *    show, in the manager's list, in "Use"'s title, or in the agent name it
+ *    fills in, where the review wrote it out.
  */
 
 type El = { type: unknown; props: Record<string, unknown> };
@@ -236,5 +257,35 @@ describe('using a template (Overlay · Instantiate template · prompt)', () => {
     await create();
     expect(created).toHaveLength(1);
     expect(started).toEqual([]);
+  });
+});
+
+describe("a saved template's own text, wherever it appears (9)", () => {
+  const saved = (over: Partial<AgentTemplate>): AgentTemplate => ({
+    id: 't-9', builtin: false, displayName: 'Release notes writer', description: '', icon: '🤖', tags: [],
+    character: 'robot', provider: 'claude', permissionMode: 'normal', skills: [],
+    createdAt: '2026-09-24T07:00:00.000Z', updatedAt: '2026-09-24T07:00:00.000Z', ...over,
+  });
+
+  it("lists its name and description with what does not show written out", () => {
+    listed.templates = [saved({ displayName: 'Release\u{202E} notes', description: 'Writes\u{200B} the notes' })];
+    page = mount(() => TemplatesManagerDialog({ open: true, onClose: () => {} }));
+    const said = (elements(page.result) as unknown as El[])
+      .filter(el => el.type === 'span' || el.type === 'p')
+      .map(el => textOf(el.props.children as never));
+    expect(said).toContain('Release[U+202E] notes');
+    expect(said).toContain('Writes[U+200B] the notes');
+  });
+
+  it("titles Use with it, and fills in the agent's name with it, written out", async () => {
+    page = mount(() => InstantiateDialog({ template: saved({ displayName: 'Security\u{202E} reviewer', savedPrompt: 'Review.' }), onClose: () => {} }));
+    expect(ofType(page.result, DialogShell)[0].props.title).toBe('Use Security[U+202E] reviewer');
+    expect(ofType(page.result, Input)[0].props.value).toBe('Security[U+202E] reviewer');
+    (ofType(page.result, Dropdown)[0].props.onChange as (v: string) => void)('/Users/noah/tars');
+    (ofType(page.result, Input)[0].props.onChange as (e: unknown) => void)({ target: { value: '   ' } });
+    const primary = (ofType(page.result, Button) as unknown as El[]).find(el => el.props.variant === 'primary')!;
+    (primary.props.onClick as () => Promise<void>)();
+    await settle();
+    expect((created[0] as { name: string }).name).toBe('Security[U+202E] reviewer');
   });
 });
