@@ -4,6 +4,7 @@ import { registerHooksRoutes } from './hooks-routes';
 import { registerAgentRoutes } from './agent-routes';
 import { registerTelegramRoutes } from './telegram-routes';
 import { registerSlackRoutes } from './slack-routes';
+import { registerDiscordRoutes } from './discord-routes';
 import { registerKanbanRoutes } from './kanban-routes';
 import { registerVaultRoutes } from './vault-routes';
 import { registerMemoryRoutes } from './memory-routes';
@@ -17,6 +18,7 @@ export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
   registerAgentRoutes(app, ctx);
   registerTelegramRoutes(app, ctx);
   registerSlackRoutes(app, ctx);
+  registerDiscordRoutes(app, ctx);
   registerKanbanRoutes(app, ctx);
   registerVaultRoutes(app, ctx);
   registerMemoryRoutes(app, ctx);

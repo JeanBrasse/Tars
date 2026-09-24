@@ -118,6 +118,9 @@ function lastWords(stderr: string): string {
   return words ? `: ${words}` : '';
 }
 
+/** How long a stopped run's processes get to end on SIGTERM before SIGKILL. */
+const STOP_GRACE_MS = 2_000;
+
 export class AcpSession extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
   private buffer = '';
@@ -153,6 +156,11 @@ export class AcpSession extends EventEmitter {
       cwd: this.options.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Its own process group, so that stop() ends what it started too: the
+      // command Tars spawns is npx or an adapter, the CLI runs under it, and
+      // the commands the CLI runs under that (the Audit's table, #6). Windows
+      // has no groups to signal; the kill there is the process alone.
+      detached: process.platform !== 'win32',
     });
     this.child = child;
 
@@ -315,10 +323,28 @@ export class AcpSession extends EventEmitter {
     }
   }
 
+  /** Ends the run, and every process it started: its whole process group,
+   *  SIGTERM, then SIGKILL two seconds on for whatever did not go. */
   stop(): void {
     this.closed = true;
-    this.child?.kill();
+    const child = this.child;
     this.child = null;
+    if (!child) return;
+    const pid = child.pid;
+    if (!pid || process.platform === 'win32') {
+      child.kill();
+      return;
+    }
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch {
+      child.kill();
+      return;
+    }
+    const last = setTimeout(() => {
+      try { process.kill(-pid, 'SIGKILL'); } catch { /* the group is gone */ }
+    }, STOP_GRACE_MS);
+    last.unref();
   }
 
   get isRunning(): boolean {
