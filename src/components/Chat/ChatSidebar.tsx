@@ -283,7 +283,8 @@ export const TeamRow = memo(function TeamRow({
           <span className="font-mono text-[11px] leading-4 text-text-muted shrink-0">{shortModel(agent)}</span>
           <span className="flex-1" />
           <span className={`text-[12px] leading-4 shrink-0 ${statusInk(agent)}`}>{agentStatusLabel(agent)}</span>
-          {duration && <span className="font-mono text-[11px] leading-4 text-text-muted shrink-0">{duration}</span>}
+          {/* Counts up while the agent holds its state: marked for the e2e's mask. */}
+          {duration && <span data-volatile className="font-mono text-[11px] leading-4 text-text-muted shrink-0">{duration}</span>}
         </span>
         <span className="w-full h-5 flex items-center justify-between gap-2 pl-6 min-w-0">
           <span className="text-[12px] leading-4 text-text-muted truncate">{agentDetail(agent, lastSpokeAt, held, joinedAt)}</span>
