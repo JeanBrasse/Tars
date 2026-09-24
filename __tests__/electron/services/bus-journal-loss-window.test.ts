@@ -146,7 +146,14 @@ describe('nothing reads the journal off disk while it is behind', () => {
     // And no other process reads it: the Kanban and orchestrator servers read
     // agents.json, the journal belongs to the main process alone. A reader
     // added elsewhere would see a file that is a turn behind.
-    const roots = ['electron', 'mcp-kanban/src', 'mcp-orchestrator/src', 'mcp-memory/src', 'mcp-vault/src', 'src'];
+    // Every MCP folder, the one the servers share included (mcp-shared, D4),
+    // found rather than listed: a server or a shared module added later is
+    // scanned without anyone editing this list.
+    const mcp = fs.readdirSync(process.cwd())
+      .filter(name => name.startsWith('mcp-') && fs.existsSync(path.join(process.cwd(), name, 'src')))
+      .map(name => `${name}/src`);
+    expect(mcp, 'the MCP folders were not found').toContain('mcp-shared/src');
+    const roots = ['electron', 'src', ...mcp];
     const mentions: string[] = [];
     const walk = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
