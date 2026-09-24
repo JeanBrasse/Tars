@@ -49,6 +49,17 @@ export function spellingsOf(root: string): string[] {
 }
 
 /**
+ * Every directory a session's transcript may be filed under, in the order to
+ * try: each path as Tars saved it, then its real path when that differs (see
+ * spellingsOf). Every reader of a transcript goes through this: #138 fixed the
+ * resume alone, and four other readers kept looking under the saved spelling
+ * only (QA's re-check of #138).
+ */
+export function transcriptRoots(...paths: Array<string | undefined>): string[] {
+  return [...new Set(paths.filter((p): p is string => !!p).flatMap(spellingsOf))];
+}
+
+/**
  * The session id to resume, or null.
  *
  * Null covers every reason not to resume: no id recorded, an id that is not a

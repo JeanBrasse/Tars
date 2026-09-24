@@ -307,8 +307,15 @@ the first path nobody thought to list.
 
 | Path | Holds | Reachable by an agent |
 |---|---|---|
-| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, and the files staged for a room (`bus-files/`, a week, then removed) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
+| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's token (`hermes-connection.json`), and the files staged for a room (`bus-files/`, a week, then removed) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
 | `~/.tars-private/` | Noah's conversation with the super chat, and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700` |
+
+So what the kanban tools let an agent do on the Hermes board (since #183, delete
+only a task it filed that nobody claimed, or one it claimed) is a rule of Tars's
+own tools, not a barrier: an agent that reads `hermes-connection.json` can call
+the gateway with its token and edit or delete any task (the audit's gate of #183).
+
+What an agent waits on (`waitingOn`, the command or question of an open dialog) is kept in memory only: it is not written to `agents.json`. While the dialog is open, another agent can read it through `GET /api/agents/:id?full=true`, as it can read the rest of that agent's record; a command typed with a secret in it is visible there for that long. The hook sends only the fields that name the dialog, each cut at 1000 characters, never a tool's whole input.
 
 `~/.tars-private/overseer.json` used to be `~/.dorothy/overseer.json`: 148,654
 bytes, 344 messages, mode `0644`, in the directory every agent is pointed at.
