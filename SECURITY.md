@@ -96,6 +96,17 @@ SessionStart with a run's token: it registered a session over the live terminal'
 which then had every post refused as stale. A terminal replaced by a restart or a new
 start, or one that has ended, takes its token with it: the old CLI's late posts are a
 401, where a stopped CLI's token used to last until the agent's next launch.
+A hook sends that token only to the Tars that spawned its CLI (the Audit's table,
+#11). While Tars is down any process of any account may hold its port, and got every
+token posted to it: measured on 2026-09-24 with a listener on the port after the quit,
+the 1.9.0 hook sent it `Bearer <the terminal's token>`. Tars now mints an instance id
+per run (`tarsInstanceId`, in memory, never written) and hands it to each CLI beside the
+token (`TARS_INSTANCE_ID`). As it starts, a hook sends a fresh random challenge to
+`/api/health` and sends the token only when the answer is sha256 of the id and the
+challenge; with no id, no answer within 2 s or a wrong one, it posts without a token.
+The same listener got the challenge and a post with no Authorization. The id is as
+readable as the token by a process of the same user (`ps -Eww`), and no more: this
+closes the port to other accounts and to a replay, not to that.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
 outlives the update, and each is relaunched with a token and the new scripts (they sit
 in the app bundle). One that survives anyway posts without a token, or with one this

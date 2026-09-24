@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
+import * as crypto from 'node:crypto';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -25,6 +26,7 @@ const home = path.join(tmp, 'home');
 let server: http.Server;
 let port: number;
 const received: { path: string; authorization?: string; body: string }[] = [];
+const INSTANCE = crypto.randomBytes(16).toString('hex');
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -33,6 +35,14 @@ beforeAll(async () => {
     req.on('end', () => {
       received.push({ path: req.url ?? '', authorization: req.headers.authorization, body });
       res.writeHead(200, { 'Content-Type': 'application/json' });
+      // This server plays the Tars that spawned the CLI: it proves it knows
+      // the instance id, which a hook checks before it sends its token (#11,
+      // hook-checks-the-instance.test.ts).
+      const challenge = new URL(req.url ?? '/', 'http://x').searchParams.get('challenge');
+      if (challenge) {
+        res.end(JSON.stringify({ ok: true, proof: crypto.createHash('sha256').update(`${INSTANCE}:${challenge}`).digest('hex') }));
+        return;
+      }
       res.end(JSON.stringify({ success: true }));
     });
   });
@@ -64,7 +74,7 @@ function runHook(env: Record<string, string>): Promise<number> {
 describe('a hook post', () => {
   it('carries the token of the CLI it runs in', async () => {
     received.length = 0;
-    await runHook({ CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: 'token-of-a1s-terminal' });
+    await runHook({ CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: 'token-of-a1s-terminal', TARS_INSTANCE_ID: INSTANCE });
 
     const posts = received.filter(r => r.path.startsWith('/api/hooks/'));
     expect(posts.length).toBeGreaterThan(0);
@@ -73,7 +83,7 @@ describe('a hook post', () => {
   }, 30_000);
 
   it('logs in the data folder of the Tars that owns the CLI, for its user only', async () => {
-    await runHook({ CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: 'token-of-a1s-terminal' });
+    await runHook({ CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: 'token-of-a1s-terminal', TARS_INSTANCE_ID: INSTANCE });
 
     const dir = path.join(home, '.dorothy', 'logs');
     const log = path.join(dir, 'hooks.log');

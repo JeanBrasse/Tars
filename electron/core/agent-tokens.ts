@@ -35,6 +35,28 @@ import * as crypto from 'crypto';
  * that is no longer in there is refused by the lookup that follows.
  */
 
+/**
+ * This Tars, for the run: a random id handed to every agent process beside its
+ * token (TARS_INSTANCE_ID), never written anywhere and never sent. A hook asks
+ * the port it posts to for sha256("<id>:<challenge>") on a challenge of its
+ * own, and sends its token only when the answer is right (the Audit's table on
+ * a3d7c125, #11): while Tars is down, any process of any account may hold
+ * 31415, and got every token posted to it. The id is as readable as the token
+ * by a process of the same user (`ps -Eww`), and no more: this closes the port
+ * to others, not to that.
+ */
+const INSTANCE_ID = crypto.randomBytes(16).toString('hex');
+
+export function tarsInstanceId(): string {
+  return INSTANCE_ID;
+}
+
+/** The proof of this instance for a hook's challenge, or undefined for a challenge that is not 32 to 64 hex digits. */
+export function instanceProof(challenge: unknown): string | undefined {
+  if (typeof challenge !== 'string' || !/^[0-9a-f]{32,64}$/.test(challenge)) return undefined;
+  return crypto.createHash('sha256').update(`${INSTANCE_ID}:${challenge}`).digest('hex');
+}
+
 /** token -> agent id. The direction the server asks in. */
 const agentByToken = new Map<string, string>();
 /** agent id -> the token of its terminal, so a new spawn can drop the previous one. */
