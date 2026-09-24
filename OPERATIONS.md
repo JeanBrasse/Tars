@@ -811,13 +811,28 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
-| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` |
+| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
 | POST | `/api/webhooks/hermes` |
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
 none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
 which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`; both read
 the settings as they are, so a change there counts without a restart (SECURITY §6).
+
+The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
+Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
+message only when it is mentioned, unless Require @mention is off (`discordRequireMention`); a
+direct message always. Its commands are Slack's words (`status`, `start <agent> <task>`...), and
+anything else goes to the orchestrator, which answers with `send_discord`. Nothing it posts can
+ping. Setting it up:
+
+1. In the Discord Developer Portal, create an application, then under Bot reset the token and
+   paste it in Settings > Discord. On the same page, switch on the **Message Content** intent,
+   or every message reaches the bot empty.
+2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=68608`
+   (view channels, send messages, read message history). "Test token" in Settings gives this link.
+3. Add your Discord user id (Developer Mode, then Copy User ID), and mention the bot or DM it:
+   that channel becomes the one Tars posts to.
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
 raises its own fetch timeout to 600 s for any path containing `/wait` so the client never

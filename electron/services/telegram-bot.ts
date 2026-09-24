@@ -9,8 +9,8 @@ import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR, dataPath } from '../constan
 import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
 import {
-  findAgent, forwardToOrchestrator, projectsReport, startWithTask, statusReport, stopNow,
-  type BotFleet, type StatusGroup,
+  findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
+  type BotFleet, type ClaudeUsageStats, type StatusGroup,
 } from './bot-core';
 
 /**
@@ -31,24 +31,8 @@ let currentResponseChatId: string | null = null; // Track which chat to respond 
  * #19). Every read goes through here.
  */
 let getSettings: () => AppSettings = () => ({} as AppSettings);
-/**
- * What `/stats` reads out of Claude Code's own usage data. Only the fields this
- * bot renders are modelled; the rest of the object belongs to the reader that
- * produces it.
- */
-interface ClaudeModelUsage {
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadInputTokens?: number;
-  cacheCreationInputTokens?: number;
-}
-
-interface ClaudeStats {
-  modelUsage?: Record<string, ClaudeModelUsage>;
-  totalSessions?: number;
-  totalMessages?: number;
-  firstSessionDate?: string;
-}
+/** What `/usage` reads out of Claude Code's own usage data (bot-core.ts). */
+type ClaudeStats = ClaudeUsageStats;
 
 let fleet: BotFleet;
 let mainWindow: BrowserWindow | null;
@@ -460,66 +444,10 @@ function statusLine(a: AgentStatus): string {
   return line + '\n';
 }
 
-// ============== /usage, with Telegram's own price table ==============
-
-// Token pricing per million tokens (MTok) - same as frontend
-const MODEL_PRICING: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitsPerMTok: number; cache5mWritePerMTok: number }> = {
-  'claude-opus-4-5-20251101': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
-  'claude-opus-4-5': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
-  'claude-opus-4-1-20250501': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-  'claude-opus-4-1': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-  'claude-opus-4-20250514': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-  'claude-opus-4': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
-  'claude-sonnet-4-5-20251022': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-  'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-  'claude-sonnet-4-20250514': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-  'claude-sonnet-4': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-  'claude-3-7-sonnet-20250219': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
-  'claude-haiku-4-5-20251022': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
-  'claude-haiku-4-5': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
-  'claude-3-5-haiku-20241022': { inputPerMTok: 0.80, outputPerMTok: 4, cacheHitsPerMTok: 0.08, cache5mWritePerMTok: 1 },
-};
-
-/** A model's family, as the price table and the report name it, from any spelling of its id. */
-const FAMILIES: Array<[RegExp, string, string]> = [
-  [/opus-4-5|opus-4\.5/, 'claude-opus-4-5', 'Opus 4.5'],
-  [/opus-4-1|opus-4\.1/, 'claude-opus-4-1', 'Opus 4.1'],
-  [/opus-4|opus4/, 'claude-opus-4', 'Opus 4'],
-  [/sonnet-4-5|sonnet-4\.5/, 'claude-sonnet-4-5', 'Sonnet 4.5'],
-  [/sonnet-4|sonnet4/, 'claude-sonnet-4', 'Sonnet 4'],
-  [/sonnet-3|sonnet3/, 'claude-3-7-sonnet-20250219', 'Sonnet 3.7'],
-  [/haiku-4-5|haiku-4\.5/, 'claude-haiku-4-5', 'Haiku 4.5'],
-  [/haiku-3-5|haiku-3\.5/, 'claude-3-5-haiku-20241022', 'Haiku 3.5'],
-];
-const familyOf = (modelId: string) => FAMILIES.find(([pattern]) => pattern.test(modelId.toLowerCase()));
-
-function modelCost(modelId: string, input: number, output: number, cacheRead: number, cacheWrite: number): number {
-  const pricing = MODEL_PRICING[modelId] ?? MODEL_PRICING[familyOf(modelId)?.[1] ?? 'claude-sonnet-4'];
-  return (input / 1_000_000) * pricing.inputPerMTok +
-         (output / 1_000_000) * pricing.outputPerMTok +
-         (cacheRead / 1_000_000) * pricing.cacheHitsPerMTok +
-         (cacheWrite / 1_000_000) * pricing.cache5mWritePerMTok;
-}
+// ============== /usage ==============
 
 function usageReport(stats: ClaudeStats): string {
-  let totalCost = 0;
-  let totalInput = 0;
-  let totalOutput = 0;
-  let totalCacheRead = 0;
-  const modelBreakdown: Array<{ name: string; cost: number }> = [];
-  Object.entries(stats.modelUsage ?? {}).forEach(([modelId, usage]) => {
-    const input = usage.inputTokens || 0;
-    const output = usage.outputTokens || 0;
-    const cacheRead = usage.cacheReadInputTokens || 0;
-    const cacheWrite = usage.cacheCreationInputTokens || 0;
-    totalInput += input;
-    totalOutput += output;
-    totalCacheRead += cacheRead;
-    const cost = modelCost(modelId, input, output, cacheRead, cacheWrite);
-    totalCost += cost;
-    modelBreakdown.push({ name: familyOf(modelId)?.[2] ?? modelId.split('-').slice(0, 3).join(' '), cost });
-  });
-  modelBreakdown.sort((a, b) => b.cost - a.cost);
+  const { cost: totalCost, input: totalInput, output: totalOutput, cacheRead: totalCacheRead, byModel: modelBreakdown } = priceUsage(stats);
 
   let text = `📊 *Usage & Cost Summary*\n\n`;
   text += `💰 *Total Cost:* $${totalCost.toFixed(2)}\n`;
