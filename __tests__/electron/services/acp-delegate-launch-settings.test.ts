@@ -24,6 +24,7 @@ const FAKE_AGENT = `
 let buf = '';
 const offered = JSON.parse(process.env.FAKE_OFFERS || '["model","effort"]');
 const set = [];
+let promptId;
 const send = m => process.stdout.write(JSON.stringify(m) + '\\n');
 process.stdin.on('data', chunk => {
   buf += chunk;
@@ -45,6 +46,17 @@ function handle(msg) {
   if (msg.method === 'session/set_config_option') {
     set.push([msg.params.configId, msg.params.value]);
     return send({ jsonrpc: '2.0', id: msg.id, result: { configOptions: [] } });
+  }
+  if (msg.method === 'session/prompt' && process.env.FAKE_ASK_EDIT) {
+    // Asks to edit a file first, as an agent does before its Edit tool runs.
+    promptId = msg.id;
+    return send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: {
+      sessionId: 's1', toolCall: { title: 'Edit src/app.ts', kind: 'edit' },
+      options: [{ optionId: 'yes', kind: 'allow_once', name: 'Allow' }, { optionId: 'no', kind: 'reject_once', name: 'Reject' }],
+    } });
+  }
+  if (msg.id === 900 && !msg.method) {
+    return send({ jsonrpc: '2.0', id: promptId, result: { stopReason: 'end_turn' } });
   }
   if (msg.method === 'session/prompt') {
     send({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(set) } } } });
@@ -92,8 +104,45 @@ async function settingsOfARun(fields: Partial<AgentStatus>, offers?: string[]): 
   return set!;
 }
 
+/** What Tars answered when the agent asked to edit a file during the turn. */
+async function answerToAnEdit(fields: Partial<AgentStatus>): Promise<unknown> {
+  const script = path.join(tmp, 'agent.mjs');
+  fs.writeFileSync(script, FAKE_AGENT);
+  launch = { command: process.execPath, args: [script] };
+  process.env.FAKE_ASK_EDIT = '1';
+  const answers: unknown[] = [];
+  const result = await delegateOverAcp({
+    agent: {
+      id: 'agent-acp', name: 'Delegated', status: 'idle', projectPath: tmp, provider: 'claude',
+      skills: [], output: [], lastActivity: new Date().toISOString(), permissionMode: 'bypass',
+      ...fields,
+    } as AgentStatus,
+    task: 'report', appSettings: {} as never, timeoutMs: 20_000,
+    onEvent: ({ type, payload }) => { if (type === 'permission') answers.push(payload); },
+  });
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+  expect(answers).toHaveLength(1);
+  return answers[0];
+}
+
 beforeEach(() => {
   delete process.env.FAKE_OFFERS;
+  delete process.env.FAKE_ASK_EDIT;
+});
+
+describe('the role, on a task delegated over ACP', () => {
+  // The protocol's deny list is what keeps an orchestrator from editing on
+  // every ACP agent. It follows the role, as every launch does, and never
+  // the name (core/agent-role.ts).
+  it('refuses an orchestrator the edit, whatever it is called', async () => {
+    expect(await answerToAnEdit({ name: 'Lead', role: 'orchestrator', orchestratorMode: true }))
+      .toEqual({ tool: 'Edit src/app.ts', denied: true, decision: 'no' });
+  });
+
+  it('lets a worker edit, even one called orchestrator', async () => {
+    expect(await answerToAnEdit({ name: 'Tars-Orchestrator', role: 'worker', orchestratorMode: false }))
+      .toMatchObject({ denied: false, decision: 'yes' });
+  });
 });
 
 describe('a task delegated over ACP', () => {

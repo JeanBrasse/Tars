@@ -9,15 +9,20 @@
  * - MCP orchestrator integration
  */
 
+// First: every module required after it is compiled from the cache it keeps.
+import './core/compile-cache';
+
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
+import { defaultShell } from './utils/default-shell';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE } from './constants';
+import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE } from './constants';
 
 // Core modules
 import {
@@ -71,6 +76,8 @@ import {
   getSlackResponseChannel,
   getSlackResponseThreadTs,
 } from './services/slack-bot';
+import { initDiscordBot } from './services/discord-bot';
+import { registerDiscordHandlers } from './handlers/discord-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -79,9 +86,11 @@ import {
   getClaudeSkills,
   getClaudeHistory,
 } from './services/claude-service';
-import { configureStatusHooks } from './services/hooks-manager';
+import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe } from './core/agent-manager';
+import { assignRole } from './core/agent-role';
+import { forgetRestart } from './core/agent-restart';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -103,12 +112,15 @@ import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
-import { startAgentWatch } from './services/agent-watch';
+import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
-import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
+import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
+import { hermesKanban } from './services/api-routes/kanban-routes';
+import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
+import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
 // Utils
@@ -154,6 +166,12 @@ function loadAppSettings(): AppSettings {
     slackAppToken: '',
     slackSigningSecret: '',
     slackChannelId: '',
+    slackAllowedUserIds: [],
+    discordEnabled: false,
+    discordBotToken: '',
+    discordChannelId: '',
+    discordAllowedUserIds: [],
+    discordRequireMention: true,
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -230,7 +248,8 @@ function initTelegramBot() {
   initTelegramBotService(
     agents,
     ptyProcesses,
-    appSettings,
+    // Live: a save replaces this object, and the bot must see the new one.
+    () => appSettings,
     getMainWindow(),
     () => getSuperAgent(agents),
     saveAgents,
@@ -288,10 +307,11 @@ function createIpcDependencies(): IpcHandlerDependencies {
     isSuperAgent,
     getMcpOrchestratorPath,
     initTelegramBot,
-    initSlackBot: () => initSlackBot(appSettings, (settings) => {
+    initSlackBot: () => initSlackBot(() => appSettings, (settings) => {
       appSettings = settings;
       saveAppSettingsToFile(settings);
     }, getMainWindow()),
+    initDiscordBot: startDiscordBot,
     getTelegramBot,
     getSlackApp,
     getSuperAgentTelegramTask: () => {
@@ -315,6 +335,14 @@ function createIpcDependencies(): IpcHandlerDependencies {
     getClaudeSkills,
     getClaudeHistory,
   };
+}
+
+/** The Discord bot on the settings as they are now; the channel it detects is saved like Slack's. */
+function startDiscordBot() {
+  initDiscordBot(() => appSettings, (settings) => {
+    appSettings = settings;
+    saveAppSettingsToFile(settings);
+  }, getMainWindow());
 }
 
 // ============== API Server Initialization ==============
@@ -342,6 +370,28 @@ function initApiServer() {
   // See services/openai-bridge.ts for why this cannot just be another /api/*
   // route, and for the addressing scheme that lets one server serve both.
   startOpenAIBridgeServer();
+  moveLocalKanbanToHermes();
+}
+
+/**
+ * The agents' kanban is the Hermes board now (services/kanban-board.ts). The
+ * open tasks of the old local board, which no page shows, move there once,
+ * parked, on their project; ~/.dorothy/kanban-tasks.json stays as it is, the
+ * backup. Whatever Hermes did not take is tried again at the next launch.
+ */
+function moveLocalKanbanToHermes() {
+  setKanbanAgentDirectory(id => agents.get(id));
+  const hermes = hermesKanban();
+  if (!hermes) return;
+  if ('unusable' in hermes) {
+    console.warn(`[kanban] local board not moved to Hermes: ${hermes.unusable}`);
+    return;
+  }
+  void migrateLocalTasks(hermes, KANBAN_FILE, path.join(DATA_DIR, 'kanban-moved-to-hermes.json')).then(r => {
+    if (r.moved || r.errors.length) {
+      console.log(`[kanban] local board to Hermes: ${r.moved} moved, ${r.skipped} already there${r.errors.length ? `, ${r.errors.length} left for the next launch: ${r.errors.join('; ')}` : ''}`);
+    }
+  }, err => console.warn('[kanban] local board to Hermes: not attempted:', err));
 }
 
 // ============== App Initialization ==============
@@ -364,6 +414,9 @@ app.whenReady().then(async () => {
   for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
     ensureSecretFileMode(secret);
   }
+  // And the directory itself with everything in it: the fleet, the board, the
+  // ledger and the vault were readable by every account on the machine.
+  narrowDataDir(DATA_DIR);
 
   // Take Noah's conversation with the super chat out of ~/.dorothy, which is
   // the directory every agent is handed. Here rather than on the first read of
@@ -429,6 +482,7 @@ app.whenReady().then(async () => {
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
+  registerDiscordHandlers({ getAppSettings: () => appSettings });
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
@@ -445,6 +499,7 @@ app.whenReady().then(async () => {
     startAgent: startAgentForTask,
     stopAgent: async (agentId: string) => {
       const agent = agents.get(agentId);
+      await stopAcpRuns(agentId, 'the agent was stopped');
       if (agent?.ptyId) {
         const ptyProcess = ptyProcesses.get(agent.ptyId);
         if (ptyProcess) {
@@ -466,6 +521,7 @@ app.whenReady().then(async () => {
     },
     deleteAgent: async (agentId: string) => {
       const agent = agents.get(agentId);
+      await stopAcpRuns(agentId, 'the agent was deleted');
       if (agent) {
         // Stop PTY if running
         if (agent.ptyId) {
@@ -477,6 +533,7 @@ app.whenReady().then(async () => {
         }
         // Remove agent
         agents.delete(agentId);
+        forgetRestart(agentId);
         saveAgents();
         console.log(`Agent ${agentId} deleted`);
       }
@@ -502,7 +559,7 @@ app.whenReady().then(async () => {
       const { v4: uuidv4 } = await import('uuid');
 
       const id = uuidv4();
-      const shell = process.env.SHELL || '/bin/zsh';
+      const shell = defaultShell();
       let cwd = config.projectPath;
 
       if (!fs.existsSync(cwd)) {
@@ -547,6 +604,8 @@ app.whenReady().then(async () => {
         name: config.name || `Agent ${id.slice(0, 4)}`,
         permissionMode: config.permissionMode || 'auto',
       };
+      // A board creates workers, whatever it names them.
+      assignRole(status, 'worker', agents.values());
 
       agents.set(id, status);
       saveAgents();
@@ -602,10 +661,11 @@ app.whenReady().then(async () => {
 
   // Initialize services
   initTelegramBot();
-  initSlackBot(appSettings, (settings) => {
+  initSlackBot(() => appSettings, (settings) => {
     appSettings = settings;
     saveAppSettingsToFile(settings);
   }, getMainWindow());
+  startDiscordBot();
   initApiServer();
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
@@ -616,6 +676,11 @@ app.whenReady().then(async () => {
     const agent = agents.get(agentId);
     return agent ? lastLocalCommandAt(agent) : undefined;
   });
+  // And nothing is typed into a dialog its CLI shows: a permission, an
+  // AskUserQuestion. Its Enter would answer it (the Audit, 2026-09-24).
+  wireDialogProbe();
+  // And a turn ended by Esc, which sends no hook, ends here from the transcript.
+  watchInterruptedTurns();
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk
@@ -628,6 +693,7 @@ app.whenReady().then(async () => {
     console.error('MCP registration failed:', err));
   setupMemoryBackends(appSettings);
   await configureStatusHooks();
+  removeLegacyHookLogs();
 
   // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
   initAutoUpdater(getMainWindow);
@@ -639,22 +705,26 @@ app.whenReady().then(async () => {
   // least: Tars is left open for days at a time, so someone who never quits
   // never learned there was a new version. Half an hour is well inside
   // GitHub's unauthenticated rate limit and the check itself is one request.
-  if (appSettings.autoCheckUpdates !== false) {
-    const check = () => {
-      checkForUpdates().catch((err) => {
-        console.error('Auto-update check failed:', err);
-      });
-    };
-    setTimeout(check, 5000);
-    const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
-    // Never hold the process open for a version check.
-    timer.unref?.();
-  }
+  //
+  // "Check for updates" is read at every tick, not once at launch: turning it
+  // off stops the next check, and turning it on starts one within half an hour,
+  // without a restart. It is the one switch for these and the CLIs' below.
+  const check = () => {
+    if (appSettings.autoCheckUpdates === false) return;
+    checkForUpdates().catch((err) => {
+      console.error('Auto-update check failed:', err);
+    });
+  };
+  setTimeout(check, 5000);
+  const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  // Never hold the process open for a version check.
+  timer.unref?.();
 
   // And the CLIs the agents run, which Tars keeps from updating themselves:
-  // claude and Amp, 5 s after launch and every half hour, logged to
-  // ~/.dorothy/cli-updates.log. See services/cli-updater.ts.
-  startCliUpdates(() => appSettings);
+  // claude and Amp, when at least one agent runs them, 5 s after launch and
+  // every half hour, logged to ~/.dorothy/cli-updates.log. Under the same
+  // switch. See services/cli-updater.ts.
+  startCliUpdates(() => appSettings, () => [...agents.values()].map(agent => agent.provider));
 
   console.log('App initialization complete');
 });
@@ -683,6 +753,9 @@ app.on('before-quit', () => {
   runShutdownSteps([
     ['flushBus', flushBus],
     ['saveAgents', saveAgents],
+    // Before the app exits, which neither the stop's timer nor a run left
+    // reparented to launchd would wait for: at most a second, then SIGKILL.
+    ['endAcpRunsOnQuit', endAcpRunsOnQuit],
     ['destroyTray', destroyTray],
     ['stopAgentAutosave', stopAgentAutosave],
     ['stopOverseerWatch', stopOverseerWatch],

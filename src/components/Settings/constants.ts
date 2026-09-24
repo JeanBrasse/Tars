@@ -5,13 +5,14 @@ import {
   Bell,
   Send,
   Shield,
-  Sparkles,
+  Puzzle,
   Monitor,
   Terminal,
   Twitter,
   Cloud,
   Plug,
   Zap,
+  MessagesSquare,
 } from 'lucide-react';
 import { SlackIcon } from './SlackIcon';
 import { TasmaniaIcon } from './TasmaniaIcon';
@@ -74,6 +75,7 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     children: [
       { id: 'telegram', label: 'Telegram', description: 'Reach your agents from a Telegram chat.', icon: Send },
       { id: 'slack', label: 'Slack', description: 'Reach your agents from a Slack workspace.', icon: SlackIcon },
+      { id: 'discord', label: 'Discord', description: 'Same commands, in your server.', icon: MessagesSquare },
       { id: 'socialdata', label: 'X (Twitter)', description: 'Read and post on X with your own keys.', icon: Twitter },
       { id: 'google-workspace', label: 'Google Workspace', description: 'Gmail, Calendar and Drive, through your own account.', icon: Cloud },
     ],
@@ -81,9 +83,9 @@ export const SECTION_GROUPS: SettingsGroup[] = [
   {
     id: 'extensions',
     label: 'Extensions',
-    icon: Sparkles,
+    icon: Puzzle,
     children: [
-      { id: 'skills', label: 'Skills & Plugins', description: 'Everything installed on top of the agents you already have.', icon: Sparkles },
+      { id: 'skills', label: 'Skills & Plugins', description: 'Everything installed on top of the agents you already have.', icon: Puzzle },
       { id: 'mcp', label: 'Custom MCP', description: 'Servers Tars did not install, listed as they are.', icon: Plug },
       { id: 'tasmania', label: 'Tasmania', description: 'The Tasmania server, and where it runs from.', icon: TasmaniaIcon },
     ],
@@ -119,6 +121,13 @@ export const DEFAULT_APP_SETTINGS = {
   slackAppToken: '',
   slackSigningSecret: '',
   slackChannelId: '',
+  slackAllowedUserIds: [],
+  // Main's own defaults (#193): off, no token, and a mention required.
+  discordEnabled: false,
+  discordBotToken: '',
+  discordChannelId: '',
+  discordAllowedUserIds: [] as string[],
+  discordRequireMention: true,
   socialDataEnabled: false,
   socialDataApiKey: '',
   xPostingEnabled: false,

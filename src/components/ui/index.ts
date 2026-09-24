@@ -1,12 +1,13 @@
 export { Button } from './Button';
 export type { ButtonProps } from './Button';
 export { StatusBadge, StatusSquare, StatusDot } from './StatusBadge';
+export { AgentMark } from './AgentMark';
 export type { Tone, StatusTone, AnyTone } from './StatusBadge';
 export { Label, FieldError, Input, PasswordInput, Select, Textarea } from './Field';
 export { Dropdown } from './Dropdown';
 export { MenuPicker, pickerTriggerClass } from './MenuPicker';
 export type { MenuPickerOption } from './MenuPicker';
-export { ComposerCard, AttachmentTile, notSentText } from './ComposerCard';
+export { ComposerCard, AttachmentTile, ImageTile, notSentText } from './ComposerCard';
 export type { ComposerNotice } from './ComposerCard';
 export type { DropdownOption } from './Dropdown';
 export { BrandSpinner, LoadingPanel, LoadingState, SlowOperation, useLoadingStage } from './Loading';

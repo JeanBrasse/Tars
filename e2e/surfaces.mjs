@@ -21,10 +21,10 @@ import * as path from 'node:path';
 /** @type {Surface[]} */
 export const PAGES = [
   { name: 'dashboard', route: '/' },
-  // The fleet rail shows statuses that settle from running to idle in the first
-  // seconds after launch, and chat is the second surface visited. Waiting is
-  // better than masking the rail: a masked panel is a pink rectangle in the
-  // baseline and no coverage at all.
+  // The room list counts the agents the sweep launches as it starts, and chat
+  // is the second surface visited: waiting lets those counts settle. Better
+  // than masking the list: a masked panel is a pink rectangle in the baseline
+  // and no coverage at all.
   { name: 'chat', route: '/chat', settle: 3000 },
   { name: 'agents', route: '/agents' },
   { name: 'kanban', route: '/kanban' },
@@ -55,7 +55,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 16 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 17 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -68,6 +68,7 @@ const SETTINGS_TREE = [
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],
   ['slack', 'Integrations', 'Slack'],
+  ['discord', 'Integrations', 'Discord'],
   ['x-twitter', 'Integrations', 'X (Twitter)'],
   ['google-workspace', 'Integrations', 'Google Workspace'],
   ['skills-plugins', 'Extensions', 'Skills & Plugins'],
@@ -179,6 +180,14 @@ export const SCREENSHOT_TOLERANCE = {
  * they match, and e2e/known-errors.spec.ts fails a full run in which one of
  * them matched nothing anywhere, because a mask that stops matching hides
  * nothing and says nothing.
+ *
+ * A mask is painted magenta, and its shade is not fixed: (255, 0, 255) in the
+ * references recorded before 1.8.0, (234, 51, 247) in those recorded on
+ * Electron 44 for it (#173), and two runs a day apart have shown either. Mask
+ * against mask stays under the per-pixel threshold, so Playwright counts none
+ * of it; a count made by hand (the regions of the final runs of 1.8.0 and
+ * 1.8.1) must skip a pixel that is magenta on both sides, red and blue above
+ * 200 and green below 90, or it reports every mask as a change.
  */
 export const VOLATILE = {
   'terminal-bodies': {
@@ -223,33 +232,10 @@ export const VOLATILE = {
     selector: 'text=/· \\d+ chunks$/',
     why: 'how much a live CLI has printed by the time the page is photographed',
   },
-  'fleet-status-lines': {
-    surfaces: ['chat'],
-    selector: 'text=/^(running|waiting) (just now|<1m|\\d+m|\\d+h)/',
-    why: 'how long an agent has held its status, and the last line its terminal printed',
-  },
   'changelog-body': {
     surfaces: ['whats-new'],
     selector: 'div.space-y-2:has(ul li)',
     why: 'every changelog entry, which is new text on this page at every release; the page frame stays compared',
-  },
-  'usage-chart-window': {
-    surfaces: ['usage'],
-    // The rows, not the labels inside them. Masking each day label covered the
-    // right text and left its edges: a mask takes the box of what it covers,
-    // and a label's box follows its text. Measured on 2026-09-18, the day
-    // after these references were recorded: the sixth day of the window went
-    // from one digit to two, its box from 4 to 8 pixels wide, and `usage`
-    // failed by 28 pixels with nothing in the app changed. A row's box is the
-    // panel's width whatever the day says, so it holds.
-    //
-    // What this stops comparing, and it is not nothing: the three plot areas.
-    // In this sandbox they hold no usage at all, so the bars sit at their 2%
-    // floor with the accent on the latest one, and that is all that is lost
-    // today. The day the seed carries usage, the honest move is a fixed clock
-    // for this surface rather than a wider mask, and one re-record.
-    selector: 'div[class*="items-stretch"][class*="gap-1"], div[class*="items-center"][class*="justify-between"][class*="mt-1.5"]',
-    why: 'the fourteen day window under each chart, counted back from the day of the run, and the bars it labels',
   },
   'marketplace-plugin-count': {
     surfaces: ['extensions-plugins'],
@@ -257,6 +243,15 @@ export const VOLATILE = {
     why: 'how many plugins the marketplaces on GitHub are serving at the moment of the run',
   },
 };
+
+/**
+ * The day the Usage page is photographed on, whatever day the run is: local
+ * noon on 2026-09-16, far from midnight in any timezone the suite runs in. Its
+ * window, the span under TOTAL COST, the TODAY tile and the day under each bar
+ * all count back from it (e2e/fixture.mjs, pinDayOn). It replaces the mask the
+ * fourteen day labels needed, so the three plot areas are compared again.
+ */
+export const USAGE_DAY = new Date(2026, 8, 16, 12).getTime();
 
 /**
  * The masks for one surface, and the keys that actually matched something.
@@ -374,8 +369,9 @@ export function readPageErrorRecords() {
 // how fast that CLI registers its session. There nothing starts, the
 // Orchestrator reads a transcript seeded on disk, and the Backend Engineer
 // runs codex, which writes none.
-// The Chat room, the six frames `design/chat-design.pen` specifies as states
-// of the page rather than as overlays. One room per state, because a room is
+// The Chat room in six states of the page rather than overlays, first
+// specified in `design/chat-design.pen` and drawn since #165 from
+// `design/chat-redesign-a.pen`. One room per state, because a room is
 // derived from a project and a journal can only put a given one in a single
 // state at a time.
 //
@@ -388,7 +384,11 @@ export function readPageErrorRecords() {
 export const CHAT_ROOMS = [
   {
     name: 'chat-hermes-with-rooms', route: '/chat',
-    shows: 'All projects',
+    // Direction A (#165) no longer says `All projects`. The tars row's count
+    // comes from the bus journal and the placeholder from the failed Hermes
+    // connection, so the picture waits for both.
+    shows: '1 not sent',
+    placeholder: 'Fix the Hermes connection above',
   },
   {
     name: 'chat-room-agents-at-work', route: '/chat', clickText: 'tars',

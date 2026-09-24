@@ -205,7 +205,8 @@ describe('the Agents page', () => {
   // Seven agents in three projects, arriving tars first. Statuses as in the
   // frame `Agents · dark`, with a completed agent among the idle ones.
   const seven = () => [
-    agent('Orchestrator', TARS, { status: 'running' }),
+    // The role, since #129: a name decides nothing.
+    agent('Orchestrator', TARS, { status: 'running', role: 'orchestrator' }),
     agent('Frontend Engineer', TARS, { status: 'running', branchName: 'feat/frontend' }),
     agent('Backend Engineer', TARS, { status: 'waiting', branchName: 'feat/backend' }),
     agent('QA Engineer', TARS, { status: 'completed' }),

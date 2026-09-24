@@ -59,12 +59,7 @@ export default function AgentsPage() {
 
 
   // Custom hooks
-  const { superAgent } = useSuperAgent({
-    agents,
-    startAgent,
-    onAgentCreated: (id) => setEditAgentId(id),
-    onCreateNew: () => setShowNewChatModal(true),
-  });
+  const { superAgent } = useSuperAgent({ agents });
 
   // A project whose last agent is gone has nothing to show, so the page falls
   // back to every project rather than to an empty list under a stale name.
@@ -123,7 +118,7 @@ export default function AgentsPage() {
       branchName: agent.branchName,
       obsidianVaultPaths: agent.obsidianVaultPaths,
       savedPrompt: agent.savedPrompt,
-      orchestratorMode: agent.orchestratorMode,
+      role: agent.role,
       cliPath: agent.cliPath,
     };
   // Snapshot on open: depending on `agents` would rebuild this object on every
@@ -146,12 +141,12 @@ export default function AgentsPage() {
     localModel?: string,
     obsidianVaultPaths?: string[],
     effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-    orchestratorMode?: boolean,
+    role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
     try {
       const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
-      const agent = await createAgent({ projectPath, skills, worktree, character, name, secondaryProjectPath, permissionMode, effort, provider, model: resolvedModel, localModel, obsidianVaultPaths, orchestratorMode, cliPath });
+      const agent = await createAgent({ projectPath, skills, worktree, character, name, secondaryProjectPath, permissionMode, effort, provider, model: resolvedModel, localModel, obsidianVaultPaths, role, cliPath });
       if (prompt) {
         const options = { model: resolvedModel, provider, localModel };
         await startAgent(agent.id, prompt, options);
@@ -179,7 +174,7 @@ export default function AgentsPage() {
     savedPrompt?: string | null;
     obsidianVaultPaths?: string[];
     worktree?: { enabled: boolean; branchName: string };
-    orchestratorMode?: boolean;
+    role?: 'orchestrator' | 'worker';
     cliPath?: string | null;
   }) => {
     try {

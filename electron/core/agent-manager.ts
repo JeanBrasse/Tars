@@ -7,7 +7,9 @@ import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
-import { ptyProcesses, writeProgrammaticInput } from './pty-manager';
+import { rolesOnLoad } from './agent-role';
+import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-manager';
+import { dialogOpen, dialogShown } from './agent-launch';
 import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
@@ -19,7 +21,63 @@ import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
 
-export const agents: Map<string, AgentStatus> = new Map();
+/**
+ * When each agent's current status began (`statusSince`), stamped where the
+ * status is written rather than by each writer.
+ *
+ * Forty lines assign `agent.status`, in the hooks, the routes, the bots and the
+ * handlers, and a "since" left to each of them is a "since" one of them
+ * forgets. So an agent put in the fleet has its `status` turned into an
+ * accessor over the same value: writing a different status stamps the time,
+ * writing the same one does not (a Stop hook posting `idle` on an idle agent
+ * does not restart "idle for 4m"). It stays an enumerable own property, so
+ * agents.json, a spread and JSON.stringify see a plain field. `lastActivity`
+ * could not do this: every repaint of the terminal moves it. `waitingOn` goes
+ * with the wait it describes, for the same reason: twelve lines clear
+ * `waitingReason` by hand.
+ */
+function watchStatus(agent: AgentStatus, previous: AgentStatus | undefined): void {
+  const descriptor = Object.getOwnPropertyDescriptor(agent, 'status');
+  if (descriptor?.get) return;
+  let value = agent.status;
+  // An object replaced in the map keeps its time while its status is the same.
+  agent.statusSince = previous && previous.status === value && previous.statusSince
+    ? previous.statusSince
+    : new Date().toISOString();
+  Object.defineProperty(agent, 'status', {
+    enumerable: true,
+    configurable: true,
+    get: () => value,
+    set: (next: AgentStatus['status']) => {
+      if (next === value) return;
+      value = next;
+      agent.statusSince = new Date().toISOString();
+      // What it waited on belongs to that wait, whichever line ended it.
+      if (next !== 'waiting') agent.waitingOn = undefined;
+    },
+  });
+}
+
+class AgentMap extends Map<string, AgentStatus> {
+  override set(id: string, agent: AgentStatus): this {
+    if (agent && typeof agent === 'object') watchStatus(agent, this.get(id));
+    return super.set(id, agent);
+  }
+}
+
+export const agents: Map<string, AgentStatus> = new AgentMap();
+
+/**
+ * The writer refuses to type into an open dialog (pty-manager.ts,
+ * setDialogProbe), and this map is where an agent's dialog is known. Called by
+ * main.ts at startup, beside the field probe.
+ */
+export function wireDialogProbe(): void {
+  setDialogProbe(agentId => {
+    const agent = agents.get(agentId);
+    return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+  });
+}
 
 /**
  * Pre-populate Claude Code's workspace trust record for a given directory.
@@ -41,6 +99,10 @@ export const agents: Map<string, AgentStatus> = new Map();
  */
 export function ensureProjectTrusted(projectPath: string): void {
   if (!projectPath) return;
+  if (trustsTooMuch(projectPath)) {
+    console.warn(`ensureProjectTrusted: ${projectPath} would trust every folder below it, left for Claude Code to ask`);
+    return;
+  }
   const claudeJsonPath = path.join(os.homedir(), '.claude.json');
   type ClaudeConfig = {
     projects?: Record<string, {
@@ -77,6 +139,34 @@ export function ensureProjectTrusted(projectPath: string): void {
   } catch (err) {
     console.warn(`ensureProjectTrusted: failed to update ${claudeJsonPath}:`, err);
   }
+}
+
+/**
+ * Whether marking this directory trusted would trust far more than a project.
+ *
+ * Claude Code reads `hasTrustDialogAccepted` for its working directory and
+ * every directory above it, so the flag on $HOME trusts everything the account
+ * owns and the flag on `/` trusts the machine. Refused: the root, the home
+ * directory, anything above it, and a relative path, which names whatever the
+ * app's working directory happens to be. Compared by the path given and by the
+ * path the filesystem resolves, which follows a link and, on macOS, gives the
+ * case the disk stores, so neither a link nor another spelling gets through.
+ * Claude Code then shows its own dialog, which is the point of it.
+ */
+function trustsTooMuch(projectPath: string): boolean {
+  if (!path.isAbsolute(projectPath)) return true;
+  const spellings = (p: string) => {
+    const resolved = path.resolve(p);
+    try {
+      return [resolved, fs.realpathSync.native(resolved)];
+    } catch {
+      return [resolved];
+    }
+  };
+  const homes = spellings(os.homedir());
+  return spellings(projectPath).some(dir =>
+    dir === path.parse(dir).root
+    || homes.some(home => home === dir || home.startsWith(dir + path.sep)));
 }
 
 export let agentsLoaded = false;
@@ -237,8 +327,10 @@ export function handleStatusChangeNotification(
 /**
  * On-disk format version. Bumping it lets loadAgents migrate old records
  * deliberately instead of hoping every field happens to still line up.
+ * 3: the role is the Orchestrator toggle's, and no longer read from the name
+ * (see core/agent-role.ts).
  */
-const AGENTS_SCHEMA_VERSION = 2;
+const AGENTS_SCHEMA_VERSION = 3;
 
 /**
  * Retained terminal chunks per agent, bounded. What reads them now is text:
@@ -336,7 +428,7 @@ function backupPreviousGeneration(): void {
   if (!fs.existsSync(AGENTS_FILE)) return;
   try {
     const existing = fs.readFileSync(AGENTS_FILE, 'utf-8');
-    const existingAgents = parseAgentsFile(existing);
+    const existingAgents = parseAgentsFile(existing)?.agents;
     if (existingAgents && existingAgents.length > 0) {
       fs.writeFileSync(backupFile(), existing);
     }
@@ -354,19 +446,23 @@ function persistable(agent: AgentStatus): AgentStatus {
     pathMissing: undefined,
     output: agent.output.slice(-100),
     status: agent.status === 'running' ? 'idle' : agent.status,
+    // Runtime state, and the command a dialog asks about can carry a secret:
+    // agents.json is in every agent's --add-dir (the gate of #172).
+    waitingOn: undefined,
   } as AgentStatus;
 }
 
-function parseAgentsFile(raw: string): AgentStatus[] | null {
+function parseAgentsFile(raw: string): { agents: AgentStatus[]; version: number } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return null;
   }
-  if (Array.isArray(parsed)) return parsed as AgentStatus[];       // v1: bare array
+  if (Array.isArray(parsed)) return { agents: parsed as AgentStatus[], version: 1 };       // v1: bare array
   const file = parsed as Partial<AgentsFile>;
-  return Array.isArray(file?.agents) ? file.agents : null;
+  if (!Array.isArray(file?.agents)) return null;
+  return { agents: file.agents, version: typeof file.version === 'number' ? file.version : 1 };
 }
 
 /**
@@ -444,22 +540,22 @@ export function loadAgents() {
     }
 
     const data = fs.readFileSync(AGENTS_FILE, 'utf-8');
-    let agentsArray = parseAgentsFile(data);
+    let file = parseAgentsFile(data);
 
     // Unparseable or empty: fall back to the backup rather than carrying on
     // with an empty map, which the next save would then write over the file.
-    if (!agentsArray || agentsArray.length === 0) {
+    if (!file || file.agents.length === 0) {
       const backup = backupFile();
       if (fs.existsSync(backup)) {
         const restored = parseAgentsFile(fs.readFileSync(backup, 'utf-8'));
-        if (restored && restored.length > 0) {
-          console.warn(`agents.json unusable - restoring ${restored.length} agents from backup`);
-          agentsArray = restored;
+        if (restored && restored.agents.length > 0) {
+          console.warn(`agents.json unusable - restoring ${restored.agents.length} agents from backup`);
+          file = restored;
         }
       }
     }
 
-    if (!agentsArray) {
+    if (!file) {
       // Keep the unreadable file for inspection instead of silently replacing it.
       try {
         fs.copyFileSync(AGENTS_FILE, `${AGENTS_FILE}.corrupt`);
@@ -467,6 +563,11 @@ export function loadAgents() {
       console.error('agents.json could not be parsed; kept a copy at agents.json.corrupt');
       agentsLoaded = true;
       return;
+    }
+    const agentsArray = file.agents;
+
+    for (const agent of rolesOnLoad(agentsArray, file.version)) {
+      console.warn(`[role] ${agent.name || agent.id} is a worker now: ${agent.projectPath} had another orchestrator, and a project has one`);
     }
 
     for (const agent of agentsArray) {
@@ -509,16 +610,6 @@ export function loadAgents() {
       // Migrate legacy skipPermissions boolean → permissionMode
       if (!agent.permissionMode) {
         agent.permissionMode = agent.skipPermissions ? 'auto' : 'normal';
-      }
-
-      // Migrate name-substring orchestrator detection → persistent role field.
-      // Name-only on purpose: orchestratorMode is a tool-restriction toggle
-      // and must not promote agents into the Telegram/Slack super-agent pool.
-      if (!agent.role) {
-        const name = agent.name?.toLowerCase() || '';
-        agent.role = (name.includes('super agent') || name.includes('orchestrator'))
-          ? 'orchestrator'
-          : 'worker';
       }
 
       // Backfill createdAt for legacy agents using lastActivity
@@ -762,7 +853,7 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
     if (!ptyProcess) return;
     // A blocking permission dialog reads typed text as its answer, so a
     // redelivery there would accept the dialog rather than deliver anything.
-    if (live.status === 'waiting' && live.waitingReason === 'permission') return;
+    if (dialogOpen(live)) return;
 
     if (!pending.retried) {
       console.warn(

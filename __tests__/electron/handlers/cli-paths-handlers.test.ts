@@ -21,8 +21,15 @@ vi.mock('os', async (importOriginal) => {
   return { ...mod, homedir: () => tmpDir };
 });
 
+const shellCalls = vi.hoisted(() => [] as Array<{ file: string; args: string[] }>);
+
 vi.mock('child_process', () => ({
   exec: vi.fn((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string }) => void) => {
+    cb(null, { stdout: '' });
+  }),
+  // The login shell that reads the user's PATH.
+  execFile: vi.fn((file: string, args: string[], _opts: unknown, cb: (err: Error | null, result: { stdout: string }) => void) => {
+    shellCalls.push({ file, args });
     cb(null, { stdout: '' });
   }),
 }));
@@ -61,6 +68,7 @@ beforeEach(() => {
   fs.mkdirSync(path.join(tmpDir, '.dorothy'), { recursive: true });
 
   mockSettings = {};
+  shellCalls.length = 0;
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -103,6 +111,64 @@ describe('cli-paths-handlers', () => {
 
       // Should find claude somewhere (may be system path or our fake)
       expect(result.claude).toBeTruthy();
+    });
+
+    // Every Settings section and every "+ Agent" and "+ Team" dialog asked,
+    // and each call started a login shell: 114 to 762 ms (the Audit, 2026-09-23).
+    it('starts one login shell per app run, however many surfaces ask, at once or later', async () => {
+      await registerHandlers();
+
+      const [a, b] = await Promise.all([invokeHandler('cliPaths:detect'), invokeHandler('cliPaths:detect')]);
+      const c = await invokeHandler('cliPaths:detect');
+
+      expect(shellCalls).toHaveLength(1);
+      expect(b).toBe(a);
+      expect(c).toBe(a);
+    });
+
+    it('runs the shell as a file with its script as an argument, never a command line', async () => {
+      process.env.SHELL = '/bin/zsh; touch /tmp/owned';
+      try {
+        await registerHandlers();
+        await invokeHandler('cliPaths:detect');
+      } finally {
+        delete process.env.SHELL;
+      }
+
+      expect(shellCalls[0]).toEqual({ file: '/bin/zsh; touch /tmp/owned', args: ['-ilc', 'echo $PATH'] });
+    });
+
+    it('looks again when asked (the Detect button), and when the saved paths change', async () => {
+      await registerHandlers();
+      await invokeHandler('cliPaths:detect');
+
+      await invokeHandler('cliPaths:detect', { refresh: true });
+      expect(shellCalls).toHaveLength(2);
+
+      await invokeHandler('cliPaths:save', { claude: path.join(tmpDir, 'claude') });
+      await invokeHandler('cliPaths:detect');
+      expect(shellCalls).toHaveLength(3);
+
+      await invokeHandler('cliPaths:detect');
+      expect(shellCalls).toHaveLength(3);
+    });
+
+    it('answers a refresh with what is on disk now', async () => {
+      await registerHandlers();
+      const before = await invokeHandler('cliPaths:detect') as { claude: string };
+      const binDir = path.join(tmpDir, 'saved');
+      fs.mkdirSync(binDir, { recursive: true });
+      const saved = path.join(binDir, 'claude');
+      mockSettings = { cliPaths: { claude: saved } };
+      await invokeHandler('cliPaths:detect');
+      // Saved but not there yet: the detection keeps what it found.
+      fs.writeFileSync(saved, '#!/bin/sh\n', { mode: 0o755 });
+
+      const cached = await invokeHandler('cliPaths:detect') as { claude: string };
+      const fresh = await invokeHandler('cliPaths:detect', { refresh: true }) as { claude: string };
+
+      expect(cached.claude).toBe(before.claude);
+      expect(fresh.claude).toBe(saved);
     });
   });
 

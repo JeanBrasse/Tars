@@ -45,7 +45,7 @@ alone:
 
 | Credential | Who it is | What it opens |
 |---|---|---|
-| An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents, and a new agent in its own project; another project's only with `allowCrossProject`. Not the webhook |
+| An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents, and a new agent in its own project, never an orchestrator (`POST /api/agents` refuses the role to every caller: only the Agents page makes one); another project's only with `allowCrossProject`. Not the webhook |
 | Tars's own pass (minted in memory, written nowhere) | the main process | every agent of every project: it is Noah's super chat, which drives every project by design. Not the webhook |
 | `~/.tars-private/hermes-webhook-secret` | Hermes | `POST /api/webhooks/hermes` and nothing else, and through it any agent of any project, named by id or by name |
 | `~/.dorothy/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent, and does not open the webhook |
@@ -77,11 +77,33 @@ token file. It is not isolation: see §3.
 
 **What it leaves open, deliberately.** The read routes (`GET /api/agents`, and
 per-agent status, output, health, wait, bootstrap) still accept the shared
-token, because `hooks/session-start.sh` fetches an agent's bootstrap with it at
-the start of every session. So a process holding that file can still enumerate
-the fleet and read any agent's terminal output. Closing that means giving the
-hooks an identity of their own, which is a change to every CLI's hook config,
-not to a route.
+token. So a process holding that file can still enumerate the fleet and read any
+agent's terminal output. The hooks no longer need it: since 2026-09-23 they
+present the token of the CLI they run in, for the bootstrap and memory reads and
+on `/api/hooks/*`, where nothing else is accepted (below). Closing the reads to
+the shared token is now a change to routes only.
+
+**What the hook routes take.** `/api/hooks/*` sets an agent's status and output and
+registers the session that owns it, so until 2026-09-23 anybody on the loopback could
+post for any agent with no credential: the Audit registered one agent's session for
+another and got its conversation back through a restart (`--resume`), and a killed
+CLI's late SessionStart took its agent from the live session by accident. The hooks
+run inside the agent's CLI and inherit its `CLAUDE_MGR_API_TOKEN`, minted for that
+terminal: a post now carries it, and the route takes nothing else (not the shared
+token, not Tars's pass, not the token of a delegated ACP run, which names the agent
+too) and only for the `agent_id` it names. The Audit's gate of #135 posted a
+SessionStart with a run's token: it registered a session over the live terminal's,
+which then had every post refused as stale. A terminal replaced by a restart or a new
+start, or one that has ended, takes its token with it: the old CLI's late posts are a
+401, where a stopped CLI's token used to last until the agent's next launch.
+Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
+outlives the update, and each is relaunched with a token and the new scripts (they sit
+in the app bundle). One that survives anyway posts without a token, or with one this
+Tars never minted, and is refused: stop and start it from Tars. The hook logs moved
+from `/tmp` (readable by every user, shared by every Tars on the machine) to
+`~/.dorothy/logs/`, `0600`, and Tars removes the two old files at startup
+(`removeLegacyHookLogs`): only regular files the user owns, and only when `HOME` is the
+user's own, so a sandbox never deletes the logs of a Tars still on 1.7.9 beside it.
 
 **What the webhook secret is.** The reach of Noah's own chat, handed to Hermes,
 so it lives where Noah's conversation lives, in `~/.tars-private`, and not in
@@ -285,8 +307,15 @@ the first path nobody thought to list.
 
 | Path | Holds | Reachable by an agent |
 |---|---|---|
-| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal | Yes, deliberately: it is in every agent's `--add-dir` |
-| `~/.tars-private/` | Noah's conversation with the super chat, and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700` |
+| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's token (`hermes-connection.json`), and the files staged for a room (`bus-files/`, a week, then removed) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
+| `~/.tars-private/` | Noah's conversation with the super chat, the Hermes sessions it held that conversation in (`overseer-hermes-sessions.json`), and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700`. The conversation also lives in Hermes, one session per turn: `memory_search` (`/api/memory/search`, what agents call) leaves out every session the super chat opened, every run of its cron job and any hit that names no session. Sessions opened before 1.9.0 were not recorded, so only their cron runs are left out; an agent holding `hermes-connection.json` can still ask the gateway itself (§5, the paragraph below) |
+
+So what the kanban tools let an agent do on the Hermes board (since #183, delete
+only a task it filed that nobody claimed, or one it claimed) is a rule of Tars's
+own tools, not a barrier: an agent that reads `hermes-connection.json` can call
+the gateway with its token and edit or delete any task (the audit's gate of #183).
+
+What an agent waits on (`waitingOn`, the command or question of an open dialog) is kept in memory only: it is not written to `agents.json`. While the dialog is open, another agent can read it through `GET /api/agents/:id?full=true`, as it can read the rest of that agent's record; a command typed with a secret in it is visible there for that long. The hook sends only the fields that name the dialog, each cut at 1000 characters, never a tool's whole input.
 
 `~/.tars-private/overseer.json` used to be `~/.dorothy/overseer.json`: 148,654
 bytes, 344 messages, mode `0644`, in the directory every agent is pointed at.
@@ -305,8 +334,20 @@ with one call. Both refuse the private directory now. The vault's attach route
 was a third way, measured on the same branch: it copies the file its caller
 names into `~/.dorothy/vault/attachments`, where `/api/local-file` serves it
 with no token, and it took a file from `~/.tars-private` on the shared token.
-It refuses the private directory now too. It still copies any other file its
-caller names, `~/.ssh` included; that is older than 1.7.6, and closing it means
+It refuses the private directory now too, by what the file is and not by how
+it is named: on 2026-09-23 the audit's lead #21 was reproduced in a sandbox
+app, where `~/.TARS-PRIVATE/...` (the volume ignores case) and
+`/System/Volumes/Data/...` (the Data volume's firmlink) both copied the webhook
+secret in and `/api/local-file` served it. The route and the app's Telegram send
+routes now compare the real path, and each directory above it, with the private
+directory by device and inode (`electron/utils/path-identity.ts`), so a case
+variant, the firmlink or a symlink is refused like the plain name; the agents'
+Telegram MCP server compares segments in any case and checks the real path too.
+A hard link has no path back to the file it names, so a link made elsewhere to
+a private file passed all of that; all three guards now look for its inode among
+the files of the private directory, and the two Telegram ones in `~/.ssh` as
+well (the audit's gate of #137).
+It still copies any other file its caller names, `~/.ssh` included; that is older than 1.7.6, and closing it means
 deciding what an agent may attach. Each of these is a refusal of the one-call
 route, not a wall: an agent with a shell copies the file somewhere else first,
 because §1.
@@ -315,3 +356,46 @@ Made on a new install by the first save, the directory came out `0755`, since
 only the migration asked for `0700`. Whichever write makes it now, the
 migration or the first save of the conversation or of the webhook secret, makes
 it `0700`. A directory that already exists at another mode is left as it is.
+
+## 6. Who the bots answer
+
+Each bot is a way into the fleet from outside the machine, so each answers a
+list Noah keeps in Settings, and nobody when the list is empty.
+
+- **Telegram**: the chats enrolled with `/auth <token>`. Read from the settings
+  as they are at each message: before 2026-09-23 the bot held the object it was
+  started with, every Settings save replaced main's, and a chat removed or a
+  token regenerated kept working until a restart (the audit's lead #19). The
+  app's own `/api/telegram/send*` go only to those chats, as mcp-telegram's do:
+  `send_telegram`, in every agent, forwarded a chat id chosen by the model
+  (lead #20). And what the bot sends of its own accord, the super agent's
+  replies and errors and the status notices, goes only to a chat Settings
+  allows at the moment it is sent: the chat that last asked was remembered and
+  never checked again, so a chat removed after asking kept receiving all three
+  (the audit's gate of #137). It is forgotten now, and what it would have
+  received goes to the chats that are allowed. Since 2026-09-24, `/auth` takes
+  five wrong tokens from a chat, and twenty from all chats together, in any
+  fifteen minutes (the Audit's gate of #176); past that it answers "Too many
+  attempts" without comparing, the same to a right token as to a wrong one. The
+  token Tars generates is 128 random bits: the limit is for a token set by hand,
+  and against a bot that answers a stranger for ever. The count from all chats
+  is a lock-out anyone who finds the bot can cause: twenty wrong tokens in
+  fifteen minutes keep every new chat out, Noah's included (chats already
+  enrolled are not affected). Kept for 1.9.0 on purpose (the Audit's gate of
+  #200), with its way out said in the refusal itself: "Try again at HH:MM, or
+  turn Telegram off and on in Tars's Settings". The toggle restarts the bot,
+  which starts the count again. Only toggling Telegram in Settings or
+  restarting Tars clears it: the count lives in memory, no API route restarts
+  the bot and nothing watches app-settings.json.
+- **Slack**: the member ids in Settings > Slack (`slackAllowedUserIds`). Before
+  it, anyone who could mention or message the bot could list agents and project
+  paths, start, stop and brief them, and move the channel agents post to
+  (lead #15). A sender not on the list is told its own id, in a mention or a
+  direct message, so the owner can add it; other channel messages are ignored
+  without a word.
+- **Discord**: the user ids in Settings > Discord (`discordAllowedUserIds`), and
+  in a server channel only a message that mentions the bot, unless Require
+  @mention is off. A stranger is told its id where it addressed the bot. Nothing
+  the bot posts can ping (`allowedMentions` with nothing in it). Its invite asks
+  for View Channels and Send Messages and nothing else: until the Audit's gate
+  of #195 it asked for Read Message History too, which the bot never uses.

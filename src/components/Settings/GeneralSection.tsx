@@ -39,7 +39,7 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
     <SettingsCard>
       <SettingsRow
         label="Check for updates"
-        description="Looks at the fork's releases, never upstream."
+        description="Tars from its fork, never upstream, and the claude and Amp CLIs your agents run: at launch, every 30 min."
         control={
           <Toggle
             enabled={appSettings.autoCheckUpdates !== false}

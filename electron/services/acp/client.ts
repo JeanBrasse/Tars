@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 
@@ -36,6 +36,29 @@ export interface TurnResult {
   /** Tool calls it made, in order. */
   toolCalls: { title: string; kind?: string; status?: string }[];
   costUSD?: number;
+  /**
+   * What the turn started and left running when it ended: background
+   * commands, monitors, wakeups. A delegated run ends with its turn, and all
+   * of it is stopped with the agent (see backgroundOf).
+   */
+  background: string[];
+}
+
+/**
+ * The name to report for a tool call that leaves work running after the turn,
+ * or null. Claude Code has three: a Bash command started with
+ * `run_in_background`, a Monitor, and a ScheduleWakeup (claude-agent-acp
+ * titles those two by their tool name). In a terminal session each brings the
+ * agent back when it fires; in a delegated run nothing does, since the run
+ * ends with the turn and the agent is stopped.
+ */
+function backgroundOf(title: string, rawInput: unknown): string | null {
+  const input = (rawInput ?? {}) as { run_in_background?: unknown; command?: unknown; description?: unknown };
+  if (input.run_in_background === true) {
+    return typeof input.command === 'string' ? input.command : typeof input.description === 'string' ? input.description : title;
+  }
+  if (title === 'Monitor' || title === 'ScheduleWakeup') return title;
+  return null;
 }
 
 export interface McpServerSpec {
@@ -95,6 +118,171 @@ function lastWords(stderr: string): string {
   return words ? `: ${words}` : '';
 }
 
+/** How long a stopped run's processes get to end on SIGTERM before SIGKILL. */
+const STOP_GRACE_MS = 2_000;
+
+type ProcessRow = { pid: number; ppid: number; pgid: number; zombie: boolean; age?: number };
+const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,stat=,etime='];
+
+/** ps's elapsed time, `[[dd-]hh:]mm:ss`, in seconds; undefined when it gives none. */
+function ageOf(etime: string | undefined): number | undefined {
+  const match = etime?.match(/^(?:(\d+)-)?(?:(\d+):)?(?:(\d+):)?(\d+)$/);
+  if (!match) return undefined;
+  const [, days, a, b, seconds] = match;
+  // With two colons the fields are hh:mm:ss, with one mm:ss.
+  const [hours, minutes] = b !== undefined ? [a, b] : [undefined, a];
+  return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes ?? 0) * 60 + Number(seconds);
+}
+
+export function parseProcessTable(out: string): ProcessRow[] {
+  return out.split('\n').map(line => line.trim().split(/\s+/))
+    .filter(cols => cols.length >= 4 && cols.slice(0, 3).every(c => /^\d+$/.test(c)))
+    .map(([pid, ppid, pgid, stat, etime]) => ({
+      pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), zombie: stat.startsWith('Z'), age: ageOf(etime),
+    }));
+}
+
+/** Every process, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
+function processTable(): Promise<ProcessRow[] | undefined> {
+  return new Promise(resolve => {
+    execFile('ps', PS_ARGS, { timeout: 5_000 }, (err, out) => resolve(err ? undefined : parseProcessTable(String(out))));
+  });
+}
+
+/** The same, read while the caller waits, for at most `timeoutMs`: for the quit, which nothing outlives. */
+function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
+  try {
+    return parseProcessTable(String(execFileSync('ps', PS_ARGS, { timeout: timeoutMs })));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The processes some roots lead, and every process group found among their
+ * descendants.
+ *
+ * The roots' own groups are not enough. Claude Code's Bash tool runs each
+ * command in a group of its own, and a run whose claude could not pass the stop
+ * on (wedged, SIGSTOPped by the Audit on #191) left its `zsh -c` and `sleep`
+ * alive, reparented to launchd, once npm, the adapter and claude had died with
+ * their group. So the tree is read from ps before the first signal, while the
+ * parents that tie those groups to the run are still alive, and read again
+ * before the last, from every process already known, for what was started in
+ * between. Tars's own group, and init's, are never signalled. With no ps, the
+ * roots' own groups still are.
+ */
+export class ProcessTree {
+  private readonly known: Set<number>;
+  private readonly groups: Set<number>;
+  private ownGroup: number | undefined;
+  private firstReadAt: number | undefined;
+
+  constructor(roots: number[]) {
+    this.known = new Set(roots);
+    this.groups = new Set(roots);
+  }
+
+  /**
+   * Adds what `table` shows under the processes already known. From the second
+   * read on, a known pid younger than the time since the first read, whose
+   * parent is not the run's, is another process that took the id since (the
+   * Audit's gate of #199): it is dropped, and a group of the run's whose id it
+   * took by leading one with it. (pid, ppid) pairs cannot tell: launchd is the
+   * parent of a reparented process and of many a new one. ps gives the age in
+   * whole seconds, so an id taken within a second of the first read passes.
+   */
+  grow(table: ProcessRow[] | undefined, now: number = Date.now()): void {
+    if (!table) return;
+    this.ownGroup = table.find(row => row.pid === process.pid)?.pgid;
+    if (this.firstReadAt === undefined) {
+      this.firstReadAt = now;
+    } else {
+      const elapsed = (now - this.firstReadAt) / 1000;
+      for (const row of table) {
+        if (!this.known.has(row.pid) || row.age === undefined || this.known.has(row.ppid)) continue;
+        if (row.age >= elapsed - 1) continue;
+        this.known.delete(row.pid);
+        if (row.pgid === row.pid) this.groups.delete(row.pgid);
+      }
+    }
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const row of table) {
+        if (!this.known.has(row.pid) && this.known.has(row.ppid)) { this.known.add(row.pid); grew = true; }
+      }
+    }
+    for (const row of table) if (this.known.has(row.pid)) this.groups.add(row.pgid);
+  }
+
+  /** The groups a signal goes to: never Tars's own, nor init's. */
+  get targets(): number[] {
+    return [...this.groups].filter(group => group > 1 && group !== this.ownGroup && group !== process.pid);
+  }
+
+  signal(sig: NodeJS.Signals): void {
+    for (const group of this.targets) {
+      try { process.kill(-group, sig); } catch { /* the group is gone */ }
+    }
+  }
+
+  /** Whether a live process is left in any of the groups. A zombie is not: its
+   *  parent, Tars for the process it spawned, reaps it once the thread is free. */
+  anyLeft(table: ProcessRow[] | undefined): boolean {
+    if (!table) return this.targets.some(group => { try { process.kill(-group, 0); return true; } catch { return false; } });
+    const targets = new Set(this.targets);
+    return table.some(row => targets.has(row.pgid) && !row.zombie);
+  }
+}
+
+/** Ends the process `root` leads and everything under it: SIGTERM, then SIGKILL two seconds on. */
+async function endProcessTree(root: number): Promise<void> {
+  const tree = new ProcessTree([root]);
+  tree.grow(await processTable());
+  tree.signal('SIGTERM');
+  const last = setTimeout(() => {
+    void processTable().then(table => { tree.grow(table); tree.signal('SIGKILL'); });
+  }, STOP_GRACE_MS);
+  last.unref();
+}
+
+/** How long the quit waits for delegated runs to end on SIGTERM before SIGKILL. */
+const QUIT_GRACE_MS = 1_000;
+/** And for the read of ps before the SIGKILL, past that. */
+const QUIT_LAST_READ_MS = 500;
+const QUIT_POLL_MS = 50;
+
+/**
+ * Ends the processes these roots lead, and everything under them, before it
+ * returns: SIGTERM, a wait of at most QUIT_GRACE_MS that ends as soon as
+ * nothing is left, then SIGKILL. For the quit, where the stop's timer would
+ * never fire (measured on #197: a wedged run was whole 14 s after the quit).
+ *
+ * Every read of ps shares one deadline, a second and a half from the start:
+ * each had its own 2 s timeout, and a ps that hangs held the quit 6.5 s (the
+ * Audit's gate of #199). A read that finds no time left is not made; the
+ * groups already known still get their signals.
+ */
+export function endProcessTreesNow(roots: number[]): void {
+  if (roots.length === 0) return;
+  const graceEnds = Date.now() + QUIT_GRACE_MS;
+  const deadline = graceEnds + QUIT_LAST_READ_MS;
+  const read = (until: number) => {
+    const left = Math.min(until, deadline) - Date.now();
+    return left > 20 ? processTableNow(left) : undefined;
+  };
+  const tree = new ProcessTree(roots);
+  tree.grow(read(graceEnds));
+  tree.signal('SIGTERM');
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < graceEnds) {
+    if (!tree.anyLeft(read(graceEnds))) return;
+    Atomics.wait(pause, 0, 0, QUIT_POLL_MS);
+  }
+  tree.grow(read(deadline));
+  tree.signal('SIGKILL');
+}
+
 export class AcpSession extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
   private buffer = '';
@@ -109,6 +297,10 @@ export class AcpSession extends EventEmitter {
   /** Text and tool calls for the turn currently in flight. */
   private turnText: string[] = [];
   private turnTools: { title: string; kind?: string; status?: string }[] = [];
+  /** Tool calls of this turn that leave work running past it, by toolCallId. */
+  private turnBackground = new Map<string, string>();
+  /** This turn's tool calls by toolCallId, so an update can name one better. */
+  private turnToolsById = new Map<string, { title: string; kind?: string; status?: string }>();
   private turnUsage: AcpUsage | undefined;
   private turnCost: number | undefined;
 
@@ -126,6 +318,11 @@ export class AcpSession extends EventEmitter {
       cwd: this.options.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Its own process group, so that stop() ends what it started too: the
+      // command Tars spawns is npx or an adapter, the CLI runs under it, and
+      // the commands the CLI runs under that (the Audit's table, #6). Windows
+      // has no groups to signal; the kill there is the process alone.
+      detached: process.platform !== 'win32',
     });
     this.child = child;
 
@@ -251,6 +448,8 @@ export class AcpSession extends EventEmitter {
 
     this.turnText = [];
     this.turnTools = [];
+    this.turnBackground = new Map();
+    this.turnToolsById = new Map();
     this.turnUsage = undefined;
     this.turnCost = undefined;
 
@@ -265,7 +464,16 @@ export class AcpSession extends EventEmitter {
       text: this.turnText.join(''),
       toolCalls: this.turnTools,
       costUSD: this.turnCost,
+      background: [...this.turnBackground.values()],
     };
+  }
+
+  /**
+   * What the turn in flight has said and done so far: for a turn stopped at
+   * its limit, which otherwise answered nothing however far it had got.
+   */
+  partialTurn(): { text: string; toolCalls: { title: string; kind?: string; status?: string }[]; background: string[] } {
+    return { text: this.turnText.join(''), toolCalls: this.turnTools, background: [...this.turnBackground.values()] };
   }
 
   async cancel(): Promise<void> {
@@ -277,10 +485,36 @@ export class AcpSession extends EventEmitter {
     }
   }
 
+  /** Ends the run, and every process it started (endProcessTree): SIGTERM,
+   *  then SIGKILL two seconds on for whatever did not go. */
   stop(): void {
     this.closed = true;
-    this.child?.kill();
+    const child = this.child;
     this.child = null;
+    if (!child) return;
+    const pid = child.pid;
+    if (!pid || process.platform === 'win32') {
+      child.kill();
+      return;
+    }
+    void endProcessTree(pid);
+  }
+
+  /**
+   * For the quit: marks the run ended and hands back the process id to end
+   * with endProcessTreesNow, all runs at once. Undefined when there is nothing
+   * to end, or on Windows, where the process is killed here, having no group.
+   */
+  releaseForQuit(): number | undefined {
+    this.closed = true;
+    const child = this.child;
+    this.child = null;
+    if (!child) return undefined;
+    if (!child.pid || process.platform === 'win32') {
+      child.kill();
+      return undefined;
+    }
+    return child.pid;
   }
 
   get isRunning(): boolean {
@@ -370,7 +604,19 @@ export class AcpSession extends EventEmitter {
     if (kind === 'tool_call' || kind === 'tool_call_update') {
       const title = (update.title as string) || (update.rawInput as { command?: string } | undefined)?.command || 'tool';
       const entry = { title, kind: update.kind as string | undefined, status: update.status as string | undefined };
-      if (kind === 'tool_call') this.turnTools.push(entry);
+      const id = update.toolCallId as string | undefined;
+      if (kind === 'tool_call') {
+        this.turnTools.push(entry);
+        if (id) this.turnToolsById.set(id, entry);
+      } else if (id && update.title) {
+        // The adapter emits a call first under a placeholder ("Terminal") and
+        // its command in an update: name it by what it ran.
+        const recorded = this.turnToolsById.get(id);
+        if (recorded) recorded.title = title;
+      }
+      // Read on the update too: the adapter emits a call before its input.
+      const left = backgroundOf(title, update.rawInput);
+      if (left && id) this.turnBackground.set(id, left);
       this.emit('tool', entry);
       return;
     }

@@ -6,7 +6,9 @@ the installed app.
 
 Target platform is macOS: `electron-builder` is invoked with `--mac` only, the code-signing
 config is `build/entitlements.mac.plist`, and the Tasmania integration reads a token out of
-`~/Library/Application Support/`.
+`~/Library/Application Support/`. The code stays Linux compatible all the same (Noah,
+2026-09-24): the CI runs the tests on ubuntu, and a macOS-only code path has a Linux one or
+fails cleanly.
 
 ---
 
@@ -68,7 +70,7 @@ npm run electron:dev
 
 That is `concurrently` over two things:
 
-1. `npm run dev`: `next dev` on port 3000.
+1. `npm run dev`: `next dev` on 127.0.0.1, port 3000.
 2. `npm run electron:start`: `wait-on http://localhost:3000`, then
    `tsc -p electron/tsconfig.json`, then `NODE_ENV=development electron .`.
 
@@ -80,16 +82,31 @@ In dev the window loads `process.env.DOROTHY_DEV_URL || 'http://localhost:3000'`
 DevTools automatically (suppressed when `DOROTHY_E2E=1`). In production it loads
 `app://-/index.html` off the custom protocol, served from `<appPath>/out`.
 
+From the second launch on, the main process no longer compiles its JavaScript from source, and
+from the third the renderer does not either. The app:// scheme has Chromium's `codeCache`
+privilege, so V8 keeps what it compiled of the renderer bundle in the profile's `Code Cache/js`:
+Chromium writes it during the second launch and reads it from the third. The main process turns
+on Node's compile cache before it requires anything else (`electron/core/compile-cache.ts`), in
+the profile's `compile-cache/`, and flushes it once the window has loaded. Both are keyed by each
+file's content: an update is compiled once more. Deleting `compile-cache/` costs one slower
+launch, deleting `Code Cache` two. Measured on 2026-09-24 on packaged builds: the main process's
+compile work fell from 181 to 441 ms to 79 to 101 ms, and the renderer's main-thread compile from
+59 to 129 ms to 3 ms once its cache is read. `NODE_DEBUG_NATIVE=COMPILE_CACHE` in the app's
+environment prints each module the cache served.
+
 ### Run the renderer alone
 
 ```bash
-npm run dev            # next dev, port 3000
-npm run dev:network    # next dev -H 0.0.0.0, for a phone/tailnet client
+npm run dev            # next dev on 127.0.0.1, port 3000
 ```
 
-`next.config.ts` already allows `http://100.92.4.122:3000` as a dev origin. The renderer alone
-has no IPC bridge: every `window.electron.*` call is undefined, so most pages render empty.
-Use it only for pure-layout work.
+The dev server listens on the loopback only. It used to listen on every interface, and a
+`dev:network` script and a tailnet dev origin were there to reach it from another machine:
+both are gone, with the web build's API routes they served (`/api/agents` spawned `claude`
+from an HTTP request, and `/api/skills` ran a shell command). The e2e suite starts its own
+`next dev` on port 3100 (`playwright.config.ts`). The renderer alone has no IPC bridge: every
+`window.electron.*` call is undefined, so most pages render empty. Use it only for pure-layout
+work.
 
 ### Compile just the main process
 
@@ -157,7 +174,44 @@ npm run lint:design     # design guardrail, see below
 
 ## Tests and guardrails
 
-Four separate gates. They do not overlap.
+The rules are in CLAUDE.md, Workflow Rule 3, and they are Noah's (2026-09-23): a feature is
+proven end to end in the real app, every E2E run leaves an artefact, a unit tested in isolation
+is written failures first, and the vitest suite stays as the regression net. Below, how to prove
+a feature, then the four gates. They do not overlap.
+
+### Proving a feature: an E2E spec and its artefact
+
+A feature's spec lives in `e2e/<feature>.spec.ts` and drives the running app, never a component
+or a mock:
+
+1. **Launch** through `launchSandboxed(electron, home)` from `e2e/fixture.mjs`, with a HOME made
+   for the run and seeded before the launch (`seedSandbox`, or the files the feature reads).
+   Spell it `/tmp/...`: the app reports its folders under `/tmp`, so a HOME spelled
+   `/private/tmp/...` fails the fixture's check. The fixture adds `--user-data-dir` and
+   `CFFIXED_USER_HOME`, and fails the launch if the app reports any folder outside the sandbox.
+2. **A CLI** in the feature is real claude (its path in the seed's `cliPaths.claude` or the
+   agent's `cliPath`; a fake Messages API behind `ANTHROPIC_BASE_URL` when no real turn is
+   needed), or the recording fake CLI through `cliPath`. The sweep's agents run the fake CLI
+   `seedSandbox` writes; a spec that needs its own CLI writes one through `cliPath`, as
+   `terminal-replay-modes.spec.ts` does. `launchSandboxed` refuses to hand the app the caller's
+   `CLAUDE_*`, `DOROTHY_*` or `ANTHROPIC_*`: a variable of that family the app needs is set in
+   the spec's `env`. Check which hook scripts the sandbox's `~/.claude/settings.json` names
+   before a CLI starts: they must post to the sandbox's port.
+3. **Assert** on what the user sees or the main process reports: the DOM,
+   `window.electronAPI.agent.list()`, the files written. Never on a mock.
+4. **Leave the artefact.** `npx tsc -p electron/tsconfig.json`, then
+   `E2E_TRACE=on npx playwright test e2e/<feature>.spec.ts`. Every run writes into its own
+   directory, `test-results/runs/<stamp>` (or `E2E_RUN_DIR`), which holds `command.txt`: the
+   commit and the command that reproduce it. In the spec, `recordValues({...})`
+   (`e2e/fixture.mjs`) writes the values asserted to `values.json`, and
+   `stepShot(page, '<step>')` each screenshot. `E2E_TRACE=on` adds the app's own trace,
+   `app-trace.zip`. Playwright's `--trace` records only the runner's steps for an Electron app.
+   The PR names the run directory.
+5. **Show it bites**: run it against the old build (the base branch's `electron/dist` and
+   renderer) or a mutant, and see it red.
+
+Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
+moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
 ### Unit tests: `npm test`
 
@@ -167,7 +221,12 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Current state: **46 files, 733 tests, ~5 s.** Config is `vitest.config.mts`: node environment,
+A unit tested in isolation (a parser, `electron/core/input-draft.ts`, `src/lib/usage-window.ts`,
+the worktree path guard) starts with a header listing every way it can fail, then the tests,
+then the code. A test written after the code, one that restates a constant or one that only
+checks a mock was called is refused at the gate.
+
+Config is `vitest.config.mts`: node environment,
 globals on, `include: ['__tests__/**/*.test.ts']`, and an `@` → `src/` alias so renderer
 modules resolve the same way Next resolves them.
 
@@ -180,8 +239,9 @@ Layout mirrors the source tree: `__tests__/electron/services/api-routes/*.test.t
 print stack traces on success (`team-template-handlers` corrupt-store case, the security
 suites); a stderr block is not a failure, read the final summary line.
 
-`npm test` does **not** cover `src/` React components beyond two files
-(`__tests__/components/`). The renderer is guarded by the E2E sweep instead.
+`npm test` reaches `src/` through the 25 test files of `__tests__/components/`, several of which
+call a component as a function under `__tests__/components/hook-runtime.ts`. The renderer in a
+real window is the E2E specs' to prove.
 
 ### E2E surface sweep: `npm run e2e`
 
@@ -220,10 +280,9 @@ Per surface the spec does two things:
 - `toHaveScreenshot()` against `e2e/__screenshots__/<name>.png` with
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
-The manifest is `e2e/surfaces.mjs`: **16 pages + 16 settings sections + 3 overlays = 35
-surfaces**. Note `e2e/__screenshots__/` holds **36** PNGs: `settings-obsidian.png` is an
-orphaned baseline with no manifest entry. Delete it or add the surface back; it is currently
-neither compared nor cleaned up.
+The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
+surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms and the
+two panel-history views that their own specs photograph.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings
@@ -303,10 +362,11 @@ Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint,
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
-**And it has never run.** Measured on 2026-09-17: the workflow is listed as active, and
-`gh api repos/JeanBrasse/Tars/actions/runs` answers `total_count: 0`, PR #105 included. Actions
-stay off on a fork until somebody enables them in the repository's Actions tab. Until that click,
-every check is one you ran yourself, on your own machine, and nothing is checked on Linux.
+**It runs, and it is the only check made on Linux.** Measured on 2026-09-17, it had never run:
+Actions stay off on a fork until somebody enables them. They are on now, and
+`gh api repos/JeanBrasse/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
+part of every gate, because the code stays Linux compatible (Noah, 2026-09-24): a test that
+passes on your Mac and fails there is a finding, not noise.
 
 ---
 
@@ -444,7 +504,9 @@ path, so a change to either setting changes the other with it. The comment on `G
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
-Auto-check fires 5 s after `whenReady()` unless `appSettings.autoCheckUpdates === false`.
+Auto-check fires 5 s after `whenReady()` and every 30 minutes, and each tick reads `appSettings.autoCheckUpdates`:
+with it `false` the tick does nothing, so turning the switch off or on needs no restart. The same switch
+governs the CLI updates below.
 
 ### Cut a release
 
@@ -469,7 +531,11 @@ a build of the version being released.
 
 `scripts/release.mjs` stops at the first thing that is not as it should be:
 
-1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean,
+1. **refuses** unless `HEAD` is `origin/main` after a fetch, the tracked tree is clean, the
+   Electron the build will package is the one `package.json` accepts and `package-lock.json`
+   locks, package and binary (`dist/version`), found where Node finds it from the checkout,
+   which from a worktree is the main checkout's `node_modules` (the Audit, 2026-09-24: 43.4.1
+   installed under a `^44.4.4`; the fix is `npm ci` then `npx install-electron`),
    `v<version>` exists on GitHub neither as a release nor as a tag, the top entry of the
    changelog is that version, and no newer version is published. A GitHub it cannot ask is a
    refusal, not a pass;
@@ -526,7 +592,13 @@ and a manifest deleted by hand is one that nothing can compare any more.
 
 Tars starts every claude with `DISABLE_AUTOUPDATER=1` and every Amp with its update check off,
 so neither updates itself inside a Tars terminal. Tars updates them instead
-(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time.
+(`electron/services/cli-updater.ts`): 5 s after launch, then every 30 minutes, one CLI at a time,
+while "Check for updates" is on in Settings (the one switch for Tars's own updates and these), and
+only the CLIs at least one agent runs. An agent with no provider, and the thirteen providers pointed
+at another vendor, run claude; an Amp agent runs Amp; codex, gemini, grok, opencode and pi run their
+own binaries, which Tars does not update. So a fleet with no Amp agent never has Amp checked, and a
+codex-only fleet never has claude checked. The log says `all off` once when the switch is off, and
+`<cli> skipped: <why>` once for each reason a CLI is left alone, such as no agent running it.
 
 | CLI | Covered when installed as | Command Tars runs |
 |---|---|---|
@@ -546,7 +618,7 @@ it runs, and a launch in those seconds fails. npm's cache for it lives in the sc
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
 package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
 
-Everything else is left alone and named once per launch in the log: codex, gemini, grok,
+Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
 yourself.
 
@@ -602,12 +674,14 @@ work.
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
-| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | board |
+| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
+| `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
 | `~/.dorothy/cli-paths.json` | `electron/handlers/cli-paths-handlers.ts` | resolved binary paths, readable by MCP |
+| `~/.dorothy/skills-marketplace.json` | `electron/services/skills-marketplace.ts` | the last skills.sh listing, served first; delete it to fetch afresh |
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
@@ -736,8 +810,36 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
-| POST | `/api/telegram/{send,send-photo,send-video,send-document}` · `/api/slack/send` |
+| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
 | POST | `/api/webhooks/hermes` |
+
+The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
+none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
+which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`, which takes
+five wrong tokens from a chat and twenty from all chats in any fifteen minutes, then says "Too many
+attempts" without comparing, with the time it lifts; both read the settings as they are, so a change
+there counts without a restart (SECURITY §6). A lock-out from the count of all chats keeps your own
+new chat out too: turn Telegram off and on in Settings, which restarts the bot and clears the count.
+
+The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
+Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
+message only when it is mentioned, unless Require @mention is off (`discordRequireMention`); a
+direct message always. Its commands are Slack's words (`status`, `start <agent> <task>`...), and
+anything else goes to the orchestrator, which answers with `send_discord`. Nothing it posts can
+ping. Setting it up:
+
+1. In the Discord Developer Portal, create an application, then under Bot reset the token and
+   paste it in Settings > Discord. On the same page, switch on the **Message Content** intent,
+   or every message reaches the bot empty.
+2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=274877910016`
+   (view channels, send messages, send messages in threads: the bot does nothing else). "Test
+   token" in Settings gives this link, and main makes it from a token as it is typed
+   (`discord:inviteUrl`, which refuses anything over 200 characters). A mention in a thread or a
+   forum post is answered in that thread, which needs Send Messages in Threads: a server the bot
+   was invited to before 1.9.0 (3072 or 68608) must invite it again with this link, or give its
+   role that permission, or the answer there is refused.
+3. Add your Discord user id (Developer Mode, then Copy User ID), and mention the bot or DM it:
+   that channel becomes the one Tars posts to.
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
 raises its own fetch timeout to 600 s for any path containing `/wait` so the client never
@@ -797,7 +899,7 @@ any process that reads `~/.dorothy/api-token` gets. `allowCrossProject: true` le
 through. The guard stops an orchestrator from acting on the wrong project by mistake; it does not
 stop an agent that means to.
 
-`mcp-kanban` is outside this: it never calls the API, it reads and writes the files directly.
+`mcp-kanban` presents the agent's own token too, since its tools moved to the Hermes board (`/api/kanban/*`). It acts on its own project's tasks and no other. It has no `allowCrossProject`: its schemas have no such field.
 
 Genuine cross-project denials read differently and are recoverable:
 
@@ -824,11 +926,18 @@ both behave identically. It:
 2. **refuses with `409`** if the agent is `waiting` on a permission dialog: a typed message
    cannot answer arrow-key UI, and the trailing `\r` could *accept* the pending permission:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
+   Every other writer (the bus, delegation notes, "send held", Telegram, Slack) is held by the
+   writer itself while a dialog is up, and its message goes in after the answer (SPECS §5).
 3. types the message into the session (`mode: "message"`) when a CLI runs in the terminal,
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
    `cd … && exec <cli>` and ends with the CLI. The status alone never types: `running` or
-   `waiting` over a bare shell had the message run as a command. Otherwise it
+   `waiting` over a bare shell had the message run as a command. A launch on its way (a restart,
+   a start from a window, a bot's cold start) is waited for and never spawned over: 15 s, and
+   past that while its CLI runs, up to 180 s. The API waits 20 s at most, counted from the
+   request even for a sender queued behind another, then answers `409` with `starting: true`
+   and types nothing: send it again. A sender refused so does not become the agent's requester.
+   Otherwise it
 4. spawns a fresh session with the message as the prompt (`mode: "start"`), only where no CLI
    runs: the spawn kills the terminal, and a session it replaced is not resumed.
 
@@ -866,6 +975,24 @@ Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and
 
 Plus `tasmania` when `appSettings.tasmaniaEnabled` and the configured
 `tasmaniaServerPath` exists on disk.
+
+Each server builds itself (`npm run build` in its folder): `tsc` checks the types, and esbuild
+bundles `src/index.ts` into `dist/bundle.js`, with `mcp-shared/` in it. That folder is what the
+seven share: the client to Tars, the tool table they register through, one request read whole,
+the settings file. It imports node's builtins only; a package imported from there would resolve
+from the repository's root, not from the server's own lock.
+
+What the seven answer is recorded in `__tests__/mcp/contracts/`. Before changing a server:
+
+```bash
+node __tests__/mcp/contracts/mcp-servers.contract.mjs            # builds the seven, compares
+node __tests__/mcp/contracts/mcp-servers.contract.mjs --only=x   # one server
+```
+
+It starts each bundle over stdio with an agent's environment, asks `tools/list`, then calls
+every tool along each of its answers against a fake Tars (SocialData, X and Telegram are
+faked too), and prints `identical` or the diff. `--record` rewrites the recording: only for a
+change meant to be seen, recorded on the code before the change.
 
 ### How registration works
 
@@ -1111,7 +1238,8 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 
 | Symptom | Where to look |
 |---|---|
-| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `/tmp/dorothy-hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
+| a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
 | an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1122,8 +1250,11 @@ in `ps`.
 ### Debugging hooks
 
 ```bash
-tail -f /tmp/dorothy-hooks.log          # session-start
-tail -f /tmp/dorothy-hooks-debug.log    # on-stop, verbose
+tail -f ~/.dorothy/logs/hooks.log          # session-start, prompts, stops
+tail -f ~/.dorothy/logs/hooks-debug.log    # on-stop, verbose
+# Until 2026-09-23 these were /tmp/dorothy-hooks.log and -debug.log, readable by
+# every user and shared by every Tars on the machine, a sandbox's included. Tars
+# removes those two at startup, when HOME is the user's own (never from a sandbox).
 
 # are they installed and pointing at a file that exists?
 jq -r '.hooks | to_entries[] | "\(.key)\t\(.value[0].hooks[0].command)"' ~/.claude/settings.json
@@ -1132,6 +1263,12 @@ jq -r '.hooks | to_entries[] | .value[0].hooks[0].command' ~/.claude/settings.js
 # the hooks need jq and curl
 which jq curl
 ```
+
+A hook post that is refused (`401` or `403` in those logs) comes from a CLI whose
+token is not its terminal's: one that outlived its terminal (a restart replaced it), or
+one Tars did not start. The agent's status then stops following that CLI: stop and
+start the agent from Tars. After an update from 1.7.9 there is none of these, since
+quitting kills every agent terminal and each comes back with a token.
 
 | Symptom | Cause |
 |---|---|
@@ -1288,6 +1425,49 @@ secret sat in `~/.dorothy`, which every agent can read.
 Response mirrors `/dispatch` (`{success, mode, agent}`); poll `GET /api/agents/:id` for the
 result afterwards.
 
+### The agents' kanban
+
+The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`, `assign_task`,
+`update_task_progress`, `mark_task_done`, `move_task`, `delete_task`) work on the Hermes board,
+the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
+and never write a file. `electron/services/kanban-board.ts` decides where a task sits:
+
+| State | On the Hermes board | Who takes it |
+|---|---|---|
+| parked | `scheduled`, assignee `tars:unclaimed`, tenant = the project's path | nobody by itself: Hermes never dispatches `scheduled` |
+| claimed | `ready`, assignee `tars:<agent id>` | the agent that claimed it; Hermes skips it (`skipped_nonspawnable`: a lane with a colon can never be a Hermes profile) |
+| done | `done` | |
+
+Measured against Hermes 0.21.1's own kanban code: `todo` is promoted to `ready` by the
+dispatcher and `triage` is decomposed by the gateway's aux model (`kanban.auto_decompose`), so
+neither is a place to park.
+
+- **An agent files a task**: `create_task` parks it on the agent's own project. If the project
+  has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
+- **An agent takes one**: `assign_task` with no `agent_id`. A claim is atomic among Tars's
+  agents: a second one gets "already claimed by ...".
+- **An agent hands one to another**: `assign_task` with the other agent's id, same project only.
+  Tars claims it on that agent's lane and types it into it, as the agent that handed it.
+- **An agent cannot hand a task to Hermes**: `move_task` to `planned` is refused.
+- **An agent deletes only its own**: a task it filed that nobody claimed, or one it claimed, done
+  or not. A task Noah gave to a Hermes profile, one Hermes finished, another agent's, or one moved
+  from the local board is Noah's to delete, on the Kanban page. Who filed a task is the last line
+  of its body, `Filed by <name> (Tars agent <id>).`, which Tars writes after the agent's own
+  description: the gateway records every creation as `dashboard`.
+- **Noah hands a task to Hermes**: on the Kanban page, give it a Hermes profile and move it to
+  `ready`.
+- **The old local board** (`~/.dorothy/kanban-tasks.json`): its open tasks move to the Hermes
+  board once at launch, parked. `kanban-moved-to-hermes.json` records which, and a task left
+  behind is tried again at the next launch. The file itself is never written again: it is the
+  backup. The kanban-automation that matched an agent when a local task reached `planned` only
+  served that board, which no page shows.
+- **Nothing is written to a Hermes nobody configured**: without `hermes-connection.json`, the tools
+  answer "Hermes is not configured". With one that cannot be read, is not a JSON object, or names
+  no address for its mode (a `local` port, an `ssh` host, a `remote` or `cloud` URL), they say what
+  is wrong with it, and the old board is not moved. The default port is only a guess, and on this
+  machine it is a tunnel to a real gateway.
+- **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
+
 ---
 
 ## Tasmania (local models)
@@ -1329,7 +1509,8 @@ is skipped.
 Every agent runs in a `node-pty` login shell: `pty.spawn('/bin/bash', ['-l'], …)`,
 `xterm-256color`, `cwd = worktreePath || projectPath` (falling back to `$HOME` with a warning
 if that path is gone), at the size the agent's panel last asked for, or 120×30 (120×40 for an
-API-driven session) when no panel has. Free-standing terminals use `process.env.SHELL || '/bin/zsh'`.
+API-driven session) when no panel has. Free-standing terminals use `$SHELL`, or `/bin/zsh` on macOS
+and `/bin/bash` elsewhere when it is unset (`defaultShell`, `electron/utils/default-shell.ts`).
 
 The environment is `process.env` plus:
 
@@ -1394,7 +1575,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/age
 
 ### An agent restarted by itself after its model or effort changed
 
-Saving a model, an effort, a permission mode, orchestrator mode, a secondary folder, an
+Saving a model, an effort, a permission mode, the Orchestrator toggle, a secondary folder, an
 Obsidian vault or a local model in the Agents page restarts that agent's CLI on the new values,
 continuing its conversation (`--resume <session> --fork-session`), unless something would be cut
 (`electron/core/agent-restart.ts`). Every decision is one line in the main process log:
@@ -1411,14 +1592,41 @@ A turn can end with work still running in the background (Claude Code refuses a 
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
 
-A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
+A restart that waits tells every window what it waits on (`agent:restart-pending`, and
+`agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
+panel shows it once the Frontend's part lands. Deleting the agent drops the wait and tells the
+windows it is over. A restart waiting on a field is waiting on you: send what is typed there, or clear it. Only the
 CLIs on the claude binary are restarted this way, the thirteen providers that point it at another
-vendor included, and they continue their conversation too; codex, gemini, grok, opencode, pi and
+vendor included, and they continue their conversation too, found under the project's real path as
+well as the one Tars saved (a project reached through a symlink resumed nothing before). The same two spellings are read for the background work a restart waits for, the command that empties a field, the session's model and the Chat's transcript (`transcriptRoots`): read under the saved path alone, a restart on a linked project did not wait for the work its session had left running, and killed it; codex, gemini, grok, opencode, pi and
 amp never are: stop and start them. To see what a running CLI was actually launched with, read
 its argv (the model and effort are on the command line):
 
 ```bash
 ps -Aww -o pid,lstart,args | grep -- '--add-dir' | grep -v grep
+```
+
+### An orchestrator became a worker, or the other way round
+
+The Orchestrator toggle is the role, and a project has one orchestrator
+(`electron/core/agent-role.ts`). Switching it on for an agent makes the project's current
+orchestrator a worker, and both CLIs restart on their new flags:
+
+```
+[restart] Tars-Backend: orchestrator changed: restarting its CLI now
+[restart] Tars-Orchestrator: orchestrator changed: restarting when its turn ends
+```
+
+The name decides nothing: renaming "Tars-Orchestrator" leaves it the orchestrator, and an agent
+called "Orchestrator" can be a worker. On load, a file with two orchestrators in one project keeps
+the first and logs `[role] <name> is a worker now: <project> had another orchestrator, and a
+project has one`. Who is what, and what a running CLI got:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents?all=true \
+  | jq -r '.agents[] | "\(.role)\t\(.name)\t\(.projectPath)"' | sort
+# an orchestrator's argv carries the instructions file and the tool block
+ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 ```
 
 ### Fleet-wide log search

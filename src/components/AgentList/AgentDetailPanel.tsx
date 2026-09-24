@@ -1,8 +1,6 @@
 'use client';
 
 import {
-  Bot,
-  Cpu,
   FolderOpen,
   Clock,
   GitBranch,
@@ -10,14 +8,12 @@ import {
   Square,
   Play,
   Trash2,
-  Sparkles,
+  Blocks,
   Terminal as TerminalIcon,
 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { STATUS_COLORS, CHARACTER_FACES } from '@/app/agents/constants';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
-import { BrandSpinner } from '@/components/ui';
-import { providerBadgeClass } from '@/components/ui/ProviderBadge';
+import { AgentMark, BrandSpinner } from '@/components/ui';
 
 interface AgentDetailPanelProps {
   agent: AgentStatus;
@@ -36,36 +32,17 @@ export function AgentDetailPanel({
   onStart,
   onRemove,
 }: AgentDetailPanelProps) {
-  const statusConfig = STATUS_COLORS[agent.status];
-
   return (
     <>
       {/* Agent Header */}
       <div className="px-3 lg:px-5 py-3 lg:py-4 border-b border-border-primary flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-bg-tertiary/30">
         <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 rounded-none ${agent.name?.toLowerCase() === 'bitwonka' ? 'bg-accent-green/20' : 'bg-bg-tertiary'} flex items-center justify-center relative`}>
-            {agent.name?.toLowerCase() === 'bitwonka' ? (
-              <span className="text-2xl">🐸</span>
-            ) : agent.character ? (
-              <span className="text-2xl">{CHARACTER_FACES[agent.character] || '🤖'}</span>
-            ) : agent.status === 'running' ? (
-              <Cpu className={`w-6 h-6 ${statusConfig.text} animate-pulse`} />
-            ) : (
-              <Bot className={`w-6 h-6 ${statusConfig.text}`} />
-            )}
-            {agent.status === 'running' && (
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-primary animate-pulse border border-bg-secondary" />
-            )}
-          </div>
+          <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} size={24} />
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-semibold">{agent.name || agent.projectPath.split('/').pop()}</h3>
               {agent.provider && agent.provider !== 'claude' && agent.provider !== 'local' && (
-                <span className={`text-[10px] px-1.5 py-0.5 font-medium uppercase tracking-wider ${
-                  providerBadgeClass(agent.provider, 'bg-bg-tertiary text-text-muted')
-                }`}>
-                  {agent.provider}
-                </span>
+                <span className="font-mono text-[10.5px] text-muted-foreground">{agent.provider}</span>
               )}
               {agent.branchName && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-xs">
@@ -139,7 +116,7 @@ export function AgentDetailPanel({
       {/* Skills Bar */}
       {agent.skills.length > 0 && (
         <div className="px-5 py-2 border-b border-border-primary bg-bg-tertiary/50 flex items-center gap-2 overflow-x-auto">
-          <Sparkles className="w-4 h-4 text-text-muted shrink-0" />
+          <Blocks className="w-4 h-4 text-text-muted shrink-0" />
           <span className="text-xs text-text-muted shrink-0">Skills:</span>
           {agent.skills.map((skill) => (
             <span

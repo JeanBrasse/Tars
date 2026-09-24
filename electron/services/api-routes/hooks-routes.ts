@@ -5,7 +5,8 @@ import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
-import { emitAgentStatus } from '../agent-events';
+import { waitingOnFrom } from '../../utils/waiting-on';
+import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 
 /**
  * Session ownership contract:
@@ -33,7 +34,7 @@ import { emitAgentStatus } from '../agent-events';
  * needed permission. That is one of the ways the app appeared to ask twice.
  */
 /**
- * A session id Tars can act on: present, and not the empty string.
+ * A session id Tars can act on: present, and shaped like one (see below).
  *
  * The nine hooks build this field with `jq -r '.session_id // empty'`, which
  * yields "" when the field is missing and also when jq is not installed, and
@@ -50,9 +51,22 @@ import { emitAgentStatus } from '../agent-events';
  * the next real session adopts it.
  */
 function usableSessionId(sessionId?: string): string | undefined {
-  const trimmed = sessionId?.trim();
-  return trimmed ? trimmed : undefined;
+  return typeof sessionId === 'string' && SESSION_ID_SHAPE.test(sessionId) ? sessionId : undefined;
 }
+
+/**
+ * The shape of every id a CLI Tars hooks into gives its session: a UUID, as
+ * Claude Code and Gemini CLI both mint them, sent by the hooks exactly as the
+ * CLI wrote it.
+ *
+ * Anything else is refused, not trimmed or cleaned. The registered id becomes
+ * a file name (`transcriptPath` joins it into ~/.claude/projects/<project>/)
+ * and a `--resume` argument, and until this check any non-empty string was
+ * registered: `../../x` made Tars read and watch a file outside the transcript
+ * directory. An id on disk from before the check reads as no owner at all, so
+ * the next real session adopts the agent.
+ */
+const SESSION_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The id of a session that was killed. Checked on its own before
  *  registration, where the full staleness test cannot run: a SessionStart
@@ -127,6 +141,20 @@ function isStaleIdlePrompt(agent: AgentStatus, now = Date.now()): boolean {
     .some(age => age < IDLE_PROMPT_DELAY_MS);
 }
 
+/**
+ * When a dialog opened: the hook script's own time, not this post's arrival
+ * (the Audit's re-check of #174: a refusal made before a late post arrived
+ * read as older than the dialog, and the agent stayed deaf until its next
+ * turn). Bounded to the last minute and to now: a hook runs as the dialog
+ * appears, and a time outside that is a clock or a caller not to believe.
+ */
+const DIALOG_TIME_SLACK_MS = 60_000;
+function dialogOpenedAt(openedAt: unknown): string {
+  const now = Date.now();
+  const at = typeof openedAt === 'number' && Number.isFinite(openedAt) ? openedAt : now;
+  return new Date(at > now || at < now - DIALOG_TIME_SLACK_MS ? now : at).toISOString();
+}
+
 /** Long enough for any message the CLI writes in place of an answer, and short
  *  enough for the notification and the card that show it. */
 const TURN_FAILURE_TEXT_MAX = 500;
@@ -181,7 +209,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/hooks/status
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
-      agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message,
+      agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
+      tool_name, tool_input,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -195,6 +224,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       error_kind?: string;
       /** StopFailure only: what the CLI wrote in the terminal instead of an answer. */
       error_message?: string;
+      /** PermissionRequest only: when the dialog opened (ms), taken by the hook script. */
+      opened_at?: number;
+      /** PermissionRequest only: the tool the dialog asks about, and its input. */
+      tool_name?: string;
+      tool_input?: unknown;
     };
 
     console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
@@ -212,7 +246,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // saying so names the actual cause: every hook Tars ships sends a real id,
     // so one that cannot is telling us jq is missing on that machine.
     if (!usableSessionId(session_id)) {
-      sendJson({ error: 'session_id is required and must not be empty' }, 400);
+      sendJson({ error: 'session_id is required and must be the UUID the CLI gave its session' }, 400);
       return;
     }
 
@@ -247,6 +281,10 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // spawned with on the clock.
       noteSessionRegistered(agent);
       saveAgents();
+      // Not a status change, and so no `status:` event (a /wait answers
+      // those), but the fleet did change: what agent-watch held for this agent
+      // while its launch was on its way can go in now (agent-watch flush).
+      agentStatusEmitter.emit('fleet-change', agent.id);
       sendJson({ success: true, registered: true, agent: { id: agent.id, status: agent.status } });
       return;
     }
@@ -311,6 +349,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // showing why it had stopped. Only `running` clears it.
       agent.status = 'waiting';
       agent.waitingReason = waiting_reason;
+      // When the dialog opened: a refusal of it is read from the transcript,
+      // after this moment (dialogOpen), since Claude Code sends no hook for one.
+      agent.dialogSince = waiting_reason === 'permission' ? dialogOpenedAt(opened_at) : undefined;
+      // What the dialog asks, for the page to say (AgentStatus.waitingOn). The
+      // idle prompt waits on nobody in particular and has no text.
+      agent.waitingOn = waiting_reason === 'permission' ? waitingOnFrom(tool_name, tool_input) : undefined;
     } else if (status === 'idle') {
       agent.status = 'idle';
       agent.waitingReason = undefined;

@@ -2,7 +2,8 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * A Dashboard panel mounted after a long turn starts in the modes the CLI set
@@ -11,26 +12,26 @@ import { launchSandboxed, seedSandbox } from './fixture.mjs';
  *
  * Claude Code in fullscreen asks for the alternate screen, the mouse and
  * bracketed paste once, at start, and a turn with no input only repaints: 649
- * chunks and not one mode over 270 seconds, measured on 2.1.273. agent.output
- * keeps 600 chunks and trims to 400, so a panel mounted after the trim took the
- * start, by changing page and coming back, replayed onto the normal screen with
- * no mouse request and no bracketed paste. The wheel sent nothing, and a paste
- * went out as lines, each ending in an Enter. appendAgentOutput now puts the
- * modes the trimmed chunks left set back in front: output-replay-modes.test.ts
- * holds what goes in front, this holds what a remounted panel does with it,
- * and the agent window of the Agents page, which replays the same output.
+ * chunks and not one mode over 270 seconds, measured on 2.1.273. A panel
+ * mounted after such a turn used to be written from agent.output, which kept
+ * 600 chunks and trimmed to 400: the start was gone and every mode with it, so
+ * 478f6ec put the modes back in front of the kept chunks. Since #127 a panel is
+ * handed the terminal's own screen from its mirror instead, one chunk that
+ * starts with RIS and carries the modes the terminal is in: the start of the
+ * turn is on screen again, and the modes come with the screen. This holds what
+ * a remounted panel does with it, and the agent window of the Agents page,
+ * which is handed the same.
  *
  * The CLI is a recorder that asks the way Claude Code does, at start only, then
- * repaints more chunks than the trim keeps and never asks again. Every byte a
- * panel sends lands in its file. Without the carried modes (478f6ec) the
- * remounted panel and the agent window send nothing for the wheel, and the
+ * repaints more chunks than the old trim kept and never asks again. Every byte
+ * a panel sends lands in its file. Handed a screen without its modes, the
+ * remounted panel and the agent window send nothing for the wheel and the
  * paste arrives unwrapped, while the live panel before them did both.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 const AGENT = { id: 'replay-long-turn', name: 'Reader of a long turn' };
 
-/** More repaints than the 600 chunks agent.output keeps, each written on its own. */
+/** More repaints than the 600 chunks agent.output kept before #127, each written on its own. */
 const REPAINTS = 1000;
 
 /**
@@ -90,7 +91,7 @@ test('a panel remounted after a long turn, and the agent window, still send the 
   }], null, 2));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31494', DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31494), DOROTHY_E2E: '1' },
   });
 
   try {
@@ -120,11 +121,14 @@ test('a panel remounted after a long turn, and the agent window, still send the 
     await expect(live.locator('.xterm-rows')).toContainText('start of a long turn', { timeout: 30_000 });
     await expect(live.locator('.xterm-rows')).toContainText('turn over', { timeout: 60_000 });
 
-    // What a panel mounted now replays: the chunk that asked is no longer in it.
-    const kept = await page.evaluate(id => (window as unknown as AgentApi).electronAPI.agent.get(id).then(agent => agent?.output ?? []), AGENT.id);
-    console.log(`REPLAY kept ${kept.length} chunks, first ${JSON.stringify(kept[0]?.slice(0, 80))}`);
-    expect(kept.join(''), 'the replay holds the end of the turn').toContain('turn over');
-    expect(kept.some(chunk => chunk.includes('start of a long turn')), 'the start was not trimmed, so this proves nothing').toBe(false);
+    // What a panel mounted now is handed: the terminal's screen from its
+    // mirror, one chunk opening with RIS, not the chunks the turn wrote.
+    const handed = await page.evaluate(id => (window as unknown as AgentApi).electronAPI.agent.get(id).then(agent => agent?.output ?? []), AGENT.id);
+    console.log(`REPLAY handed ${handed.length} chunk(s), first ${JSON.stringify(handed[0]?.slice(0, 80))}`);
+    expect(handed, 'one chunk: the screen').toHaveLength(1);
+    expect(handed[0].startsWith('\x1bc'), 'the screen opens with RIS').toBe(true);
+    expect(handed[0], 'the screen holds the end of the turn').toContain('turn over');
+    recordValues({ handedChunks: handed.length, handedBytes: handed[0].length });
 
     // The control: before any remount, the panel that saw the start passes the
     // wheel on and wraps a paste.
@@ -143,7 +147,7 @@ test('a panel remounted after a long turn, and the agent window, still send the 
     const remounted = await screenOf(page, AGENT.name);
     await expect(remounted.locator('.xterm-rows')).toContainText('turn over', { timeout: 30_000 });
     expect(await page.locator('.xterm[data-qa-mounted-before]').count(), 'the panel on screen is a new terminal').toBe(0);
-    await expect(remounted.locator('.xterm-rows'), 'the new terminal shows the replay, which no longer holds the start').not.toContainText('start of a long turn');
+    await expect(remounted.locator('.xterm-rows'), 'the new terminal shows the whole screen, the start of the turn included').toContainText('start of a long turn');
     // A resize would make Claude Code ask for the mouse again, and the recorder
     // never does: said here so a run that resized is read for what it is.
     console.log(`REPLAY resizes while remounting: ${JSON.stringify(fs.readFileSync(resizes, 'utf8').slice(resizedBefore))}`);

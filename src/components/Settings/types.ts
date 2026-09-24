@@ -58,6 +58,19 @@ export interface AppSettings {
   slackAppToken: string;
   slackSigningSecret: string;
   slackChannelId: string;
+  /**
+   * The Slack member IDs the bot answers; empty answers nobody (#137).
+   */
+  slackAllowedUserIds: string[];
+  /** The Discord bot (PR 193). Saving `discordEnabled` or `discordBotToken`
+   *  restarts it; the members and the mention switch count at the next
+   *  message. `discordChannelId` is the bot's to fill, never typed. */
+  discordEnabled: boolean;
+  discordBotToken: string;
+  discordChannelId: string;
+  /** Discord user IDs, 17 to 20 digits; empty answers nobody. */
+  discordAllowedUserIds: string[];
+  discordRequireMention: boolean;
   socialDataEnabled: boolean;
   socialDataApiKey: string;
   xPostingEnabled: boolean;
@@ -138,4 +151,4 @@ export interface AppSettings {
   providerBudgets?: Record<string, number>;
 }
 
-export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';
+export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';

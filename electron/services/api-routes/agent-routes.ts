@@ -1,16 +1,19 @@
 import * as path from 'path';
+import { stopAcpRuns } from '../acp/delegate';
+import { publishedWaitingOn } from '../../utils/waiting-on';
 import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
-import { AgentStatus, AgentCharacter } from '../../types';
+import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
-import { getSuperAgentInstructionsPath } from '../../utils';
+import { getSuperAgentInstructionsPath, isSuperAgent } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
@@ -21,7 +24,8 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
-import { noteLaunch, launchSettings } from '../../core/agent-restart';
+import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
+import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 
 /**
@@ -97,9 +101,8 @@ async function spawnAgentSession(
 
   const usePrintMode = opts.printMode;
 
-  const isSuperAgentApi = agent.role === 'orchestrator' ||
-                          agent.name?.toLowerCase().includes('super agent') ||
-                          agent.name?.toLowerCase().includes('orchestrator');
+  // Its project's orchestrator: the toggle, never the name (core/agent-role.ts).
+  const isSuperAgentApi = isSuperAgent(agent);
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
@@ -216,8 +219,8 @@ async function spawnAgentSession(
       // itself instead of delegating.
       systemPromptFile: orchestratorInstructionsFile(isSuperAgentApi),
       isSuperAgent: isSuperAgentApi,
-      // BUG 5: orchestrator-mode agents cannot edit files directly.
-      orchestratorMode: isSuperAgentApi || agent.orchestratorMode,
+      // BUG 5: an orchestrator cannot edit files directly.
+      orchestratorMode: isSuperAgentApi,
       verbose: appSettings.verboseModeEnabled,
       chrome: appSettings.chromeEnabled,
     });
@@ -292,15 +295,28 @@ async function spawnAgentSession(
   // A session that never starts a turn must stop claiming to work. See
   // TASK_START_GRACE_MS below for what this catches and why it is checked
   // rather than assumed.
-  const ptyProcess = spawnAgentPty({
-    binaryName: cliProvider.binaryName,
-    shell,
-    args: ['-l', '-c', command],
-    cols: 120,
-    rows: 40,
-    cwd: rawWorkingDir,
-    env: spawnEnv,
-  });
+  //
+  // A launch, for every other sender, from before its terminal exists
+  // (core/agent-launch.ts): the CLI execs at once and counts as running, but
+  // takes no keys until its SessionStart. Unmarked, a /dispatch 0.1 to 0.3 s
+  // after a /start typed its message into a claude not yet reading, and it was
+  // lost 4 times in 5 while the caller heard 200 (the Audit, gate of #134).
+  const launch = launchBegins(agent.id, { withTask: !!prompt.trim() });
+  let ptyProcess: ReturnType<typeof spawnAgentPty>;
+  try {
+    ptyProcess = spawnAgentPty({
+      binaryName: cliProvider.binaryName,
+      shell,
+      args: ['-l', '-c', command],
+      cols: 120,
+      rows: 40,
+      cwd: rawWorkingDir,
+      env: spawnEnv,
+    });
+  } catch (err) {
+    launchAbandoned(agent.id, launch);
+    throw err;
+  }
 
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
@@ -338,14 +354,24 @@ async function spawnAgentSession(
     }
     agent.lastActivity = new Date().toISOString();
 
-    if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
-      ctx.mainWindow.webContents.send('agent:output', { agentId: agent.id, data });
-    }
+    // The event every other terminal sends, with the terminal it came from:
+    // a panel that filters on ptyId dropped this one's output, or took it for
+    // the terminal it replaced.
+    broadcastToAllWindows('agent:output', {
+      type: 'output',
+      agentId: agent.id,
+      ptyId,
+      data,
+      timestamp: new Date().toISOString(),
+    });
     // As initAgentPty does: the tick carries the line the cards show.
     scheduleTick();
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    // A CLI that exits before its session came up is not coming up: nobody
+    // waits the rest of CLI_BOOT_MS for it.
+    launchAbandoned(agent.id, launch);
     // Remove from the live map IMMEDIATELY: node-pty write() on a dead PTY is
     // a silent no-op, so leaving it registered lets /dispatch and /message
     // "successfully" type a task into a corpse during the status-delay below.
@@ -426,6 +452,15 @@ function projectAgent(agent: AgentStatus) {
 const HELD_REASON = 'Somebody is typing in that terminal, has left something in its field, or has a '
   + "command's panel open there. The message goes in by itself as soon as the field is free: "
   + 'whoever is at that terminal can send or clear what is typed, or close the panel.';
+
+/** The same, when what holds it is a dialog the CLI shows (a permission, a
+ *  question): the Enter would answer it. */
+const DIALOG_REASON = 'That agent\'s CLI shows a dialog (a permission or a question), and a typed Enter would answer it. '
+  + 'The message goes in by itself once the dialog is answered or refused.';
+
+function heldReasonFor(agent: AgentStatus): string {
+  return dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined) ? DIALOG_REASON : HELD_REASON;
+}
 
 /** Who a message into an agent's terminal is from, as verified: the agent whose
  *  token made the call, or Tars when it is Tars's own pass or the agent itself. */
@@ -579,28 +614,66 @@ async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<
  * decided, /dispatch with assertMayDriveAgent and the webhook by opening to
  * Hermes alone. A third caller decides for itself first.
  */
+export interface DispatchOpts {
+  message: string;
+  model?: string;
+  permissionMode?: 'normal' | 'auto' | 'bypass';
+  from?: string;
+  sender?: MessageSender;
+  /** Run once the agent takes keys, before anything is typed: never for a sender refused 409. */
+  onAccepted?: () => void;
+}
+
 export async function performDispatch(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
+  opts: DispatchOpts,
   ctx: RouteContext,
   sendJson: SendJson,
 ): Promise<void> {
-  return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson));
+  // The wait is counted from the request, not from the lock: a sender queued
+  // behind another is still answered inside the MCP tools' 30 s.
+  const until = Date.now() + SENDER_WAIT_MS;
+  return withAgentLock(agent.id, () => performDispatchLocked(agent, opts, ctx, sendJson, until));
+}
+
+/**
+ * The answer to a sender that waited SENDER_WAIT_MS on a launch still on its
+ * way: its CLI runs but has not started its session or task, and a message
+ * typed now would be lost. Nothing was typed; the caller may try again.
+ */
+function stillStarting(agent: AgentStatus): Record<string, unknown> {
+  return {
+    error: `${agent.name || agent.id}'s CLI is still starting (it has not taken keys after ${SENDER_WAIT_MS / 1000} s, `
+      + 'as happens on a loaded machine): nothing was typed. Send it again in a moment.',
+    starting: true,
+    agent: { id: agent.id, name: agent.name, status: agent.status },
+  };
 }
 
 async function performDispatchLocked(
   agent: AgentStatus,
-  opts: { message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; from?: string; sender?: MessageSender },
+  opts: DispatchOpts,
   ctx: RouteContext,
   sendJson: SendJson,
+  until: number,
 ): Promise<void> {
+  // A launch on its way (a restart, a start from a window) owns the terminal
+  // until its CLI runs there: wait for it, then type into its session. Taken
+  // for "no session", the message started one over it, without the resume.
+  // Still starting when the caller can wait no longer: say so, type nothing.
+  if (!(await sessionStarted(agent, until - Date.now()))) {
+    sendJson(stillStarting(agent), 409);
+    return;
+  }
+  opts.onAccepted?.();
+
   // BUG 4 guard: kill the PTY if its cwd no longer matches the agent's
   // worktree so the spawn path below restarts it in the right directory.
   killStalePty(agent);
 
   const previousStatus = agent.status;
   const livePty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  if (livePty && agent.status === 'waiting' && agent.waitingReason === 'permission') {
+  if (livePty && dialogOpen(agent)) {
     // A blocking permission dialog expects arrow keys/enter, not text: a
     // typed message is useless and the delayed \r could ACCEPT the pending
     // permission. Refuse and surface the reason instead.
@@ -644,7 +717,7 @@ async function performDispatchLocked(
     // that had received nothing thirty seconds later.
     sendJson({
       success: true, mode: 'message', previousStatus,
-      ...(outcome === 'held' ? { held: true, heldReason: HELD_REASON } : {}),
+      ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}),
       agent: { id: agent.id, name: agent.name, status: agent.status },
     });
     return;
@@ -772,7 +845,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
     const full = req.url.searchParams.get('full') === 'true';
-    sendJson({ agent: full ? agent : projectAgent(agent) });
+    sendJson({ agent: full ? { ...agent, waitingOn: publishedWaitingOn(agent) } : projectAgent(agent) });
   });
 
   // GET /api/agents/:id/bootstrap: identity + team roster context, injected
@@ -786,9 +859,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    const isOrchestrator = agent.role === 'orchestrator' ||
-                           agent.name?.toLowerCase().includes('super agent') ||
-                           agent.name?.toLowerCase().includes('orchestrator');
+    const isOrchestrator = isSuperAgent(agent);
 
     const teammates = Array.from(agents.values())
       .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id)
@@ -821,7 +892,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       lines.push(
         ``,
         `## Working rules`,
-        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`
+        `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
 
@@ -868,13 +940,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const driver = resolveDriver(req, sendJson);
     if (!driver) return;
 
-    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, orchestratorMode, provider, model, effort, cliPath } = req.body as {
+    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, provider, model, effort, cliPath } = req.body as {
       projectPath: string;
       name?: string;
       skills?: string[];
       character?: AgentCharacter;
       permissionMode?: 'normal' | 'auto' | 'bypass';
       secondaryProjectPath?: string;
+      /** The Orchestrator toggle, or its old name: see requestedRole. */
+      role?: AgentRole;
       orchestratorMode?: boolean;
       provider?: string;
       model?: string;
@@ -905,10 +979,29 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'Invalid effort level' }, 400);
       return;
     }
+    let role: AgentRole;
+    try {
+      role = requestedRole(req.body as { role?: unknown; orchestratorMode?: unknown }) ?? 'worker';
+    } catch (err) {
+      sendJson({ error: err instanceof Error ? err.message : 'Invalid role' }, 400);
+      return;
+    }
+    // An orchestrator is made in the Agents page and nowhere else. Made here,
+    // it took the role from the project's current one and restarted it on the
+    // word of whoever held a token, with none of the confirmation Noah asked
+    // for: the QA's gate of #123 measured a worker's own token making itself a
+    // "Rogue" orchestrator of its project, and with allowCrossProject, in
+    // bypass, of another one. Nothing asks for it legitimately: the MCP's
+    // create_agent sends no role. Decided on 2026-09-23, for every caller.
+    if (role === 'orchestrator') {
+      sendJson({
+        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; Noah can make it the orchestrator there.',
+      }, 403);
+      return;
+    }
 
     const id = uuidv4();
     const resolvedName = name || `Agent ${id.slice(0, 6)}`;
-    const lowerName = resolvedName.toLowerCase();
     const agent: AgentStatus = {
       id,
       status: 'idle',
@@ -920,20 +1013,17 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       character,
       name: resolvedName,
       permissionMode: permissionMode || 'auto',
-      orchestratorMode: orchestratorMode || false,
       provider: provider as AgentStatus['provider'],
       model,
       effort,
       cliPath,
-      // role mirrors the historical name-based isSuperAgent semantics.
-      // orchestratorMode stays an independent tool-restriction toggle. It
-      // must NOT promote an agent into the Telegram/Slack super-agent pool.
-      role: (lowerName.includes('super agent') || lowerName.includes('orchestrator'))
-        ? 'orchestrator'
-        : 'worker',
     };
+    // The role asked for, never the name; an orchestrator takes the role from
+    // its project's current one, whoever creates it (core/agent-role.ts).
+    const demoted = assignRole(agent, role, agents.values());
     agents.set(id, agent);
     saveAgents();
+    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
     announceAgent(agent);
     sendJson({ agent });
   });
@@ -993,9 +1083,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'message is required' }, 400);
       return;
     }
-    recordRequester(agent, req);
-
-    await performDispatch(agent, { message, model, permissionMode, from: senderName(agent, req), sender: senderOf(agent, req) }, ctx, sendJson);
+    await performDispatch(agent, {
+      message, model, permissionMode, from: senderName(agent, req), sender: senderOf(agent, req),
+      // After the wait: a sender refused 409 typed nothing and takes no link.
+      onAccepted: () => recordRequester(agent, req),
+    }, ctx, sendJson);
   });
 
   /**
@@ -1042,7 +1134,6 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       agent,
       task,
       appSettings: ctx.getAppSettings(),
-      isOrchestrator: agent.role === 'orchestrator',
       timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
     });
 
@@ -1061,11 +1152,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       announceAgent(agent);
     }
 
-    sendJson(result, result.ok ? 200 : 502);
+    // A run that started is an answer, however it ended: 502 only when none
+    // did, which is when delegate_task may type the task into the terminal
+    // instead without running it twice.
+    sendJson(result, result.ok || result.started ? 200 : 502);
   });
 
   // POST /api/agents/:id/stop
-  app_.post(/^\/api\/agents\/([^/]+)\/stop$/, (req, sendJson) => {
+  app_.post(/^\/api\/agents\/([^/]+)\/stop$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
       sendJson({ error: 'Agent not found' }, 404);
@@ -1073,6 +1167,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
+    // Its delegated run too (the Audit's table, #6).
+    await stopAcpRuns(agent.id, 'the agent was stopped');
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
@@ -1116,16 +1212,23 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'message is required' }, 400);
       return;
     }
-    recordRequester(agent, req);
-
+    const until = Date.now() + SENDER_WAIT_MS;
     await withAgentLock(agent.id, async () => {
+      // As /dispatch: a launch on its way is waited for, never spawned over,
+      // and never typed into before it takes keys, counted from the request.
+      if (!(await sessionStarted(agent, until - Date.now()))) {
+        sendJson(stillStarting(agent), 409);
+        return;
+      }
+      recordRequester(agent, req);
+
       // BUG 4 guard: if the agent's worktreePath changed after the PTY was
       // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
       // reconnect path below spawns fresh with the correct working directory.
       killStalePty(agent);
 
       if (agent.ptyId && ptyProcesses.has(agent.ptyId) &&
-          agent.status === 'waiting' && agent.waitingReason === 'permission') {
+          dialogOpen(agent)) {
         // Same guard as /dispatch: never type into a blocking permission dialog.
         sendJson({
           error: `Agent "${agent.name || agent.id}" is blocked on a permission dialog; a typed message cannot answer it. Resolve it in the Tars UI, or stop the agent and re-dispatch.`,
@@ -1162,7 +1265,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         agent.lastActivity = new Date().toISOString();
         saveAgents();
         announceAgent(agent);
-        sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: HELD_REASON } : {}) });
+        sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}) });
         return;
       }
       sendJson({ error: 'Failed to send message - PTY not available' }, 500);
@@ -1170,7 +1273,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   });
 
   // DELETE /api/agents/:id
-  app_.delete(/^\/api\/agents\/([^/]+)$/, (req, sendJson) => {
+  app_.delete(/^\/api\/agents\/([^/]+)$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
       sendJson({ error: 'Agent not found' }, 404);
@@ -1178,6 +1281,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
+    await stopAcpRuns(agent.id, 'the agent was deleted');
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
@@ -1187,6 +1291,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       }
     }
     agents.delete(req.params.id);
+    forgetRestart(req.params.id);
     saveAgents();
     // Gone from the next tick, and the rail reloads a fleet without it.
     announceAgent(agent);

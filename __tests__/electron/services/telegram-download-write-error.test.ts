@@ -52,6 +52,13 @@ import type { AppSettings } from '../../../electron/types';
 const uncaught: Error[] = [];
 const record = (err: Error) => { uncaught.push(err); };
 
+const settings = {
+  telegramEnabled: true,
+  telegramBotToken: 'test-bot-token',
+  telegramAuthToken: 'test-auth-token',
+  telegramAuthorizedChatIds: ['42'],
+} as AppSettings;
+
 beforeEach(() => {
   expect(TELEGRAM_DOWNLOADS_DIR.startsWith(process.env.HOME!), 'the downloads folder is not under the throwaway HOME').toBe(true);
   uncaught.length = 0;
@@ -60,12 +67,7 @@ beforeEach(() => {
   process.on('uncaughtException', record);
   initTelegramBotService(
     new Map(), new Map(),
-    {
-      telegramEnabled: true,
-      telegramBotToken: 'test-bot-token',
-      telegramAuthToken: 'test-auth-token',
-      telegramAuthorizedChatIds: ['42'],
-    } as AppSettings,
+    () => settings,
     null, () => undefined, () => {}, async () => null, async () => 'unused', () => {},
   );
   initTelegramBot();

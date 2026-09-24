@@ -132,6 +132,13 @@ components:
   status-dot:
     size: 6
     shape: square
+  agent-mark:
+    grid: 4x4, the left half drawn from the agent's name, the right half mirrored
+    sizes: [16, 24]
+    square: "3 at 16, 5 at 24, gaps of 1"
+    lit: "{text-secondary}"
+    lit-orchestrator: "{accent}"
+    unlit: "{surface-raised}"
   brand-mark:
     size: 10
     shape: square
@@ -381,18 +388,20 @@ border, an `on-accent` knob, knob right. Off: `surface-raised` track, a
 drawn for it is unused.
 
 ### Cards and panels
-`surface` fill, 1px `border`, 2px radius, no shadow. An agent card is: a 40px
-(`w-10 h-10`) tile holding the agent's emoji (or a spinner while it runs), the
-name with its provider icon inline, a `rounded-full` status pill and a single
-`Pencil` edit button right-aligned, one line of task text in `text-muted`, then
-a row of chips (project, local model, branch, skills). No status square, and no
-open/stop row.
+`surface` fill, 1px `border`, 2px radius, no shadow. An agent card
+(`AgentList/AgentManagementCard`) is: the agent's mark at 16, its name, and the
+status as a word in its tone, right-aligned; one line of task text, or the error
+reason in red; provider, model and branch as plain mono words, `claude · opus 5 ·
+main`; then the four word buttons, open, stop or start, edit, delete. Frame:
+`Agents · dark`.
 
 ### Terminal panes
-A `surface-raised` header (`px-3 py-1.5`, no fixed height): emoji avatar, agent
-name, status pill, project name, the first 8 characters of the session id in
-mono, and Play/Stop, Clear, Fullscreen and Close icon buttons, over a terminal
-body. The `⋯` is a right-click context menu, not a glyph. xterm gets its palette
+A 32px `surface` header (`TerminalsView/components/TerminalPanelHeader`): the
+agent's mark at 16, its name, its branch (or, in error, the reason in red), then
+right of the gap the status as a word in its tone and `provider · model` in
+mono, the live and history switch, start or stop, and the `···` menu with
+clear, fullscreen and remove. Frames: `Dashboard · dark`, `Agent error ·
+reason`. xterm gets its palette
 as a JS object rather than from CSS variables, and there are two of them:
 `src/components/Terminal.tsx` draws on `#0D0B08`, while `TERMINAL_THEME` in
 `src/components/AgentWorld/constants.ts` (re-exported by `TerminalsView`) draws
@@ -400,12 +409,34 @@ on `#1a1a2e` and `TERMINAL_THEME_LIGHT` on `#FFFFFF`. It is the one surface the
 tokens don't reach, and the one place the pre-fork teal (`#3D9B94`) survives.
 
 ### Status dots and badges: `ui/StatusBadge`
-The frames draw the agent mark as a 6px **square**, in the state's colour: the
-same shape as the brand mark, one size down. `ui/StatusBadge` still ships
-`StatusDot` as a 6px circle; that is the only round shape left in the app, and
-it is tolerated at 6px and nowhere larger. `StatusBadge` is a bordered pill of
-the tone's colour at 10% fill / 25% border. Five tones: success, warning,
-danger, info, neutral. No raw colours anywhere else.
+A state is a 6px **square** in its colour, `StatusSquare`, or the word itself in
+that colour, `StatusBadge`: no fill, no border, no pill. Four tones, running,
+waiting, error and idle, with the older five names folded onto them. The square
+marks rooms, notices and the menus that pick an agent as a target (the room's
+recipients, Add agent), where the state decides the pick. A row about an agent
+itself leads with its agent mark instead and writes the state as the word.
+`StatusDot`, a 6px circle, is deprecated and the only round shape left.
+
+### Agent mark: `ui/AgentMark`
+Every agent has a mark: a 4×4 grid of squares, the Tars mark one size down,
+drawn from its name by `src/lib/agent-mark.ts`. The left two columns take 8
+bits of a hash of the name, stirred until 3 to 6 are lit, and the right two
+mirror them, so the same name draws the same mark on every screen and every
+machine, and a renamed agent gets a new one. Lit squares are `text-secondary`,
+or the `accent` for the orchestrator (the role, never the name); unlit ones
+are `surface-raised`. Two sizes, in whole pixels: 16 (squares of 3, gaps of 1)
+in cards, panel headers, the Chat's team and fleet and each New team member; 24
+(squares of 5) in the agent window's header and beside New agent's name field,
+where it redraws as the name is typed. It is hidden from assistive tech: the
+name beside it is what is read.
+
+It replaced the emoji faces and the character picker (Noah's choice, 2026-09-23,
+option C of the identity board). The `character` field stays in an agent's
+data and nothing draws it. With it went the coloured provider badges: where a
+provider is a fact about an agent, it is a plain mono word in `text-muted`,
+`claude · opus 5 · main`. Its 8 free squares allow 210 marks, so two agents of
+a large fleet can share one; the name beside it is what tells them apart.
+Frame: `Agent mark`.
 
 ### Modals
 Full-bleed `scrim`, then a `surface` panel with a `border`. Header band: serif
@@ -458,11 +489,9 @@ progress.
   nothing else.
 - **Don't add a shadow.** `scripts/design-lint.sh` fails on `shadow-sm|md|lg|xl|2xl`,
   and `globals.css` neutralises anything matching `[class*="shadow-"]` with
-  `box-shadow: none !important`. The dead `.card-hover` / `.hover-lift` /
-  `.shadow-elevated` utilities at the bottom of `globals.css` are pre-fork Dorothy
-  leftovers: `.card-hover` and `.card-accent` still carry its teal
-  (`rgba(61, 155, 148, …)`), while `.hover-lift` and `.shadow-elevated` carry a
-  warm brown shadow (`rgba(44, 36, 24, …)`). Unused, and not to be revived.
+  `box-shadow: none !important`. The pre-fork Dorothy utilities `.card-hover`,
+  `.card-accent`, `.hover-lift` and `.shadow-elevated`, with its teal and its warm
+  brown shadow, left `globals.css` on 2026-08-23 (a337e7a). Not to be revived.
 - **Don't use a gradient.** Lint fails on `bg-gradient`.
 - **Don't set a radius inline.** Lint fails on `style={{ borderRadius`. Radius
   comes from the theme: 2px on buttons, inputs, selects, and every `.rounded-*`
@@ -518,7 +547,9 @@ Every sidebar entry, settings group, menu row and provider row in
 mark. Pick the lucide glyph that names the thing.
 
 Provider marks are the exception: Claude, Codex, Gemini, Grok and the rest keep
-their own logos. `src/components/ProviderBadge.tsx` renders them from one
+their own logos where a provider is chosen, New agent's provider cards, Settings
+and Usage. Where a provider is a fact about an agent, it is a plain word (see
+Agent mark). `src/components/ui/ProviderBadge.tsx` renders the logos from one
 registry (`src/lib/providers.ts`) at 14px (`w-3.5 h-3.5`): most as inline SVG
 on `currentColor` so they inherit the row's text colour, a few as bitmap assets
 from `public/` where the vendor mark is not reducible to a single path.

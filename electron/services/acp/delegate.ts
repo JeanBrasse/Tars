@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { AcpSession, type TurnResult } from './client';
+import { AcpSession, endProcessTreesNow, type TurnResult } from './client';
 import { acpLaunchFor, loadAcpRegistry } from './registry';
 import { getMcpOrchestratorPath, getMcpMemoryPath } from '../mcp-orchestrator';
 import { getProvider } from '../../providers';
@@ -11,6 +11,7 @@ import { mintRunToken } from '../../core/agent-tokens';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { API_PORT } from '../../constants';
+import { isSuperAgent } from '../../utils';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -23,9 +24,22 @@ import { API_PORT } from '../../constants';
 export interface DelegationResult {
   ok: boolean;
   transport: 'acp';
+  /**
+   * Whether the task reached the agent. False only when the run could not
+   * start at all, which is the one case where typing the task into the
+   * agent's terminal instead does not run it twice.
+   */
+  started: boolean;
+  /** `turn_limit` when the run was stopped at its time limit, mid-work. */
   stopReason?: string;
   text: string;
   toolCalls: string[];
+  /**
+   * What the turn left running when it ended, stopped with the agent: a run
+   * is one turn, and nothing brings the agent back for it (backgroundOf, in
+   * client.ts).
+   */
+  backgroundStopped?: string[];
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   costUSD?: number;
   error?: string;
@@ -65,6 +79,57 @@ function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; co
   return servers;
 }
 
+/**
+ * The runs under way, by agent, so that stopping or deleting an agent stops its
+ * delegated run too (the Audit's table on a3d7c125, #6): cancel() had no
+ * caller, and a stopped agent's run went on working for up to its hour with
+ * the agent's run token.
+ */
+interface Run { session: AcpSession; done: Promise<void>; stoppedWhy?: string }
+const runs = new Map<string, Set<Run>>();
+/** How long a run asked to cancel gets to end its turn before its processes are ended. */
+const CANCEL_GRACE_MS = 1_500;
+
+/**
+ * Stop every delegated run of this agent: asked to cancel over the protocol
+ * first, then ended with every process it started (AcpSession.stop). Its caller
+ * is answered that the run was stopped, and why. Returns how many were stopped.
+ */
+export async function stopAcpRuns(agentId: string, why: string): Promise<number> {
+  const live = [...(runs.get(agentId) ?? [])];
+  await Promise.all(live.map(async run => {
+    run.stoppedWhy = why;
+    await run.session.cancel();
+    await Promise.race([run.done, new Promise(resolve => setTimeout(resolve, CANCEL_GRACE_MS))]);
+    run.session.stop();
+  }));
+  if (live.length) console.log(`[acp] stopped ${live.length} delegated run(s) of ${agentId}: ${why}`);
+  return live.length;
+}
+
+/**
+ * End every delegated run before Tars exits, whatever it is doing. Called from
+ * before-quit. The runs are asked to cancel, which is best effort, since the
+ * message may not leave before the process does. Then their processes, and
+ * every command their CLIs started, are ended while the quit waits: SIGTERM,
+ * at most a second, SIGKILL. Measured on #197 before this: a run that still
+ * answered ended by itself 2.4 s after the quit, and a wedged one was whole
+ * 14 s later, reparented to launchd. Returns how many runs were ended.
+ */
+export function endAcpRunsOnQuit(): number {
+  const live = [...runs.values()].flatMap(set => [...set]).filter(run => run.session.isRunning);
+  const roots: number[] = [];
+  for (const run of live) {
+    run.stoppedWhy = 'Tars quit';
+    void run.session.cancel();
+    const pid = run.session.releaseForQuit();
+    if (pid !== undefined) roots.push(pid);
+  }
+  endProcessTreesNow(roots);
+  if (live.length) console.log(`[acp] ended ${live.length} delegated run(s) on quit`);
+  return live.length;
+}
+
 export function canDelegateOverAcp(agent: AgentStatus): boolean {
   return !!acpLaunchFor(agent.provider ?? 'claude');
 }
@@ -77,21 +142,20 @@ export async function delegateOverAcp(opts: {
   agent: AgentStatus;
   task: string;
   appSettings: AppSettings;
-  isOrchestrator?: boolean;
   timeoutMs?: number;
   onEvent?: (event: { type: string; payload: unknown }) => void;
 }): Promise<DelegationResult> {
-  const { agent, task, appSettings, isOrchestrator, onEvent } = opts;
+  const { agent, task, appSettings, onEvent } = opts;
 
   await loadAcpRegistry().catch(() => undefined);
   const launch = acpLaunchFor(agent.provider ?? 'claude');
   if (!launch) {
-    return { ok: false, transport: 'acp', text: '', toolCalls: [], error: 'provider has no ACP mode' };
+    return { ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'provider has no ACP mode' };
   }
 
   const cwd = agent.worktreePath || agent.projectPath;
   if (!cwd || !fs.existsSync(cwd)) {
-    return { ok: false, transport: 'acp', text: '', toolCalls: [], error: `working directory is missing: ${cwd}` };
+    return { ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: `working directory is missing: ${cwd}` };
   }
 
   const provider = getProvider(agent.provider ?? 'claude');
@@ -126,8 +190,9 @@ export async function delegateOverAcp(opts: {
     permissionMode: agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : 'normal',
     // An orchestrator delegates; it does not edit. Enforced here by the
-    // protocol rather than by a flag only one CLI understands.
-    denyTools: isOrchestrator || agent.orchestratorMode ? ORCHESTRATOR_DENY : undefined,
+    // protocol rather than by a flag only one CLI understands. The role, as
+    // every launch reads it (core/agent-role.ts).
+    denyTools: isSuperAgent(agent) ? ORCHESTRATOR_DENY : undefined,
   });
 
   if (onEvent) {
@@ -137,6 +202,13 @@ export async function delegateOverAcp(opts: {
     session.on('permission', p => onEvent({ type: 'permission', payload: p }));
   }
 
+  let settle!: () => void;
+  const run: Run = { session, done: new Promise<void>(resolve => { settle = resolve; }) };
+  const own = runs.get(agent.id) ?? new Set<Run>();
+  own.add(run);
+  runs.set(agent.id, own);
+
+  let started = false;
   try {
     await session.start();
     // The agent's own model and effort. A launch in a terminal puts them on the
@@ -152,7 +224,30 @@ export async function delegateOverAcp(opts: {
     if (effort && !(await session.setConfigOption('effort', effort))) {
       console.warn(`[acp] ${agent.name || agent.id}: this run is not at ${effort} effort, the agent did not take it`);
     }
-    const turn: TurnResult = await session.prompt(task, opts.timeoutMs);
+    started = true;
+    let turn: TurnResult;
+    try {
+      turn = await session.prompt(task, opts.timeoutMs);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/session\/prompt timed out/.test(message)) throw err;
+      // Stopped at its limit, mid-work: the stop below kills whatever command
+      // was running (QA and Database of the Parallel project, 2026-09-23, at
+      // exactly 3600 s). What it said and did by then is all there is.
+      const partial = session.partialTurn();
+      const seconds = Math.round((opts.timeoutMs ?? 0) / 1000);
+      return {
+        ok: false,
+        transport: 'acp',
+        started: true,
+        stopReason: 'turn_limit',
+        text: partial.text,
+        toolCalls: partial.toolCalls.map(t => t.title),
+        backgroundStopped: partial.background.length ? partial.background : undefined,
+        error: `stopped at the run's limit of ${seconds} s while the agent was still working; `
+          + 'what it said and did before the limit is above, and nothing after it was reported',
+      };
+    }
 
     // Every provider reports its tokens over ACP, which is the only place
     // non-Claude usage can be captured at all.
@@ -173,21 +268,30 @@ export async function delegateOverAcp(opts: {
     return {
       ok: turn.stopReason === 'end_turn',
       transport: 'acp',
+      started: true,
       stopReason: turn.stopReason,
       text: turn.text,
       toolCalls: turn.toolCalls.map(t => t.title),
+      backgroundStopped: turn.background.length ? turn.background : undefined,
       usage: turn.usage,
       costUSD: turn.costUSD,
+      ...(run.stoppedWhy ? { error: `the run was stopped: ${run.stoppedWhy}` } : {}),
     };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
       transport: 'acp',
-      text: '',
-      toolCalls: [],
-      error: err instanceof Error ? err.message : String(err),
+      started,
+      text: run.stoppedWhy ? session.partialTurn().text : '',
+      toolCalls: run.stoppedWhy ? session.partialTurn().toolCalls.map(t => t.title) : [],
+      // Said as what happened, not as the crash it looks like from inside.
+      error: run.stoppedWhy ? `the run was stopped: ${run.stoppedWhy}` : message,
     };
   } finally {
+    own.delete(run);
+    if (own.size === 0 && runs.get(agent.id) === own) runs.delete(agent.id);
+    settle();
     session.stop();
     revoke();
   }

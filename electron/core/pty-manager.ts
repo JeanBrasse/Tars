@@ -1,4 +1,5 @@
 import * as pty from 'node-pty';
+import { defaultShell } from '../utils/default-shell';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { BrowserWindow } from 'electron';
@@ -159,6 +160,34 @@ export function setFieldProbe(probe: FieldProbe | null): void {
 }
 
 /**
+ * Whether a dialog is open in the CLI of this terminal's agent: the one case
+ * this writer refuses by itself (TypingRefusal in agent-launch.ts, `dialog`).
+ * A dialog reads what is typed and its Enter answers it, so nothing is written
+ * while one is up, whoever queued the message and whenever: the check is made
+ * when the message would go out, not when it was handed over. What waits goes
+ * in once the agent runs again (the answer's PostToolUse). Set by
+ * agent-manager, which knows the agents; unset, nothing is refused.
+ */
+export type DialogProbe = (agentId: string) => boolean;
+let dialogProbe: DialogProbe | null = null;
+
+export function setDialogProbe(probe: DialogProbe | null): void {
+  dialogProbe = probe;
+}
+
+function dialogOpenIn(ptyProcess: pty.IPty, state: TerminalInput): boolean {
+  const agentId = state.agentId ?? terminalOwner.get(ptyProcess);
+  if (!dialogProbe || !agentId) return false;
+  try {
+    return dialogProbe(agentId);
+  } catch (err) {
+    // Refusing to write is the side that cannot answer a dialog.
+    console.warn('[pty] could not read whether a dialog is open, holding the message:', err);
+    return true;
+  }
+}
+
+/**
  * How much one terminal can be holding.
  *
  * The same number, and the same reason, as the cap on what agent-watch holds
@@ -185,7 +214,7 @@ const MAX_WAITING_MESSAGES = 20;
 export type MessageSender =
   | { kind: 'agent'; id: string; name?: string }
   | { kind: 'tars' }
-  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Hermes' };
+  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' };
 
 /** The line typed before a pasted message: who sent it, and nothing else. */
 export function senderLine(sender: MessageSender): string {
@@ -211,6 +240,18 @@ export interface WriteOrigin {
    * the same lie whichever queue it is sitting in.
    */
   onWritten?: () => void;
+  /**
+   * Called once, if the message has to wait for a person: somebody is typing
+   * in the field, or left something there Tars cannot put back. Not when it
+   * only waits a moment for Tars's own previous write, which ends by itself.
+   */
+  onHeld?: () => void;
+  /**
+   * Called if the message is never written: it was waiting when its terminal
+   * exited, and a terminal that is gone takes nothing. Without this, whoever
+   * recorded the wait would go on saying the message was on its way.
+   */
+  onDropped?: () => void;
 }
 
 /** What became of a message handed to a terminal. */
@@ -222,6 +263,8 @@ interface Waiting {
   origin?: WriteOrigin;
   /** When it was first found to be waiting, and said so. */
   heldSince?: number;
+  /** Its caller has been told it waits for a person (WriteOrigin.onHeld). */
+  toldHeld?: boolean;
 }
 
 /**
@@ -311,9 +354,22 @@ export function terminalExited(ptyProcess: pty.IPty): void {
     const who = state.agentId ?? terminalOwner.get(ptyProcess) ?? 'an agent';
     console.log(`[pty] ${who}'s terminal exited with ${state.queue.length} message(s) held for it: dropped`);
   }
+  const dropped = state.queue;
   state.queue = [];
   state.held = null;
   announce(ptyProcess, state);
+  tellDropped(dropped);
+}
+
+/** Each caller whose message a dead terminal will never take is told so. */
+function tellDropped(dropped: Waiting[]): void {
+  for (const waiting of dropped) {
+    try {
+      waiting.origin?.onDropped?.();
+    } catch (err) {
+      console.error('[pty] a dropped message\'s hook failed:', err);
+    }
+  }
 }
 
 /** What Tars believes is in a terminal's field. Read by tests and by nothing else. */
@@ -331,6 +387,16 @@ export function draftOf(ptyProcess: pty.IPty): Draft {
  */
 export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   const state = inputOf(ptyProcess);
+  // A key typed while the CLI shows a dialog answers the dialog: the field
+  // behind it is as it was. Read as a key in the field, the arrow and the Enter
+  // that picked an option left a draft Tars could not vouch for, and what the
+  // dialog had held back waited for ever (found by the in-app proof). Even
+  // while Tars owns the field: a message whose Enter waits out a dialog must
+  // not keep the person from answering it (takeField).
+  if (dialogOpenIn(ptyProcess, state)) {
+    ptyProcess.write(data);
+    return;
+  }
   if (isKeystroke(data)) {
     state.lastKeyAt = Date.now();
     state.lastKeyClosesPanel = data === '\r' || data === '\x1b';
@@ -423,6 +489,22 @@ function noteHeld(state: TerminalInput, why: string): void {
 }
 
 /**
+ * Tell each caller whose message now waits for a person, once. Every message
+ * in the queue, not only the first: they all wait on the same field.
+ */
+function tellHeld(state: TerminalInput): void {
+  for (const waiting of state.queue) {
+    if (waiting.toldHeld) continue;
+    waiting.toldHeld = true;
+    try {
+      waiting.origin?.onHeld?.();
+    } catch (err) {
+      console.error('[pty] a held message\'s hook failed:', err);
+    }
+  }
+}
+
+/**
  * Whether the field is empty although the draft model cannot vouch for it: a
  * local command finished after the last key anybody typed into it. Only after:
  * a key typed since may have put something in the field again, and that is
@@ -469,15 +551,27 @@ function pump(ptyProcess: pty.IPty): void {
   if (!state || state.gone || state.held || state.queue.length === 0) return;
   if (state.timer) { clearTimeout(state.timer); state.timer = undefined; }
 
+  // A dialog first: it holds whatever the field holds, and nothing a person
+  // does in the field ends it. Looked at again every FIELD_PROBE_MS, since the
+  // answer comes as a status change, not as a key in this terminal.
+  if (dialogOpenIn(ptyProcess, state)) {
+    noteHeld(state, 'its CLI shows a dialog, which the Enter would answer');
+    announce(ptyProcess, state);
+    state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+    return;
+  }
+
   const left = pauseLeft(state);
   if (left > 0) {
     noteHeld(state, 'somebody is typing in it');
+    tellHeld(state);
     announce(ptyProcess, state);
     state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, left);
     return;
   }
   if (state.draft.state !== 'known' && !fieldProvenEmpty(ptyProcess, state)) {
     noteHeld(state, 'it holds a draft Tars cannot put back as it was');
+    tellHeld(state);
     announce(ptyProcess, state);
     // Look again later: a command's record comes a moment after its panel
     // closes, and no key or hook will come to say so. A key or a hook still
@@ -530,7 +624,15 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
       console.error('[pty] a message reached its terminal but its caller threw:', err);
     }
   }
-  setTimeout(() => {
+  const enter = () => {
+    // A dialog that opened after the paste would take this Enter as its answer
+    // (the Audit's gate of #174, reachable by /dispatch into a running turn).
+    // It waits until the dialog is gone; the person's keys meanwhile go to the
+    // dialog (writeHumanInput).
+    if (!state.gone && dialogOpenIn(ptyProcess, state)) {
+      setTimeout(enter, FIELD_PROBE_MS);
+      return;
+    }
     write(ptyProcess, state, '\r');
     if (!draft.text) { done(); return; }
     let at = RESTORE_DELAY_MS;
@@ -539,7 +641,8 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
       at += RESTORE_PIECE_GAP_MS;
     }
     setTimeout(done, at);
-  }, PROGRAMMATIC_SUBMIT_DELAY_MS);
+  };
+  setTimeout(enter, PROGRAMMATIC_SUBMIT_DELAY_MS);
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
@@ -580,9 +683,11 @@ function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
     console.warn('[pty] terminal gone mid-write, dropping what was queued for it:', err);
     state.gone = true;
     state.held = null;
+    const dropped = state.queue;
     state.queue = [];
     if (state.timer) { clearTimeout(state.timer); state.timer = undefined; }
     announce(ptyProcess, state);
+    tellDropped(dropped);
   }
 }
 
@@ -745,7 +850,7 @@ export function createQuickPty(
   rows: number | undefined,
   mainWindow: BrowserWindow | null
 ): string {
-  const shell = process.env.SHELL || '/bin/zsh';
+  const shell = defaultShell();
 
   const ptyProcess = pty.spawn(shell, ['-l'], {
     name: 'xterm-256color',

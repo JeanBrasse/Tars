@@ -21,7 +21,8 @@ export function getAppBasePath(): string {
 
 export function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // Readable by its owner alone; narrowDataDir closes an older install's.
+    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   }
 }
 
@@ -213,12 +214,10 @@ function playSound(filePath: string): void {
   }
 }
 
+/** Its project's orchestrator: the Orchestrator toggle, and never the name.
+ *  See core/agent-role.ts. */
 export function isSuperAgent(agent: AgentStatus): boolean {
-  // The persisted role is authoritative; the name-substring test only covers
-  // agents created before the role field existed (loadAgents migrates them).
-  if (agent.role) return agent.role === 'orchestrator';
-  const name = agent.name?.toLowerCase() || '';
-  return name.includes('super agent') || name.includes('orchestrator');
+  return agent.role === 'orchestrator';
 }
 
 /** Find an orchestrator agent. Pass projectPath to get the orchestrator OF
@@ -324,7 +323,7 @@ export function getSuperAgentInstructions(): string {
     console.error('Failed to read super agent instructions:', err);
   }
   // Fallback instructions
-  return 'You are the Super Agent - an orchestrator that manages other Claude agents using MCP tools. Use list_agents, start_agent, get_agent_output, send_telegram, and send_slack tools.';
+  return 'You are the Super Agent - an orchestrator that manages other Claude agents using MCP tools. Use list_agents, start_agent, get_agent_output, send_telegram, send_slack and send_discord tools.';
 }
 
 /**

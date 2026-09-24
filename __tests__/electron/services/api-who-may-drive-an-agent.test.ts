@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { sid } from '../../fixtures/session-id';
 
 /**
  * Who may start, stop, message, dispatch to, run a task on, delete and create
@@ -198,6 +199,118 @@ beforeEach(() => {
   fs.rmSync(HERMES_SECRET_LEGACY, { force: true });
 });
 
+describe('the hook routes, which only an agent\'s own CLI posts to', () => {
+  // Exempt from auth until 2026-09-23: with no credential a post registered
+  // any session for any agent, which the Audit used to resume one agent's
+  // conversation in another, and which a killed CLI's late SessionStart did
+  // by accident. The hooks run inside the CLI and carry its token.
+  const post = (headers: Record<string, string>, agentId: string) =>
+    call('POST', '/api/hooks/status', headers, { agent_id: agentId, session_id: sid('sess-a'), status: 'idle', source: 'startup' });
+
+  it('refuses a post with no token', async () => {
+    expect((await post({}, ALPHA.id)).status).toBe(401);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('refuses the shared token and Tars\'s pass, which name no CLI', async () => {
+    expect((await post(bearer(sharedToken), ALPHA.id)).status).toBe(403);
+    expect((await post(bearer(tokens.internalToken()), ALPHA.id)).status).toBe(403);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('takes the agent\'s own token, for that agent', async () => {
+    const answer = await post(bearer(alphaToken), ALPHA.id);
+
+    expect(answer.status).toBe(200);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe(sid('sess-a'));
+  });
+
+  it('refuses one agent\'s token posting for another', async () => {
+    expect((await post(bearer(betaToken), ALPHA.id)).status).toBe(403);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('refuses the token of a terminal that has been replaced, as a killed CLI\'s late post', async () => {
+    const replaced = alphaToken;
+    tokens.mintAgentToken(ALPHA.id);
+
+    expect((await post(bearer(replaced), ALPHA.id)).status).toBe(401);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+});
+
+describe('the hook routes take the terminal\'s token and no other token its agent holds (gate of #135)', () => {
+  // How this fails, written before the fix:
+  // 1. A delegated run's token (mintRunToken) names its agent everywhere, and
+  //    the hook routes took it: a SessionStart posted from the run registered
+  //    a session over the live terminal's, whose every later post was then
+  //    refused as stale while it stayed `running`.
+  // 2. Refusing run tokens everywhere would cut an ACP run off from the MCP
+  //    routes it works through: the run's token must still open its agent's
+  //    other routes.
+  // 3. A terminal that has ended keeps a valid token until the agent's next
+  //    launch: a SessionStart posted with a stopped CLI's token changed which
+  //    session a restart would resume.
+  // 4. Revoking on exit revokes the wrong token: an old terminal that exits
+  //    after the agent was respawned must leave the new terminal's alone.
+  const post = (token: string, sessionId: string) =>
+    call('POST', '/api/hooks/status', bearer(token), { agent_id: ALPHA.id, session_id: sessionId, status: 'idle', source: 'startup' });
+
+  /** A terminal opened the way every agent terminal is, with its exit in the test's hands. */
+  function terminalOf(agentId: string): { token: string; exit: () => void } {
+    const exits: Array<(e: { exitCode: number }) => void> = [];
+    const terminal = {
+      process: '2.1.280', write: () => {},
+      onExit: (cb: (e: { exitCode: number }) => void) => { exits.push(cb); return { dispose() {} }; },
+      onData: () => ({ dispose() {} }),
+    };
+    vi.mocked(pty.spawn).mockReturnValueOnce(terminal as never);
+    spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: ALPHA.projectPath, cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: agentId } });
+    const env = (vi.mocked(pty.spawn).mock.calls.at(-1)![2] as { env: Record<string, string> }).env;
+    return { token: env.CLAUDE_MGR_API_TOKEN, exit: () => { for (const cb of exits) cb({ exitCode: 0 }); } };
+  }
+
+  it('refuses a delegated run\'s token, and the live terminal keeps its session', async () => {
+    const live = terminalOf(ALPHA.id);
+    expect((await post(live.token, sid('sess-live'))).status).toBe(200);
+    const run = tokens.mintRunToken(ALPHA.id);
+
+    const fromRun = await post(run.token, sid('sess-acp'));
+
+    expect(fromRun.status, JSON.stringify(fromRun.body)).toBe(403);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe(sid('sess-live'));
+    run.revoke();
+  });
+
+  it('still lets a run\'s token open its agent\'s other routes', async () => {
+    const run = tokens.mintRunToken(ALPHA.id);
+
+    const { status } = await call('GET', '/api/agents', bearer(run.token));
+
+    expect(status).toBe(200);
+    run.revoke();
+  });
+
+  it('refuses the token of a terminal that has ended, before any new launch', async () => {
+    const ended = terminalOf(ALPHA.id);
+    ended.exit();
+
+    const late = await post(ended.token, sid('sess-late'));
+
+    expect(late.status).toBe(401);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
+  });
+
+  it('leaves a newer terminal\'s token alone when an older one ends after it', async () => {
+    const older = terminalOf(ALPHA.id);
+    const newer = terminalOf(ALPHA.id);
+    older.exit();
+
+    expect((await post(newer.token, sid('sess-new'))).status).toBe(200);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe(sid('sess-new'));
+  });
+});
+
 describe('the super chat, which is Noah driving every project', () => {
   it('reaches an agent of any project, through its own code and its own request', async () => {
     const beta = agents.get(BETA.id)!;
@@ -279,6 +392,48 @@ describe('the super chat, which is Noah driving every project', () => {
     expect(sharedFound, 'the walk found nothing at all, so finding no pass means nothing').toContain('api-token');
     expect(found).toEqual([]);
   });
+});
+
+describe('the super chat, to an agent whose launch is slow (the Database Engineer, re-gate of #134)', () => {
+  // /dispatch holds a sender up to SENDER_WAIT_MS (20 s) on a launch whose CLI
+  // runs and has not started its session, as happens on a loaded machine.
+  //
+  // How this fails, written before the code:
+  // 1. The super chat gives up on its request before /dispatch answers, and
+  //    tells Noah the message failed while it is typed a moment later.
+  // 2. It reports a bare "timeout" where /dispatch said the CLI is still
+  //    starting and nothing was typed.
+  afterEach(async () => { (await import('../../../electron/core/agent-launch')).resetLaunches(); });
+
+  it('waits for a launch that comes up after 15 s, and says the message went in', async () => {
+    const { launchBegins } = await import('../../../electron/core/agent-launch');
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+    launchBegins(beta.id, { withTask: false });
+    const up = setTimeout(() => { beta.sessionRegisteredAt = new Date().toISOString(); }, 16_500);
+
+    try {
+      const result = await overseer.sendToAgent(BETA.id, 'ship the thing');
+
+      expect(result, JSON.stringify(result)).toEqual({ success: true, mode: 'message' });
+      expect(terminal.written.join('')).toContain('ship the thing');
+    } finally {
+      clearTimeout(up);
+    }
+  }, 60_000);
+
+  it('passes on that nothing was typed when the launch is still starting', async () => {
+    const { launchBegins } = await import('../../../electron/core/agent-launch');
+    const beta = agents.get(BETA.id)!;
+    const terminal = liveTerminal(beta);
+    launchBegins(beta.id, { withTask: false });
+
+    const result = await overseer.sendToAgent(BETA.id, 'ship the thing');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/still starting.*nothing was typed/);
+    expect(terminal.written.join('')).not.toContain('ship the thing');
+  }, 60_000);
 });
 
 describe('Hermes, the one caller published off this machine', () => {
@@ -567,5 +722,26 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
     expect(vi.mocked(delegateOverAcp)).toHaveBeenCalledWith(expect.objectContaining({
       agent: agents.get(BETA.id), task: 'take this over',
     }));
+  });
+  // A run that started is an answer however it ended; 502 is what tells
+  // delegate_task it may type the task into the terminal instead, and after a
+  // run that started that runs it twice (sessions that died while they
+  // waited, 2026-09-23). Written before the route changed.
+  it('answers 200 for a run that started and was stopped at its limit, 502 only for one that never started', async () => {
+    putAgent({ id: 'agent-beta-3', projectPath: BETA.projectPath });
+    const sameProject = tokens.mintAgentToken('agent-beta-3');
+    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
+      ok: false, transport: 'acp', started: true, stopReason: 'turn_limit', text: 'half', toolCalls: ['pnpm build'],
+      error: "stopped at the run's limit of 3600 s while the agent was still working",
+    } as never);
+    const stopped = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
+      ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'spawn npx ENOENT',
+    } as never);
+    const neverStarted = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+
+    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+    expect(stopped.body).toMatchObject({ started: true, stopReason: 'turn_limit', text: 'half' });
+    expect(neverStarted.status).toBe(502);
   });
 });

@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 /**
  * MCP server that exposes Telegram tools for sending messages, photos, videos, and documents.
- * Works independently - reads config from ~/.dorothy/settings.json and sends directly to Telegram.
+ * Works independently - reads its settings from ~/.dorothy/app-settings.json and sends directly to Telegram.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { readAppSettings } from "../../mcp-shared/src/settings.js";
+import { registerTools, text, tool } from "../../mcp-shared/src/tools.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as https from "https";
-
-// Settings file path
-const SETTINGS_FILE = path.join(os.homedir(), ".dorothy", "app-settings.json");
 
 interface AppSettings {
   telegramBotToken?: string;
@@ -63,10 +62,7 @@ function isBlockedName(name: string): boolean {
   return BLOCKED_NAMES.has(lower) || lower.startsWith(".env.");
 }
 
-function assertSendablePath(filePath: string): string {
-  const resolved = path.resolve(filePath);
-  const home = os.homedir();
-
+function assertSendableName(resolved: string, home: string): void {
   if (resolved !== home && !resolved.startsWith(home + path.sep)) {
     throw new Error(`Refused: ${resolved} is outside the home directory`);
   }
@@ -77,14 +73,77 @@ function assertSendablePath(filePath: string): string {
     }
   }
   // Every segment, not just the last: a directory called `.ssh` three levels
-  // into a project is still an `.ssh` directory.
+  // into a project is still an `.ssh` directory. In any case: the volume macOS
+  // ships ignores it, so `.TARS-PRIVATE` opens `.tars-private`.
   for (const segment of resolved.slice(home.length).split(path.sep)) {
     if (!segment) continue;
-    if (isBlockedName(segment) || BLOCKED_DIRS.includes(segment)) {
+    if (isBlockedName(segment) || BLOCKED_DIRS.includes(segment.toLowerCase())) {
       throw new Error(`Refused: ${segment} holds credentials and cannot be sent`);
     }
   }
+}
+
+function assertSendablePath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  assertSendableName(resolved, os.homedir());
+  // And the file the name opens: a symlink put a blocked directory under an
+  // ordinary name (the audit's lead #21, on the vault's guard). Judged by its
+  // real path, against the home's own real path.
+  let real: string | undefined;
+  try {
+    real = fs.realpathSync.native(resolved);
+  } catch {
+    // Not there: the send says so after the guard.
+  }
+  if (real !== undefined) assertSendableName(real, fs.realpathSync.native(os.homedir()));
+  // A hard link has no path back to the file it names, so it is looked for by
+  // inode, in the two small directories whose files are secrets whole (the
+  // audit's gate of #137).
+  for (const dir of [".tars-private", ".ssh"]) {
+    if (isHardLinkInto(resolved, path.join(os.homedir(), dir))) {
+      throw new Error(`Refused: this file is also in ${dir}, which holds credentials and cannot be sent`);
+    }
+  }
   return resolved;
+}
+
+/**
+ * Whether `candidate` is another name for a regular file under `dir`, by
+ * device and inode. The app's own guard has the same function
+ * (electron/utils/path-identity.ts); this server is built on its own.
+ */
+function isHardLinkInto(candidate: string, dir: string): boolean {
+  let file: fs.Stats;
+  try {
+    file = fs.statSync(candidate);
+  } catch {
+    return false;
+  }
+  if (!file.isFile() || file.nlink < 2) return false;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full);
+      } else if (entry.isFile()) {
+        try {
+          const here = fs.lstatSync(full);
+          if (here.dev === file.dev && here.ino === file.ino) return true;
+        } catch {
+          // Gone since it was listed.
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -107,14 +166,8 @@ function assertAuthorizedChat(settings: AppSettings, chatId: string): string {
 }
 
 function loadSettings(): AppSettings {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8"));
-    }
-  } catch (err) {
-    console.error("Failed to load settings:", err);
-  }
-  return {};
+  const settings = readAppSettings((err) => console.error("Failed to load settings:", err));
+  return settings === undefined ? {} : (settings as AppSettings);
 }
 
 // Telegram Bot API helper
@@ -229,214 +282,91 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-// Register send_telegram tool
-server.tool(
-  "send_telegram",
-  "Send a text message to Telegram. IMPORTANT: When responding to a Telegram message, you MUST include the chat_id from the original request to ensure the response goes to the correct chat.",
-  {
-    message: z.string().describe("The message to send to Telegram"),
-    chat_id: z.coerce.string().optional().describe("The chat ID to send to. REQUIRED when responding to a specific Telegram chat. Use the chat_id from the incoming Telegram message."),
-  },
-  async ({ message, chat_id }) => {
-    try {
-      const settings = loadSettings();
-      if (!settings.telegramBotToken) {
-        throw new Error("Telegram not configured - missing bot token in settings");
-      }
+/**
+ * The bot and the approved chat a send goes to: the chat asked for, or the
+ * default one.
+ */
+function destination(chat_id: string | undefined): { token: string; chatId: string } {
+  const settings = loadSettings();
+  if (!settings.telegramBotToken) {
+    throw new Error("Telegram not configured - missing bot token in settings");
+  }
 
-      // Use provided chat_id, or fall back to default from settings
-      const requestedChatId = chat_id || settings.telegramChatId;
-      if (!requestedChatId) {
-        throw new Error("No chat_id provided and no default chat ID configured");
-      }
-      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
+  // Use provided chat_id, or fall back to default from settings
+  const requestedChatId = chat_id || settings.telegramChatId;
+  if (!requestedChatId) {
+    throw new Error("No chat_id provided and no default chat ID configured");
+  }
+  return { token: settings.telegramBotToken, chatId: assertAuthorizedChat(settings, requestedChatId) };
+}
 
-      await telegramApiRequest(settings.telegramBotToken, "sendMessage", {
-        chat_id: targetChatId,
+/** A photo, a video or a document, past both guards. */
+async function sendAFile(
+  method: string,
+  field: string,
+  noun: string,
+  filePath: string,
+  caption: string | undefined,
+  chat_id: string | undefined
+) {
+  const { token, chatId } = destination(chat_id);
+  await sendFile(token, chatId, method, assertSendablePath(filePath), field, caption);
+  return text(`${noun} sent to Telegram chat ${chatId}: ${filePath}${caption ? ` with caption: "${caption.slice(0, 50)}..."` : ""}`);
+}
+
+registerTools(server, [
+  tool({
+    name: "send_telegram",
+    description: "Send a text message to Telegram. IMPORTANT: When responding to a Telegram message, you MUST include the chat_id from the original request to ensure the response goes to the correct chat.",
+    schema: {
+      message: z.string().describe("The message to send to Telegram"),
+      chat_id: z.coerce.string().optional().describe("The chat ID to send to. REQUIRED when responding to a specific Telegram chat. Use the chat_id from the incoming Telegram message."),
+    },
+    failure: "sending to Telegram",
+    async run({ message, chat_id }) {
+      const { token, chatId } = destination(chat_id);
+      await telegramApiRequest(token, "sendMessage", {
+        chat_id: chatId,
         text: `👑 ${message}`,
         parse_mode: "Markdown",
       });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Message sent to Telegram chat ${targetChatId}: "${message.slice(0, 100)}${message.length > 100 ? "..." : ""}"`,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error sending to Telegram: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
-
-// Register send_telegram_photo tool
-server.tool(
-  "send_telegram_photo",
-  "Send a photo/image to Telegram. Use this to share screenshots, images, or visual content with the user.",
-  {
-    photo_path: z.string().describe("The absolute file path to the photo/image to send (e.g., /Users/name/image.png)"),
-    caption: z.string().optional().describe("Optional caption text to include with the photo"),
-    chat_id: z.coerce.string().optional().describe("The chat ID to send to. Use the chat_id from the incoming Telegram message."),
-  },
-  async ({ photo_path, caption, chat_id }) => {
-    try {
-      const settings = loadSettings();
-      if (!settings.telegramBotToken) {
-        throw new Error("Telegram not configured - missing bot token in settings");
-      }
-
-      const requestedChatId = chat_id || settings.telegramChatId;
-      if (!requestedChatId) {
-        throw new Error("No chat_id provided and no default chat ID configured");
-      }
-      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
-
-      await sendFile(
-        settings.telegramBotToken,
-        targetChatId,
-        "sendPhoto",
-        assertSendablePath(photo_path),
-        "photo",
-        caption
-      );
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Photo sent to Telegram chat ${targetChatId}: ${photo_path}${caption ? ` with caption: "${caption.slice(0, 50)}..."` : ""}`,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error sending photo to Telegram: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
-
-// Register send_telegram_video tool
-server.tool(
-  "send_telegram_video",
-  "Send a video to Telegram. Use this to share video content, screen recordings, or animations with the user.",
-  {
-    video_path: z.string().describe("The absolute file path to the video to send (e.g., /Users/name/video.mp4)"),
-    caption: z.string().optional().describe("Optional caption text to include with the video"),
-    chat_id: z.coerce.string().optional().describe("The chat ID to send to. Use the chat_id from the incoming Telegram message."),
-  },
-  async ({ video_path, caption, chat_id }) => {
-    try {
-      const settings = loadSettings();
-      if (!settings.telegramBotToken) {
-        throw new Error("Telegram not configured - missing bot token in settings");
-      }
-
-      const requestedChatId = chat_id || settings.telegramChatId;
-      if (!requestedChatId) {
-        throw new Error("No chat_id provided and no default chat ID configured");
-      }
-      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
-
-      await sendFile(
-        settings.telegramBotToken,
-        targetChatId,
-        "sendVideo",
-        assertSendablePath(video_path),
-        "video",
-        caption
-      );
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Video sent to Telegram chat ${targetChatId}: ${video_path}${caption ? ` with caption: "${caption.slice(0, 50)}..."` : ""}`,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error sending video to Telegram: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
-
-// Register send_telegram_document tool
-server.tool(
-  "send_telegram_document",
-  "Send a document/file to Telegram. Use this to share PDFs, text files, or any other documents with the user.",
-  {
-    document_path: z.string().describe("The absolute file path to the document to send (e.g., /Users/name/report.pdf)"),
-    caption: z.string().optional().describe("Optional caption text to include with the document"),
-    chat_id: z.coerce.string().optional().describe("The chat ID to send to. Use the chat_id from the incoming Telegram message."),
-  },
-  async ({ document_path, caption, chat_id }) => {
-    try {
-      const settings = loadSettings();
-      if (!settings.telegramBotToken) {
-        throw new Error("Telegram not configured - missing bot token in settings");
-      }
-
-      const requestedChatId = chat_id || settings.telegramChatId;
-      if (!requestedChatId) {
-        throw new Error("No chat_id provided and no default chat ID configured");
-      }
-      const targetChatId = assertAuthorizedChat(settings, requestedChatId);
-
-      await sendFile(
-        settings.telegramBotToken,
-        targetChatId,
-        "sendDocument",
-        assertSendablePath(document_path),
-        "document",
-        caption
-      );
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Document sent to Telegram chat ${targetChatId}: ${document_path}${caption ? ` with caption: "${caption.slice(0, 50)}..."` : ""}`,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error sending document to Telegram: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
+      return text(`Message sent to Telegram chat ${chatId}: "${message.slice(0, 100)}${message.length > 100 ? "..." : ""}"`);
+    },
+  }),
+  tool({
+    name: "send_telegram_photo",
+    description: "Send a photo/image to Telegram. Use this to share screenshots, images, or visual content with the user.",
+    schema: {
+      photo_path: z.string().describe("The absolute file path to the photo/image to send (e.g., /Users/name/image.png)"),
+      caption: z.string().optional().describe("Optional caption text to include with the photo"),
+      chat_id: z.coerce.string().optional().describe("The chat ID to send to. Use the chat_id from the incoming Telegram message."),
+    },
+    failure: "sending photo to Telegram",
+    run: ({ photo_path, caption, chat_id }) => sendAFile("sendPhoto", "photo", "Photo", photo_path, caption, chat_id),
+  }),
+  tool({
+    name: "send_telegram_video",
+    description: "Send a video to Telegram. Use this to share video content, screen recordings, or animations with the user.",
+    schema: {
+      video_path: z.string().describe("The absolute file path to the video to send (e.g., /Users/name/video.mp4)"),
+      caption: z.string().optional().describe("Optional caption text to include with the video"),
+      chat_id: z.coerce.string().optional().describe("The chat ID to send to. Use the chat_id from the incoming Telegram message."),
+    },
+    failure: "sending video to Telegram",
+    run: ({ video_path, caption, chat_id }) => sendAFile("sendVideo", "video", "Video", video_path, caption, chat_id),
+  }),
+  tool({
+    name: "send_telegram_document",
+    description: "Send a document/file to Telegram. Use this to share PDFs, text files, or any other documents with the user.",
+    schema: {
+      document_path: z.string().describe("The absolute file path to the document to send (e.g., /Users/name/report.pdf)"),
+      caption: z.string().optional().describe("Optional caption text to include with the document"),
+      chat_id: z.coerce.string().optional().describe("The chat ID to send to. Use the chat_id from the incoming Telegram message."),
+    },
+    failure: "sending document to Telegram",
+    run: ({ document_path, caption, chat_id }) => sendAFile("sendDocument", "document", "Document", document_path, caption, chat_id),
+  }),
+]);
 
 // Start server
 async function main() {

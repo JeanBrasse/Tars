@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { managedCliEnv } from '../providers/cli-provider';
-import { mintAgentToken } from './agent-tokens';
+import { mintAgentToken, revokeTerminalToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
@@ -11,6 +11,16 @@ import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
  * whether it was handed a command to run (`-c`) rather than left interactive.
  */
 const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean }>();
+
+/** When each agent PTY last printed something, and whether it has at all. */
+const heardFrom = new WeakMap<pty.IPty, { lastAt: number }>();
+/** The agent PTYs whose output is listened to for that. */
+const listening = new WeakSet<pty.IPty>();
+
+/** A shell that has spoken and then been quiet this long is at its prompt. */
+export const SHELL_QUIET_MS = 150;
+/** A shell that has said nothing after this long is typed into anyway. */
+export const SHELL_READY_MAX_MS = 5_000;
 
 /** node-pty's own program, which takes the terminal and then executes the shell. */
 const NODE_PTY_HELPER = 'spawn-helper';
@@ -72,6 +82,7 @@ export function spawnAgentPty(opts: {
   // the caller's default kept it until the panel happened to change size. See
   // rememberPanelSize.
   const size = panelSizeOf(agentId) ?? { cols: opts.cols, rows: opts.rows };
+  const token = agentId ? mintAgentToken(agentId) : undefined;
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
@@ -101,7 +112,7 @@ export function spawnAgentPty(opts: {
       // a secret that has to reach every agent process cannot depend on each
       // of them remembering. Minted per spawn, so a restart invalidates the
       // token the previous process ran with.
-      ...(agentId ? { CLAUDE_MGR_API_TOKEN: mintAgentToken(agentId) } : {}),
+      ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
@@ -113,13 +124,24 @@ export function spawnAgentPty(opts: {
   if (agentId) rememberTerminalOwner(spawned, agentId);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
-  spawned.onExit(() => terminalExited(spawned));
+  spawned.onExit(() => {
+    terminalExited(spawned);
+    // And what it was spawned as: gone, node-pty on Linux still names the
+    // shell it spawned, and a terminal handed a command read as a running CLI.
+    spawnedAs.delete(spawned);
+    // And its token: a stopped CLI's stayed valid until the agent's next launch.
+    if (agentId && token) revokeTerminalToken(agentId, token);
+  });
   // Before any caller subscribes, so a chunk is in the mirror before it is
   // broadcast. Here for the reason above: every agent terminal needs one. The
   // left-fullscreen watch only for the claude binary, whose two renderers it
   // was measured on.
   if (agentId) {
     attachTerminalMirror(spawned, { ...size, watchRepaint: opts.binaryName === 'claude', label: agentId });
+    // What shellReady waits on: a launch typed before the shell has printed its
+    // prompt goes through the terminal's canonical mode (see shellReady).
+    listening.add(spawned);
+    spawned.onData(() => { heardFrom.set(spawned, { lastAt: Date.now() }); });
   }
   return spawned;
 }
@@ -150,9 +172,9 @@ export function spawnAgentPty(opts: {
  * the foreground. Then `spawn-helper`, node-pty's own program, which opens the
  * terminal and executes the shell. Measured with the real spawnAgentPty and
  * node-pty 1.1.0 under Electron's node, five spawns: `/bin/bash` for 3 to
- * 127 ms, `spawn-helper` for up to 7 ms, then `bash`. agent:get creates a
- * terminal and reads this at once, and said a CLI ran in a shell that had not
- * started. After a command exits the name is briefly undefined, until the
+ * 127 ms, `spawn-helper` for up to 7 ms, then `bash`. agent:get, which then
+ * created a terminal and read this at once, said a CLI ran in a shell that
+ * had not started. After a command exits the name is briefly undefined, until the
  * shell takes the terminal back.
  *
  * All of that is the interactive shell. A shell handed its command with `-c`,
@@ -186,4 +208,35 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   return foreground !== path.basename(spawned.shell)
     && foreground !== spawned.shell
     && foreground !== NODE_PTY_HELPER;
+}
+
+/**
+ * Resolves once the shell in an agent's PTY is at its prompt: it has printed
+ * something, then been quiet for SHELL_QUIET_MS. At once for a shell that did
+ * so long ago, and after SHELL_READY_MAX_MS for one that never speaks.
+ *
+ * A line typed before the shell takes its terminal goes through the terminal's
+ * canonical mode, which holds a line of about 1 KB on macOS and 4 KB on Linux:
+ * the rest is cut, and the command never runs. Measured at the QA gate of #155
+ * with node-pty and a cold `/bin/bash -l`: 995 bytes typed at once ran, 1095 did
+ * not; 1495 ran after the shell had spoken and gone quiet for 150 ms, 2/2. In
+ * the app, a Telegram message of 946 characters (a 1374-byte launch) started no
+ * session in 60 s, and the same launch into a shell at its prompt did. The
+ * quiet adapts to load where a fixed delay does not.
+ */
+export async function shellReady(ptyProcess: pty.IPty): Promise<void> {
+  const deadline = Date.now() + SHELL_READY_MAX_MS;
+  for (;;) {
+    const heard = heardFrom.get(ptyProcess);
+    const quietFor = heard ? Date.now() - heard.lastAt : 0;
+    if (heard && quietFor >= SHELL_QUIET_MS) return;
+    // A terminal nobody listens to, or one that has exited, has nothing to wait for.
+    if (!listening.has(ptyProcess) || !spawnedAs.has(ptyProcess)) return;
+    const left = deadline - Date.now();
+    if (left <= 0) {
+      console.warn(`[agent-pty] a shell said nothing in ${SHELL_READY_MAX_MS / 1000} s: typing into it anyway`);
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(left, heard ? SHELL_QUIET_MS - quietFor : 50)));
+  }
 }

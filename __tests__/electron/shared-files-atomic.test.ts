@@ -10,10 +10,10 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
  * `~/.claude.json` is read and rewritten by every live Claude Code, Claude's
  * `settings.json` is read by every claude binary, `~/.claude/mcp.json` by every
  * Claude session Tars starts, through --mcp-config, and `kanban-tasks.json` is
- * written whole by Tars and by mcp-kanban from every agent that uses the board.
- * All four were rewritten in place, so a reader that opened one mid-write got
- * a truncated JSON document; both kanban writers read that as an empty board,
- * and their next save wrote it.
+ * written whole by Tars (and by mcp-kanban, until #171 sent its tools through
+ * Tars). All four were rewritten in place, so a reader that opened one
+ * mid-write got a truncated JSON document; both kanban writers read that as an
+ * empty board, and their next save wrote it.
  *
  * Every case runs the real writer and cuts into its writeFileSync: halfway
  * through, a reader parses the file, or the process dies. HOME is the
@@ -82,7 +82,6 @@ import { setupMemoryBackends, setupOrchestratorSetupHandler, setupOrchestratorRe
 import { enableStatusLine, disableStatusLine } from '../../electron/utils/statusline';
 import { KANBAN_FILE, dataPath } from '../../electron/constants';
 import type { AppSettings } from '../../electron/types';
-import * as mcpKanban from '../../mcp-kanban/src/store';
 
 const nodeFs = createRequire(import.meta.url)('node:fs') as typeof fs;
 const home = () => os.homedir();
@@ -945,7 +944,7 @@ describe("fs:write-text-file and Claude's own files", () => {
   });
 });
 
-describe('kanban-tasks.json, written by Tars and by mcp-kanban', () => {
+describe('kanban-tasks.json, written by Tars', () => {
   const board = [{ id: 't1', title: 'keep me', column: 'backlog', order: 0 }, { id: 't2', title: 'and me', column: 'done', order: 0 }];
 
   function kanbanDeps(): KanbanHandlerDependencies {
@@ -971,12 +970,9 @@ describe('kanban-tasks.json, written by Tars and by mcp-kanban', () => {
     title: 'a new task', description: '', projectId: 'p', projectPath: '/work/p', requiredSkills: [], priority: 'low', labels: [],
   });
 
-  it('Tars never shows the board half-written to a reader, mcp-kanban included', async () => {
+  it('Tars never shows the board half-written to a reader', async () => {
     const seenMidway: unknown[] = [];
-    const undo = cutWrites(path.dirname(KANBAN_FILE), () => {
-      seenMidway.push(readAsJson(KANBAN_FILE));
-      seenMidway.push(mcpKanban.loadTasks());
-    });
+    const undo = cutWrites(path.dirname(KANBAN_FILE), () => seenMidway.push(readAsJson(KANBAN_FILE)));
     try {
       await create();
     } finally {
@@ -996,31 +992,5 @@ describe('kanban-tasks.json, written by Tars and by mcp-kanban', () => {
     }
 
     expect(readAsJson(KANBAN_FILE)).toEqual(board);
-  });
-
-  it('mcp-kanban never shows the board half-written to a reader, Tars included', () => {
-    const seenMidway: unknown[] = [];
-    const undo = cutWrites(path.dirname(KANBAN_FILE), () => seenMidway.push(readAsJson(KANBAN_FILE)));
-    try {
-      mcpKanban.saveTasks([...board, { id: 't3', title: 'from an agent', column: 'ongoing', order: 0 }] as never);
-    } finally {
-      undo();
-    }
-
-    expect(seenMidway.length).toBeGreaterThan(0);
-    for (const seen of seenMidway) expect(seen).toEqual(board);
-    expect((readAsJson(KANBAN_FILE) as unknown[]).length).toBe(3);
-  });
-
-  it('mcp-kanban leaves the board whole when its write dies halfway, and no temp file behind', () => {
-    const undo = cutWrites(path.dirname(KANBAN_FILE), () => {}, { die: true });
-    try {
-      expect(() => mcpKanban.saveTasks([] as never)).toThrow('the process died here');
-    } finally {
-      undo();
-    }
-
-    expect(readAsJson(KANBAN_FILE)).toEqual(board);
-    expect(leftovers(path.dirname(KANBAN_FILE))).toEqual([]);
   });
 });

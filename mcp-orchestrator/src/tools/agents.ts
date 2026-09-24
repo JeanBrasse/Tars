@@ -4,6 +4,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { problem, registerTools, text, tool, type Tool } from "../../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "../utils/api.js";
 
 type WaitResult = {
@@ -165,212 +166,150 @@ async function fetchCleanOutput(
   return { output: undefined, status: last?.agent.status ?? "unknown", name: last?.agent.name };
 }
 
-export function registerAgentTools(server: McpServer): void {
-  // Tool: Who am I (identity handshake for orchestrator sessions)
-  server.tool(
-    "whoami",
-    "Get YOUR identity as a Tars agent: id, name, project, role, and the roster of your project's agents. Call this first if you are unsure who you are or who you can delegate to.",
-    {},
-    async () => {
+/**
+ * Sends the caller a progress notification every minute until stopped, when
+ * the call carries a progressToken (Claude Code 2.1.280 sends one with every
+ * call). Claude Code abandons an MCP call that sends nothing for 30 minutes,
+ * "sent no response or progress for 1811s; aborting", and a progress
+ * notification resets that clock: measured on a 150 s call with the limit
+ * lowered to seconds, silent it was aborted, with progress every 5 s it
+ * completed. Without this, a delegation longer than half an hour went on in
+ * the agent while the orchestrator that asked for it had stopped listening.
+ */
+export function keepCallerListening(
+  extra: { _meta?: { progressToken?: string | number }; sendNotification?: (n: never) => Promise<void> } | undefined,
+  everyMs = 60_000,
+): () => void {
+  const token = extra?._meta?.progressToken;
+  const send = extra?.sendNotification;
+  if (token === undefined || !send) return () => {};
+  let progress = 0;
+  const timer = setInterval(() => {
+    progress += 1;
+    send({ method: "notifications/progress", params: { progressToken: token, progress, message: "still waiting on the agent" } } as never)
+      .catch(() => { /* the caller has gone: nothing to keep */ });
+  }, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+/** The agent tools, in the order tools/list gives them. */
+const AGENT_TOOLS: Tool[] = [
+  // Identity handshake for orchestrator sessions
+  tool({
+    name: "whoami",
+    description: "Get YOUR identity as a Tars agent: id, name, project, role, and the roster of your project's agents. Call this first if you are unsure who you are or who you can delegate to.",
+    schema: {},
+    failure: "resolving identity",
+    async run() {
       const { agentId, projectPath } = getCallerIdentity();
       if (!agentId && !projectPath) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No agent identity found in the environment (CLAUDE_AGENT_ID / CLAUDE_PROJECT_PATH are unset). You are probably running outside a Tars-managed session; list_agents will return ALL agents unscoped.",
-            },
-          ],
-        };
+        return text("No agent identity found in the environment (CLAUDE_AGENT_ID / CLAUDE_PROJECT_PATH are unset). You are probably running outside a Tars-managed session; list_agents will return ALL agents unscoped.");
       }
-      try {
-        let selfInfo: string;
-        if (agentId) {
-          const data = (await apiRequest(`/api/agents/${agentId}`)) as {
-            agent: { name?: string; role?: string; projectPath: string; branchName?: string; worktreePath?: string };
-          };
-          selfInfo =
-            `You are "${data.agent.name || agentId}" (agent id: ${agentId}), ` +
-            `${data.agent.role || "agent"} of project ${data.agent.projectPath}` +
-            (data.agent.branchName ? ` (branch ${data.agent.branchName})` : "") +
-            ".";
-        } else {
-          selfInfo = `Your project: ${projectPath} (no agent id available).`;
-        }
-        const list = (await apiRequest("/api/agents")) as { agents: unknown[] };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${selfInfo}\n\nYour project's agents:\n${JSON.stringify(list.agents, null, 2)}`,
-            },
-          ],
+      let selfInfo: string;
+      if (agentId) {
+        const data = (await apiRequest(`/api/agents/${agentId}`)) as {
+          agent: { name?: string; role?: string; projectPath: string; branchName?: string; worktreePath?: string };
         };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error resolving identity: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+        selfInfo =
+          `You are "${data.agent.name || agentId}" (agent id: ${agentId}), ` +
+          `${data.agent.role || "agent"} of project ${data.agent.projectPath}` +
+          (data.agent.branchName ? ` (branch ${data.agent.branchName})` : "") +
+          ".";
+      } else {
+        selfInfo = `Your project: ${projectPath} (no agent id available).`;
       }
-    }
-  );
+      const list = (await apiRequest("/api/agents")) as { agents: unknown[] };
+      return text(`${selfInfo}\n\nYour project's agents:\n${JSON.stringify(list.agents, null, 2)}`);
+    },
+  }),
 
-  // Tool: List agents (scoped to the caller's project by default)
-  server.tool(
-    "list_agents",
-    "List the agents of YOUR project and their current status (idle/running/waiting/completed/error). Only these agents can receive your tasks: delegating to another project's agents is rejected. `all: true` adds other projects' agents for visibility ONLY; they remain undelegatable, and you must not present them as agents you have access to.",
-    {
+  // Scoped to the caller's project by default
+  tool({
+    name: "list_agents",
+    description: "List the agents of YOUR project and their current status (idle/running/waiting/completed/error). Only these agents can receive your tasks: delegating to another project's agents is rejected. `all: true` adds other projects' agents for visibility ONLY; they remain undelegatable, and you must not present them as agents you have access to.",
+    schema: {
       all: z.boolean().optional().describe("If true, list agents of ALL projects instead of only your own"),
     },
-    async ({ all }) => {
-      try {
-        const data = (await apiRequest(all ? "/api/agents?all=true" : "/api/agents")) as {
-          agents: unknown[];
-          scopedToProject?: string;
-        };
-        // When the caller asked for the global view, say plainly which of these
-        // it can actually act on. Listing every project's agents under a
-        // heading like "agents you have access to" is misleading: delegation
-        // to another project is rejected, so most of that list is unreachable.
-        // Asking an agent to list "all the agents you have access to" is
-        // exactly the phrasing that makes a model pass all:true.
-        const mine = getCallerIdentity().projectPath;
-        if (all) {
-          const rows = (data.agents as Array<Record<string, unknown>>) ?? [];
-          const reachable = mine ? rows.filter(a => a.projectPath === mine) : rows;
-          const others = mine ? rows.filter(a => a.projectPath !== mine) : [];
-          const header = mine
-            ? `You can delegate to these ${reachable.length} agent(s) - they are in your project (${mine}):`
-            : `No caller identity, so nothing here is scoped:`;
-          const tail = others.length
-            ? `\n\nThe following ${others.length} agent(s) belong to OTHER projects. They are listed ` +
-              `because all:true was requested. You CANNOT delegate to them - delegate_task will ` +
-              `reject it. Do not describe them as available to you:\n` +
-              JSON.stringify(others, null, 2)
-            : "";
-          return {
-            content: [{ type: "text", text: `${header}\n${JSON.stringify(reachable, null, 2)}${tail}` }],
-          };
-        }
-
-        const scopeNote = data.scopedToProject
-          ? `Agents of your project (${data.scopedToProject}):\n`
+    failure: "listing agents",
+    async run({ all }) {
+      const data = (await apiRequest(all ? "/api/agents?all=true" : "/api/agents")) as {
+        agents: unknown[];
+        scopedToProject?: string;
+      };
+      // When the caller asked for the global view, say plainly which of these
+      // it can actually act on. Listing every project's agents under a
+      // heading like "agents you have access to" is misleading: delegation
+      // to another project is rejected, so most of that list is unreachable.
+      // Asking an agent to list "all the agents you have access to" is
+      // exactly the phrasing that makes a model pass all:true.
+      const mine = getCallerIdentity().projectPath;
+      if (all) {
+        const rows = (data.agents as Array<Record<string, unknown>>) ?? [];
+        const reachable = mine ? rows.filter(a => a.projectPath === mine) : rows;
+        const others = mine ? rows.filter(a => a.projectPath !== mine) : [];
+        const header = mine
+          ? `You can delegate to these ${reachable.length} agent(s) - they are in your project (${mine}):`
+          : `No caller identity, so nothing here is scoped:`;
+        const tail = others.length
+          ? `\n\nThe following ${others.length} agent(s) belong to OTHER projects. They are listed ` +
+            `because all:true was requested. You CANNOT delegate to them - delegate_task will ` +
+            `reject it. Do not describe them as available to you:\n` +
+            JSON.stringify(others, null, 2)
           : "";
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${scopeNote}${JSON.stringify(data.agents, null, 2)}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error listing agents: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+        return text(`${header}\n${JSON.stringify(reachable, null, 2)}${tail}`);
       }
-    }
-  );
 
-  // Tool: Get agent details
-  server.tool(
-    "get_agent",
-    "Get detailed information about a specific agent including its full output history.",
-    {
+      const scopeNote = data.scopedToProject
+        ? `Agents of your project (${data.scopedToProject}):\n`
+        : "";
+      return text(`${scopeNote}${JSON.stringify(data.agents, null, 2)}`);
+    },
+  }),
+
+  tool({
+    name: "get_agent",
+    description: "Get detailed information about a specific agent including its full output history.",
+    schema: {
       id: z.string().describe("The agent ID"),
     },
-    async ({ id }) => {
-      try {
-        const data = (await apiRequest(`/api/agents/${id}`)) as { agent: unknown };
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(data.agent, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting agent: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+    failure: "getting agent",
+    async run({ id }) {
+      const data = (await apiRequest(`/api/agents/${id}`)) as { agent: unknown };
+      return text(JSON.stringify(data.agent, null, 2));
+    },
+  }),
 
-  // Tool: Get agent output (clean text from transcript, no ANSI)
-  server.tool(
-    "get_agent_output",
-    "Get the agent's last response as clean text (no terminal formatting). This is captured from the agent's transcript by hooks. Falls back to noting output is available in terminal view if no clean output is captured yet.",
-    {
+  // Clean text from the transcript, no ANSI
+  tool({
+    name: "get_agent_output",
+    description: "Get the agent's last response as clean text (no terminal formatting). This is captured from the agent's transcript by hooks. Falls back to noting output is available in terminal view if no clean output is captured yet.",
+    schema: {
       id: z.string().describe("The agent ID"),
     },
-    async ({ id }) => {
-      try {
-        const data = (await apiRequest(`/api/agents/${id}`)) as {
-          agent: {
-            status: string;
-            name?: string;
-            lastCleanOutput?: string;
-          };
+    failure: "getting output",
+    async run({ id }) {
+      const data = (await apiRequest(`/api/agents/${id}`)) as {
+        agent: {
+          status: string;
+          name?: string;
+          lastCleanOutput?: string;
         };
-        const agentName = data.agent.name || id;
+      };
+      const agentName = data.agent.name || id;
 
-        if (data.agent.lastCleanOutput) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" (${data.agent.status}):\n\n${data.agent.lastCleanOutput}`,
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Agent "${agentName}" (${data.agent.status}): No clean output captured yet. The agent's terminal output is available in the Tars UI. Clean output is captured when the agent pauses or completes.`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting output: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+      if (data.agent.lastCleanOutput) {
+        return text(`Agent "${agentName}" (${data.agent.status}):\n\n${data.agent.lastCleanOutput}`);
       }
-    }
-  );
 
-  // Tool: Create agent
-  server.tool(
-    "create_agent",
-    "Create a new agent. Defaults to YOUR project when projectPath is omitted; another project is refused unless allowCrossProject is true. The agent will be in 'idle' state until started. By default, agents run with --dangerously-skip-permissions for autonomous operation.",
-    {
+      return text(`Agent "${agentName}" (${data.agent.status}): No clean output captured yet. The agent's terminal output is available in the Tars UI. Clean output is captured when the agent pauses or completes.`);
+    },
+  }),
+
+  tool({
+    name: "create_agent",
+    description: "Create a new agent. Defaults to YOUR project when projectPath is omitted; another project is refused unless allowCrossProject is true. The agent will be in 'idle' state until started. By default, agents run with --dangerously-skip-permissions for autonomous operation.",
+    schema: {
       projectPath: z.string().optional().describe("Absolute path to the project directory (defaults to your own project)"),
       name: z.string().optional().describe("Name for the agent (e.g., 'Backend Worker', 'Test Runner')"),
       skills: z.array(z.string()).optional().describe("List of skill names to enable for this agent"),
@@ -386,340 +325,174 @@ export function registerAgentTools(server: McpServer): void {
       secondaryProjectPath: z.string().optional().describe("Secondary project path to add as context (--add-dir)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow creating the agent in ANOTHER project than yours (normally rejected)"),
     },
-    async ({ projectPath, name, skills, character, skipPermissions = true, secondaryProjectPath, allowCrossProject }) => {
-      try {
-        const resolvedProjectPath = projectPath || getCallerIdentity().projectPath;
-        if (!resolvedProjectPath) {
-          return {
-            content: [{ type: "text", text: "Error: projectPath is required (no caller project identity available)." }],
-            isError: true,
-          };
-        }
-        const data = (await apiRequest("/api/agents", "POST", {
-          projectPath: resolvedProjectPath,
-          name,
-          skills,
-          character,
-          skipPermissions,
-          secondaryProjectPath,
-          allowCrossProject,
-        })) as { agent: { id: string; name: string } };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Created agent "${data.agent.name}" with ID: ${data.agent.id}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error creating agent: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+    failure: "creating agent",
+    async run({ projectPath, name, skills, character, skipPermissions = true, secondaryProjectPath, allowCrossProject }) {
+      const resolvedProjectPath = projectPath || getCallerIdentity().projectPath;
+      if (!resolvedProjectPath) {
+        return problem("Error: projectPath is required (no caller project identity available).");
       }
-    }
-  );
+      const data = (await apiRequest("/api/agents", "POST", {
+        projectPath: resolvedProjectPath,
+        name,
+        skills,
+        character,
+        skipPermissions,
+        secondaryProjectPath,
+        allowCrossProject,
+      })) as { agent: { id: string; name: string } };
+      return text(`Created agent "${data.agent.name}" with ID: ${data.agent.id}`);
+    },
+  }),
 
-  // Tool: Start agent
-  server.tool(
-    "start_agent",
-    "Start an agent with a specific task/prompt. If agent is already running/waiting, sends the prompt as a message instead. The agent runs with its own configured permission mode.",
-    {
+  tool({
+    name: "start_agent",
+    description: "Start an agent with a specific task/prompt. If agent is already running/waiting, sends the prompt as a message instead. The agent runs with its own configured permission mode.",
+    schema: {
       id: z.string().describe("The agent ID"),
       prompt: z.string().describe("The task or instruction for the agent to work on"),
       model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
     },
-    async ({ id, prompt, model, allowCrossProject }) => {
-      try {
-        const data = await dispatchToAgent(id, prompt, model, allowCrossProject);
-        const agentName = data.agent.name || id;
+    failure: "starting agent",
+    async run({ id, prompt, model, allowCrossProject }) {
+      const data = await dispatchToAgent(id, prompt, model, allowCrossProject);
+      const agentName = data.agent.name || id;
 
-        if (data.held) {
-          return { content: [{ type: "text", text: heldText(agentName, "The task", data.heldReason) }] };
-        }
-
-        if (data.mode === "message") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"`,
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error starting agent: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+      if (data.held) {
+        return text(heldText(agentName, "The task", data.heldReason));
       }
-    }
-  );
 
-  // Tool: Stop agent
-  server.tool(
-    "stop_agent",
-    "Stop a running agent. The agent will be terminated and return to 'idle' state.",
-    {
+      if (data.mode === "message") {
+        return text(`Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"`);
+      }
+
+      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}`);
+    },
+  }),
+
+  tool({
+    name: "stop_agent",
+    description: "Stop a running agent. The agent will be terminated and return to 'idle' state.",
+    schema: {
       id: z.string().describe("The agent ID"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
     },
-    async ({ id, allowCrossProject }) => {
-      try {
-        await apiRequest(`/api/agents/${id}/stop`, "POST", allowCrossProject ? { allowCrossProject } : undefined);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Stopped agent ${id}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error stopping agent: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+    failure: "stopping agent",
+    async run({ id, allowCrossProject }) {
+      await apiRequest(`/api/agents/${id}/stop`, "POST", allowCrossProject ? { allowCrossProject } : undefined);
+      return text(`Stopped agent ${id}`);
+    },
+  }),
 
-  // Tool: Send message to agent
-  server.tool(
-    "send_message",
-    "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status.",
-    {
+  tool({
+    name: "send_message",
+    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status.",
+    schema: {
       id: z.string().describe("The agent ID"),
       message: z.string().optional().describe("The message to send to the agent"),
       prompt: z.string().optional().describe("Alias for 'message', use either one"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
     },
-    async ({ id, message, prompt, allowCrossProject }) => {
+    failure: "sending message",
+    async run({ id, message, prompt, allowCrossProject }) {
       // Accept either "message" or "prompt" so the LLM doesn't trip on naming
       const resolvedMessage = message || prompt;
       if (!resolvedMessage) {
-        return {
-          content: [{ type: "text", text: "Error: either 'message' or 'prompt' is required." }],
-          isError: true,
-        };
+        return problem("Error: either 'message' or 'prompt' is required.");
       }
-      try {
-        const data = await dispatchToAgent(id, resolvedMessage, undefined, allowCrossProject);
-        const agentName = data.agent.name || id;
-        const previousStatus = data.previousStatus ?? "idle";
+      const data = await dispatchToAgent(id, resolvedMessage, undefined, allowCrossProject);
+      const agentName = data.agent.name || id;
+      const previousStatus = data.previousStatus ?? "idle";
 
-        if (data.held) {
-          return { content: [{ type: "text", text: heldText(agentName, "Your message", data.heldReason) }] };
-        }
-
-        if (data.mode === "start") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}`,
-              },
-            ],
-          };
-        }
-
-        if (previousStatus === "running") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `⚠️ Agent "${agentName}" is currently running. Message sent but may interfere with current work. Consider using wait_for_agent first to wait until the agent is done.\nMessage sent: "${resolvedMessage}"`,
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Sent message to agent "${agentName}" (${previousStatus}): "${resolvedMessage}"`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error sending message: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+      if (data.held) {
+        return text(heldText(agentName, "Your message", data.heldReason));
       }
-    }
-  );
 
-  // Tool: Remove agent
-  server.tool(
-    "remove_agent",
-    "Permanently remove an agent. This will stop the agent if running and delete it from the system.",
-    {
+      if (data.mode === "start") {
+        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}`);
+      }
+
+      if (previousStatus === "running") {
+        return text(`⚠️ Agent "${agentName}" is currently running. Message sent but may interfere with current work. Consider using wait_for_agent first to wait until the agent is done.\nMessage sent: "${resolvedMessage}"`);
+      }
+
+      return text(`Sent message to agent "${agentName}" (${previousStatus}): "${resolvedMessage}"`);
+    },
+  }),
+
+  tool({
+    name: "remove_agent",
+    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system.",
+    schema: {
       id: z.string().describe("The agent ID"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
     },
-    async ({ id, allowCrossProject }) => {
-      try {
-        await apiRequest(`/api/agents/${id}${allowCrossProject ? "?allowCrossProject=true" : ""}`, "DELETE");
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Removed agent ${id}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error removing agent: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+    failure: "removing agent",
+    async run({ id, allowCrossProject }) {
+      await apiRequest(`/api/agents/${id}${allowCrossProject ? "?allowCrossProject=true" : ""}`, "DELETE");
+      return text(`Removed agent ${id}`);
+    },
+  }),
 
-  // Tool: Wait for agent completion (long-poll, no polling loop)
-  server.tool(
-    "wait_for_agent",
-    "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
-    {
+  // Long-poll, no polling loop
+  tool({
+    name: "wait_for_agent",
+    description: "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+    schema: {
       id: z.string().describe("The agent ID"),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
     },
-    async ({ id, timeoutSeconds = 300 }) => {
-      try {
-        // Single long-poll request to the wait endpoint
-        const data = await waitForAgentStatus(id, timeoutSeconds);
+    failure: "waiting for agent",
+    async run({ id, timeoutSeconds = 300 }) {
+      const data = await waitForAgentStatus(id, timeoutSeconds);
 
-        const agentData = (await apiRequest(`/api/agents/${id}`)) as {
-          agent: { name?: string };
-        };
-        const agentName = agentData.agent.name || id;
+      const agentData = (await apiRequest(`/api/agents/${id}`)) as {
+        agent: { name?: string };
+      };
+      const agentName = agentData.agent.name || id;
 
-        if (data.timeout) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Timeout after ${timeoutSeconds}s. Agent "${agentName}" is still '${data.status}'. Use get_agent_output to check progress.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        if (data.status === "completed" || data.status === "idle") {
-          const outputInfo = data.lastCleanOutput
-            ? `\n\nOutput:\n${data.lastCleanOutput}`
-            : "\n\nUse get_agent_output to read the result.";
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" finished (${data.status}).${outputInfo}`,
-              },
-            ],
-          };
-        }
-
-        if (data.status === "error") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" encountered an error: ${data.error || "Unknown error"}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        if (data.status === "waiting") {
-          const reasonInfo = data.waitingReason === "permission"
-            ? " It is blocked on a PERMISSION dialog: send_message cannot answer it; resolve it in the Tars UI or stop_agent and re-delegate."
-            : " Use send_message to respond, or get_agent_output to see what it's asking.";
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" is waiting for input.${reasonInfo}`,
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Agent "${agentName}" status: ${data.status}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error waiting for agent: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+      if (data.timeout) {
+        return problem(`Timeout after ${timeoutSeconds}s. Agent "${agentName}" is still '${data.status}'. Use get_agent_output to check progress.`);
       }
-    }
-  );
 
-  // Tool: Delegate task (composite: start + wait + get output)
-  server.tool(
-    "delegate_task",
-    "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately.",
-    {
+      if (data.status === "completed" || data.status === "idle") {
+        const outputInfo = data.lastCleanOutput
+          ? `\n\nOutput:\n${data.lastCleanOutput}`
+          : "\n\nUse get_agent_output to read the result.";
+        return text(`Agent "${agentName}" finished (${data.status}).${outputInfo}`);
+      }
+
+      if (data.status === "error") {
+        return problem(`Agent "${agentName}" encountered an error: ${data.error || "Unknown error"}`);
+      }
+
+      if (data.status === "waiting") {
+        const reasonInfo = data.waitingReason === "permission"
+          ? " It is blocked on a PERMISSION dialog: send_message cannot answer it; resolve it in the Tars UI or stop_agent and re-delegate."
+          : " Use send_message to respond, or get_agent_output to see what it's asking.";
+        return text(`Agent "${agentName}" is waiting for input.${reasonInfo}`);
+      }
+
+      return text(`Agent "${agentName}" status: ${data.status}`);
+    },
+  }),
+
+  // Composite: start, wait, then the output
+  tool({
+    name: "delegate_task",
+    description: "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately.",
+    schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
       model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow delegating to an agent of ANOTHER project (normally rejected)"),
     },
-    async ({ id, prompt, model, timeoutSeconds = 300, allowCrossProject }) => {
+    failure: "delegating task",
+    async run({ id, prompt, model, timeoutSeconds = 300, allowCrossProject }, extra) {
+      // Claude Code abandons an MCP call silent for 30 minutes; a delegation
+      // can last an hour. Progress while it waits keeps the caller listening.
+      const stopProgress = keepCallerListening(extra);
       try {
         // Preferred path: run the task over the Agent Client Protocol, which
         // returns the agent's actual answer, why the turn ended and what it
@@ -733,33 +506,51 @@ export function registerAgentTools(server: McpServer): void {
             (timeoutSeconds + 60) * 1000,
           )) as {
             ok?: boolean;
+            started?: boolean;
             stopReason?: string;
             text?: string;
             toolCalls?: string[];
+            backgroundStopped?: string[];
             usage?: { totalTokens?: number };
             costUSD?: number;
             error?: string;
             retryWithDispatch?: boolean;
           };
 
-          if (acp && !acp.retryWithDispatch && (acp.ok || acp.text)) {
+          // A run that started is the answer, however it ended. Falling back
+          // to the terminal after one typed the same brief into a second
+          // session: the task ran twice (Parallel project, 2026-09-23).
+          if (acp && !acp.retryWithDispatch && (acp.ok || acp.text || acp.started)) {
             const meta = [
               acp.stopReason ? `ended: ${acp.stopReason}` : "",
               acp.toolCalls?.length ? `tools: ${acp.toolCalls.slice(0, 8).join(", ")}` : "",
               acp.usage?.totalTokens ? `${acp.usage.totalTokens} tokens` : "",
               typeof acp.costUSD === "number" ? `$${acp.costUSD.toFixed(4)}` : "",
             ].filter(Boolean).join(" | ");
+            // A run is one turn: what the agent left running when it answered
+            // was stopped with it, and nothing brings it back for that work.
+            const left = acp.backgroundStopped?.length
+              ? `\nstopped when the run ended: ${acp.backgroundStopped.join(", ")}. Re-delegate what still needs doing.`
+              : "";
+            const why = !acp.ok && acp.error ? `\n${acp.error}` : "";
 
             return {
               content: [{
                 type: "text",
-                text: `${acp.text || "(the agent produced no text)"}\n\n---\n${meta}`,
+                text: `${acp.text || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}`,
               }],
               isError: !acp.ok,
             };
           }
-        } catch {
-          // ACP unavailable for this agent. The terminal path still works.
+        } catch (err) {
+          // This call's own wait ran out: the run it started may still be
+          // working, and typing the brief into the terminal as well would run
+          // the task twice.
+          if (err instanceof Error && err.name === "AbortError") {
+            return problem(`No answer from agent ${id} within ${timeoutSeconds + 60} s. The run may still be working: follow it with get_agent or wait_for_agent rather than delegating the task again.`);
+          }
+          // No run started (this CLI has no ACP mode, or its launch failed).
+          // The terminal path still works.
         }
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
@@ -771,13 +562,8 @@ export function registerAgentTools(server: McpServer): void {
         // started, for as long as the field stays in use, and then report the
         // agent as still running. Say it now; wait_for_agent follows it.
         if (dispatched.held) {
-          return {
-            content: [{
-              type: "text",
-              text: heldText(agentName, "The task", dispatched.heldReason)
-                + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
-            }],
-          };
+          return text(heldText(agentName, "The task", dispatched.heldReason)
+            + " delegate_task is not waiting on it: use wait_for_agent to follow it.");
         }
 
         // Wait for completion via long-poll
@@ -787,15 +573,7 @@ export function registerAgentTools(server: McpServer): void {
           if (waitData.waitingReason === "permission") {
             // A blocking permission dialog: typing text into it does nothing
             // useful (it expects arrow keys/enter). Surface it instead.
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`,
-                },
-              ],
-              isError: true,
-            };
+            return problem(`Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`);
           }
           // Agent asked for confirmation: auto-reply "continue" and wait
           // again. A single retry only answers the FIRST question a task
@@ -831,67 +609,31 @@ export function registerAgentTools(server: McpServer): void {
             // now would run out on a turn that never began, then call the
             // agent still running (the gate of #128).
             if (continued.held) {
-              return {
-                content: [{
-                  type: "text",
-                  text: heldText(agentName, "The answer to its question", continued.heldReason)
-                    + " delegate_task is not waiting on it: use wait_for_agent to follow it.",
-                }],
-              };
+              return text(heldText(agentName, "The answer to its question", continued.heldReason)
+                + " delegate_task is not waiting on it: use wait_for_agent to follow it.");
             }
             waitData = await waitForAgentStatus(id, Math.max(Math.floor(remainingMs / 1000), 30));
           }
 
           if (waitData.status === "waiting") {
             if (waitData.waitingReason === "permission") {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: `Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`,
-                  },
-                ],
-                isError: true,
-              };
+              return problem(`Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`);
             }
             // Still waiting after every auto-continue: give up and let the
             // orchestrator handle it.
             const outputInfo = waitData.lastCleanOutput
               ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
               : "";
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Agent "${agentName}" is still waiting for input after ${autoContinues} auto-continue attempt(s).${outputInfo}\n\nUse send_message to respond.`,
-                },
-              ],
-            };
+            return text(`Agent "${agentName}" is still waiting for input after ${autoContinues} auto-continue attempt(s).${outputInfo}\n\nUse send_message to respond.`);
           }
         }
 
         if (waitData.timeout) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" is still running after ${timeoutSeconds}s. Use wait_for_agent to continue waiting, or get_agent_output to check progress.`,
-              },
-            ],
-            isError: true,
-          };
+          return problem(`Agent "${agentName}" is still running after ${timeoutSeconds}s. Use wait_for_agent to continue waiting, or get_agent_output to check progress.`);
         }
 
         if (waitData.status === "error") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" failed: ${waitData.error || "Unknown error"}`,
-              },
-            ],
-            isError: true,
-          };
+          return problem(`Agent "${agentName}" failed: ${waitData.error || "Unknown error"}`);
         }
 
         // Completed or idle: fetch the clean output, retrying briefly since
@@ -901,35 +643,17 @@ export function registerAgentTools(server: McpServer): void {
         const output = fetchedOutput || waitData.lastCleanOutput;
 
         if (output) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Agent "${agentName}" completed.\n\n${output}`,
-              },
-            ],
-          };
+          return text(`Agent "${agentName}" completed.\n\n${output}`);
         }
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Agent "${agentName}" finished (${waitData.status}) but no clean output was captured. Use get_agent_output to retry, or check the agent's terminal in the Tars UI.`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error delegating task: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+        return text(`Agent "${agentName}" finished (${waitData.status}) but no clean output was captured. Use get_agent_output to retry, or check the agent's terminal in the Tars UI.`);
+      } finally {
+        stopProgress();
       }
-    }
-  );
+    },
+  }),
+];
+
+export function registerAgentTools(server: McpServer): void {
+  registerTools(server, AGENT_TOOLS);
 }

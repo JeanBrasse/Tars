@@ -54,13 +54,17 @@ project, its CLI and the exact words, and nothing is sent until you say so. The
 target is resolved from the live fleet when you confirm, not from what the model
 remembered, so it cannot write to the wrong terminal.
 
-![Chat: the fleet on the right, and Hermes asking before it writes to any of them](screenshots/chat.png)
+![Chat: Hermes and a room per project in one list, Hermes asking before it writes to any agent](screenshots/chat.png)
 
 **Delegation that reports back.** An orchestrator hands work to another agent
 over the [Agent Client Protocol](https://agentclientprotocol.com), not by
 typing into its terminal and hoping. The call returns the agent's answer, why
 the turn ended, which tools it used and what it cost. Where a CLI has no ACP
 mode, Tars falls back to the terminal path rather than pretending.
+
+**Your fleet from Telegram, Slack or Discord.** Each bot answers only the people
+you let in, and takes the same commands: the fleet's status, an agent started on a
+task, and messages to the orchestrator, which answers there.
 
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
@@ -93,7 +97,8 @@ Download the latest release for macOS 13 (Ventura) or later:
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
 
-It also keeps claude and Amp up to date, at launch and every half hour, so a model
+It also keeps claude and Amp up to date, when an agent runs them, at launch and every half
+hour, under the same "Check for updates" switch as Tars itself, so a model
 a new CLI release brings is there for every agent without a `claude update` by
 hand. Sessions already running are left alone and restarts pick up the new version;
 what was updated, or why not, is in `~/.dorothy/cli-updates.log`. The other CLIs
@@ -183,7 +188,7 @@ completion hook, it simply has no screen of its own.
 | Screen | What it is for |
 |---|---|
 | **Dashboard** | The terminal grid. Every agent, live, grouped by project |
-| **Chat** | Hermes watching every project and asking before it acts, plus a room per project where that project's agents talk to each other and to you |
+| **Chat** | Hermes and a room per project, in one list. Hermes watches every project and asks before it acts; in a room, that project's agents talk to each other and to you, the thread first, the team listed under the rooms, and what needs you above the thread |
 | **Agents** | Create, configure, start and stop, grouped by project or one project at a time. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |
@@ -210,7 +215,7 @@ Everything is a file in your home directory. Nothing is uploaded.
 | `api-token` | Bearer token for the local API. `0600` |
 | `hermes-connection.json` | Gateway address and session token. `0600` |
 | `projects.json` | The folders you added by hand |
-| `kanban-tasks.json` | The local board |
+| `kanban-tasks.json` | The old local board, kept as a backup: its open tasks moved to the Hermes board |
 | `vault.db` | Vault documents |
 | `observations/` | The per-project session ledger |
 | `model-catalog.json` | Cached model and price catalogue |

@@ -1,10 +1,9 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
 import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { CHAT_ROOMS, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The Chat room, one frame per state, in a sandbox of its own.
@@ -21,7 +20,6 @@ import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from 
  * that works.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 let app: ElectronApplication;
 let page: Page;
@@ -31,7 +29,12 @@ const pageErrors: string[] = [];
 type ChatSurface = { name: string; route: string; clickText?: string; shows: string; placeholder?: string };
 
 test.beforeAll(async () => {
-  sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-chat-'));
+  // Under /tmp, not os.tmpdir(): a room's head prints its project's path, so a
+  // path that follows TMPDIR moves the head with the machine (3,842 to 5,111 px
+  // between /tmp and macOS's /var/folders, measured for 1.9.0) and, once long,
+  // cuts the room's name to its first letter. Spelled /tmp, not /private/tmp:
+  // the fixture compares the app's folders with it.
+  sandboxHome = fs.mkdtempSync('/tmp/dorothy-e2e-chat-');
   seedSandbox(sandboxHome, { chatRooms: true });
   app = await launchSandboxed(electron, sandboxHome, {
     timezoneId: 'UTC',
@@ -39,7 +42,7 @@ test.beforeAll(async () => {
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       // Its own port: the other suites may still be holding 31498 and 31496.
-      DOROTHY_API_PORT: '31495',
+      DOROTHY_API_PORT: apiPort(31495),
       DOROTHY_E2E: '1',
       // Every row carries a time, so the clock is pinned here rather than left
       // to whichever machine records the baseline.

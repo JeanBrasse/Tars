@@ -57,7 +57,9 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSect
   const handleDetectPaths = async () => {
     setDetecting(true);
     try {
-      const rawPaths = await window.electronAPI?.cliPaths?.detect();
+      // Looks again. Detection is cached in main for the app run (#144), so
+      // without `refresh` a CLI installed while Tars runs stays not found.
+      const rawPaths = await window.electronAPI?.cliPaths?.detect({ refresh: true });
       const paths = rawPaths as DetectedPaths | undefined;
       if (paths) {
         setDetectedPaths(paths);

@@ -11,7 +11,7 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { DATA_DIR, DATA_DIR_SHELL, GITHUB_REPO } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'; // claude appends /v1/messages
@@ -150,8 +150,10 @@ export class OpenRouterProvider implements CLIProvider {
     if (apiKey) {
       vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
       vars.ANTHROPIC_API_KEY = apiKey;
-      // OpenRouter HTTP-Referer header (optional but recommended)
-      vars.OR_SITE_URL = 'https://tars.app';
+      // OpenRouter HTTP-Referer header (optional but recommended). The
+      // repository, which the project owns: it said https://tars.app, a domain
+      // it does not, and OpenRouter credits traffic to that name.
+      vars.OR_SITE_URL = `https://github.com/${GITHUB_REPO}`;
       vars.OR_APP_NAME = 'Tars';
     }
 

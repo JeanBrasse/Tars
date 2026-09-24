@@ -33,41 +33,38 @@ function makeAgent(overrides: Partial<AgentStatus> = {}): AgentStatus {
 }
 
 describe('isSuperAgent', () => {
-  it('returns true for "Super Agent" name', () => {
-    expect(isSuperAgent(makeAgent({ name: 'Super Agent' }))).toBe(true);
+  // The role is the Orchestrator toggle's, and the name decides nothing
+  // (core/agent-role.ts): renaming "Tars-Orchestrator" to "Tars-Lead" must not
+  // demote it, and a worker called "Orchestrator docs" is still a worker.
+  it('is true for the role, whatever the name', () => {
+    expect(isSuperAgent(makeAgent({ name: 'Tars', role: 'orchestrator' }))).toBe(true);
+    expect(isSuperAgent(makeAgent({ name: undefined, role: 'orchestrator' }))).toBe(true);
   });
 
-  it('returns true for "super agent" (case insensitive)', () => {
-    expect(isSuperAgent(makeAgent({ name: 'My super agent' }))).toBe(true);
+  it('never reads the name', () => {
+    expect(isSuperAgent(makeAgent({ name: 'Super Agent' }))).toBe(false);
+    expect(isSuperAgent(makeAgent({ name: 'My super agent' }))).toBe(false);
+    expect(isSuperAgent(makeAgent({ name: 'orchestrator' }))).toBe(false);
+    expect(isSuperAgent(makeAgent({ name: 'orchestrator docs writer', role: 'worker' }))).toBe(false);
   });
 
-  it('returns true for "orchestrator" name', () => {
-    expect(isSuperAgent(makeAgent({ name: 'orchestrator' }))).toBe(true);
-  });
-
-  it('returns false for regular agent names', () => {
-    expect(isSuperAgent(makeAgent({ name: 'Backend Worker' }))).toBe(false);
-    expect(isSuperAgent(makeAgent({ name: 'Test Runner' }))).toBe(false);
-  });
-
-  it('returns false when name is undefined', () => {
+  it('is false for a worker and for a record with no role', () => {
+    expect(isSuperAgent(makeAgent({ name: 'Backend Worker', role: 'worker' }))).toBe(false);
     expect(isSuperAgent(makeAgent({ name: undefined }))).toBe(false);
   });
 
-  it('role field is authoritative over the name', () => {
-    // A worker whose name happens to contain "orchestrator" is NOT a super
-    // agent, and an orchestrator with an arbitrary name IS one.
-    expect(isSuperAgent(makeAgent({ name: 'orchestrator docs writer', role: 'worker' }))).toBe(false);
-    expect(isSuperAgent(makeAgent({ name: 'Tars', role: 'orchestrator' }))).toBe(true);
+  it('does not take the old toggle field for the role', () => {
+    // Always equal to the role on a record Tars wrote; the role is what counts.
+    expect(isSuperAgent(makeAgent({ role: 'worker', orchestratorMode: true }))).toBe(false);
   });
 });
 
 describe('getSuperAgent', () => {
   it('finds the super agent in a map', () => {
     const agents = new Map<string, AgentStatus>();
-    agents.set('1', makeAgent({ id: '1', name: 'Worker' }));
-    agents.set('2', makeAgent({ id: '2', name: 'Super Agent' }));
-    agents.set('3', makeAgent({ id: '3', name: 'Tester' }));
+    agents.set('1', makeAgent({ id: '1', name: 'Orchestrator docs', role: 'worker' }));
+    agents.set('2', makeAgent({ id: '2', name: 'Lead', role: 'orchestrator' }));
+    agents.set('3', makeAgent({ id: '3', name: 'Tester', role: 'worker' }));
 
     const result = getSuperAgent(agents);
     expect(result?.id).toBe('2');
@@ -88,8 +85,8 @@ describe('getSuperAgent', () => {
     // The old cross-project bug: three orchestrators (one per project) and
     // getSuperAgent returned whichever came first in the map.
     const agents = new Map<string, AgentStatus>();
-    agents.set('1', makeAgent({ id: '1', name: 'Orchestrator', projectPath: '/proj/beta' }));
-    agents.set('2', makeAgent({ id: '2', name: 'Orchestrator', projectPath: '/proj/alpha' }));
+    agents.set('1', makeAgent({ id: '1', name: 'Orchestrator', role: 'orchestrator', projectPath: '/proj/beta' }));
+    agents.set('2', makeAgent({ id: '2', name: 'Orchestrator', role: 'orchestrator', projectPath: '/proj/alpha' }));
 
     expect(getSuperAgent(agents, '/proj/alpha')?.id).toBe('2');
     expect(getSuperAgent(agents, '/proj/beta')?.id).toBe('1');
@@ -101,7 +98,7 @@ describe('getSuperAgent', () => {
 
 describe('formatAgentStatus', () => {
   it('formats super agent with crown emoji', () => {
-    const agent = makeAgent({ name: 'Super Agent', status: 'running' });
+    const agent = makeAgent({ name: 'Super Agent', role: 'orchestrator', status: 'running' });
     const result = formatAgentStatus(agent);
     expect(result).toContain('👑');
     expect(result).toContain('*Super Agent*');
@@ -137,7 +134,7 @@ describe('formatAgentStatus', () => {
   });
 
   it('hides project for super agents', () => {
-    const agent = makeAgent({ name: 'Super Agent', projectPath: '/home/user/my-project' });
+    const agent = makeAgent({ name: 'Super Agent', role: 'orchestrator', projectPath: '/home/user/my-project' });
     const result = formatAgentStatus(agent);
     expect(result).not.toContain('Project:');
   });

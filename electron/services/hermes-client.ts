@@ -248,6 +248,28 @@ export function hermesRequest(
   });
 }
 
+/** One request to the gateway `conn` points at, carrying its token. */
+function gatewayCall(
+  conn: HermesConnection,
+  pathname: string,
+  options: { method?: string; body?: unknown; timeoutMs?: number } = {},
+): Promise<HermesResponse> {
+  return hermesRequest(resolveHermesBaseUrl(conn), pathname, { ...options, token: conn.token });
+}
+
+/** A call the gateway refused, flagged when signing in is what would fix it. */
+function refused(status: number, error: string) {
+  return { success: false as const, error, needsSignIn: status === 401 || status === 403 };
+}
+
+/** A read the gateway refused: the sign-in prompt when that is the reason,
+ *  the status otherwise. */
+function failedRead(status: number, signInPrompt: string) {
+  return status === 401 || status === 403
+    ? { success: false as const, error: signInPrompt, needsSignIn: true }
+    : { success: false as const, error: `HTTP ${status}` };
+}
+
 export interface HermesStatus {
   reachable: boolean;
   status?: number;
@@ -326,10 +348,7 @@ export async function signInHermes(
       body: { provider, username: credentials.username, password: credentials.password, next: '/' },
     });
     if (status === 200 && hasHermesSession(baseUrl)) return { success: true };
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail)
-      : `HTTP ${status}`;
-    return { success: false, error: status === 200 ? 'Gateway accepted the login but set no session cookie.' : detail };
+    return { success: false, error: status === 200 ? 'Gateway accepted the login but set no session cookie.' : errorDetail(status, body) };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -350,9 +369,12 @@ const KANBAN = '/api/plugins/kanban';
  * `{ detail: "title is required" }` or `{ detail: [{ msg, loc, ... }] }`. Every
  * kanban call used to collapse that to a bare `HTTP 422`, so a task created
  * with no title told the user nothing they could act on. Read `detail` the
- * same way for every endpoint here, board included.
+ * same way for every Hermes call, here and in hermes-session.ts: eight more
+ * here, and the Chat's effort picker there, turned the array into a string,
+ * and the Schedules page, the model picker, a memory write and the Chat said
+ * "[object Object],[object Object]" instead.
  */
-function errorDetail(status: number, body: unknown): string {
+export function errorDetail(status: number, body: unknown): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === 'string') return detail;
@@ -364,55 +386,41 @@ function errorDetail(status: number, body: unknown): string {
   return `HTTP ${status}`;
 }
 
-export async function fetchHermesBoard(conn: HermesConnection, board?: string) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const query = board ? `?board=${encodeURIComponent(board)}` : '';
-  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/board${query}`, { token: conn.token });
-  if (status !== 200) {
-    return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
-  }
+/** The board, or one tenant of it: the agents' kanban files each project as a tenant. */
+export async function fetchHermesBoard(conn: HermesConnection, board?: string, tenant?: string) {
+  const params = new URLSearchParams();
+  if (board) params.set('board', board);
+  if (tenant) params.set('tenant', tenant);
+  const query = params.size ? `?${params.toString()}` : '';
+  const { status, body } = await gatewayCall(conn, `${KANBAN}/board${query}`);
+  if (status !== 200) return refused(status, errorDetail(status, body));
   return { success: true as const, board: body };
 }
 
 export async function getHermesTask(conn: HermesConnection, taskId: string) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { token: conn.token });
-  if (status !== 200) {
-    return { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
-  }
+  const { status, body } = await gatewayCall(conn, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`);
+  if (status !== 200) return refused(status, errorDetail(status, body));
   return { success: true as const, detail: body };
 }
 
 export async function createHermesTask(conn: HermesConnection, task: Record<string, unknown>) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks`, { method: 'POST', body: task, token: conn.token });
-  return status < 300
-    ? { success: true as const, task: body }
-    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+  const { status, body } = await gatewayCall(conn, `${KANBAN}/tasks`, { method: 'POST', body: task });
+  return status < 300 ? { success: true as const, task: body } : refused(status, errorDetail(status, body));
 }
 
 export async function updateHermesTask(conn: HermesConnection, taskId: string, patch: Record<string, unknown>) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: patch, token: conn.token });
-  return status < 300
-    ? { success: true as const, task: body }
-    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+  const { status, body } = await gatewayCall(conn, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: patch });
+  return status < 300 ? { success: true as const, task: body } : refused(status, errorDetail(status, body));
 }
 
 export async function deleteHermesTask(conn: HermesConnection, taskId: string) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE', token: conn.token });
-  return status < 300
-    ? { success: true as const }
-    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+  const { status, body } = await gatewayCall(conn, `${KANBAN}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+  return status < 300 ? { success: true as const } : refused(status, errorDetail(status, body));
 }
 
 export async function addHermesTaskComment(conn: HermesConnection, taskId: string, body_: string) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, `${KANBAN}/tasks/${encodeURIComponent(taskId)}/comments`, { method: 'POST', body: { body: body_ }, token: conn.token });
-  return status < 300
-    ? { success: true as const }
-    : { success: false as const, error: errorDetail(status, body), needsSignIn: status === 401 || status === 403 };
+  const { status, body } = await gatewayCall(conn, `${KANBAN}/tasks/${encodeURIComponent(taskId)}/comments`, { method: 'POST', body: { body: body_ } });
+  return status < 300 ? { success: true as const } : refused(status, errorDetail(status, body));
 }
 
 // ── Cron / automations ────────────────────────────────────────────────────
@@ -421,13 +429,8 @@ export async function addHermesTaskComment(conn: HermesConnection, taskId: strin
 // every profile to find it.
 
 export async function fetchHermesCrons(conn: HermesConnection) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/cron/jobs?profile=all', { token: conn.token });
-  if (status !== 200) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-    return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
-  }
+  const { status, body } = await gatewayCall(conn, '/api/cron/jobs?profile=all');
+  if (status !== 200) return refused(status, errorDetail(status, body));
   return { success: true as const, jobs: body };
 }
 
@@ -437,12 +440,8 @@ export async function hermesCronAction(
   jobId: string,
   profile?: string,
 ) {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
-  const { status, body } = await hermesRequest(
-    baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}/${action}${q}`,
-    { method: 'POST', token: conn.token },
-  );
+  const { status, body } = await gatewayCall(conn, `/api/cron/jobs/${encodeURIComponent(jobId)}/${action}${q}`, { method: 'POST' });
   return status < 300 ? { success: true as const, job: body } : { success: false as const, error: `HTTP ${status}` };
 }
 
@@ -468,22 +467,15 @@ export async function updateHermesCron(
   updates: Record<string, unknown>,
   profile?: string,
 ) {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
-  const { status, body } = await hermesRequest(
-    baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`,
-    { method: 'PUT', body: { updates }, token: conn.token },
-  );
+  const { status, body } = await gatewayCall(conn, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`, { method: 'PUT', body: { updates } });
   if (status < 300) return { success: true as const, job: body };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return refused(status, errorDetail(status, body));
 }
 
 export async function deleteHermesCron(conn: HermesConnection, jobId: string, profile?: string) {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
-  const { status } = await hermesRequest(baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`, { method: 'DELETE', token: conn.token });
+  const { status } = await gatewayCall(conn, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`, { method: 'DELETE' });
   return status < 300 ? { success: true as const } : { success: false as const, error: `HTTP ${status}` };
 }
 
@@ -523,12 +515,8 @@ export async function fetchHermesModelOptions(
   | { success: true; provider: string; model: string; providers: HermesModelProvider[] }
   | { success: false; error: string; needsSignIn?: boolean }
 > {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/model/options', { token: conn.token });
-  if (status === 401 || status === 403) {
-    return { success: false, error: 'Sign in to Hermes to list its models', needsSignIn: true };
-  }
-  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, '/api/model/options');
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes to list its models');
 
   const b = (body ?? {}) as Record<string, unknown>;
   const raw = Array.isArray(b.providers) ? b.providers : [];
@@ -565,26 +553,20 @@ export async function setHermesModel(
   conn: HermesConnection,
   choice: { provider: string; model: string },
 ) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/model/set', {
+  const { status, body } = await gatewayCall(conn, '/api/model/set', {
     method: 'POST',
-    token: conn.token,
     body: { scope: 'main', provider: choice.provider, model: choice.model },
   });
   if (status < 300) return { success: true as const };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? JSON.stringify((body as { detail: unknown }).detail).slice(0, 200) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return refused(status, errorDetail(status, body).slice(0, 200));
 }
 
 export async function createHermesCron(
   conn: HermesConnection,
   job: { name: string; schedule: string; prompt: string; deliver?: string; model?: string; provider?: string },
 ) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/cron/jobs', {
+  const { status, body } = await gatewayCall(conn, '/api/cron/jobs', {
     method: 'POST',
-    token: conn.token,
     // `model` and `provider` are accepted here and echoed back on the created
     // job, but measurement against the live gateway showed they are ignored at
     // run time: a job pinned to anthropic never answered, while the same job
@@ -602,9 +584,7 @@ export async function createHermesCron(
     },
   });
   if (status < 300) return { success: true as const, job: body as { id?: string; [key: string]: unknown } };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return refused(status, errorDetail(status, body));
 }
 
 /** A file that now lives on the gateway, ready to be named in a prompt. */
@@ -628,9 +608,11 @@ export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 
 /** The name is used to build a path on the gateway, so it must not be able to
  *  climb out of the upload directory or contain a separator. */
-function safeUploadName(name: string): string {
+export function safeUploadName(name: string): string {
   const base = name.split(/[\\/]/).pop() || 'file';
-  const cleaned = base.replace(/[\x00-\x1f]/g, '').replace(/^\.+/, '').trim();
+  // Controls (C0, DEL, C1) and direction marks and overrides: a name is shown
+  // to a person and typed at an agent, and U+202E turns what follows around.
+  const cleaned = base.replace(/[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/^\.+/, '').trim();
   return cleaned.slice(0, 120) || 'file';
 }
 
@@ -655,33 +637,25 @@ export async function uploadHermesAttachment(
   | { success: true; attachment: HermesAttachment }
   | { success: false; error: string; needsSignIn?: boolean }
 > {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const name = safeUploadName(file.name);
   const isImage = file.mimeType.startsWith('image/');
   const dataUrl = `data:${file.mimeType || 'application/octet-stream'};base64,${file.base64}`;
 
   const { status, body } = isImage
-    ? await hermesRequest(baseUrl, '/api/chat/image-upload', {
+    ? await gatewayCall(conn, '/api/chat/image-upload', {
       method: 'POST',
-      token: conn.token,
       // An upload is not a status poll: a few megabytes over a home
       // connection outlasts the 10s default several times over.
       timeoutMs: 120_000,
       body: { data_url: dataUrl, filename: name },
     })
-    : await hermesRequest(baseUrl, '/api/files/upload', {
+    : await gatewayCall(conn, '/api/files/upload', {
       method: 'POST',
-      token: conn.token,
       timeoutMs: 120_000,
       body: { path: `~/.hermes/uploads/${name}`, data_url: dataUrl, overwrite: true },
     });
 
-  if (status >= 300) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail).slice(0, 200)
-      : `HTTP ${status}`;
-    return { success: false, error: detail, needsSignIn: status === 401 || status === 403 };
-  }
+  if (status >= 300) return refused(status, errorDetail(status, body).slice(0, 200));
 
   const payload = (body ?? {}) as { path?: unknown; name?: unknown; bytes?: unknown };
   const remotePath = typeof payload.path === 'string' ? payload.path : '';
@@ -711,14 +685,12 @@ export async function fetchHermesCronRuns(
   jobId: string,
   opts: { limit?: number; profile?: string } = {},
 ): Promise<{ success: true; runs: HermesCronRun[] } | { success: false; error: string; needsSignIn?: boolean }> {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const params = new URLSearchParams();
   if (opts.limit) params.set('limit', String(opts.limit));
   if (opts.profile) params.set('profile', opts.profile);
   const qs = params.toString() ? `?${params.toString()}` : '';
-  const { status, body } = await hermesRequest(baseUrl, `/api/cron/jobs/${encodeURIComponent(jobId)}/runs${qs}`, { token: conn.token });
-  if (status === 401 || status === 403) return { success: false, error: 'Sign in to Hermes', needsSignIn: true };
-  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, `/api/cron/jobs/${encodeURIComponent(jobId)}/runs${qs}`);
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes');
 
   const raw = Array.isArray(body) ? body : (body as { runs?: unknown[] } | null)?.runs ?? [];
   const runs = raw.map(entry => {
@@ -743,10 +715,8 @@ export async function fetchHermesSessionMessages(
   conn: HermesConnection,
   sessionId: string,
 ): Promise<{ success: true; messages: HermesSessionMessage[] } | { success: false; error: string; needsSignIn?: boolean }> {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, `/api/sessions/${encodeURIComponent(sessionId)}/messages`, { token: conn.token });
-  if (status === 401 || status === 403) return { success: false, error: 'Sign in to Hermes', needsSignIn: true };
-  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, `/api/sessions/${encodeURIComponent(sessionId)}/messages`);
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes');
 
   const raw = Array.isArray(body) ? body : (body as { messages?: unknown[] } | null)?.messages ?? [];
   const messages = raw.map(entry => {
@@ -798,18 +768,12 @@ const HERMES_MEMORY_DIR = '~/.hermes/memories';
 export async function fetchHermesMemoryFiles(conn: HermesConnection): Promise<
   { success: true; files: HermesMemoryFile[] } | { success: false; error: string; needsSignIn?: boolean }
 > {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const files: HermesMemoryFile[] = [];
 
   for (const name of ['MEMORY.md', 'USER.md']) {
-    const { status, body } = await hermesRequest(
-      baseUrl, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`, { token: conn.token },
-    );
-    if (status === 401 || status === 403) {
-      return { success: false, error: 'Sign in to Hermes to read its memory', needsSignIn: true };
-    }
+    const { status, body } = await gatewayCall(conn, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`);
     if (status === 404) continue; // the gateway simply has not written it yet
-    if (status >= 300) return { success: false, error: `HTTP ${status}` };
+    if (status >= 300) return failedRead(status, 'Sign in to Hermes to read its memory');
 
     const content = decodeDataUrl((body as Record<string, unknown> | null)?.data_url);
     if (content.trim()) files.push({ name, content });
@@ -846,12 +810,9 @@ export async function appendHermesMemory(
   const name = file.replace(/[^A-Za-z0-9._-]/g, '');
   if (!name || name.startsWith('.')) return { success: false, error: `Invalid memory file "${file}"` };
 
-  const baseUrl = resolveHermesBaseUrl(conn);
   const path = `${HERMES_MEMORY_DIR}/${name}`;
 
-  const read = await hermesRequest(
-    baseUrl, `/api/files/read?path=${encodeURIComponent(path)}`, { token: conn.token },
-  );
+  const read = await gatewayCall(conn, `/api/files/read?path=${encodeURIComponent(path)}`);
   if (read.status === 401 || read.status === 403) {
     return { success: false, error: 'Sign in to Hermes to write to its memory', needsSignIn: true };
   }
@@ -866,20 +827,15 @@ export async function appendHermesMemory(
   const separator = existing.trim() ? (existing.endsWith('\n') ? '\n' : '\n\n') : '';
   const next = `${existing}${separator}${trimmed}\n`;
 
-  const { status, body } = await hermesRequest(baseUrl, '/api/files/upload', {
+  const { status, body } = await gatewayCall(conn, '/api/files/upload', {
     method: 'POST',
-    token: conn.token,
     body: {
       path,
       data_url: `data:text/markdown;base64,${Buffer.from(next, 'utf-8').toString('base64')}`,
       overwrite: true,
     },
   });
-  if (status >= 300) {
-    const detail = (body && typeof body === 'object' && 'detail' in body)
-      ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-    return { success: false, error: detail, needsSignIn: status === 401 || status === 403 };
-  }
+  if (status >= 300) return refused(status, errorDetail(status, body));
 
   const written = (body && typeof body === 'object' && 'path' in body)
     ? String((body as { path: unknown }).path) : path;
@@ -908,12 +864,8 @@ export interface HermesMcpServer {
 export async function fetchHermesMcpServers(
   conn: HermesConnection,
 ): Promise<{ success: true; servers: HermesMcpServer[] } | { success: false; error: string; needsSignIn?: boolean }> {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/mcp/servers', { token: conn.token });
-  if (status === 401 || status === 403) {
-    return { success: false, error: 'Sign in to Hermes to list its MCP servers', needsSignIn: true };
-  }
-  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, '/api/mcp/servers');
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes to list its MCP servers');
 
   const raw = (body as { servers?: unknown[] } | null)?.servers;
   if (!Array.isArray(raw)) return { success: true, servers: [] };
@@ -955,12 +907,8 @@ export async function fetchHermesMemoryProviders(
   | { success: true; active: string; providers: HermesMemoryProvider[]; builtinBytes: number }
   | { success: false; error: string; needsSignIn?: boolean }
 > {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/memory', { token: conn.token });
-  if (status === 401 || status === 403) {
-    return { success: false, error: 'Sign in to Hermes to read its memory settings', needsSignIn: true };
-  }
-  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, '/api/memory');
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes to read its memory settings');
 
   const b = (body ?? {}) as Record<string, unknown>;
   const raw = Array.isArray(b.providers) ? b.providers : [];
@@ -990,14 +938,9 @@ export async function fetchHermesMemoryProviders(
 
 /** Switch the gateway's active memory provider. */
 export async function setHermesMemoryProvider(conn: HermesConnection, provider: string) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/memory/provider', {
-    method: 'PUT', token: conn.token, body: { provider },
-  });
+  const { status, body } = await gatewayCall(conn, '/api/memory/provider', { method: 'PUT', body: { provider } });
   if (status < 300) return { success: true as const, body };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail) : `HTTP ${status}`;
-  return { success: false as const, error: detail, needsSignIn: status === 401 || status === 403 };
+  return refused(status, errorDetail(status, body));
 }
 
 export interface HermesSessionHit {
@@ -1014,14 +957,9 @@ export async function searchHermesSessions(
   query: string,
   limit = 10,
 ): Promise<{ success: true; hits: HermesSessionHit[] } | { success: false; error: string; needsSignIn?: boolean }> {
-  const baseUrl = resolveHermesBaseUrl(conn);
   const q = `?q=${encodeURIComponent(query)}&limit=${Math.min(Math.max(limit, 1), 50)}`;
-  const { status, body } = await hermesRequest(baseUrl, `/api/sessions/search${q}`, { token: conn.token });
-
-  if (status === 401 || status === 403) {
-    return { success: false, error: 'Sign in to Hermes to search its history', needsSignIn: true };
-  }
-  if (status >= 300) return { success: false, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, `/api/sessions/search${q}`);
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes to search its history');
 
   const payload = body as Record<string, unknown> | null;
   const raw = Array.isArray(payload)
@@ -1046,11 +984,7 @@ export async function searchHermesSessions(
 
 /** Which memory provider the gateway has active, and how big its files are. */
 export async function fetchHermesMemoryState(conn: HermesConnection) {
-  const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/memory', { token: conn.token });
-  if (status === 401 || status === 403) {
-    return { success: false as const, error: 'Sign in to Hermes', needsSignIn: true };
-  }
-  if (status >= 300) return { success: false as const, error: `HTTP ${status}` };
+  const { status, body } = await gatewayCall(conn, '/api/memory');
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes');
   return { success: true as const, state: body as Record<string, unknown> };
 }

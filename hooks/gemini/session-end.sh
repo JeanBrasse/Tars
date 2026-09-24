@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../tars-hook.sh"
 # Session end hook for tars (Gemini CLI)
 
 INPUT=$(cat)
@@ -11,7 +12,7 @@ API_URL="${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}"
 
 AGENT_ID="${DOROTHY_AGENT_ID:-$SESSION_ID}"
 
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"completed\"}" \
   > /dev/null 2>&1 &

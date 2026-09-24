@@ -47,7 +47,12 @@ export function useElectronAgents() {
             prevAgent.cliRunning !== agent.cliRunning ||
             prevAgent.leftFullscreen !== agent.leftFullscreen ||
             // A new terminal under the same agent: its panel resends its size.
-            prevAgent.ptyId !== agent.ptyId
+            prevAgent.ptyId !== agent.ptyId ||
+            // Another agent's save can take this one's role, and a role
+            // change moves nothing else on the record.
+            prevAgent.role !== agent.role ||
+            // A rename, which every agent row draws the mark from.
+            prevAgent.name !== agent.name
           );
         });
         return hasChanged ? list : prev;
@@ -73,7 +78,7 @@ export function useElectronAgents() {
     model?: string;
     localModel?: string;
     obsidianVaultPaths?: string[];
-    orchestratorMode?: boolean;
+    role?: 'orchestrator' | 'worker';
     cliPath?: string;
   }) => {
     if (!isElectron()) {
@@ -81,8 +86,11 @@ export function useElectronAgents() {
     }
     const agent = await window.electronAPI!.agent.create(config);
     setAgents(prev => [...prev, agent]);
+    // A new orchestrator takes the role from its project's current one, and
+    // neither the answer nor the tick says so: the list is read again.
+    if (config.role === 'orchestrator') await fetchAgents();
     return agent;
-  }, []);
+  }, [fetchAgents]);
 
   // Update an agent
   const updateAgent = useCallback(async (params: {
@@ -100,7 +108,7 @@ export function useElectronAgents() {
     savedPrompt?: string | null;
     obsidianVaultPaths?: string[];
     worktree?: { enabled: boolean; branchName: string };
-    orchestratorMode?: boolean;
+    role?: 'orchestrator' | 'worker';
     cliPath?: string | null;
   }) => {
     if (!isElectron()) {
@@ -109,9 +117,11 @@ export function useElectronAgents() {
     const result = await window.electronAPI!.agent.update(params);
     if (result.success && result.agent) {
       setAgents(prev => prev.map(a => a.id === params.id ? result.agent! : a));
+      // Same as a create: the project's previous orchestrator is a worker now.
+      if (params.role === 'orchestrator') await fetchAgents();
     }
     return result;
-  }, []);
+  }, [fetchAgents]);
 
   // Start an agent
   const startAgent = useCallback(async (
@@ -215,10 +225,12 @@ export function useElectronAgents() {
         // Check if any status, currentTask or running CLI changed. A CLI starts
         // and exits without the status moving (/exit, or claude left at its
         // prompt by a failed turn), and the panel's start/stop follows it. The
-        // same for a claude that left fullscreen: its panel says so.
+        // same for a claude that left fullscreen: its panel says so, and for a
+        // launch on its way, which no status change announces (a restart keeps
+        // idle): the Chat counts it neither stopped nor idle.
         const changed = (a: AgentStatus, t: (typeof tickAgents)[number]) =>
           a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning ||
-          a.leftFullscreen !== t.leftFullscreen;
+          a.leftFullscreen !== t.leftFullscreen || !!a.launching !== !!t.launching;
         const hasChange = tickAgents.some(t => {
           const existing = prev.find(a => a.id === t.id);
           return existing && changed(existing, t);
@@ -227,7 +239,7 @@ export function useElectronAgents() {
         return prev.map(a => {
           const tick = tickAgents.find(t => t.id === a.id);
           if (tick && changed(a, tick)) {
-            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen };
+            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching };
           }
           return a;
         });
