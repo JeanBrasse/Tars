@@ -37,11 +37,19 @@
  * 11. the notice about templates that skip all checks is missing, or names
  *    the wrong ones, or appears when none does;
  * 12. using a template sends its prompt by default when it is not built in:
- *    an imported template looks just like one you made.
+ *    an imported template looks just like one you made;
+ * 13. an edited built-in starts with its prompt: its override lives in
+ *    ~/.dorothy/templates.json, which any agent can write (the Audit's gate of
+ *    #204 wrote bypass and a "curl ... | sh" prompt there, and one click sent
+ *    it);
+ * 14. a newline, a carriage return or a tab in a one-line field (a name, a
+ *    folder, a skill) splits it over two lines or hides in it, where the
+ *    prompt keeps its lines.
  */
 import { describe, expect, it } from 'vitest';
 import {
   reveal,
+  revealLine,
   reviewTemplateFile,
   templateFacts,
   permissionWord,
@@ -391,12 +399,46 @@ describe('the words around the list (11)', () => {
 });
 
 describe('whether using a template starts it with its prompt (12)', () => {
-  it('starts a built-in template with its prompt, customised or not', () => {
+  it('starts a built-in template as it ships with its prompt', () => {
     expect(startsWithPromptByDefault({ builtin: true })).toBe(true);
-    expect(startsWithPromptByDefault({ builtin: true, overridden: true })).toBe(true);
+    expect(startsWithPromptByDefault({ builtin: true, overridden: false })).toBe(true);
+  });
+
+  it('does not start an edited built-in with its prompt: any agent can write the edit (13)', () => {
+    expect(startsWithPromptByDefault({ builtin: true, overridden: true })).toBe(false);
   });
 
   it('does not start any other template with its prompt: made here and imported look the same', () => {
     expect(startsWithPromptByDefault({ builtin: false })).toBe(false);
+  });
+});
+
+describe('one-line fields write out their line breaks and tabs (14)', () => {
+  it('writes out a newline, a carriage return and a tab, where reveal keeps them for the prompt', () => {
+    expect(revealLine('a\nb\tc\r\nd')).toEqual({ text: 'a[U+000A]b[U+0009]c[U+000D][U+000A]d', hidden: 4 });
+    expect(reveal('a\nb\tc\r\nd')).toEqual({ text: 'a\nb\tc\nd', hidden: 0 });
+  });
+
+  it('still writes out the rest, and leaves an emoji alone', () => {
+    expect(revealLine('Release\u{202E} notes 👨\u{200D}👩\u{200D}👧')).toEqual({ text: 'Release[U+202E] notes 👨\u{200D}👩\u{200D}👧', hidden: 1 });
+  });
+
+  it('shows a folder, a name and a skill on one line, and the prompt on its own lines', () => {
+    const facts = templateFacts({
+      displayName: 'Release\tnotes',
+      obsidianVaultPaths: ['/Users/noah/evil\n/Users/noah/.ssh'],
+      skills: ['copy\nwriting'],
+      savedPrompt: 'First line.\nSecond line.',
+    });
+    expect(facts.name).toBe('Release[U+0009]notes');
+    expect(facts.folders).toEqual(['/Users/noah/evil[U+000A]/Users/noah/.ssh']);
+    expect(facts.skills).toEqual(['copy[U+000A]writing']);
+    expect(facts.prompt).toEqual({ text: 'First line.\nSecond line.', characters: 24, hidden: 0 });
+  });
+
+  it('accepts a folder with a newline in it as the absolute path it is, written out in the review', () => {
+    const review = accepted(file([{ displayName: 'A', obsidianVaultPaths: ['/Users/noah/evil\n/Users/noah/.ssh'] }]));
+    expect(review.templates[0].facts.folders).toEqual(['/Users/noah/evil[U+000A]/Users/noah/.ssh']);
+    expect(review.payload.templates[0].obsidianVaultPaths).toEqual(['/Users/noah/evil\n/Users/noah/.ssh']);
   });
 });
