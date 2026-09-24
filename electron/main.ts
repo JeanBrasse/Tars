@@ -109,7 +109,7 @@ import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
-import { startAgentWatch } from './services/agent-watch';
+import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
@@ -650,6 +650,8 @@ app.whenReady().then(async () => {
   // And nothing is typed into a dialog its CLI shows: a permission, an
   // AskUserQuestion. Its Enter would answer it (the Audit, 2026-09-24).
   wireDialogProbe();
+  // And a turn ended by Esc, which sends no hook, ends here from the transcript.
+  watchInterruptedTurns();
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk

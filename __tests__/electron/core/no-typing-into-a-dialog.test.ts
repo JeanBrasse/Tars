@@ -110,9 +110,13 @@ beforeEach(async () => {
   manager.wireDialogProbe();
   pty.ptyProcesses.clear();
   store.resetBusStore();
+  // The transcripts the refusal tests write: each test starts with none.
+  fs.rmSync(path.join(os.homedir(), '.claude', 'projects', '-tars'), { recursive: true, force: true });
   fs.rmSync(path.join(tmp, 'bus.json'), { force: true });
   watch.resetAgentWatch();
   watch.startAgentWatch();
+  // As main.ts starts it.
+  watch.watchInterruptedTurns();
   ipcHandlers.clear();
   const { registerBusHandlers } = await import('../../../electron/handlers/bus-handlers');
   registerBusHandlers();
