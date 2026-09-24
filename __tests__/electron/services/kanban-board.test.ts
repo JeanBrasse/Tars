@@ -583,6 +583,18 @@ describe('16. an agent deletes only a task it filed and nobody claimed, or one i
     }
   });
 
+  it('refuses a task it filed once another agent has claimed it', async () => {
+    // "Nobody took it" is the rule: the filer's line stays in the body after a claim
+    // (the surviving mutant of the Audit's gate of #183 deleted it on that line alone).
+    const id = await parked(dune, 'Dune filed it, Dove took it');
+    expect((await claimTask(h, dove, id)).ok).toBe(true);
+    const r = await deleteTask(h, dune, id);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? 0 : r.status).toBe(409);
+    expect(r.ok ? '' : r.error).toMatch(/Dove/);
+    expect(h.tasks.has(id)).toBe(true);
+  });
+
   it('refuses a scheduled task Noah gave to a Hermes profile, and a task Hermes finished', async () => {
     const noahs = await boardTask('scheduled', 'coder');
     const hermesDone = await boardTask('done', 'coder');
