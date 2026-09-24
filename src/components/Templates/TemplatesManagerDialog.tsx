@@ -5,6 +5,7 @@ import { useElectronSkills } from '@/hooks/useElectron';
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import type { AgentTemplate, AgentTemplateInput } from '@/types/electron';
 import { BrandSpinner, Button, DialogShell, Input, MetaChip } from '@/components/ui';
+import { reveal } from '@/lib/template-review';
 import { InstantiateDialog } from './InstantiateDialog';
 import { TemplateFormDialog } from './TemplateFormDialog';
 import { ImportDialog } from './ImportDialog';
@@ -149,11 +150,11 @@ export function TemplatesManagerDialog({ open, onClose }: TemplatesManagerDialog
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12.5px] text-foreground truncate">{t.displayName}</span>
+                    <span className="text-[12.5px] text-foreground truncate">{reveal(t.displayName).text}</span>
                     <MetaChip>{templateOrigin(t)}</MetaChip>
                   </div>
                   <p className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                    {t.description || [t.provider, t.model].filter(Boolean).join(' · ')}
+                    {reveal(t.description).text || [t.provider, t.model].filter(Boolean).join(' · ')}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 font-mono lowercase">
