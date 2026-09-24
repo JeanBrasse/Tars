@@ -19,6 +19,8 @@ export interface AgentTickItem {
   currentTask: string;
   projectName: string;
   lastActivity: string;
+  /** When the current status began. See AgentStatus.statusSince. */
+  statusSince?: string;
   provider: string;
   /** A CLI runs in the agent's PTY, whatever its status says. See cliRunningIn. */
   cliRunning: boolean;
@@ -80,6 +82,7 @@ function buildTickPayload(): AgentTickItem[] {
       currentTask: a.currentTask || '',
       projectName: a.projectPath ? path.basename(a.projectPath) : '',
       lastActivity: a.lastActivity,
+      statusSince: a.statusSince,
       provider: a.provider || 'claude',
       cliRunning: agentCliRunning(a),
       leftFullscreen: leftFullscreenIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined),

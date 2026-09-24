@@ -96,6 +96,8 @@ export interface AgentTickItem {
   currentTask: string;
   projectName: string;
   lastActivity: string;
+  /** When the current status began (ISO). See AgentStatus.statusSince. */
+  statusSince?: string;
   provider: string;
   /** A CLI runs in the agent's terminal, whatever its status says: a turn that
    *  failed leaves claude alive, and done or idle agents keep their session.
@@ -303,6 +305,10 @@ export interface AgentStatus {
    *  `waiting`, `permission`). An interrupt the transcript records after it
    *  means the dialog was refused and is gone (core/agent-launch.ts, dialogOpen). */
   dialogSince?: string;
+  /** When the current `status` began (ISO), stamped in the main process
+   *  whenever `status` changes, and when the agent joins the fleet. Not
+   *  `lastActivity`, which every repaint of the terminal moves. */
+  statusSince?: string;
   lastActivity: string;
   error?: string;
   ptyId?: string;
