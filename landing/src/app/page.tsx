@@ -4,6 +4,8 @@ import Image from 'next/image';
 import { Download, Github } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dashboard from '@/assets/dashboard.png';
+import { SiteFooter } from '@/components/SiteFooter';
+import { SiteNav } from '@/components/SiteNav';
 
 const FEATURES = [
   {
@@ -45,26 +47,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-bg text-ink">
-      <nav className="max-w-[1040px] mx-auto px-6 py-6 flex items-center justify-between">
-        <a href="#" className="flex items-center gap-2.5">
-          <span className="inline-block w-2.5 h-2.5 bg-accent" />
-          <span className="font-display text-xl">Tars</span>
-        </a>
-        <div className="hidden md:flex items-center gap-8 text-[13px] text-ink-soft">
-          <a href="#features" className="hover:text-ink transition-colors">Features</a>
-          <a href="#how" className="hover:text-ink transition-colors">How it works</a>
-          <a href="#download" className="hover:text-ink transition-colors">Download</a>
-        </div>
-        <div className="flex items-center gap-4">
-          <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" aria-label="Tars on GitHub" className="text-ink-soft hover:text-ink transition-colors">
-            <Github className="w-[18px] h-[18px]" aria-hidden />
-          </a>
-          <a href="#download" className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-accent text-bg text-[13px] font-medium hover:bg-accent-deep transition-colors">
-            <Download className="w-3.5 h-3.5" />
-            Download
-          </a>
-        </div>
-      </nav>
+      <SiteNav home />
 
       {/* Hero */}
       <section className="max-w-[1040px] mx-auto px-6 pt-16 pb-20 border-b border-line">
@@ -86,8 +69,8 @@ export default function Home() {
             <Github className="w-4 h-4" />
             Source
           </a>
-          {/* Nothing until there is something to count: with no counter store
-              configured the route answers 0, and "0 downloads" said so. */}
+          {/* GitHub's own count of .dmg downloads (src/lib/downloads.ts).
+              Nothing while there is none, or when GitHub did not answer. */}
           {count !== null && count > 0 && (
             <span className="font-mono text-xs text-ink-muted">{count.toLocaleString()} downloads</span>
           )}
@@ -126,7 +109,7 @@ export default function Home() {
         <ol className="space-y-6">
           {[
             ['Point it at a folder', 'Add your project. Tars finds the CLIs already installed on your machine.'],
-            ['Create an agent, or a team', 'One agent from a template, or a full engineering team with one worktree branch each.'],
+            ['Create an agent, or a team', 'One agent from a template, or a full engineering team with a worktree branch each.'],
             ['Let them work', 'Terminals stream live. The orchestrator delegates and gets an answer. Nothing starts without you asking.'],
             ['Wire in Hermes', 'Your own gateway schedules the recurring work, and its kanban board drives what the team picks up next.'],
           ].map(([t, d], i) => (
@@ -153,17 +136,7 @@ export default function Home() {
         </a>
       </section>
 
-      <footer className="border-t border-line">
-        <div className="max-w-[1040px] mx-auto px-6 py-8 flex items-center justify-between">
-          <span className="flex items-center gap-2.5">
-            <span className="inline-block w-2 h-2 bg-accent" />
-            <span className="font-display text-base">Tars</span>
-          </span>
-          <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-ink-muted hover:text-ink transition-colors">
-            github
-          </a>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }
