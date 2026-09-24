@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "MCP server for posting tweets via X API v2 (OAuth 1.0a)",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/bundle.js",
   "scripts": {
-    "build": "tsc && esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/bundle.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
-    "start": "node dist/index.js"
+    "build": "tsc && esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/bundle.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "start": "node dist/bundle.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "description": "MCP server for orchestrating Claude Manager agents",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/bundle.js",
   "bin": {
-    "claude-mgr-orchestrator": "./dist/index.js"
+    "claude-mgr-orchestrator": "./dist/bundle.js"
   },
   "scripts": {
-    "build": "tsc && esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/bundle.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
-    "start": "node dist/index.js",
+    "build": "tsc && esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/bundle.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "start": "node dist/bundle.js",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
