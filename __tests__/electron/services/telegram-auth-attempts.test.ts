@@ -194,3 +194,46 @@ describe('/auth, guessed', () => {
     expect(enrolled('99'), 'what was not a guess counted as one').toBe(true);
   });
 });
+
+describe('QA, re-check of #203: the minute the refusal names', () => {
+  // Each of these was seen to pass on the PR and to turn red on a mutant the
+  // tests above let through: the lift rounded down, or to the nearest minute;
+  // the newest miss taken for the oldest; the seconds kept. Dubai keeps UTC+4
+  // all year, so the minutes below are the same on any machine, and the one
+  // for the Mac's clock against UTC holds on the UTC runner CI uses as well.
+  let zone: string | undefined;
+  beforeEach(() => { zone = process.env.TZ; process.env.TZ = 'Asia/Dubai'; });
+  afterEach(() => { if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone; });
+  const at = (iso: string) => vi.setSystemTime(new Date(iso));
+
+  it('rounds the lift up to the next minute, past midnight, from the chat\'s oldest miss, and lets the chat in at that minute', async () => {
+    at('2026-09-24T19:44:10Z'); // 23:44:10 in Dubai
+    await send('99', '/auth wrong');
+    at('2026-09-24T19:50:00Z');
+    for (let i = 0; i < 4; i++) await send('99', '/auth wrong');
+
+    at('2026-09-24T19:55:00Z');
+    await send('99', `/auth ${TOKEN}`);
+    // The first miss is fifteen minutes old at 23:59:10: the next whole minute is 00:00.
+    expect(lastReply('99')).toContain("Try again at 00:00, or turn Telegram off and on in Tars's Settings.");
+
+    at('2026-09-24T19:59:09Z');
+    await send('99', `/auth ${TOKEN}`);
+    expect(lastReply('99')).toMatch(REFUSED);
+
+    at('2026-09-24T20:00:00Z'); // 00:00 in Dubai, the minute it named
+    await send('99', `/auth ${TOKEN}`);
+    expect(enrolled('99'), 'refused at the minute the refusal named').toBe(true);
+  });
+
+  it('names the lift of the oldest of all the misses when the count of all chats is full', async () => {
+    at('2026-09-25T08:00:30Z'); // 12:00:30 in Dubai
+    await send('100', '/auth wrong');
+    at('2026-09-25T08:05:00Z');
+    for (let chat = 101; chat < 120; chat++) await send(String(chat), '/auth wrong');
+
+    at('2026-09-25T08:06:00Z');
+    await send('200', `/auth ${TOKEN}`);
+    expect(lastReply('200')).toContain('Try again at 12:16, or turn');
+  });
+});

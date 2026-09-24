@@ -551,3 +551,36 @@ describe('QA, gate of #193: the guards the tests above did not hold', () => {
     expect(await sendDiscordMessage('after', settings, 'C-OTHER')).toMatchObject({ ok: false, status: 403 });
   });
 });
+
+describe('QA, re-check of #203: the bound is 200 characters', () => {
+  // Seen to pass on the PR and to turn red on the bound made inclusive, which
+  // the tests above let through: OPERATIONS says anything over 200 characters.
+  beforeEach(() => registerDiscordHandlers({ getAppSettings: () => settings }));
+
+  it('makes a link from a token-shaped value of 200 characters, and none from 201', async () => {
+    const id = '1187342155628118067';
+    const head = `${Buffer.from(id, 'utf8').toString('base64').replace(/=+$/, '')}.GhXyZa.`;
+    const shaped = (length: number) => head + 's'.repeat(length - head.length);
+    const inviteFor = (value: unknown) => ipc.get('discord:inviteUrl')!({}, value) as Promise<string | null>;
+
+    expect(shaped(200)).toHaveLength(200);
+    expect(await inviteFor(shaped(200))).toBe(discordInviteUrl(id));
+    expect(await inviteFor(shaped(201))).toBeNull();
+  });
+
+  it('refuses 50 MB without splitting it, however fast the machine', async () => {
+    // The test above times the answer, and splitting 50 MB of dots took 1.1 to
+    // 1.6 s here: a faster machine lets the split through under its second.
+    // The handler answers before it returns its promise, so the calls made on
+    // the value are all in the spy by the next line.
+    const inviteFor = (value: unknown) => ipc.get('discord:inviteUrl')!({}, value) as Promise<string | null>;
+    const huge = '.'.repeat(50 * 1024 * 1024);
+    const split = vi.spyOn(String.prototype, 'split');
+    const pending = inviteFor(huge);
+    const splits = split.mock.contexts.filter(value => String(value).length > 200).length;
+    split.mockRestore();
+
+    expect(await pending).toBeNull();
+    expect(splits, 'the value was split before it was refused').toBe(0);
+  });
+});
