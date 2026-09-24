@@ -49,3 +49,33 @@ describe('the shell a terminal runs when SHELL is not set', () => {
     expect(spawned.at(-1)).toBe('/bin/bash');
   });
 });
+
+describe('QA #178: no terminal launch keeps a shell fallback of its own', () => {
+  // Written by the QA at the gate of #178. Only the quick terminal is driven
+  // above; the five other launches that fell back to /bin/zsh (main.ts, the
+  // CLI path detection, pty:create, the plugin install and shell:startPty) are
+  // held here, at the source: any fallback for SHELL goes through
+  // defaultShell(). Measured at the gate: reverting any one of those five left
+  // every test above green.
+  it('has no `process.env.SHELL ||` and no quoted /bin/zsh outside default-shell.ts', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const root = path.resolve(__dirname, '../../../electron');
+    const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) return e.name === 'dist' || e.name === 'node_modules' ? [] : walk(p);
+      return p.endsWith('.ts') ? [p] : [];
+    });
+    const found: string[] = [];
+    for (const file of walk(root)) {
+      if (file.endsWith(`${path.sep}default-shell.ts`)) continue;
+      fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+        const code = line.replace(/\/\/.*$/, '');
+        if (/process\.env\.SHELL\s*\|\|/.test(code) || /['"`]\/bin\/zsh['"`]/.test(code)) {
+          found.push(`${path.relative(root, file)}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+    expect(found).toEqual([]);
+  });
+});
