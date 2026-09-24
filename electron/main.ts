@@ -16,6 +16,7 @@ import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { defaultShell } from './utils/default-shell';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
@@ -531,7 +532,7 @@ app.whenReady().then(async () => {
       const { v4: uuidv4 } = await import('uuid');
 
       const id = uuidv4();
-      const shell = process.env.SHELL || '/bin/zsh';
+      const shell = defaultShell();
       let cwd = config.projectPath;
 
       if (!fs.existsSync(cwd)) {

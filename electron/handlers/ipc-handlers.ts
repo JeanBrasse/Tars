@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell, app } from 'electron';
+import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
 import { checkForUpdates, downloadUpdate, quitAndInstall } from '../services/update-checker';
 import { registerMemoryHandlers } from './memory-handlers';
@@ -176,7 +177,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
   // Create a new PTY terminal
   ipcMain.handle('pty:create', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
     const id = uuidv4();
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
 
     const ptyProcess = pty.spawn(shell, ['-l'], {
       name: 'xterm-256color',
@@ -1512,7 +1513,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const id = uuidv4();
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
 
     // If the command starts with /, it's a Claude CLI slash command - prefix with 'claude'
     const finalCommand = command.startsWith('/') ? `claude "${command}"` : command;
@@ -2895,7 +2896,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   // Start a new quick terminal PTY
   ipcMain.handle('shell:startPty', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
     const id = uuidv4();
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = defaultShell();
 
     const ptyProcess = pty.spawn(shell, ['-l'], {
       name: 'xterm-256color',
