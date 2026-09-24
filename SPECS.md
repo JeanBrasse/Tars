@@ -27,7 +27,7 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
-│     ├─◄ bundled MCP servers (stdio, node)   orchestration + memory tools
+│     ├─◄ bundled MCP servers (stdio, the app's Node)   orchestration + memory tools
 │     └─◄ Hermes gateway webhook              external scheduler → dispatch
 │
 ├── ACP layer (electron/services/acp/)
@@ -657,6 +657,8 @@ Seven servers ship in `extraResources` as `<name>/dist/bundle.js` and are regist
 Plus `tasmania` when `tasmaniaEnabled` and the configured path exists. `DOROTHY_MANAGED_MCPS` holds eight names: the six above plus `tasmania` and `google-workspace`; they are hidden from the Custom MCP settings UI. `tars-memory` is not in the set.
 
 Registration is idempotent: `isMcpServerRegistered(name, expectedServerPath)` compares the last argv element. The Claude implementation checks both `~/.claude.json` (where `claude mcp add -s user` actually writes) and `~/.claude/mcp.json`; checking only the latter meant the answer was always `false` and every server was re-registered by spawning the CLI, once per claude-family provider, on every boot. The registration loop yields with `setImmediate` between servers: it runs on the main thread, the one that paints the window and pumps every PTY.
+
+The program a server is registered with is not `node` but `~/.dorothy/bin/tars-mcp-node` (`mcpNodeCommand`, `electron/utils/mcp-node.ts`), a launcher Tars writes at each start, 0700, that runs the app's own binary with `ELECTRON_RUN_AS_NODE=1`: the servers run on the Node inside the app, whatever the machine has. Registered as `node`, the CLI looked it up on its PATH, and an agent's `/bin/bash -l` on macOS puts /etc/paths ahead of Tars's PATH (path_helper): measured on 2026-09-24, the live Tars's servers ran `/usr/local/bin/node`, Node 18.16, end of life, and a machine with no Node got no Tars tools. The launcher is rewritten when the app has moved and left alone otherwise. Since the registration check compares the server's path only, `~/.dorothy/mcp-servers-runtime.json` records the program the servers were last registered with; when it differs, every server is removed and registered again once, and it is recorded only when every registration succeeded and at least one bundle was found. The delegated ACP runs get the same launcher. Windows keeps `node`. This relies on Electron's RunAsNode fuse, on by default and left on.
 
 ---
 

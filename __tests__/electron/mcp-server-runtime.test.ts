@@ -38,6 +38,10 @@ import { execFileSync } from 'node:child_process';
  * 9. Over-correction: once moved over, every server is registered again at
  *    every start (for Claude that is a `claude mcp add` per server).
  * 10. The servers handed to a delegated ACP run still name `node`.
+ * 11. A move-over that failed for one registration, or found no server to
+ *     move (a start without the bundles), is recorded as done anyway, and the
+ *     servers left on `node` are never moved again. Found in the app on this
+ *     branch: a dev start, whose resources hold no bundle, wrote the record.
  */
 
 const home = () => os.homedir();
@@ -167,6 +171,29 @@ describe('registering the servers', () => {
       expect(registry.get(name)?.command, name).toBe(launcher());
     }
     expect(calls).toContain('remove claude-mgr-orchestrator');
+  });
+
+  it('11. is tried again at the next start when one registration failed, or when there was nothing to move', async () => {
+    registry.set('claude-mgr-orchestrator', { command: 'node', args: [bundles[0]] });
+    const register = fakeProvider.registerMcpServer;
+    fakeProvider.registerMcpServer = async (name, command, args) => {
+      if (name === 'claude-mgr-orchestrator') throw new Error('claude is busy');
+      return register(name, command, args);
+    };
+    try {
+      await setupMcpOrchestrator({} as never);
+    } finally {
+      fakeProvider.registerMcpServer = register;
+    }
+
+    await setupMcpOrchestrator({} as never);
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+
+    // A start that finds no bundle records nothing either.
+    fs.rmSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'), { force: true });
+    (process as unknown as { resourcesPath: string }).resourcesPath = path.join(scratch, 'no-resources');
+    await setupMcpOrchestrator({} as never);
+    expect(fs.existsSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'))).toBe(false);
   });
 
   it('9. registers nothing again at the next start', async () => {
