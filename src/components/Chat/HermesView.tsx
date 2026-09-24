@@ -72,7 +72,8 @@ export function HermesBanner({ state, detail, onRetry }: { state: GatewayState; 
         <span className="text-[13px] leading-5 text-foreground">{message}</span>
         {detail && <span className="font-mono text-[11px] leading-4 text-text-muted break-all">{detail}</span>}
       </span>
-      <span className="shrink-0 flex items-center gap-2 pl-3 self-start h-5">
+      {/* Centred on the words, one line or two, as the frame's 40 high box. */}
+      <span className="shrink-0 flex items-center gap-2 pl-3 self-center">
         <Link
           href="/settings?section=hermes"
           className="inline-flex items-center justify-center h-[26px] px-2.5 text-[12px] font-medium border border-primary bg-primary text-primary-foreground hover:bg-primary/90"
