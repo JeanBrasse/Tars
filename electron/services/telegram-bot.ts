@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { stopAcpRuns } from './acp/delegate';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as https from 'https';
@@ -901,6 +902,8 @@ export function initTelegramBot() {
           ptyProcess.write('\x03'); // Ctrl+C
         }
       }
+      // And its delegated run (the Audit's table, #6).
+      void stopAcpRuns(agent.id, 'the agent was stopped from Telegram');
       agent.status = 'idle';
       agent.currentTask = undefined;
       saveAgents();

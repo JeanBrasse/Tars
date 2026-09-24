@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { stopAcpRuns } from './acp/delegate';
 import * as fs from 'fs';
 import * as os from 'os';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
@@ -604,6 +605,8 @@ export async function handleSlackCommand(
         ptyProcess.write('\x03'); // Ctrl+C
       }
     }
+    // And its delegated run (the Audit's table, #6).
+    await stopAcpRuns(agent.id, 'the agent was stopped from Slack');
     agent.status = 'idle';
     agent.currentTask = undefined;
     saveAgents();
