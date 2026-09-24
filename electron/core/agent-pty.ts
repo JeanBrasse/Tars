@@ -12,6 +12,16 @@ import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
  */
 const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean }>();
 
+/** When each agent PTY last printed something, and whether it has at all. */
+const heardFrom = new WeakMap<pty.IPty, { lastAt: number }>();
+/** The agent PTYs whose output is listened to for that. */
+const listening = new WeakSet<pty.IPty>();
+
+/** A shell that has spoken and then been quiet this long is at its prompt. */
+export const SHELL_QUIET_MS = 150;
+/** A shell that has said nothing after this long is typed into anyway. */
+export const SHELL_READY_MAX_MS = 5_000;
+
 /** node-pty's own program, which takes the terminal and then executes the shell. */
 const NODE_PTY_HELPER = 'spawn-helper';
 
@@ -128,6 +138,10 @@ export function spawnAgentPty(opts: {
   // was measured on.
   if (agentId) {
     attachTerminalMirror(spawned, { ...size, watchRepaint: opts.binaryName === 'claude', label: agentId });
+    // What shellReady waits on: a launch typed before the shell has printed its
+    // prompt goes through the terminal's canonical mode (see shellReady).
+    listening.add(spawned);
+    spawned.onData(() => { heardFrom.set(spawned, { lastAt: Date.now() }); });
   }
   return spawned;
 }
@@ -194,4 +208,35 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   return foreground !== path.basename(spawned.shell)
     && foreground !== spawned.shell
     && foreground !== NODE_PTY_HELPER;
+}
+
+/**
+ * Resolves once the shell in an agent's PTY is at its prompt: it has printed
+ * something, then been quiet for SHELL_QUIET_MS. At once for a shell that did
+ * so long ago, and after SHELL_READY_MAX_MS for one that never speaks.
+ *
+ * A line typed before the shell takes its terminal goes through the terminal's
+ * canonical mode, which holds a line of about 1 KB on macOS and 4 KB on Linux:
+ * the rest is cut, and the command never runs. Measured at the QA gate of #155
+ * with node-pty and a cold `/bin/bash -l`: 995 bytes typed at once ran, 1095 did
+ * not; 1495 ran after the shell had spoken and gone quiet for 150 ms, 2/2. In
+ * the app, a Telegram message of 946 characters (a 1374-byte launch) started no
+ * session in 60 s, and the same launch into a shell at its prompt did. The
+ * quiet adapts to load where a fixed delay does not.
+ */
+export async function shellReady(ptyProcess: pty.IPty): Promise<void> {
+  const deadline = Date.now() + SHELL_READY_MAX_MS;
+  for (;;) {
+    const heard = heardFrom.get(ptyProcess);
+    const quietFor = heard ? Date.now() - heard.lastAt : 0;
+    if (heard && quietFor >= SHELL_QUIET_MS) return;
+    // A terminal nobody listens to, or one that has exited, has nothing to wait for.
+    if (!listening.has(ptyProcess) || !spawnedAs.has(ptyProcess)) return;
+    const left = deadline - Date.now();
+    if (left <= 0) {
+      console.warn(`[agent-pty] a shell said nothing in ${SHELL_READY_MAX_MS / 1000} s: typing into it anyway`);
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(left, heard ? SHELL_QUIET_MS - quietFor : 50)));
+  }
 }

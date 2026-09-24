@@ -7,7 +7,7 @@ import { SLACK_CHARACTER_FACES } from '../constants';
 import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
-import { cliRunningIn } from '../core/agent-pty';
+import { cliRunningIn, shellReady } from '../core/agent-pty';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
@@ -559,6 +559,8 @@ export async function handleSlackCommand(
       agent.status = 'running';
       agent.currentTask = task.slice(0, 100);
       agent.lastActivity = new Date().toISOString();
+      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+      await shellReady(ptyProcess);
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(agent));
       saveAgents();
@@ -726,6 +728,8 @@ export async function sendToSuperAgentFromSlack(
       superAgentSlackTask = true;
       superAgentSlackBuffer = [];
 
+      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+      await shellReady(ptyProcess);
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();
