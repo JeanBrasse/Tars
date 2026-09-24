@@ -39,7 +39,7 @@ export function transcriptPath(projectPath: string, sessionId: string, homeDir =
  * resumed, and every restart silently started a new one (QA's gate of #138).
  * A path that no longer exists has only its saved spelling.
  */
-function spellingsOf(root: string): string[] {
+export function spellingsOf(root: string): string[] {
   try {
     const real = fs.realpathSync(root);
     return real === root ? [root] : [root, real];

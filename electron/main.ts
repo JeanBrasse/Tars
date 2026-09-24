@@ -85,7 +85,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe } from './core/agent-manager';
 import { assignRole } from './core/agent-role';
 import { forgetRestart } from './core/agent-restart';
 import {
@@ -647,6 +647,9 @@ app.whenReady().then(async () => {
     const agent = agents.get(agentId);
     return agent ? lastLocalCommandAt(agent) : undefined;
   });
+  // And nothing is typed into a dialog its CLI shows: a permission, an
+  // AskUserQuestion. Its Enter would answer it (the Audit, 2026-09-24).
+  wireDialogProbe();
 
   // Setup MCP orchestrator and hooks
   // Warm the model/price catalogue without blocking the window: a stale disk

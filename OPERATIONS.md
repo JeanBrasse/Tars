@@ -904,6 +904,8 @@ both behave identically. It:
 2. **refuses with `409`** if the agent is `waiting` on a permission dialog: a typed message
    cannot answer arrow-key UI, and the trailing `\r` could *accept* the pending permission:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
+   Every other writer (the bus, delegation notes, "send held", Telegram, Slack) is held by the
+   writer itself while a dialog is up, and its message goes in after the answer (SPECS §5).
 3. types the message into the session (`mode: "message"`) when a CLI runs in the terminal,
    whatever the status says (a turn ends on `idle`, a failed one on `error`, both with the CLI
    at its prompt). A session the API started counts from its spawn: its terminal was handed
