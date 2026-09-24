@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { AcpSession, type TurnResult } from './client';
+import { AcpSession, endProcessTreesNow, type TurnResult } from './client';
 import { acpLaunchFor, loadAcpRegistry } from './registry';
 import { getMcpOrchestratorPath, getMcpMemoryPath } from '../mcp-orchestrator';
 import { getProvider } from '../../providers';
@@ -105,6 +105,29 @@ export async function stopAcpRuns(agentId: string, why: string): Promise<number>
     run.session.stop();
   }));
   if (live.length) console.log(`[acp] stopped ${live.length} delegated run(s) of ${agentId}: ${why}`);
+  return live.length;
+}
+
+/**
+ * End every delegated run before Tars exits, whatever it is doing. Called from
+ * before-quit. The runs are asked to cancel, which is best effort, since the
+ * message may not leave before the process does. Then their processes, and
+ * every command their CLIs started, are ended while the quit waits: SIGTERM,
+ * at most a second, SIGKILL. Measured on #197 before this: a run that still
+ * answered ended by itself 2.4 s after the quit, and a wedged one was whole
+ * 14 s later, reparented to launchd. Returns how many runs were ended.
+ */
+export function endAcpRunsOnQuit(): number {
+  const live = [...runs.values()].flatMap(set => [...set]).filter(run => run.session.isRunning);
+  const roots: number[] = [];
+  for (const run of live) {
+    run.stoppedWhy = 'Tars quit';
+    void run.session.cancel();
+    const pid = run.session.releaseForQuit();
+    if (pid !== undefined) roots.push(pid);
+  }
+  endProcessTreesNow(roots);
+  if (live.length) console.log(`[acp] ended ${live.length} delegated run(s) on quit`);
   return live.length;
 }
 

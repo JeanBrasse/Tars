@@ -373,10 +373,21 @@ list Noah keeps in Settings, and nobody when the list is empty.
   allows at the moment it is sent: the chat that last asked was remembered and
   never checked again, so a chat removed after asking kept receiving all three
   (the audit's gate of #137). It is forgotten now, and what it would have
-  received goes to the chats that are allowed.
+  received goes to the chats that are allowed. Since 2026-09-24, `/auth` takes
+  five wrong tokens from a chat, and twenty from all chats together, in any
+  fifteen minutes (the Audit's gate of #176); past that it answers "Too many
+  attempts" without comparing, the same to a right token as to a wrong one. The
+  token Tars generates is 128 random bits: the limit is for a token set by hand,
+  and against a bot that answers a stranger for ever.
 - **Slack**: the member ids in Settings > Slack (`slackAllowedUserIds`). Before
   it, anyone who could mention or message the bot could list agents and project
   paths, start, stop and brief them, and move the channel agents post to
   (lead #15). A sender not on the list is told its own id, in a mention or a
   direct message, so the owner can add it; other channel messages are ignored
   without a word.
+- **Discord**: the user ids in Settings > Discord (`discordAllowedUserIds`), and
+  in a server channel only a message that mentions the bot, unless Require
+  @mention is off. A stranger is told its id where it addressed the bot. Nothing
+  the bot posts can ping (`allowedMentions` with nothing in it). Its invite asks
+  for View Channels and Send Messages and nothing else: until the Audit's gate
+  of #195 it asked for Read Message History too, which the bot never uses.

@@ -373,12 +373,41 @@ export async function sendDiscordMessage(text: string, settings: AppSettings, ch
   }
 }
 
-/** View channels, send messages, read message history: what the bot needs in a server. */
-export const DISCORD_BOT_PERMISSIONS = 68608;
+/**
+ * View Channels and Send Messages (1024 + 2048): all the bot does in a server
+ * is read what it is sent and answer with channel.send. It fetches no history
+ * and replies to no message, so Read Message History (65536), which it asked
+ * for until the Audit's gate of #195, is not requested.
+ */
+export const DISCORD_BOT_PERMISSIONS = 3072;
 
 /** The link that adds the bot to a server. A bot's application id is its user id. */
 export function discordInviteUrl(applicationId: string): string {
   return `https://discord.com/oauth2/authorize?client_id=${applicationId}&scope=bot&permissions=${DISCORD_BOT_PERMISSIONS}`;
+}
+
+/**
+ * The same link, from a bot token as Settings > Discord has it while it is
+ * typed, before any test has asked Discord: so the page shows main's link
+ * rather than building its own. A token is three dot-separated parts, the
+ * first the bot's id in base64url; a value that does not carry one gives no
+ * link, and only the id goes into it, never the rest, which is the secret.
+ */
+export function inviteUrlFromToken(token: unknown): string | null {
+  if (typeof token !== 'string') return null;
+  const [first, ...rest] = token.split('.');
+  // A token has its three parts: a blank field, or an id pasted alone, invites nobody.
+  if (!rest.length) return null;
+  let id: string;
+  try {
+    // atob is forgiving about what a paste brings (spaces, the padding
+    // base64url leaves off), and refuses base64url's own `-` and `_`, which an
+    // id's encoding never holds: ASCII digits never reach index 62 or 63.
+    id = atob(first);
+  } catch {
+    return null;
+  }
+  return /^\d{17,20}$/.test(id) ? discordInviteUrl(id) : null;
 }
 
 export type DiscordTokenCheck =

@@ -358,7 +358,7 @@ describe('Settings > Discord: test token and send test', () => {
     }) as typeof fetch;
     const r = await ipc.get('discord:test')!({});
     expect(r).toEqual({ success: true, botName: 'Tars', inviteUrl: discordInviteUrl('1100000000000000001') });
-    expect(discordInviteUrl('1')).toBe('https://discord.com/oauth2/authorize?client_id=1&scope=bot&permissions=68608');
+    expect(discordInviteUrl('1')).toBe('https://discord.com/oauth2/authorize?client_id=1&scope=bot&permissions=3072');
     expect(asked).toEqual([['https://discord.com/api/v10/users/@me', 'Bot dc-bot-token']]);
   });
 
@@ -378,6 +378,68 @@ describe('Settings > Discord: test token and send test', () => {
     settings.discordChannelId = 'C-TEAM';
     expect(await ipc.get('discord:sendTest')!({})).toEqual({ success: true });
     expect(said('C-TEAM')).toEqual(['✅ Test message from Tars!']);
+  });
+});
+
+/**
+ * The invite link, made in main (the Audit's gate of #195). Settings > Discord
+ * shows it as the token is typed, and asks main for it, so that what the link
+ * asks for is one constant, main's, and not a copy in the renderer.
+ *
+ * How this can fail, written before the code:
+ * 1. it asks for more than the bot uses: Read Message History beside View
+ *    Channels and Send Messages, when the bot only ever sends (no history, no
+ *    reply);
+ * 2. the link Settings shows and the one "test token" gives disagree;
+ * 3. a field that holds no token gives a link anyway: blank, an id pasted
+ *    alone, a first part that is no id's base64url, 16 or 21 digits;
+ * 4. a paste's spaces and newline around the token lose the link;
+ * 5. the link carries more of the token than the id, or anything but a string
+ *    sent down the channel throws in main.
+ */
+describe('Settings > Discord: the invite link, made in main', () => {
+  // Discord's permission bits (developer docs, "Permissions").
+  const VIEW_CHANNEL = 1 << 10;
+  const SEND_MESSAGES = 1 << 11;
+  const READ_MESSAGE_HISTORY = 1 << 16;
+  const b64url = (text: string) => Buffer.from(text, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const token = (id: string) => `${b64url(id)}.GhXyZa.secret-part_of-the-token`;
+  const inviteFor = (value: unknown) => ipc.get('discord:inviteUrl')!({}, value) as Promise<string | null>;
+
+  beforeEach(() => registerDiscordHandlers({ getAppSettings: () => settings }));
+
+  it('asks only for what the bot does: see a channel and send to it (1)', async () => {
+    const url = await inviteFor(token('1187342155628118067'));
+    const asked = Number(new URL(url!).searchParams.get('permissions'));
+    expect(asked & READ_MESSAGE_HISTORY, 'asks for Read Message History, which the bot never uses').toBe(0);
+    expect(asked).toBe(VIEW_CHANNEL | SEND_MESSAGES);
+  });
+
+  it('gives, from the token as it is typed, the link "test token" gives (2)', async () => {
+    expect(await inviteFor(token('1100000000000000001'))).toBe(discordInviteUrl('1100000000000000001'));
+  });
+
+  it('gives no link for a field that holds no token (3)', async () => {
+    for (const value of ['', '   ', b64url('1187342155628118067'), 'ab-_cd.x.y', '***.x.y',
+      `${b64url('xoxb-slack-token')}.x.y`, `${b64url('12345678901234567a')}.x.y`,
+      token('1234567890123456'), token('123456789012345678901')]) {
+      expect(await inviteFor(value), JSON.stringify(value)).toBeNull();
+    }
+    expect(await inviteFor(token('12345678901234567890'))).toBe(discordInviteUrl('12345678901234567890'));
+  });
+
+  it('takes a pasted token with spaces and a newline around it (4)', async () => {
+    expect(await inviteFor(`  ${token('1187342155628118067')}\n`)).toBe(discordInviteUrl('1187342155628118067'));
+  });
+
+  it('puts the id in it and nothing else of the token, and answers anything but a string with no link (5)', async () => {
+    const url = await inviteFor(token('283746510293847561'));
+    expect(url).toBe(`https://discord.com/oauth2/authorize?client_id=283746510293847561&scope=bot&permissions=${VIEW_CHANNEL | SEND_MESSAGES}`);
+    expect(url).not.toContain('secret');
+    expect(url).not.toContain('GhXyZa');
+    for (const value of [undefined, null, 42, { token: token('283746510293847561') }]) {
+      expect(await inviteFor(value), String(value)).toBeNull();
+    }
   });
 });
 
