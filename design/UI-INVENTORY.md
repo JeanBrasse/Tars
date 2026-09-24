@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 89 root frames.
-`design/chat-design.pen` holds 75 of those, the other fourteen being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 93 root frames.
+`design/chat-design.pen` holds 75 of those, the other eighteen being newer than the
 fork, plus the eleven frames of the Chat
 room listed on the `/chat` line below: 86 in all. The first 74 share their ids
 and names across the two. The 75th, `Agent error · reason`, was drawn after the
