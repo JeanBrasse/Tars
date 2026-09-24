@@ -35,14 +35,21 @@ const AUTH_MISSES_PER_CHAT = 5;
 const AUTH_MISSES_IN_ALL = 20;
 let authMisses: Array<{ chatId: string; at: number }> = [];
 
-/** Minutes before /auth compares this chat's token again, or 0 when it may now. */
+/**
+ * When /auth compares this chat's token again, rounded up to the minute, or 0
+ * when it may now. The refusal names that time and the one way to lift the
+ * limit sooner, which a lock-out from the global count needs: twenty misses
+ * from anywhere keep every new chat out, Noah's included (the Audit's gate of
+ * #200). Turning Telegram off and on in Settings restarts the bot, which starts
+ * the count again; nothing outside Settings can.
+ */
 function authWait(chatId: string, now: number): number {
   authMisses = authMisses.filter(m => now - m.at < AUTH_WINDOW_MS);
   const mine = authMisses.filter(m => m.chatId === chatId);
   const since = mine.length >= AUTH_MISSES_PER_CHAT ? mine[0].at
     : authMisses.length >= AUTH_MISSES_IN_ALL ? authMisses[0].at
     : undefined;
-  return since === undefined ? 0 : Math.max(1, Math.ceil((since + AUTH_WINDOW_MS - now) / 60_000));
+  return since === undefined ? 0 : Math.ceil((since + AUTH_WINDOW_MS) / 60_000) * 60_000;
 }
 
 /**
@@ -698,11 +705,13 @@ export function initTelegramBot() {
         return;
       }
 
-      const wait = authWait(chatId, Date.now());
-      if (wait) {
+      const until = authWait(chatId, Date.now());
+      if (until) {
+        // The Mac's own clock: the owner reads it where Tars runs.
+        const at = new Date(until).toTimeString().slice(0, 5);
         telegramBot?.sendMessage(chatId,
           '⛔ *Too many attempts*\n\n' +
-          `_Try again in ${wait} minute${wait === 1 ? '' : 's'}._`,
+          `_Try again at ${at}, or turn Telegram off and on in Tars's Settings._`,
           { parse_mode: 'Markdown' }
         );
         return;

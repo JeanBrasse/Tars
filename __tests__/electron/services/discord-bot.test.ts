@@ -377,7 +377,7 @@ describe('Settings > Discord: test token and send test', () => {
     }) as typeof fetch;
     const r = await ipc.get('discord:test')!({});
     expect(r).toEqual({ success: true, botName: 'Tars', inviteUrl: discordInviteUrl('1100000000000000001') });
-    expect(discordInviteUrl('1')).toBe('https://discord.com/oauth2/authorize?client_id=1&scope=bot&permissions=3072');
+    expect(discordInviteUrl('1')).toBe('https://discord.com/oauth2/authorize?client_id=1&scope=bot&permissions=274877910016');
     expect(asked).toEqual([['https://discord.com/api/v10/users/@me', 'Bot dc-bot-token']]);
   });
 
