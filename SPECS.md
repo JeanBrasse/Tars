@@ -654,6 +654,8 @@ Seven servers ship in `extraResources` as `<name>/dist/bundle.js` and are regist
 | `mcp-socialdata` | `dorothy-socialdata` | X/Twitter read |
 | `mcp-x` | `dorothy-x` | X/Twitter post |
 
+What the seven share is in `mcp-shared/`, which is not a server: the client to Tars's API (where it is, the token presented, the caller's identity), the tool table every server but `mcp-memory` registers its tools through, whose one guard words each tool's failures ("Error <what>: <message>"), one HTTP request read whole, and the settings file as it is at the call. Each server's esbuild bundles it in. It imports node's builtins and nothing else, so each server keeps the SDK and zod its own lock pins (SDK 1.25 to 1.30 today). `__tests__/mcp/contracts/` records what the seven answer over stdio, `tools/list` and every tool along each of its answers, against a fake Tars.
+
 Plus `tasmania` when `tasmaniaEnabled` and the configured path exists. `DOROTHY_MANAGED_MCPS` holds eight names: the six above plus `tasmania` and `google-workspace`; they are hidden from the Custom MCP settings UI. `tars-memory` is not in the set.
 
 Registration is idempotent: `isMcpServerRegistered(name, expectedServerPath)` compares the last argv element. The Claude implementation checks both `~/.claude.json` (where `claude mcp add -s user` actually writes) and `~/.claude/mcp.json`; checking only the latter meant the answer was always `false` and every server was re-registered by spawning the CLI, once per claude-family provider, on every boot. The registration loop yields with `setImmediate` between servers: it runs on the main thread, the one that paints the window and pumps every PTY.
@@ -796,7 +798,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | App id | `xyz.cooperlabs.tars` · product name `Tars` |
 | Entry | `electron/dist/main.js` (TypeScript compiled by `tsc -p electron/tsconfig.json`) |
 | Renderer | `ELECTRON_BUILD=1 next build` with `src/app/api` and `src/app/icon.tsx` moved aside behind an `EXIT` trap, output to `out/` |
-| MCP servers | each `mcp-*` built with its own esbuild bundle, shipped as `extraResources` filtered to `package.json` + `dist/bundle.js` |
+| MCP servers | each `mcp-*` bundled by its own esbuild from `src/index.ts`, `mcp-shared/` included (`tsc` only checks the types), shipped as `extraResources` filtered to `package.json` + `dist/bundle.js` |
 | asarUnpack | `out/`, `hooks/`, `electron/resources/`, `better-sqlite3`, `node-pty` |
 | Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized via `@electron/notarize` |
 | Updates | `electron-updater` against `JeanBrasse/Tars` releases |
@@ -818,7 +820,6 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path.
 - **A changed model or effort restarts only the CLIs on the claude binary.** codex, gemini, grok, opencode, pi and amp report no end of turn, so they take new settings at their next launch.
 - **The `/run-task` status event name does not match what `/wait` listens on.** `emit('status', …)` vs `` `status:${agentId}` ``.
-- **The caller-identity header name has drifted between the MCP source and the server.** Shipped bundles still send the old name and work; rebuilding the MCP servers disables project scoping and 403s every guarded route until one side is renamed.
 - **`pi` has no ACP fallback entry.** If the ACP registry has never been reachable, `pi` has no ACP mode at all.
 - **Some of Tars's own files are still written in place.** `templates.json` (after a backup copy), `team-templates.json` and `cli-paths.json`, and the caches and generated files. `agents.json`, `app-settings.json`, `hermes-connection.json`, `projects.json` and `kanban-tasks.json` are written to a temp file and renamed over. Claude's own files, `~/.claude.json`, `~/.claude/settings.json` and `~/.claude/mcp.json`, go through `updateSharedJsonSync`, which also keeps their mode and never writes over a file that is not JSON: `claude-files-writers.test.ts` fails if anything in the main process or the MCP servers writes them another way.
 - **`agent.output` retains 600 chunks live and 100 on disk.** `/logs` searches only what is retained; there is no persistent log store.
