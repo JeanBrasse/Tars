@@ -42,12 +42,35 @@ import { execFileSync } from 'node:child_process';
  *     move (a start without the bundles), is recorded as done anyway, and the
  *     servers left on `node` are never moved again. Found in the app on this
  *     branch: a dev start, whose resources hold no bundle, wrote the record.
+ *
+ * The Audit's gate of #201 (2026-09-24), written before the fix:
+ * 12. The launcher follows the last Tars started, packaged or not: a dev run
+ *     on the real HOME rewrote it to a worktree's Electron, and once that
+ *     Electron was gone every Tars server of every claude session, Noah's own
+ *     included, failed to connect. The same from a copy run from a DMG or
+ *     translocated by macOS, which is gone once it quits. Only a packaged Tars
+ *     at a lasting place writes it; another leaves it as it is.
+ * 13. A launcher whose app is gone runs nothing: it must fall back to `node`.
+ * 14. An AppImage writes its /tmp mount point, gone once it quits: the
+ *     AppImage file ($APPIMAGE) is the lasting path.
+ * 15. A symlinked ~/.dorothy/bin is followed, and the launcher written, or
+ *     chmodded, wherever it points.
+ * 16. The move-over repeats at every start for every provider while one of
+ *     them fails (measured: 35 removals and 42 registrations per launch, the
+ *     claude CLI run on the main thread each time); the others must be
+ *     recorded as moved, and only the failing one tried again.
+ * 17. A start that did not write the launcher moves registrations over to
+ *     whatever it would name: an unpackaged run must move nothing.
  */
 
 const home = () => os.homedir();
 
+const appState = vi.hoisted(() => ({ isPackaged: false }));
 vi.mock('electron', () => ({
-  app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false, getVersion: () => '0.0.0', on: vi.fn() },
+  app: {
+    getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), getVersion: () => '0.0.0', on: vi.fn(),
+    get isPackaged() { return appState.isPackaged; },
+  },
   ipcMain: { handle: vi.fn() },
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
 }));
@@ -63,7 +86,26 @@ const fakeProvider = {
   getSkillDirectories: () => [] as string[],
   getPtyEnvVars: () => ({}),
 };
-vi.mock('../../electron/providers', () => ({ getAllProviders: () => [fakeProvider], getProvider: () => fakeProvider }));
+/** A second provider, whose registrations can be made to fail, like a config file chmodded 000. */
+const otherRegistry = new Map<string, { command: string; args: string[] }>();
+const otherState = { failing: false };
+const otherProvider = {
+  id: 'other',
+  isMcpServerRegistered: (name: string, serverPath: string) => otherRegistry.get(name)?.args.at(-1) === serverPath,
+  registerMcpServer: async (name: string, command: string, args: string[]) => {
+    calls.push(`other add ${name}`);
+    if (otherState.failing) throw new Error('EACCES: permission denied, open config.toml');
+    otherRegistry.set(name, { command, args });
+  },
+  removeMcpServer: async (name: string) => { calls.push(`other remove ${name}`); otherRegistry.delete(name); },
+  getSkillDirectories: () => [] as string[],
+  getPtyEnvVars: () => ({}),
+};
+const providerList = { value: 'one' as 'one' | 'two' };
+vi.mock('../../electron/providers', () => ({
+  getAllProviders: () => (providerList.value === 'two' ? [fakeProvider, otherProvider] : [fakeProvider]),
+  getProvider: () => fakeProvider,
+}));
 
 let acpLaunch: { command: string; args: string[] };
 vi.mock('../../electron/services/acp/registry', () => ({ acpLaunchFor: () => acpLaunch, loadAcpRegistry: async () => undefined }));
@@ -92,7 +134,7 @@ describe('the program Tars runs its MCP servers on', () => {
   it('1, 2. is an absolute launcher that runs the app binary as Node, with no PATH at all', () => {
     const app = fakeApp(path.join(scratch, 'one'));
 
-    const command = mcpNodeCommand(app, 'darwin');
+    const command = mcpNodeCommand(app, 'darwin', true);
 
     expect(command).toBe(launcher());
     expect(path.isAbsolute(command)).toBe(true);
@@ -102,28 +144,28 @@ describe('the program Tars runs its MCP servers on', () => {
   it('3. survives an app path with a space, a quote and $(...), and runs none of it', () => {
     const app = fakeApp(path.join(scratch, "My Apps", "it's $(touch pwned)"));
 
-    const command = mcpNodeCommand(app, 'linux');
+    const command = mcpNodeCommand(app, 'linux', true);
 
     expect(run(command, ['x'])).toEqual({ runAsNode: '1', args: ['x'] });
     expect(fs.existsSync(path.join(process.cwd(), 'pwned'))).toBe(false);
   });
 
   it('4. is readable, writable and runnable by its owner alone', () => {
-    mcpNodeCommand(fakeApp(path.join(scratch, 'four')), 'darwin');
+    mcpNodeCommand(fakeApp(path.join(scratch, 'four')), 'darwin', true);
     expect(fs.statSync(launcher()).mode & 0o777).toBe(0o700);
   });
 
   it('5. follows the app when it moves, and is not rewritten when it did not', () => {
     const before = fakeApp(path.join(scratch, 'before'));
     const after = fakeApp(path.join(scratch, 'after'));
-    mcpNodeCommand(before, 'darwin');
+    mcpNodeCommand(before, 'darwin', true);
     const first = fs.statSync(launcher());
 
-    mcpNodeCommand(before, 'darwin');
+    mcpNodeCommand(before, 'darwin', true);
     expect(fs.statSync(launcher()).mtimeMs, 'rewritten with nothing changed').toBe(first.mtimeMs);
     expect(fs.statSync(launcher()).ino).toBe(first.ino);
 
-    mcpNodeCommand(after, 'darwin');
+    mcpNodeCommand(after, 'darwin', true);
     expect(fs.readFileSync(launcher(), 'utf-8')).toContain(after);
     expect(fs.readFileSync(launcher(), 'utf-8')).not.toContain(before);
   });
@@ -137,7 +179,7 @@ describe('the program Tars runs its MCP servers on', () => {
     fs.rmSync(bin, { recursive: true, force: true });
     fs.writeFileSync(bin, 'a file where the directory should be');
     try {
-      expect(mcpNodeCommand(fakeApp(path.join(scratch, 'seven')), 'darwin')).toBe('node');
+      expect(mcpNodeCommand(fakeApp(path.join(scratch, 'seven')), 'darwin', true)).toBe('node');
     } finally {
       fs.rmSync(bin, { force: true });
     }
@@ -154,6 +196,7 @@ describe('registering the servers', () => {
   });
 
   beforeEach(() => {
+    appState.isPackaged = true;
     (process as unknown as { resourcesPath: string }).resourcesPath = resources;
     registry.clear();
     calls.length = 0;
@@ -207,6 +250,106 @@ describe('registering the servers', () => {
   });
 });
 
+describe('the gate of #201', () => {
+  const resources = path.join(scratch, 'resources');
+  const runtimeFile = () => path.join(home(), '.dorothy', 'mcp-servers-runtime.json');
+  beforeEach(() => {
+    (process as unknown as { resourcesPath: string }).resourcesPath = resources;
+    for (const dir of ['mcp-orchestrator', 'mcp-memory', 'mcp-kanban']) {
+      fs.mkdirSync(path.join(resources, dir, 'dist'), { recursive: true });
+      fs.writeFileSync(path.join(resources, dir, 'dist', 'bundle.js'), '');
+    }
+    registry.clear(); otherRegistry.clear(); calls.length = 0;
+    otherState.failing = false; providerList.value = 'one'; appState.isPackaged = true;
+    fs.rmSync(runtimeFile(), { force: true });
+    fs.rmSync(path.join(home(), '.dorothy', 'bin'), { recursive: true, force: true });
+  });
+
+  it('12. leaves the launcher as the packaged Tars wrote it when another start is not a packaged one at a lasting place', () => {
+    const installed = fakeApp(path.join(scratch, 'Applications', 'Tars.app'));
+    mcpNodeCommand(installed, 'darwin', true);
+    const written = fs.readFileSync(launcher(), 'utf-8');
+
+    appState.isPackaged = false;
+    expect(mcpNodeCommand(fakeApp(path.join(scratch, 'worktree', 'Electron')), 'darwin')).toBe(launcher());
+    appState.isPackaged = true;
+    for (const transient of ['/Volumes/Tars 1.9.0/Tars.app/Contents/MacOS/Tars', '/private/var/folders/xy/T/AppTranslocation/1A2B/d/Tars.app/Contents/MacOS/Tars']) {
+      expect(mcpNodeCommand(transient, 'darwin'), transient).toBe(launcher());
+    }
+
+    expect(fs.readFileSync(launcher(), 'utf-8')).toBe(written);
+  });
+
+  it('12. names `node` when there is no launcher and this start may not write one', () => {
+    appState.isPackaged = false;
+    expect(mcpNodeCommand(fakeApp(path.join(scratch, 'dev', 'Electron')), 'darwin')).toBe('node');
+    expect(fs.existsSync(launcher())).toBe(false);
+  });
+
+  it('13. falls back to the node on the PATH once the app it names is gone', () => {
+    const app = fakeApp(path.join(scratch, 'gone'));
+    mcpNodeCommand(app, 'darwin', true);
+    fs.rmSync(app);
+    const bin = path.join(scratch, 'fake-node-bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\necho "the PATH's node: $*"\n`, { mode: 0o755 });
+
+    const out = execFileSync(launcher(), ['/some/bundle.js'], { env: { PATH: `${bin}:/usr/bin:/bin` } }).toString();
+
+    expect(out.trim()).toBe("the PATH's node: /some/bundle.js");
+  });
+
+  it('14. names the AppImage file, not its mount point, on Linux', () => {
+    const appImage = fakeApp(path.join(scratch, 'Apps', 'Tars.AppImage'));
+    const before = process.env.APPIMAGE;
+    process.env.APPIMAGE = appImage;
+    try {
+      mcpNodeCommand(undefined, 'linux', true);
+    } finally {
+      if (before === undefined) delete process.env.APPIMAGE; else process.env.APPIMAGE = before;
+    }
+    expect(fs.readFileSync(launcher(), 'utf-8')).toContain(appImage);
+  });
+
+  it('15. writes nothing through a symlinked ~/.dorothy/bin', () => {
+    const elsewhere = path.join(scratch, 'elsewhere');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    fs.symlinkSync(elsewhere, path.join(home(), '.dorothy', 'bin'));
+
+    expect(mcpNodeCommand(fakeApp(path.join(scratch, 'fifteen')), 'darwin', true)).toBe('node');
+    expect(fs.readdirSync(elsewhere)).toEqual([]);
+  });
+
+  it('16. tries again only the provider that failed, and records the others as moved', async () => {
+    providerList.value = 'two';
+    otherState.failing = true;
+    await setupMcpOrchestrator({} as never);
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+
+    calls.length = 0;
+    await setupMcpOrchestrator({} as never);
+    expect(calls.filter(c => !c.startsWith('other')), 'the provider that worked was moved again').toEqual([]);
+    expect(calls.some(c => c.startsWith('other add'))).toBe(true);
+
+    otherState.failing = false;
+    await setupMcpOrchestrator({} as never);
+    expect(otherRegistry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    calls.length = 0;
+    await setupMcpOrchestrator({} as never);
+    expect(calls).toEqual([]);
+  });
+
+  it('17. moves nothing over from a start that is not packaged', async () => {
+    registry.set('claude-mgr-orchestrator', { command: '/somewhere/else/node', args: [path.join(resources, 'mcp-orchestrator', 'dist', 'bundle.js')] });
+    appState.isPackaged = false;
+
+    await setupMcpOrchestrator({} as never);
+
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe('/somewhere/else/node');
+    expect(calls.filter(c => c.startsWith('remove'))).toEqual([]);
+  });
+});
+
 describe('a delegated run', () => {
   it('10. hands its CLI servers that run on the launcher', async () => {
     const resources = path.join(scratch, 'resources');
@@ -236,6 +379,7 @@ function handle(msg) {
 }
 `);
     acpLaunch = { command: process.execPath, args: [agentScript] };
+    mcpNodeCommand(fakeApp(path.join(scratch, 'acp-app')), 'darwin', true);
 
     await delegateOverAcp({
       agent: { id: 'a1', name: 'A', status: 'idle', projectPath: scratch, provider: 'claude', skills: [], output: [], lastActivity: new Date().toISOString() } as never,
