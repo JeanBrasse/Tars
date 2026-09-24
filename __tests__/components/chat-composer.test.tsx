@@ -50,7 +50,8 @@ describe('the room composer', () => {
 
   it('says one thing at a time: a failure, everyone stopped, the stopped target, held, queued, then nothing', () => {
     open({ targets: [target({ id: 'a1', label: 'Backend', stopped: true }), target({ id: 'a2', label: 'QA', stopped: true })], failure: { kind: 'send', message: 'Failed to post' } });
-    expect(strip()).toMatch(/^Not sent: Failed to post/);
+    // The room's own sentence, the frame's: the main process's is not relayed.
+    expect(strip()).toBe('Not sent: the room did not accept the message. Your text is still here; press send to try again.');
     rerender({ failure: null });
     expect(strip()).toBe('Everyone in tars is stopped. Nothing you write reaches an agent until one starts.');
     rerender({ targets: [target({ id: 'a1', label: 'Backend', stopped: true }), target({ id: 'a2', label: 'QA' })], targetId: 'a1' });
