@@ -10,13 +10,13 @@
  */
 
 // First: every module required after it is compiled from the cache it keeps.
-import { defaultShell } from './utils/default-shell';
 import './core/compile-cache';
 
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { defaultShell } from './utils/default-shell';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
