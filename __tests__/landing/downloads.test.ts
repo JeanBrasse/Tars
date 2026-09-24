@@ -20,11 +20,15 @@ import { countDmgDownloads, downloadCount } from '../../landing/src/lib/download
  * 4. GitHub does not answer, or answers an error or a rate limit, and the
  *    counter shows 0 or a partial sum as if it were the count;
  * 5. something in the site still writes a log of who downloads: a store
- *    client, the User-Agent or the time of a download kept.
+ *    client, the User-Agent or the time of a download kept;
+ * 6. an answer whose pages never end (a full page every time) keeps the
+ *    counter reading, and asking GitHub, for ever.
  */
 
 const rel = (...assets: Array<[string, number]>) => ({ assets: assets.map(([name, download_count]) => ({ name, download_count })) });
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+/** The page a request asks for: `per_page=100` holds "page=1" too, so never match the text. */
+const pageOf = (url: string | URL | Request) => new URL(String(url)).searchParams.get('page');
 
 describe('what the counter counts (1, 2)', () => {
   it('counts the .dmg of every release, and nothing an installed app fetches to update', () => {
@@ -48,7 +52,7 @@ describe('reading GitHub (3, 4)', () => {
     const page2 = [rel(['Tars.dmg', 5]), rel(['latest-mac.yml', 50])];
     const fetchImpl = async (url: string | URL | Request) => {
       asked.push(String(url));
-      return json(String(url).includes('page=1') ? page1 : page2);
+      return json(pageOf(url) === '1' ? page1 : page2);
     };
     expect(await downloadCount(fetchImpl as typeof fetch)).toBe(105);
     expect(asked).toEqual([
@@ -68,8 +72,20 @@ describe('reading GitHub (3, 4)', () => {
 
   it('has no count when a later page fails, rather than the sum of the pages before it', async () => {
     const page1 = Array.from({ length: 100 }, () => rel(['Tars.dmg', 1]));
-    const fetchImpl = async (url: string | URL | Request) => (String(url).includes('page=1') ? json(page1) : json({}, 500));
+    const fetchImpl = async (url: string | URL | Request) => (pageOf(url) === '1' ? json(page1) : json({}, 500));
     expect(await downloadCount(fetchImpl as typeof fetch)).toBeNull();
+  });
+
+  it('stops at twenty pages, with no count, when the list never ends (6)', async () => {
+    let asked = 0;
+    const full = Array.from({ length: 100 }, () => rel(['Tars.dmg', 1]));
+    const fetchImpl = async () => {
+      asked += 1;
+      if (asked > 200) throw new Error('still asking');
+      return json(full);
+    };
+    expect(await downloadCount(fetchImpl as unknown as typeof fetch)).toBeNull();
+    expect(asked).toBe(20);
   });
 });
 
@@ -89,7 +105,8 @@ describe('the site keeps no download log (5)', () => {
 
   it('has no store client and keeps nothing of a download: no Upstash, no Redis, no User-Agent', () => {
     const hits = sources(path.join(LANDING, 'src'))
-      .filter(f => /upstash|redis|lpush|user-agent|userAgent/i.test(fs.readFileSync(f, 'utf8')))
+      // A robots.txt rule's `userAgent` is no log: reading the request's header is.
+      .filter(f => /upstash|redis|lpush|headers\.get\(\s*['"]user-agent/i.test(fs.readFileSync(f, 'utf8')))
       .map(f => path.relative(LANDING, f));
     expect(hits).toEqual([]);
   });
