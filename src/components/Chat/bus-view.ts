@@ -1,8 +1,10 @@
 import type {
   AgentStatus,
+  BusAttachment,
   BusDelivery,
   BusDeliveryReason,
   BusDeliveryState,
+  BusMembersChanged,
   BusMessage,
   BusRoom,
   BusSystemKind,
@@ -140,6 +142,8 @@ export interface MessageItem {
   tag?: DeliveryTag;
   /** Your line's receipts. */
   note?: string;
+  /** The files it carried, each where the agents can read it. */
+  files?: BusAttachment[];
 }
 
 export interface SystemItem {
@@ -147,7 +151,11 @@ export interface SystemItem {
   id: string;
   time: string;
   systemKind?: BusSystemKind;
+  /** Who joined or left, on a change of members: its icon is decided from this. */
+  members?: BusMembersChanged;
   text: string;
+  /** What the line's own data adds after its sentence, in a lighter ink. */
+  more?: string;
 }
 
 export interface DayItem {
@@ -164,6 +172,25 @@ export interface NoticeItem {
 }
 
 export type ThreadItem = MessageItem | SystemItem | DayItem | NoticeItem;
+
+/** 48 KB, 1.2 MB: a file's size as its chip says it. */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * What a system line adds after the bus's sentence, from the line's own data
+ * and nothing else: the messages a change of members dropped with the
+ * exchange it closed. The frame's "It takes part once it has started" is not
+ * written: whether an agent had started is a state the line does not carry.
+ */
+function systemMore(message: BusMessage): string | undefined {
+  const dropped = message.systemData?.dropped ?? 0;
+  if (message.systemKind !== 'members_changed' || dropped === 0) return undefined;
+  return `The exchange closed with it: ${dropped} message${dropped === 1 ? ' was' : 's were'} dropped.`;
+}
 
 /** `today`, `yesterday`, then the weekday and date: the day lines' words. */
 export function dayLabel(iso: string, now: Date = new Date()): string {
@@ -197,11 +224,20 @@ export function threadItems(
     lastDay = label;
 
     if (message.authorKind === 'system') {
-      items.push({ kind: 'system', id: message.id, time: HHMM(message.createdAt), systemKind: message.systemKind, text: message.text });
+      items.push({
+        kind: 'system',
+        id: message.id,
+        time: HHMM(message.createdAt),
+        systemKind: message.systemKind,
+        members: message.systemData,
+        text: message.text,
+        more: systemMore(message),
+      });
       continue;
     }
     const mine = deliveries.filter(d => d.messageId === message.id);
     const to = message.mentions.length ? list(message.mentions.map(id => nameOf(agents, id))) : 'all';
+    const files = message.attachments?.length ? message.attachments : undefined;
     if (message.authorKind === 'human') {
       items.push({
         kind: 'message',
@@ -215,6 +251,7 @@ export function threadItems(
         // Your line lists who has it and who is waiting: a tag on top would
         // say it twice.
         note: receipts(mine, agents) || undefined,
+        files,
       });
       continue;
     }
@@ -229,6 +266,7 @@ export function threadItems(
       you: false,
       dim: !!tag,
       tag,
+      files,
     });
   }
   const notice = threadNotice(thread);

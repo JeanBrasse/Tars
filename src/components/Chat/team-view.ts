@@ -66,12 +66,14 @@ export function statusInk(agent: RoomAgent): string {
  * Not `statusLine`: that is the last raw line its terminal printed, which for
  * an idle CLI is its shell prompt. A prompt is not a description of work.
  */
-export function agentDetail(agent: RoomAgent, lastSpokeAt?: string): string {
+export function agentDetail(agent: RoomAgent, lastSpokeAt?: string, held = 0): string {
   // Why it stopped before what it was asked, on any CLI: an agent whose turn
   // failed still has its task set, and the reason is the part worth reading.
   const reason = errorReason(agent);
   if (reason) return reason;
   if (agent.status === 'error') return agent.currentTask || 'stopped on an error';
+  // What is in the way right now: its terminal holds messages behind a draft.
+  if (held > 0) return 'a draft in its field';
   if (!agent.hasEndOfTurn) return 'turns not visible';
   // Before the task, which a stopped agent can still carry: it is on nothing.
   if (shownStopped(agent)) return 'no live session';
@@ -200,6 +202,8 @@ export interface RowCount {
 export function roomCounts(
   agents: Array<Pick<AgentStatus, 'status' | 'cliRunning'>>,
   open?: { queued: number; needYou: number },
+  /** The bus's count of what is queued in the room, for a room you are not in. */
+  queuedElsewhere = 0,
 ): { tone: RowTone; counts: RowCount[] } {
   if (agents.length === 0) return { tone: 'none', counts: [{ label: 'no agents yet' }] };
   const waiting = agents.filter(a => a.status === 'waiting').length;
@@ -212,7 +216,8 @@ export function roomCounts(
   if (errors) counts.push({ label: `${errors} error`, tone: 'error' });
   if (needYou) counts.push({ label: `${needYou} need${needYou === 1 ? 's' : ''} you`, tone: 'waiting' });
   if (running) counts.push({ label: `${running} running` });
-  if (open?.queued) counts.push({ label: `${open.queued} queued` });
+  const queued = open ? open.queued : queuedElsewhere;
+  if (queued) counts.push({ label: `${queued} queued` });
   if (!running && idle > 0) counts.push({ label: `${idle} idle` });
   if (stopped) counts.push({ label: `${stopped} stopped` });
   // Three at most, in the order a reader acts on: a fourth truncated every
@@ -243,14 +248,15 @@ export interface NeedRow {
 
 /**
  * What in this room needs you, one row per thing only you can do, most urgent
- * first: a turn that failed, an agent waiting on you, messages to a stopped
- * agent, then messages a live agent holds unsent. Frame: the needs-you strip
+ * first: a turn that failed, an agent waiting on you, messages held behind a
+ * draft in its field, messages to a stopped agent, then messages a live agent
+ * holds unsent. Frame: the needs-you strip
  * of `Chat · A · Room · *` and the sheet `Chat · A · Thread rows · states` >
  * `NEEDS YOU`.
  */
 export function needsRows(
   agents: RoomAgent[],
-  deliveries: Array<Pick<BusDelivery, 'targetAgentId' | 'state' | 'reasonCode' | 'queuedAt' | 'refusedAt'>>,
+  deliveries: Array<Pick<BusDelivery, 'targetAgentId' | 'state' | 'reasonCode' | 'queuedAt' | 'refusedAt' | 'heldAt'>>,
 ): NeedRow[] {
   const rows: Array<NeedRow & { rank: number }> = [];
   for (const agent of agents) {
@@ -273,11 +279,27 @@ export function needsRows(
     if (!agent.stopped && agent.status === 'waiting') {
       rows.push({ rank: 1, id: `${agent.id}:waiting`, agentId: agent.id, tone: 'waiting', text: `${name} is waiting on you.`, action: 'open terminal', actionLabel: 'open terminal' });
     }
+    // Its terminal took them and types them once the field is free: only the
+    // person at that terminal can send or clear what is in it.
+    const held = deliveries.filter(d => d.targetAgentId === agent.id && d.state === 'held');
+    if (held.length) {
+      const h = held.length;
+      rows.push({
+        rank: 2,
+        id: `${agent.id}:held`,
+        agentId: agent.id,
+        tone: 'waiting',
+        text: `Something is typed in ${name}’s field, so ${h === 1 ? 'one message is' : `${h} messages are`} held until it is sent or cleared.`,
+        since: timeLabel(held.map(d => d.heldAt ?? d.queuedAt).sort()[0]) || undefined,
+        action: 'open terminal',
+        actionLabel: 'open terminal',
+      });
+    }
     if (notSent.length === 0) continue;
     const n = notSent.length;
     if (shownStopped(agent)) {
       rows.push({
-        rank: 2,
+        rank: 3,
         id: `${agent.id}:stopped`,
         agentId: agent.id,
         tone: 'hollow',
@@ -294,7 +316,7 @@ export function needsRows(
     // stopped. The words follow the bus's reason, not the agent's CLI.
     const noSession = notSent.every(d => d.reasonCode === 'no_live_session');
     rows.push({
-      rank: 3,
+      rank: 4,
       id: `${agent.id}:not-sent`,
       agentId: agent.id,
       tone: 'none',

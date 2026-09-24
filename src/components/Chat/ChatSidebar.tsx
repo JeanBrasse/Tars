@@ -231,6 +231,7 @@ export function TeamRow({
   open,
   onToggle,
   queued,
+  held,
   notSent,
   lastSpokeAt,
   onAction,
@@ -239,6 +240,8 @@ export function TeamRow({
   open: boolean;
   onToggle: () => void;
   queued: number;
+  /** Taken by its terminal, waiting on a draft in its field (#169). */
+  held: number;
   notSent: number;
   lastSpokeAt?: string;
   onAction: (action: RowActionId, agent: RoomAgent) => void;
@@ -247,7 +250,8 @@ export function TeamRow({
   const more = useRef<HTMLButtonElement>(null);
   const actions = rowActions(agent, notSent);
   const name = agent.name || agent.id.slice(0, 8);
-  const chip = notSent > 0 ? `${notSent} not sent` : queued > 0 ? `${queued} queued` : null;
+  // Refused, then waiting on a person, then waiting for a turn: the frame's order.
+  const chip = notSent > 0 ? `${notSent} not sent` : held > 0 ? `${held} held` : queued > 0 ? `${queued} queued` : null;
   const act = (id: RowActionId) => { setMenuOpen(false); onAction(id, agent); };
 
   return (
@@ -267,7 +271,7 @@ export function TeamRow({
           <span className={`text-[12px] leading-4 shrink-0 ${statusInk(agent)}`}>{agentStatusLabel(agent)}</span>
         </span>
         <span className="w-full h-5 flex items-center justify-between gap-2 pl-6 min-w-0">
-          <span className="text-[12px] leading-4 text-text-muted truncate">{agentDetail(agent, lastSpokeAt)}</span>
+          <span className="text-[12px] leading-4 text-text-muted truncate">{agentDetail(agent, lastSpokeAt, held)}</span>
           {chip && <MetaChip raised={open}>{chip}</MetaChip>}
         </span>
       </button>
@@ -315,7 +319,7 @@ export interface TeamSectionProps {
   project: string;
   agents: RoomAgent[];
   /** Per agent, what waits for it, from the bus. */
-  pending: Record<string, { queued: number; notSent: number }>;
+  pending: Record<string, { queued: number; held: number; notSent: number }>;
   /** Per agent, when it last spoke in this room. */
   lastSpoke: Record<string, string>;
   /** Agents of the project that are not in the room: what + can add. */
@@ -396,6 +400,7 @@ export function TeamSection({
           open={openId === agent.id}
           onToggle={() => setOpenId(id => (id === agent.id ? null : agent.id))}
           queued={pending[agent.id]?.queued ?? 0}
+          held={pending[agent.id]?.held ?? 0}
           notSent={pending[agent.id]?.notSent ?? 0}
           lastSpokeAt={lastSpoke[agent.id]}
           onAction={onAction}

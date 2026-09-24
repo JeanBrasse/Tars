@@ -259,10 +259,11 @@ export default function ChatPage() {
   useEffect(() => { setRecipient(''); }, [roomId]);
 
   const pending = useMemo(() => {
-    const per: Record<string, { queued: number; notSent: number }> = {};
+    const per: Record<string, { queued: number; held: number; notSent: number }> = {};
     for (const d of bus.snapshot.deliveries) {
-      const row = per[d.targetAgentId] ?? { queued: 0, notSent: 0 };
+      const row = per[d.targetAgentId] ?? { queued: 0, held: 0, notSent: 0 };
       if (d.state === 'queued') row.queued += 1;
+      if (d.state === 'held') row.held += 1;
       if (d.state === 'not_sent') row.notSent += 1;
       per[d.targetAgentId] = row;
     }
@@ -389,7 +390,9 @@ export default function ChatPage() {
               needYou: needs.filter(n => n.tone !== 'error').length,
             }
           : undefined;
-        const { tone, counts } = roomCounts(agentsHere, open);
+        // A room you are not in has the bus's own count of what is queued in
+        // it (#169); who needs you there waits for its strip, when it opens.
+        const { tone, counts } = roomCounts(agentsHere, open, room.pending?.queued ?? 0);
         const parts = (room.projectPath ?? '').split('/').filter(Boolean);
         return {
           id: room.id,
