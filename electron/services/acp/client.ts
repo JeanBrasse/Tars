@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 
@@ -120,6 +120,61 @@ function lastWords(stderr: string): string {
 
 /** How long a stopped run's processes get to end on SIGTERM before SIGKILL. */
 const STOP_GRACE_MS = 2_000;
+
+/** Every process as `pid ppid pgid`, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
+function processTable(): Promise<{ pid: number; ppid: number; pgid: number }[] | undefined> {
+  return new Promise(resolve => {
+    execFile('ps', ['-A', '-o', 'pid=,ppid=,pgid='], { timeout: 5_000 }, (err, out) => {
+      if (err) return resolve(undefined);
+      resolve(String(out).split('\n').map(line => line.trim().split(/\s+/).map(Number))
+        .filter(row => row.length === 3 && row.every(Number.isInteger))
+        .map(([pid, ppid, pgid]) => ({ pid, ppid, pgid })));
+    });
+  });
+}
+
+/**
+ * Ends the process `root` leads and everything under it: SIGTERM to every
+ * process group found among its descendants, then SIGKILL to them two seconds
+ * on.
+ *
+ * Its own group is not enough. Claude Code's Bash tool runs each command in a
+ * group of its own, and a run whose claude could not pass the stop on (wedged,
+ * SIGSTOPped by the Audit on #191) left its `zsh -c` and `sleep` alive,
+ * reparented to launchd, once npm, the adapter and claude had died with their
+ * group. So the tree is read from ps before the first signal, while the
+ * parents that tie those groups to the run are still alive, and read again
+ * before the SIGKILL, from every process already known, for what was started
+ * in between. Tars's own group, and init's, are never signalled. With no ps,
+ * the run's own group still is.
+ */
+async function endProcessTree(root: number): Promise<void> {
+  const known = new Set([root]);
+  const groups = new Set([root]);
+  let ownGroup: number | undefined;
+  const look = async () => {
+    const table = await processTable();
+    if (!table) return;
+    ownGroup = table.find(row => row.pid === process.pid)?.pgid;
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const row of table) {
+        if (!known.has(row.pid) && known.has(row.ppid)) { known.add(row.pid); grew = true; }
+      }
+    }
+    for (const row of table) if (known.has(row.pid)) groups.add(row.pgid);
+  };
+  const signal = (sig: NodeJS.Signals) => {
+    for (const group of groups) {
+      if (group <= 1 || group === ownGroup || group === process.pid) continue;
+      try { process.kill(-group, sig); } catch { /* the group is gone */ }
+    }
+  };
+  await look();
+  signal('SIGTERM');
+  const last = setTimeout(() => { void look().then(() => signal('SIGKILL')); }, STOP_GRACE_MS);
+  last.unref();
+}
 
 export class AcpSession extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -323,8 +378,8 @@ export class AcpSession extends EventEmitter {
     }
   }
 
-  /** Ends the run, and every process it started: its whole process group,
-   *  SIGTERM, then SIGKILL two seconds on for whatever did not go. */
+  /** Ends the run, and every process it started (endProcessTree): SIGTERM,
+   *  then SIGKILL two seconds on for whatever did not go. */
   stop(): void {
     this.closed = true;
     const child = this.child;
@@ -335,16 +390,7 @@ export class AcpSession extends EventEmitter {
       child.kill();
       return;
     }
-    try {
-      process.kill(-pid, 'SIGTERM');
-    } catch {
-      child.kill();
-      return;
-    }
-    const last = setTimeout(() => {
-      try { process.kill(-pid, 'SIGKILL'); } catch { /* the group is gone */ }
-    }, STOP_GRACE_MS);
-    last.unref();
+    void endProcessTree(pid);
   }
 
   get isRunning(): boolean {
