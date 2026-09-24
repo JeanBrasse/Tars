@@ -64,6 +64,7 @@ const orchestratorAgent = [
   { name: "get_agent", tool: "get_agent", args: { id: "a1" }, tars: [ok({ agent: { ...dune, output: ["line 1", "line 2"] } })] },
   { name: "get_agent, unknown", tool: "get_agent", args: { id: "zz" }, tars: [fail(404, { error: "Agent not found" })] },
   { name: "get_agent, no id", tool: "get_agent", args: {} },
+  { name: "get_agent, Tars never answers: 30 s", tool: "get_agent", args: { id: "a1" }, tars: [hold] },
 
   { name: "get_agent_output, captured", tool: "get_agent_output", args: { id: "a1" }, tars: [ok({ agent: { ...dune, lastCleanOutput: "All tests pass." } })] },
   { name: "get_agent_output, nothing captured, no name", tool: "get_agent_output", args: { id: "a9" }, tars: [ok({ agent: { status: "running" } })] },
@@ -112,6 +113,7 @@ const orchestratorAgent = [
   { name: "wait_for_agent, another status", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped" }), ok({ agent: dune })] },
   { name: "wait_for_agent, times out", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [ok({ status: "running", timeout: true }), ok({ agent: dune })] },
   { name: "wait_for_agent, the agent lookup fails", tool: "wait_for_agent", args: { id: "a1" }, tars: [done("x"), fail(404, { error: "Agent not found" })] },
+  { name: "wait_for_agent, Tars never answers: its segment's 31 s", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [hold] },
 
   {
     name: "delegate_task over ACP, answered", tool: "delegate_task", args: { id: "a1", prompt: "Fix the bug" },
@@ -233,6 +235,7 @@ const memoryAgent = [
   { name: "memory_read", tool: "memory_read", tars: [ok({ context: "  # Memory\nThings.\n  " })] },
   { name: "memory_read, nothing recorded", tool: "memory_read", args: { project_path: "/projects/beta" }, tars: [ok({ context: "   " })] },
   { name: "memory_read, error", tool: "memory_read", tars: [fail(500, { error: "boom" })] },
+  { name: "memory_read, Tars never answers: 30 s", tool: "memory_read", tars: [hold] },
   {
     name: "memory_write, to several memories", tool: "memory_write", args: { content: "Use port 31478 for proofs.", to: ["project", "hermes"], file: "ports.md" },
     tars: [ok({ success: false, results: [{ target: "project", success: true, path: "/projects/alpha/memory/ports.md" }, { target: "hermes", success: false, error: "Hermes is not configured" }] })],
@@ -271,6 +274,7 @@ const kanbanAgent = [
   { name: "list_tasks, an error with no message", tool: "list_tasks", tars: [fail(502, {})] },
   { name: "list_tasks, not JSON", tool: "list_tasks", tars: [raw(502, `<html>${"Bad gateway ".repeat(30)}</html>`)] },
   { name: "list_tasks, the connection drops", tool: "list_tasks", tars: [drop] },
+  { name: "list_tasks, Tars never answers: 60 s", tool: "list_tasks", tars: [hold] },
   { name: "list_tasks, an answer that is null", tool: "list_tasks", tars: [ok(null)] },
   { name: "list_tasks, an error whose body is null", tool: "list_tasks", tars: [fail(500, null)] },
   { name: "list_tasks, a column that does not exist", tool: "list_tasks", args: { column: "later" } },

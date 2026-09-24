@@ -97,11 +97,11 @@ function loadTasks(): KanbanTask[] {
 }
 
 /**
- * mcp-kanban writes this file too, whole, from every agent that uses the board.
- * Both sides read a file they cannot parse as an empty board, and the next save
- * wrote that: a save that met the other writer's half-written file emptied the
- * board. So both write a temp file and rename it, and neither can see the
- * other's file half-written. Two saves that overlap still keep only the last.
+ * Until #171 sent mcp-kanban's tools through Tars, mcp-kanban wrote this file
+ * too, whole, from every agent that used the board. Both sides read a file they
+ * cannot parse as an empty board, and the next save wrote that: a save that met
+ * the other writer's half-written file emptied the board. So the save writes a
+ * temp file and renames it, and no reader can see the file half-written.
  */
 function saveTasks(tasks: KanbanTask[]): void {
   ensureDir();
