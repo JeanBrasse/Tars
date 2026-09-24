@@ -8,7 +8,7 @@ import * as path from 'path';
  * default umask of 022 lands at 0644 - readable by every other account on the
  * machine. `api-token` and `hermes-webhook-secret` were hardened for this
  * reason; `app-settings.json` was not, and it holds far more: the Telegram,
- * Slack, Jira, SocialData, X, OpenRouter, DeepSeek, Mimo, Moonshot, Qwen,
+ * Slack, Discord, Jira, SocialData, X, OpenRouter, DeepSeek, Mimo, Moonshot, Qwen,
  * Zhipu, MiniMax, NVIDIA and Nous Portal keys, the Hermes gateway token, and
  * the gbrain and Honcho credentials. One file, twenty-odd secrets, world
  * readable.

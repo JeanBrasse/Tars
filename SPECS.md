@@ -35,7 +35,7 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
 │        { stopReason, usage, text, toolCalls }
 │
 └── Outbound: models.dev · ACP registry · GitHub releases · Hermes gateway
-             · Telegram · Slack · gbrain / Honcho MCP
+             · Telegram · Slack · Discord · gbrain / Honcho MCP
 ```
 
 The orchestration loop, in full:
@@ -85,7 +85,7 @@ orchestrator agent's CLI
 | 7 | `initTray()` | menu-bar popover rendering `/tray-panel` |
 | 8 | IPC registration | 162 channels across 12 files: the 11 handler modules plus `mcp-orchestrator.ts` |
 | 9 | `initVaultDb()` | better-sqlite3, WAL, foreign keys on |
-| 10 | Telegram + Slack + `startApiServer()` | |
+| 10 | Telegram + Slack + Discord + `startApiServer()` | |
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
 | 12 | `setupMcpOrchestrator()` (not awaited) | registering spawns CLIs; it used to hold the first paint |
 | 13 | `configureStatusHooks()` (awaited) | |
@@ -298,7 +298,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `wait_for_agent` | Single long-poll against `/wait`, no polling loop |
 | `delegate_task` | The composite. ACP first, terminal dispatch as fallback |
 | `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
-| `send_telegram` / `send_slack` | Reply to whichever channel the request came from: for Telegram, only a chat authorized in Settings (the app's route and mcp-telegram alike); for Slack, the channel of the last allowed user who wrote |
+| `send_telegram` / `send_slack` / `send_discord` | Reply to whichever channel the request came from: for Telegram, only a chat authorized in Settings (the app's route and mcp-telegram alike); for Slack, the channel of the last allowed user who wrote; for Discord, the channel the message named, if Settings detected it or an allowed member wrote from it |
 
 Auth: `Authorization: Bearer <token>`, the agent's own `CLAUDE_MGR_API_TOKEN` when the process was started with one and `~/.dorothy/api-token` otherwise, plus `X-Tars-Client: mcp` and caller identity headers. The server takes the caller from the token alone: an id header naming another agent is refused, and on the shared token the call has no agent identity at all. Timeouts: 30 s normally, 600 s on `/wait`, or an explicit override: a caller passing `timeoutSeconds` sends `(timeout + 30) * 1000` so the client never gives up before the server-side long-poll resolves.
 
@@ -382,7 +382,7 @@ The Orchestrator toggle is the role, `role: 'orchestrator' | 'worker'` on the ag
 | no editing tools: `--disallowed-tools "Edit" "Write" "NotebookEdit" "Task"` (no `MultiEdit`: claude 2.1.268 to 2.1.280 know no tool by that name and warn at every start) | the 14 claude-binary providers; over ACP the same tools are denied to an orchestrator, whatever its provider |
 | "orchestrator of project" in the identity header, and the orchestration rules in `/bootstrap` | every session |
 | a seat in the Chat's global room | `bus-store.ts`, read at each call |
-| Telegram and Slack messages | `getSuperAgent(agents)`: the first orchestrator in the fleet, all projects considered |
+| Telegram, Slack and Discord messages | `getSuperAgent(agents)`: the first orchestrator in the fleet, all projects considered |
 
 A project has one orchestrator at most, and only the Agents page makes or unmakes one: `POST /api/agents` answers `403` to a request for the role, from any caller, since it would demote and restart the current orchestrator with none of the confirmation the page asks for. Through `agent:create` and `agent:update`, the agent being written takes the role from its project's current orchestrator, which becomes a worker: switching the toggle on, creating an orchestrator, or moving one into a project that has one. Both CLIs restart through `core/agent-restart.ts` (the `orchestrator` launch setting), at a moment that cuts nothing. On load, a file with two orchestrators in a project keeps the first and says so: `[role] <name> is a worker now: <project> had another orchestrator, and a project has one`.
 
@@ -412,7 +412,7 @@ The contract: `role` on `agent:create` and `agent:update`, where anything but th
 **Not guaranteed: be explicit about this.**
 - `/dispatch` on the PTY path returns as soon as the bytes are written. There is no acknowledgement that the agent read the message, and none that it understood it as a task rather than as terminal noise. `mode: 'message'` means "typed into a live session", nothing more.
 - A message into a field somebody is using is held, not typed (`held: true`, and `HELD:` from `send_message`, `start_agent` and `delegate_task`). It goes in when the field frees: at a pause in the typing, when what was typed is sent or cleared, or when the session transcript shows a slash command typed by hand has finished (`<command-name>` and `<local-command-stdout>`, written when a command closes, `lastLocalCommandAt`). Only when the last key typed there is the Enter or Esc that closed the panel: a key typed between the panel closing and its record went into the field. `/help`, and `/config` closed without a change, write no record; `/model` cancelled with Esc writes two `system` records of subtype `local_command`, which the reader skips on purpose, since the same pair is written when the "Switch model?" confirmation is backed out of with Esc while the picker stays open. Those three leave it held until the next key or Ctrl+C in that terminal. A terminal that exits drops what it held (`terminalExited`).
-- A message typed into a CLI, short or pasted, comes after a line naming its sender as Tars verified it (`senderLine`, `core/pty-manager.ts`: the agent by name and id, Tars, or Telegram, Slack, Hermes). Claude Code 2.1.280 hands a folded paste to the model as `<pasted_content>`. That the line stays outside the tag was measured once, with a real account in a sandbox (session 27029ce7, 2026-09-22 23:31Z: `Message from agent "Beta" ("sb-beta"): ` then `<pasted_content id="eab1">`), and fits Noah's transcripts, where 40 of 41 folded pastes begin their record with the tag; a stub API with key auth never folds, so the gate of #128 could not see it. Whether the receiver treats the message as work is for its instructions to say, not the line: measured with the same brief on Haiku 4.5, a bare paste was declined, `Message from Tars-Orchestrator:` was carried out, and two other wordings were declined again.
+- A message typed into a CLI, short or pasted, comes after a line naming its sender as Tars verified it (`senderLine`, `core/pty-manager.ts`: the agent by name and id, Tars, or Telegram, Slack, Discord, Hermes). Claude Code 2.1.280 hands a folded paste to the model as `<pasted_content>`. That the line stays outside the tag was measured once, with a real account in a sandbox (session 27029ce7, 2026-09-22 23:31Z: `Message from agent "Beta" ("sb-beta"): ` then `<pasted_content id="eab1">`), and fits Noah's transcripts, where 40 of 41 folded pastes begin their record with the tag; a stub API with key auth never folds, so the gate of #128 could not see it. Whether the receiver treats the message as work is for its instructions to say, not the line: measured with the same brief on Haiku 4.5, a bare paste was declined, `Message from Tars-Orchestrator:` was carried out, and two other wordings were declined again.
 - **Status is hook-driven, and only the `~/.claude` family fires hooks.** `codex`, `grok`, `opencode` and `pi` declare `supportsNativeHooks: false`; `gemini` declares `true` but has its own hook shape. For those CLIs the only status transition is the PTY-exit handler, 1.5 s after the process dies. `wait_for_agent` against them effectively waits for process exit or times out, and `lastCleanOutput` is never populated.
 - `/run-task` emits `agentStatusEmitter.emit('status', {…})`, while `/wait` listens on `` `status:${agentId}` ``. **An ACP run does not resolve a concurrent long-poll on the same agent.** In the normal `delegate_task` flow this is invisible, because ACP and the wait path are mutually exclusive; it bites anything that dispatches over ACP and waits separately.
 - Project scoping follows the caller's token, never the `X-Tars-Caller-Project` header. An agent process started without `CLAUDE_MGR_API_TOKEN` (outside Tars, or under a CLI that does not hand its environment to its MCP servers) has no identity: its guarded calls get the no-identity 403, and the bus refuses it.
@@ -747,7 +747,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### The IPC boundary
 
-`electron/preload.ts` (664 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 162 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `api:`. Every event subscription returns its own unsubscribe closure.
+`electron/preload.ts` (845 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 200 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `api:`. Every event subscription returns its own unsubscribe closure.
 
 ### What is validated where
 
@@ -776,7 +776,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Body | 4 MB, prototype-pollution keys stripped |
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |
 
-43 routes are registered across nine modules: health (1), hooks (5), agents (13), telegram (4), slack (1), kanban (2), vault (10 + `local-file`), memory (5), webhooks (1).
+53 routes are registered across eleven modules: bus (2), health (1), hooks (5), agents (13), telegram (4), slack (1), discord (1), kanban (9), vault (10 + `local-file`), memory (5), webhooks (1).
 
 ### Residual risk
 

@@ -76,6 +76,8 @@ import {
   getSlackResponseChannel,
   getSlackResponseThreadTs,
 } from './services/slack-bot';
+import { initDiscordBot } from './services/discord-bot';
+import { registerDiscordHandlers } from './handlers/discord-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -165,6 +167,11 @@ function loadAppSettings(): AppSettings {
     slackSigningSecret: '',
     slackChannelId: '',
     slackAllowedUserIds: [],
+    discordEnabled: false,
+    discordBotToken: '',
+    discordChannelId: '',
+    discordAllowedUserIds: [],
+    discordRequireMention: true,
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -304,6 +311,7 @@ function createIpcDependencies(): IpcHandlerDependencies {
       appSettings = settings;
       saveAppSettingsToFile(settings);
     }, getMainWindow()),
+    initDiscordBot: startDiscordBot,
     getTelegramBot,
     getSlackApp,
     getSuperAgentTelegramTask: () => {
@@ -327,6 +335,14 @@ function createIpcDependencies(): IpcHandlerDependencies {
     getClaudeSkills,
     getClaudeHistory,
   };
+}
+
+/** The Discord bot on the settings as they are now; the channel it detects is saved like Slack's. */
+function startDiscordBot() {
+  initDiscordBot(() => appSettings, (settings) => {
+    appSettings = settings;
+    saveAppSettingsToFile(settings);
+  }, getMainWindow());
 }
 
 // ============== API Server Initialization ==============
@@ -466,6 +482,7 @@ app.whenReady().then(async () => {
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
+  registerDiscordHandlers({ getAppSettings: () => appSettings });
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
@@ -648,6 +665,7 @@ app.whenReady().then(async () => {
     appSettings = settings;
     saveAppSettingsToFile(settings);
   }, getMainWindow());
+  startDiscordBot();
   initApiServer();
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.

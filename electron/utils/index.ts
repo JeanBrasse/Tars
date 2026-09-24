@@ -323,7 +323,7 @@ export function getSuperAgentInstructions(): string {
     console.error('Failed to read super agent instructions:', err);
   }
   // Fallback instructions
-  return 'You are the Super Agent - an orchestrator that manages other Claude agents using MCP tools. Use list_agents, start_agent, get_agent_output, send_telegram, and send_slack tools.';
+  return 'You are the Super Agent - an orchestrator that manages other Claude agents using MCP tools. Use list_agents, start_agent, get_agent_output, send_telegram, send_slack and send_discord tools.';
 }
 
 /**
