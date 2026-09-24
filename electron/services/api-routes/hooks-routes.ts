@@ -34,7 +34,7 @@ import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
  * needed permission. That is one of the ways the app appeared to ask twice.
  */
 /**
- * A session id Tars can act on: present, and not the empty string.
+ * A session id Tars can act on: present, and shaped like one (see below).
  *
  * The nine hooks build this field with `jq -r '.session_id // empty'`, which
  * yields "" when the field is missing and also when jq is not installed, and
@@ -51,9 +51,22 @@ import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
  * the next real session adopts it.
  */
 function usableSessionId(sessionId?: string): string | undefined {
-  const trimmed = sessionId?.trim();
-  return trimmed ? trimmed : undefined;
+  return typeof sessionId === 'string' && SESSION_ID_SHAPE.test(sessionId) ? sessionId : undefined;
 }
+
+/**
+ * The shape of every id a CLI Tars hooks into gives its session: a UUID, as
+ * Claude Code and Gemini CLI both mint them, sent by the hooks exactly as the
+ * CLI wrote it.
+ *
+ * Anything else is refused, not trimmed or cleaned. The registered id becomes
+ * a file name (`transcriptPath` joins it into ~/.claude/projects/<project>/)
+ * and a `--resume` argument, and until this check any non-empty string was
+ * registered: `../../x` made Tars read and watch a file outside the transcript
+ * directory. An id on disk from before the check reads as no owner at all, so
+ * the next real session adopts the agent.
+ */
+const SESSION_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The id of a session that was killed. Checked on its own before
  *  registration, where the full staleness test cannot run: a SessionStart
@@ -233,7 +246,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // saying so names the actual cause: every hook Tars ships sends a real id,
     // so one that cannot is telling us jq is missing on that machine.
     if (!usableSessionId(session_id)) {
-      sendJson({ error: 'session_id is required and must not be empty' }, 400);
+      sendJson({ error: 'session_id is required and must be the UUID the CLI gave its session' }, 400);
       return;
     }
 

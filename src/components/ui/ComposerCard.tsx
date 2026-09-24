@@ -18,9 +18,9 @@ import type { StatusTone } from './StatusBadge';
 
 /** The field grows to this many lines, then scrolls inside the card. */
 const MAX_LINES = 8;
-/** Body text is 14/21. */
-const LINE_PX = 21;
-/** The field's own padding, top and bottom together. */
+/** Body text is 14/20, on the 4px grid every chat frame is drawn on. */
+const LINE_PX = 20;
+/** The field's own padding, top and bottom together: an empty field is 28. */
 const FIELD_PAD_PX = 8;
 
 /**
@@ -60,6 +60,7 @@ export function ComposerCard({
   controls,
   onAttach,
   attachLabel,
+  onPasteFiles,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -81,6 +82,9 @@ export function ComposerCard({
   onAttach?: () => void;
   /** What + does, or why it cannot. */
   attachLabel: string;
+  /** Files pasted into the field join the message, as they do in Claude's
+   *  and ChatGPT's. Without it, a paste is text only. */
+  onPasteFiles?: (files: File[]) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -99,6 +103,15 @@ export function ComposerCard({
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, MAX_LINES * LINE_PX + FIELD_PAD_PX)}px`;
   }, [value]);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData.files);
+    if (!onPasteFiles || files.length === 0) return;
+    onPasteFiles(files);
+    // A copied image comes with nothing to type; a copied page, with its text
+    // as well as its picture, and the text still goes in the field.
+    if (!e.clipboardData.getData('text/plain')) e.preventDefault();
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Not while an input method is composing: its Enter picks a candidate.
@@ -119,11 +132,13 @@ export function ComposerCard({
       }`}
     >
       {notice && (
-        <div role="status" className="flex items-center gap-2 h-9 px-3 shrink-0 min-w-0 border-b border-border bg-secondary">
-          {notice.tone && <StatusSquare tone={notice.tone} hollow={notice.hollow} />}
+        // 36 high, the square hanging at 10 and the button ending 24 from the
+        // edge, as the frame's strip across the card.
+        <div role="status" className="flex items-center gap-2 h-9 pl-2.5 pr-6 shrink-0 min-w-0 border-b border-border bg-secondary">
+          {notice.tone && <StatusSquare tone={notice.tone} hollow={notice.hollow} size={8} />}
           <p
             title={notice.text}
-            className={`min-w-0 truncate text-xs ${
+            className={`min-w-0 truncate text-[12px] leading-4 ${
               notice.emphasis === 'error'
                 ? 'text-danger'
                 : notice.emphasis === 'question'
@@ -138,8 +153,10 @@ export function ComposerCard({
         </div>
       )}
 
-      <div className="flex flex-col gap-2.5 px-3 py-2.5">
-        {attachments}
+      {/* The text and + at 24 from the card's edge, send ending 24 from it:
+          the body at 16 and 24, the field and + each bringing their 8. */}
+      <div className="flex flex-col gap-2 pt-3 pr-6 pb-3 pl-4">
+        {attachments && <div className="pl-2">{attachments}</div>}
 
         <textarea
           ref={ref}
@@ -150,6 +167,7 @@ export function ComposerCard({
           placeholder={placeholder}
           onChange={e => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           // Inline because globals.css gives every textarea a background, a
           // border and an accent focus border outside any layer, which no
           // utility class can override. The field has no box of its own: the
@@ -160,7 +178,7 @@ export function ComposerCard({
             background: 'transparent',
             border: 'none',
           }}
-          className="w-full px-1 py-1 text-sm text-foreground outline-none resize-none overflow-y-auto disabled:cursor-not-allowed"
+          className="w-full px-2 py-1 text-[14px] text-foreground outline-none resize-none overflow-y-auto disabled:cursor-not-allowed"
         />
 
         <div className="flex items-center gap-1 min-w-0">
@@ -216,13 +234,13 @@ export function AttachmentTile({
 }) {
   const Kind = isImage ? ImageIcon : FileText;
   return (
-    <div className="flex items-center gap-2.5 w-[200px] h-14 pl-2.5 pr-1.5 shrink-0 rounded border border-border bg-secondary" title={title ?? name}>
+    <div className="flex items-center gap-2 w-[200px] h-14 pl-3 pr-1 shrink-0 rounded border border-border bg-secondary" title={title ?? name}>
       <span className="inline-flex items-center justify-center w-8 h-8 shrink-0 rounded border border-border bg-card">
         <Kind className="w-4 h-4 text-muted-foreground" />
       </span>
       <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <span className="text-xs font-medium text-foreground truncate">{name}</span>
-        <span className="font-mono text-[10.5px] text-text-muted truncate">{meta}</span>
+        <span className="text-[12px] leading-4 font-medium text-foreground truncate">{name}</span>
+        <span className="font-mono text-[10.5px] leading-4 text-text-muted truncate">{meta}</span>
       </span>
       {onRemove && (
         <button
@@ -231,6 +249,44 @@ export function AttachmentTile({
           aria-label={`Remove ${name}`}
           title={`Remove ${name}`}
           className="inline-flex items-center justify-center w-[26px] h-[26px] shrink-0 border border-transparent text-muted-foreground transition-colors cursor-pointer hover:text-foreground hover:bg-card"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A pasted, dropped or picked image, above the text: the picture itself in a
+ * 56px tile, its remove on hover or focus. Frame: `Chat · A · Composer ·
+ * states` > `WITH ATTACHMENTS`, the first two tiles.
+ */
+export function ImageTile({
+  src,
+  name,
+  title,
+  onRemove,
+}: {
+  /** A local URL for the image's bytes, owned and revoked by the caller. */
+  src: string;
+  name: string;
+  title?: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="group relative w-14 h-14 shrink-0 rounded border border-border hover:border-border-accent bg-term-bg overflow-hidden" title={title ?? name}>
+      {/* A blob URL of bytes still in this window: nothing to optimise, and
+          next/image has nothing to fetch. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={name} className="w-full h-full object-cover" />
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${name}`}
+          title={`Remove ${name}`}
+          className="absolute top-[3px] right-[3px] inline-flex items-center justify-center w-[26px] h-[26px] rounded border border-border bg-card text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer"
         >
           <X className="w-3 h-3" />
         </button>

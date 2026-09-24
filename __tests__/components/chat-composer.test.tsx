@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 const target = (over: Partial<ComposerTarget> & { id: string }): ComposerTarget => ({
-  label: over.id, busy: false, noTurnSignal: false, stopped: false, tone: 'idle', state: 'idle', ...over,
+  label: over.id, busy: false, noTurnSignal: false, canInterrupt: false, stopped: false, tone: 'idle', state: 'idle', ...over,
 });
 
 describe('the room composer', () => {
@@ -50,7 +50,8 @@ describe('the room composer', () => {
 
   it('says one thing at a time: a failure, everyone stopped, the stopped target, held, queued, then nothing', () => {
     open({ targets: [target({ id: 'a1', label: 'Backend', stopped: true }), target({ id: 'a2', label: 'QA', stopped: true })], failure: { kind: 'send', message: 'Failed to post' } });
-    expect(strip()).toMatch(/^Not sent: Failed to post/);
+    // The room's own sentence, the frame's: the main process's is not relayed.
+    expect(strip()).toBe('Not sent: the room did not accept the message. Your text is still here; press send to try again.');
     rerender({ failure: null });
     expect(strip()).toBe('Everyone in tars is stopped. Nothing you write reaches an agent until one starts.');
     rerender({ targets: [target({ id: 'a1', label: 'Backend', stopped: true }), target({ id: 'a2', label: 'QA' })], targetId: 'a1' });
@@ -90,19 +91,23 @@ describe('the room composer', () => {
     expect(button('starting')!.props.disabled).toBe(true);
   });
 
-  it('draws send now off, and says why, until the bus can interrupt a turn', () => {
-    const onSend = vi.fn();
-    open({ onSend, targets: [target({ id: 'a1', label: 'Backend', busy: true })], targetId: 'a1' });
-    const now = button('send now')!;
-    expect(now.props.disabled).toBe(true);
-    expect(String(now.props.title)).toContain('Tars cannot interrupt a turn yet');
-    expect(onSend).not.toHaveBeenCalled();
+  // Since #169 the bus interrupts a turn, for a CLI that can be (`canInterrupt`).
+  // One that cannot gets the queue, and no button that could never work.
+  it('offers send now only for an agent whose turn Tars can interrupt', () => {
+    const onSendNow = vi.fn();
+    open({ onSendNow, targets: [target({ id: 'a1', label: 'Backend', busy: true })], targetId: 'a1' });
+    expect(button('send now')).toBeUndefined();
+    expect(strip()).toBe('Backend is working, so this message will wait in its queue until the turn ends.');
+    rerender({ targets: [target({ id: 'a1', label: 'Backend', busy: true, canInterrupt: true })] });
+    expect(button('send now')!.props.disabled).toBe(false);
+    expect(strip()).toBe('Backend is working, so this message will wait in its queue until the turn ends. Send now interrupts that turn.');
+    expect(onSendNow).not.toHaveBeenCalled();
   });
 
   it('asks once before send now interrupts, and the question lapses for another recipient or no text', () => {
     const onSendNow = vi.fn();
     const onSend = vi.fn();
-    open({ onSendNow, onSend, targets: [target({ id: 'a1', label: 'Backend', busy: true }), target({ id: 'a2', label: 'QA', busy: true })], targetId: 'a1' });
+    open({ onSendNow, onSend, targets: [target({ id: 'a1', label: 'Backend', busy: true, canInterrupt: true }), target({ id: 'a2', label: 'QA', busy: true, canInterrupt: true })], targetId: 'a1' });
     click('send now');
     expect(strip()).toBe("Interrupt Backend's turn and send this now? What it is doing stops where it is.");
     expect(card().canSubmit).toBe(false);
