@@ -234,17 +234,12 @@ export interface NeedRow {
   tone: RowTone;
   text: string;
   /** When it began, when the room knows: a refused delivery carries its time;
-   *  a waiting agent's does not yet (#159, contract 4). */
+   *  a waiting agent's does not yet (#159, contract 4). Worded like the room
+   *  list's times, so one older than today says its day. */
   since?: string;
   action: NeedAction;
   actionLabel: string;
 }
-
-const hhmm = (iso: string | undefined): string | undefined => {
-  if (!iso) return undefined;
-  const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? undefined : at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-};
 
 /**
  * What in this room needs you, one row per thing only you can do, most urgent
@@ -287,7 +282,7 @@ export function needsRows(
         agentId: agent.id,
         tone: 'hollow',
         text: `${name} is stopped, so ${n === 1 ? 'one message for it is' : `${n} messages for it are`} not sent.`,
-        since: hhmm(oldest),
+        since: timeLabel(oldest) || undefined,
         action: 'start',
         // The slot is 96 wide: a long name would push the button out of it.
         actionLabel: name.length <= 8 ? `start ${name}` : 'start',
@@ -306,7 +301,7 @@ export function needsRows(
       text: noSession
         ? `${name} had no live session when ${n === 1 ? 'one message was' : `${n} messages were`} written to it, so ${n === 1 ? 'it waits for you to send it' : 'they wait for you to send them'}.`
         : `${name} cannot tell Tars when its turn ends, so ${n === 1 ? 'one message waits for you to send it' : `${n} messages wait for you to send them`}.`,
-      since: hhmm(oldest),
+      since: timeLabel(oldest) || undefined,
       action: 'send it',
       actionLabel: 'send it',
     });
