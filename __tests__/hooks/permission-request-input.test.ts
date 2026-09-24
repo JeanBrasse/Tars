@@ -57,6 +57,33 @@ async function ask(payload: Record<string, unknown>): Promise<Record<string, unk
   return post!.body;
 }
 
+describe('permission-request.sh, with a large input (the gate of #172)', () => {
+  // The whole tool_input went to curl as one argument: a Write of 1.5 MB never
+  // reached Tars (argument list too long: macOS takes about 1 MB, Linux 128 KB
+  // for one argument), and the agent stayed running with no dialog recorded.
+  it('reaches Tars with a 2 MB Write, keeping only what names the dialog, and not the content', async () => {
+    const body = await ask({
+      session_id: 's1', tool_name: 'Write',
+      tool_input: { file_path: '/repo/big.txt', content: 'x'.repeat(2 * 1024 * 1024) },
+    });
+
+    expect(body).toMatchObject({ status: 'waiting', waiting_reason: 'permission', tool_name: 'Write' });
+    expect((body.tool_input as { file_path: string }).file_path).toBe('/repo/big.txt');
+    expect((body.tool_input as { content?: string }).content).toBeUndefined();
+    expect(JSON.stringify(body).length).toBeLessThan(16 * 1024);
+  });
+
+  it('cuts a very long command, and keeps a question\'s words', async () => {
+    const long = await ask({ session_id: 's1', tool_name: 'Bash', tool_input: { command: `echo ${'y'.repeat(300 * 1024)}` } });
+    const command = (long.tool_input as { command: string }).command;
+    expect(command.startsWith('echo yyy')).toBe(true);
+    expect(command.length).toBeLessThanOrEqual(1000);
+
+    const q = await ask({ session_id: 's1', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Which port?', options: [{ label: 'a'.repeat(5000) }] }] } });
+    expect((q.tool_input as { questions: Array<{ question: string; options?: unknown }> }).questions).toEqual([{ question: 'Which port?' }]);
+  });
+});
+
 describe('permission-request.sh', () => {
   it('sends the tool and its input with the waiting status', async () => {
     const body = await ask({

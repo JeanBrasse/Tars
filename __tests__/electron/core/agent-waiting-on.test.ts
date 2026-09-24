@@ -125,13 +125,43 @@ describe('what a waiting agent waits on', { timeout: 20_000 }, () => {
   it('flattens controls and direction overrides, and cuts a long text', async () => {
     await post({
       status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash',
-      tool_input: { command: `echo ‮evil‬\x1b[31m red\nnext\t${'x'.repeat(400)}` },
+      tool_input: { command: `echo \u202Eevil\u202C\x1b[31m red\nnext\t${'x'.repeat(400)}` },
     });
 
     const text = a1().waitingOn!.text;
-    expect(text).not.toMatch(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/);
+    expect(text).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/);
     expect(text.startsWith('echo evil [31m red next ')).toBe(true);
     expect(text.length).toBeLessThanOrEqual(200);
+  });
+
+  // The gate of #172: a refused dialog sends no hook, and waitingOn said
+  // "allow ..." for a dialog gone since (#174 closes it from the transcript).
+  it('is not published once the dialog is refused, which the transcript records', async () => {
+    await post({ status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', tool_input: { command: 'npx playwright test' } });
+    const { transcriptPath } = await import('../../../electron/utils/resume-session');
+    const file = transcriptPath(tmp, 'sess-1');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ type: 'user', timestamp: new Date(Date.now() + 1000).toISOString(), message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } }) + '\n');
+    pushed.length = 0;
+    const { scheduleTick } = await import('../../../electron/utils/agents-tick');
+    scheduleTick();
+    await new Promise(r => setTimeout(r, 700));
+
+    const said = pushed.filter(p => p.channel === 'agents:tick')
+      .map(p => (p.payload as Array<{ id: string; waitingOn?: unknown }>).find(t => t.id === 'a1'));
+    expect(said.length).toBeGreaterThan(0);
+    for (const t of said) expect(t?.waitingOn).toBeUndefined();
+  });
+
+  it('is not written to agents.json, which every agent can read', async () => {
+    // saveAgents writes only once the fleet was loaded from disk.
+    const a1 = manager.agents.get('a1')!;
+    manager.loadAgents();
+    if (!manager.agents.has('a1')) manager.agents.set('a1', a1);
+    await post({ status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', tool_input: { command: 'export TOKEN=secret; deploy' } });
+    manager.saveAgents();
+
+    expect(fs.readFileSync(path.join(tmp, 'agents.json'), 'utf-8')).not.toContain('TOKEN=secret');
   });
 
   it('reaches the renderer on agents:tick', async () => {
