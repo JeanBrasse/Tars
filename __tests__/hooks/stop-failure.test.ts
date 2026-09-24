@@ -45,6 +45,7 @@ import { agents } from '../../electron/core/agent-manager';
 import { ClaudeProvider } from '../../electron/providers/claude-provider';
 import type { RouteApp, RouteContext, RouteRequest } from '../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../electron/types';
+import { sid } from '../fixtures/session-id';
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const HOOK = path.join(HOOKS_DIR, 'stop-failure.sh');
@@ -247,7 +248,7 @@ describe('a turn that fails on an API error', () => {
   it('changes nothing when it comes from a session that no longer owns the agent', async () => {
     // /api/hooks/* needs no token, so ownership is the only thing standing
     // between a killed session's hooks and the agent that replaced it.
-    const agent = putAgent({ currentSessionId: 'live-session' });
+    const agent = putAgent({ currentSessionId: sid('live-session') });
 
     await failTurn(MEASURED_STOP_FAILURE);
 

@@ -120,7 +120,7 @@ import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgent
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
 import { stopAcpRuns } from './services/acp/delegate';
-import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
+import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
 // Utils
@@ -414,6 +414,9 @@ app.whenReady().then(async () => {
   for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
     ensureSecretFileMode(secret);
   }
+  // And the directory itself with everything in it: the fleet, the board, the
+  // ledger and the vault were readable by every account on the machine.
+  narrowDataDir(DATA_DIR);
 
   // Take Noah's conversation with the super chat out of ~/.dorothy, which is
   // the directory every agent is handed. Here rather than on the first read of

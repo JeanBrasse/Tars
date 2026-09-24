@@ -50,6 +50,7 @@ import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks
 import { agents } from '../../../electron/core/agent-manager';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { sid } from '../../fixtures/session-id';
 
 const ptyProcesses = new Map<string, { kill: ReturnType<typeof vi.fn> }>();
 
@@ -111,7 +112,7 @@ function runningAgent(): AgentStatus {
   const agent = {
     id: 'a1', name: 'a1', status: 'running', provider: 'claude', projectPath: '/p',
     skills: [], output: [], lastActivity: new Date().toISOString(),
-    ptyId: 'pty-1', currentSessionId: 'sess-killed',
+    ptyId: 'pty-1', currentSessionId: sid('sess-killed'),
   } as AgentStatus;
   agents.set(agent.id, agent);
   return agent;
@@ -123,11 +124,11 @@ describe('an agent stopped from the interface', () => {
 
     await handlers.get('agent:stop')!({}, 'a1');
     // What hooks/session-end.sh posts once the CLI it belonged to is gone.
-    const answer = await hookPosts({ agent_id: 'a1', session_id: 'sess-killed', status: 'completed' });
+    const answer = await hookPosts({ agent_id: 'a1', session_id: sid('sess-killed'), status: 'completed' });
 
     expect(answer.stale, JSON.stringify(answer)).toBe(true);
     expect(agent.status).toBe('idle');
-    expect(agent.lastKilledSessionId).toBe('sess-killed');
+    expect(agent.lastKilledSessionId).toBe(sid('sess-killed'));
   });
 
   it('still lets the next session take the agent and drive it', async () => {
@@ -135,12 +136,12 @@ describe('an agent stopped from the interface', () => {
     const agent = runningAgent();
     await handlers.get('agent:stop')!({}, 'a1');
 
-    const registered = await hookPosts({ agent_id: 'a1', session_id: 'sess-next', status: 'running', source: 'startup' });
-    const driven = await hookPosts({ agent_id: 'a1', session_id: 'sess-next', status: 'running' });
+    const registered = await hookPosts({ agent_id: 'a1', session_id: sid('sess-next'), status: 'running', source: 'startup' });
+    const driven = await hookPosts({ agent_id: 'a1', session_id: sid('sess-next'), status: 'running' });
 
     expect(registered.registered).toBe(true);
     expect(driven.success, JSON.stringify(driven)).toBe(true);
-    expect(agent.currentSessionId).toBe('sess-next');
+    expect(agent.currentSessionId).toBe(sid('sess-next'));
     expect(agent.status).toBe('running');
   });
 });
