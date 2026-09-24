@@ -79,6 +79,34 @@ function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; co
   return servers;
 }
 
+/**
+ * The runs under way, by agent, so that stopping or deleting an agent stops its
+ * delegated run too (the Audit's table on a3d7c125, #6): cancel() had no
+ * caller, and a stopped agent's run went on working for up to its hour with
+ * the agent's run token.
+ */
+interface Run { session: AcpSession; done: Promise<void>; stoppedWhy?: string }
+const runs = new Map<string, Set<Run>>();
+/** How long a run asked to cancel gets to end its turn before its processes are ended. */
+const CANCEL_GRACE_MS = 1_500;
+
+/**
+ * Stop every delegated run of this agent: asked to cancel over the protocol
+ * first, then ended with every process it started (AcpSession.stop). Its caller
+ * is answered that the run was stopped, and why. Returns how many were stopped.
+ */
+export async function stopAcpRuns(agentId: string, why: string): Promise<number> {
+  const live = [...(runs.get(agentId) ?? [])];
+  await Promise.all(live.map(async run => {
+    run.stoppedWhy = why;
+    await run.session.cancel();
+    await Promise.race([run.done, new Promise(resolve => setTimeout(resolve, CANCEL_GRACE_MS))]);
+    run.session.stop();
+  }));
+  if (live.length) console.log(`[acp] stopped ${live.length} delegated run(s) of ${agentId}: ${why}`);
+  return live.length;
+}
+
 export function canDelegateOverAcp(agent: AgentStatus): boolean {
   return !!acpLaunchFor(agent.provider ?? 'claude');
 }
@@ -151,6 +179,12 @@ export async function delegateOverAcp(opts: {
     session.on('permission', p => onEvent({ type: 'permission', payload: p }));
   }
 
+  let settle!: () => void;
+  const run: Run = { session, done: new Promise<void>(resolve => { settle = resolve; }) };
+  const own = runs.get(agent.id) ?? new Set<Run>();
+  own.add(run);
+  runs.set(agent.id, own);
+
   let started = false;
   try {
     await session.start();
@@ -218,17 +252,23 @@ export async function delegateOverAcp(opts: {
       backgroundStopped: turn.background.length ? turn.background : undefined,
       usage: turn.usage,
       costUSD: turn.costUSD,
+      ...(run.stoppedWhy ? { error: `the run was stopped: ${run.stoppedWhy}` } : {}),
     };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
       transport: 'acp',
       started,
-      text: '',
-      toolCalls: [],
-      error: err instanceof Error ? err.message : String(err),
+      text: run.stoppedWhy ? session.partialTurn().text : '',
+      toolCalls: run.stoppedWhy ? session.partialTurn().toolCalls.map(t => t.title) : [],
+      // Said as what happened, not as the crash it looks like from inside.
+      error: run.stoppedWhy ? `the run was stopped: ${run.stoppedWhy}` : message,
     };
   } finally {
+    own.delete(run);
+    if (own.size === 0 && runs.get(agent.id) === own) runs.delete(agent.id);
+    settle();
     session.stop();
     revoke();
   }

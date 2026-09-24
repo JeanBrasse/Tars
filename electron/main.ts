@@ -117,6 +117,7 @@ import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
+import { stopAcpRuns } from './services/acp/delegate';
 import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
@@ -478,6 +479,7 @@ app.whenReady().then(async () => {
     startAgent: startAgentForTask,
     stopAgent: async (agentId: string) => {
       const agent = agents.get(agentId);
+      await stopAcpRuns(agentId, 'the agent was stopped');
       if (agent?.ptyId) {
         const ptyProcess = ptyProcesses.get(agent.ptyId);
         if (ptyProcess) {
@@ -499,6 +501,7 @@ app.whenReady().then(async () => {
     },
     deleteAgent: async (agentId: string) => {
       const agent = agents.get(agentId);
+      await stopAcpRuns(agentId, 'the agent was deleted');
       if (agent) {
         // Stop PTY if running
         if (agent.ptyId) {
