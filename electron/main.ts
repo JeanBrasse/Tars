@@ -366,6 +366,10 @@ function moveLocalKanbanToHermes() {
   setKanbanAgentDirectory(id => agents.get(id));
   const hermes = hermesKanban();
   if (!hermes) return;
+  if ('unusable' in hermes) {
+    console.warn(`[kanban] local board not moved to Hermes: ${hermes.unusable}`);
+    return;
+  }
   void migrateLocalTasks(hermes, KANBAN_FILE, path.join(DATA_DIR, 'kanban-moved-to-hermes.json')).then(r => {
     if (r.moved || r.errors.length) {
       console.log(`[kanban] local board to Hermes: ${r.moved} moved, ${r.skipped} already there${r.errors.length ? `, ${r.errors.length} left for the next launch: ${r.errors.join('; ')}` : ''}`);
