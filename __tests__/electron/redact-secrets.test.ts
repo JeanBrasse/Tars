@@ -56,6 +56,15 @@ describe('redactSecrets', () => {
     }
   });
 
+  it('takes out a Discord bot token, all three parts of it', () => {
+    // The bot's id in base64, a timestamp, then the signature: what Settings > Discord holds.
+    const token = j('MTA5ODc2NTQzMjEwOTg3NjU0', '.', 'GaBcDe', '.', 'G'.repeat(38));
+    const out = redactSecrets(`login failed for ${token} (401)`);
+    expect(out).not.toContain(token);
+    expect(out).toContain('login failed for');
+    expect(out).toContain('[redacted]');
+  });
+
   it('catches a bearer token and an api-key header from a verbose curl', () => {
     const curl = [
       `> Authorization: Bearer ${JWT}`,

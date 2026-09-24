@@ -40,6 +40,8 @@ const RULES: Rule[] = [
   { name: 'openrouter', pattern: /\bsk-or-v1-[A-Za-z0-9]{20,}/g },
   { name: 'aws', pattern: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g },
   { name: 'telegram-bot', pattern: /\b\d{8,12}:[A-Za-z0-9_-]{30,}/g },
+  // The bot's id in base64 (it starts M, N or O), a six-character timestamp, the signature.
+  { name: 'discord-bot', pattern: /\b[MNO][A-Za-z0-9_-]{22,27}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}/g },
 
   // A bearer token or an api-key header, wherever it appears.
   { name: 'bearer', pattern: /\b[Bb]earer\s+([A-Za-z0-9._~+/=-]{16,})/g, group: 1 },

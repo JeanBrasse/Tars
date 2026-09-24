@@ -85,6 +85,7 @@ export interface IpcHandlerDependencies {
   getMcpOrchestratorPath: () => string;
   initTelegramBot: () => void;
   initSlackBot: () => void;
+  initDiscordBot: () => void;
   getTelegramBot: () => TelegramBot | null;
   getSlackApp: () => SlackApp | null;
   getSuperAgentTelegramTask: () => boolean;
@@ -1842,6 +1843,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     saveAppSettings,
     initTelegramBot,
     initSlackBot,
+    initDiscordBot,
     getTelegramBot,
     getSlackApp
   } = deps;
@@ -1968,6 +1970,11 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
                            newSettings.slackBotToken !== undefined ||
                            newSettings.slackAppToken !== undefined;
 
+      // Who it answers and the mention rule are read at each message: only a
+      // new token, or switching it on or off, reconnects the bot.
+      const discordChanged = newSettings.discordEnabled !== undefined ||
+                             newSettings.discordBotToken !== undefined;
+
       const currentSettings = getAppSettings();
       const updatedSettings = { ...currentSettings, ...newSettings };
       setAppSettings(updatedSettings);
@@ -1981,6 +1988,10 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       // Reinitialize Slack bot if settings changed
       if (slackChanged) {
         initSlackBot();
+      }
+
+      if (discordChanged) {
+        initDiscordBot();
       }
 
       // Re-sync shared memory backend MCP registrations when their settings change
