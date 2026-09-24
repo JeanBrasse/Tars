@@ -815,8 +815,10 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
 none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
-which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`; both read
-the settings as they are, so a change there counts without a restart (SECURITY §6).
+which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`, which takes
+five wrong tokens from a chat and twenty from all chats in any fifteen minutes, then says "Too many
+attempts" without comparing; both read the settings as they are, so a change there counts without
+a restart (SECURITY §6).
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
@@ -828,8 +830,9 @@ ping. Setting it up:
 1. In the Discord Developer Portal, create an application, then under Bot reset the token and
    paste it in Settings > Discord. On the same page, switch on the **Message Content** intent,
    or every message reaches the bot empty.
-2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=68608`
-   (view channels, send messages, read message history). "Test token" in Settings gives this link.
+2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=3072`
+   (view channels, send messages: the bot does nothing else). "Test token" in Settings gives this
+   link, and main makes it from a token as it is typed (`discord:inviteUrl`).
 3. Add your Discord user id (Developer Mode, then Copy User ID), and mention the bot or DM it:
    that channel becomes the one Tars posts to.
 
@@ -967,6 +970,24 @@ Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and
 
 Plus `tasmania` when `appSettings.tasmaniaEnabled` and the configured
 `tasmaniaServerPath` exists on disk.
+
+Each server builds itself (`npm run build` in its folder): `tsc` checks the types, and esbuild
+bundles `src/index.ts` into `dist/bundle.js`, with `mcp-shared/` in it. That folder is what the
+seven share: the client to Tars, the tool table they register through, one request read whole,
+the settings file. It imports node's builtins only; a package imported from there would resolve
+from the repository's root, not from the server's own lock.
+
+What the seven answer is recorded in `__tests__/mcp/contracts/`. Before changing a server:
+
+```bash
+node __tests__/mcp/contracts/mcp-servers.contract.mjs            # builds the seven, compares
+node __tests__/mcp/contracts/mcp-servers.contract.mjs --only=x   # one server
+```
+
+It starts each bundle over stdio with an agent's environment, asks `tools/list`, then calls
+every tool along each of its answers against a fake Tars (SocialData, X and Telegram are
+faked too), and prints `identical` or the diff. `--record` rewrites the recording: only for a
+change meant to be seen, recorded on the code before the change.
 
 ### How registration works
 

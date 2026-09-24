@@ -1,4 +1,4 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 
@@ -121,59 +121,120 @@ function lastWords(stderr: string): string {
 /** How long a stopped run's processes get to end on SIGTERM before SIGKILL. */
 const STOP_GRACE_MS = 2_000;
 
-/** Every process as `pid ppid pgid`, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
-function processTable(): Promise<{ pid: number; ppid: number; pgid: number }[] | undefined> {
+type ProcessRow = { pid: number; ppid: number; pgid: number; zombie: boolean };
+const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,stat='];
+
+function parseProcessTable(out: string): ProcessRow[] {
+  return out.split('\n').map(line => line.trim().split(/\s+/))
+    .filter(cols => cols.length >= 4 && cols.slice(0, 3).every(c => /^\d+$/.test(c)))
+    .map(([pid, ppid, pgid, stat]) => ({ pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), zombie: stat.startsWith('Z') }));
+}
+
+/** Every process, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
+function processTable(): Promise<ProcessRow[] | undefined> {
   return new Promise(resolve => {
-    execFile('ps', ['-A', '-o', 'pid=,ppid=,pgid='], { timeout: 5_000 }, (err, out) => {
-      if (err) return resolve(undefined);
-      resolve(String(out).split('\n').map(line => line.trim().split(/\s+/).map(Number))
-        .filter(row => row.length === 3 && row.every(Number.isInteger))
-        .map(([pid, ppid, pgid]) => ({ pid, ppid, pgid })));
-    });
+    execFile('ps', PS_ARGS, { timeout: 5_000 }, (err, out) => resolve(err ? undefined : parseProcessTable(String(out))));
   });
 }
 
+/** The same, read while the caller waits: for the quit, which nothing outlives. */
+function processTableNow(): ProcessRow[] | undefined {
+  try {
+    return parseProcessTable(String(execFileSync('ps', PS_ARGS, { timeout: 2_000 })));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Ends the process `root` leads and everything under it: SIGTERM to every
- * process group found among its descendants, then SIGKILL to them two seconds
- * on.
+ * The processes some roots lead, and every process group found among their
+ * descendants.
  *
- * Its own group is not enough. Claude Code's Bash tool runs each command in a
- * group of its own, and a run whose claude could not pass the stop on (wedged,
- * SIGSTOPped by the Audit on #191) left its `zsh -c` and `sleep` alive,
- * reparented to launchd, once npm, the adapter and claude had died with their
- * group. So the tree is read from ps before the first signal, while the
+ * The roots' own groups are not enough. Claude Code's Bash tool runs each
+ * command in a group of its own, and a run whose claude could not pass the stop
+ * on (wedged, SIGSTOPped by the Audit on #191) left its `zsh -c` and `sleep`
+ * alive, reparented to launchd, once npm, the adapter and claude had died with
+ * their group. So the tree is read from ps before the first signal, while the
  * parents that tie those groups to the run are still alive, and read again
- * before the SIGKILL, from every process already known, for what was started
- * in between. Tars's own group, and init's, are never signalled. With no ps,
- * the run's own group still is.
+ * before the last, from every process already known, for what was started in
+ * between. Tars's own group, and init's, are never signalled. With no ps, the
+ * roots' own groups still are.
  */
-async function endProcessTree(root: number): Promise<void> {
-  const known = new Set([root]);
-  const groups = new Set([root]);
-  let ownGroup: number | undefined;
-  const look = async () => {
-    const table = await processTable();
+class ProcessTree {
+  private readonly known: Set<number>;
+  private readonly groups: Set<number>;
+  private ownGroup: number | undefined;
+
+  constructor(roots: number[]) {
+    this.known = new Set(roots);
+    this.groups = new Set(roots);
+  }
+
+  grow(table: ProcessRow[] | undefined): void {
     if (!table) return;
-    ownGroup = table.find(row => row.pid === process.pid)?.pgid;
+    this.ownGroup = table.find(row => row.pid === process.pid)?.pgid;
     for (let grew = true; grew;) {
       grew = false;
       for (const row of table) {
-        if (!known.has(row.pid) && known.has(row.ppid)) { known.add(row.pid); grew = true; }
+        if (!this.known.has(row.pid) && this.known.has(row.ppid)) { this.known.add(row.pid); grew = true; }
       }
     }
-    for (const row of table) if (known.has(row.pid)) groups.add(row.pgid);
-  };
-  const signal = (sig: NodeJS.Signals) => {
-    for (const group of groups) {
-      if (group <= 1 || group === ownGroup || group === process.pid) continue;
+    for (const row of table) if (this.known.has(row.pid)) this.groups.add(row.pgid);
+  }
+
+  private get targets(): number[] {
+    return [...this.groups].filter(group => group > 1 && group !== this.ownGroup && group !== process.pid);
+  }
+
+  signal(sig: NodeJS.Signals): void {
+    for (const group of this.targets) {
       try { process.kill(-group, sig); } catch { /* the group is gone */ }
     }
-  };
-  await look();
-  signal('SIGTERM');
-  const last = setTimeout(() => { void look().then(() => signal('SIGKILL')); }, STOP_GRACE_MS);
+  }
+
+  /** Whether a live process is left in any of the groups. A zombie is not: its
+   *  parent, Tars for the process it spawned, reaps it once the thread is free. */
+  anyLeft(table: ProcessRow[] | undefined): boolean {
+    if (!table) return this.targets.some(group => { try { process.kill(-group, 0); return true; } catch { return false; } });
+    const targets = new Set(this.targets);
+    return table.some(row => targets.has(row.pgid) && !row.zombie);
+  }
+}
+
+/** Ends the process `root` leads and everything under it: SIGTERM, then SIGKILL two seconds on. */
+async function endProcessTree(root: number): Promise<void> {
+  const tree = new ProcessTree([root]);
+  tree.grow(await processTable());
+  tree.signal('SIGTERM');
+  const last = setTimeout(() => {
+    void processTable().then(table => { tree.grow(table); tree.signal('SIGKILL'); });
+  }, STOP_GRACE_MS);
   last.unref();
+}
+
+/** How long the quit waits for delegated runs to end on SIGTERM before SIGKILL. */
+const QUIT_GRACE_MS = 1_000;
+const QUIT_POLL_MS = 50;
+
+/**
+ * Ends the processes these roots lead, and everything under them, before it
+ * returns: SIGTERM, a wait of at most QUIT_GRACE_MS that ends as soon as
+ * nothing is left, then SIGKILL. For the quit, where the stop's timer would
+ * never fire (measured on #197: a wedged run was whole 14 s after the quit).
+ */
+export function endProcessTreesNow(roots: number[]): void {
+  if (roots.length === 0) return;
+  const tree = new ProcessTree(roots);
+  tree.grow(processTableNow());
+  tree.signal('SIGTERM');
+  const until = Date.now() + QUIT_GRACE_MS;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < until) {
+    if (!tree.anyLeft(processTableNow())) return;
+    Atomics.wait(pause, 0, 0, QUIT_POLL_MS);
+  }
+  tree.grow(processTableNow());
+  tree.signal('SIGKILL');
 }
 
 export class AcpSession extends EventEmitter {
@@ -391,6 +452,23 @@ export class AcpSession extends EventEmitter {
       return;
     }
     void endProcessTree(pid);
+  }
+
+  /**
+   * For the quit: marks the run ended and hands back the process id to end
+   * with endProcessTreesNow, all runs at once. Undefined when there is nothing
+   * to end, or on Windows, where the process is killed here, having no group.
+   */
+  releaseForQuit(): number | undefined {
+    this.closed = true;
+    const child = this.child;
+    this.child = null;
+    if (!child) return undefined;
+    if (!child.pid || process.platform === 'win32') {
+      child.kill();
+      return undefined;
+    }
+    return child.pid;
   }
 
   get isRunning(): boolean {

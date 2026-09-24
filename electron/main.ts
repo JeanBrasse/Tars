@@ -119,7 +119,7 @@ import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
-import { stopAcpRuns } from './services/acp/delegate';
+import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
@@ -753,6 +753,9 @@ app.on('before-quit', () => {
   runShutdownSteps([
     ['flushBus', flushBus],
     ['saveAgents', saveAgents],
+    // Before the app exits, which neither the stop's timer nor a run left
+    // reparented to launchd would wait for: at most a second, then SIGKILL.
+    ['endAcpRunsOnQuit', endAcpRunsOnQuit],
     ['destroyTray', destroyTray],
     ['stopAgentAutosave', stopAgentAutosave],
     ['stopOverseerWatch', stopOverseerWatch],

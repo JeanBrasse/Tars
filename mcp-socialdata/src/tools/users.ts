@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { registerTools, text, tool } from "../../../mcp-shared/src/tools.js";
 import { socialDataRequest } from "../utils/api.js";
 
 interface UserProfile {
@@ -62,16 +63,17 @@ function formatUserProfile(user: UserProfile): string {
 }
 
 export function registerUserTools(server: McpServer): void {
-  server.tool(
-    "twitter_get_user",
-    "Get a Twitter/X user's profile by username. Returns bio, follower counts, join date, and other profile information.",
-    {
-      username: z
-        .string()
-        .describe("Twitter username without the @ symbol (e.g. 'elonmusk')"),
-    },
-    async ({ username }) => {
-      try {
+  registerTools(server, [
+    tool({
+      name: "twitter_get_user",
+      description: "Get a Twitter/X user's profile by username. Returns bio, follower counts, join date, and other profile information.",
+      schema: {
+        username: z
+          .string()
+          .describe("Twitter username without the @ symbol (e.g. 'elonmusk')"),
+      },
+      failure: "fetching user profile",
+      async run({ username }) {
         // Strip @ if accidentally included
         const cleanUsername = username.replace(/^@/, "");
         const user = (await socialDataRequest(
@@ -79,43 +81,30 @@ export function registerUserTools(server: McpServer): void {
           `/twitter/user/${cleanUsername}`
         )) as UserProfile;
 
-        return {
-          content: [{ type: "text" as const, text: formatUserProfile(user) }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error fetching user profile: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text(formatUserProfile(user));
+      },
+    }),
 
-  server.tool(
-    "twitter_get_user_tweets",
-    "Get recent tweets from a Twitter/X user by their user ID. Returns up to ~20 tweets per page with pagination.",
-    {
-      user_id: z
-        .string()
-        .describe(
-          "The numerical user ID (get this from twitter_get_user first). E.g. '44196397' for Elon Musk."
-        ),
-      include_replies: z
-        .boolean()
-        .optional()
-        .describe("If true, includes replies in addition to tweets. Default: false (tweets only)."),
-      cursor: z
-        .string()
-        .optional()
-        .describe("Pagination cursor from a previous result's next_cursor"),
-    },
-    async ({ user_id, include_replies, cursor }) => {
-      try {
+    tool({
+      name: "twitter_get_user_tweets",
+      description: "Get recent tweets from a Twitter/X user by their user ID. Returns up to ~20 tweets per page with pagination.",
+      schema: {
+        user_id: z
+          .string()
+          .describe(
+            "The numerical user ID (get this from twitter_get_user first). E.g. '44196397' for Elon Musk."
+          ),
+        include_replies: z
+          .boolean()
+          .optional()
+          .describe("If true, includes replies in addition to tweets. Default: false (tweets only)."),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor from a previous result's next_cursor"),
+      },
+      failure: "fetching user tweets",
+      async run({ user_id, include_replies, cursor }) {
         const endpoint = include_replies
           ? `/twitter/user/${user_id}/tweets-and-replies`
           : `/twitter/user/${user_id}/tweets`;
@@ -129,11 +118,7 @@ export function registerUserTools(server: McpServer): void {
         };
 
         if (!result.tweets || result.tweets.length === 0) {
-          return {
-            content: [
-              { type: "text" as const, text: "No tweets found for this user." },
-            ],
-          };
+          return text("No tweets found for this user.");
         }
 
         const formatted = result.tweets
@@ -143,26 +128,14 @@ export function registerUserTools(server: McpServer): void {
           )
           .join("\n\n---\n\n");
 
-        let text = `${result.tweets.length} tweets:\n\n${formatted}`;
+        let found = `${result.tweets.length} tweets:\n\n${formatted}`;
 
         if (result.next_cursor) {
-          text += `\n\n📄 More tweets available. Use cursor: "${result.next_cursor}"`;
+          found += `\n\n📄 More tweets available. Use cursor: "${result.next_cursor}"`;
         }
 
-        return {
-          content: [{ type: "text" as const, text }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error fetching user tweets: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text(found);
+      },
+    }),
+  ]);
 }
