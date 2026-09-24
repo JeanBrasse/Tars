@@ -1066,6 +1066,45 @@
           }
         },
         {
+          "scenario": "get_agent, Tars never answers: 30 s",
+          "call": {
+            "tool": "get_agent",
+            "arguments": {
+              "id": "a1"
+            }
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/agents/a1",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error getting agent: This operation was aborted"
+              }
+            ],
+            "isError": true
+          }
+        },
+        {
           "scenario": "get_agent_output, captured",
           "call": {
             "tool": "get_agent_output",
@@ -2678,6 +2717,46 @@
               {
                 "type": "text",
                 "text": "Error waiting for agent: Agent not found"
+              }
+            ],
+            "isError": true
+          }
+        },
+        {
+          "scenario": "wait_for_agent, Tars never answers: its segment's 31 s",
+          "call": {
+            "tool": "wait_for_agent",
+            "arguments": {
+              "id": "a1",
+              "timeoutSeconds": 1
+            }
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/agents/a1/wait?timeout=1",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error waiting for agent: This operation was aborted"
               }
             ],
             "isError": true
@@ -7359,6 +7438,43 @@
           }
         },
         {
+          "scenario": "memory_read, Tars never answers: 30 s",
+          "call": {
+            "tool": "memory_read",
+            "arguments": {}
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/memory/context?project_path=%2Fprojects%2Falpha",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "This operation was aborted"
+              }
+            ],
+            "isError": true
+          }
+        },
+        {
           "scenario": "memory_write, to several memories",
           "call": {
             "tool": "memory_write",
@@ -9369,6 +9485,35 @@
               {
                 "type": "text",
                 "text": "Error listing tasks: Tars did not answer at http://127.0.0.1:<port>: socket hang up"
+              }
+            ],
+            "isError": true
+          }
+        },
+        {
+          "scenario": "list_tasks, Tars never answers: 60 s",
+          "call": {
+            "tool": "list_tasks",
+            "arguments": {}
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/kanban/tasks",
+              "headers": [
+                "Content-Type: application/json",
+                "Authorization: Bearer agent-token-lead",
+                "Host: 127.0.0.1:<port>",
+                "Connection: keep-alive"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error listing tasks: Tars did not answer at http://127.0.0.1:<port>: no answer within 60 s"
               }
             ],
             "isError": true
