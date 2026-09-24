@@ -6,8 +6,9 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
-import { DATA_DIR, dataPath } from '../constants';
+import { API_PORT, DATA_DIR, dataPath } from '../constants';
 import { readHermesConnection, writeHermesConnection } from '../services/hermes-config';
+import { resetLiveSession } from '../services/overseer';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
 import { provisionWebhookSecret } from '../services/hermes-webhook-secret';
@@ -101,8 +102,6 @@ function hermesGet(baseUrl: string, pathname: string, token?: string, timeoutMs 
     req.end();
   });
 }
-
-const API_PORT = 31415;
 
 /**
  * Hermes integration handlers: everything the Settings → Hermes section
@@ -214,9 +213,16 @@ export function registerHermesHandlers(): void {
     };
   });
 
+  // The Chat remembers that a gateway refused its live session, so a gateway
+  // without one does not pay for the attempt on every turn. A new connection,
+  // a new sign-in or a sign-out is a new gateway as far as that goes, so each
+  // of them forgets it, and drops a session opened under the old one: nothing
+  // did, and one refusal kept the Chat on the slower cron path until Tars
+  // restarted.
   ipcMain.handle('hermes:connection:save', async (_event, connection: HermesConnection) => {
     try {
       writeConnection(connection);
+      resetLiveSession();
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -227,6 +233,7 @@ export function registerHermesHandlers(): void {
     const imported = importDesktopConfig();
     if (!imported) return { success: false, error: 'No Hermes Desktop configuration found on this machine.' };
     writeConnection(imported);
+    resetLiveSession();
     return { success: true, connection: imported, baseUrl: resolveHermesBaseUrl(imported) };
   });
 
@@ -257,12 +264,14 @@ export function registerHermesHandlers(): void {
       username: params.username, password: params.password, provider: params.provider,
     });
     if (!result.success) return result;
+    resetLiveSession();
     const probe = await probeHermes(params.connection);
     return { success: true, version: probe.version, gatewayState: probe.gatewayState };
   });
 
   ipcMain.handle('hermes:signOut', async (_event, connection: HermesConnection) => {
     clearHermesSession(resolveHermesBaseUrl(connection));
+    resetLiveSession();
     return { success: true };
   });
 

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The Usage page saying what it could not read.
@@ -18,7 +19,6 @@ import { launchSandboxed, seedSandbox } from './fixture.mjs';
  * process cannot open to the sentence under the subtitle.
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 function assistantLine(i: number): string {
   return JSON.stringify({
@@ -49,7 +49,7 @@ test('names how many transcripts it could not read, and prices the rest', async 
   fs.chmodSync(blocked, 0o000);
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31491', DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31491), DOROTHY_E2E: '1' },
   });
   const page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

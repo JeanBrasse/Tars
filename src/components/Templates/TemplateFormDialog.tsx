@@ -5,7 +5,6 @@ import type { AgentTemplate, AgentTemplateInput, AgentCharacter, AgentProvider }
 import { Button, Chip, DialogShell, Dropdown, Input, Label, SegmentedControl, Textarea } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';
 
-const CHARACTERS: AgentCharacter[] = ['robot', 'ninja', 'wizard', 'astronaut', 'knight', 'pirate', 'alien', 'viking'];
 const PROVIDERS: AgentProvider[] = ['claude', 'codex', 'gemini'];
 
 type PermissionMode = 'normal' | 'auto' | 'bypass';
@@ -27,8 +26,11 @@ interface TemplateFormDialogProps {
 export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, onSubmit, onReset }: TemplateFormDialogProps) {
   const [displayName, setDisplayName] = useState(initialTemplate?.displayName ?? '');
   const [description, setDescription] = useState(initialTemplate?.description ?? '');
-  const [icon, setIcon] = useState(initialTemplate?.icon ?? '🤖');
-  const [character, setCharacter] = useState<AgentCharacter>(initialTemplate?.character ?? 'robot');
+  // Kept in the template and carried through an edit, but no longer asked:
+  // nothing draws a template's icon or an agent's character. An agent made
+  // from it is shown by the mark its name draws.
+  const icon = initialTemplate?.icon ?? '🤖';
+  const character: AgentCharacter = initialTemplate?.character ?? 'robot';
   const [provider, setProvider] = useState<AgentProvider>(initialTemplate?.provider ?? 'claude');
   // Model is preserved when editing an existing template, but not asked on create -
   // it falls back to the provider's default.
@@ -115,25 +117,14 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
       }
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-[80px_1fr] gap-3">
-          <div>
-            <Label>Icon</Label>
-            <Input
-              value={icon}
-              onChange={e => setIcon(e.target.value)}
-              maxLength={4}
-              className="text-center text-base"
-            />
-          </div>
-          <div>
-            <Label>Name</Label>
-            <Input
-              value={displayName}
-              onChange={e => setDisplayName(e.target.value)}
-              maxLength={40}
-              placeholder="e.g. Mobile App Engineer"
-            />
-          </div>
+        <div>
+          <Label>Name</Label>
+          <Input
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+            maxLength={40}
+            placeholder="e.g. Mobile App Engineer"
+          />
         </div>
 
         <div>
@@ -147,15 +138,6 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Character</Label>
-            <Dropdown
-              ariaLabel="Character"
-              value={character}
-              options={CHARACTERS.map(c => ({ value: c, label: c }))}
-              onChange={v => setCharacter(v as AgentCharacter)}
-            />
-          </div>
           <div>
             <Label>Provider</Label>
             <Dropdown

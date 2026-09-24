@@ -236,6 +236,13 @@ export interface AppSettings {
   slackAppToken: string;
   slackSigningSecret: string;
   slackChannelId: string;
+  /**
+   * The Slack users (member ids, `U…`) the bot answers. Empty answers nobody:
+   * without it, anyone who could reach the bot (a workspace member, a guest, a
+   * Slack Connect user in a shared channel) could list, start, stop and brief
+   * agents (the audit's lead #15). The Telegram bot's authorized chats, for Slack.
+   */
+  slackAllowedUserIds: string[];
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;

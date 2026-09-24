@@ -72,7 +72,10 @@ function postLocalDispatch(agentId: string, message: string): Promise<{ status: 
         'Content-Length': Buffer.byteLength(payload),
         Authorization: `Bearer ${token}`,
       },
-      timeout: 15_000,
+      // As the MCP tools: /dispatch holds a message up to SENDER_WAIT_MS (20 s)
+      // on a launch still starting, and says so. At 15 s this gave up first,
+      // and Noah read "timeout" for a message typed a moment later.
+      timeout: 30_000,
     }, res => {
       let raw = '';
       res.on('data', c => { raw += c; });

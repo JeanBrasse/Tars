@@ -7,10 +7,11 @@ import { SLACK_CHARACTER_FACES } from '../constants';
 import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
-import { cliRunningIn } from '../core/agent-pty';
+import { cliRunningIn, shellReady } from '../core/agent-pty';
 import { getMainWindow } from '../core/window-manager';
 import { getProvider } from '../providers';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
+import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
@@ -102,11 +103,30 @@ export async function sendSlackMessage(
 }
 
 // Initialize Slack bot
+/**
+ * Whether a Slack user may command Tars through the bot: only the ids in
+ * Settings > Slack, and nobody while that list is empty. Before it, the bot
+ * acted on any human sender (the audit's lead #15). Read from the settings as
+ * they are now, so an id added or removed in Settings counts at once.
+ */
+export function isAllowedSlackUser(settings: AppSettings, userId: string | undefined): boolean {
+  return !!userId && (settings.slackAllowedUserIds ?? []).includes(userId);
+}
+
+/** What a sender the bot will not answer is told: why, and the id to add. */
+function refusal(userId: string | undefined): string {
+  return `:no_entry: This bot only answers the Slack users allowed in Tars Settings > Slack.`
+    + (userId ? ` Your Slack user ID is ${userId}.` : '');
+}
+
 export function initSlackBot(
-  appSettings: AppSettings,
+  getSettings: () => AppSettings,
   onSettingsChanged: (settings: AppSettings) => void,
   mainWindow?: Electron.BrowserWindow | null
 ): void {
+  // The settings as they are now, at each event: a save replaces main's object,
+  // and the bot kept its own (the audit's lead #19, the Slack side of it).
+  const appSettings = getSettings();
   // Stop existing bot if any
   if (slackApp) {
     slackApp.stop().catch(err => console.error('Error stopping Slack app:', err));
@@ -129,6 +149,14 @@ export function initSlackBot(
     // Handle app mentions
     slackApp.event('app_mention', async ({ event, say }) => {
       console.log('Slack app_mention event received:', JSON.stringify(event, null, 2));
+      const settings = getSettings();
+      // Before anything else, the channel included: an unknown sender does not
+      // get to choose where agents' send_slack goes.
+      if (!isAllowedSlackUser(settings, event.user)) {
+        console.log(`[slack] refused a mention from ${event.user ?? 'an unknown user'}: not in Settings > Slack's allowed users`);
+        await say(refusal(event.user));
+        return;
+      }
       // Remove the bot mention from the text
       const text = event.text.replace(/<@[A-Z0-9]+>/gi, '').trim();
       slackResponseChannel = event.channel;
@@ -139,13 +167,13 @@ export function initSlackBot(
         null;
 
       // Save channel ID
-      if (appSettings.slackChannelId !== event.channel) {
-        appSettings.slackChannelId = event.channel;
-        onSettingsChanged(appSettings);
-        mainWindow?.webContents.send('settings:updated', appSettings);
+      if (settings.slackChannelId !== event.channel) {
+        settings.slackChannelId = event.channel;
+        onSettingsChanged(settings);
+        mainWindow?.webContents.send('settings:updated', settings);
       }
 
-      await handleSlackCommand(text, event.channel, say, appSettings, mainWindow);
+      await handleSlackCommand(text, event.channel, say, settings, mainWindow);
     });
 
     // Handle direct messages - use 'message' event with subtype filter
@@ -155,7 +183,9 @@ export function initSlackBot(
         bot_id?: string;
         subtype?: string;
         text?: string;
+        user?: string;
         channel: string;
+        channel_type?: string;
         ts?: string;
         thread_ts?: string;
       };
@@ -166,19 +196,28 @@ export function initSlackBot(
       if (msg.subtype) return; // Skip edited, deleted, etc.
       if (!msg.text) return;
 
+      const settings = getSettings();
+      if (!isAllowedSlackUser(settings, msg.user)) {
+        console.log(`[slack] refused a message from ${msg.user ?? 'an unknown user'}: not in Settings > Slack's allowed users`);
+        // Told in a direct message, where the bot was addressed; not in every
+        // channel message it happens to receive.
+        if (msg.channel_type === 'im') await say(refusal(msg.user));
+        return;
+      }
+
       const channel = msg.channel;
       slackResponseChannel = channel;
       // Use thread_ts if replying in a thread, otherwise use the message ts to start a thread
       slackResponseThreadTs = msg.thread_ts || msg.ts || null;
 
       // Save channel for responses
-      if (appSettings.slackChannelId !== channel) {
-        appSettings.slackChannelId = channel;
-        onSettingsChanged(appSettings);
-        mainWindow?.webContents.send('settings:updated', appSettings);
+      if (settings.slackChannelId !== channel) {
+        settings.slackChannelId = channel;
+        onSettingsChanged(settings);
+        mainWindow?.webContents.send('settings:updated', settings);
       }
 
-      await sendToSuperAgentFromSlack(channel, msg.text, say, appSettings, mainWindow);
+      await sendToSuperAgentFromSlack(channel, msg.text, say, settings, mainWindow);
     });
 
     // Log all events for debugging
@@ -441,12 +480,18 @@ export async function handleSlackCommand(
       return;
     }
 
+    let launch: object | null = null;
     try {
       const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
 
       // BUG 4 guard: if worktreePath changed after PTY spawn, the running
       // PTY is in the wrong cwd. Kill it so initAgentPty respawns correctly.
       killStalePty(agent);
+
+      // A launch on its way owns the terminal until its CLI runs: wait for it.
+      await sessionStarted(agent);
+      // No CLI up there: this is a launch from now on, for every other sender.
+      launch = launchUnlessRunning(agent);
 
       if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
         const ptyId = await initAgentPtyWithCallbacks(agent);
@@ -455,6 +500,7 @@ export async function handleSlackCommand(
 
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (!ptyProcess) {
+        if (launch) launchAbandoned(agent.id, launch);
         await say(':x: Failed to initialize agent terminal.');
         return;
       }
@@ -513,6 +559,8 @@ export async function handleSlackCommand(
       agent.status = 'running';
       agent.currentTask = task.slice(0, 100);
       agent.lastActivity = new Date().toISOString();
+      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+      await shellReady(ptyProcess);
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(agent));
       saveAgents();
@@ -522,6 +570,7 @@ export async function handleSlackCommand(
       const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
       await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);
     } catch (err) {
+      if (launch) launchAbandoned(agent.id, launch);
       console.error('Failed to start agent from Slack:', err);
       await say(`:x: Failed to start agent: ${err}`);
     }
@@ -583,12 +632,18 @@ export async function sendToSuperAgentFromSlack(
   // Sanitize message - replace newlines with spaces for terminal compatibility
   const sanitizedMessage = message.replace(/\r?\n/g, ' ').trim();
 
+  let launch: object | null = null;
   try {
     // BUG 4 guard: if worktreePath changed after PTY spawn, the existing
     // PTY is stuck in the wrong cwd. Kill it so initAgentPty respawns.
     killStalePty(superAgent);
 
     // Initialize PTY if needed
+    // A launch on its way owns the terminal until its CLI runs: wait for it.
+    await sessionStarted(superAgent);
+    // No CLI up there: this is a launch from now on, for every other sender.
+    launch = launchUnlessRunning(superAgent);
+
     if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
       const ptyId = await initAgentPtyWithCallbacks(superAgent);
       superAgent.ptyId = ptyId;
@@ -596,6 +651,7 @@ export async function sendToSuperAgentFromSlack(
 
     const ptyProcess = ptyProcesses.get(superAgent.ptyId);
     if (!ptyProcess) {
+      if (launch) launchAbandoned(superAgent.id, launch);
       await say(':x: Failed to connect to Super Agent terminal.');
       return;
     }
@@ -672,6 +728,8 @@ export async function sendToSuperAgentFromSlack(
       superAgentSlackTask = true;
       superAgentSlackBuffer = [];
 
+      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+      await shellReady(ptyProcess);
       writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();
@@ -681,6 +739,7 @@ export async function sendToSuperAgentFromSlack(
       await say(':crown: Super Agent is processing your request...');
     }
   } catch (err) {
+    if (launch) launchAbandoned(superAgent.id, launch);
     console.error('Failed to send to Super Agent:', err);
     await say(`:x: Error: ${err}`);
   }

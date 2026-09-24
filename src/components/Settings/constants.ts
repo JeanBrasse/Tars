@@ -5,7 +5,7 @@ import {
   Bell,
   Send,
   Shield,
-  Sparkles,
+  Puzzle,
   Monitor,
   Terminal,
   Twitter,
@@ -81,9 +81,9 @@ export const SECTION_GROUPS: SettingsGroup[] = [
   {
     id: 'extensions',
     label: 'Extensions',
-    icon: Sparkles,
+    icon: Puzzle,
     children: [
-      { id: 'skills', label: 'Skills & Plugins', description: 'Everything installed on top of the agents you already have.', icon: Sparkles },
+      { id: 'skills', label: 'Skills & Plugins', description: 'Everything installed on top of the agents you already have.', icon: Puzzle },
       { id: 'mcp', label: 'Custom MCP', description: 'Servers Tars did not install, listed as they are.', icon: Plug },
       { id: 'tasmania', label: 'Tasmania', description: 'The Tasmania server, and where it runs from.', icon: TasmaniaIcon },
     ],
@@ -119,6 +119,7 @@ export const DEFAULT_APP_SETTINGS = {
   slackAppToken: '',
   slackSigningSecret: '',
   slackChannelId: '',
+  slackAllowedUserIds: [],
   socialDataEnabled: false,
   socialDataApiKey: '',
   xPostingEnabled: false,

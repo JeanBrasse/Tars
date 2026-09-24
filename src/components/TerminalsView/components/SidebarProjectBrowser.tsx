@@ -3,7 +3,8 @@
 import { useMemo } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { STATUS_COLORS, CHARACTER_FACES } from '../constants';
+import { STATUS_COLORS } from '../constants';
+import { AgentMark } from '@/components/ui';
 
 interface SidebarProjectBrowserProps {
   agents: AgentStatus[];
@@ -51,9 +52,6 @@ export default function SidebarProjectBrowser({ agents, onFocusPanel }: SidebarP
           {/* Agents in project */}
           <div className="ml-4 space-y-0.5">
             {project.agents.map(agent => {
-              const emoji = agent.name?.toLowerCase() === 'bitwonka'
-                ? '🐸'
-                : CHARACTER_FACES[agent.character || 'robot'] || '🤖';
               const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
               const status = STATUS_COLORS[agent.status] || STATUS_COLORS.idle;
 
@@ -63,7 +61,7 @@ export default function SidebarProjectBrowser({ agents, onFocusPanel }: SidebarP
                   onClick={() => onFocusPanel(agent.id)}
                   className="flex items-center gap-2 w-full px-2 py-1 hover:bg-primary/5 transition-colors text-left"
                 >
-                  <span className="text-xs">{emoji}</span>
+                  <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} />
                   <span className="text-[11px] text-foreground truncate flex-1">{name}</span>
                   <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
                 </button>

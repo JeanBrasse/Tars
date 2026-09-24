@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { decodeProjectPath } from '../utils/decode-project-path';
+import { decodedProjectPath } from './project-index';
 import { computeTranscriptUsage } from './transcript-usage';
 
 // Type definitions for Claude data structures
@@ -260,7 +260,7 @@ export async function getClaudeProjects(): Promise<ClaudeProject[]> {
       if (!stat.isDirectory()) continue;
 
       // Decode project path smartly
-      const decodedPath = decodeProjectPath(dir);
+      const decodedPath = await decodedProjectPath(dir);
 
       // Skip junk entries: the decoder falls back to '/' or to fabricated
       // paths for stale/renamed folders, and worktrees are views of a repo

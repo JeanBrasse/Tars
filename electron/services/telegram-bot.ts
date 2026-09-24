@@ -11,10 +11,11 @@ import { redactSecrets } from '../utils/redact-secrets';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions, getTelegramInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import { writeProgrammaticInput } from '../core/pty-manager';
-import { cliRunningIn } from '../core/agent-pty';
+import { cliRunningIn, shellReady } from '../core/agent-pty';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
+import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
 
 // ============== Telegram Bot State ==============
 let telegramBot: TelegramBot | null = null;
@@ -26,7 +27,14 @@ let currentResponseChatId: string | null = null; // Track which chat to respond 
 // References to external state (will be injected)
 let agents: Map<string, AgentStatus>;
 let ptyProcesses: Map<string, pty.IPty>;
-let appSettings: AppSettings;
+/**
+ * The settings as they are now. A getter, not the object the bot was started
+ * with: app:saveSettings replaces main's object on every save, and the bot kept
+ * checking chats and /auth tokens against the old one, so a chat removed or a
+ * token regenerated in Settings stayed good until a restart (the audit's lead
+ * #19). Every read goes through here.
+ */
+let getSettings: () => AppSettings = () => ({} as AppSettings);
 /**
  * What `/stats` reads out of Claude Code's own usage data. Only the fields this
  * bot renders are modelled; the rest of the object belongs to the reader that
@@ -61,7 +69,7 @@ let saveAppSettings: (settings: AppSettings) => void;
 export function initTelegramBotService(
   agentsMap: Map<string, AgentStatus>,
   ptyMap: Map<string, pty.IPty>,
-  settings: AppSettings,
+  settings: () => AppSettings,
   window: BrowserWindow | null,
   getSuperAgentFn: () => AgentStatus | undefined,
   saveAgentsFn: () => void,
@@ -71,7 +79,7 @@ export function initTelegramBotService(
 ) {
   agents = agentsMap;
   ptyProcesses = ptyMap;
-  appSettings = settings;
+  getSettings = settings;
   mainWindow = window;
   getSuperAgent = getSuperAgentFn;
   saveAgents = saveAgentsFn;
@@ -99,6 +107,14 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
     return;
   }
 
+  // A chat removed in Settings since it asked is forgotten here, and what it
+  // would have received goes where a notice goes. It was checked when it
+  // wrote in and never again, so it went on receiving the super agent's
+  // replies, its errors and main's notices (the audit's gate of #137).
+  if (currentResponseChatId && !sendableChats().has(currentResponseChatId)) {
+    currentResponseChatId = null;
+  }
+
   // If we have a current response chat (from an active Telegram task), send there
   if (currentResponseChatId) {
     sendToChat(currentResponseChatId, truncated, parseMode, text);
@@ -106,9 +122,9 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
   }
 
   // Fallback: send to all authorized users (for notifications not from a specific chat)
-  const chatIds = appSettings.telegramAuthorizedChatIds?.length > 0
-    ? appSettings.telegramAuthorizedChatIds
-    : (appSettings.telegramChatId ? [appSettings.telegramChatId] : []);
+  const chatIds = getSettings().telegramAuthorizedChatIds?.length > 0
+    ? getSettings().telegramAuthorizedChatIds
+    : (getSettings().telegramChatId ? [getSettings().telegramChatId] : []);
 
   if (chatIds.length === 0) return;
 
@@ -118,10 +134,26 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
 }
 
 /**
+ * The chats this bot may send to, as the settings are now: the ones Noah
+ * authorized and the default chat, the set the send route and mcp-telegram
+ * accept. Read at every send.
+ */
+function sendableChats(): Set<string> {
+  const settings = getSettings();
+  return new Set([settings.telegramChatId, ...(settings.telegramAuthorizedChatIds ?? [])].filter(Boolean).map(String));
+}
+
+/**
  * Helper to send to a specific chat with error handling
  */
 function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | 'HTML', originalText: string) {
   if (!telegramBot) return;
+  // Every send that is not a reply to a message passes here, so a chat
+  // Settings does not allow is refused here, whoever named it.
+  if (!sendableChats().has(String(chatId))) {
+    console.warn(`Telegram: not sending to chat ${chatId}, which Settings does not authorize`);
+    return;
+  }
   try {
     telegramBot.sendMessage(chatId, truncated, { parse_mode: parseMode });
   } catch (err) {
@@ -236,7 +268,7 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
  * Check if a chat ID is authorized
  */
 function isAuthorized(chatId: string): boolean {
-  return appSettings.telegramAuthorizedChatIds?.includes(chatId) || false;
+  return getSettings().telegramAuthorizedChatIds?.includes(chatId) || false;
 }
 
 /**
@@ -257,7 +289,7 @@ function shouldRespondToMessage(msg: TelegramBot.Message): boolean {
   }
 
   // If require mention is disabled, always respond
-  if (!appSettings.telegramRequireMention) {
+  if (!getSettings().telegramRequireMention) {
     console.log(`Telegram: Mention not required, responding to group message`);
     return true;
   }
@@ -335,7 +367,7 @@ function ensureDownloadsDir(): void {
  * Download a file from Telegram servers
  */
 async function downloadTelegramFile(fileId: string, fileName: string): Promise<string> {
-  if (!telegramBot || !appSettings.telegramBotToken) {
+  if (!telegramBot || !getSettings().telegramBotToken) {
     throw new Error('Telegram bot not initialized');
   }
 
@@ -355,7 +387,7 @@ async function downloadTelegramFile(fileId: string, fileName: string): Promise<s
   const localPath = path.join(TELEGRAM_DOWNLOADS_DIR, uniqueFileName);
 
   // Download file from Telegram
-  const fileUrl = `https://api.telegram.org/file/bot${appSettings.telegramBotToken}/${file.file_path}`;
+  const fileUrl = `https://api.telegram.org/file/bot${getSettings().telegramBotToken}/${file.file_path}`;
 
   return new Promise((resolve, reject) => {
     const fileStream = fs.createWriteStream(localPath);
@@ -424,18 +456,18 @@ export function initTelegramBot() {
     telegramBot = null;
   }
 
-  if (!appSettings.telegramEnabled || !appSettings.telegramBotToken) {
+  if (!getSettings().telegramEnabled || !getSettings().telegramBotToken) {
     console.log('Telegram bot disabled or no bot token');
     return;
   }
 
-  if (!appSettings.telegramAuthToken) {
+  if (!getSettings().telegramAuthToken) {
     console.log('Telegram bot disabled: no auth token configured (security requirement)');
     return;
   }
 
   try {
-    telegramBot = new TelegramBot(appSettings.telegramBotToken, { polling: true });
+    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
     console.log('Telegram bot started');
 
     // Fetch and cache bot username for mention detection
@@ -457,7 +489,8 @@ export function initTelegramBot() {
       }
 
       // Check if auth token is configured
-      if (!appSettings.telegramAuthToken) {
+      const live = getSettings();
+      if (!live.telegramAuthToken) {
         telegramBot?.sendMessage(chatId,
           '⚠️ No authentication token configured.\n\n' +
           '_Generate one in Tars Settings → Telegram_',
@@ -467,17 +500,19 @@ export function initTelegramBot() {
       }
 
       // Verify the token
-      if (providedToken === appSettings.telegramAuthToken) {
-        // Add to authorized list if not already there
-        if (!appSettings.telegramAuthorizedChatIds) {
-          appSettings.telegramAuthorizedChatIds = [];
+      if (providedToken === live.telegramAuthToken) {
+        // Add to authorized list if not already there. Onto the live settings:
+        // writing the bot's old object back would restore what Settings had
+        // removed since, on disk as well.
+        if (!live.telegramAuthorizedChatIds) {
+          live.telegramAuthorizedChatIds = [];
         }
-        if (!appSettings.telegramAuthorizedChatIds.includes(chatId)) {
-          appSettings.telegramAuthorizedChatIds.push(chatId);
+        if (!live.telegramAuthorizedChatIds.includes(chatId)) {
+          live.telegramAuthorizedChatIds.push(chatId);
           // Also update legacy field for backwards compatibility
-          appSettings.telegramChatId = chatId;
-          saveAppSettings(appSettings);
-          mainWindow?.webContents.send('settings:updated', appSettings);
+          live.telegramChatId = chatId;
+          saveAppSettings(live);
+          mainWindow?.webContents.send('settings:updated', live);
         }
 
         telegramBot?.sendMessage(chatId,
@@ -724,6 +759,7 @@ export function initTelegramBot() {
         return;
       }
 
+      let launch: object | null = null;
       try {
         // Start the agent using the existing IPC mechanism
         const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
@@ -732,6 +768,11 @@ export function initTelegramBot() {
         killStalePty(agent);
 
         // Initialize PTY if needed
+        // A launch on its way owns the terminal until its CLI runs: wait for it.
+        await sessionStarted(agent);
+        // No CLI up there: this is a launch from now on, for every other sender.
+        launch = launchUnlessRunning(agent);
+
         if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
           const ptyId = await initAgentPty(agent);
           agent.ptyId = ptyId;
@@ -739,6 +780,7 @@ export function initTelegramBot() {
 
         const ptyProcess = ptyProcesses.get(agent.ptyId);
         if (!ptyProcess) {
+          if (launch) launchAbandoned(agent.id, launch);
           telegramBot?.sendMessage(msg.chat.id, '❌ Failed to initialize agent terminal.');
           return;
         }
@@ -766,7 +808,7 @@ export function initTelegramBot() {
 
         // Build command using the shared provider interface (same as agent:start in ipc-handlers)
         const cliProvider = getProvider(agent.provider);
-        const binaryPath = cliProvider.resolveBinaryPath(appSettings);
+        const binaryPath = cliProvider.resolveBinaryPath(getSettings());
 
         // Resolve MCP config path if provider uses flag strategy
         let mcpConfigPath: string | undefined;
@@ -800,7 +842,13 @@ export function initTelegramBot() {
         agent.status = 'running';
         agent.currentTask = task.slice(0, 100);
         agent.lastActivity = new Date().toISOString();
-        writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
+        // Typed plainly, as the Slack bot does: this is a shell prompt, not
+        // claude's field. Every agent terminal is /bin/bash, Apple's 3.2, which
+        // has no bracketed paste, and a command this long went in as one: bash
+        // ran `00~cd ...`, "command not found", and nothing started.
+        // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+        await shellReady(ptyProcess);
+        writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
         noteLaunch(ptyProcess, launchSettings(agent));
         saveAgents();
         // Started from a phone, and just as able to come up with no task.
@@ -812,6 +860,7 @@ export function initTelegramBot() {
           { parse_mode: 'Markdown' }
         );
       } catch (err) {
+        if (launch) launchAbandoned(agent.id, launch);
         console.error('Failed to start agent from Telegram:', err);
         telegramBot?.sendMessage(msg.chat.id, `❌ Failed to start agent: ${err}`);
       }
@@ -1154,7 +1203,7 @@ export function initTelegramBot() {
 
       // Voice messages in groups don't have captions for mentions, so we check reply-to
       // For now, voice messages always trigger in groups (can't easily @mention with voice)
-      if (msg.chat.type !== 'private' && appSettings.telegramRequireMention) {
+      if (msg.chat.type !== 'private' && getSettings().telegramRequireMention) {
         // In groups with require mention, voice messages are ignored unless replying to bot
         return;
       }
@@ -1246,12 +1295,18 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
   // Sanitize message - replace newlines with spaces for terminal compatibility
   const sanitizedMessage = fullMessage.replace(/\r?\n/g, ' ').trim();
 
+  let launch: object | null = null;
   try {
     // BUG 4 guard: if worktreePath changed since the PTY was spawned, its
     // cwd is stale: kill it so initAgentPty respawns in the right directory.
     killStalePty(superAgent);
 
     // Initialize PTY if needed
+    // A launch on its way owns the terminal until its CLI runs: wait for it.
+    await sessionStarted(superAgent);
+    // No CLI up there: this is a launch from now on, for every other sender.
+    launch = launchUnlessRunning(superAgent);
+
     if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
       const ptyId = await initAgentPty(superAgent);
       superAgent.ptyId = ptyId;
@@ -1259,6 +1314,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
     const ptyProcess = ptyProcesses.get(superAgent.ptyId);
     if (!ptyProcess) {
+      if (launch) launchAbandoned(superAgent.id, launch);
       telegramBot?.sendMessage(chatId, '❌ Failed to connect to Super Agent terminal.');
       return;
     }
@@ -1289,7 +1345,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 
       // Build command using the shared provider interface
       const cliProvider = getProvider(superAgent.provider || 'claude');
-      const binaryPath = cliProvider.resolveBinaryPath(appSettings);
+      const binaryPath = cliProvider.resolveBinaryPath(getSettings());
 
       // Resolve MCP config path
       let mcpConfigPath: string | undefined;
@@ -1353,8 +1409,11 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       superAgentTelegramTask = true;
       superAgentOutputBuffer = [];
 
-      // Start new Claude session
-      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`, true);
+      // Start new Claude session. Typed plainly into the shell, as /start_agent
+      // above: pasted, bash 3.2 ran `00~cd` and the super agent never started.
+      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
+      await shellReady(ptyProcess);
+      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
       noteLaunch(ptyProcess, launchSettings(superAgent));
       saveAgents();
       // A cold start of the super agent carries a task like any other start.
@@ -1363,6 +1422,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
       telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
     }
   } catch (err) {
+    if (launch) launchAbandoned(superAgent.id, launch);
     console.error('Failed to send to Super Agent:', err);
     telegramBot?.sendMessage(chatId, `❌ Error: ${err}`);
   }

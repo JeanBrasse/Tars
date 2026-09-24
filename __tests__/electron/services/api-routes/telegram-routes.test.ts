@@ -45,6 +45,8 @@ beforeEach(() => {
       telegramChatId: '12345',
       telegramAuthorizedChatIds: ['12345'],
     } as unknown as AppSettings,
+    // The routes read the live settings, as the server hands them (api-server.ts).
+    getAppSettings: () => ctx.appSettings,
     getTelegramBot: () => ({
       sendMessage: mockSendMessage,
       sendPhoto: mockSendPhoto,

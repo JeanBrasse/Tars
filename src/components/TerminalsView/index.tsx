@@ -201,8 +201,7 @@ export default function TerminalsView() {
       // generateLayout, which the saved layout overrides once the user has
       // dragged anything.
       const forProject = agents.filter(a => a.projectPath === tabManager.activeProjectPath);
-      const rank = (a: typeof forProject[number]) =>
-        (a.role === 'orchestrator' || a.orchestratorMode) ? 0 : 1;
+      const rank = (a: typeof forProject[number]) => a.role === 'orchestrator' ? 0 : 1;
       return forProject.slice().sort((a, b) => rank(a) - rank(b));
     }
     return [];
@@ -213,9 +212,10 @@ export default function TerminalsView() {
   // different agent lists into the same key. NUL is the one byte none of
   // these fields can contain. `error` is in it because the panel header shows
   // it: a field the panel reads and the key leaves out is a field that can
-  // change without the panel ever hearing of it.
+  // change without the panel ever hearing of it. `name` and `role` for the
+  // same reason: the header draws the agent's mark from both.
   const filteredAgentsKey = useMemo(
-    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}\u0000${a.leftFullscreen}\u0000${a.ptyId}`).join('\u0000'),
+    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}\u0000${a.leftFullscreen}\u0000${a.ptyId}\u0000${a.name}\u0000${a.role}`).join('\u0000'),
     [computedFilteredAgents]
   );
   const filteredAgents = useMemo(
@@ -370,10 +370,21 @@ export default function TerminalsView() {
   // The way back offered to a panel whose claude left fullscreen: the header's
   // stop, then its start, so the new session opens fullscreen and the wheel
   // scrolls again. A start that fails says why, as it does from the header.
+  // A panel's `restart` (the left-fullscreen notice) continues the agent's
+  // conversation (#138). A stop then a start began a new one, since a start
+  // resumes only once per app run.
   const handleRestartAgent = useCallback(async (agentId: string) => {
-    await stopAgent(agentId);
-    await handleStartAgent(agentId);
-  }, [stopAgent, handleStartAgent]);
+    setStartError(null);
+    try {
+      const result = await window.electronAPI?.agent?.restart?.(agentId);
+      // A launch that fails, or a restart already running, answers why: on
+      // the line a failed start uses, rather than a click that did nothing.
+      if (result && !result.success) setStartError(result.error || 'The agent could not be restarted.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStartError(message.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, ''));
+    }
+  }, []);
 
   // Remove from tab (custom tabs): stop agent + remove from tab membership
   //
@@ -501,7 +512,7 @@ export default function TerminalsView() {
     localModel?: string,
     obsidianVaultPaths?: string[],
     effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-    orchestratorMode?: boolean,
+    role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
     try {
@@ -519,7 +530,7 @@ export default function TerminalsView() {
         model: resolvedModel,
         localModel,
         obsidianVaultPaths,
-        orchestratorMode,
+        role,
         cliPath,
       });
       // Auto-add to active custom tab

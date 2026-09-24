@@ -4,8 +4,8 @@ import type { AgentEffort } from '@/types/agent';
 import type { AgentProvider, TeamTemplateMember } from '@/types/electron';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import { useModelCatalog } from '@/hooks/useModelCatalog';
-import { Button, Dropdown, Input } from '@/components/ui';
-import { EFFORT_LEVELS } from './logic';
+import { AgentMark, Button, Dropdown, Input } from '@/components/ui';
+import { EFFORT_LEVELS, deployedMemberName } from './logic';
 import { branchSlug } from './team-defaults';
 
 const EFFORT_DROPDOWN_OPTIONS = [
@@ -38,8 +38,10 @@ function MemberModelPicker({ provider, value, onChange }: {
  * obvious at a glance, which a stack of per-member cards (the old
  * `DeployTeamDialog`) never gave you: you had to open five cards to notice.
  */
-export function MembersTable({ members, selected, onToggleSelect, onPatch, onRemove, onAdd, availability }: {
+export function MembersTable({ members, projectPath, selected, onToggleSelect, onPatch, onRemove, onAdd, availability }: {
   members: TeamTemplateMember[];
+  /** Where the team deploys: each member's mark is drawn from the name it will get there. */
+  projectPath: string;
   selected: Set<number>;
   onToggleSelect: (i: number) => void;
   onPatch: (i: number, patch: Partial<TeamTemplateMember>) => void;
@@ -78,20 +80,27 @@ export function MembersTable({ members, selected, onToggleSelect, onPatch, onRem
                 onClick={() => onToggleSelect(i)}
                 className={`w-3 h-3 shrink-0 border ${isSelected ? 'bg-primary border-primary' : 'border-border-accent'}`}
               />
-              <Input
-                value={m.name}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  // Prefill the branch from the role name, same as typing over a
-                  // suggestion - but only while the branch is still untouched, so
-                  // this never overwrites one the user already set.
-                  const patch: Partial<TeamTemplateMember> = { name };
-                  if (!m.worktreeBranch) patch.worktreeBranch = branchSlug(name) || undefined;
-                  onPatch(i, patch);
-                }}
-                placeholder="Role"
-                compact
-              />
+              {/* The member's mark, drawn from the name it deploys under, so
+                  it is the one the agent will carry. Inside the role cell,
+                  which keeps every column under its heading. */}
+              <div className="flex items-center gap-2 min-w-0">
+                <AgentMark name={deployedMemberName(m.name, projectPath)} orchestrator={m.role === 'orchestrator'} />
+                <Input
+                  value={m.name}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    // Prefill the branch from the role name, same as typing over a
+                    // suggestion - but only while the branch is still untouched, so
+                    // this never overwrites one the user already set.
+                    const patch: Partial<TeamTemplateMember> = { name };
+                    if (!m.worktreeBranch) patch.worktreeBranch = branchSlug(name) || undefined;
+                    onPatch(i, patch);
+                  }}
+                  placeholder="Role"
+                  className="min-w-0"
+                  compact
+                />
+              </div>
               <Dropdown
                 size="sm"
                 value={m.provider || 'claude'}
@@ -113,7 +122,7 @@ export function MembersTable({ members, selected, onToggleSelect, onPatch, onRem
                 mono
                 value={m.worktreeBranch || ''}
                 onChange={(e) => onPatch(i, { worktreeBranch: e.target.value.replace(/\s+/g, '-') || undefined })}
-                placeholder={m.orchestratorMode ? 'main (no worktree)' : '(project root)'}
+                placeholder={m.role === 'orchestrator' ? 'main (no worktree)' : '(project root)'}
                 compact
               />
               <button

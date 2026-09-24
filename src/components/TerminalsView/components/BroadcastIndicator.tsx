@@ -15,7 +15,7 @@ export default function BroadcastIndicator({ active }: BroadcastIndicatorProps) 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-primary/20 border border-primary/30 backdrop-blur-sm"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-primary/20 border border-primary/30"
         >
           <Radio className="w-4 h-4 text-primary animate-pulse" />
           <span className="text-xs font-medium text-primary">

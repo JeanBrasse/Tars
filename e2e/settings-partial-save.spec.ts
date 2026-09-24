@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * Saving the Settings page must not write back what nobody touched.
@@ -24,7 +25,6 @@ import { launchSandboxed, seedSandbox } from './fixture.mjs';
  * The Co-authored-by toggle is the only control wired to `updateSettings`, so
  * it is the only key a save can legitimately carry today.
  */
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 test('saving the Git toggle carries that key and nothing else', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-partial-'));
@@ -46,7 +46,7 @@ test('saving the Git toggle carries that key and nothing else', async () => {
   fs.writeFileSync(settings, JSON.stringify(before, null, 2));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: '31492', DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31492), DOROTHY_E2E: '1' },
   });
   const page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

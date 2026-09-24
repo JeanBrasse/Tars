@@ -11,6 +11,7 @@ exports[`hermes-client, as recorded before the D2 refactor > exports the same na
   "createHermesTask",
   "deleteHermesCron",
   "deleteHermesTask",
+  "errorDetail",
   "fetchHermesBoard",
   "fetchHermesCronRuns",
   "fetchHermesCrons",
@@ -504,7 +505,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "auth setHermesModel": {
     "result": {
-      "error": ""Not signed in"",
+      "error": "Not signed in",
       "needsSignIn": true,
       "success": false,
     },
@@ -642,7 +643,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail createHermesCron": {
     "result": {
-      "error": "[object Object],[object Object]",
+      "error": "boom; again",
       "needsSignIn": false,
       "success": false,
     },
@@ -791,7 +792,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail fetchHermesCrons": {
     "result": {
-      "error": "[object Object],[object Object]",
+      "error": "boom; again",
       "needsSignIn": false,
       "success": false,
     },
@@ -1042,7 +1043,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail setHermesMemoryProvider": {
     "result": {
-      "error": "[object Object],[object Object]",
+      "error": "boom; again",
       "needsSignIn": false,
       "success": false,
     },
@@ -1061,7 +1062,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail setHermesModel": {
     "result": {
-      "error": "[{"msg":"boom"},{"msg":"again"}]",
+      "error": "boom; again",
       "needsSignIn": false,
       "success": false,
     },
@@ -1080,7 +1081,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail signInHermes": {
     "result": {
-      "error": "[object Object],[object Object]",
+      "error": "boom; again",
       "success": false,
     },
     "sent": [
@@ -1098,7 +1099,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail updateHermesCron": {
     "result": {
-      "error": "[object Object],[object Object]",
+      "error": "boom; again",
       "needsSignIn": false,
       "success": false,
     },
@@ -1136,7 +1137,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "fail uploadHermesAttachment": {
     "result": {
-      "error": "[object Object],[object Object]",
+      "error": "boom; again",
       "needsSignIn": false,
       "success": false,
     },
@@ -1620,7 +1621,7 @@ exports[`hermes-client, as recorded before the D2 refactor > sends and returns t
   },
   "forbidden setHermesModel": {
     "result": {
-      "error": ""Forbidden"",
+      "error": "Forbidden",
       "needsSignIn": true,
       "success": false,
     },

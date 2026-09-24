@@ -2,12 +2,13 @@ import { ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import type { AppSettings, CLIPaths } from '../types';
 import { dataPath } from '../constants';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Shared config file path that MCP can read
 const CLI_PATHS_CONFIG_FILE = dataPath('cli-paths.json');
@@ -40,8 +41,10 @@ async function detectCLIPaths(savedPaths?: Partial<CLIPaths>): Promise<{ amp: st
   // Try to get the full interactive shell PATH (includes .zshrc/.bashrc paths)
   let shellPath = process.env.PATH || '';
   try {
+    // The user's shell as a file and its script as an argument: $SHELL is
+    // never parsed by another shell.
     const shell = process.env.SHELL || '/bin/zsh';
-    const { stdout } = await execAsync(`${shell} -ilc 'echo $PATH'`, { timeout: 5000 });
+    const { stdout } = await execFileAsync(shell, ['-ilc', 'echo $PATH'], { timeout: 5000 });
     if (stdout.trim()) {
       shellPath = stdout.trim();
     }
@@ -448,16 +451,48 @@ function loadCLIPathsConfig(): CLIPaths | null {
   return null;
 }
 
+type DetectedCLIPaths = Awaited<ReturnType<typeof detectCLIPaths>>;
+
+/**
+ * The last detection, for the paths saved when it ran.
+ *
+ * A detection starts a login shell (the user's .zshrc, nvm and all) and probes
+ * a dozen CLIs: 114 to 762 ms measured by the Audit on 2026-09-23, paid by every
+ * Settings section and every "+ Agent" and "+ Team" dialog, which all asked
+ * again. What it finds changes when a CLI is installed or moved, not between
+ * two dialogs, so it runs once per app run and again when the saved paths
+ * change or somebody asks (`refresh`, the Detect button). Calls made while it
+ * runs share it.
+ */
+let detection: { savedPaths: string; result: Promise<DetectedCLIPaths> } | null = null;
+
+export function detectCLIPathsCached(savedPaths: Partial<CLIPaths> | undefined, refresh = false): Promise<DetectedCLIPaths> {
+  const key = JSON.stringify(savedPaths ?? {});
+  if (!refresh && detection?.savedPaths === key) return detection.result;
+  const current = { savedPaths: key, result: detectCLIPaths(savedPaths) };
+  detection = current;
+  current.result.catch(() => {
+    if (detection === current) detection = null;
+  });
+  return current.result;
+}
+
+/** Test seam. */
+export function resetCLIPathsDetection(): void {
+  detection = null;
+}
+
 /**
  * Register CLI paths IPC handlers
  */
 export function registerCLIPathsHandlers(deps: CLIPathsHandlerDependencies): void {
   const { getAppSettings, setAppSettings, saveAppSettings } = deps;
 
-  // Detect CLI paths (use saved settings as overrides if binary exists at saved path)
-  ipcMain.handle('cliPaths:detect', async () => {
+  // Detect CLI paths (use saved settings as overrides if binary exists at
+  // saved path), from the last detection unless asked to look again.
+  ipcMain.handle('cliPaths:detect', async (_event, options?: { refresh?: boolean }) => {
     const settings = getAppSettings();
-    return detectCLIPaths(settings.cliPaths);
+    return detectCLIPathsCached(settings.cliPaths, options?.refresh === true);
   });
 
   // Get CLI paths from app settings

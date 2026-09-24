@@ -29,9 +29,16 @@ describe('the restriction itself', () => {
 
   it('blocks every file-mutating tool', () => {
     const flags = orchestratorToolFlags(true);
-    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
       expect(flags).toContain(`"${tool}"`);
     }
+  });
+
+  it('names no tool claude does not have: every orchestrator start warned about MultiEdit', () => {
+    // claude 2.1.268, 2.1.273 and 2.1.280: `Permission deny rule "MultiEdit"
+    // matches no known tool - check for typos.` on stderr, at every start.
+    expect(orchestratorToolFlags(true)).toBe(' --disallowed-tools "Edit" "Write" "NotebookEdit" "Task"');
+    expect(orchestratorToolFlags(true)).not.toContain('MultiEdit');
   });
 
   it('blocks the built-in subagent tool', () => {

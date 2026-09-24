@@ -2,9 +2,10 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
+import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, USAGE_DAY, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, stubSkillsSh } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, pinDayOn, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
+import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * Visual + technical sweep of the real Electron app.
@@ -20,7 +21,6 @@ import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, stubSk
  *  - compare a screenshot against baseline   ← design check
  */
 
-const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
 let app: ElectronApplication;
 let page: Page;
@@ -38,17 +38,22 @@ test.beforeAll(async () => {
     env: {
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
-      DOROTHY_API_PORT: '31498',
+      DOROTHY_API_PORT: apiPort(31498),
       DOROTHY_E2E: '1',
     },
   });
   page = await app.firstWindow();
   listenForErrors(page, pageErrors);
   await markWhatsNewSeen(page, WHATS_NEW_STORAGE_KEY, String(LATEST_RELEASE.id));
+  await pinDayOn(page, '/usage', USAGE_DAY);
   await stubSkillsSh(app);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForLoadState('domcontentloaded');
+  // The Dashboard has just started the tars agents on the seed's fake CLI:
+  // once each holds its terminal, the statuses the references show are set,
+  // and nothing in the sandbox moves them again. See SWEEP_STATUSES.
+  await settleFleet(app);
 });
 
 test.afterAll(async () => {

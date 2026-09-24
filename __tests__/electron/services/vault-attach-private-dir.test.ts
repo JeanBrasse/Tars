@@ -4,6 +4,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 
 /**
  * The vault does not copy the private directory back into the agents' one.
@@ -125,6 +126,143 @@ describe('attaching a file to a vault document', () => {
 
     expect(status, text).toBe(403);
     expect(attachments(), 'the conversation was copied into the directory every agent is handed').toEqual([]);
+  });
+
+  // The same file under the other names the file system gives it (the audit's
+  // lead #21, reproduced in a sandbox app on main b9a95b1: both copied the
+  // webhook secret in, and /api/local-file served it without a token). A
+  // prefix test on the string sees neither.
+  const secretFile = () => {
+    fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    const secret = path.join(privateDir, 'hermes-webhook-secret');
+    fs.writeFileSync(secret, 'the webhook secret', { mode: 0o600 });
+    return secret;
+  };
+  const upperCased = (file: string) => file.replace(path.basename(privateDir), path.basename(privateDir).toUpperCase());
+  const caseInsensitive = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-case-probe-'));
+    try { return fs.existsSync(probe.toUpperCase()) && fs.existsSync(probe.replace(/tars-case-probe/, 'TARS-CASE-PROBE')); } finally { fs.rmSync(probe, { recursive: true, force: true }); }
+  })();
+
+  it.runIf(caseInsensitive)('refuses the private directory spelled in another case, on a volume that does not care', async () => {
+    const alias = upperCased(secretFile());
+    expect(fs.existsSync(alias), 'the alias does not open the file here').toBe(true);
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: alias });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  it.runIf(fs.existsSync('/System/Volumes/Data'))('refuses the private directory reached through the Data volume', async () => {
+    const alias = path.join('/System/Volumes/Data', fs.realpathSync(secretFile()));
+    expect(fs.existsSync(alias), 'the firmlink does not open the file here').toBe(true);
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: alias });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  it('refuses the private directory reached through a symlink', async () => {
+    const link = path.join(tmp, 'innocent-looking');
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(privateDir, link);
+    secretFile();
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: path.join(link, 'hermes-webhook-secret') });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  /**
+   * A hard link is a second name for the file with no path back to the first,
+   * so a check that follows paths finds it inside nothing (the audit's gate of
+   * #137, measured on this route). How the check for it can fail, written
+   * before it:
+   * 1. a hard link made outside, to a file in the private directory, is copied in;
+   * 2. every file with a second name is refused: a pnpm store is made of them;
+   * 3. a copy, which is another file with the same bytes, is refused;
+   * 4. the search leaves the private directory through a symlink inside it.
+   */
+  it('refuses a hard link, made outside, to a file in the private directory', async () => {
+    const link = path.join(tmp, 'notes.txt');
+    fs.rmSync(link, { force: true });
+    fs.linkSync(secretFile(), link);
+
+    const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+      authorization: `Bearer ${sharedToken}`,
+    }, { file_path: link });
+
+    expect(status, text).toBe(403);
+    expect(attachments()).toEqual([]);
+  });
+
+  it('still attaches a file with two ordinary names, and a copy of a private file', async () => {
+    const first = path.join(tmp, 'store-first.txt');
+    const second = path.join(tmp, 'store-second.txt');
+    fs.writeFileSync(first, 'one file, two names');
+    fs.rmSync(second, { force: true });
+    fs.linkSync(first, second);
+    const copy = path.join(tmp, 'copy-of-the-secret.txt');
+    fs.copyFileSync(secretFile(), copy);
+    // A way out of the private directory, to where the pair lives: the search
+    // must not take it.
+    const exit = path.join(privateDir, 'to-the-pair');
+    fs.rmSync(exit, { force: true });
+    fs.symlinkSync(tmp, exit);
+
+    try {
+      for (const file of [second, copy]) {
+        const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+          authorization: `Bearer ${sharedToken}`,
+        }, { file_path: file });
+        expect(status, `${file}: ${text}`).toBe(200);
+      }
+      expect(attachments()).toHaveLength(2);
+    } finally {
+      fs.rmSync(exit, { force: true });
+    }
+  });
+
+  /**
+   * The mutant the gate left alive (V2): copying the name the caller gave
+   * instead of the file that was checked passes every test above, because a
+   * name opens the same file at the check and at the copy unless it is changed
+   * in between, which no test can time. So the copy's source is read instead:
+   * a symlink is checked by what it opens, and that file, never the symlink,
+   * is what gets copied.
+   */
+  it('copies the file it checked, not the name it was given', async () => {
+    const checked = path.join(tmp, 'checked.txt');
+    fs.writeFileSync(checked, 'the file that was checked');
+    const alias = path.join(tmp, 'alias-of-checked.txt');
+    fs.rmSync(alias, { force: true });
+    fs.symlinkSync(checked, alias);
+    // The CommonJS object, which a spy can replace, and every ESM view of it
+    // brought up to date, the route's included.
+    const cjsFs = createRequire(import.meta.url)('fs') as typeof fs;
+    const copies = vi.spyOn(cjsFs, 'copyFileSync');
+    syncBuiltinESMExports();
+
+    try {
+      const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
+        authorization: `Bearer ${sharedToken}`,
+      }, { file_path: alias });
+
+      expect(status, text).toBe(200);
+      expect(copies.mock.calls.map(call => String(call[0]))).toEqual([fs.realpathSync.native(checked)]);
+    } finally {
+      copies.mockRestore();
+      syncBuiltinESMExports();
+    }
   });
 
   it('still attaches an ordinary file, which the copy above would otherwise prove nothing about', async () => {

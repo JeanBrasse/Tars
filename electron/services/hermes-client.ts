@@ -257,13 +257,6 @@ function gatewayCall(
   return hermesRequest(resolveHermesBaseUrl(conn), pathname, { ...options, token: conn.token });
 }
 
-/** The gateway's own `detail`, as it wrote it, or the status when it gave none. */
-function detailOrStatus(status: number, body: unknown): string {
-  return (body && typeof body === 'object' && 'detail' in body)
-    ? String((body as { detail: unknown }).detail)
-    : `HTTP ${status}`;
-}
-
 /** A call the gateway refused, flagged when signing in is what would fix it. */
 function refused(status: number, error: string) {
   return { success: false as const, error, needsSignIn: status === 401 || status === 403 };
@@ -355,7 +348,7 @@ export async function signInHermes(
       body: { provider, username: credentials.username, password: credentials.password, next: '/' },
     });
     if (status === 200 && hasHermesSession(baseUrl)) return { success: true };
-    return { success: false, error: status === 200 ? 'Gateway accepted the login but set no session cookie.' : detailOrStatus(status, body) };
+    return { success: false, error: status === 200 ? 'Gateway accepted the login but set no session cookie.' : errorDetail(status, body) };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -376,9 +369,12 @@ const KANBAN = '/api/plugins/kanban';
  * `{ detail: "title is required" }` or `{ detail: [{ msg, loc, ... }] }`. Every
  * kanban call used to collapse that to a bare `HTTP 422`, so a task created
  * with no title told the user nothing they could act on. Read `detail` the
- * same way for every endpoint here, board included.
+ * same way for every Hermes call, here and in hermes-session.ts: eight more
+ * here, and the Chat's effort picker there, turned the array into a string,
+ * and the Schedules page, the model picker, a memory write and the Chat said
+ * "[object Object],[object Object]" instead.
  */
-function errorDetail(status: number, body: unknown): string {
+export function errorDetail(status: number, body: unknown): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail: unknown }).detail;
     if (typeof detail === 'string') return detail;
@@ -430,7 +426,7 @@ export async function addHermesTaskComment(conn: HermesConnection, taskId: strin
 
 export async function fetchHermesCrons(conn: HermesConnection) {
   const { status, body } = await gatewayCall(conn, '/api/cron/jobs?profile=all');
-  if (status !== 200) return refused(status, detailOrStatus(status, body));
+  if (status !== 200) return refused(status, errorDetail(status, body));
   return { success: true as const, jobs: body };
 }
 
@@ -470,7 +466,7 @@ export async function updateHermesCron(
   const q = profile ? `?profile=${encodeURIComponent(profile)}` : '';
   const { status, body } = await gatewayCall(conn, `/api/cron/jobs/${encodeURIComponent(jobId)}${q}`, { method: 'PUT', body: { updates } });
   if (status < 300) return { success: true as const, job: body };
-  return refused(status, detailOrStatus(status, body));
+  return refused(status, errorDetail(status, body));
 }
 
 export async function deleteHermesCron(conn: HermesConnection, jobId: string, profile?: string) {
@@ -558,9 +554,7 @@ export async function setHermesModel(
     body: { scope: 'main', provider: choice.provider, model: choice.model },
   });
   if (status < 300) return { success: true as const };
-  const detail = (body && typeof body === 'object' && 'detail' in body)
-    ? JSON.stringify((body as { detail: unknown }).detail).slice(0, 200) : `HTTP ${status}`;
-  return refused(status, detail);
+  return refused(status, errorDetail(status, body).slice(0, 200));
 }
 
 export async function createHermesCron(
@@ -586,7 +580,7 @@ export async function createHermesCron(
     },
   });
   if (status < 300) return { success: true as const, job: body as { id?: string; [key: string]: unknown } };
-  return refused(status, detailOrStatus(status, body));
+  return refused(status, errorDetail(status, body));
 }
 
 /** A file that now lives on the gateway, ready to be named in a prompt. */
@@ -655,7 +649,7 @@ export async function uploadHermesAttachment(
       body: { path: `~/.hermes/uploads/${name}`, data_url: dataUrl, overwrite: true },
     });
 
-  if (status >= 300) return refused(status, detailOrStatus(status, body).slice(0, 200));
+  if (status >= 300) return refused(status, errorDetail(status, body).slice(0, 200));
 
   const payload = (body ?? {}) as { path?: unknown; name?: unknown; bytes?: unknown };
   const remotePath = typeof payload.path === 'string' ? payload.path : '';
@@ -835,7 +829,7 @@ export async function appendHermesMemory(
       overwrite: true,
     },
   });
-  if (status >= 300) return refused(status, detailOrStatus(status, body));
+  if (status >= 300) return refused(status, errorDetail(status, body));
 
   const written = (body && typeof body === 'object' && 'path' in body)
     ? String((body as { path: unknown }).path) : path;
@@ -940,7 +934,7 @@ export async function fetchHermesMemoryProviders(
 export async function setHermesMemoryProvider(conn: HermesConnection, provider: string) {
   const { status, body } = await gatewayCall(conn, '/api/memory/provider', { method: 'PUT', body: { provider } });
   if (status < 300) return { success: true as const, body };
-  return refused(status, detailOrStatus(status, body));
+  return refused(status, errorDetail(status, body));
 }
 
 export interface HermesSessionHit {

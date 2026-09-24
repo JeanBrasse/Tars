@@ -30,6 +30,25 @@ export function transcriptPath(projectPath: string, sessionId: string, homeDir =
 }
 
 /**
+ * A path as Tars saved it, then its real path when that differs.
+ *
+ * Claude Code files a transcript under the real path of the directory it runs
+ * in, and a project reached through a symlink (anything under /tmp, which is
+ * /private/tmp on macOS, or a linked checkout) encodes to another directory:
+ * looked for under the saved spelling alone, its conversation was never
+ * resumed, and every restart silently started a new one (QA's gate of #138).
+ * A path that no longer exists has only its saved spelling.
+ */
+function spellingsOf(root: string): string[] {
+  try {
+    const real = fs.realpathSync(root);
+    return real === root ? [root] : [root, real];
+  } catch {
+    return [root];
+  }
+}
+
+/**
  * The session id to resume, or null.
  *
  * Null covers every reason not to resume: no id recorded, an id that is not a
@@ -53,10 +72,12 @@ export function resolveResumeSessionId(
     // worktree after the session that is being resumed.
     const roots = [agent.worktreePath, agent.projectPath].filter((p): p is string => !!p);
     for (const root of roots) {
-      try {
-        if (fs.existsSync(transcriptPath(root, sessionId, homeDir))) return sessionId;
-      } catch {
-        // An unreadable home directory is not a reason to fail the start.
+      for (const spelling of spellingsOf(root)) {
+        try {
+          if (fs.existsSync(transcriptPath(spelling, sessionId, homeDir))) return sessionId;
+        } catch {
+          // An unreadable home directory is not a reason to fail the start.
+        }
       }
     }
   }

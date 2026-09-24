@@ -124,6 +124,31 @@ export interface AgentMessageWaiting {
   from: string[];
 }
 
+/**
+ * What a restart that applies a changed launch setting waits on
+ * (electron/core/agent-restart.ts):
+ * - `turn`: the turn in progress ends.
+ * - `permission`: its permission question is answered and the turn ends.
+ * - `note`: a note or room message owed to the agent has been typed in.
+ * - `background`: work the session left running (a Bash command, a Monitor,
+ *   an asynchronous Agent) has reported back.
+ * - `launch`: its CLI, restarted a moment ago, is still starting.
+ * - `draft`: its field is emptied: something is typed in it and not sent.
+ * - `typing`: nobody has typed in its field for five seconds.
+ * - `queued`: the messages waiting for its field have gone in.
+ * - `writing`: the message Tars just typed into it has started.
+ */
+export type AgentRestartWait =
+  | 'turn' | 'permission' | 'note' | 'background' | 'launch'
+  | 'draft' | 'typing' | 'queued' | 'writing';
+
+export interface AgentPendingRestart {
+  agentId: string;
+  /** The settings it applies: `model`, `effort`, `permissionMode`, `orchestrator`, `secondaryProjectPath`, `obsidianVaultPaths`, `localModel`. */
+  settings: string[];
+  waitingFor: AgentRestartWait;
+}
+
 export interface AgentEvent {
   type: string;
   agentId: string;
@@ -271,7 +296,8 @@ export interface AgentStatus {
   /** Empty from agent:list. From agent:get, what to write into a fresh terminal
    *  to show this agent: its terminal's screen as one chunk, opening with RIS
    *  (core/terminal-mirror.ts), or the kept tail of the stream when the
-   *  terminal has no mirror. */
+   *  terminal has no mirror. Empty, with no ptyId, for an agent with no
+   *  terminal: agent:get opens none. */
   output: string[];
   lastActivity: string;
   error?: string;
@@ -292,9 +318,10 @@ export interface AgentStatus {
   /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;
   /** The Orchestrator toggle, and nothing else: never read from the name.
-   *  An orchestrator gets the orchestration instructions, cannot edit files,
-   *  sits in the global room and answers Telegram and Slack. A project has
-   *  one at most. Always set on a record from the main process. */
+   *  An orchestrator gets the orchestration instructions, cannot edit files
+   *  and sits in the global room. Telegram and Slack talk to one of them only,
+   *  the fleet's first (getSuperAgent with no project). A project has one at
+   *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
@@ -788,6 +815,20 @@ export interface ElectronAPI {
      *  put back as it was. Pushed on every change, `waiting: 0` when it is
      *  over. Mirror of `agent:message-waiting` in electron/preload.ts. */
     onMessageWaiting?: (callback: (waiting: AgentMessageWaiting) => void) => () => void;
+    /** Restart the agent's CLI now, continuing its conversation under a new
+     *  session id, whatever it is doing. A stop then a start begins a new
+     *  conversation instead. Mirror of `agent:restart`. */
+    restart?: (id: string) => Promise<{ success: boolean; error?: string }>;
+    /** The restarts waiting right now, for a window that opened after the
+     *  wait began. An agent absent from the list has none waiting. */
+    pendingRestarts?: () => Promise<{ success: boolean; pending: AgentPendingRestart[] }>;
+    /** Pushed when an agent's restart starts waiting, waits on something
+     *  else, or stops waiting (`pending: null`). Mirror of
+     *  `agent:restart-pending` in electron/preload.ts. */
+    onRestartPending?: (callback: (event: {
+      agentId: string;
+      pending: Omit<AgentPendingRestart, 'agentId'> | null;
+    }) => void) => () => void;
   };
 
   // Skills management
@@ -800,7 +841,8 @@ export interface ElectronAPI {
     listInstalled: () => Promise<string[]>;
     listInstalledAll: () => Promise<Record<string, string[]>>;
     linkToProvider: (params: { skillName: string; providerId: string }) => Promise<{ success: boolean; error?: string }>;
-    fetchMarketplace: () => Promise<{ skills: Array<{ rank: number; name: string; repo: string; installs: string; installsNum: number }> | null }>;
+    /** The last skills.sh listing, at once, refreshed behind it when older than an hour; only the first ever call waits on the network. `fetchedAt` is when it was fetched (ms). */
+    fetchMarketplace: () => Promise<{ skills: Array<{ rank: number; name: string; repo: string; installs: string; installsNum: number }> | null; fetchedAt?: number }>;
     onPtyData: (callback: (event: { id: string; data: string }) => void) => () => void;
     onPtyExit: (callback: (event: { id: string; exitCode: number }) => void) => () => void;
     onInstallOutput: (callback: (event: SkillInstallOutputEvent) => void) => () => void;
@@ -986,6 +1028,7 @@ export interface ElectronAPI {
       slackAppToken: string;
       slackSigningSecret: string;
       slackChannelId: string;
+      slackAllowedUserIds: string[];
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1082,6 +1125,7 @@ export interface ElectronAPI {
       slackAppToken?: string;
       slackSigningSecret?: string;
       slackChannelId?: string;
+      slackAllowedUserIds?: string[];
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;
@@ -1301,7 +1345,8 @@ export interface ElectronAPI {
 
   // CLI paths management
   cliPaths?: {
-    detect: () => Promise<{
+    /** The last detection, cached in main for the app run and the saved paths; `refresh: true` looks again (a login shell and a probe of every CLI). */
+    detect: (options?: { refresh?: boolean }) => Promise<{
       amp: string;
       claude: string;
       codex: string;
