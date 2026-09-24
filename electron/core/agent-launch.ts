@@ -88,6 +88,23 @@ export const SENDER_WAIT_MS = 20_000;
 const launchesUnderWay = new Map<string, { since: number; withTask: boolean }>();
 
 /**
+ * Told when a launch begins or is abandoned, so the page can say `starting`
+ * (AgentStatus.launching) without a status change to carry it: a restart keeps
+ * `idle`. agents-tick listens, and watches the window until it closes by
+ * itself (sessionStarting drops a launch that came up or timed out).
+ */
+let launchListener: (() => void) | undefined;
+
+export function setLaunchListener(fn: (() => void) | undefined): void {
+  launchListener = fn;
+}
+
+/** The agents with a launch under way, as far as this map knows. */
+export function launchesPending(): string[] {
+  return [...launchesUnderWay.keys()];
+}
+
+/**
  * A launch into an agent's terminal has begun: a start from a window, a
  * restart, a bot's cold start. Until its CLI runs there, the terminal is a
  * shell that is about to hand over, and anything that would start a session
@@ -97,12 +114,15 @@ const launchesUnderWay = new Map<string, { since: number; withTask: boolean }>()
 export function launchBegins(agentId: string, opts: { withTask?: boolean } = {}): object {
   const launch = { since: Date.now(), withTask: !!opts.withTask };
   launchesUnderWay.set(agentId, launch);
+  launchListener?.();
   return launch;
 }
 
 /** That launch failed or was refused: nothing is coming up. */
 export function launchAbandoned(agentId: string, launch: object): void {
-  if (launchesUnderWay.get(agentId) === launch) launchesUnderWay.delete(agentId);
+  if (launchesUnderWay.get(agentId) !== launch) return;
+  launchesUnderWay.delete(agentId);
+  launchListener?.();
 }
 
 /**

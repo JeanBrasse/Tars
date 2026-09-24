@@ -76,6 +76,12 @@ export interface AgentStatus {
    *  from the hook that reports it; gone as soon as `status` changes. Not set
    *  for the idle prompt. */
   waitingOn?: AgentWaitingOn;
+  /** Set by agent:list, agent:get and agents:tick: a launch is on its way and
+   *  its session is not up yet (a restart, a start from a window, a bot's cold
+   *  start, a session the API starts). Main's own window (sessionStarting,
+   *  core/agent-launch.ts): 15 s for a CLI that never runs, up to 180 s for
+   *  one that runs, until its SessionStart (or, with a task, its first turn). */
+  launching?: boolean;
   lastActivity: string;
   error?: string;
   ptyId?: string;

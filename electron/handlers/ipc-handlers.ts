@@ -35,7 +35,7 @@ import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
-import { registerAgentLauncher, launchBegins, launchAbandoned, type AgentLauncher } from '../core/agent-launch';
+import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
 import { assignRole, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
@@ -906,7 +906,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the Chat's fleet list; agent:start opens the terminal a launch needs.
     const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
     if (!ptyProcess) {
-      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false };
+      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false, launching: sessionStarting(agent) };
     }
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
@@ -919,6 +919,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: screen === undefined ? agent.output : [screen],
       cliRunning: cliRunningIn(ptyProcess),
       leftFullscreen: leftFullscreenIn(ptyProcess),
+      launching: sessionStarting(agent),
     };
   });
 
@@ -936,6 +937,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: [],
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
+      launching: sessionStarting(agent),
     }));
   });
 

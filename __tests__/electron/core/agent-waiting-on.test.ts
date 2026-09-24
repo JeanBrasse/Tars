@@ -144,7 +144,10 @@ describe('what a waiting agent waits on', { timeout: 20_000 }, () => {
     } finally {
       vi.useRealTimers();
     }
-    const tick = pushed.filter(p => p.channel === 'agents:tick').at(-1)!.payload as Array<{ id: string; waitingOn?: unknown }>;
-    expect(tick.find(t => t.id === 'a1')?.waitingOn).toEqual({ kind: 'permission', text: 'npx playwright test' });
+    // Any tick of this module: a tick armed by the previous test's module (its
+    // own timer, from before resetModules) can land after ours under load.
+    const said = pushed.filter(p => p.channel === 'agents:tick')
+      .map(p => (p.payload as Array<{ id: string; waitingOn?: { text?: string } }>).find(t => t.id === 'a1')?.waitingOn);
+    expect(said).toContainEqual({ kind: 'permission', text: 'npx playwright test' });
   });
 });

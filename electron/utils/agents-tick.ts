@@ -5,6 +5,7 @@ import { extractStatusLine } from './ansi';
 import { ptyProcesses } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
 import { leftFullscreenIn } from '../core/terminal-mirror';
+import { launchesPending, sessionStarting, setLaunchListener } from '../core/agent-launch';
 import type { AgentStatus, AgentWaitingOn } from '../types';
 
 export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
@@ -29,6 +30,8 @@ export interface AgentTickItem {
   /** The CLI repaints inline on an alternate screen it never left, so the
    *  wheel reaches nothing. See RepaintWatch in core/terminal-mirror.ts. */
   leftFullscreen: boolean;
+  /** A launch is on its way and its session is not up yet (sessionStarting). */
+  launching: boolean;
 }
 
 let tickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -88,7 +91,37 @@ function buildTickPayload(): AgentTickItem[] {
       waitingOn: a.waitingOn,
       provider: a.provider || 'claude',
       cliRunning: agentCliRunning(a),
+      launching: sessionStarting(a),
       leftFullscreen: leftFullscreenIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined),
     }))
     .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
 }
+
+/**
+ * A launch that begins or ends is news for the page (`launching`) even when no
+ * status moves with it: a restart keeps `idle`, and a launch given up after
+ * CLI_BOOT_MS ends by itself. So a tick goes out when one begins or is
+ * abandoned, and the window is looked at every second while any is open, for
+ * one that closed by itself (sessionStarting drops it when its session is up
+ * or it timed out). Nothing is polled while no launch is under way.
+ */
+let launchPoll: ReturnType<typeof setInterval> | null = null;
+
+function watchLaunches(): void {
+  scheduleTick();
+  if (launchPoll) return;
+  launchPoll = setInterval(() => {
+    let ended = false;
+    for (const id of launchesPending()) {
+      const agent = agents.get(id);
+      if (!agent || !sessionStarting(agent)) ended = true;
+    }
+    if (ended) scheduleTick();
+    if (launchesPending().length === 0 && launchPoll) {
+      clearInterval(launchPoll);
+      launchPoll = null;
+    }
+  }, 1000);
+}
+
+setLaunchListener(watchLaunches);
