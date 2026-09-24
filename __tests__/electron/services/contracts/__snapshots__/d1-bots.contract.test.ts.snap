@@ -1,5 +1,398 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`Files, launches and replies that fail, recorded before D1 > Slack: a reply that fails to post fails the start, and gives the launch up 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "Plan the release",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":x: Failed to start agent: Error: slack is down",
+    },
+    {
+      "in": "C1",
+      "text": ":rocket: Started *Rest*
+
+:robot_face: Task: Measure the Usage page",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+",
+    },
+  ],
+}
+`;
+
+exports[`Files, launches and replies that fail, recorded before D1 > Slack: a terminal that fails to open is said, and the launch given up, so the next try starts at once 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [
+    {
+      "slackChannelId": "C1",
+    },
+    {
+      "slackChannelId": "D1",
+    },
+  ],
+  "slack": [
+    {
+      "in": "C1",
+      "text": ":x: Failed to start agent: Error: no terminal in the contract",
+    },
+    {
+      "in": "C1",
+      "text": ":rocket: Started *Rest*
+
+:robot_face: Task: Measure the Usage page",
+    },
+    {
+      "in": "D1",
+      "text": ":x: Error: Error: no terminal in the contract",
+    },
+    {
+      "in": "D1",
+      "text": ":crown: Super Agent is processing your request...",
+    },
+  ],
+  "slackPosted": [],
+  "telegram": [],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+",
+    },
+    {
+      "terminal": 1,
+      "text": "cd '<HOME>/projects/atlas' && '/opt/tars-contract/bin/claude' --append-system-prompt-file '<REPO>/electron/resources/super-agent-instructions.md' --model 'claude-opus-5-5' --dangerously-skip-permissions --disallowed-tools "Edit" "Write" "NotebookEdit" "Task" --effort medium --add-dir '<HOME>/.dorothy' -- '[FROM SLACK - Use send_slack MCP tool to respond!] what is everyone doing?'
+",
+    },
+  ],
+}
+`;
+
+exports[`Files, launches and replies that fail, recorded before D1 > Telegram: a terminal that fails to open is said, and the launch given up, so the next try starts at once 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "❌ Failed to start agent: Error: no terminal in the contract",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🚀 Started *Rest*
+
+🐸 Task: Measure the Usage page",
+      "to": "42",
+    },
+    {
+      "text": "❌ Error: Error: no terminal in the contract",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing your request...",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+",
+    },
+    {
+      "terminal": 1,
+      "text": "cd '<HOME>/projects/atlas' && '/opt/tars-contract/bin/claude' --append-system-prompt-file '<HOME>/.dorothy/telegram-combined-prompt.md' --model 'claude-opus-5-5' --dangerously-skip-permissions --disallowed-tools "Edit" "Write" "NotebookEdit" "Task" --effort medium --add-dir '<HOME>/.dorothy' -- '[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] what is everyone doing?'
+",
+    },
+  ],
+}
+`;
+
+exports[`Files, launches and replies that fail, recorded before D1 > Telegram: an agent given no terminal is told so, and the launch given up 1`] = `
+{
+  "fleet": [
+    {
+      "currentTask": "what is everyone doing?",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": "Measure the Usage page",
+      "id": "agent-rest",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "❌ Failed to initialize agent terminal.",
+      "to": "42",
+    },
+    {
+      "text": "❌ Failed to connect to Super Agent terminal.",
+      "to": "42",
+    },
+    {
+      "opts": {
+        "parse_mode": "Markdown",
+      },
+      "text": "🚀 Started *Rest*
+
+🐸 Task: Measure the Usage page",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing your request...",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "cd '<HOME>/projects/orion' && '/opt/tars-contract/bin/claude' --model 'claude-opus-5-5' --dangerously-skip-permissions --effort medium --add-dir '<HOME>/.dorothy' -- 'Measure the Usage page'
+",
+    },
+    {
+      "terminal": 1,
+      "text": "cd '<HOME>/projects/atlas' && '/opt/tars-contract/bin/claude' --append-system-prompt-file '<HOME>/.dorothy/telegram-combined-prompt.md' --model 'claude-opus-5-5' --dangerously-skip-permissions --disallowed-tools "Edit" "Write" "NotebookEdit" "Task" --effort medium --add-dir '<HOME>/.dorothy' -- '[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] what is everyone doing?'
+",
+    },
+  ],
+}
+`;
+
+exports[`Files, launches and replies that fail, recorded before D1 > Telegram: files downloaded, each handed to the orchestrator with what it is 1`] = `
+{
+  "downloads": [
+    "https://api.telegram.org/file/bottg-bot-token/files/p-large.bin",
+    "https://api.telegram.org/file/bottg-bot-token/files/d1.bin",
+    "https://api.telegram.org/file/bottg-bot-token/files/v1.bin",
+    "https://api.telegram.org/file/bottg-bot-token/files/a1.bin",
+    "https://api.telegram.org/file/bottg-bot-token/files/o1.bin",
+  ],
+  "fleet": [
+    {
+      "currentTask": "[FILE ATTACHED - voice message",
+      "id": "agent-orch",
+      "status": "running",
+    },
+    {
+      "currentTask": "Rebase onto main and fix the conflicts in the settings page",
+      "id": "agent-dune",
+      "status": "running",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-dove",
+      "status": "waiting",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-rest",
+      "status": "idle",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-err",
+      "status": "error",
+    },
+    {
+      "currentTask": null,
+      "id": "agent-done",
+      "status": "completed",
+    },
+  ],
+  "saved": [],
+  "slack": [],
+  "slackPosted": [],
+  "telegram": [
+    {
+      "text": "📥 Downloading image...",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading report.pdf...",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading video...",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading audio...",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+    {
+      "text": "📥 Downloading voice message...",
+      "to": "42",
+    },
+    {
+      "text": "👑 Super Agent is processing...",
+      "to": "42",
+    },
+  ],
+  "typed": [
+    {
+      "terminal": 0,
+      "text": "Message from Telegram: [200~[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] [FILE ATTACHED - image saved to: <HOME>/.dorothy/telegram-downloads/<TIME>-photo_20.jpg] what is this?  Downloaded files available at:   - <HOME>/.dorothy/telegram-downloads/<TIME>-photo_20.jpg  You can read/analyze these files using your tools.[201~
+Message from Telegram: [200~[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] [FILE ATTACHED - PDF document "report.pdf" saved to: <HOME>/.dorothy/telegram-downloads/<TIME>-report.pdf] Please analyze or use this file as needed.  Downloaded files available at:   - <HOME>/.dorothy/telegram-downloads/<TIME>-report.pdf  You can read/analyze these files using your tools.[201~
+Message from Telegram: [200~[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] [FILE ATTACHED - video "video_22.mp4" saved to: <HOME>/.dorothy/telegram-downloads/<TIME>-video_22.mp4] the demo  Downloaded files available at:   - <HOME>/.dorothy/telegram-downloads/<TIME>-video_22.mp4  You can read/analyze these files using your tools.[201~
+Message from Telegram: [200~[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] [FILE ATTACHED - audio "memo.m4a" saved to: <HOME>/.dorothy/telegram-downloads/<TIME>-memo.m4a] An audio file has been downloaded for reference.  Downloaded files available at:   - <HOME>/.dorothy/telegram-downloads/<TIME>-memo.m4a  You can read/analyze these files using your tools.[201~
+Message from Telegram: [200~[FROM TELEGRAM chat_id=42 - Use send_telegram MCP tool with chat_id="42" to respond!] [FILE ATTACHED - voice message saved to: <HOME>/.dorothy/telegram-downloads/<TIME>-voice_24.ogg] A voice message has been downloaded. Note: You may need to transcribe this audio file to understand its content.  Downloaded files available at:   - <HOME>/.dorothy/telegram-downloads/<TIME>-voice_24.ogg  You can read/analyze these files using your tools.[201~
+",
+    },
+  ],
+}
+`;
+
 exports[`Slack, as recorded before D1 > a mention and a direct message go to the orchestrator whose CLI is up 1`] = `
 {
   "fleet": [

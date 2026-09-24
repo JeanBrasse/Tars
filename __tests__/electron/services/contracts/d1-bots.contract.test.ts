@@ -38,7 +38,10 @@ const tg = vi.hoisted(() => ({
   texts: [] as Array<{ pattern: RegExp; handler: Handler }>,
   on: new Map<string, Handler[]>(),
   sent: [] as Array<{ to: string; text: string; opts?: unknown }>,
+  downloads: [] as string[],
 }));
+/** Faults a scenario can switch on: terminals that fail to open, and Telegram files that download. */
+const faults = vi.hoisted(() => ({ spawn: 0, files: false }));
 const sl = vi.hoisted(() => ({
   events: new Map<string, Handler>(),
   message: null as Handler | null,
@@ -51,6 +54,10 @@ vi.mock('os', async (importOriginal) => {
 });
 vi.mock('node-pty', () => ({
   spawn: vi.fn((file: string): FakePty => {
+    if (faults.spawn > 0) {
+      faults.spawn--;
+      throw new Error('no terminal in the contract');
+    }
     const listeners: Array<(data: string) => void> = [];
     const terminal: FakePty = {
       pid: 7000 + spawned.length, process: file, write: vi.fn(), kill: vi.fn(), resize: vi.fn(), onExit: vi.fn(),
@@ -79,12 +86,27 @@ vi.mock('@slack/bolt', () => ({
     stop() { return Promise.resolve(); }
   },
 }));
+vi.mock('https', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('https')>();
+  const { PassThrough } = await import('node:stream');
+  const get = (url: string, callback: (response: unknown) => void) => {
+    tg.downloads.push(String(url));
+    const response = Object.assign(new PassThrough(), { statusCode: 200 });
+    setImmediate(() => { callback(response); response.end('contract bytes'); });
+    return { on() { return this; } };
+  };
+  return { ...actual, get, default: { ...actual, get } };
+});
 vi.mock('node-telegram-bot-api', () => ({
   default: class {
     on(event: string, handler: Handler) { tg.on.set(event, [...(tg.on.get(event) ?? []), handler]); }
     onText(pattern: RegExp, handler: Handler) { tg.texts.push({ pattern, handler }); }
     getMe() { return Promise.resolve({ username: 'tars_test_bot' }); }
-    getFile() { return Promise.reject(new Error('no file in the contract')); }
+    getFile(fileId: string) {
+      return faults.files
+        ? Promise.resolve({ file_id: fileId, file_path: `files/${fileId}.bin` })
+        : Promise.reject(new Error('no file in the contract'));
+    }
     sendMessage(chatId: unknown, text: string, opts?: unknown) {
       tg.sent.push({ to: String(chatId), text, ...(opts === undefined ? {} : { opts }) });
       return Promise.resolve({});
@@ -238,7 +260,8 @@ beforeEach(() => {
   agents.clear();
   ptyProcesses.clear();
   spawned.length = 0;
-  tg.texts.length = 0; tg.on.clear(); tg.sent.length = 0;
+  tg.texts.length = 0; tg.on.clear(); tg.sent.length = 0; tg.downloads.length = 0;
+  faults.spawn = 0; faults.files = false;
   sl.events.clear(); sl.message = null; sl.posted.length = 0;
   said.length = 0; saved.length = 0;
   settings = baseSettings();
@@ -592,6 +615,84 @@ describe('What sets the two bots apart, recorded before D1', () => {
     await slackMention('U1', 'start rest Measure the Usage page');
     await slackMention('U1', 'start err Read the logs');
     terminalExited(terminal as never);
+    expect(outcome()).toMatchSnapshot();
+  });
+});
+
+// ── Files, launches that fail, and replies that fail ──────────────────────
+
+/** A downloaded file is named after the time it came in: the same on every run once that is taken out. */
+const untimed = (value: unknown) => JSON.parse(JSON.stringify(value).replace(/\/\d{13}-/g, '/<TIME>-'));
+
+/** Telegram's service again, with another way to open a terminal. */
+function telegramService(open: (a: AgentStatus) => Promise<string>): void {
+  initTelegramBotService(
+    agents, ptyProcesses, () => settings, null,
+    () => getSuperAgent(agents), () => {}, async () => stats, open,
+    (s: AppSettings) => { saved.push({ telegramAuthorizedChatIds: s.telegramAuthorizedChatIds, telegramChatId: s.telegramChatId }); },
+  );
+}
+
+describe('Files, launches and replies that fail, recorded before D1', () => {
+  it('Telegram: files downloaded, each handed to the orchestrator with what it is', async () => {
+    faults.files = true;
+    liveCli('agent-orch');
+    await telegram({ message_id: 20, chat: { id: 42, type: 'private' }, photo: [{ file_id: 'p-small' }, { file_id: 'p-large' }], caption: '@tars_test_bot what is this?' });
+    await telegram({ message_id: 21, chat: { id: 42, type: 'private' }, document: { file_id: 'd1', file_name: 'report.pdf', mime_type: 'application/pdf' } });
+    await telegram({ message_id: 22, chat: { id: 42, type: 'private' }, video: { file_id: 'v1' }, caption: 'the demo' });
+    await telegram({ message_id: 23, chat: { id: 42, type: 'private' }, audio: { file_id: 'a1', file_name: 'memo.m4a' } });
+    await telegram({ message_id: 24, chat: { id: 42, type: 'private' }, voice: { file_id: 'o1' } });
+    const seen = untimed({ ...outcome(), downloads: tg.downloads.splice(0) });
+    // The orchestrator's task is its message cut at 100 characters, and where the
+    // cut falls in the file's path depends on the machine's temporary folder.
+    seen.fleet = seen.fleet.map((a: { currentTask: string | null }) => ({ ...a, currentTask: a.currentTask?.split(' saved to: ')[0] ?? null }));
+    expect(seen).toMatchSnapshot();
+  });
+
+  it('Telegram: a terminal that fails to open is said, and the launch given up, so the next try starts at once', async () => {
+    faults.spawn = 1;
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    faults.spawn = 1;
+    await telegram(dm('what is everyone doing?'));
+    await telegram(dm('what is everyone doing?'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Slack: a terminal that fails to open is said, and the launch given up, so the next try starts at once', async () => {
+    faults.spawn = 1;
+    await slackMention('U1', 'start rest Measure the Usage page');
+    await slackMention('U1', 'start rest Measure the Usage page');
+    faults.spawn = 1;
+    await slackMessage('U1', 'what is everyone doing?');
+    await slackMessage('U1', 'what is everyone doing?');
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Telegram: an agent given no terminal is told so, and the launch given up', async () => {
+    telegramService(async () => 'pty-nowhere');
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    await telegram(dm('what is everyone doing?'));
+    telegramService((a: AgentStatus) => initAgentPty(a, null, vi.fn(), vi.fn()));
+    await telegram(dm('/start_agent rest Measure the Usage page'));
+    await telegram(dm('what is everyone doing?'));
+    expect(outcome()).toMatchSnapshot();
+  });
+
+  it('Slack: a reply that fails to post fails the start, and gives the launch up', async () => {
+    let failed = false;
+    const flaky = (where: string) => async (text: string) => {
+      if (!failed && text.startsWith(':rocket:')) {
+        failed = true;
+        throw new Error('slack is down');
+      }
+      said.push({ in: where, text });
+    };
+    await sl.events.get('app_mention')!({ event: { user: 'U1', text: '<@UBOT> start rest Measure the Usage page', channel: 'C1', ts: '1700000000.000300' }, say: flaky('C1') });
+    await settle();
+    // Given up: the next start does not wait for a launch that told nobody it began.
+    agents.get('agent-rest')!.status = 'idle';
+    await slackMention('U1', 'start rest Measure the Usage page');
     expect(outcome()).toMatchSnapshot();
   });
 });
