@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
  * MCP server that exposes Telegram tools for sending messages, photos, videos, and documents.
- * Works independently - reads config from ~/.dorothy/settings.json and sends directly to Telegram.
+ * Works independently - reads its settings from ~/.dorothy/app-settings.json and sends directly to Telegram.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { readAppSettings } from "../../mcp-shared/src/settings.js";
 import { registerTools, text, tool } from "../../mcp-shared/src/tools.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as https from "https";
-
-// Settings file path
-const SETTINGS_FILE = path.join(os.homedir(), ".dorothy", "app-settings.json");
 
 interface AppSettings {
   telegramBotToken?: string;
@@ -168,14 +166,8 @@ function assertAuthorizedChat(settings: AppSettings, chatId: string): string {
 }
 
 function loadSettings(): AppSettings {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8"));
-    }
-  } catch (err) {
-    console.error("Failed to load settings:", err);
-  }
-  return {};
+  const settings = readAppSettings((err) => console.error("Failed to load settings:", err));
+  return settings === undefined ? {} : (settings as AppSettings);
 }
 
 // Telegram Bot API helper

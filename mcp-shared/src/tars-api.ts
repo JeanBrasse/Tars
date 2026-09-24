@@ -12,7 +12,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
+export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
 const API_TOKEN_FILE = path.join(os.homedir(), ".dorothy", "api-token");
 
 // Caller identity, injected into the PTY environment by Tars when it spawns
@@ -31,9 +31,9 @@ export function getCallerIdentity(): { agentId: string; projectPath: string } {
 // the file below is one secret shared by every agent on the machine and says
 // only that the caller is on it. Preferred whenever it is there; the file
 // remains for the sessions that started before Tars minted any.
-const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
+export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
 
-function readApiToken(): string | null {
+export function readApiToken(): string | null {
   if (AGENT_API_TOKEN) return AGENT_API_TOKEN;
   try {
     if (fs.existsSync(API_TOKEN_FILE)) {
