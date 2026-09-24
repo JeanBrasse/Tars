@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { BrandSpinner, Button } from '@/components/ui';
 import type { BusDelivery, BusMessage, BusRoom, BusThread } from '@/types/electron';
@@ -81,7 +81,12 @@ export function RoomView({
   // The thread starts under the head; once it is longer than the panel, the
   // view follows the newest message, unless you scrolled up to read, in which
   // case what arrived is counted in a band under the thread instead.
-  useEffect(() => {
+  //
+  // A layout effect, before the browser paints and scrolls: a thread that
+  // first spans two days gains a day line at its top, the browser's scroll
+  // anchoring moves the view to keep its place, and the scroll event that
+  // follows used to find the view off the bottom and stop following it.
+  useLayoutEffect(() => {
     const el = logRef.current;
     const added = messageCount - seenCount.current;
     seenCount.current = messageCount;
