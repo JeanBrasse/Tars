@@ -28,6 +28,9 @@ import * as path from 'node:path';
  * 5. Over-correction: a template the review accepts is refused: a scoped skill
  *    (`vercel:nextjs`, `@acme/ship`), no skills, no folders, an update that
  *    changes only the name.
+ * 6. (the Audit's gate of #208) a refusal quotes the name or the skill as it
+ *    is: a U+202E in it turns the refusal's own text around on screen. It is
+ *    written out, `[U+202E]`, as the review writes it.
  */
 
 vi.mock('electron', () => ({
@@ -112,5 +115,16 @@ describe('template:update', () => {
   it('5. takes a change of name alone', async () => {
     const created = await call('template:create', GOOD) as { template: { id: string } };
     expect(await call('template:update', { id: created.template.id, displayName: 'Renamed' })).toMatchObject({ success: true });
+  });
+});
+
+describe('what a refusal quotes (gate of #208)', () => {
+  it('6. writes out what does not show, in the name and in the skill', async () => {
+    const result = await call('template:create', { ...GOOD, displayName: 'Helper\u202Egnp.exe', skills: ['ok', 'sly\u202Eskill name'] });
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('Helper[U+202E]gnp.exe');
+    expect(String(result.error)).toContain('sly[U+202E]skill name');
+    expect(String(result.error)).not.toMatch(/\u202E/);
   });
 });
