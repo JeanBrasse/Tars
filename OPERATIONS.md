@@ -6,7 +6,9 @@ the installed app.
 
 Target platform is macOS: `electron-builder` is invoked with `--mac` only, the code-signing
 config is `build/entitlements.mac.plist`, and the Tasmania integration reads a token out of
-`~/Library/Application Support/`.
+`~/Library/Application Support/`. The code stays Linux compatible all the same (Noah,
+2026-09-24): the CI runs the tests on ubuntu, and a macOS-only code path has a Linux one or
+fails cleanly.
 
 ---
 
@@ -361,10 +363,11 @@ Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint,
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
-**And it has never run.** Measured on 2026-09-17: the workflow is listed as active, and
-`gh api repos/JeanBrasse/Tars/actions/runs` answers `total_count: 0`, PR #105 included. Actions
-stay off on a fork until somebody enables them in the repository's Actions tab. Until that click,
-every check is one you ran yourself, on your own machine, and nothing is checked on Linux.
+**It runs, and it is the only check made on Linux.** Measured on 2026-09-17, it had never run:
+Actions stay off on a fork until somebody enables them. They are on now, and
+`gh api repos/JeanBrasse/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
+part of every gate, because the code stays Linux compatible (Noah, 2026-09-24): a test that
+passes on your Mac and fails there is a finding, not noise.
 
 ---
 
