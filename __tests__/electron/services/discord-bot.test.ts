@@ -404,3 +404,57 @@ describe('starting and stopping the bot', () => {
     expect(dc.destroyed).toBe(1);
   });
 });
+
+describe('QA, gate of #193: the guards the tests above did not hold', () => {
+  // Each of these was seen to pass on the adapter and to turn red on a mutant
+  // of the guard it names, which the tests above let through.
+
+  it('leaves no channel behind for a stranger: send_discord refuses it, and still posts where a member wrote', async () => {
+    settings.discordChannelId = 'C-TEAM';
+    await discord({ author: STRANGER, content: mention('status'), channelId: 'C-OTHER' });
+    // Its refusal, where it addressed the bot, and nothing else.
+    expect(said('C-OTHER')).toHaveLength(1);
+    expect(await sendDiscordMessage('to the stranger', settings, 'C-OTHER')).toMatchObject({ ok: false, status: 403 });
+    expect(await sendDiscordMessage('to the team', settings)).toEqual({ ok: true });
+    expect(said('C-TEAM')).toEqual(['to the team']);
+    expect(said('C-OTHER')).toHaveLength(1);
+  });
+
+  it('lets nothing an agent writes ping: send_discord posts @everyone, @here, a member and a role inert', async () => {
+    const routes = new Map<string, Handler>();
+    registerDiscordRoutes({ post: (p: string, h: Handler) => routes.set(p, h) } as never, { getAppSettings: () => settings } as never);
+    settings.discordChannelId = 'C-TEAM';
+    const text = `@everyone @here <@${NOAH}> <@&222222222222222222> the build is green`;
+    await routes.get('/api/discord/send')!({ body: { message: text } }, () => {});
+    const posted = dc.sent.filter(s => s.channel === 'C-TEAM');
+    expect(posted).toHaveLength(1);
+    expect(posted[0].content).toContain(text);
+    expect(posted[0].allowedMentions).toEqual({ parse: [] });
+  });
+
+  it('takes no other mention for its own: another member, @everyone, @here or a role', async () => {
+    for (const content of [`<@${STRANGER}> status`, '@everyone status', '@here status', '<@&222222222222222222> status']) {
+      await discord({ content });
+    }
+    expect(said()).toEqual([]);
+    expect(typed()).toBe('');
+  });
+
+  it('requires a mention when the setting was never saved, and takes the nickname form of one', async () => {
+    delete (settings as Partial<AppSettings>).discordRequireMention;
+    await discord({ content: 'status' });
+    expect(said()).toEqual([]);
+    await discord({ content: `<@!${BOT_ID}> status` });
+    expect(said()).toHaveLength(1);
+    expect(said()[0]).toContain('**Agents Status**');
+  });
+
+  it('forgets, with a new token, the channels the last one answered in', async () => {
+    await discord({ content: mention('help'), channelId: 'C-OTHER' });
+    await discord({ content: mention('help'), channelId: 'C-TEAM' });
+    expect(await sendDiscordMessage('before', settings, 'C-OTHER')).toEqual({ ok: true });
+    settings.discordBotToken = 'dc-bot-token-2';
+    initDiscordBot(() => settings, () => { saves++; }, null);
+    expect(await sendDiscordMessage('after', settings, 'C-OTHER')).toMatchObject({ ok: false, status: 403 });
+  });
+});
