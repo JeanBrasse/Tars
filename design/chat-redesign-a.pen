@@ -93074,6 +93074,45 @@
               "fontFamily": "$font-ui",
               "fontSize": 14,
               "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "tnEuK",
+              "name": "line",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "A room at rest while an agent works outside any exchange says so in its head: at rest, no exchange open, 1 agent at work. Every agent finished its turn is said only when it is true.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 14,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "y9kuW",
+              "name": "line",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "A room you are not in counts what waits on you by delivery, as the bus counts it: 2 not sent, 1 held. The open room counts its strip’s rows, one per agent.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 14,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "gqSXZ",
+              "name": "line",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "An agent in error whose session is gone stopped on an error. Turn failed is said of a turn that failed while its session stays open.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 14,
+              "fontWeight": "normal"
             }
           ]
         },
@@ -93242,7 +93281,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "Held as a delivery state, the counts per member, who joined or left on a members change, and starting for a member that joined. The pull request lists each one with the field it needs.",
+              "content": "Held as a delivery state, who joined or left on a members change, and starting for a member that joined are in the bus now (PR 169, PR 172). Still not: counts per member for a room you are not in. The bus counts a room’s deliveries, so that room’s line says them by delivery.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
