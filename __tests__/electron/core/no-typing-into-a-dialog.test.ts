@@ -371,6 +371,25 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     expect(manager.agents.get('alpha')!.status).toBe('idle');
   });
 
+  // QA's gate of #189: claude registers again at every compaction, in the same
+  // process and session. Counted from that registration, an interruption made
+  // before a /compact the next tick had not seen yet was ignored for good, and
+  // the agent stayed running. Counted from the CLI's launch, it is not.
+  it('12. still ends a turn interrupted just before a compaction registered the session again', async () => {
+    terminalFor('alpha');
+    const restart = await import('../../../electron/core/agent-restart');
+    restart.noteLaunch(pty.ptyProcesses.get('pty-alpha'), {} as never);
+    await settle(20);
+    const turnStarted = new Date().toISOString();
+    await settle(20);
+    interruptRecorded('alpha', new Date());
+    await settle(20);
+    putAgent({ id: 'alpha', status: 'running', lastTurnStartedAt: turnStarted, sessionRegisteredAt: new Date().toISOString() });
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('idle');
+  });
+
   it('12. does not end a turn on an interruption from before it began', async () => {
     terminalFor('alpha');
     interruptRecorded('alpha', new Date(Date.now() - 20_000));
