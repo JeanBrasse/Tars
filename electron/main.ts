@@ -10,6 +10,7 @@
  */
 
 // First: every module required after it is compiled from the cache it keeps.
+import { defaultShell } from './utils/default-shell';
 import './core/compile-cache';
 
 import { app, BrowserWindow } from 'electron';
@@ -531,7 +532,7 @@ app.whenReady().then(async () => {
       const { v4: uuidv4 } = await import('uuid');
 
       const id = uuidv4();
-      const shell = process.env.SHELL || '/bin/zsh';
+      const shell = defaultShell();
       let cwd = config.projectPath;
 
       if (!fs.existsSync(cwd)) {
