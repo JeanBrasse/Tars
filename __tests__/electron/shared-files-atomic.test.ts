@@ -865,8 +865,9 @@ describe('~/.claude/mcp.json, from the orchestrator setup when `claude mcp add` 
     expect(await setup()).toMatchObject({ success: true, method: 'mcp-json-fallback' });
 
     // An argv: the path is an argument of its own, never inside a shell string.
-    // On the app's own Node, through its launcher (mcp-server-runtime.test.ts), not `node`.
-    const launcher = path.join(home(), '.dorothy', 'bin', 'tars-mcp-node');
+    // What mcpNodeCommand names (mcp-server-runtime.test.ts): this is not a
+    // packaged Tars and no launcher was written, so `node`.
+    const launcher = 'node';
     expect(claudeRuns).toContainEqual(['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', launcher, bundle]);
     // Bounded for good: the default SIGTERM leaves a child that ignores it
     // running, and the setup waiting on it (the gate of #128).

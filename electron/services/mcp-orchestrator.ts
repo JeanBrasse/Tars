@@ -114,13 +114,18 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
     // program would be left on it: when the program changes, which the file
     // below records, every server is registered again, once.
     const nodeCommand = mcpNodeCommand();
+    // Which providers have every server on that program, recorded per
+    // provider: one that fails (a config file it cannot write) is tried again
+    // at the next start, and the others are not moved again (the Audit's gate
+    // of #201: 35 removals and 42 registrations per launch while codex failed,
+    // the claude CLI run on the main thread each time). Only a packaged Tars
+    // moves anything over: another names the launcher it found, or `node`.
     const runtimeFile = path.join(DATA_DIR, 'mcp-servers-runtime.json');
-    let registeredWith: string | undefined;
-    try { registeredWith = JSON.parse(fs.readFileSync(runtimeFile, 'utf-8')).command; } catch { /* none yet */ }
-    const moveOver = registeredWith !== nodeCommand;
-    // Recorded only once every server was registered on it: a registration
-    // that failed, or a start that found no bundle, leaves it to the next.
-    let movedAll = true;
+    let recorded: { command?: string; providers?: string[] } = {};
+    try { recorded = JSON.parse(fs.readFileSync(runtimeFile, 'utf-8')); } catch { /* none yet */ }
+    const movedBefore = new Set(recorded.command === nodeCommand && Array.isArray(recorded.providers) ? recorded.providers : []);
+    const mayMove = app.isPackaged === true;
+    const failed = new Set<string>();
     let foundAny = false;
 
     // For each server × each provider: register if not already present
@@ -138,23 +143,29 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
       for (const provider of providers) {
         try {
           const registered = provider.isMcpServerRegistered(name, serverPath);
-          if (!registered || (moveOver && !isTypeScript)) {
+          const moveOver = mayMove && !isTypeScript && !movedBefore.has(provider.id);
+          if (!registered || moveOver) {
             // Registering spawns a CLI, and this is the main thread, the one
             // that paints the window and pumps every PTY. Yield between each
             // so the app stays answerable while it catches up.
             await new Promise(resolve => setImmediate(resolve));
+            // Removed and added again: the entry is Tars's, and whatever was
+            // added to it by hand (an env, say) is not kept.
             if (registered) await provider.removeMcpServer(name);
             await provider.registerMcpServer(name, command, args);
           }
         } catch (err) {
-          movedAll = false;
+          failed.add(provider.id);
           console.error(`[${provider.id}] Failed to register ${name}:`, err);
         }
       }
     }
-    if (moveOver && movedAll && foundAny) {
+    const moved = providers.map(p => p.id).filter(id => !failed.has(id));
+    const unchanged = recorded.command === nodeCommand
+      && moved.length === movedBefore.size && moved.every(id => movedBefore.has(id));
+    if (mayMove && foundAny && !unchanged) {
       try {
-        writeAtomicSync(runtimeFile, JSON.stringify({ command: nodeCommand }));
+        writeAtomicSync(runtimeFile, JSON.stringify({ command: nodeCommand, providers: moved }));
       } catch (err) {
         console.warn('[mcp] could not record the program the MCP servers were registered on:', err);
       }

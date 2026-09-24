@@ -97,7 +97,11 @@ const otherProvider = {
     if (otherState.failing) throw new Error('EACCES: permission denied, open config.toml');
     otherRegistry.set(name, { command, args });
   },
-  removeMcpServer: async (name: string) => { calls.push(`other remove ${name}`); otherRegistry.delete(name); },
+  removeMcpServer: async (name: string) => {
+    calls.push(`other remove ${name}`);
+    if (otherState.failing) throw new Error('EACCES: permission denied, open config.toml');
+    otherRegistry.delete(name);
+  },
   getSkillDirectories: () => [] as string[],
   getPtyEnvVars: () => ({}),
 };
@@ -322,6 +326,13 @@ describe('the gate of #201', () => {
 
   it('16. tries again only the provider that failed, and records the others as moved', async () => {
     providerList.value = 'two';
+    // Both providers carry what an older Tars registered, on `node`; the
+    // second one's config cannot be written (chmod 000), so it keeps that.
+    for (const dir of ['mcp-orchestrator', 'mcp-memory', 'mcp-kanban']) {
+      const name = { 'mcp-orchestrator': 'claude-mgr-orchestrator', 'mcp-memory': 'tars-memory', 'mcp-kanban': 'claude-mgr-kanban' }[dir]!;
+      const entry = { command: 'node', args: [path.join(resources, dir, 'dist', 'bundle.js')] };
+      registry.set(name, { ...entry }); otherRegistry.set(name, { ...entry });
+    }
     otherState.failing = true;
     await setupMcpOrchestrator({} as never);
     expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
@@ -329,7 +340,7 @@ describe('the gate of #201', () => {
     calls.length = 0;
     await setupMcpOrchestrator({} as never);
     expect(calls.filter(c => !c.startsWith('other')), 'the provider that worked was moved again').toEqual([]);
-    expect(calls.some(c => c.startsWith('other add'))).toBe(true);
+    expect(calls.some(c => c.startsWith('other')), 'the provider that failed was not tried again').toBe(true);
 
     otherState.failing = false;
     await setupMcpOrchestrator({} as never);

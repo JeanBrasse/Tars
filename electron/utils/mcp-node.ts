@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { app } from 'electron';
 import { DATA_DIR } from '../constants';
 
 /**
@@ -29,22 +30,47 @@ import { DATA_DIR } from '../constants';
  *
  * Windows has no such script to run: `node` there, as before. So is a launcher
  * that cannot be written.
+ *
+ * Written by a packaged Tars at a lasting place only (the Audit's gate of
+ * #201). A dev run on the real HOME rewrote it to a worktree's Electron, and
+ * once that was gone every Tars server of every claude session, in Tars and
+ * out of it, failed to connect; a copy run from a DMG, or translocated by
+ * macOS, is gone once it quits. Such a start names the launcher already there
+ * and leaves it as it is, or names `node` when there is none. On Linux the
+ * AppImage file ($APPIMAGE) is named, not its mount point under /tmp. And the
+ * script itself falls back to the `node` on the PATH when the app it names is
+ * gone. A symlinked ~/.dorothy/bin, or a symlinked launcher, is not written
+ * through.
  */
-export function mcpNodeCommand(appBinary: string = process.execPath, platform: NodeJS.Platform = process.platform): string {
+export function mcpNodeCommand(
+  appBinary: string = lastingAppBinary(),
+  platform: NodeJS.Platform = process.platform,
+  mayWrite: boolean = isPackaged() && !isTransient(appBinary),
+): string {
   if (platform === 'win32') return 'node';
-  const launcher = path.join(DATA_DIR, 'bin', 'tars-mcp-node');
+  const bin = path.join(DATA_DIR, 'bin');
+  const launcher = path.join(bin, 'tars-mcp-node');
+  const isLink = (p: string) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
+  if (!mayWrite) return fs.existsSync(launcher) && !isLink(bin) && !isLink(launcher) ? launcher : 'node';
+  if (isLink(bin) || isLink(launcher)) {
+    console.warn('[mcp] ~/.dorothy/bin/tars-mcp-node is a link: not written through, the MCP servers run on `node`');
+    return 'node';
+  }
   const quoted = `'${appBinary.replace(/'/g, `'\\''`)}'`;
   const script = [
     '#!/bin/sh',
-    '# Written by Tars at each start: its MCP servers run on the Node inside the app.',
-    `ELECTRON_RUN_AS_NODE=1 exec ${quoted} "$@"`,
+    '# Written by a packaged Tars: its MCP servers run on the Node inside the app,',
+    '# or on the node on the PATH once that app is gone.',
+    `APP=${quoted}`,
+    '[ -x "$APP" ] && ELECTRON_RUN_AS_NODE=1 exec "$APP" "$@"',
+    'exec node "$@"',
     '',
   ].join('\n');
   try {
     let current: string | undefined;
     try { current = fs.readFileSync(launcher, 'utf-8'); } catch { /* not written yet */ }
     if (current !== script) {
-      fs.mkdirSync(path.dirname(launcher), { recursive: true, mode: 0o700 });
+      fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
       const tmp = `${launcher}.tmp`;
       fs.rmSync(tmp, { force: true });
       fs.writeFileSync(tmp, script, { flag: 'wx', mode: 0o700 });
@@ -56,4 +82,19 @@ export function mcpNodeCommand(appBinary: string = process.execPath, platform: N
     console.warn('[mcp] the launcher for the MCP servers could not be written, they run on `node`:', err);
     return 'node';
   }
+}
+
+/** Whether this is a packaged Tars. Undefined outside Electron, as in a plain node test. */
+function isPackaged(): boolean {
+  return (app as { isPackaged?: boolean } | undefined)?.isPackaged === true;
+}
+
+/** The app's path as it will still be once it quits: an AppImage's file, not its mount. $APPIMAGE is set by the AppImage runtime only. */
+function lastingAppBinary(): string {
+  return process.env.APPIMAGE || process.execPath;
+}
+
+/** A copy run from a disk image, or translocated by macOS, is gone once it quits. */
+function isTransient(appBinary: string): boolean {
+  return appBinary.startsWith('/Volumes/') || appBinary.includes('/AppTranslocation/');
 }
