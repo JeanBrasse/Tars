@@ -87,6 +87,7 @@ describe('a connection file the kanban cannot use', () => {
     ['null', 'null'],
     ['a string', '"local"'],
     ['no mode', '{}'],
+    ['a port and no mode', '{"localPort":9119,"token":"t"}'],
     ['a mode Tars does not know', '{"mode":"telepathy","localPort":9}'],
     ['local with no port', '{"mode":"local","authMode":"token"}'],
     ['local with a port that is not one', '{"mode":"local","localPort":"9"}'],
