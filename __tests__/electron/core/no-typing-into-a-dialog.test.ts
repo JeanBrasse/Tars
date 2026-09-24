@@ -340,6 +340,36 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     expect(store.deliveriesOf(id)[0].state).toBe('delivered');
   });
 
+  // The Audit's gate of #179: a session resumed with --fork-session copies the
+  // old conversation into its transcript, old interruptions and their dates
+  // included. Between its SessionStart and its first UserPromptSubmit, the turn
+  // it began from was still the previous one.
+  it('12. does not end a forked session\'s turn on an interruption copied from before it registered', async () => {
+    terminalFor('alpha');
+    interruptRecorded('alpha', new Date(Date.now() - 5_000));
+    putAgent({
+      id: 'alpha', status: 'running',
+      lastTurnStartedAt: new Date(Date.now() - 10_000).toISOString(),
+      sessionRegisteredAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('running');
+  });
+
+  it('12. still ends a forked session\'s turn on an interruption made after it registered', async () => {
+    terminalFor('alpha');
+    putAgent({
+      id: 'alpha', status: 'running',
+      lastTurnStartedAt: new Date(Date.now() - 10_000).toISOString(),
+      sessionRegisteredAt: new Date(Date.now() - 3_000).toISOString(),
+    });
+    interruptRecorded('alpha', new Date());
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('idle');
+  });
+
   it('12. does not end a turn on an interruption from before it began', async () => {
     terminalFor('alpha');
     interruptRecorded('alpha', new Date(Date.now() - 20_000));
