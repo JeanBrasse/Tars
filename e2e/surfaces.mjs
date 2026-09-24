@@ -179,6 +179,14 @@ export const SCREENSHOT_TOLERANCE = {
  * they match, and e2e/known-errors.spec.ts fails a full run in which one of
  * them matched nothing anywhere, because a mask that stops matching hides
  * nothing and says nothing.
+ *
+ * A mask is painted magenta, and its shade is not fixed: (255, 0, 255) in the
+ * references recorded before 1.8.0, (234, 51, 247) in those recorded on
+ * Electron 44 for it (#173), and two runs a day apart have shown either. Mask
+ * against mask stays under the per-pixel threshold, so Playwright counts none
+ * of it; a count made by hand (the regions of the final runs of 1.8.0 and
+ * 1.8.1) must skip a pixel that is magenta on both sides, red and blue above
+ * 200 and green below 90, or it reports every mask as a change.
  */
 export const VOLATILE = {
   'terminal-bodies': {
