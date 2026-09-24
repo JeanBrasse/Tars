@@ -1,6 +1,7 @@
 import type { AgentPermissionMode, AgentProvider } from '../types';
 import { ptyProcesses } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
+import { dialogOnScreen } from './terminal-mirror';
 import { getProvider } from '../providers';
 
 /**
@@ -189,4 +190,47 @@ export async function sessionStarted(agent: StartingAgent, maxWaitMs = Infinity)
 /** Test seam. */
 export function resetLaunches(): void {
   launchesUnderWay.clear();
+}
+
+/**
+ * Why Tars may not type into an agent's CLI now, or null when it may. The one
+ * definition every writer asks, so a new writer cannot forget a case:
+ * - `dialog`: the CLI shows a dialog (the PermissionRequest hook said so:
+ *   `waiting`, `permission`). A permission, an AskUserQuestion (which fires
+ *   that hook in bypass too), an ExitPlanMode. Anything typed is read by the
+ *   dialog, and its Enter answers it: measured by the Audit on 2026-09-24 with
+ *   claude 2.1.280, a room post said Yes to "Do you want to proceed?" and
+ *   "Yes, delete it" to "Delete the build folder?". Enforced by the writer
+ *   itself (pty-manager.ts), at the moment it writes.
+ * - `no_cli`: no CLI runs in the terminal, which is a shell.
+ * - `launch`: a launch is on its way and its session is not up (sessionStarting).
+ * - `turn`: a turn runs. A room message and a note wait for its end
+ *   (agent-watch); /dispatch and /message type it as a queued steer.
+ * Only `dialog` is refused by the writer: the others are each caller's own
+ * decision, and they already make it.
+ */
+export type TypingRefusal = 'dialog' | 'no_cli' | 'launch' | 'turn';
+
+export function dialogOpen(agent: { status?: string; waitingReason?: string }): boolean {
+  return agent.status === 'waiting' && agent.waitingReason === 'permission';
+}
+
+/**
+ * A dialog the hook reported, or one on the screen whose hook has not arrived
+ * yet (dialogOnScreen, terminal-mirror.ts). The screen only ever adds a
+ * dialog: it never takes away one the hook reported.
+ */
+export function dialogShown(agent: { status?: string; waitingReason?: string }, ptyProcess: import('node-pty').IPty | undefined): boolean {
+  return dialogOpen(agent) || dialogOnScreen(ptyProcess);
+}
+
+export function agentTakesTyping(
+  agent: StartingAgent & { status?: string; waitingReason?: string },
+  ptyProcess: import('node-pty').IPty | undefined,
+): TypingRefusal | null {
+  if (dialogShown(agent, ptyProcess)) return 'dialog';
+  if (!ptyProcess || !cliRunningIn(ptyProcess)) return 'no_cli';
+  if (sessionStarting(agent)) return 'launch';
+  if (agent.status === 'running') return 'turn';
+  return null;
 }

@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
-import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -662,7 +662,7 @@ async function performDispatchLocked(
 
   const previousStatus = agent.status;
   const livePty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-  if (livePty && agent.status === 'waiting' && agent.waitingReason === 'permission') {
+  if (livePty && dialogOpen(agent)) {
     // A blocking permission dialog expects arrow keys/enter, not text: a
     // typed message is useless and the delayed \r could ACCEPT the pending
     // permission. Refuse and surface the reason instead.
@@ -1215,7 +1215,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       killStalePty(agent);
 
       if (agent.ptyId && ptyProcesses.has(agent.ptyId) &&
-          agent.status === 'waiting' && agent.waitingReason === 'permission') {
+          dialogOpen(agent)) {
         // Same guard as /dispatch: never type into a blocking permission dialog.
         sendJson({
           error: `Agent "${agent.name || agent.id}" is blocked on a permission dialog; a typed message cannot answer it. Resolve it in the Tars UI, or stop the agent and re-dispatch.`,

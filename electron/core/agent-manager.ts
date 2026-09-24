@@ -8,7 +8,8 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { rolesOnLoad } from './agent-role';
-import { ptyProcesses, writeProgrammaticInput } from './pty-manager';
+import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-manager';
+import { dialogOpen, dialogShown } from './agent-launch';
 import { spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
@@ -21,6 +22,18 @@ import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
 
 export const agents: Map<string, AgentStatus> = new Map();
+
+/**
+ * The writer refuses to type into an open dialog (pty-manager.ts,
+ * setDialogProbe), and this map is where an agent's dialog is known. Called by
+ * main.ts at startup, beside the field probe.
+ */
+export function wireDialogProbe(): void {
+  setDialogProbe(agentId => {
+    const agent = agents.get(agentId);
+    return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+  });
+}
 
 /**
  * Pre-populate Claude Code's workspace trust record for a given directory.
@@ -761,7 +774,7 @@ function scheduleDeliveryCheck(agentId: string, ptyId: string): void {
     if (!ptyProcess) return;
     // A blocking permission dialog reads typed text as its answer, so a
     // redelivery there would accept the dialog rather than deliver anything.
-    if (live.status === 'waiting' && live.waitingReason === 'permission') return;
+    if (dialogOpen(live)) return;
 
     if (!pending.retried) {
       console.warn(

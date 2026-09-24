@@ -106,6 +106,8 @@ beforeEach(async () => {
   watch = await import('../../../electron/services/agent-watch');
   store = await import('../../../electron/services/bus-store');
   manager.agents.clear();
+  // As main.ts wires it at startup.
+  manager.wireDialogProbe();
   pty.ptyProcesses.clear();
   store.resetBusStore();
   fs.rmSync(path.join(tmp, 'bus.json'), { force: true });
@@ -212,6 +214,25 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     await settle(1500);
 
     expect(alpha.typed, 'Noah\'s post answered the question').not.toContain('Keep going.');
+  });
+
+  it('8. goes in after a person answers the dialog with the arrows and Enter, whose keys never reached the field', async () => {
+    // Found by the in-app proof: the keys that answered the question (an arrow,
+    // then Enter) were read as keys typed in the field, which the draft model
+    // then could not vouch for, and the message waited for ever.
+    const alpha = terminalFor('alpha');
+    putAgent({ id: 'alpha', status: 'idle' });
+    dialogOpens('alpha');
+    await noahWrites('After your answer.', ['alpha']);
+    const ptyProcess = pty.ptyProcesses.get('pty-alpha')!;
+
+    pty.writeHumanInput(ptyProcess, '\x1b[B');
+    pty.writeHumanInput(ptyProcess, '\r');
+    answered('alpha');
+    await settle(pty.TYPING_PAUSE_MS + 2500);
+
+    expect(alpha.typed).toContain('After your answer.');
+    pty.resetTerminalInput(ptyProcess);
   });
 
   it('7. still passes a person\'s keys, and a launch typed into a bare shell', () => {

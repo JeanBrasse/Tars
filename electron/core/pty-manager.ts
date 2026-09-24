@@ -159,6 +159,34 @@ export function setFieldProbe(probe: FieldProbe | null): void {
 }
 
 /**
+ * Whether a dialog is open in the CLI of this terminal's agent: the one case
+ * this writer refuses by itself (TypingRefusal in agent-launch.ts, `dialog`).
+ * A dialog reads what is typed and its Enter answers it, so nothing is written
+ * while one is up, whoever queued the message and whenever: the check is made
+ * when the message would go out, not when it was handed over. What waits goes
+ * in once the agent runs again (the answer's PostToolUse). Set by
+ * agent-manager, which knows the agents; unset, nothing is refused.
+ */
+export type DialogProbe = (agentId: string) => boolean;
+let dialogProbe: DialogProbe | null = null;
+
+export function setDialogProbe(probe: DialogProbe | null): void {
+  dialogProbe = probe;
+}
+
+function dialogOpenIn(ptyProcess: pty.IPty, state: TerminalInput): boolean {
+  const agentId = state.agentId ?? terminalOwner.get(ptyProcess);
+  if (!dialogProbe || !agentId) return false;
+  try {
+    return dialogProbe(agentId);
+  } catch (err) {
+    // Refusing to write is the side that cannot answer a dialog.
+    console.warn('[pty] could not read whether a dialog is open, holding the message:', err);
+    return true;
+  }
+}
+
+/**
  * How much one terminal can be holding.
  *
  * The same number, and the same reason, as the cap on what agent-watch holds
@@ -331,6 +359,14 @@ export function draftOf(ptyProcess: pty.IPty): Draft {
  */
 export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   const state = inputOf(ptyProcess);
+  // A key typed while the CLI shows a dialog answers the dialog: the field
+  // behind it is as it was. Read as a key in the field, the arrow and the Enter
+  // that picked an option left a draft Tars could not vouch for, and what the
+  // dialog had held back waited for ever (found by the in-app proof).
+  if (!state.held && dialogOpenIn(ptyProcess, state)) {
+    ptyProcess.write(data);
+    return;
+  }
   if (isKeystroke(data)) {
     state.lastKeyAt = Date.now();
     state.lastKeyClosesPanel = data === '\r' || data === '\x1b';
@@ -468,6 +504,16 @@ function pump(ptyProcess: pty.IPty): void {
   const state = inputs.get(ptyProcess);
   if (!state || state.gone || state.held || state.queue.length === 0) return;
   if (state.timer) { clearTimeout(state.timer); state.timer = undefined; }
+
+  // A dialog first: it holds whatever the field holds, and nothing a person
+  // does in the field ends it. Looked at again every FIELD_PROBE_MS, since the
+  // answer comes as a status change, not as a key in this terminal.
+  if (dialogOpenIn(ptyProcess, state)) {
+    noteHeld(state, 'its CLI shows a dialog, which the Enter would answer');
+    announce(ptyProcess, state);
+    state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+    return;
+  }
 
   const left = pauseLeft(state);
   if (left > 0) {

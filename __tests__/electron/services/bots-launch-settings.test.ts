@@ -65,7 +65,7 @@ vi.mock('node-telegram-bot-api', () => ({
   },
 }));
 
-import { agents, initAgentPty } from '../../../electron/core/agent-manager';
+import { agents, initAgentPty, wireDialogProbe } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { resetLaunches, launchBegins, sessionStarting } from '../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
@@ -105,6 +105,8 @@ async function typedAfter(launch: () => Promise<unknown>): Promise<string> {
 }
 
 beforeEach(() => {
+  // As main.ts wires it at startup.
+  wireDialogProbe();
   shell.speaksAfterMs = 20;
   // A cold start of one test is not a launch still on its way in the next.
   resetLaunches();
