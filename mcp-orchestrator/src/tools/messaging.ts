@@ -1,5 +1,5 @@
 /**
- * Messaging tools (Telegram, Slack) for the MCP server
+ * Messaging tools (Telegram, Slack, Discord) for the MCP server
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -64,6 +64,39 @@ export function registerMessagingTools(server: McpServer): void {
             {
               type: "text",
               text: `Error sending to Slack: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Tool: Send message to Discord
+  server.tool(
+    "send_discord",
+    "Send a message to Discord. Use this to respond to the user when the request came from Discord.",
+    {
+      message: z.string().describe("The message to send to Discord"),
+      channel_id: z.string().optional().describe("The channel to send to: the channel_id of the incoming Discord message. Without it, the channel the bot last answered in."),
+    },
+    async ({ message, channel_id }) => {
+      try {
+        await apiRequest("/api/discord/send", "POST", { message, channel_id });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Message sent to Discord: "${message.slice(0, 100)}${message.length > 100 ? "..." : ""}"`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error sending to Discord: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
           isError: true,

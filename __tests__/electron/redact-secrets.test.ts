@@ -56,6 +56,33 @@ describe('redactSecrets', () => {
     }
   });
 
+  it('takes out a Discord bot token, all three parts of it', () => {
+    // The bot's id in base64, a timestamp, then the signature: what Settings > Discord holds.
+    const token = j('MTA5ODc2NTQzMjEwOTg3NjU0', '.', 'GaBcDe', '.', 'G'.repeat(38));
+    const out = redactSecrets(`login failed for ${token} (401)`);
+    expect(out).not.toContain(token);
+    expect(out).toContain('login failed for');
+    expect(out).toContain('[redacted]');
+  });
+
+  it('takes out a Discord token for a bot id of any length, and either signature length', () => {
+    // QA, gate of #193. Bot ids of 17, 19 and 20 digits read as 23, 26 and 27
+    // base64 characters; ids made since 2022 have 19. Older signatures have 27
+    // characters, newer ones 38. Written where no other rule would catch them.
+    const tokens = [
+      j('OTg3NjU0MzIxMDk4NzY1NDM', '.', 'GaBcDe', '.', 'h'.repeat(27)),
+      j('MTIzNDU2Nzg5MDEyMzQ1Njc4OQ', '.', 'GxYz12', '.', 'k'.repeat(38)),
+      j('MTIzNDU2Nzg5MDEyMzQ1Njc4OTA', '.', 'G_-abc', '.', 'Q'.repeat(27)),
+    ];
+    for (const token of tokens) {
+      for (const line of [`login failed for ${token} (401)`, `> Authorization: Bot ${token}`]) {
+        const out = redactSecrets(line);
+        expect(out, line.slice(0, 40)).not.toContain(token);
+        expect(out).toContain('[redacted]');
+      }
+    }
+  });
+
   it('catches a bearer token and an api-key header from a verbose curl', () => {
     const curl = [
       `> Authorization: Bearer ${JWT}`,

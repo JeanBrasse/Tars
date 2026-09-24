@@ -34,7 +34,7 @@ export interface BotFleet {
 }
 
 /** The chat a message came from, as Tars names it on the line it types before it. */
-export type BotChannel = 'Telegram' | 'Slack';
+export type BotChannel = 'Telegram' | 'Slack' | 'Discord';
 
 /** An agent named in a command: a part of its name, or its id. */
 export function findAgent(agents: Map<string, AgentStatus>, name: string): AgentStatus | undefined {
@@ -49,17 +49,21 @@ const GROUPS: Array<[StatusGroup, string, (a: AgentStatus) => boolean]> = [
   ['idle', 'Idle', a => a.status === 'idle' || a.status === 'completed'],
 ];
 
-/** The fleet by status, a group per line of dots, the orchestrator first in each group when asked. */
+/**
+ * The fleet by status, a group per line of dots, the orchestrator first in each
+ * group when asked. `strong` is the chat's bold: `*` in Telegram and Slack, `**` in Discord.
+ */
 export function statusReport(
   list: AgentStatus[],
-  words: { title: string; dot: Record<StatusGroup, string>; item: (a: AgentStatus) => string; orchestratorFirst: boolean },
+  words: { title: string; dot: Record<StatusGroup, string>; item: (a: AgentStatus) => string; orchestratorFirst: boolean; strong?: string },
 ): string {
+  const b = words.strong ?? '*';
   let text = words.title;
   for (const [key, label, belongs] of GROUPS) {
     let group = list.filter(belongs);
     if (group.length === 0) continue;
     if (words.orchestratorFirst) group = [...group].sort((a, b) => (isSuperAgent(b) ? 1 : 0) - (isSuperAgent(a) ? 1 : 0));
-    text += `${words.dot[key]} *${label} (${group.length}):*\n`;
+    text += `${words.dot[key]} ${b}${label} (${group.length}):${b}\n`;
     group.forEach(a => { text += words.item(a); });
     if (key !== 'idle') text += '\n';
   }
@@ -74,7 +78,10 @@ export function statusDot(a: AgentStatus, dot: Record<StatusGroup, string>): str
 /** The projects that have agents, each with its agents, the orchestrators left out. Null when there are none. */
 export function projectsReport(
   agents: Map<string, AgentStatus>,
-  words: { title: string; folder: string; indent: string; people: string; face: (a: AgentStatus) => string; dot: Record<StatusGroup, string> },
+  words: {
+    title: string; folder: string; indent: string; people: string; face: (a: AgentStatus) => string;
+    dot: Record<StatusGroup, string>; strong?: string;
+  },
 ): string | null {
   const byProject = new Map<string, AgentStatus[]>();
   for (const agent of agents.values()) {
@@ -82,13 +89,106 @@ export function projectsReport(
     byProject.set(agent.projectPath, [...(byProject.get(agent.projectPath) ?? []), agent]);
   }
   if (byProject.size === 0) return null;
+  const b = words.strong ?? '*';
   let text = words.title;
   byProject.forEach((projectAgents, projectPath) => {
-    text += `${words.folder} *${projectPath.split('/').pop() || 'Unknown'}*\n`;
+    text += `${words.folder} ${b}${projectPath.split('/').pop() || 'Unknown'}${b}\n`;
     text += `${words.indent}\`${projectPath}\`\n`;
     text += `${words.indent}${words.people} Agents: ${projectAgents.map(a => `${words.face(a)}${a.name}${statusDot(a, words.dot)}`).join(', ')}\n\n`;
   });
   return text;
+}
+
+/**
+ * What a bot's usage command reads out of Claude Code's own usage data. Only the
+ * fields the bots render are modelled; the rest belongs to the reader that
+ * produces it.
+ */
+export interface ClaudeUsageStats {
+  modelUsage?: Record<string, {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+  }>;
+  totalSessions?: number;
+  totalMessages?: number;
+  firstSessionDate?: string;
+}
+
+/** Claude's usage priced per model, in tokens and dollars, the most expensive model first. */
+export interface PricedUsage {
+  cost: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  byModel: Array<{ name: string; cost: number }>;
+}
+
+// Token pricing per million tokens (MTok) - same as frontend
+const MODEL_PRICING: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitsPerMTok: number; cache5mWritePerMTok: number }> = {
+  'claude-opus-4-5-20251101': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
+  'claude-opus-4-5': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.50, cache5mWritePerMTok: 6.25 },
+  'claude-opus-4-1-20250501': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-opus-4-1': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-opus-4-20250514': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-opus-4': { inputPerMTok: 15, outputPerMTok: 75, cacheHitsPerMTok: 1.50, cache5mWritePerMTok: 18.75 },
+  'claude-sonnet-4-5-20251022': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-sonnet-4-20250514': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-sonnet-4': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-3-7-sonnet-20250219': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.30, cache5mWritePerMTok: 3.75 },
+  'claude-haiku-4-5-20251022': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
+  'claude-haiku-4-5': { inputPerMTok: 1, outputPerMTok: 5, cacheHitsPerMTok: 0.10, cache5mWritePerMTok: 1.25 },
+  'claude-3-5-haiku-20241022': { inputPerMTok: 0.80, outputPerMTok: 4, cacheHitsPerMTok: 0.08, cache5mWritePerMTok: 1 },
+};
+
+/** A model's family, as the price table and the report name it, from any spelling of its id. */
+const FAMILIES: Array<[RegExp, string, string]> = [
+  [/opus-4-5|opus-4\.5/, 'claude-opus-4-5', 'Opus 4.5'],
+  [/opus-4-1|opus-4\.1/, 'claude-opus-4-1', 'Opus 4.1'],
+  [/opus-4|opus4/, 'claude-opus-4', 'Opus 4'],
+  [/sonnet-4-5|sonnet-4\.5/, 'claude-sonnet-4-5', 'Sonnet 4.5'],
+  [/sonnet-4|sonnet4/, 'claude-sonnet-4', 'Sonnet 4'],
+  [/sonnet-3|sonnet3/, 'claude-3-7-sonnet-20250219', 'Sonnet 3.7'],
+  [/haiku-4-5|haiku-4\.5/, 'claude-haiku-4-5', 'Haiku 4.5'],
+  [/haiku-3-5|haiku-3\.5/, 'claude-3-5-haiku-20241022', 'Haiku 3.5'],
+];
+const familyOf = (modelId: string) => FAMILIES.find(([pattern]) => pattern.test(modelId.toLowerCase()));
+
+function modelCost(modelId: string, input: number, output: number, cacheRead: number, cacheWrite: number): number {
+  const pricing = MODEL_PRICING[modelId] ?? MODEL_PRICING[familyOf(modelId)?.[1] ?? 'claude-sonnet-4'];
+  return (input / 1_000_000) * pricing.inputPerMTok +
+         (output / 1_000_000) * pricing.outputPerMTok +
+         (cacheRead / 1_000_000) * pricing.cacheHitsPerMTok +
+         (cacheWrite / 1_000_000) * pricing.cache5mWritePerMTok;
+}
+
+/**
+ * Claude's usage, priced with the table Telegram's /usage has always used, which
+ * Discord's shares. Slack keeps its own, smaller one (slack-bot.ts): putting it on
+ * this table would change the numbers it answers.
+ */
+export function priceUsage(stats: ClaudeUsageStats): PricedUsage {
+  let cost = 0;
+  let input = 0;
+  let output = 0;
+  let cacheRead = 0;
+  const byModel: Array<{ name: string; cost: number }> = [];
+  Object.entries(stats.modelUsage ?? {}).forEach(([modelId, usage]) => {
+    const modelInput = usage.inputTokens || 0;
+    const modelOutput = usage.outputTokens || 0;
+    const modelCacheRead = usage.cacheReadInputTokens || 0;
+    const modelCacheWrite = usage.cacheCreationInputTokens || 0;
+    input += modelInput;
+    output += modelOutput;
+    cacheRead += modelCacheRead;
+    const modelPrice = modelCost(modelId, modelInput, modelOutput, modelCacheRead, modelCacheWrite);
+    cost += modelPrice;
+    byModel.push({ name: familyOf(modelId)?.[2] ?? modelId.split('-').slice(0, 3).join(' '), cost: modelPrice });
+  });
+  byModel.sort((a, b) => b.cost - a.cost);
+  return { cost, input, output, cacheRead, byModel };
 }
 
 function mcpConfigPathFor(provider: CLIProvider): string | undefined {
