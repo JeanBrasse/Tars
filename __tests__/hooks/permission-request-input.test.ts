@@ -1,0 +1,90 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { spawn } from 'node:child_process';
+import * as http from 'node:http';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+/**
+ * permission-request.sh says what the dialog asks, not only that there is one
+ * (AgentStatus.waitingOn, #159: "allow npx playwright test?").
+ *
+ * How it fails, written before the code (2026-09-24):
+ * 1. It posts `waiting_reason: permission` and nothing else, so Tars cannot
+ *    say what the agent waits on.
+ * 2. It builds the JSON by pasting shell strings into it: a command with a
+ *    quote or a newline breaks the body, and the status post is lost with it.
+ * 3. A question (AskUserQuestion, which reaches this hook too: 24 times in
+ *    the hooks log on 2026-09-24) goes up without its question.
+ */
+
+const HOOK = path.join(__dirname, '../../hooks/permission-request.sh');
+const received: Array<{ url: string; body: Record<string, unknown> }> = [];
+let server: http.Server;
+let port = 0;
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-permission-hook-'));
+
+beforeAll(async () => {
+  server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', chunk => { raw += chunk; });
+    req.on('end', () => {
+      received.push({ url: req.url || '', body: JSON.parse(raw) });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  port = (server.address() as { port: number }).port;
+});
+
+afterAll(() => new Promise<void>(resolve => server.close(() => resolve())));
+
+async function ask(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  received.length = 0;
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('/bin/bash', [HOOK], {
+      env: { ...process.env, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, CLAUDE_AGENT_ID: 'a1', HOME: tmp },
+    });
+    child.stdout.resume();
+    child.stderr.resume();
+    child.on('error', reject);
+    child.on('exit', () => resolve());
+    child.stdin.end(JSON.stringify(payload));
+  });
+  const post = received.find(r => r.url === '/api/hooks/status');
+  expect(post, 'the hook posted no status').toBeTruthy();
+  return post!.body;
+}
+
+describe('permission-request.sh', () => {
+  it('sends the tool and its input with the waiting status', async () => {
+    const body = await ask({
+      session_id: 's1', hook_event_name: 'PermissionRequest', tool_name: 'Bash',
+      tool_input: { command: 'npx playwright test', description: 'Run the suite' },
+    });
+
+    expect(body).toMatchObject({ agent_id: 'a1', session_id: 's1', status: 'waiting', waiting_reason: 'permission' });
+    expect(body.tool_name).toBe('Bash');
+    expect(body.tool_input).toEqual({ command: 'npx playwright test', description: 'Run the suite' });
+  });
+
+  it('keeps quotes and line breaks in the input without breaking the post', async () => {
+    const command = 'git commit -m "a \\"quoted\\" line"\necho \'done\'';
+    const body = await ask({ session_id: 's1', tool_name: 'Bash', tool_input: { command } });
+
+    expect(body.status).toBe('waiting');
+    expect((body.tool_input as { command: string }).command).toBe(command);
+  });
+
+  it('sends a question with its question', async () => {
+    const body = await ask({
+      session_id: 's1', tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Which port should the sandbox use?', header: 'Port', options: [] }] },
+    });
+
+    expect(body.tool_name).toBe('AskUserQuestion');
+    expect((body.tool_input as { questions: Array<{ question: string }> }).questions[0].question)
+      .toBe('Which port should the sandbox use?');
+  });
+});
