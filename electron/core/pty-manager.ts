@@ -362,8 +362,10 @@ export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   // A key typed while the CLI shows a dialog answers the dialog: the field
   // behind it is as it was. Read as a key in the field, the arrow and the Enter
   // that picked an option left a draft Tars could not vouch for, and what the
-  // dialog had held back waited for ever (found by the in-app proof).
-  if (!state.held && dialogOpenIn(ptyProcess, state)) {
+  // dialog had held back waited for ever (found by the in-app proof). Even
+  // while Tars owns the field: a message whose Enter waits out a dialog must
+  // not keep the person from answering it (takeField).
+  if (dialogOpenIn(ptyProcess, state)) {
     ptyProcess.write(data);
     return;
   }
@@ -576,7 +578,15 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
       console.error('[pty] a message reached its terminal but its caller threw:', err);
     }
   }
-  setTimeout(() => {
+  const enter = () => {
+    // A dialog that opened after the paste would take this Enter as its answer
+    // (the Audit's gate of #174, reachable by /dispatch into a running turn).
+    // It waits until the dialog is gone; the person's keys meanwhile go to the
+    // dialog (writeHumanInput).
+    if (!state.gone && dialogOpenIn(ptyProcess, state)) {
+      setTimeout(enter, FIELD_PROBE_MS);
+      return;
+    }
     write(ptyProcess, state, '\r');
     if (!draft.text) { done(); return; }
     let at = RESTORE_DELAY_MS;
@@ -585,7 +595,8 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
       at += RESTORE_PIECE_GAP_MS;
     }
     setTimeout(done, at);
-  }, PROGRAMMATIC_SUBMIT_DELAY_MS);
+  };
+  setTimeout(enter, PROGRAMMATIC_SUBMIT_DELAY_MS);
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */

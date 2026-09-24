@@ -3,6 +3,7 @@ import { ptyProcesses } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
 import { dialogOnScreen } from './terminal-mirror';
 import { getProvider } from '../providers';
+import { lastInterruptAt } from '../services/agent-truth';
 
 /**
  * The launch of an agent's CLI in its terminal, reachable without a renderer.
@@ -211,8 +212,20 @@ export function resetLaunches(): void {
  */
 export type TypingRefusal = 'dialog' | 'no_cli' | 'launch' | 'turn';
 
-export function dialogOpen(agent: { status?: string; waitingReason?: string }): boolean {
-  return agent.status === 'waiting' && agent.waitingReason === 'permission';
+export function dialogOpen(agent: {
+  status?: string; waitingReason?: string; dialogSince?: string;
+  currentSessionId?: string; projectPath?: string; worktreePath?: string;
+}): boolean {
+  if (agent.status !== 'waiting' || agent.waitingReason !== 'permission') return false;
+  // Refused, with "No" or Esc: Claude Code sends no hook for it, and records
+  // "[Request interrupted by user" in the transcript. An interrupt recorded
+  // since the dialog opened closes it (the Audit's gate of #174: without this
+  // the agent stayed deaf until Noah typed in it). Without a time the dialog
+  // opened at, it stays open: the safe side.
+  const since = agent.dialogSince ? Date.parse(agent.dialogSince) : NaN;
+  if (!Number.isFinite(since)) return true;
+  const interrupted = lastInterruptAt(agent);
+  return interrupted === undefined || interrupted < since;
 }
 
 /**
@@ -220,7 +233,7 @@ export function dialogOpen(agent: { status?: string; waitingReason?: string }): 
  * yet (dialogOnScreen, terminal-mirror.ts). The screen only ever adds a
  * dialog: it never takes away one the hook reported.
  */
-export function dialogShown(agent: { status?: string; waitingReason?: string }, ptyProcess: import('node-pty').IPty | undefined): boolean {
+export function dialogShown(agent: Parameters<typeof dialogOpen>[0], ptyProcess: import('node-pty').IPty | undefined): boolean {
   return dialogOpen(agent) || dialogOnScreen(ptyProcess);
 }
 
