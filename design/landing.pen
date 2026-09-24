@@ -308,7 +308,7 @@
                   "id": "AHtiy",
                   "name": "count",
                   "fill": "$text-muted",
-                  "content": "2,481 downloads",
+                  "content": "5 downloads",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-mono",
                   "fontSize": 12,
