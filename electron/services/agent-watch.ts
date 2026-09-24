@@ -3,7 +3,7 @@ import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS, type WriteOrigin } from '../core/pty-manager';
 import { agentStatusEmitter, emitAgentStatus } from './agent-events';
-import { sessionStarting } from '../core/agent-launch';
+import { sessionStarting, cliLaunchedAt } from '../core/agent-launch';
 import { envelopeValue } from '../utils/envelope-value';
 import { lastInterruptAt, pendingBackgroundWork } from './agent-truth';
 import { broadcastToAllWindows } from '../utils/broadcast';
@@ -300,12 +300,16 @@ export function stopWatchingInterruptedTurns(): void {
 function endInterruptedTurns(): void {
   for (const agent of agents.values()) {
     if (agent.status !== 'running') continue;
-    // The session's own registration counts too: a session resumed with
+    // The launch of the CLI now running counts too: a session resumed with
     // --fork-session copies the old conversation, old interruptions and their
     // dates included, and until its first UserPromptSubmit the last turn known
-    // is the previous session's (the Audit's gate of #179).
-    const began = Math.max(...[agent.lastTurnStartedAt, agent.workHandedAt, agent.sessionRegisteredAt]
-      .map(at => (at ? Date.parse(at) : NaN)).filter(Number.isFinite));
+    // is the previous session's (the Audit's gate of #179). The launch, and the
+    // registration only when no launch was noted: claude registers again at
+    // every compaction, and an interruption made just before one is real.
+    const launched = cliLaunchedAt(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)
+      ?? (agent.sessionRegisteredAt ? Date.parse(agent.sessionRegisteredAt) : NaN);
+    const began = Math.max(...[agent.lastTurnStartedAt, agent.workHandedAt]
+      .map(at => (at ? Date.parse(at) : NaN)).concat(launched).filter(Number.isFinite));
     if (!Number.isFinite(began)) continue;
     let interrupted: number | undefined;
     try {
@@ -405,13 +409,17 @@ function queueForRequester(child: AgentStatus, news: News): void {
   // tells its requester about the real end. That rest is reported as what it
   // is instead.
   //
-  // Counted from the current session too, not only from the hand-over: a
-  // resumed session copies the earlier conversation with its old timestamps,
-  // and a background start from before it registered is not running in it
-  // (the Audit's gate of #152).
+  // Counted from the launch of the CLI now running too, not only from the
+  // hand-over: a resumed session copies the earlier conversation with its old
+  // timestamps, and a background start from before that launch is not running
+  // (the Audit's gate of #152). Not from the session's registration, which
+  // only stands in when no launch was noted: claude registers again at every
+  // compaction, in the same process, and the job it left running before one
+  // is still running after it (QA's gate of #189, measured in the app).
   if (news.kind === 'ended' && child.workHandedAt) {
-    const since = Math.max(...[child.workHandedAt, child.sessionRegisteredAt]
-      .map(t => (t ? Date.parse(t) : NaN)).filter(Number.isFinite));
+    const launched = cliLaunchedAt(child.ptyId ? ptyProcesses.get(child.ptyId) : undefined)
+      ?? (child.sessionRegisteredAt ? Date.parse(child.sessionRegisteredAt) : NaN);
+    const since = Math.max(...[Date.parse(child.workHandedAt), launched].filter(Number.isFinite));
     const left = pendingBackgroundWork(child, since);
     if (left.length > 0) news = { ...news, background: left };
   }

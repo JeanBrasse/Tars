@@ -1,7 +1,7 @@
 import { agents, saveAgents } from './agent-manager';
 import { ptyProcesses, fieldInUse, onFieldChange, type FieldInUse } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
-import { launchAgent, CLI_BOOT_MS, dialogOpen } from './agent-launch';
+import { launchAgent, CLI_BOOT_MS, dialogOpen, noteCliLaunched, cliLaunchedAt } from './agent-launch';
 import { getProvider } from '../providers';
 import { agentStatusEmitter } from '../services/agent-events';
 import { holdsFor } from '../services/agent-watch';
@@ -83,7 +83,7 @@ export function launchSettings(agent: AgentStatus): LaunchSettings {
  * apply, and without this it fired anyway the next time the agent was free.
  * Keyed by the terminal, so a new one never inherits it.
  */
-const launchedWith = new WeakMap<object, { settings: string; at: number }>();
+const launchedWith = new WeakMap<object, { settings: string }>();
 
 /**
  * Called by every launch, once it has typed the CLI into `ptyProcess`, with
@@ -97,7 +97,9 @@ const launchedWith = new WeakMap<object, { settings: string; at: number }>();
  * CLI on the other.
  */
 export function noteLaunch(ptyProcess: object | undefined, settings: LaunchSettings): void {
-  if (ptyProcess) launchedWith.set(ptyProcess, { settings: JSON.stringify(settings), at: Date.now() });
+  if (!ptyProcess) return;
+  launchedWith.set(ptyProcess, { settings: JSON.stringify(settings) });
+  noteCliLaunched(ptyProcess);
 }
 
 /** The names of the settings that differ, in a stable order. */
@@ -328,7 +330,7 @@ function decide(agentId: string): RestartOutcome {
   // Last, because it reads the transcript. A turn that ended on work left
   // running in the background comes back by itself when that work reports,
   // as a turn of its own: its start and its end are what bring this back.
-  const since = launchedWith.get(ptyProcess)?.at
+  const since = cliLaunchedAt(ptyProcess)
     ?? (agent.sessionRegisteredAt ? Date.parse(agent.sessionRegisteredAt) : undefined);
   const background = since !== undefined ? pendingBackgroundWork(agent, since) : [];
   if (background.length > 0) {
