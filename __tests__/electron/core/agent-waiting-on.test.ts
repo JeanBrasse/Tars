@@ -49,6 +49,9 @@ beforeEach(async () => {
   pushed.length = 0;
   manager = await import('../../../electron/core/agent-manager');
   manager.agents.clear();
+  // The transcript a refusal test writes: each test starts with none.
+  const { transcriptPath } = await import('../../../electron/utils/resume-session');
+  fs.rmSync(transcriptPath(tmp, 'sess-1'), { force: true });
   manager.agents.set('a1', {
     id: 'a1', name: 'Worker', status: 'running', projectPath: tmp, output: [], skills: [], provider: 'claude',
     lastActivity: new Date().toISOString(), currentSessionId: 'sess-1',

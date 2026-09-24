@@ -414,6 +414,9 @@ function persistable(agent: AgentStatus): AgentStatus {
     pathMissing: undefined,
     output: agent.output.slice(-100),
     status: agent.status === 'running' ? 'idle' : agent.status,
+    // Runtime state, and the command a dialog asks about can carry a secret:
+    // agents.json is in every agent's --add-dir (the gate of #172).
+    waitingOn: undefined,
   } as AgentStatus;
 }
 

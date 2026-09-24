@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell, app } from 'electron';
+import { publishedWaitingOn } from '../utils/waiting-on';
 import { openTerminal } from '../utils/open-terminal';
 import { checkForUpdates, downloadUpdate, quitAndInstall } from '../services/update-checker';
 import { registerMemoryHandlers } from './memory-handlers';
@@ -906,7 +907,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the Chat's fleet list; agent:start opens the terminal a launch needs.
     const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
     if (!ptyProcess) {
-      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false, launching: sessionStarting(agent) };
+      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false, launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent) };
     }
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
@@ -919,7 +920,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: screen === undefined ? agent.output : [screen],
       cliRunning: cliRunningIn(ptyProcess),
       leftFullscreen: leftFullscreenIn(ptyProcess),
-      launching: sessionStarting(agent),
+      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
     };
   });
 
@@ -937,7 +938,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: [],
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
-      launching: sessionStarting(agent),
+      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
     }));
   });
 

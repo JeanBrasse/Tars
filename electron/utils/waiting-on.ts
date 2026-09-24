@@ -1,4 +1,5 @@
-import type { AgentWaitingOn } from '../types';
+import type { AgentStatus, AgentWaitingOn } from '../types';
+import { dialogOpen } from '../core/agent-launch';
 
 /** Long enough for a command line or a question, short enough for one line of a card. */
 const MAX_TEXT = 200;
@@ -12,9 +13,8 @@ const MAX_TEXT = 200;
  */
 export function oneLine(text: string): string {
   const flat = text
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-    .replace(/[‎‏‪-‮⁦-⁩]/g, '')
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   return flat.length > MAX_TEXT ? `${flat.slice(0, MAX_TEXT - 1)}…` : flat;
@@ -46,4 +46,14 @@ export function waitingOnFrom(toolName: unknown, toolInput: unknown): AgentWaiti
     || str('url') || str('query') || str('pattern')
     || tool;
   return { kind: 'permission', text: oneLine(subject) };
+}
+
+/**
+ * What an agent waits on, as the page and the API are told it: only while the
+ * dialog is open (#174's dialogOpen, which a refusal recorded in the transcript
+ * closes, since Claude Code sends no hook for one). Kept on the agent, it
+ * outlived a refused dialog and said "allow ..." for nothing (the gate of #172).
+ */
+export function publishedWaitingOn(agent: AgentStatus): AgentWaitingOn | undefined {
+  return agent.waitingOn && dialogOpen(agent) ? agent.waitingOn : undefined;
 }

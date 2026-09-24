@@ -308,6 +308,8 @@ the first path nobody thought to list.
 | Path | Holds | Reachable by an agent |
 |---|---|---|
 | `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal | Yes, deliberately: it is in every agent's `--add-dir` |
+
+What an agent waits on (`waitingOn`, the command or question of an open dialog) is kept in memory only: it is not written to `agents.json`. While the dialog is open, another agent can read it through `GET /api/agents/:id?full=true`, as it can read the rest of that agent's record; a command typed with a secret in it is visible there for that long. The hook sends only the fields that name the dialog, each cut at 1000 characters, never a tool's whole input.
 | `~/.tars-private/` | Noah's conversation with the super chat, and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700` |
 
 `~/.tars-private/overseer.json` used to be `~/.dorothy/overseer.json`: 148,654

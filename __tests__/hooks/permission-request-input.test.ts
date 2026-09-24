@@ -93,7 +93,8 @@ describe('permission-request.sh', () => {
 
     expect(body).toMatchObject({ agent_id: 'a1', session_id: 's1', status: 'waiting', waiting_reason: 'permission' });
     expect(body.tool_name).toBe('Bash');
-    expect(body.tool_input).toEqual({ command: 'npx playwright test', description: 'Run the suite' });
+    // Only what names the dialog: the rest of a tool's input can be a whole file.
+    expect(body.tool_input).toEqual({ command: 'npx playwright test' });
   });
 
   it('keeps quotes and line breaks in the input without breaking the post', async () => {

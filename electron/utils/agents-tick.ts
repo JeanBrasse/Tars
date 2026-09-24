@@ -6,6 +6,7 @@ import { ptyProcesses } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
 import { leftFullscreenIn } from '../core/terminal-mirror';
 import { launchesPending, sessionStarting, setLaunchListener } from '../core/agent-launch';
+import { publishedWaitingOn } from './waiting-on';
 import type { AgentStatus, AgentWaitingOn } from '../types';
 
 export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
@@ -88,7 +89,7 @@ function buildTickPayload(): AgentTickItem[] {
       projectName: a.projectPath ? path.basename(a.projectPath) : '',
       lastActivity: a.lastActivity,
       statusSince: a.statusSince,
-      waitingOn: a.waitingOn,
+      waitingOn: publishedWaitingOn(a),
       provider: a.provider || 'claude',
       cliRunning: agentCliRunning(a),
       launching: sessionStarting(a),

@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { publishedWaitingOn } from '../../utils/waiting-on';
 import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
@@ -843,7 +844,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
     const full = req.url.searchParams.get('full') === 'true';
-    sendJson({ agent: full ? agent : projectAgent(agent) });
+    sendJson({ agent: full ? { ...agent, waitingOn: publishedWaitingOn(agent) } : projectAgent(agent) });
   });
 
   // GET /api/agents/:id/bootstrap: identity + team roster context, injected
