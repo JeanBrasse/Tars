@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 50,
+    version: '1.9.1',
+    date: '2026-09-26',
+    updates: [
+      'A hook or a Tars tool that went quiet for more than a few seconds between two calls to Tars no longer has its next call fail with a connection reset, "fetch failed": Tars keeps an idle connection open for a minute, where it closed it after six seconds',
+    ],
+  },
+  {
     id: 49,
     version: '1.9.0',
     date: '2026-09-24',
