@@ -24,6 +24,9 @@ import { enableStatusLine } from '../../../electron/utils/statusline';
  *    took after this one had released its own.
  * 2. Its lock left behind when it dies holding it: every render after it
  *    waits a second and skips its write until the lock is 5 s old.
+ * 3. Its lock never released once its write is done, which leaves the same
+ *    stale lock at every render. Test 1 sees it: the other render cannot take
+ *    the lock while this one runs git.
  *
  * These run the installed script through bash and jq, in a temp HOME, with a
  * stand-in `git` or `date` on the PATH that acts at the one moment that matters,
@@ -58,19 +61,22 @@ function bench(name: 'git' | 'date', body: string) {
     input: JSON.stringify({ session_id: 's1', model: { display_name: 'Opus 5' }, context_window: {}, cost: {} }),
     cwd: home, encoding: 'utf-8', env: { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: home },
   });
-  return { lock, stats, render };
+  return { home, lock, stats, render };
 }
 
 describe('the token-stats lock of the status line', () => {
   it('1. leaves alone, as it exits, a lock another render took after it released its own', () => {
     // git runs after the write, for the branch: the moment another render
-    // takes the lock is while this one waits on it.
-    const b = bench('git', `mkdir "$HOME/.dorothy/token-stats.lock"\necho main`);
+    // takes the lock is while this one waits on it. `took` says it could:
+    // this render had released its own lock by then, so the lock left at the
+    // end is the other render's.
+    const b = bench('git', `mkdir "$HOME/.dorothy/token-stats.lock" && touch "$HOME/took"\necho main`);
 
     const run = b.render();
 
     expect(run.status, run.stderr).toBe(0);
     expect(JSON.parse(fs.readFileSync(b.stats, 'utf-8'))).toHaveProperty('s1');
+    expect(fs.existsSync(path.join(b.home, 'took')), 'its own lock was still held when git ran').toBe(true);
     expect(fs.existsSync(b.lock), 'the other render\'s lock was removed').toBe(true);
   });
 
