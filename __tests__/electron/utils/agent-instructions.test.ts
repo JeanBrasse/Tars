@@ -22,7 +22,7 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-agent-instr-'));
 const dataDir = path.join(home, '.dorothy');
 
 /**
- * app.getAppPath() run from a clone IS the repository, which is Nico's case
+ * app.getAppPath() run from a clone IS the repository, which is Nexarion434's case
  * and the whole bug: the repository's own CLAUDE.md really is sitting exactly
  * where the old code looked. Pointed at the real one rather than a stand-in,
  * so the assertions are against the document that actually leaked.
@@ -125,7 +125,7 @@ describe('the instructions Tars publishes for its agents', () => {
   });
 
   it('repair a file that already holds the wrong document', () => {
-    // Nico's machine: the leak is already on disk from an earlier launch.
+    // Nexarion434's machine: the leak is already on disk from an earlier launch.
     fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(dest(), fs.readFileSync(REPO_CLAUDE_MD, 'utf-8'));
 
@@ -162,7 +162,7 @@ describe('the instructions Tars publishes for its agents', () => {
 });
 
 describe('a machine that already has the wrong document', () => {
-  /** Nico's install: the repository's rules are on disk from an earlier run. */
+  /** Nexarion434's install: the repository's rules are on disk from an earlier run. */
   function pollute(): string[] {
     fs.mkdirSync(dataDir, { recursive: true });
     const repoRules = fs.readFileSync(REPO_CLAUDE_MD, 'utf-8');
