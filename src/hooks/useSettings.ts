@@ -37,9 +37,6 @@ export const useSettings = () => {
 
     try {
       setLoading(true);
-      // Claude's data is only read here for the skills list, so the page does
-      // not wait for it: the skills come in when the store has them.
-      void readClaudeData().then(claude => { if (claude?.skills) setSkills(claude.skills); });
       const [settingsData, infoData, appSettingsData] = await Promise.all([
         window.electronAPI.settings.get(),
         window.electronAPI.settings.getInfo(),
@@ -62,6 +59,11 @@ export const useSettings = () => {
         }));
       }
       setError(null);
+      // Claude's data is only read here for the skills list, so the page does
+      // not wait for it, and asks for it only once its own settings are in:
+      // past main's one-minute memo it is a whole transcript scan, and asked
+      // first, it ran ahead of them.
+      void readClaudeData().then(claude => { if (claude?.skills) setSkills(claude.skills); });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
