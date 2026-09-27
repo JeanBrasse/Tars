@@ -16,6 +16,9 @@ import * as fs from 'node:fs';
  * 3. Noah's reply to a question also reaches the super agent, as a new task.
  * 4. Over-correction: a message that is not a reply to a question no longer
  *    reaches the super agent.
+ * 5. The proof against a fake Telegram needs the bot pointed at it
+ *    (DOROTHY_TELEGRAM_API); a packaged Tars must never be, whatever its
+ *    environment says.
  */
 
 const { tmpHome } = vi.hoisted(() => ({
@@ -23,6 +26,8 @@ const { tmpHome } = vi.hoisted(() => ({
 }));
 const bot = vi.hoisted(() => ({
   on: new Map<string, (msg: Record<string, unknown>) => unknown>(),
+  options: [] as Array<Record<string, unknown> | undefined>,
+  packaged: false,
   sent: [] as Array<{ chatId: string; text: string; options?: Record<string, unknown>; messageId: number }>,
   next: 500,
 }));
@@ -33,7 +38,7 @@ vi.mock('os', async (importOriginal) => {
 });
 vi.mock('node-pty', () => ({ spawn: vi.fn(() => ({ pid: 1, process: 'bash', write: vi.fn(), kill: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn() })) }));
 vi.mock('electron', () => ({
-  app: { getPath: () => tmpHome, getAppPath: () => process.cwd(), isPackaged: false, getVersion: () => '1.9.1' },
+  app: { getPath: () => tmpHome, getAppPath: () => process.cwd(), get isPackaged() { return bot.packaged; }, getVersion: () => '1.9.1' },
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
   Notification: vi.fn(),
 }));
@@ -41,6 +46,7 @@ vi.mock('../../../electron/core/window-manager', () => ({ getMainWindow: () => n
 vi.mock('@slack/bolt', () => ({ App: class {}, LogLevel: { INFO: 'info' } }));
 vi.mock('node-telegram-bot-api', () => ({
   default: class {
+    constructor(_token: string, options?: Record<string, unknown>) { bot.options.push(options); }
     on(event: string, handler: (msg: Record<string, unknown>) => unknown) { bot.on.set(event, handler); }
     onText() {}
     getMe() { return Promise.resolve({ username: 'tars_test_bot' }); }
@@ -119,5 +125,21 @@ describe('a question on Telegram', () => {
     await settle();
 
     expect(bot.sent.at(-1)?.text).toMatch(/Super Agent/);
+  });
+});
+
+describe('which Telegram the bot talks to', () => {
+  const restart = () => { stopTelegramBot(); bot.options.length = 0; initTelegramBot(); return bot.options.at(-1); };
+  afterEach(() => { delete process.env.DOROTHY_TELEGRAM_API; bot.packaged = false; });
+
+  it('5. is the one DOROTHY_TELEGRAM_API names, in a development run', () => {
+    process.env.DOROTHY_TELEGRAM_API = 'http://127.0.0.1:39200';
+    expect(restart()).toMatchObject({ polling: true, baseApiUrl: 'http://127.0.0.1:39200' });
+  });
+
+  it('5. is always Telegram\'s own in a packaged Tars', () => {
+    bot.packaged = true;
+    process.env.DOROTHY_TELEGRAM_API = 'http://127.0.0.1:39200';
+    expect(restart()?.baseApiUrl).toBeUndefined();
   });
 });
