@@ -28,6 +28,11 @@ export const ROOM_RULES: Array<[string, string]> = [
  * the last control is the ghost `how it runs`, the head's right padding is 14:
  * a ghost button's label sits 10 inside its box, so its words end at 24 like
  * the bordered buttons' edges.
+ *
+ * A long path gives way before the name (`Chat · A · Room head · states`): the
+ * name and the path share the free space, the name keeps its width and the
+ * path is cut at its end; only once the path is gone is the name cut. The
+ * state and the buttons keep their size, and no label wraps.
  */
 export function RoomHead({
   title,
@@ -54,10 +59,11 @@ export function RoomHead({
 
   return (
     <div data-room-head className={`h-[52px] shrink-0 flex items-center gap-2 pl-6 border-b border-border ${button || !rules ? 'pr-6' : 'pr-3.5'}`}>
-      <span className="text-[15px] leading-5 font-medium text-foreground truncate">{title}</span>
-      {/* 1px low: the 11px mono baseline sits a pixel above the 15px title's. */}
-      {path && <span className="relative top-px font-mono text-[11px] leading-4 text-text-muted truncate">{path}</span>}
-      <span className="flex-1" />
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="shrink-0 max-w-full text-[15px] leading-5 font-medium text-foreground truncate">{title}</span>
+        {/* 1px low: the 11px mono baseline sits a pixel above the 15px title's. */}
+        {path && <span className="relative top-px min-w-0 font-mono text-[11px] leading-4 text-text-muted truncate">{path}</span>}
+      </div>
       <span className="flex items-center gap-2 shrink-0" role="status">
         {state.tone === 'hollow' ? <StatusSquare hollow /> : state.tone !== 'none' && <StatusSquare tone={state.tone} />}
         <span className="text-[12px] leading-4 text-text-secondary">{state.word}</span>
@@ -73,6 +79,7 @@ export function RoomHead({
           ref={how}
           size="sm"
           variant="ghost"
+          className="shrink-0 whitespace-nowrap"
           active={howOpen}
           aria-haspopup="dialog"
           aria-expanded={howOpen}
@@ -96,7 +103,7 @@ export function RoomHead({
         </div>
       </AnchoredMenu>
       {button && (
-        <Button size="sm" title={button.title} disabled={button.disabled} onClick={button.onClick}>{button.label}</Button>
+        <Button size="sm" className="shrink-0 whitespace-nowrap" title={button.title} disabled={button.disabled} onClick={button.onClick}>{button.label}</Button>
       )}
     </div>
   );

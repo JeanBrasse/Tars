@@ -6,7 +6,7 @@ import { useElectronAgents, useElectronFS } from '@/hooks/useElectron';
 import { Button, DialogShell, Dropdown, Input, Label } from '@/components/ui';
 import type { DropdownOption } from '@/components/ui';
 import { Toggle } from '@/components/Settings/Toggle';
-import { reveal, startsWithPromptByDefault, templateFacts } from '@/lib/template-review';
+import { revealLine, startsWithPromptByDefault, templateFacts } from '@/lib/template-review';
 import { PromptBlock, TemplateFactRows } from './TemplateReview';
 
 interface InstantiateDialogProps {
@@ -29,7 +29,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
   const [projectPath, setProjectPath] = useState<string | null>(null);
   // Written out like everything else the template says: an agent's name is
   // shown all over the app, and a direction override in it turns the text around.
-  const [name, setName] = useState(() => reveal(template.displayName).text);
+  const [name, setName] = useState(() => revealLine(template.displayName).text);
   const [sendPrompt, setSendPrompt] = useState(() => startsWithPromptByDefault(template));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,12 +158,12 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
             </div>
             <div className="mt-2 space-y-1">
               <label className="flex w-fit items-center gap-2 cursor-pointer">
-                <Toggle enabled={sendPrompt} onChange={() => setSendPrompt(on => !on)} />
+                <Toggle enabled={sendPrompt} onChange={() => setSendPrompt(on => !on)} label="Start it with this prompt" />
                 <span className="text-xs text-foreground">Start it with this prompt</span>
               </label>
-              {!template.builtin && (
+              {!startsWithPromptByDefault(template) && (
                 <p className="text-[11px] leading-4 text-muted-foreground">
-                  Templates that are not built in start with this off, since an imported template looks just like one you made.
+                  This starts off unless the template is built in and unedited: an imported or edited one may carry a prompt you did not write.
                 </p>
               )}
             </div>

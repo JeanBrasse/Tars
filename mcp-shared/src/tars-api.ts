@@ -11,6 +11,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { noAnswerWithin } from "./http.js";
 
 export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
 const API_TOKEN_FILE = path.join(os.homedir(), ".dorothy", "api-token");
@@ -74,7 +75,11 @@ export async function apiRequest(
   const timeoutMs = timeoutMsOverride ?? (isLongPoll ? 600_000 : 30_000);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   const options: RequestInit = {
     method,
@@ -94,6 +99,17 @@ export async function apiRequest(
     }
 
     return data;
+  } catch (err) {
+    // Said as mcp-kanban says it, with the wait that ran out: fetch's own
+    // "This operation was aborted" named neither. Still an AbortError, the name
+    // delegate_task reads as its own wait running out: anything else sends it
+    // on to type the task into the agent's terminal too, and the task runs twice.
+    if (timedOut) {
+      const late = new Error(`Tars did not answer at ${new URL(API_URL).origin}: ${noAnswerWithin(timeoutMs)}`);
+      late.name = "AbortError";
+      throw late;
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }

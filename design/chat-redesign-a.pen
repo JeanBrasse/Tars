@@ -169304,6 +169304,1386 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "x9QR1",
+      "x": 6516,
+      "y": 21600,
+      "name": "Chat · A · Room head · states",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 986,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        40,
+        48,
+        40
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "NJHJL",
+          "name": "intro",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "M6nves",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Room head",
+              "lineHeight": 1.2308,
+              "fontFamily": "$font-display",
+              "fontSize": 26,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "J0UQY",
+              "name": "sub",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "The head of a room, and of Hermes: the name, the path, the state, how it runs and stop, on one line 52 high.",
+              "lineHeight": 1.6,
+              "fontFamily": "$font-ui",
+              "fontSize": 12.5,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "IPy05",
+          "name": "state A LONG PATH",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "E9Uz4D",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "N24uJj",
+                  "name": "baseline +1",
+                  "padding": [
+                    2,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Lmpus",
+                      "name": "cap",
+                      "fill": "$text-muted",
+                      "content": "A LONG PATH",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "jw4FM",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "The name keeps its width and the path gives way, cut at its end. The state and the buttons never shrink, and no label wraps.",
+                  "lineHeight": 1.3333333333333333,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "D1Zj0",
+              "name": "heads",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "W0gxf",
+                  "name": "room head",
+                  "width": "fill_container",
+                  "height": 52,
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "V5B5aR",
+                      "name": "title",
+                      "fill": "$text-primary",
+                      "content": "tars",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "v5lOoO",
+                      "name": "baseline +1",
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "RV6fb",
+                          "name": "mono",
+                          "fill": "$text-muted",
+                          "content": "~/tars",
+                          "lineHeight": 1.2727272727272727,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "cDHGW",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xOp2u",
+                      "name": "room state",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "Vxrqj",
+                          "name": "StatusSquare running",
+                          "fill": "$status-running",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "C0QXWL",
+                          "name": "state",
+                          "fill": "$text-secondary",
+                          "content": "relaying",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "YCoJa",
+                          "name": "dot",
+                          "fill": "$text-muted",
+                          "content": "·",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "P5AOw",
+                          "name": "detail",
+                          "fill": "$text-muted",
+                          "content": "pauses after 3 more agent messages",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ScRVq",
+                      "name": "Button ghost sm · how it runs",
+                      "height": 26,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "iTPms",
+                          "name": "info",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "qXBSe",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "how it runs",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "i1ySQH",
+                      "name": "Button secondary sm · stop",
+                      "height": 26,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "PCO9s",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "stop",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "lCbxZ",
+                  "name": "room head",
+                  "width": "fill_container",
+                  "height": 52,
+                  "stroke": "$border",
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Ed2gr",
+                      "name": "title",
+                      "fill": "$text-primary",
+                      "content": "tars",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "I3aNdK",
+                      "name": "baseline +1",
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Hq0ZK",
+                          "name": "mono",
+                          "fill": "$text-muted",
+                          "content": "/Volumes/Work/clients/acme-corporation/2026/web…",
+                          "lineHeight": 1.2727272727272727,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "a3QUi",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "C1HkJ",
+                      "name": "room state",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "W75qjH",
+                          "name": "StatusSquare running",
+                          "fill": "$status-running",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "j3yYef",
+                          "name": "state",
+                          "fill": "$text-secondary",
+                          "content": "relaying",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "MUtbO",
+                          "name": "dot",
+                          "fill": "$text-muted",
+                          "content": "·",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Fb95m",
+                          "name": "detail",
+                          "fill": "$text-muted",
+                          "content": "pauses after 3 more agent messages",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "QkqgB",
+                      "name": "Button ghost sm · how it runs",
+                      "height": 26,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "MPryp",
+                          "name": "info",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "j0zHcz",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "how it runs",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "UtqWo",
+                      "name": "Button secondary sm · stop",
+                      "height": 26,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "g7nLy",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "stop",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "xCFeP",
+          "name": "state A LONG NAME TOO",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "u85zI",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "O6ZXk",
+                  "name": "baseline +1",
+                  "padding": [
+                    2,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "l809fh",
+                      "name": "cap",
+                      "fill": "$text-muted",
+                      "content": "A LONG NAME TOO",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "KBDro",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "With no room left for the path, the path is gone, and only then is the name cut.",
+                  "lineHeight": 1.3333333333333333,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "vguV3",
+              "name": "heads",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "vREEV",
+                  "name": "room head",
+                  "width": "fill_container",
+                  "height": 52,
+                  "stroke": "$border",
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "N9R0WX",
+                      "name": "title",
+                      "fill": "$text-primary",
+                      "content": "acme-corporation-website-redesign-for-the-autu…",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yIMj4",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zygLH",
+                      "name": "room state",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "vc9FK",
+                          "name": "StatusSquare running",
+                          "fill": "$status-running",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "cubSk",
+                          "name": "state",
+                          "fill": "$text-secondary",
+                          "content": "relaying",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "pS4gl",
+                          "name": "dot",
+                          "fill": "$text-muted",
+                          "content": "·",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "FSY1b",
+                          "name": "detail",
+                          "fill": "$text-muted",
+                          "content": "pauses after 3 more agent messages",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "uncJQ",
+                      "name": "Button ghost sm · how it runs",
+                      "height": 26,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "n7c3fp",
+                          "name": "info",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "lAATP",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "how it runs",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "KPEGe",
+                      "name": "Button secondary sm · stop",
+                      "height": 26,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "J0vRb4",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "stop",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "J10lI",
+      "x": 7602,
+      "y": 21600,
+      "name": "Chat · A · Room head · states · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 986,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        40,
+        48,
+        40
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "dvrR0",
+          "name": "intro",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "vP0mF",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Room head",
+              "lineHeight": 1.2308,
+              "fontFamily": "$font-display",
+              "fontSize": 26,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "XQgGx",
+              "name": "sub",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "The head of a room, and of Hermes: the name, the path, the state, how it runs and stop, on one line 52 high.",
+              "lineHeight": 1.6,
+              "fontFamily": "$font-ui",
+              "fontSize": 12.5,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "hm9yf",
+          "name": "state A LONG PATH",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "o3qlGA",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "czXLI",
+                  "name": "baseline +1",
+                  "padding": [
+                    2,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "pbetw",
+                      "name": "cap",
+                      "fill": "$text-muted",
+                      "content": "A LONG PATH",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "l8z624",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "The name keeps its width and the path gives way, cut at its end. The state and the buttons never shrink, and no label wraps.",
+                  "lineHeight": 1.3333333333333333,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "QSzFD",
+              "name": "heads",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ds1wc",
+                  "name": "room head",
+                  "width": "fill_container",
+                  "height": 52,
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "wWopB",
+                      "name": "title",
+                      "fill": "$text-primary",
+                      "content": "tars",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "pSwdW",
+                      "name": "baseline +1",
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rkp4u",
+                          "name": "mono",
+                          "fill": "$text-muted",
+                          "content": "~/tars",
+                          "lineHeight": 1.2727272727272727,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "XgdqV",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "rRrMa",
+                      "name": "room state",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "sSJIZ",
+                          "name": "StatusSquare running",
+                          "fill": "$status-running",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "Hmi6b",
+                          "name": "state",
+                          "fill": "$text-secondary",
+                          "content": "relaying",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "We6HK",
+                          "name": "dot",
+                          "fill": "$text-muted",
+                          "content": "·",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "X63LH",
+                          "name": "detail",
+                          "fill": "$text-muted",
+                          "content": "pauses after 3 more agent messages",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "t0A0xs",
+                      "name": "Button ghost sm · how it runs",
+                      "height": 26,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "Ba9Ai",
+                          "name": "info",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "UJPHu",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "how it runs",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "g5WgW9",
+                      "name": "Button secondary sm · stop",
+                      "height": 26,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "hXL5S",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "stop",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "k82hr2",
+                  "name": "room head",
+                  "width": "fill_container",
+                  "height": 52,
+                  "stroke": "$border",
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "HIS3z",
+                      "name": "title",
+                      "fill": "$text-primary",
+                      "content": "tars",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "qY65B",
+                      "name": "baseline +1",
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "I77okV",
+                          "name": "mono",
+                          "fill": "$text-muted",
+                          "content": "/Volumes/Work/clients/acme-corporation/2026/web…",
+                          "lineHeight": 1.2727272727272727,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yKfvZ",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "x3hDfU",
+                      "name": "room state",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "YOAxx",
+                          "name": "StatusSquare running",
+                          "fill": "$status-running",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "rK1qO",
+                          "name": "state",
+                          "fill": "$text-secondary",
+                          "content": "relaying",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "k9kjzv",
+                          "name": "dot",
+                          "fill": "$text-muted",
+                          "content": "·",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "MUTX2",
+                          "name": "detail",
+                          "fill": "$text-muted",
+                          "content": "pauses after 3 more agent messages",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "mIybM",
+                      "name": "Button ghost sm · how it runs",
+                      "height": 26,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "l3c6V",
+                          "name": "info",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "dXodl",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "how it runs",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "n3FHX",
+                      "name": "Button secondary sm · stop",
+                      "height": 26,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "B5NTjB",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "stop",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "EF6EU",
+          "name": "state A LONG NAME TOO",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "hLRR8",
+              "name": "caption",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Bj2Dd",
+                  "name": "baseline +1",
+                  "padding": [
+                    2,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "rIhMH",
+                      "name": "cap",
+                      "fill": "$text-muted",
+                      "content": "A LONG NAME TOO",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "GBSpc",
+                  "name": "note",
+                  "fill": "$text-secondary",
+                  "content": "With no room left for the path, the path is gone, and only then is the name cut.",
+                  "lineHeight": 1.3333333333333333,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "IUzY3",
+              "name": "heads",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "yAQkx",
+                  "name": "room head",
+                  "width": "fill_container",
+                  "height": 52,
+                  "stroke": "$border",
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "IxIlS",
+                      "name": "title",
+                      "fill": "$text-primary",
+                      "content": "acme-corporation-website-redesign-for-the-autu…",
+                      "lineHeight": 1.3333333333333333,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zyh5D",
+                      "name": "sp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "uASW9",
+                      "name": "room state",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "QFn2G",
+                          "name": "StatusSquare running",
+                          "fill": "$status-running",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "KknrQ",
+                          "name": "state",
+                          "fill": "$text-secondary",
+                          "content": "relaying",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "smDDJ",
+                          "name": "dot",
+                          "fill": "$text-muted",
+                          "content": "·",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "jstuZ",
+                          "name": "detail",
+                          "fill": "$text-muted",
+                          "content": "pauses after 3 more agent messages",
+                          "lineHeight": 1.3333333333333333,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "pGRSI",
+                      "name": "Button ghost sm · how it runs",
+                      "height": 26,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "GSW7r",
+                          "name": "info",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "J1CyxE",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "how it runs",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yKHbc",
+                      "name": "Button secondary sm · stop",
+                      "height": 26,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "I0RKg",
+                          "name": "label",
+                          "fill": "$text-primary",
+                          "content": "stop",
+                          "lineHeight": 1.2,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "themes": {
