@@ -219,9 +219,14 @@ export function registerHermesHandlers(): void {
 
   ipcMain.handle('hermes:connection:get', async () => {
     const connection = readConnection();
+    // The form shows the default, to be saved. The base URL is what Settings >
+    // Hermes and the Chat probe as soon as they open (hermes:connection:test),
+    // so it is the gateway a file names, or none: for a missing or broken file
+    // it was the default port's, the SSH tunnel to Noah's Hermes on his machine.
+    const configured = configuredHermesConnection();
     return {
       connection,
-      baseUrl: resolveHermesBaseUrl(connection),
+      baseUrl: configured && !('unusable' in configured) ? resolveHermesBaseUrl(configured.conn) : '',
       desktopConfigAvailable: fs.existsSync(HERMES_DESKTOP_CONFIG),
     };
   });
