@@ -71,12 +71,18 @@ const QUOTE_LIMIT = 60;
  * and cut, since it only has to name it. On one line too: the newline and the
  * tab reveal() leaves as they are (a prompt keeps its lines) are written out
  * here, or a skill with a newline would start a line of its own in the log.
+ * One parameter, so that `.map(quoted)` passes no index as a limit.
  */
 export function quoted(value: unknown): string {
+  return quotedUpTo(value, QUOTE_LIMIT);
+}
+
+/** quoted(), keeping `limit` characters: the error triage keeps more of a title than a refusal needs of a name. */
+export function quotedUpTo(value: unknown, limit: number): string {
   const oneLine = (s: string) => s.replace(/\n/g, '[U+000A]').replace(/\t/g, '[U+0009]');
   const cut = (s: string) => {
     const chars = Array.from(s);
-    return chars.length > QUOTE_LIMIT ? `${chars.slice(0, QUOTE_LIMIT).join('')}...` : s;
+    return chars.length > limit ? `${chars.slice(0, limit).join('')}...` : s;
   };
   if (typeof value === 'string') return `"${cut(oneLine(reveal(value).text))}"`;
   return cut(JSON.stringify(value) ?? String(value));

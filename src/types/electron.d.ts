@@ -1119,6 +1119,9 @@ export interface ElectronAPI {
       discordRequireMention: boolean;
       /** Error reports to Sentry, off by default (services/error-reports in main). */
       errorReportsEnabled: boolean;
+      /** The error triage (services/error-triage in main): a Sentry token with the event:read scope, and the project whose board gets the tasks. Empty, nothing polls. */
+      sentryAuthToken: string;
+      sentryTriageProject: string;
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1222,6 +1225,8 @@ export interface ElectronAPI {
       discordAllowedUserIds?: string[];
       discordRequireMention?: boolean;
       errorReportsEnabled?: boolean;
+      sentryAuthToken?: string;
+      sentryTriageProject?: string;
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;

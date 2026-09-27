@@ -497,6 +497,36 @@ async function asCreated(h: KanbanHermes, id: string): Promise<boolean | null> {
     && detail.events.length === 1 && detail.events[0]?.kind === 'created';
 }
 
+/**
+ * A task Tars files itself, parked on a project: created on the Tars lane under
+ * an idempotency key, then parked. The key hands back the task a previous run
+ * created, whatever became of it since: claimed, run by Hermes, dragged back,
+ * done. Hermes would take `scheduled` from ready and running and clear the claim
+ * and the worker (the Backend's gate of #171, W1), so only a task still as it
+ * was created, with no event but `created`, is owed a park. `parkedNow` says
+ * whether this call parked it: false for a task the key handed back, parked by
+ * an earlier run or moved on since. Throws when Hermes does not answer.
+ */
+export async function fileParkedTask(
+  h: KanbanHermes,
+  task: { title: string; body: string; tenant: string; priority?: 'low' | 'medium' | 'high'; key: string },
+): Promise<{ ok: true; id: string; parkedNow: boolean } | { ok: false; error: string }> {
+  const created = await h.create({
+    title: task.title, body: task.body, tenant: task.tenant, assignee: TARS_LANE,
+    priority: PRIORITY_TO_HERMES[task.priority ?? 'medium'] ?? 0,
+    idempotency_key: task.key,
+  });
+  if (!created.success) return { ok: false, error: created.error || 'refused' };
+  const t = taskIn(created.task);
+  if (t.status === PARKED) return { ok: true, id: t.id, parkedNow: false };
+  const untouched = await asCreated(h, t.id);
+  if (untouched === null) return { ok: false, error: `created as ${t.id}, and Hermes did not say what became of it` };
+  if (!untouched) return { ok: true, id: t.id, parkedNow: false };
+  const parked = await h.update(t.id, { status: PARKED });
+  if (!parked.success) return { ok: false, error: `created as ${t.id} but not parked: ${parked.error || 'refused'}` };
+  return { ok: true, id: t.id, parkedNow: true };
+}
+
 interface LocalTask {
   id: string;
   title: string;
@@ -537,27 +567,9 @@ export async function migrateLocalTasks(h: KanbanHermes, file: string, record: s
     try {
       const labels = (t.labels ?? []).filter(Boolean);
       const body = [t.description ?? '', labels.length ? `Labels: ${labels.join(', ')}` : '', `Moved from the local Tars board (${t.id}).`].filter(Boolean).join('\n\n');
-      const created = await h.create({
-        title: t.title, body, tenant: t.projectPath, assignee: TARS_LANE,
-        priority: PRIORITY_TO_HERMES[t.priority ?? 'medium'] ?? 0,
-        idempotency_key: `tars-local:${t.id}`,
-      });
-      if (!created.success) { out.errors.push(`${t.id}: ${created.error || 'refused'}`); continue; }
-      const task = taskIn(created.task);
-      if (task.status !== PARKED) {
-        // The key hands back the task a previous run created, whatever became
-        // of it since: claimed, run by Hermes, dragged back, done. Hermes would
-        // take `scheduled` from ready and running and clear the claim and the
-        // worker (the Backend's gate of #171, W1). Only a task still as it was
-        // created, with no event but `created`, is one this migration owes a park.
-        const untouched = await asCreated(h, task.id);
-        if (untouched === null) { out.errors.push(`${t.id}: created as ${task.id}, and Hermes did not say what became of it`); continue; }
-        if (untouched) {
-          const parked = await h.update(task.id, { status: PARKED });
-          if (!parked.success) { out.errors.push(`${t.id}: created as ${task.id} but not parked: ${parked.error || 'refused'}`); continue; }
-        }
-      }
-      moved[t.id] = task.id;
+      const filed = await fileParkedTask(h, { title: t.title, body, tenant: t.projectPath, priority: t.priority, key: `tars-local:${t.id}` });
+      if (!filed.ok) { out.errors.push(`${t.id}: ${filed.error}`); continue; }
+      moved[t.id] = filed.id;
       out.moved++;
       writeAtomicSync(record, JSON.stringify(moved, null, 2));
     } catch (err) {
