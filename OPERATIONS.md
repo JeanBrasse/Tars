@@ -817,8 +817,9 @@ The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUser
 none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
 which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`, which takes
 five wrong tokens from a chat and twenty from all chats in any fifteen minutes, then says "Too many
-attempts" without comparing; both read the settings as they are, so a change there counts without
-a restart (SECURITY §6).
+attempts" without comparing, with the time it lifts; both read the settings as they are, so a change
+there counts without a restart (SECURITY §6). A lock-out from the count of all chats keeps your own
+new chat out too: turn Telegram off and on in Settings, which restarts the bot and clears the count.
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
@@ -830,9 +831,13 @@ ping. Setting it up:
 1. In the Discord Developer Portal, create an application, then under Bot reset the token and
    paste it in Settings > Discord. On the same page, switch on the **Message Content** intent,
    or every message reaches the bot empty.
-2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=3072`
-   (view channels, send messages: the bot does nothing else). "Test token" in Settings gives this
-   link, and main makes it from a token as it is typed (`discord:inviteUrl`).
+2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=274877910016`
+   (view channels, send messages, send messages in threads: the bot does nothing else). "Test
+   token" in Settings gives this link, and main makes it from a token as it is typed
+   (`discord:inviteUrl`, which refuses anything over 200 characters). A mention in a thread or a
+   forum post is answered in that thread, which needs Send Messages in Threads: a server the bot
+   was invited to before 1.9.0 (3072 or 68608) must invite it again with this link, or give its
+   role that permission, or the answer there is refused.
 3. Add your Discord user id (Developer Mode, then Copy User ID), and mention the bot or DM it:
    that channel becomes the one Tars posts to.
 

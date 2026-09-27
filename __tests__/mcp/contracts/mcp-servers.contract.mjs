@@ -198,7 +198,8 @@ async function runVariant(server, variant, fake, sandbox) {
     session.notifications = [];
     writeSettings(home, "settings" in scenario ? scenario.settings : (variant.settings ?? null));
     const params = { name: scenario.tool, arguments: withHome(scenario.args, home), ...(scenario.meta ? { _meta: scenario.meta } : {}) };
-    const answer = await session.request("tools/call", params, 60_000);
+    // Longer than the longest wait a server has of its own: mcp-kanban's 60 s.
+    const answer = await session.request("tools/call", params, 90_000);
     for (const res of fake.state.held.splice(0)) res.socket?.destroy();
     calls.push({
       scenario: scenario.name,

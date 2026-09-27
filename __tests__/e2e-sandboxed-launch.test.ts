@@ -47,6 +47,37 @@ describe('e2e launches of the app', () => {
   });
 });
 
+/**
+ * The scripts that start the app go through it too (QA's note on #214).
+ * scripts/readme-shots.mjs photographs the app for the README, and launched it
+ * with HOME alone: every run opened the installed Tars's profile, the same way
+ * the e2e suite did until 2026-09-16.
+ *
+ * How it fails: a script under scripts/ calls `.launch(` itself, so the
+ * profile lands in the real ~/Library/Application Support/tars and no folder
+ * check runs; or the scan reads no script and passes for a clean one.
+ */
+describe('the scripts that start the app', () => {
+  const SCRIPTS = path.join(__dirname, '..', 'scripts');
+  const sources = () => (fs.readdirSync(SCRIPTS, { recursive: true }) as string[])
+    .filter(name => /\.(ts|mts|js|mjs|cjs)$/.test(name));
+
+  it('reads real scripts, readme-shots.mjs among them', () => {
+    expect(sources()).toContain('readme-shots.mjs');
+  });
+
+  it('launch Electron only through launchSandboxed', () => {
+    const direct: string[] = [];
+    for (const name of sources()) {
+      fs.readFileSync(path.join(SCRIPTS, name), 'utf-8').split('\n').forEach((line, index) => {
+        if (/\.launch\(/.test(line)) direct.push(`scripts/${name}:${index + 1}: ${line.trim()}`);
+      });
+    }
+    expect(direct, 'launch the app with launchSandboxed from e2e/fixture.mjs').toEqual([]);
+    expect(fs.readFileSync(path.join(SCRIPTS, 'readme-shots.mjs'), 'utf-8')).toMatch(/launchSandboxed\(electron, /);
+  });
+});
+
 describe('the renderer server the e2e suite starts', () => {
   const config = fs.readFileSync(path.join(__dirname, '..', 'playwright.config.ts'), 'utf-8');
   const command = config.match(/command: `(npx next dev [^`]*)`/)?.[1];

@@ -20,6 +20,10 @@ import * as fs from 'node:fs';
  * 6. misses spread over many chats escape a limit kept per chat;
  * 7. what is not a guess counts as one: `/auth` with no token, or /auth while
  *    Settings holds no auth token.
+ * 8. (gate of #200) the lock-out has no way out that anyone is told of: twenty
+ *    misses from anywhere shut out every new chat, Noah's too, and the refusal
+ *    names neither the time it lifts nor the one thing that lifts it sooner,
+ *    turning Telegram off and on in Settings, which restarts the bot.
  *
  * The bot and its handlers are the real ones; the Telegram client is a recorder
  * of the handlers the bot registers and of what it sends. Only Date is faked,
@@ -105,6 +109,7 @@ afterEach(() => {
 });
 
 const minutes = (n: number) => vi.setSystemTime(Date.now() + n * 60_000);
+const clock = (at: number) => new Date(at).toTimeString().slice(0, 5);
 
 describe('/auth, guessed', () => {
   it('stops comparing a chat\'s tokens after five misses, the right one included, and says the same to both', async () => {
@@ -132,7 +137,8 @@ describe('/auth, guessed', () => {
     // The first miss was five minutes ago: ten more to go.
     await send('99', `/auth ${TOKEN}`);
     expect(lastReply('99')).toMatch(REFUSED);
-    expect(lastReply('99')).toContain('10 minutes');
+    // At the minute the first miss is fifteen minutes old, on the clock of the Mac Tars runs on.
+    expect(lastReply('99')).toContain(`Try again at ${clock(Date.now() + 10 * 60_000)}`);
 
     minutes(10);
     await send('99', `/auth ${TOKEN}`);
@@ -162,6 +168,21 @@ describe('/auth, guessed', () => {
     expect(enrolled('200')).toBe(true);
   });
 
+  it('8. names the way out of a lock-out, and turning Telegram off and on in Settings is one', async () => {
+    for (let chat = 100; chat < 120; chat++) await send(String(chat), '/auth wrong');
+    await send('200', `/auth ${TOKEN}`);
+
+    expect(lastReply('200')).toMatch(REFUSED);
+    expect(lastReply('200')).toContain(`Try again at ${clock(Date.now() + 15 * 60_000)}`);
+    expect(lastReply('200')).toMatch(/turn Telegram off and on in Tars's Settings/);
+
+    // What the Settings toggle does: app:saveSettings stops the bot and starts it again.
+    stopTelegramBot();
+    initTelegramBot();
+    await send('200', `/auth ${TOKEN}`);
+    expect(enrolled('200'), 'the toggle did not clear the count').toBe(true);
+  });
+
   it('counts only guesses: no token given, or no auth token in Settings, is no miss', async () => {
     for (let i = 0; i < 6; i++) await send('99', '/auth    ');
     live = { ...live, telegramAuthToken: '' };
@@ -171,5 +192,48 @@ describe('/auth, guessed', () => {
 
     await send('99', `/auth ${TOKEN}`);
     expect(enrolled('99'), 'what was not a guess counted as one').toBe(true);
+  });
+});
+
+describe('QA, re-check of #203: the minute the refusal names', () => {
+  // Each of these was seen to pass on the PR and to turn red on a mutant the
+  // tests above let through: the lift rounded down, or to the nearest minute;
+  // the newest miss taken for the oldest; the seconds kept. Dubai keeps UTC+4
+  // all year, so the minutes below are the same on any machine, and the one
+  // for the Mac's clock against UTC holds on the UTC runner CI uses as well.
+  let zone: string | undefined;
+  beforeEach(() => { zone = process.env.TZ; process.env.TZ = 'Asia/Dubai'; });
+  afterEach(() => { if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone; });
+  const at = (iso: string) => vi.setSystemTime(new Date(iso));
+
+  it('rounds the lift up to the next minute, past midnight, from the chat\'s oldest miss, and lets the chat in at that minute', async () => {
+    at('2026-09-24T19:44:10Z'); // 23:44:10 in Dubai
+    await send('99', '/auth wrong');
+    at('2026-09-24T19:50:00Z');
+    for (let i = 0; i < 4; i++) await send('99', '/auth wrong');
+
+    at('2026-09-24T19:55:00Z');
+    await send('99', `/auth ${TOKEN}`);
+    // The first miss is fifteen minutes old at 23:59:10: the next whole minute is 00:00.
+    expect(lastReply('99')).toContain("Try again at 00:00, or turn Telegram off and on in Tars's Settings.");
+
+    at('2026-09-24T19:59:09Z');
+    await send('99', `/auth ${TOKEN}`);
+    expect(lastReply('99')).toMatch(REFUSED);
+
+    at('2026-09-24T20:00:00Z'); // 00:00 in Dubai, the minute it named
+    await send('99', `/auth ${TOKEN}`);
+    expect(enrolled('99'), 'refused at the minute the refusal named').toBe(true);
+  });
+
+  it('names the lift of the oldest of all the misses when the count of all chats is full', async () => {
+    at('2026-09-25T08:00:30Z'); // 12:00:30 in Dubai
+    await send('100', '/auth wrong');
+    at('2026-09-25T08:05:00Z');
+    for (let chat = 101; chat < 120; chat++) await send(String(chat), '/auth wrong');
+
+    at('2026-09-25T08:06:00Z');
+    await send('200', `/auth ${TOKEN}`);
+    expect(lastReply('200')).toContain('Try again at 12:16, or turn');
   });
 });
