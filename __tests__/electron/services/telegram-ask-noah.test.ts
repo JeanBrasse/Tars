@@ -98,6 +98,9 @@ describe('a question on Telegram', () => {
 
     expect(bot.sent.map(m => m.chatId)).toEqual([NOAH]);
     expect(bot.sent[0].options).toMatchObject({ parse_mode: 'HTML' });
+    // No link preview: a URL in an agent's question would have Telegram fetch
+    // it and show that site's title and picture in Noah's chat (gate of #231).
+    expect(bot.sent[0].options).toMatchObject({ disable_web_page_preview: true, link_preview_options: JSON.stringify({ is_disabled: true }) });
     expect(bot.sent[0].text).toContain('<blockquote>Staging or prod?</blockquote>');
   });
 
