@@ -23,7 +23,8 @@ import * as path from 'node:path';
 
 const sdk = vi.hoisted(() => ({ loads: 0, inits: [] as Array<Record<string, unknown>>, fail: null as null | 'import' | 'init' }));
 
-vi.mock('@sentry/electron/renderer', () => {
+/** The SDK as the page would import it, counting each time it is loaded. */
+const fakeSdk = () => {
   sdk.loads += 1;
   if (sdk.fail === 'import') throw new Error('the SDK could not load');
   const integration = (name: string) => () => ({ name });
@@ -37,7 +38,7 @@ vi.mock('@sentry/electron/renderer', () => {
     breadcrumbsIntegration: integration('Breadcrumbs'),
     dedupeIntegration: integration('Dedupe'),
   };
-});
+};
 
 type Lib = typeof import('../../src/lib/error-reports');
 let lib: Lib;
@@ -48,8 +49,10 @@ beforeEach(async () => {
   sdk.inits = [];
   sdk.fail = null;
   warn.mockClear();
-  // A fresh module each time: what it started is per run of the app.
+  // A fresh module each time: what it started is per run of the app. The mock
+  // is registered again too, or vitest hands back the SDK an earlier test loaded.
   vi.resetModules();
+  vi.doMock('@sentry/electron/renderer', fakeSdk);
   lib = await import('../../src/lib/error-reports');
 });
 afterEach(() => { sdk.fail = null; });
