@@ -746,14 +746,35 @@ let launchDir: string | undefined;
  * it, and zsh reads on from the open file. A command with neither is typed as
  * it is, so the terminal shows what was launched.
  */
+/**
+ * Whether the launch folder is still the one Tars made: a directory, not a
+ * link, owned by this user, closed to others. On a multi-user Linux whose
+ * /tmp is cleaned, another user can make a folder of the same name, and swap
+ * the file Tars writes there before the shell reads it (the Audit's gate of
+ * #224, reproduced). Anything else, and a new folder is made; the one found
+ * is left as it is.
+ */
+function stillOurs(dir: string): boolean {
+  try {
+    const st = fs.lstatSync(dir);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : st.uid;
+    // lstat: a link is not a directory, whatever it points at.
+    return st.isDirectory() && st.uid === uid && (st.mode & 0o077) === 0;
+  } catch {
+    return false;
+  }
+}
+
 function shellLine(command: string): string {
   if (!/[\t\n]/.test(command)) return command;
   const quote = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
   try {
-    if (!launchDir || !fs.existsSync(launchDir)) {
+    if (!launchDir || !stillOurs(launchDir)) {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-launch-'));
       launchDir = dir;
-      process.once('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ } });
+      // Removed at quit only if it is still ours: a folder somebody else put
+      // in its place is not Tars's to empty.
+      process.once('exit', () => { try { if (stillOurs(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ } });
     }
     const file = path.join(launchDir, `${randomBytes(8).toString('hex')}.sh`);
     fs.writeFileSync(file, `rm -f -- ${quote(file)}\n${command}\n`, { mode: 0o600, flag: 'wx' });

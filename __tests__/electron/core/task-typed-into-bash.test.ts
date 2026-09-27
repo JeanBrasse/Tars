@@ -157,15 +157,21 @@ describe('the launch folder, before it is used again', () => {
       return elsewhere;
     }],
     ['opened to others', (dir: string) => { fs.chmodSync(dir, 0o777); return dir; }],
+    ['replaced by a file of this user\'s, closed to others', (dir: string) => {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.writeFileSync(dir, 'not a folder', { mode: 0o600 });
+      return dir;
+    }],
   ])('7. is not used when it was %s', (_what, tamper) => {
     const first = folderOf(typedFor("cd '/tmp' && cli 'a\tb'"));
     const watched = tamper(first);
-    const before = fs.readdirSync(watched);
+    const look = () => (fs.statSync(watched).isDirectory() ? fs.readdirSync(watched) : fs.readFileSync(watched, 'utf-8'));
+    const before = look();
 
     const second = folderOf(typedFor("cd '/tmp' && cli 'c\td'"));
 
     expect(second).not.toBe(first);
-    expect(fs.readdirSync(watched)).toEqual(before);
+    expect(look()).toEqual(before);
     expect(fs.lstatSync(second).isDirectory()).toBe(true);
     expect(fs.statSync(second).mode & 0o077).toBe(0);
   });
