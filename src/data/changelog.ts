@@ -11,9 +11,9 @@ export const CHANGELOG: Release[] = [
     version: '1.9.1',
     date: '2026-09-26',
     updates: [
-      'With several Claude agents at work at once, the Usage page no longer misses one of their sessions: an agent\'s status line could remove the lock another had just taken on the token count, and two of them then wrote the count over each other. Fixed by Nico',
-      'A Tars tool whose process was held for a few seconds between two calls to Tars no longer has its next call fail with a connection reset, "fetch failed": Tars keeps an idle connection open for a minute, where it closed it after six seconds. Fixed by Nico',
-      'An Amp update Tars ran is reported as what it came to, updated, up to date or failed with npm\'s own reason, even when Tars cannot delete the temporary folder it downloaded into; it read "failed" with the deletion\'s error. Fixed by Nico',
+      'With several Claude agents at work at once, the Usage page no longer misses one of their sessions: an agent\'s status line could remove the lock another had just taken on the token count, and two of them then wrote the count over each other. Fixed by Nexarion434',
+      'A Tars tool whose process was held for a few seconds between two calls to Tars no longer has its next call fail with a connection reset, "fetch failed": Tars keeps an idle connection open for a minute, where it closed it after six seconds. Fixed by Nexarion434',
+      'An Amp update Tars ran is reported as what it came to, updated, up to date or failed with npm\'s own reason, even when Tars cannot delete the temporary folder it downloaded into; it read "failed" with the deletion\'s error. Fixed by Nexarion434',
       'A temporary folder Tars could not delete after an Amp update is named in ~/.dorothy/cli-updates.log, and a later check removes it once it is an hour old, where such folders stayed in the system\'s temp folder for good',
     ],
   },
