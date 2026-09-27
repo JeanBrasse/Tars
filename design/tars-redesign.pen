@@ -25459,14 +25459,14 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "LDFbd",
+                                      "id": "SMHdy",
                                       "name": "h",
                                       "width": 560,
                                       "layout": "vertical",
                                       "children": [
                                         {
                                           "type": "text",
-                                          "id": "WjrN9",
+                                          "id": "SO9Dg",
                                           "name": "sent",
                                           "fill": "$text-secondary",
                                           "textGrowth": "fixed-width",
@@ -25478,18 +25478,31 @@
                                           "fontWeight": "normal"
                                         },
                                         {
+                                          "type": "text",
+                                          "id": "LmA85",
+                                          "name": "paths",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": 560,
+                                          "content": "File paths keep their names, with your home folder shown as ~.",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-ui",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
                                           "type": "frame",
-                                          "id": "p4VAv6",
+                                          "id": "s9IRq",
                                           "name": "never",
                                           "gap": 3,
                                           "alignItems": "center",
                                           "children": [
                                             {
                                               "type": "text",
-                                              "id": "fm2uq",
+                                              "id": "n0udl2",
                                               "name": "text",
                                               "fill": "$text-secondary",
-                                              "content": "Never your code, prompts, conversations, files, paths or keys.",
+                                              "content": "Never your code, prompts, conversations or keys.",
                                               "lineHeight": 1.4,
                                               "fontFamily": "$font-ui",
                                               "fontSize": 11,
@@ -25497,7 +25510,7 @@
                                             },
                                             {
                                               "type": "text",
-                                              "id": "V3nJKk",
+                                              "id": "Q83iT",
                                               "name": "link",
                                               "fill": "$accent",
                                               "content": "Privacy policy",
@@ -144048,14 +144061,14 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "J1AZq",
+                                      "id": "hWU30",
                                       "name": "h",
                                       "width": 560,
                                       "layout": "vertical",
                                       "children": [
                                         {
                                           "type": "text",
-                                          "id": "lGHzk",
+                                          "id": "vHHsg",
                                           "name": "sent",
                                           "fill": "$text-secondary",
                                           "textGrowth": "fixed-width",
@@ -144067,18 +144080,31 @@
                                           "fontWeight": "normal"
                                         },
                                         {
+                                          "type": "text",
+                                          "id": "c74i3",
+                                          "name": "paths",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": 560,
+                                          "content": "File paths keep their names, with your home folder shown as ~.",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-ui",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
                                           "type": "frame",
-                                          "id": "jPTJP",
+                                          "id": "Vsi4a",
                                           "name": "never",
                                           "gap": 3,
                                           "alignItems": "center",
                                           "children": [
                                             {
                                               "type": "text",
-                                              "id": "QCD54",
+                                              "id": "bQ4lx",
                                               "name": "text",
                                               "fill": "$text-secondary",
-                                              "content": "Never your code, prompts, conversations, files, paths or keys.",
+                                              "content": "Never your code, prompts, conversations or keys.",
                                               "lineHeight": 1.4,
                                               "fontFamily": "$font-ui",
                                               "fontSize": 11,
@@ -144086,7 +144112,7 @@
                                             },
                                             {
                                               "type": "text",
-                                              "id": "IBkQM",
+                                              "id": "j83GvU",
                                               "name": "link",
                                               "fill": "$accent",
                                               "content": "Privacy policy",
