@@ -616,7 +616,10 @@ An Amp update is never started while a process has the Amp binary open (`lsof -t
 removes the old package before the new one is in place: `amp` is missing for a few seconds while
 it runs, and a launch in those seconds fails. npm's cache for it lives in the scratch folder and
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
-package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
+package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`. A scratch folder that cannot be
+removed (`tars-cli-update-` and six characters, in the system's temp folder) is named in the log,
+and a later pass removes it once it is an hour old, which is past the longest an update holds its
+own.
 
 Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
