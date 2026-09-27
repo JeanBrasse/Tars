@@ -29,7 +29,8 @@ vi.mock('react', async (importOriginal) => ({
  * 6. a failed first read shows no error, or a failed read after data arrived
  *    blanks the page;
  * 7. Settings waits for Claude's data before it shows anything, when all it
- *    takes from it is the skills list.
+ *    takes from it is the skills list; or it asks for that data first, and a
+ *    whole transcript scan in main runs ahead of the settings it shows.
  */
 
 type Api = { claude: { getData: ReturnType<typeof vi.fn> } };
@@ -188,6 +189,27 @@ describe('Settings does not wait for it (7)', () => {
     expect(settings.result.skills).toEqual([]);
     answer.resolve(payload(1));
     await settle();
+    expect(settings.result.skills.map(s => s.name)).toEqual(['skill-1']);
+  });
+
+  it('asks main for its own settings first, and for Claude\'s data only once they are in', async () => {
+    const order: string[] = [];
+    const held = deferred<unknown>();
+    getData().mockImplementation(async () => { order.push('claude:getData'); return payload(1); });
+    Object.assign(g.window!.electronAPI, {
+      settings: {
+        get: vi.fn(async () => { order.push('settings:get'); return held.promise; }),
+        getInfo: vi.fn(async () => { order.push('settings:getInfo'); return { claudeVersion: '2' }; }),
+      },
+      appSettings: { get: vi.fn(async () => { order.push('app:getSettings'); return {}; }), onUpdated: vi.fn(() => () => {}) },
+    });
+    const settings = mount(() => useSettings());
+    pages.push(settings as never);
+    await settle();
+    expect(order).not.toContain('claude:getData');
+    held.resolve({ includeCoAuthoredBy: true });
+    await settle();
+    expect(order.at(-1)).toBe('claude:getData');
     expect(settings.result.skills.map(s => s.name)).toEqual(['skill-1']);
   });
 });
