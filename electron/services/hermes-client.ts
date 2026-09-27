@@ -944,7 +944,12 @@ export async function setHermesMemoryProvider(conn: HermesConnection, provider: 
 }
 
 export interface HermesSessionHit {
+  /** The lineage's newest session: after a compression, the child, not the session that was opened. */
   sessionId?: string;
+  /** The lineage's first session (`lineage_root`), the one that was opened. */
+  lineageRoot?: string;
+  /** The session this one was split from (`parent_session_id`). */
+  parentSessionId?: string;
   title?: string;
   snippet?: string;
   timestamp?: string;
@@ -957,7 +962,8 @@ export async function searchHermesSessions(
   query: string,
   limit = 10,
 ): Promise<{ success: true; hits: HermesSessionHit[] } | { success: false; error: string; needsSignIn?: boolean }> {
-  const q = `?q=${encodeURIComponent(query)}&limit=${Math.min(Math.max(limit, 1), 50)}`;
+  // Up to 100, the gateway's own cap: a caller that filters asks for more than it keeps.
+  const q = `?q=${encodeURIComponent(query)}&limit=${Math.min(Math.max(limit, 1), 100)}`;
   const { status, body } = await gatewayCall(conn, `/api/sessions/search${q}`);
   if (status >= 300) return failedRead(status, 'Sign in to Hermes to search its history');
 
@@ -970,6 +976,8 @@ export async function searchHermesSessions(
     const r = (item ?? {}) as Record<string, unknown>;
     return {
       sessionId: typeof r.session_id === 'string' ? r.session_id : typeof r.id === 'string' ? r.id : undefined,
+      lineageRoot: typeof r.lineage_root === 'string' ? r.lineage_root : undefined,
+      parentSessionId: typeof r.parent_session_id === 'string' ? r.parent_session_id : undefined,
       title: typeof r.title === 'string' ? r.title : undefined,
       snippet: typeof r.snippet === 'string' ? r.snippet
         : typeof r.content === 'string' ? r.content.slice(0, 400) : undefined,
