@@ -15,6 +15,9 @@ import * as fs from 'node:fs';
  * 4. Reports keep going once the bot is stopped.
  * 5. It depends on the desktop notification switch for errors: the two are
  *    different people's settings, the Mac's and Noah's phone.
+ * 6. (found in the app proof) The first status change Tars sees for an agent
+ *    is only recorded, never acted on: an agent whose first change after
+ *    Tars starts is to error was neither notified nor reported.
  */
 
 const { tmpHome } = vi.hoisted(() => ({
@@ -99,5 +102,15 @@ describe('an agent gone to error', () => {
     goesToError('a2', 'Other', 'boom');
     await vi.advanceTimersByTimeAsync(130_000);
     expect(reports()).toEqual([]);
+  });
+});
+
+describe('the first status change Tars sees for an agent', () => {
+  it('6. is reported when it is to error', async () => {
+    const agent = { id: 'a3', name: 'First', status: 'error', error: 'API Error: 529 overloaded', provider: 'claude', projectPath: '/p/tars', skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
+    agents.set('a3', agent);
+    handleStatusChangeNotification(agent, 'error', settings, vi.fn());
+    await vi.advanceTimersByTimeAsync(130_000);
+    expect(reports().map(m => m.text).join('')).toContain('529 overloaded');
   });
 });
