@@ -13,15 +13,18 @@
  *   npx next dev -p 3100        (or let the e2e webServer be running)
  *   node scripts/readme-shots.mjs
  *
- * Everything runs against a temp HOME. The real ~/.dorothy and ~/.claude are
- * never read or written.
+ * Everything runs in a sandbox, through launchSandboxed (e2e/fixture.mjs): a
+ * temp HOME, and Electron's profile moved with --user-data-dir and
+ * CFFIXED_USER_HOME, then checked. HOME alone moved ~/.dorothy and ~/.claude
+ * and nothing else: until 1.9.1 this script opened the installed Tars's own
+ * profile (QA's note on #214).
  */
 
 import { _electron as electron } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { seedSandbox } from '../e2e/fixture.mjs';
+import { launchSandboxed, seedSandbox } from '../e2e/fixture.mjs';
 
 const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
 
@@ -44,11 +47,8 @@ seedSandbox(home);
 
 let app;
 try {
-  app = await electron.launch({
-    args: ['.'],
+  app = await launchSandboxed(electron, home, {
     env: {
-      ...process.env,
-      HOME: home,
       NODE_ENV: 'development',
       DOROTHY_DEV_URL: DEV_URL,
       DOROTHY_API_PORT: '31495',
