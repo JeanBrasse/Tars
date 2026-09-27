@@ -96,6 +96,17 @@ SessionStart with a run's token: it registered a session over the live terminal'
 which then had every post refused as stale. A terminal replaced by a restart or a new
 start, or one that has ended, takes its token with it: the old CLI's late posts are a
 401, where a stopped CLI's token used to last until the agent's next launch.
+A hook sends that token only to the Tars that spawned its CLI (the Audit's table,
+#11). While Tars is down any process of any account may hold its port, and got every
+token posted to it: measured on 2026-09-24 with a listener on the port after the quit,
+the 1.9.0 hook sent it `Bearer <the terminal's token>`. Tars now mints an instance id
+per run (`tarsInstanceId`, in memory, never written) and hands it to each CLI beside the
+token (`TARS_INSTANCE_ID`). As it starts, a hook sends a fresh random challenge to
+`/api/health` and sends the token only when the answer is sha256 of the id and the
+challenge; with no id, no answer within 5 s (longer than any post waits: a Tars whose main thread is held a few seconds still gets its token) or a wrong one, it posts without a token.
+The same listener got the challenge and a post with no Authorization. The id is as
+readable as the token by a process of the same user (`ps -Eww`), and no more: this
+closes the port to other accounts and to a replay, not to that.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
 outlives the update, and each is relaunched with a token and the new scripts (they sit
 in the app bundle). One that survives anyway posts without a token, or with one this
@@ -308,7 +319,7 @@ the first path nobody thought to list.
 | Path | Holds | Reachable by an agent |
 |---|---|---|
 | `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's token (`hermes-connection.json`), and the files staged for a room (`bus-files/`, a week, then removed) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
-| `~/.tars-private/` | Noah's conversation with the super chat, the Hermes sessions it held that conversation in (`overseer-hermes-sessions.json`), what the event reports counted and the GitHub watch has seen (`event-reports.json`, `github-watch.json`: kept out of the agents' reach so none can silence a report), and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700`. The conversation also lives in Hermes, one session per turn: `memory_search` (`/api/memory/search`, what agents call) leaves out every session the super chat opened, every run of its cron job and any hit that names no session. Sessions opened before 1.9.0 were not recorded, so only their cron runs are left out; an agent holding `hermes-connection.json` can still ask the gateway itself (§5, the paragraph below) |
+| `~/.tars-private/` | Noah's conversation with the super chat, the Hermes sessions it held that conversation in (`overseer-hermes-sessions.json`), what the event reports counted and the GitHub watch has seen (`event-reports.json`, `github-watch.json`: kept out of the agents' reach so none can silence a report), and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700`. The conversation also lives in Hermes, one session per turn: `memory_search` (`/api/memory/search`, what agents call) leaves out every session the super chat opened, every run of its cron job (recorded when it runs, so a run of a job replaced since is still left out), a session Hermes compressed out of one of those (the gateway answers a compressed conversation under its newest id, with its `lineage_root` and `parent_session_id`, which are checked too), and any hit that names no session. The gateway is asked for its most (100) and the filter runs before the agent's `limit` is applied, so the super chat's hits do not take an agent's places. Sessions opened before 1.9.0 were not recorded, so only their cron runs are left out; an agent holding `hermes-connection.json` can still ask the gateway itself (§5, the paragraph below) |
 
 So what the kanban tools let an agent do on the Hermes board (since #183, delete
 only a task it filed that nobody claimed, or one it claimed) is a rule of Tars's

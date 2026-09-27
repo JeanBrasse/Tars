@@ -53,6 +53,7 @@ import {
   killAllPty,
   setFieldProbe,
 } from './core/pty-manager';
+import { startErrorReports } from './services/error-reports';
 import { lastLocalCommandAt } from './services/agent-truth';
 
 import { runShutdownSteps } from './core/shutdown';
@@ -148,6 +149,8 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 let appSettings: AppSettings = loadAppSettings();
+// Off unless the user turned them on; followed live (services/error-reports).
+const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
 
 function loadAppSettings(): AppSettings {
   const defaults: AppSettings = {
@@ -173,6 +176,7 @@ function loadAppSettings(): AppSettings {
     discordChannelId: '',
     discordAllowedUserIds: [],
     discordRequireMention: true,
+    errorReportsEnabled: false,
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -295,7 +299,7 @@ function createIpcDependencies(): IpcHandlerDependencies {
     // Functions
     getMainWindow,
     getAppSettings: () => appSettings,
-    setAppSettings: (settings: AppSettings) => { appSettings = settings; },
+    setAppSettings: (settings: AppSettings) => { appSettings = settings; void errorReports.sync(); },
     saveAppSettings: saveAppSettingsToFile,
     saveAgents,
     initAgentPty: (agent: AgentStatus) => initAgentPty(
@@ -475,7 +479,7 @@ app.whenReady().then(async () => {
   registerMcpOrchestratorHandlers();
   registerCLIPathsHandlers({
     getAppSettings: () => appSettings,
-    setAppSettings: (settings) => { appSettings = settings; },
+    setAppSettings: (settings) => { appSettings = settings; void errorReports.sync(); },
     saveAppSettings: saveAppSettingsToFile,
   });
 
