@@ -780,6 +780,10 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 53 routes are registered across eleven modules: bus (2), health (1), hooks (5), agents (13), telegram (4), slack (1), discord (1), kanban (9), vault (10 + `local-file`), memory (5), webhooks (1).
 
+### Event reports: `services/event-reports.ts`, `services/github-watch.ts`
+
+To Noah's Telegram, the private chats Settings authorizes (never a group), while the bot runs: an agent gone to error (from `handleStatusChangeNotification`, after the 5 s it waits to be sure of a status, including an agent's first change after Tars starts), a PR merged and changes requested on an open PR in the GitHub repositories of the agents' projects (`gh pr list --json`, read-only, every 5 minutes while the bot runs; a repository's first poll, or one after an hour without polling, is a baseline and reports nothing). Grouped over 2 minutes into one HTML message, names and texts escaped and their secrets masked; 40 messages a (local) day, counted across restarts, the events past that counted and said in the next day's first message; each event once (an agent is reported again only after leaving error). With the bot off, nothing is sent or kept. Publications and the other reports of the plan are later steps.
+
 ### Residual risk
 
 - Any process running as the user can read `~/.dorothy/api-token`, and every agent is such a process: its shell reads what the user can, a Claude agent has `~/.dorothy` in its `--add-dir`, and `venice` and `custom-openai` even put the token in its environment as `ANTHROPIC_API_KEY` for the OpenAI bridge. On that token a call has no agent identity, so the bus refuses it, and since 1.7.6 so do the routes that drive an agent: start, dispatch, run-task, stop, message, delete and create all need a caller with an identity of its own. It still **reads**: the listing, an agent's status, its output and its bootstrap are open to it, because `session-start.sh` fetches the bootstrap with it at the start of every session. A process holding the file can enumerate the fleet and read any agent's terminal, and no longer drive one.
