@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { pollGithub, githubRepoOf, GH_READ_ARGS } from '../../../electron/services/github-watch';
+import { pollGithub, githubRepoOf, GH_READ_ARGS, pollProjects } from '../../../electron/services/github-watch';
+import { execFileSync } from 'node:child_process';
 
 /**
  * What Tars reads from GitHub for the event reports: PRs merged, and changes
@@ -19,6 +20,9 @@ import { pollGithub, githubRepoOf, GH_READ_ARGS } from '../../../electron/servic
  * 5. `gh` is asked for anything but a read: a merge, a comment, an edit.
  * 6. A project whose remote is not on GitHub, or has none, is polled.
  * 7. A restart forgets what was seen, and reports it again.
+ * 9. (the Audit's gate of #234) `gh` is run with the main process's PATH: a
+ *    Tars opened from the Dock or Finder has /usr/bin:/bin:/usr/sbin:/sbin
+ *    only, gh lives in /opt/homebrew/bin, and every poll failed, silently.
  * 8. Polling resumes after a long pause (the bot off, Tars closed) and
  *    reports everything merged in the meantime: a repository not polled for
  *    an hour is taken as a new baseline.
@@ -108,5 +112,28 @@ describe('after a pause', () => {
     expect(await pollGithub([REPO], gh, t0 + 2 * 3_600_000)).toEqual([]);
     merged = [pr(301, { mergedAt: '2026-09-28T11:05:00Z' }), ...merged];
     expect((await pollGithub([REPO], gh, t0 + 2 * 3_600_000 + 300_000)).map(e => e.number)).toEqual([301]);
+  });
+});
+
+describe('the gh and git a real poll runs', () => {
+  it('9. are found under the bare PATH of an app opened from the Dock', async () => {
+    const home = os.homedir();
+    const bin = path.join(home, '.local', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const log = path.join(home, 'gh-calls.log');
+    fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" >> '${log}'\necho '[]'\n`, { mode: 0o755 });
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-gh-project-'));
+    execFileSync('git', ['init', '-q', project]);
+    execFileSync('git', ['-C', project, 'remote', 'add', 'origin', 'https://github.com/JeanBrasse/Tars.git']);
+
+    const saved = process.env.PATH;
+    process.env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+    try {
+      await pollProjects([project]);
+    } finally {
+      process.env.PATH = saved;
+    }
+
+    expect(fs.existsSync(log) ? fs.readFileSync(log, 'utf-8') : '', 'gh was never run').toMatch(/^pr list --repo JeanBrasse\/Tars/m);
   });
 });

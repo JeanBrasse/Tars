@@ -24,6 +24,9 @@ import * as path from 'node:path';
  * 5. An agent's name, a PR title or an error text goes out as markup, or
  *    with a secret in it.
  * 6. A restart forgets the day's count, and the limit is only per run.
+ * 7. (the Audit's gate of #234) The error text is cut before its secrets are
+ *    masked: a key that starts near the cut leaves its first characters in
+ *    clear.
  */
 
 type Reports = typeof import('../../../electron/services/event-reports');
@@ -116,6 +119,12 @@ describe('an event report', () => {
     expect(sent).toHaveLength(41);
     expect(sent[40]).toMatch(/5 events? after yesterday's limit/);
     expect(sent[40]).toContain('#100');
+  });
+
+  it('7. masks a key that the cut of a long error text would split', async () => {
+    r.reportEvent({ ...error('a9'), reason: `${'x'.repeat(285)}sk-ant-api03-QrStUvWxYz0123456789AbCdEfGh` });
+    await minutes(2.01);
+    expect(sent[0]).not.toContain('sk-ant-api03');
   });
 
   it('5. escapes names, titles and error texts, and masks secrets', async () => {
