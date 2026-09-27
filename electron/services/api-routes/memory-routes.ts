@@ -87,7 +87,10 @@ export function registerMemoryRoutes(app: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'q is required' }, 400);
       return;
     }
-    const limitParam = Number(req.url.searchParams.get('limit'));
+    // Absent, it is the default: Number(null) is 0, which is finite, and read
+    // as a limit it cut every search that named none to one hit.
+    const rawLimit = req.url.searchParams.get('limit');
+    const limitParam = rawLimit === null || rawLimit.trim() === '' ? NaN : Number(rawLimit);
     try {
       const result = await searchMemory({
         query,
