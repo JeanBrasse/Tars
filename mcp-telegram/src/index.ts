@@ -8,11 +8,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { readAppSettings } from "../../mcp-shared/src/settings.js";
+import { API_WAIT_MS, noAnswerWithin } from "../../mcp-shared/src/http.js";
 import { registerTools, text, tool } from "../../mcp-shared/src/tools.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as https from "https";
+import type { ClientRequest } from "http";
 
 interface AppSettings {
   telegramBotToken?: string;
@@ -182,7 +184,7 @@ async function telegramApiRequest(
       url.searchParams.append(key, String(value));
     });
 
-    https
+    const request: ClientRequest = https
       .get(url, (res) => {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
@@ -199,7 +201,9 @@ async function telegramApiRequest(
           }
         });
       })
-      .on("error", reject);
+      .on("error", reject)
+      // A silent Telegram is said as such, where the call waited for Claude Code to give up on it.
+      .setTimeout(API_WAIT_MS, () => request.destroy(new Error(noAnswerWithin(API_WAIT_MS))));
   });
 }
 
@@ -271,6 +275,8 @@ async function sendFile(
     });
 
     req.on("error", reject);
+    // The same for a file. Silence only: an upload that is still going is not cut off.
+    req.setTimeout(API_WAIT_MS, () => req.destroy(new Error(noAnswerWithin(API_WAIT_MS))));
     req.write(fullBody);
     req.end();
   });

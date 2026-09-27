@@ -1,5 +1,5 @@
 import * as http from "http";
-import { send } from "../../../mcp-shared/src/http.js";
+import { send, TARS_WAIT_MS } from "../../../mcp-shared/src/http.js";
 import { API_URL, readApiToken } from "../../../mcp-shared/src/tars-api.js";
 
 // The Tars that spawned this agent, read as mcp-orchestrator and mcp-memory
@@ -27,6 +27,7 @@ export async function apiRequest(
     path: path_,
     method,
     headers,
+    timeout: TARS_WAIT_MS,
   }, body && JSON.stringify(body), (err) => new Error(`API request failed: ${err.message}`));
 
   // A 4xx or 5xx whose body is JSON null reads as unparseable, as it always

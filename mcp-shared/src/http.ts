@@ -5,6 +5,17 @@ export function noAnswerWithin(ms: number): string {
   return `no answer within ${ms / 1000} s`;
 }
 
+/** How long a server here waits on Tars before it says so: apiRequest's default too. */
+export const TARS_WAIT_MS = 30_000;
+
+/**
+ * How long a call to an outside API (SocialData, X, Telegram) may stay silent
+ * before the server says so, where it used to wait for Claude Code to give up
+ * on the call, about half an hour later. Silence, not a total: an upload still
+ * going is not cut off, and an answer that is only slow gets a minute.
+ */
+export const API_WAIT_MS = 60_000;
+
 /**
  * One request over http or https, its answer read whole as text. Reaching the
  * host and reading what it answered is the same for every client here; what

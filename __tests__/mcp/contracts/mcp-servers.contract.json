@@ -9057,7 +9057,13 @@
             }
           ],
           "answer": {
-            "harness": "no answer within 90 s"
+            "content": [
+              {
+                "type": "text",
+                "text": "Error sending photo to Telegram: no answer within 60 s"
+              }
+            ],
+            "isError": true
           }
         }
       ]
@@ -9214,7 +9220,13 @@
             }
           ],
           "answer": {
-            "harness": "no answer within 90 s"
+            "content": [
+              {
+                "type": "text",
+                "text": "Error sending to Telegram: no answer within 60 s"
+              }
+            ],
+            "isError": true
           }
         }
       ]
@@ -12011,7 +12023,13 @@
             }
           ],
           "answer": {
-            "harness": "no answer within 90 s"
+            "content": [
+              {
+                "type": "text",
+                "text": "Error reading document: API request failed: no answer within 30 s"
+              }
+            ],
+            "isError": true
           }
         }
       ]
@@ -14041,7 +14059,13 @@
             }
           ],
           "answer": {
-            "harness": "no answer within 90 s"
+            "content": [
+              {
+                "type": "text",
+                "text": "Error searching tweets: SocialData API request failed: no answer within 60 s"
+              }
+            ],
+            "isError": true
           }
         }
       ]
@@ -14888,7 +14912,13 @@
             }
           ],
           "answer": {
-            "harness": "no answer within 90 s"
+            "content": [
+              {
+                "type": "text",
+                "text": "Error posting tweet: X API request failed: no answer within 60 s"
+              }
+            ],
+            "isError": true
           }
         }
       ]
