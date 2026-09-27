@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import type { ClaudeSettings, ClaudeInfo, Skill, AppSettings } from '@/components/Settings/types';
 import { DEFAULT_APP_SETTINGS } from '@/components/Settings/constants';
+import { followErrorReports } from '@/lib/error-reports';
 
 /** The settings a bot fills in itself, which the page shows as they change. */
 const BOT_WRITTEN = ['slackChannelId', 'discordChannelId'] as const;
@@ -143,6 +144,9 @@ export const useSettings = () => {
       const result = await window.electronAPI.appSettings.save(newSettings);
       if (!result.success) {
         setError(result.error || 'Failed to save notification settings');
+      } else if (newSettings.errorReportsEnabled !== undefined) {
+        // The window's half of error reports follows the switch at once.
+        void followErrorReports(newSettings.errorReportsEnabled);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save notification settings');
