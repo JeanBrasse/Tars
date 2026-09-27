@@ -760,7 +760,7 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
 });
 
 /**
- * POST /api/noah/ask, what ask_noah calls: an agent asks Noah on Telegram, and
+ * POST /api/user/ask, what ask_user calls: an agent asks Noah on Telegram, and
  * his answer is typed into its terminal (step 2 of the relay plan).
  *
  * How it fails, written before the code (2026-09-28):
@@ -773,8 +773,8 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
  * 4. Over-correction: the agent's own terminal token is refused before the
  *    question is looked at (here there is no Telegram, so it is a 503).
  */
-describe('POST /api/noah/ask', () => {
-  const ask = (token: string, body: Record<string, unknown>) => call('POST', '/api/noah/ask', bearer(token), body);
+describe('POST /api/user/ask', () => {
+  const ask = (token: string, body: Record<string, unknown>) => call('POST', '/api/user/ask', bearer(token), body);
 
   it('1. is refused to the shared token', async () => {
     const { status, body } = await ask(sharedToken, { question: 'Staging or prod?' });

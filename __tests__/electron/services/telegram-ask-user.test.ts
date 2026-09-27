@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 
 /**
- * The Telegram bot's side of ask_noah: where a question goes, and how Noah's
+ * The Telegram bot's side of ask_user: where a question goes, and how the user's
  * "reply" to it is told from any other message.
  *
  * The bot is the real one (initTelegramBot), on a fake node-telegram-bot-api
@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
  *    somebody else reads it, and could answer it.
  * 2. It goes as Markdown, where the agent's words are markup, or without
  *    being kept by message id, so a reply cannot be matched to it.
- * 3. Noah's reply to a question also reaches the super agent, as a new task.
+ * 3. the user's reply to a question also reaches the super agent, as a new task.
  * 4. Over-correction: a message that is not a reply to a question no longer
  *    reaches the super agent.
  * 5. The proof against a fake Telegram needs the bot pointed at it
@@ -62,7 +62,7 @@ vi.mock('node-telegram-bot-api', () => ({
 import { agents } from '../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { initTelegramBotService, initTelegramBot, stopTelegramBot } from '../../../electron/services/telegram-bot';
-import { askNoah } from '../../../electron/services/noah-questions';
+import { askUser } from '../../../electron/services/user-questions';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
 const NOAH = '1159136418';
@@ -93,27 +93,27 @@ const settle = () => new Promise(r => setTimeout(r, 30));
 
 describe('a question on Telegram', () => {
   it('1, 2. goes to the authorized private chat only, in HTML', async () => {
-    const r = await askNoah({ agentId: 'a1', question: 'Staging or prod?' });
+    const r = await askUser({ agentId: 'a1', question: 'Staging or prod?' });
     expect(r).toMatchObject({ ok: true });
 
     expect(bot.sent.map(m => m.chatId)).toEqual([NOAH]);
     expect(bot.sent[0].options).toMatchObject({ parse_mode: 'HTML' });
     // No link preview: a URL in an agent's question would have Telegram fetch
-    // it and show that site's title and picture in Noah's chat (gate of #231).
+    // it and show that site's title and picture in the user's chat (gate of #231).
     expect(bot.sent[0].options).toMatchObject({ disable_web_page_preview: true, link_preview_options: JSON.stringify({ is_disabled: true }) });
     expect(bot.sent[0].text).toContain('<blockquote>Staging or prod?</blockquote>');
   });
 
-  it('3. takes Noah\'s reply to it away from the super agent', async () => {
-    await askNoah({ agentId: 'a1', question: 'Staging or prod?' });
+  it('3. takes the user\'s reply to it away from the super agent', async () => {
+    await askUser({ agentId: 'a1', question: 'Staging or prod?' });
     const question = bot.sent[0];
     bot.sent.length = 0;
 
     await message({ text: 'Staging.', reply_to_message: { message_id: question.messageId } });
     await settle();
 
-    // The agent has no terminal here, so Noah is told it was not delivered,
-    // in a reply to his own message; nothing about a Super Agent.
+    // The agent has no terminal here, so the user is told it was not delivered,
+    // in a reply to their own message; nothing about a Super Agent.
     expect(bot.sent).toHaveLength(1);
     expect(bot.sent[0].text).toMatch(/not delivered|no session/i);
     expect(bot.sent[0].text).not.toMatch(/Super Agent/);
@@ -121,7 +121,7 @@ describe('a question on Telegram', () => {
   });
 
   it('4. leaves any other message to the super agent, a reply to another message included', async () => {
-    await askNoah({ agentId: 'a1', question: 'Staging or prod?' });
+    await askUser({ agentId: 'a1', question: 'Staging or prod?' });
     bot.sent.length = 0;
 
     await message({ text: 'What is everyone doing?', reply_to_message: { message_id: 1 } });

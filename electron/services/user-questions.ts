@@ -9,30 +9,30 @@ import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
 
 /**
- * ask_noah: an agent asks Noah a question on his Telegram, and his answer is
+ * ask_user: an agent asks the user a question on their Telegram, and their answer is
  * typed into that agent's terminal (step 2 of PLAN-RELAIS-SENTRY.md; the
  * design's part A3).
  *
  * - A question is recorded (id, agent, time, expiry) and sent to the private
  *   chats Settings authorizes, as a quote under the agent's and the project's
- *   names: the agent's words are data for Noah, never an order, and whatever
+ *   names: the agent's words are data for the user, never an order, and whatever
  *   markup they hold is escaped and whatever secret they hold masked.
- * - Noah answers with Telegram's "reply" on that very message. It is taken
+ * - The user answers with Telegram's "reply" on that very message. It is taken
  *   only from a private chat Settings still authorizes, from the person of
  *   that chat (in a private chat, the chat's id is the user's), and only as a
  *   reply to a message Tars sent as a question, matched by its message id.
  * - The answer is typed into the asking agent's terminal through the writer
  *   every message takes (its dialog guard included), after a line only Tars
- *   writes, "Message from Noah via Telegram: " (senderLine). Into a CLI only:
- *   an agent with no CLI running is not typed into, and Noah is told.
+ *   writes, "Message from the user via Telegram: " (senderLine). Into a CLI only:
+ *   an agent with no CLI running is not typed into, and the user is told.
  * - One open question per agent, 20 a day for the whole fleet, and 4 hours
  *   to answer: then the agent is told there was no answer, and a later reply
  *   is refused.
  * - Kept in ~/.tars-private (0600), not in ~/.dorothy, which every agent can
- *   write: a record rewritten there would send his answer to another agent.
+ *   write: a record rewritten there would send their answer to another agent.
  *
- * Every private chat Settings authorizes is taken for Noah's: today that is
- * his one chat. Telegram only: the Slack and Discord bots have no reply
+ * Every private chat Settings authorizes is taken for the user's: today that is
+ * the owner's one chat. Telegram only: the Slack and Discord bots have no reply
  * matching to share, and are not asked.
  */
 
@@ -41,7 +41,7 @@ export const QUESTIONS_PER_DAY = 20;
 export const MAX_QUESTION = 2_000;
 export const MAX_CONTEXT = 4_000;
 const DAY_MS = 24 * 3_600_000;
-const FILE = () => privatePath('noah-questions.json');
+const FILE = () => privatePath('user-questions.json');
 
 interface Question {
   id: string;
@@ -52,24 +52,24 @@ interface Question {
   context?: string;
   askedAt: number;
   expiresAt: number;
-  /** Where it went: each chat and the id of the message there, which his reply names. */
+  /** Where it went: each chat and the id of the message there, which their reply names. */
   sentTo: Array<{ chatId: string; messageId: number }>;
   state: 'open' | 'answered' | 'expired';
 }
 
 /** Telegram, as the bot hands it over when it starts, and takes it back when it stops. */
-export interface NoahChannel {
+export interface UserChannel {
   /** Sends to the private chats Settings authorizes, and says where each landed. */
   send(html: string): Promise<Array<{ chatId: string; messageId: number }>>;
-  /** Answers Noah, in a reply to his own message. */
+  /** Answers the user, in a reply to their own message. */
   tell(chatId: string, replyTo: number, text: string): void;
   /** Whether Settings authorizes this chat, now. */
   authorizes(chatId: string): boolean;
 }
 
-let channel: NoahChannel | null = null;
+let channel: UserChannel | null = null;
 
-export function setNoahChannel(next: NoahChannel | null): void {
+export function setUserChannel(next: UserChannel | null): void {
   channel = next;
 }
 
@@ -88,7 +88,7 @@ function save(list: Question[], now: number): void {
   try {
     writeSecretFileSync(FILE(), JSON.stringify(kept));
   } catch (err) {
-    console.error('[ask_noah] could not record the questions:', err instanceof Error ? err.message : err);
+    console.error('[ask_user] could not record the questions:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -115,7 +115,7 @@ export type AskResult =
   | { ok: true; id: string; expiresAt: string }
   | { ok: false; status: number; error: string };
 
-export async function askNoah(
+export async function askUser(
   input: { agentId: string; question: string; context?: string },
   now: number = Date.now(),
 ): Promise<AskResult> {
@@ -126,19 +126,19 @@ export async function askNoah(
   if (!question || question.length > MAX_QUESTION) return { ok: false, status: 400, error: `A question is 1 to ${MAX_QUESTION} characters.` };
   if (context && context.length > MAX_CONTEXT) return { ok: false, status: 400, error: `The context is at most ${MAX_CONTEXT} characters.` };
 
-  expireNoahQuestions(now);
+  expireUserQuestions(now);
   const list = load();
   const open = list.find(q => q.agentId === agent.id && q.state === 'open');
   if (open) {
     return {
       ok: false, status: 409,
-      error: `You already have a question open for Noah, until ${new Date(open.expiresAt).toISOString()}. His answer will be typed into your terminal; ask again once it is answered or has expired.`,
+      error: `You already have a question open for the user, until ${new Date(open.expiresAt).toISOString()}. Their answer will be typed into your terminal; ask again once it is answered or has expired.`,
     };
   }
   if (list.filter(q => q.askedAt > now - DAY_MS).length >= QUESTIONS_PER_DAY) {
-    return { ok: false, status: 429, error: `Noah has been asked ${QUESTIONS_PER_DAY} questions in the last 24 hours, the most Tars sends. Decide without him, or ask later.` };
+    return { ok: false, status: 429, error: `The user has been asked ${QUESTIONS_PER_DAY} questions in the last 24 hours, the most Tars sends. Decide without him, or ask later.` };
   }
-  if (!channel) return { ok: false, status: 503, error: 'Telegram is not on in Tars, so Noah cannot be asked.' };
+  if (!channel) return { ok: false, status: 503, error: 'Telegram is not on in Tars, so the user cannot be asked.' };
 
   const record: Question = {
     id: randomUUID(),
@@ -159,38 +159,38 @@ export async function askNoah(
   try {
     sentTo = await channel.send(compose(record));
   } catch (err) {
-    console.error('[ask_noah] Telegram refused the question:', err instanceof Error ? err.message : err);
+    console.error('[ask_user] Telegram refused the question:', err instanceof Error ? err.message : err);
   }
   const after = load().filter(q => q.id !== record.id);
   if (sentTo.length === 0) {
     save(after, now);
-    return { ok: false, status: 503, error: 'No private Telegram chat is authorized in Settings, or Telegram refused the message, so Noah cannot be asked.' };
+    return { ok: false, status: 503, error: 'No private Telegram chat is authorized in Settings, or Telegram refused the message, so the user cannot be asked.' };
   }
   save([...after, { ...record, sentTo }], now);
   return { ok: true, id: record.id, expiresAt: new Date(record.expiresAt).toISOString() };
 }
 
 /** A Telegram message, as far as a reply to a question is concerned. */
-export interface NoahReply {
+export interface UserReply {
   chatId: string;
   chatType: string;
   fromId?: number;
   replyToMessageId?: number;
   text?: string;
-  /** Noah's own message, which Tars answers in a reply to. */
+  /** the user's own message, which Tars answers in a reply to. */
   messageId?: number;
 }
 
 /**
- * Takes Noah's reply to a question, and says whether it was one: false leaves
+ * Takes the user's reply to a question, and says whether it was one: false leaves
  * the message to whatever else the bot does with it.
  */
-export function answerNoahReply(reply: NoahReply, now: number = Date.now()): boolean {
+export function answerUserReply(reply: UserReply, now: number = Date.now()): boolean {
   if (!channel || reply.replyToMessageId === undefined) return false;
   if (!channel.authorizes(reply.chatId)) return false;
-  // A private chat's id is its person's: in a group, the chat is not Noah.
+  // A private chat's id is its person's: in a group, the chat is not the user.
   if (reply.chatType !== 'private' || String(reply.fromId) !== reply.chatId) return false;
-  expireNoahQuestions(now);
+  expireUserQuestions(now);
   const list = load();
   const q = list.find(x => x.sentTo.some(s => s.chatId === reply.chatId && s.messageId === reply.replyToMessageId));
   if (!q) return false;
@@ -213,10 +213,20 @@ export function answerNoahReply(reply: NoahReply, now: number = Date.now()): boo
     tell(`Not delivered: ${q.agentName} has no session running. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`);
     return true;
   }
-  const outcome = writeProgrammaticInput(terminal!, `Answer to your question "${cut(q.question, 200)}":\n${answer}`, true, {
+  // Their answer alone, never the question: the agent wrote the question, and
+  // typed back under the user's sender line it would be the user's words, newlines and a
+  // look-alike sender line included (the Audit's gate of #231). The question
+  // is named by the time it was asked.
+  const outcome = writeProgrammaticInput(terminal!, `Answer to the question you asked at ${clock(q.askedAt)}:\n${answer}`, true, {
     agentId: agent.id,
-    from: 'Noah via Telegram',
-    sender: { kind: 'noah', via: 'Telegram' },
+    from: 'the user via Telegram',
+    sender: { kind: 'user', via: 'Telegram' },
+    // Held, then dropped because the CLI stopped meanwhile: the question is
+    // open again, and the user is told.
+    onDropped: () => {
+      save(load().map(x => (x.id === q.id && x.state === 'answered' ? { ...x, state: 'open' as const } : x)), Date.now());
+      tell(`Not delivered: ${q.agentName}'s session stopped before your answer could go in. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`);
+    },
   });
   if (outcome === 'refused') {
     tell(`Not delivered: ${q.agentName}'s terminal is not taking messages. The question stays open until ${clock(q.expiresAt)}.`);
@@ -230,7 +240,7 @@ export function answerNoahReply(reply: NoahReply, now: number = Date.now()): boo
 }
 
 /** Ends the questions whose time is up, and tells each agent there was no answer. */
-export function expireNoahQuestions(now: number = Date.now()): void {
+export function expireUserQuestions(now: number = Date.now()): void {
   const list = load();
   const due = list.filter(q => q.state === 'open' && q.expiresAt <= now);
   if (due.length === 0) return;
@@ -238,7 +248,7 @@ export function expireNoahQuestions(now: number = Date.now()): void {
     const agent = agents.get(q.agentId);
     const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
     if (agent && cliRunningIn(terminal)) {
-      writeProgrammaticInput(terminal!, `Noah did not answer your question "${cut(q.question, 200)}" within 4 hours. Carry on without his answer, or ask again.`, true, {
+      writeProgrammaticInput(terminal!, `The user did not answer your question "${cut(q.question, 200)}" within 4 hours. Carry on without their answer, or ask again.`, true, {
         agentId: agent.id,
         from: 'Tars',
         sender: { kind: 'tars' },
@@ -252,8 +262,8 @@ export function expireNoahQuestions(now: number = Date.now()): void {
 let sweep: NodeJS.Timeout | undefined;
 
 /** Checks for expired questions every minute, for as long as Tars runs. */
-export function startNoahQuestions(): void {
+export function startUserQuestions(): void {
   if (sweep) return;
-  sweep = setInterval(() => expireNoahQuestions(), 60_000);
+  sweep = setInterval(() => expireUserQuestions(), 60_000);
   sweep.unref?.();
 }

@@ -168,6 +168,20 @@ export function setFieldProbe(probe: FieldProbe | null): void {
  * in once the agent runs again (the answer's PostToolUse). Set by
  * agent-manager, which knows the agents; unset, nothing is refused.
  */
+/**
+ * Whether a CLI still runs in a terminal, asked again when a held message is
+ * finally written (the Audit's gate of #231). It was asked when the message
+ * was handed over only: a CLI that stopped while the message waited left the
+ * shell's prompt, where each newline runs a line as a command. Set by
+ * agent-manager.ts (cliRunningIn); unset, as in a test, a CLI is assumed.
+ */
+export type CliProbe = (ptyProcess: pty.IPty) => boolean;
+let cliProbe: CliProbe | null = null;
+
+export function setCliProbe(probe: CliProbe | null): void {
+  cliProbe = probe;
+}
+
 export type DialogProbe = (agentId: string) => boolean;
 let dialogProbe: DialogProbe | null = null;
 
@@ -216,12 +230,12 @@ export type MessageSender =
   | { kind: 'tars' }
   | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' }
   /**
-   * Noah himself: his reply on Telegram to a question an agent asked him
-   * (services/noah-questions.ts), taken only from his own private chat. Made
+   * The user: their reply on Telegram to a question an agent asked them
+   * (services/user-questions.ts), taken only from their own private chat. Made
    * there and nowhere else, so no message an agent sends is ever typed after
    * this line.
    */
-  | { kind: 'noah'; via: 'Telegram' };
+  | { kind: 'user'; via: 'Telegram' };
 
 /** The line typed before a pasted message: who sent it, and nothing else. */
 export function senderLine(sender: MessageSender): string {
@@ -229,7 +243,7 @@ export function senderLine(sender: MessageSender): string {
     return `Message from agent ${envelopeValue(sender.name || sender.id)} (${envelopeValue(sender.id)}): `;
   }
   if (sender.kind === 'channel') return `Message from ${sender.channel}: `;
-  if (sender.kind === 'noah') return `Message from Noah via ${sender.via}: `;
+  if (sender.kind === 'user') return `Message from the user via ${sender.via}: `;
   return 'Message from Tars: ';
 }
 
@@ -585,6 +599,17 @@ function pump(ptyProcess: pty.IPty): void {
     // closes, and no key or hook will come to say so. A key or a hook still
     // looks at once, as before.
     if (fieldProbe) state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+    return;
+  }
+
+  // Asked again now: the CLI may have stopped while the message waited, and
+  // the shell would run what is typed. Nothing goes; each sender is told.
+  if (cliProbe && !cliProbe(ptyProcess)) {
+    const dropped = state.queue;
+    state.queue = [];
+    console.warn(`[pty] no CLI runs in the terminal any more: ${dropped.length} held message(s) not typed into its shell`);
+    announce(ptyProcess, state);
+    tellDropped(dropped);
     return;
   }
 
