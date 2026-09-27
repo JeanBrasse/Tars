@@ -11,7 +11,10 @@ export const CHANGELOG: Release[] = [
     version: '1.9.1',
     date: '2026-09-26',
     updates: [
-      'With several Claude agents at work at once, the Usage page no longer misses one of their sessions: an agent\'s status line could remove the lock another had just taken on the token count, and two of them then wrote the count over each other. Fixed by Nico',
+      'With several Claude agents at work at once, the Usage page no longer misses one of their sessions: an agent\'s status line could remove the lock another had just taken on the token count, and two of them then wrote the count over each other. Fixed by Nexarion434',
+      'Tars no longer talks to a Hermes whose connection you never saved, even one running on your Mac at its default address, 127.0.0.1:9119. Until you save a connection in Settings > Hermes, the Chat says no Hermes gateway is configured, and Brain, the Kanban page and the Schedules page say Hermes is not configured. Settings > Hermes shows the local default with Save available, and saving it as it stands connects Tars to that Hermes again',
+      'A Tars tool whose process was held for a few seconds between two calls to Tars no longer has its next call fail with a connection reset, "fetch failed": Tars keeps an idle connection open for a minute, where it closed it after six seconds. Fixed by Nexarion434',
+      'An Amp update Tars ran is reported as what it came to, updated, up to date or failed with npm\'s own reason, even when Tars cannot delete the temporary folder it downloaded into; it read "failed" with the deletion\'s error. Fixed by Nexarion434',
     ],
   },
   {

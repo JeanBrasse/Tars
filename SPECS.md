@@ -4,7 +4,7 @@
 
 A desktop app that runs a team of AI coding-agent CLIs on your own machine, in parallel, on your own repositories. Each agent is a real terminal process (`claude`, `codex`, `gemini`, `grok`, `opencode`, `pi`, or the `claude` binary re-pointed at another vendor) running in its own git worktree, with its own model, its own permission mode and its own PTY. Tars owns the process lifecycle, the orchestration path between agents, one shared memory, and the cost accounting.
 
-Nothing runs in the cloud. No account, no server, no telemetry. The state lives in `~/.dorothy`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the ACP registry, the update feed, and whatever integration you switch on.
+Nothing runs in the cloud. No account, no server, no analytics. The state lives in `~/.dorothy`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the ACP registry, the update feed, and whatever integration you switch on: error reports to Sentry among them, off unless you turn them on (§11, Error reports).
 
 ---
 
@@ -27,7 +27,7 @@ Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
 │     ├── Origin allowlist: app://-  |  http://localhost:3000
 │     │
 │     ├─◄ Claude Code hooks (hooks/*.sh)      status, output, notifications
-│     ├─◄ bundled MCP servers (stdio, node)   orchestration + memory tools
+│     ├─◄ bundled MCP servers (stdio, the app's Node)   orchestration + memory tools
 │     └─◄ Hermes gateway webhook              external scheduler → dispatch
 │
 ├── ACP layer (electron/services/acp/)
@@ -448,7 +448,7 @@ Remote backends are probed rather than assumed. `pickSearchTool()` scans the end
 
 | Tool | Purpose |
 |---|---|
-| `memory_search` | Federated search. Optional `sources[]` and `limit`. Reports which sources could not answer |
+| `memory_search` | Federated search. Optional `sources[]` and `limit` (10 when none is named). Reports which sources could not answer |
 | `memory_read` | The full digest for the project |
 | `memory_write` | Append a durable fact. `file` defaults to `MEMORY.md`; topic files for detail |
 | `memory_sources` | Per-backend reachability, so an empty search is diagnosable |
@@ -661,6 +661,8 @@ Plus `tasmania` when `tasmaniaEnabled` and the configured path exists. `DOROTHY_
 
 Registration is idempotent: `isMcpServerRegistered(name, expectedServerPath)` compares the last argv element. The Claude implementation checks both `~/.claude.json` (where `claude mcp add -s user` actually writes) and `~/.claude/mcp.json`; checking only the latter meant the answer was always `false` and every server was re-registered by spawning the CLI, once per claude-family provider, on every boot. The registration loop yields with `setImmediate` between servers: it runs on the main thread, the one that paints the window and pumps every PTY.
 
+The program a server is registered with is not `node` but `~/.dorothy/bin/tars-mcp-node` (`mcpNodeCommand`, `electron/utils/mcp-node.ts`), a launcher Tars writes at each start, 0700, that runs the app's own binary with `ELECTRON_RUN_AS_NODE=1`: the servers run on the Node inside the app, whatever the machine has. Registered as `node`, the CLI looked it up on its PATH, and an agent's `/bin/bash -l` on macOS puts /etc/paths ahead of Tars's PATH (path_helper): measured on 2026-09-24, the live Tars's servers ran `/usr/local/bin/node`, Node 18.16, end of life, and a machine with no Node got no Tars tools. Only a packaged Tars at a lasting place writes the launcher, rewriting it when the app has moved: a dev run, a copy run from a disk image (`/Volumes/`) or translocated by macOS names the launcher already there and leaves it alone, or names `node` when there is none (a dev run on the real HOME had pointed every claude session's servers at a worktree's Electron, the Audit's gate of #201). On Linux it names the AppImage file (`$APPIMAGE`), not its mount point. The script falls back to the `node` on the PATH when the app it names is gone, and a symlinked `~/.dorothy/bin` or launcher is not written through. Since the registration check compares the server's path only, `~/.dorothy/mcp-servers-runtime.json` records the program and, per provider, which ones have every server on it; a packaged start removes and registers again the servers of any provider not recorded, so a provider that fails (a config file it cannot write) is tried again at the next start and the others are not. A move-over removes the entry and adds Tars's own again: whatever was added to a Tars server's entry by hand, an `env` say, is not kept. The delegated ACP runs get the same launcher. Windows keeps `node`. This relies on Electron's RunAsNode fuse, on by default and left on.
+
 ---
 
 ## §9 The Hermes gateway
@@ -674,6 +676,8 @@ Tars deliberately has no scheduler and no server-side task harness. Both live in
 | `local` | `http://127.0.0.1:<localPort ?? 9119>` |
 | `ssh` | `http://127.0.0.1:<ssh.localPort ?? ssh.remotePort ?? 9119>` (tunnel) |
 | `remote` / `cloud` | the configured absolute URL |
+
+Only a connection saved in `~/.dorothy/hermes-connection.json`, readable and naming the address its mode needs, is called (`configuredHermesConnection`, `usableHermesConnection`); a missing or broken file is "not configured", never the default port, and `hermes:connection:get` then gives the pages no base URL to probe.
 
 Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
 
@@ -780,6 +784,14 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |
 
 53 routes are registered across eleven modules: bus (2), health (1), hooks (5), agents (13), telegram (4), slack (1), discord (1), kanban (9), vault (10 + `local-file`), memory (5), webhooks (1).
+
+### Error reports: `services/error-reports/`
+
+Off by default (`errorReportsEnabled` in `app-settings.json`, written by Settings through `app:saveSettings`). Off, `@sentry/electron` is not even loaded. Turned on, at start or while Tars runs (`main.ts` calls `errorReports.sync()` whenever the settings are replaced), it is loaded and started once for the run, with none of its default integrations: only uncaught exceptions, unhandled rejections and the causes linked to an error. No native crash dumps, screenshots, breadcrumbs, sessions, tracing, OpenTelemetry, logs, replay or offline queue. Turned off again, nothing leaves from that moment: the setting is read at each event (`beforeSend`) and again as each envelope is about to leave (the transport), and a report already on its way is dropped.
+
+What a report carries is built field by field (`report.ts`), never scrubbed from the SDK's event: `event_id`, `timestamp`, `platform`, `level`, `release` (`tars@<version>`); up to 5 exceptions (the error and its causes), each with its `type`, its message (home folder as `~` wherever the name ends, in any case and URL-encoded too, the user name alone as `<user>`, a macOS temp folder as `<tmp>`, secrets masked by `redactSecrets`, quoted text with a space and more than 24 characters replaced by its length, 1000 characters at most), its mechanism `{ type, handled }` and the 50 frames nearest the throw (`filename` with the same paths rewritten, `function`, `lineno`, `colno`, `in_app`); `tags.process` (`main` or `renderer`); `contexts.os` `{ name, version }`; `contexts.runtime` `{ name: Electron, version }`; `user.id`, a random id made on this machine. The transport sends error events only, rebuilt the same way, and drops every other item (sessions, attachments, replays, feedback, spans, logs, client reports): @sentry/electron hands some of a renderer's envelopes to it past `beforeSend`. The request carries the public DSN key in its URL, `User-Agent: sentry.javascript.electron/<v>` and `Accept-Language: en`; like any request, it reaches Sentry from the machine's IP address.
+
+At most one report of the same error in 24 hours, and 20 in any 24 hours, per installation, across restarts (`~/.dorothy/error-reports.json`, `0600`, which holds the install id). The renderer's errors reach main through the preload's `__SENTRY_IPC__` bridge (the window is sandboxed and cannot load the SDK's own preload): only its start and its envelopes pass; its scope, feedback, logs, metrics and status go nowhere. A development run may point reports at a stand-in with `DOROTHY_ERROR_REPORTS_DSN`; a packaged Tars ignores it.
 
 ### Residual risk
 
