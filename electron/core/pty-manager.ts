@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomBytes } from 'crypto';
 import * as pty from 'node-pty';
 import { defaultShell } from '../utils/default-shell';
 import { v4 as uuidv4 } from 'uuid';
@@ -723,6 +726,45 @@ function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
  * DO NOT use this for raw keystroke passthrough from xterm.js UI terminals:
  * that is `writeHumanInput`, which is also what keeps the field known.
  */
+let launchDir: string | undefined;
+
+/**
+ * The line to type for a shell command, at a shell prompt.
+ *
+ * Readline reads what is typed as keys: a tab inside the quoted task a launch
+ * carries is the completion key, and the task reached the CLI cut, completed
+ * with file names, or not at all while bash asked "Display all 40
+ * possibilities? (y or n)" and took the next letters for the answer (the
+ * Audit's table on a3d7c125, item C). macOS's /bin/bash is 3.2, with no
+ * bracketed paste to protect it; a newer bash on Linux completes a typed tab
+ * all the same. A newline is typed as Enter, and the shell asks for the rest.
+ *
+ * So a command holding either is never typed: it goes into a file of its own,
+ * in a folder only this user reads (0700, the file 0600), and the shell is
+ * given `. '<file>'`, which runs it in the same shell as typing would. The
+ * file's first line removes it: bash reads a sourced file whole before it runs
+ * it, and zsh reads on from the open file. A command with neither is typed as
+ * it is, so the terminal shows what was launched.
+ */
+function shellLine(command: string): string {
+  if (!/[\t\n]/.test(command)) return command;
+  const quote = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+  try {
+    if (!launchDir || !fs.existsSync(launchDir)) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-launch-'));
+      launchDir = dir;
+      process.once('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ } });
+    }
+    const file = path.join(launchDir, `${randomBytes(8).toString('hex')}.sh`);
+    fs.writeFileSync(file, `rm -f -- ${quote(file)}\n${command}\n`, { mode: 0o600, flag: 'wx' });
+    return `. ${quote(file)}`;
+  } catch (err) {
+    // No file: typed, with the tabs as spaces rather than as completion keys.
+    console.warn('[pty] could not write the launch to a file, typing it:', err instanceof Error ? err.message : err);
+    return command.replace(/\t/g, ' ');
+  }
+}
+
 export function writeProgrammaticInput(
   ptyProcess: pty.IPty,
   data: string,
@@ -733,11 +775,12 @@ export function writeProgrammaticInput(
   // break out of, and is exactly the one where a lone carriage return works.
   data = asTypedText(data);
   if (!bracketPaste) {
-    // Plain shell command for a raw bash/zsh prompt: send directly. Nothing
+    // Plain shell command for a raw bash/zsh prompt: send directly, or through
+    // a file when it holds a tab or a newline (shellLine). Nothing
     // is queued here. The field is a shell line, not the Claude Code field
     // the draft model was measured against, and the shell is replaced by the
     // command a moment later, so there would be nothing to give back.
-    ptyProcess.write(data + '\r');
+    ptyProcess.write(shellLine(data) + '\r');
     return 'written';
   }
   const state = inputOf(ptyProcess);

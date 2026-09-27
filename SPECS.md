@@ -100,7 +100,7 @@ Four maps in `electron/core/pty-manager.ts`: `ptyProcesses` (agents), `quickPtyP
 
 `writeProgrammaticInput(pty, data, bracketPaste)` is the only sanctioned way to inject text into a running agent:
 
-- `bracketPaste: false` means plain `data + '\r'`, for the initial shell command.
+- `bracketPaste: false` means plain `data + '\r'`, for the initial shell command. A command holding a tab or a newline is never typed: bash's readline reads a typed tab as the completion key (macOS's /bin/bash 3.2 has no bracketed paste to protect it), and a task with a tab reached the CLI with its tabs eaten. Such a command is written to a file of its own (`tars-launch-*` under the temp folder, `0700`, the file `0600`) whose first line removes it, and the shell is given `. '<file>'` (`shellLine`, `core/pty-manager.ts`); the folder goes when Tars quits. A command with neither is typed as it is, so the terminal shows what was launched.
 - `bracketPaste: true` is for a live Claude Code TUI. Input over 200 chars or containing a newline is wrapped in `\x1b[200~ … \x1b[201~`. **The carriage return is always a separate write delayed 300 ms**, because the TUI treats a rapid `text\r` burst as one paste event: the text lands in the box as `[Pasted text]` and is never submitted.
 
 It must never be used for keystroke passthrough from an xterm.js terminal.
