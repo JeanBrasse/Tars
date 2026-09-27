@@ -85,7 +85,7 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
     // loop still runs: half a second at most, SIGKILL is not refused.
     const until = Date.now() + 500;
     while (Date.now() < until && tree.anyLeft(await processTable())) await pause();
-    await Promise.race([allExited, pause()]);
+    await Promise.race([allExited, new Promise(resolve => setTimeout(resolve, 300))]);
   }
   console.log(`Ended ${terminals.length} terminal(s) on quit`);
 }

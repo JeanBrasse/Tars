@@ -98,6 +98,8 @@ orchestrator agent's CLI
 
 Four maps in `electron/core/pty-manager.ts`: `ptyProcesses` (agents), `quickPtyProcesses` (the shell panel), `skillPtyProcesses`, `pluginPtyProcesses`. `killAllPty()` drains all four on `before-quit`.
 
+**At quit** (`endAllTerminals`, `core/pty-manager.ts`), each terminal's process tree is read from `ps` first, while the parents that tie it together live; the shells get their hangup as before, which bash relays to its jobs; the quit is held (`before-quit`, two passes) while the event loop turns until every process of those trees has ended and node-pty has delivered every exit, 1.5 s at most; then what is left, in those trees only, gets SIGKILL. Measured: a CLI that ignores SIGHUP and SIGTERM, and its child, outlived 8 quits of 8 before, and none after; a quit with a real claude takes about 1 s instead of 0.4. The exits used to come after a synchronous `before-quit`, and one delivered during Electron's final cleanup aborted the app (SIGABRT in `pty.node`'s ThreadSafeFunction, #231's proof). A terminal's exit during the quit is not its agent's error.
+
 `writeProgrammaticInput(pty, data, bracketPaste)` is the only sanctioned way to inject text into a running agent:
 
 - `bracketPaste: false` means plain `data + '\r'`, for the initial shell command.
