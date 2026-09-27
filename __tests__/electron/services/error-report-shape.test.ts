@@ -43,6 +43,10 @@ import { ReportBudget } from '../../../electron/services/error-reports/budget';
  *    throws in the main process.
  * 10. An envelope item that is not an error event (a session, an attachment,
  *     a replay, a feedback, a client report, a log, a span) leaves.
+ * 11. (the Audit's gate of #221) The home folder is only rewritten before
+ *     `/`, a space, `:`, a quote or `)`: `cwd /Users/x, exit 1`, `/Users/x;`,
+ *     `/users/x` (another case), `%2FUsers%2Fx` (URL-encoded) and a bare
+ *     `x@Host.local` leave the full path, or the user name.
  */
 
 const HOME = '/Users/somebody';
@@ -127,6 +131,24 @@ describe('the report built from an event', () => {
     expect(report.exception.values[0].value).toBe('ENOENT: no such file ~/clients/acme/notes.md with sk-a[redacted]6789');
     expect(report.exception.values[0].stacktrace!.frames[0].filename)
       .toBe('~/Applications/Tars.app/Contents/Resources/app.asar/electron/dist/main.js');
+  });
+
+  it.each([
+    ['followed by a comma', `cwd ${HOME}, exit 1`, 'cwd ~, exit 1'],
+    ['followed by a semicolon', `${HOME};rm`, '~;rm'],
+    ['at the end', `in ${HOME}`, 'in ~'],
+    ['in another case', `open /users/SOMEBODY/notes.md`, 'open ~/notes.md'],
+    ['URL-encoded', `GET /file?p=%2FUsers%2Fsomebody%2Fnotes.md`, 'GET /file?p=~%2Fnotes.md'],
+    ['URL-encoded in lower case', `p=%2fusers%2fsomebody%2fx`, 'p=~%2fx'],
+    ['the user name at a host', `ssh somebody@Somebodys-Mac.local failed`, 'ssh <user>@Somebodys-Mac.local failed'],
+  ])('11. takes the home folder out %s', (_what, value, expected) => {
+    const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value }] } }), FACTS)!;
+    expect(report.exception.values[0].value).toBe(expected);
+  });
+
+  it('11. leaves a longer name that only starts like the home folder or the user', () => {
+    const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value: '/Users/somebodyelse/x and somebodyelse' }] } }), FACTS)!;
+    expect(report.exception.values[0].value).toBe('/Users/somebodyelse/x and somebodyelse');
   });
 
   it('1. writes a temp folder of this machine without its random part', () => {
