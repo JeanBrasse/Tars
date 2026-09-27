@@ -1,0 +1,1828 @@
+{
+  "version": "2.17",
+  "children": [
+    {
+      "type": "frame",
+      "id": "mtlkc",
+      "x": 0,
+      "y": 0,
+      "name": "Landing · desktop",
+      "clip": true,
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "amXyI",
+          "name": "Nav",
+          "width": "fill_container",
+          "padding": [
+            24,
+            200
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "mZS8v",
+              "name": "brand",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "B2cdxL",
+                  "name": "mark",
+                  "fill": "$accent",
+                  "width": 11,
+                  "height": 11
+                },
+                {
+                  "type": "text",
+                  "id": "p4fFx",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 21,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "XdxJl",
+              "name": "links",
+              "gap": 32,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "xmHaW",
+                  "name": "Features",
+                  "fill": "#9B9B9B",
+                  "content": "Features",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "vLGNu",
+                  "name": "How it works",
+                  "fill": "#9B9B9B",
+                  "content": "How it works",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Bdvjc",
+                  "name": "Download",
+                  "fill": "#9B9B9B",
+                  "content": "Download",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "b3VzH7",
+              "name": "right",
+              "gap": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "x9l912",
+                  "name": "gh",
+                  "fill": "#9B9B9B",
+                  "width": 16,
+                  "height": 16
+                },
+                {
+                  "type": "frame",
+                  "id": "Ttslf",
+                  "name": "nav dl",
+                  "height": 34,
+                  "fill": "$accent",
+                  "stroke": "$accent",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "vO897",
+                      "name": "ic",
+                      "fill": "#121212",
+                      "width": 11,
+                      "height": 11
+                    },
+                    {
+                      "type": "text",
+                      "id": "nLwbY",
+                      "name": "l",
+                      "fill": "#121212",
+                      "content": "Download",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "p2Mnh",
+          "name": "Hero",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "layout": "vertical",
+          "padding": [
+            72,
+            200,
+            80,
+            200
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "kWTJp",
+              "name": "eyebrow",
+              "fill": "$accent",
+              "content": "A control room for AI coding agents",
+              "lineHeight": 1.45,
+              "fontFamily": "$font-mono",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "v6Tx77",
+              "name": "sp1",
+              "width": "fill_container",
+              "height": 18
+            },
+            {
+              "type": "text",
+              "id": "U49hM7",
+              "name": "h1",
+              "fill": "#F5F4F2",
+              "textGrowth": "fixed-width",
+              "width": 820,
+              "content": "Run a team of agents like you run a team of engineers.",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 64,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "Seycb",
+              "name": "sp2",
+              "width": "fill_container",
+              "height": 22
+            },
+            {
+              "type": "text",
+              "id": "WK08N",
+              "name": "sub",
+              "fill": "#9B9B9B",
+              "textGrowth": "fixed-width",
+              "width": 600,
+              "content": "Tars puts every agent in one place: parallel terminals per project, teams you deploy in a click, one memory they all share, and delegation that comes back with what each task did and what it cost.",
+              "lineHeight": 1.55,
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "GUWOZ",
+              "name": "sp3",
+              "width": "fill_container",
+              "height": 32
+            },
+            {
+              "type": "frame",
+              "id": "W2yoSc",
+              "name": "cta",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "U5EDB1",
+                  "name": "dl",
+                  "height": 40,
+                  "fill": "$accent",
+                  "stroke": "$accent",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "ciZpP",
+                      "name": "ic",
+                      "fill": "#121212",
+                      "width": 11,
+                      "height": 11
+                    },
+                    {
+                      "type": "text",
+                      "id": "LI5qx",
+                      "name": "l",
+                      "fill": "#121212",
+                      "content": "Download for Mac",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "pDqcv",
+                  "name": "src",
+                  "height": 40,
+                  "fill": "$bg",
+                  "stroke": "#3A3A3A",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "awrRX",
+                      "name": "ic",
+                      "fill": "#9B9B9B",
+                      "width": 11,
+                      "height": 11
+                    },
+                    {
+                      "type": "text",
+                      "id": "etc8e",
+                      "name": "l",
+                      "fill": "#9B9B9B",
+                      "content": "Source",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "AHtiy",
+                  "name": "count",
+                  "fill": "$text-muted",
+                  "content": "5 downloads",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "nntTj",
+          "name": "Screenshot",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "layout": "vertical",
+          "padding": [
+            56,
+            200
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "PKOna",
+              "name": "screenshot",
+              "width": "fill_container",
+              "height": 650,
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "../landing/src/assets/dashboard.png",
+                "mode": "stretch"
+              },
+              "stroke": "$border",
+              "strokeWidth": 1
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "y4d19r",
+          "name": "Features",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            64,
+            200
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "ajTlb",
+              "name": "h2",
+              "fill": "#F5F4F2",
+              "content": "What it does",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 34,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "Vt5We",
+              "name": "grid",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 36,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "IO021",
+                  "name": "row0",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "hMBgc",
+                      "name": "f Every agent, one screen",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "i6PFK",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Every agent, one screen",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "c5RdY5",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Real terminals in a grid, grouped by project. Watch six agents work at once, jump into any of them, broadcast one instruction to all.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ihOjQ",
+                      "name": "f Someone watching the whole thing",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "QjLex",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Someone watching the whole thing",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "iwfv9",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "A Hermes agent sees every agent in every project and tells you what they are doing, which decisions are in flight, and which ones are stuck on you. It asks before it writes to any of them.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "XCe7P",
+                  "name": "row1",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "YARur",
+                      "name": "f Delegation that reports back",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "IUpof",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Delegation that reports back",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "o71edX",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "An orchestrator hands work over the Agent Client Protocol, and every task comes back with a stop reason, the tools it used and what it cost.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yyyfc",
+                      "name": "f Deploy a whole team",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "U30JKC",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Deploy a whole team",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "keOJG",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "One click puts an orchestrator, frontend, backend, QA, audit and database engineer on a project, each on its own git worktree, model and brief.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "WJRj9",
+                  "name": "row2",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "EBdin",
+                      "name": "f Any CLI, any model",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rg2Hv",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Any CLI, any model",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "gJzCa",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Claude, Codex, Gemini, Grok, OpenCode, Ollama, Venice, DeepSeek, Kimi, MiniMax and a dozen more. Model lists and prices come from a live catalogue, so today’s release is here today.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "jbvQj",
+                      "name": "f One memory, five sources",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "NHBwQ",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "One memory, five sources",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "OfkE9",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Project files, the session ledger, your Hermes gateway, gbrain and Honcho behind one interface that every CLI can reach.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "nFtj6",
+                  "name": "row3",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "lza32",
+                      "name": "f See what they actually did",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "yVWO9",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "See what they actually did",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "yBbna",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "A diff review of every branch, one search across the whole fleet’s output, and per-provider spend against the budget you set.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "C7LRg",
+          "name": "How",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            64,
+            200
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "r9ZY37",
+              "name": "h2",
+              "fill": "#F5F4F2",
+              "content": "How it works",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 34,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "zUGxA",
+              "name": "steps",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 26,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "AKRqn",
+                  "name": "s0",
+                  "width": "fill_container",
+                  "gap": 20,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "EGdj0",
+                      "name": "n",
+                      "fill": "$accent",
+                      "content": "01",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "K1PXYm",
+                      "name": "txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 5,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "a0F57",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "content": "Point it at a folder",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "maEnw",
+                          "name": "d",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Add your project. Tars finds the CLIs already installed on your machine.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "hKmCJ",
+                  "name": "s1",
+                  "width": "fill_container",
+                  "gap": 20,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "M4p7p",
+                      "name": "n",
+                      "fill": "$accent",
+                      "content": "02",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "P1fjVM",
+                      "name": "txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 5,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UfYgH",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "content": "Create an agent, or a team",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "P3pZ6",
+                          "name": "d",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "One agent from a template, or a full engineering team with a worktree branch each.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "nl8Ug",
+                  "name": "s2",
+                  "width": "fill_container",
+                  "gap": 20,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "tqklc",
+                      "name": "n",
+                      "fill": "$accent",
+                      "content": "03",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "dh3QY",
+                      "name": "txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 5,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "udPFt",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "content": "Let them work",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "wYaXn",
+                          "name": "d",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Terminals stream live. The orchestrator delegates and gets an answer. Nothing starts without you asking.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "MlA0j",
+                  "name": "s3",
+                  "width": "fill_container",
+                  "gap": 20,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "pyEMy",
+                      "name": "n",
+                      "fill": "$accent",
+                      "content": "04",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "CHzuY",
+                      "name": "txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 5,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "KhXwO",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "content": "Wire in Hermes",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "YM1x0",
+                          "name": "d",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Your own gateway schedules the recurring work, and its kanban board drives what the team picks up next.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "glgge",
+          "name": "Download",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": [
+            80,
+            200
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "BboTR",
+              "name": "h2",
+              "fill": "#F5F4F2",
+              "content": "Get Tars",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 42,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "S7wv90",
+              "name": "p",
+              "fill": "#9B9B9B",
+              "textGrowth": "fixed-width",
+              "width": 460,
+              "content": "macOS desktop app. Free and open source. No account, no cloud in the middle.",
+              "lineHeight": 1.55,
+              "textAlign": "center",
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "o3Uz2L",
+              "name": "sp",
+              "width": "fill_container",
+              "height": 12
+            },
+            {
+              "type": "frame",
+              "id": "lv9nj",
+              "name": "cta",
+              "height": 44,
+              "fill": "$accent",
+              "stroke": "$accent",
+              "strokeWidth": 1,
+              "gap": 8,
+              "padding": [
+                0,
+                24
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "p0dAo4",
+                  "name": "ic",
+                  "fill": "#121212",
+                  "width": 12,
+                  "height": 12
+                },
+                {
+                  "type": "text",
+                  "id": "xze2g",
+                  "name": "l",
+                  "fill": "#121212",
+                  "content": "Download for Mac",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "u5PJpk",
+          "name": "Footer",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "top": 1
+          },
+          "padding": [
+            28,
+            200
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "twgmx",
+              "name": "brand",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "HvoVw",
+                  "name": "m",
+                  "fill": "$accent",
+                  "width": 9,
+                  "height": 9
+                },
+                {
+                  "type": "text",
+                  "id": "Kdd1D",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "EGtVu",
+              "name": "gh",
+              "fill": "$text-muted",
+              "content": "github",
+              "lineHeight": 1.45,
+              "fontFamily": "$font-mono",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "RIv30",
+      "x": 1540,
+      "y": 0,
+      "name": "Landing · 404",
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "ZGQzv",
+          "name": "Nav",
+          "width": "fill_container",
+          "padding": [
+            24,
+            200
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "D2cH9",
+              "name": "brand",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "fNlse",
+                  "name": "mark",
+                  "fill": "$accent",
+                  "width": 11,
+                  "height": 11
+                },
+                {
+                  "type": "text",
+                  "id": "HpWDi",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 21,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "cOUVp",
+              "name": "links",
+              "gap": 32,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "RSd2H",
+                  "name": "Features",
+                  "fill": "#9B9B9B",
+                  "content": "Features",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "CTye0",
+                  "name": "How it works",
+                  "fill": "#9B9B9B",
+                  "content": "How it works",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "lvpSU",
+                  "name": "Download",
+                  "fill": "#9B9B9B",
+                  "content": "Download",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "PAVL8",
+              "name": "right",
+              "gap": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "wBCXG",
+                  "name": "gh",
+                  "fill": "#9B9B9B",
+                  "width": 16,
+                  "height": 16
+                },
+                {
+                  "type": "frame",
+                  "id": "s2RpD",
+                  "name": "nav dl",
+                  "height": 34,
+                  "fill": "$accent",
+                  "stroke": "$accent",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "zBoLK",
+                      "name": "ic",
+                      "fill": "#121212",
+                      "width": 11,
+                      "height": 11
+                    },
+                    {
+                      "type": "text",
+                      "id": "aQKHn",
+                      "name": "l",
+                      "fill": "#121212",
+                      "content": "Download",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "tgBKH",
+          "name": "Body",
+          "width": "fill_container",
+          "layout": "vertical",
+          "padding": [
+            120,
+            200,
+            150,
+            200
+          ],
+          "children": [
+            {
+              "type": "text",
+              "id": "tSb5r",
+              "name": "eyebrow",
+              "fill": "$accent",
+              "content": "404",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "QJDhS",
+              "name": "sp1",
+              "width": "fill_container",
+              "height": 18
+            },
+            {
+              "type": "text",
+              "id": "dtAI3",
+              "name": "h1",
+              "fill": "#F5F4F2",
+              "textGrowth": "fixed-width",
+              "width": 820,
+              "content": "There is nothing at this address.",
+              "lineHeight": 1.05,
+              "fontFamily": "$font-display",
+              "fontSize": 56,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "V1999Z",
+              "name": "sp2",
+              "width": "fill_container",
+              "height": 20
+            },
+            {
+              "type": "text",
+              "id": "jp9Hj",
+              "name": "p",
+              "fill": "#9B9B9B",
+              "textGrowth": "fixed-width",
+              "width": 600,
+              "content": "The link may be old or mistyped. Everything about Tars is on the home page.",
+              "lineHeight": 1.55,
+              "fontFamily": "$font-ui",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "n4wFJ",
+              "name": "sp3",
+              "width": "fill_container",
+              "height": 32
+            },
+            {
+              "type": "frame",
+              "id": "Ak3v7",
+              "name": "home",
+              "height": 40,
+              "fill": "$accent",
+              "padding": [
+                0,
+                20
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "gt2zJ",
+                  "name": "l",
+                  "fill": "#121212",
+                  "content": "Back to Tars",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13.5,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "SQudm",
+          "name": "Footer",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "top": 1
+          },
+          "padding": [
+            28,
+            200
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "b45zQV",
+              "name": "brand",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "u0Jp5U",
+                  "name": "m",
+                  "fill": "$accent",
+                  "width": 9,
+                  "height": 9
+                },
+                {
+                  "type": "text",
+                  "id": "wc7MO",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "indDH",
+              "name": "gh",
+              "fill": "$text-muted",
+              "content": "github",
+              "lineHeight": 1.45,
+              "fontFamily": "$font-mono",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "icVwq",
+      "x": 3080,
+      "y": 0,
+      "name": "Landing · social image",
+      "clip": true,
+      "width": 1200,
+      "height": 630,
+      "fill": "$bg",
+      "gap": 44,
+      "padding": [
+        0,
+        0,
+        0,
+        72
+      ],
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "slOtU",
+          "name": "words",
+          "width": 460,
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "TI7vq",
+              "name": "brand",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "zQAPO",
+                  "name": "mark",
+                  "fill": "$accent",
+                  "width": 16,
+                  "height": 16
+                },
+                {
+                  "type": "text",
+                  "id": "r8XE7t",
+                  "name": "w",
+                  "fill": "#F5F4F2",
+                  "content": "Tars",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-display",
+                  "fontSize": 34,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "GIGH6",
+              "name": "sp1",
+              "width": "fill_container",
+              "height": 34
+            },
+            {
+              "type": "text",
+              "id": "LKR8w",
+              "name": "h",
+              "fill": "#F5F4F2",
+              "textGrowth": "fixed-width",
+              "width": 460,
+              "content": "Run a team of agents like you run a team of engineers.",
+              "lineHeight": 1.05,
+              "fontFamily": "$font-display",
+              "fontSize": 50,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "kPQBC",
+              "name": "sp2",
+              "width": "fill_container",
+              "height": 24
+            },
+            {
+              "type": "text",
+              "id": "fkUhd",
+              "name": "e",
+              "fill": "$accent",
+              "content": "A control room for AI coding agents",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "myRPx",
+          "name": "shot",
+          "width": 700,
+          "height": 438,
+          "fill": {
+            "type": "image",
+            "enabled": true,
+            "url": "../landing/src/assets/dashboard.png",
+            "mode": "stretch"
+          },
+          "stroke": "$border",
+          "strokeWidth": 1
+        }
+      ]
+    }
+  ],
+  "themes": {
+    "mode": [
+      "dark",
+      "light"
+    ]
+  },
+  "variables": {
+    "bg": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#121212",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#FAF9F7",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "border": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#2A2A2A",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#DAD6CE",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "accent": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FF9E42",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#C77012",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "font-ui": {
+      "type": "string",
+      "value": "Roboto Condensed"
+    },
+    "font-mono": {
+      "type": "string",
+      "value": "Roboto Mono"
+    },
+    "font-display": {
+      "type": "string",
+      "value": "Instrument Serif"
+    },
+    "radius": {
+      "type": "number",
+      "value": 2
+    },
+    "surface": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#1A1A1A",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#FFFFFF",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "surface-raised": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#222222",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#F3F1EE",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "term-bg": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#0F0F0F",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#F3F1EE",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "border-strong": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#3A3A3A",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#BFBAB1",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "text-primary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F5F4F2",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#1E1E1E",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "text-secondary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#9B9B9B",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#4A4A4A",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "text-muted": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#898989",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#6B6B6B",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "accent-dim": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FF9E4216",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#C7701214",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "status-running": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#4CC38A",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#1A7F37",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "status-waiting": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#E8C547",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#9A6700",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "status-error": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#E5534B",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#CF222E",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "status-idle": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#727272",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#9B9B9B",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "space": {
+      "type": "number",
+      "value": 8
+    },
+    "on-accent": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#121212",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#1E1E1E",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "scrim": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#00000099",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#1E1E1E66",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "accent-focus": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FF9E4266",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#C7701266",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    }
+  },
+  "fileToken": "02c766bb-4102-4e36-804d-df59ec49f12b"
+}
