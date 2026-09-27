@@ -71,14 +71,29 @@ const text = (v: unknown): string | undefined => (typeof v === 'string' ? v : un
 const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** A path or a message, with this machine taken out: the home folder as ~, a macOS temp folder as <tmp>, secrets masked. */
+/** Not part of a name: what may follow the home folder, or stand around the user name. */
+const NAME_END = '(?![A-Za-z0-9._-])';
+const NAME_START = '(?<![A-Za-z0-9._-])';
+
+/**
+ * A path or a message, with this machine taken out: the home folder as ~, in
+ * any case and URL-encoded too, the user name alone as <user>, a macOS temp
+ * folder as <tmp>, secrets masked. The home folder is rewritten wherever the
+ * name ends, not only before `/` or a space: `cwd /Users/x, exit 1` and
+ * `/Users/x;` left the whole path (the Audit's gate of #221).
+ */
 function scrub(value: string, home: string): string {
   let out = value.replace(/file:\/\//g, '');
   // The home folder first: it may itself be under a temp folder. /var is
   // /private/var on macOS, so a folder there reaches an error by either name.
   if (home && home !== '/') {
     const homes = new Set([home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`]);
-    for (const h of homes) out = out.replace(new RegExp(`${escape(h)}(?=[/\\\\\\s:'")]|$)`, 'g'), '~');
+    for (const h of homes) {
+      out = out.replace(new RegExp(`${escape(h)}${NAME_END}`, 'gi'), '~');
+      out = out.replace(new RegExp(`${escape(h.replace(/\//g, '%2F'))}${NAME_END}`, 'gi'), '~');
+    }
+    const user = home.split('/').filter(Boolean).pop() ?? '';
+    if (user.length >= 3) out = out.replace(new RegExp(`${NAME_START}${escape(user)}${NAME_END}`, 'gi'), '<user>');
   }
   out = out.replace(/(?:\/private)?\/var\/folders\/(?:[^/\s]+\/){1,2}T(?=\/)/g, '<tmp>');
   return redactSecrets(out);
