@@ -821,6 +821,13 @@ attempts" without comparing, with the time it lifts; both read the settings as t
 there counts without a restart (SECURITY §6). A lock-out from the count of all chats keeps your own
 new chat out too: turn Telegram off and on in Settings, which restarts the bot and clears the count.
 
+`ask_user` (the orchestrator MCP server's tool, `POST /api/user/ask`) sends an agent's question to the private
+chats enrolled with `/auth`, without link previews; reply to that very message in Telegram to answer, and your answer
+alone is typed into the agent's terminal after `Message from the user via Telegram:`. A reply from anyone else, from a
+group, or to another message goes where any message goes. One open question per agent, 20 a day, 4 hours to answer.
+A development run may point the bot at a stand-in for Telegram's API with `DOROTHY_TELEGRAM_API` (a packaged Tars
+ignores it).
+
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
 message only when it is mentioned, unless Require @mention is off (`discordRequireMention`); a
