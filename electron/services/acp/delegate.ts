@@ -10,6 +10,7 @@ import { recordUsage } from '../usage-ledger';
 import { mintRunToken } from '../../core/agent-tokens';
 import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
+import { mcpNodeCommand } from '../../utils/mcp-node';
 import { API_PORT } from '../../constants';
 import { isSuperAgent } from '../../utils';
 
@@ -73,7 +74,7 @@ function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; co
     ['claude-mgr-orchestrator', getMcpOrchestratorPath()],
   ] as const) {
     if (fs.existsSync(serverPath)) {
-      servers.push({ name, command: 'node', args: [serverPath], env });
+      servers.push({ name, command: mcpNodeCommand(), args: [serverPath], env });
     }
   }
   return servers;
