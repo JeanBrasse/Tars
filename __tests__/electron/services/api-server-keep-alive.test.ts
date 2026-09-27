@@ -59,7 +59,25 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 
 let api: typeof import('../../../electron/services/api-server');
 
-function start(): Promise<void> {
+/**
+ * The server listening on a free port. The port picked in beforeAll was free
+ * then, and only then: vitest's other workers bind random ports of their own,
+ * and one can take it before a test binds it again. The server then retries the
+ * same port on its own schedule, so a port taken meanwhile is dropped here for
+ * another one, three picks at most.
+ */
+async function start(): Promise<void> {
+  for (let pick = 1; ; pick++) {
+    const phase = await bind();
+    if (phase === 'listening') return;
+    api.stopApiServer();
+    if (pick === 3) throw new Error(`never listened, ${pick} ports picked: ${phase}`);
+    port = await freePort();
+  }
+}
+
+/** Starts the server on `port`: 'listening', or what it came to instead ('retrying' once the port is taken). */
+function bind(): Promise<string> {
   api.startApiServer(
     null,
     { notificationsEnabled: false } as never,
@@ -72,13 +90,16 @@ function start(): Promise<void> {
     async () => 'pty',
     () => ({ notificationsEnabled: false } as never),
   );
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`never listened: ${api.getApiServerState().phase}`)), 3000);
-    const check = () => {
-      if (api.getApiServerState().phase !== 'listening') return;
+  return new Promise((resolve) => {
+    const settle = (phase: string) => {
       clearTimeout(timer);
       api.apiServerEmitter.off('state', check);
-      resolve();
+      resolve(phase);
+    };
+    const timer = setTimeout(() => settle(api.getApiServerState().phase), 3000);
+    const check = () => {
+      const { phase } = api.getApiServerState();
+      if (phase === 'listening' || phase === 'retrying' || phase === 'failed') settle(phase);
     };
     api.apiServerEmitter.on('state', check);
     check();
@@ -124,14 +145,16 @@ class Connection {
 
 const pause = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// The first import compiles the API server's whole module graph: 14 s on a
+// loaded machine, past vitest's 10 s for a hook. Three port picks fit too.
 beforeEach(async () => {
   vi.resetModules();
   api = await import('../../../electron/services/api-server');
   await start();
-});
+}, 60_000);
 
 afterEach(() => {
-  api.stopApiServer();
+  api?.stopApiServer();
 });
 
 describe('a connection the local API kept alive', () => {
