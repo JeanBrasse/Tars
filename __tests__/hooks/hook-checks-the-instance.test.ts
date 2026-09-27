@@ -31,6 +31,12 @@ import * as path from 'node:path';
  *    and every status of its agents freezes.
  * 6. The instance id itself travels: in a request the hook makes, or in the
  *    server's answer, where anyone could read it and prove to be Tars later.
+ * 7. (the Audit's gate of #212) The check gives up sooner than the posts do:
+ *    it waited 2 s and a post waits 3 s, so a Tars whose main thread was held
+ *    2.5 s (a transcript scan takes 2.7 s, the Usage page 4.15 s) lost the
+ *    token, and the post was refused: a Stop lost, the agent left running.
+ *    The check waits 5 s, longer than any post: held up to that, Tars still
+ *    gets its token, where a post without the check would have given up.
  *
  * The real hook scripts and their helper, with only the port pointed at a
  * server here that plays Tars, or plays the squatter.
@@ -42,7 +48,9 @@ const home = path.join(tmp, 'home');
 const INSTANCE = crypto.randomBytes(16).toString('hex');
 const TOKEN = 'token-of-a1s-terminal';
 
-type Mode = 'tars' | 'squatter' | 'replay' | 'silent';
+type Mode = 'tars' | 'squatter' | 'replay' | 'silent' | 'held';
+/** How long a held Tars takes to answer the check. */
+let heldMs = 0;
 let mode: Mode = 'tars';
 let seenProof: string | undefined;
 const received: { path: string; authorization?: string; url: string }[] = [];
@@ -61,6 +69,13 @@ beforeAll(async () => {
       if (url.pathname === '/api/health') {
         const challenge = url.searchParams.get('challenge') ?? '';
         if (mode === 'silent') return; // never answers
+        if (mode === 'held') {
+          setTimeout(() => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, proof: proofFor(INSTANCE, challenge) }));
+          }, heldMs);
+          return;
+        }
         const proof = mode === 'tars' ? proofFor(INSTANCE, challenge)
           : mode === 'replay' ? seenProof
           : proofFor('someone-else', challenge);
@@ -112,6 +127,16 @@ describe('a hook, before it sends its token', () => {
     const posts = received.filter(r => r.path.startsWith('/api/hooks/'));
     expect(posts.length).toBeGreaterThan(0);
     for (const post of posts) expect(post.authorization).toBe(`Bearer ${TOKEN}`);
+  }, 30_000);
+
+  it.each([2_500, 4_500])('7. still sends it to Tars when its main thread is held %i ms', async held => {
+    mode = 'held';
+    heldMs = held;
+    await runHook(env);
+
+    const posts = received.filter(r => r.path.startsWith('/api/hooks/'));
+    expect(posts.length).toBeGreaterThan(0);
+    for (const post of posts) expect(post.authorization, 'the check gave up first').toBe(`Bearer ${TOKEN}`);
   }, 30_000);
 
   it('1. sends it to nothing else that holds the port', async () => {
