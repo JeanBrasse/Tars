@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('node-pty', () => ({ spawn: vi.fn() }));
+const foreground = vi.hoisted(() => ({ value: '2.1.280' }));
+vi.mock('node-pty', () => ({
+  spawn: vi.fn(() => ({ pid: 7, get process() { return foreground.value; }, write: vi.fn(), kill: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn() })),
+}));
 vi.mock('electron', () => ({ BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }) }));
 
 import * as pm from '../../../electron/core/pty-manager';
@@ -21,6 +24,9 @@ import type { IPty } from 'node-pty';
  *    the shell.
  * 2. Its sender is never told it did not go.
  * 3. Over-correction: with the CLI still there, a held message never goes.
+ * 4. What the writer is told for a real agent terminal is wrong: a terminal
+ *    back at its shell reads as a CLI, or one running the CLI reads as
+ *    stopped, or a terminal Tars did not start as an agent's is refused.
  */
 
 let cliRunning = true;
@@ -66,5 +72,17 @@ describe('a held message', () => {
     await vi.advanceTimersByTimeAsync(pm.TYPING_PAUSE_MS + 2_000);
     expect(m.writes.join('')).toContain('rm -rf ~/work');
     expect(m.wasDropped()).toBe(false);
+  });
+});
+
+describe('whether an agent\'s CLI stopped', () => {
+  it('4. is read from the terminal Tars started: stopped at its shell, not while the CLI runs, unknown otherwise', async () => {
+    const { spawnAgentPty, cliStoppedIn } = await import('../../../electron/core/agent-pty');
+    const t = spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: '/tmp', cols: 80, rows: 24, env: {} });
+    foreground.value = '2.1.280';
+    expect(cliStoppedIn(t)).toBe(false);
+    foreground.value = 'bash';
+    expect(cliStoppedIn(t)).toBe(true);
+    expect(cliStoppedIn({ process: 'bash' } as unknown as IPty)).toBe(false);
   });
 });
