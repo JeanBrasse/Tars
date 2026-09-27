@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('electron', () => ({ BrowserWindow: vi.fn() }));
@@ -40,7 +42,11 @@ afterEach(() => {
   quickPtyProcesses.clear();
 });
 
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+/** Running: a zombie waiting to be reaped has ended. */
+const alive = (pid: number) => {
+  try { process.kill(pid, 0); } catch { return false; }
+  try { return !execFileSync('ps', ['-o', 'stat=', '-p', String(pid)]).toString().trim().startsWith('Z'); } catch { return false; }
+};
 
 /**
  * A terminal: a shell-like leader that relays SIGHUP to its job, and the job
@@ -54,13 +60,13 @@ function terminal(stubborn: boolean): { pty: IPty; leader: ChildProcess; job: ()
     sh -c '${trap} sleep 300 & echo $! > "$0.child"; wait' "$T" &
     job=$!
     echo $job > "$T.job"
-    trap 'kill -HUP $job 2>/dev/null; exit 0' HUP
+    trap 'kill -HUP -$job 2>/dev/null; exit 0' HUP
     wait
   `;
   const T = `${process.env.TMPDIR || '/tmp'}/tars-quit-${process.pid}-${Math.random().toString(36).slice(2)}`;
   const leader = spawn('/bin/sh', ['-c', script], { detached: true, stdio: 'ignore', env: { ...process.env, T } });
   started.push(leader);
-  const read = (f: string) => { try { return Number(require('fs').readFileSync(f, 'utf-8').trim()); } catch { return 0; } };
+  const read = (f: string) => { try { return Number(fs.readFileSync(f, 'utf-8').trim()); } catch { return 0; } };
   const exits: Array<(e: { exitCode: number }) => void> = [];
   leader.on('exit', code => { for (const cb of exits) cb({ exitCode: code ?? 0 }); });
   const pty = {
@@ -129,7 +135,7 @@ describe('the quit, for the agents\' terminals', () => {
 });
 
 describe('main.ts, at quit', () => {
-  const main = require('fs').readFileSync(require('path').join(__dirname, '../../../electron/main.ts'), 'utf-8') as string;
+  const main = fs.readFileSync(path.join(__dirname, '../../../electron/main.ts'), 'utf-8');
   const quit = main.slice(main.indexOf("app.on('before-quit'"), main.indexOf("app.on('before-quit'") + 3000);
 
   it('4. holds the quit until the terminals have ended, then quits again', () => {

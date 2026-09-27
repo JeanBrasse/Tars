@@ -143,7 +143,7 @@ export function parseProcessTable(out: string): ProcessRow[] {
 }
 
 /** Every process, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
-function processTable(): Promise<ProcessRow[] | undefined> {
+export function processTable(): Promise<ProcessRow[] | undefined> {
   return new Promise(resolve => {
     execFile('ps', PS_ARGS, { timeout: 5_000 }, (err, out) => resolve(err ? undefined : parseProcessTable(String(out))));
   });

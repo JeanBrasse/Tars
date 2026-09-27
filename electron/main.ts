@@ -49,7 +49,8 @@ import {
   quickPtyProcesses,
   skillPtyProcesses,
   pluginPtyProcesses,
-  killAllPty,
+  endAllTerminals,
+  isQuitting,
   setFieldProbe,
 } from './core/pty-manager';
 import { lastLocalCommandAt } from './services/agent-truth';
@@ -630,7 +631,8 @@ app.whenReady().then(async () => {
 
       ptyProcess.onExit(({ exitCode }) => {
         const agent = agents.get(id);
-        if (agent) {
+        // Ended by the quit: not the agent's error, nor its completion.
+        if (agent && !isQuitting()) {
           const newStatus = exitCode === 0 ? 'completed' : 'error';
           agent.status = newStatus;
           agent.lastActivity = new Date().toISOString();
@@ -744,22 +746,43 @@ app.on('activate', () => {
   }
 });
 
-// Save agents and kill all PTY processes before quitting
-app.on('before-quit', () => {
-  console.log('App quitting, saving agents and killing all PTY processes...');
-  // Each step guarded, and the two that write to disk first: see shutdown.ts.
-  // The bus journal writes once per turn of the event loop rather than once
-  // per row, so a turn that ends in a quit is the one that never gets there.
+// Save agents and end every terminal before quitting. In two passes: the
+// first saves, stops what writes, and holds the quit while the terminals'
+// process trees end and node-pty delivers their exits (endAllTerminals, at
+// most TERMINAL_GRACE_MS plus half a second); then it quits again, and the
+// second closes what the terminals no longer need. Their exits used to come
+// after a synchronous before-quit, one of them during Electron's final
+// cleanup, where it aborted the app (the crash report of #231's proof).
+let terminalsEnded = false;
+let endingTerminals = false;
+app.on('before-quit', (event) => {
+  if (!terminalsEnded) {
+    event.preventDefault();
+    if (endingTerminals) return;
+    endingTerminals = true;
+    console.log('App quitting, saving agents and ending every terminal...');
+    // Each step guarded, and the two that write to disk first: see shutdown.ts.
+    // The bus journal writes once per turn of the event loop rather than once
+    // per row, so a turn that ends in a quit is the one that never gets there.
+    runShutdownSteps([
+      ['flushBus', flushBus],
+      ['saveAgents', saveAgents],
+      // Before the app exits, which neither the stop's timer nor a run left
+      // reparented to launchd would wait for: at most a second, then SIGKILL.
+      ['endAcpRunsOnQuit', endAcpRunsOnQuit],
+      ['destroyTray', destroyTray],
+      ['stopAgentAutosave', stopAgentAutosave],
+      ['stopOverseerWatch', stopOverseerWatch],
+    ]);
+    void endAllTerminals()
+      .catch(err => console.error('Failed to end the terminals on quit:', err))
+      .finally(() => {
+        terminalsEnded = true;
+        app.quit();
+      });
+    return;
+  }
   runShutdownSteps([
-    ['flushBus', flushBus],
-    ['saveAgents', saveAgents],
-    // Before the app exits, which neither the stop's timer nor a run left
-    // reparented to launchd would wait for: at most a second, then SIGKILL.
-    ['endAcpRunsOnQuit', endAcpRunsOnQuit],
-    ['destroyTray', destroyTray],
-    ['stopAgentAutosave', stopAgentAutosave],
-    ['stopOverseerWatch', stopOverseerWatch],
-    ['killAllPty', killAllPty],
     ['closeVaultDb', closeVaultDb],
     ['stopOpenAIBridgeServer', stopOpenAIBridgeServer],
   ]);
