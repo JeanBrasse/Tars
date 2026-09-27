@@ -128,7 +128,13 @@ export interface AgentStatus {
    * It is also consumed once delivered, so it can never speak for a later
    * piece of work. Read by services/agent-watch.ts.
    */
-  requestedBy?: { agentId: string; ptyId: string };
+  requestedBy?: {
+    agentId: string;
+    ptyId: string;
+    /** Set while the link is kept for work the agent left running in the
+     *  background: its requester is owed one more note (agent-watch). */
+    backgroundLeft?: string[];
+  };
   currentSessionId?: string;
   /**
    * The last session this agent ran, kept so it can be resumed.
@@ -270,6 +276,17 @@ export interface AppSettings {
    * agents (the audit's lead #15). The Telegram bot's authorized chats, for Slack.
    */
   slackAllowedUserIds: string[];
+  discordEnabled: boolean;
+  discordBotToken: string;
+  /** The channel Tars posts to: detected when an allowed member mentions the bot or DMs it. */
+  discordChannelId: string;
+  /**
+   * The Discord users (user ids, 17 to 20 digits) the bot answers. Empty answers
+   * nobody, as Slack's allowed members (the audit's lead #15).
+   */
+  discordAllowedUserIds: string[];
+  /** In server channels, answer only a message that mentions the bot. Direct messages always work. */
+  discordRequireMention: boolean;
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;

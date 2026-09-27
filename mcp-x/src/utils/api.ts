@@ -1,20 +1,13 @@
 import * as https from "https";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
+import { send } from "../../../mcp-shared/src/http.js";
+import { readAppSettings } from "../../../mcp-shared/src/settings.js";
 import { generateOAuthHeader, type OAuthCredentials } from "./oauth.js";
 
 const X_API_HOST = "api.x.com";
 
-/** Tars's settings as they are now, or null when the file cannot be read. */
-function readSettings(): Record<string, unknown> | null {
-  const settingsPath = path.join(os.homedir(), ".dorothy", "app-settings.json");
-  try {
-    if (!fs.existsSync(settingsPath)) return null;
-    return JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-  } catch {
-    return null;
-  }
+/** Tars's settings as they are now, or nothing when the file cannot be read. */
+function readSettings(): Record<string, unknown> | null | undefined {
+  return readAppSettings() as Record<string, unknown> | null | undefined;
 }
 
 /**
@@ -66,61 +59,34 @@ export async function xApiRequest(
   const bodyStr = body ? JSON.stringify(body) : undefined;
   const authHeader = generateOAuthHeader(method, url, creds, bodyStr);
 
-  return new Promise((resolve, reject) => {
-    const options: https.RequestOptions = {
-      hostname: X_API_HOST,
-      port: 443,
-      path: endpoint,
-      method,
-      headers: {
-        Authorization: authHeader,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-    };
+  const { status, data } = await send(https, {
+    hostname: X_API_HOST,
+    port: 443,
+    path: endpoint,
+    method,
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+  }, bodyStr, (err) => new Error(`X API request failed: ${err.message}`));
 
-    const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => {
-        data += chunk;
-      });
-      res.on("end", () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (res.statusCode && res.statusCode >= 400) {
-            const errorDetail =
-              parsed.detail ||
-              parsed.errors?.[0]?.message ||
-              JSON.stringify(parsed);
-            reject(
-              new Error(
-                `X API error (HTTP ${res.statusCode}): ${errorDetail}`
-              )
-            );
-          } else {
-            resolve(parsed);
-          }
-        } catch {
-          if (res.statusCode === 204) {
-            resolve({ success: true });
-          } else {
-            reject(
-              new Error(
-                `Failed to parse X API response: ${data.slice(0, 500)}`
-              )
-            );
-          }
-        }
-      });
-    });
-
-    req.on("error", (err) =>
-      reject(new Error(`X API request failed: ${err.message}`))
-    );
-
-    if (bodyStr) {
-      req.write(bodyStr);
+  // An error whose body is JSON null reads as unparseable, as it always has:
+  // its .detail is read inside the try.
+  let refused: Error;
+  try {
+    const parsed = JSON.parse(data);
+    if (!(status && status >= 400)) return parsed;
+    const errorDetail =
+      parsed.detail ||
+      parsed.errors?.[0]?.message ||
+      JSON.stringify(parsed);
+    refused = new Error(`X API error (HTTP ${status}): ${errorDetail}`);
+  } catch {
+    if (status === 204) {
+      return { success: true };
     }
-    req.end();
-  });
+    throw new Error(`Failed to parse X API response: ${data.slice(0, 500)}`);
+  }
+  throw refused;
 }

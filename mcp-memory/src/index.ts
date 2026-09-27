@@ -13,6 +13,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { text } from "../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "./utils/api.js";
 
 const server = new McpServer({
@@ -29,10 +30,6 @@ interface MemoryHit {
 
 function projectOf(explicit?: string): string {
   return explicit || getCallerIdentity().projectPath || process.cwd();
-}
-
-function text(body: string) {
-  return { content: [{ type: "text" as const, text: body }] };
 }
 
 server.registerTool(

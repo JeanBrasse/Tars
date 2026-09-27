@@ -4,6 +4,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { sid } from '../../fixtures/session-id';
 
 /**
  * Who may start, stop, message, dispatch to, run a task on, delete and create
@@ -204,7 +205,7 @@ describe('the hook routes, which only an agent\'s own CLI posts to', () => {
   // conversation in another, and which a killed CLI's late SessionStart did
   // by accident. The hooks run inside the CLI and carry its token.
   const post = (headers: Record<string, string>, agentId: string) =>
-    call('POST', '/api/hooks/status', headers, { agent_id: agentId, session_id: 'sess-a', status: 'idle', source: 'startup' });
+    call('POST', '/api/hooks/status', headers, { agent_id: agentId, session_id: sid('sess-a'), status: 'idle', source: 'startup' });
 
   it('refuses a post with no token', async () => {
     expect((await post({}, ALPHA.id)).status).toBe(401);
@@ -221,7 +222,7 @@ describe('the hook routes, which only an agent\'s own CLI posts to', () => {
     const answer = await post(bearer(alphaToken), ALPHA.id);
 
     expect(answer.status).toBe(200);
-    expect(agents.get(ALPHA.id)!.currentSessionId).toBe('sess-a');
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe(sid('sess-a'));
   });
 
   it('refuses one agent\'s token posting for another', async () => {
@@ -271,13 +272,13 @@ describe('the hook routes take the terminal\'s token and no other token its agen
 
   it('refuses a delegated run\'s token, and the live terminal keeps its session', async () => {
     const live = terminalOf(ALPHA.id);
-    expect((await post(live.token, 'sess-live')).status).toBe(200);
+    expect((await post(live.token, sid('sess-live'))).status).toBe(200);
     const run = tokens.mintRunToken(ALPHA.id);
 
-    const fromRun = await post(run.token, 'sess-acp');
+    const fromRun = await post(run.token, sid('sess-acp'));
 
     expect(fromRun.status, JSON.stringify(fromRun.body)).toBe(403);
-    expect(agents.get(ALPHA.id)!.currentSessionId).toBe('sess-live');
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe(sid('sess-live'));
     run.revoke();
   });
 
@@ -294,7 +295,7 @@ describe('the hook routes take the terminal\'s token and no other token its agen
     const ended = terminalOf(ALPHA.id);
     ended.exit();
 
-    const late = await post(ended.token, 'sess-late');
+    const late = await post(ended.token, sid('sess-late'));
 
     expect(late.status).toBe(401);
     expect(agents.get(ALPHA.id)!.currentSessionId).toBeUndefined();
@@ -305,8 +306,8 @@ describe('the hook routes take the terminal\'s token and no other token its agen
     const newer = terminalOf(ALPHA.id);
     older.exit();
 
-    expect((await post(newer.token, 'sess-new')).status).toBe(200);
-    expect(agents.get(ALPHA.id)!.currentSessionId).toBe('sess-new');
+    expect((await post(newer.token, sid('sess-new'))).status).toBe(200);
+    expect(agents.get(ALPHA.id)!.currentSessionId).toBe(sid('sess-new'));
   });
 });
 

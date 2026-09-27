@@ -12,6 +12,7 @@ import {
   type MemoryWriteTarget,
 } from '../memory-hub';
 import { usableHermesConnection } from '../hermes-config';
+import { isOverseerHermesSession } from '../overseer-store';
 
 /**
  * Memory over HTTP, for agents rather than for the renderer.
@@ -95,6 +96,10 @@ export function registerMemoryRoutes(app: RouteApp, ctx: RouteContext): void {
         hermes: usableHermesConnection(),
         sources: parseSources(req.url.searchParams.get('sources')),
         limit: Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 50) : 10,
+        // An agent asks here: never the super chat's sessions, which are Noah's
+        // conversation (SECURITY.md §5), nor a hit that names no session and so
+        // cannot be told apart from them (the Audit's table, #13).
+        hideHermesSession: id => !id || isOverseerHermesSession(id),
       });
       sendJson(result);
     } catch (err) {

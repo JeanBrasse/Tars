@@ -8,7 +8,7 @@ import * as path from 'path';
  * default umask of 022 lands at 0644 - readable by every other account on the
  * machine. `api-token` and `hermes-webhook-secret` were hardened for this
  * reason; `app-settings.json` was not, and it holds far more: the Telegram,
- * Slack, Jira, SocialData, X, OpenRouter, DeepSeek, Mimo, Moonshot, Qwen,
+ * Slack, Discord, Jira, SocialData, X, OpenRouter, DeepSeek, Mimo, Moonshot, Qwen,
  * Zhipu, MiniMax, NVIDIA and Nous Portal keys, the Hermes gateway token, and
  * the gbrain and Honcho credentials. One file, twenty-odd secrets, world
  * readable.
@@ -107,4 +107,38 @@ export function ensureSecretFileMode(filePath: string): void {
   } catch {
     // Missing file, or no POSIX modes.
   }
+}
+
+/**
+ * Close ~/.dorothy to the other accounts on the machine: the directory and its
+ * subdirectories to 0700, its files to what their owner already had and no
+ * more, so data files land at 0600 and statusline.sh, which Claude Code runs,
+ * stays executable by its owner.
+ *
+ * Called at startup. The directory holds the fleet, the board, the usage
+ * ledger and the vault, and an install made before this ran had it at 0755
+ * with its files at 0644. One level deep is enough: a directory at 0700 can be
+ * neither listed nor entered by anyone else, so nothing below it needs its own
+ * mode. A link is never followed, since what it points to may be any file the
+ * account owns, and an entry that cannot be changed leaves the others to be.
+ */
+export function narrowDataDir(dir: string): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return; // Missing, or not a directory: nothing to narrow.
+  }
+  const narrow = (p: string) => {
+    try {
+      const stat = fs.lstatSync(p);
+      if (stat.isSymbolicLink()) return;
+      const wanted = stat.isDirectory() ? 0o700 : stat.mode & 0o700;
+      if ((stat.mode & 0o777) !== wanted) fs.chmodSync(p, wanted);
+    } catch {
+      // Not ours to change, or gone since the listing.
+    }
+  };
+  for (const name of names) narrow(path.join(dir, name));
+  narrow(dir);
 }

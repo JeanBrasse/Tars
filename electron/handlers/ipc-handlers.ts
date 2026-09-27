@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell, app } from 'electron';
+import { stopAcpRuns } from '../services/acp/delegate';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -85,6 +86,7 @@ export interface IpcHandlerDependencies {
   getMcpOrchestratorPath: () => string;
   initTelegramBot: () => void;
   initSlackBot: () => void;
+  initDiscordBot: () => void;
   getTelegramBot: () => TelegramBot | null;
   getSlackApp: () => SlackApp | null;
   getSuperAgentTelegramTask: () => boolean;
@@ -1129,6 +1131,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // Stop an agent
   ipcMain.handle('agent:stop', async (_event, id: string) => {
     const agent = agents.get(id);
+    // A delegated run too, which has no terminal: an agent running only one
+    // was not stopped at all (the Audit's table, #6).
+    if (agent) await stopAcpRuns(agent.id, 'the agent was stopped');
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1184,6 +1189,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
+    if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1842,6 +1848,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     saveAppSettings,
     initTelegramBot,
     initSlackBot,
+    initDiscordBot,
     getTelegramBot,
     getSlackApp
   } = deps;
@@ -1968,6 +1975,11 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
                            newSettings.slackBotToken !== undefined ||
                            newSettings.slackAppToken !== undefined;
 
+      // Who it answers and the mention rule are read at each message: only a
+      // new token, or switching it on or off, reconnects the bot.
+      const discordChanged = newSettings.discordEnabled !== undefined ||
+                             newSettings.discordBotToken !== undefined;
+
       const currentSettings = getAppSettings();
       const updatedSettings = { ...currentSettings, ...newSettings };
       setAppSettings(updatedSettings);
@@ -1981,6 +1993,10 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       // Reinitialize Slack bot if settings changed
       if (slackChanged) {
         initSlackBot();
+      }
+
+      if (discordChanged) {
+        initDiscordBot();
       }
 
       // Re-sync shared memory backend MCP registrations when their settings change

@@ -7,7 +7,7 @@ export { Label, FieldError, Input, PasswordInput, Select, Textarea } from './Fie
 export { Dropdown } from './Dropdown';
 export { MenuPicker, pickerTriggerClass } from './MenuPicker';
 export type { MenuPickerOption } from './MenuPicker';
-export { ComposerCard, AttachmentTile, notSentText } from './ComposerCard';
+export { ComposerCard, AttachmentTile, ImageTile, notSentText } from './ComposerCard';
 export type { ComposerNotice } from './ComposerCard';
 export type { DropdownOption } from './Dropdown';
 export { BrandSpinner, LoadingPanel, LoadingState, SlowOperation, useLoadingStage } from './Loading';

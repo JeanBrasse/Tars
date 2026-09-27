@@ -1112,6 +1112,11 @@ export interface ElectronAPI {
       slackSigningSecret: string;
       slackChannelId: string;
       slackAllowedUserIds: string[];
+      discordEnabled: boolean;
+      discordBotToken: string;
+      discordChannelId: string;
+      discordAllowedUserIds: string[];
+      discordRequireMention: boolean;
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1209,6 +1214,11 @@ export interface ElectronAPI {
       slackSigningSecret?: string;
       slackChannelId?: string;
       slackAllowedUserIds?: string[];
+      discordEnabled?: boolean;
+      discordBotToken?: string;
+      discordChannelId?: string;
+      discordAllowedUserIds?: string[];
+      discordRequireMention?: boolean;
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;
@@ -1288,6 +1298,16 @@ export interface ElectronAPI {
   slack?: {
     test: () => Promise<{ success: boolean; botName?: string; error?: string }>;
     sendTest: () => Promise<{ success: boolean; error?: string }>;
+  };
+
+  // Discord bot
+  discord?: {
+    /** Asks Discord who the saved token is: the bot's name, and the link that invites it to a server. */
+    test: () => Promise<{ success: boolean; botName?: string; inviteUrl?: string; error?: string }>;
+    /** Posts a test message to the channel the bot detected. */
+    sendTest: () => Promise<{ success: boolean; error?: string }>;
+    /** The link that invites the bot, made in main from a token as it is typed; null when it holds no bot id. */
+    inviteUrl: (token: string) => Promise<string | null>;
   };
 
   // JIRA

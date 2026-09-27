@@ -78,6 +78,7 @@ import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { delegateOverAcp } from '../../../../electron/services/acp/delegate';
 import { startAgentWatch, stopAgentWatch } from '../../../../electron/services/agent-watch';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
+import { sid } from '../../../fixtures/session-id';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 
@@ -141,11 +142,11 @@ beforeEach(() => {
   // The orchestrator, at rest at its prompt: free, so a note reaches it at
   // once and every assertion below reads what it was actually told.
   orchestratorTerminal = liveTerminal('pty-orch');
-  putAgent({ id: 'orch', name: 'Orchestrator', status: 'waiting', waitingReason: 'idle', ptyId: 'pty-orch', currentSessionId: 'sess-orch' });
+  putAgent({ id: 'orch', name: 'Orchestrator', status: 'waiting', waitingReason: 'idle', ptyId: 'pty-orch', currentSessionId: sid('sess-orch') });
   // The agent it delegates to, with a live claude session at its prompt for
   // more than a minute, so `waiting` because idle: /dispatch types into it.
   liveTerminal('pty-be');
-  putAgent({ id: 'be', name: '1212-Backend', status: 'waiting', waitingReason: 'idle', ptyId: 'pty-be', currentSessionId: 'sess-be' });
+  putAgent({ id: 'be', name: '1212-Backend', status: 'waiting', waitingReason: 'idle', ptyId: 'pty-be', currentSessionId: sid('sess-be') });
 });
 
 afterEach(async () => {
@@ -221,17 +222,17 @@ const status = (id: string, session: string, body: Record<string, unknown>) =>
 
 /** user-prompt-submit.sh: a turn begins. */
 const turnStarts = (task: string) =>
-  status('be', 'sess-be', { status: 'running', event: 'UserPromptSubmit', current_task: task });
+  status('be', sid('sess-be'), { status: 'running', event: 'UserPromptSubmit', current_task: task });
 
 /** on-stop.sh: the turn ended, with its last message as the output. */
 async function turnEnds(output: string) {
-  await call('POST', '/api/hooks/output', { agent_id: 'be', session_id: 'sess-be', output });
-  await status('be', 'sess-be', { status: 'idle' });
-  await call('POST', '/api/hooks/agent-stopped', { agent_id: 'be', session_id: 'sess-be' });
+  await call('POST', '/api/hooks/output', { agent_id: 'be', session_id: sid('sess-be'), output });
+  await status('be', sid('sess-be'), { status: 'idle' });
+  await call('POST', '/api/hooks/agent-stopped', { agent_id: 'be', session_id: sid('sess-be') });
 }
 
 /** notification.sh on Claude Code's idle_prompt: both of its posts, in order. */
-async function idlePrompt(session = 'sess-be') {
+async function idlePrompt(session = sid('sess-be')) {
   await call('POST', '/api/hooks/notification', {
     agent_id: 'be', session_id: session, type: 'idle_prompt', title: '', message: 'Claude is waiting for your input',
   });
@@ -239,14 +240,14 @@ async function idlePrompt(session = 'sess-be') {
 }
 
 /** permission-request.sh: a permission dialog is up in the middle of the turn. */
-const permissionAsked = () => status('be', 'sess-be', { status: 'waiting', waiting_reason: 'permission' });
+const permissionAsked = () => status('be', sid('sess-be'), { status: 'waiting', waiting_reason: 'permission' });
 
 /** The orchestrator's own turn, which decides when a held note may go out. */
-const orchestratorWorks = () => status('orch', 'sess-orch', { status: 'running', event: 'UserPromptSubmit', current_task: 'Noah asked for BotID' });
-const orchestratorStops = () => status('orch', 'sess-orch', { status: 'idle' });
+const orchestratorWorks = () => status('orch', sid('sess-orch'), { status: 'running', event: 'UserPromptSubmit', current_task: 'Noah asked for BotID' });
+const orchestratorStops = () => status('orch', sid('sess-orch'), { status: 'idle' });
 
 /** post-tool-use.sh: a tool ran, so the agent is working, a permission answered. */
-const toolRan = () => status('be', 'sess-be', { status: 'running' });
+const toolRan = () => status('be', sid('sess-be'), { status: 'running' });
 
 /** send_message and start_agent: /dispatch, on behalf of the orchestrator. */
 const dispatch = (message: string) => call('POST', '/api/agents/be/dispatch', { message }, 'orch');
@@ -305,10 +306,10 @@ describe('the idle prompt of a rest that is already over', () => {
     // and its conversation with it.
     const answer = await dispatch('BotID');
     expect((answer!.data as { mode: string }).mode).toBe('message');
-    expect(backend().currentSessionId).toBe('sess-be');
+    expect(backend().currentSessionId).toBe(sid('sess-be'));
 
     await pause(IDLE_PROMPT_AFTER_MS / 2);
-    await idlePrompt('sess-be');
+    await idlePrompt(sid('sess-be'));
 
     expect(backend().status).toBe('running');
   });
@@ -601,7 +602,7 @@ describe('an orchestrator that cannot be reached when the work ends', () => {
     // Started again, a new session in a new terminal.
     const next = liveTerminal('pty-orch-2');
     orchestrator.ptyId = 'pty-orch-2';
-    orchestrator.currentSessionId = 'sess-orch-2';
+    orchestrator.currentSessionId = sid('sess-orch-2');
 
     // Noah types into the agent's terminal himself.
     await pause(5 * 60_000);
@@ -670,7 +671,7 @@ describe('an orchestrator already waiting on this agent', () => {
 
   it('is told in its terminal when the poll it is sitting in is about someone else', async () => {
     liveTerminal('pty-fe');
-    putAgent({ id: 'fe', name: 'Frontend', status: 'running', ptyId: 'pty-fe', currentSessionId: 'sess-fe' });
+    putAgent({ id: 'fe', name: 'Frontend', status: 'running', ptyId: 'pty-fe', currentSessionId: sid('sess-fe') });
     await turnStarts('run the suite');
     openWait('fe', 'orch');
 

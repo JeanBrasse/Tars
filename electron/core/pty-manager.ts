@@ -214,7 +214,7 @@ const MAX_WAITING_MESSAGES = 20;
 export type MessageSender =
   | { kind: 'agent'; id: string; name?: string }
   | { kind: 'tars' }
-  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Hermes' };
+  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' };
 
 /** The line typed before a pasted message: who sent it, and nothing else. */
 export function senderLine(sender: MessageSender): string {

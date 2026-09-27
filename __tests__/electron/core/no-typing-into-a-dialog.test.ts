@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { sid } from '../../fixtures/session-id';
 
 /**
  * Nothing Tars types goes into a dialog its CLI shows.
@@ -68,7 +69,7 @@ function terminalFor(id: string): FakeTerminal {
 function putAgent(over: Partial<AgentStatus> & { id: string }): AgentStatus {
   const agent = {
     name: over.id.toUpperCase(), status: 'idle', provider: 'claude', projectPath: '/tars', skills: [], output: [],
-    ptyId: `pty-${over.id}`, currentSessionId: `sess-${over.id}`, lastActivity: new Date().toISOString(), ...over,
+    ptyId: `pty-${over.id}`, currentSessionId: sid(`sess-${over.id}`), lastActivity: new Date().toISOString(), ...over,
   } as AgentStatus;
   manager.agents.set(agent.id, agent);
   return agent;
@@ -211,7 +212,7 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     };
     registerHooksRoutes(app as never, ctx as never);
     await routes.find(r => r.pattern === '/api/hooks/status')!.handler({ body: {
-      agent_id: 'alpha', session_id: 'sess-alpha', status: 'waiting', waiting_reason: 'permission', tool_name: 'AskUserQuestion',
+      agent_id: 'alpha', session_id: sid('sess-alpha'), status: 'waiting', waiting_reason: 'permission', tool_name: 'AskUserQuestion',
     }, params: {} }, vi.fn(), ctx);
 
     await noahWrites('Keep going.', ['alpha']);
@@ -257,14 +258,14 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     const ctx = { mainWindow: null, appSettings: {}, getAppSettings: () => ({}), handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(), agentStatusEmitter: new EventEmitter() };
     registerHooksRoutes(app as never, ctx as never);
     await routes.find(r => r.pattern === '/api/hooks/status')!.handler({ body: {
-      agent_id: id, session_id: `sess-${id}`, status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', ...extra,
+      agent_id: id, session_id: sid(`sess-${id}`), status: 'waiting', waiting_reason: 'permission', tool_name: 'Bash', ...extra,
     }, params: {} }, vi.fn(), ctx);
   }
 
   function interruptRecorded(id: string, at: Date): void {
     const dir = path.join(os.homedir(), '.claude', 'projects', '-tars');
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, `sess-${id}.jsonl`), JSON.stringify({
+    fs.appendFileSync(path.join(dir, `${sid(`sess-${id}`)}.jsonl`), JSON.stringify({
       type: 'user', timestamp: at.toISOString(),
       message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] },
     }) + '\n');
@@ -338,6 +339,55 @@ describe('a dialog open in the CLI', { timeout: 30_000 }, () => {
     expect(manager.agents.get('alpha')!.status).toBe('idle');
     expect(alpha.typed).toContain('After the Esc.');
     expect(store.deliveriesOf(id)[0].state).toBe('delivered');
+  });
+
+  // The Audit's gate of #179: a session resumed with --fork-session copies the
+  // old conversation into its transcript, old interruptions and their dates
+  // included. Between its SessionStart and its first UserPromptSubmit, the turn
+  // it began from was still the previous one.
+  it('12. does not end a forked session\'s turn on an interruption copied from before it registered', async () => {
+    terminalFor('alpha');
+    interruptRecorded('alpha', new Date(Date.now() - 5_000));
+    putAgent({
+      id: 'alpha', status: 'running',
+      lastTurnStartedAt: new Date(Date.now() - 10_000).toISOString(),
+      sessionRegisteredAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('running');
+  });
+
+  it('12. still ends a forked session\'s turn on an interruption made after it registered', async () => {
+    terminalFor('alpha');
+    putAgent({
+      id: 'alpha', status: 'running',
+      lastTurnStartedAt: new Date(Date.now() - 10_000).toISOString(),
+      sessionRegisteredAt: new Date(Date.now() - 3_000).toISOString(),
+    });
+    interruptRecorded('alpha', new Date());
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('idle');
+  });
+
+  // QA's gate of #189: claude registers again at every compaction, in the same
+  // process and session. Counted from that registration, an interruption made
+  // before a /compact the next tick had not seen yet was ignored for good, and
+  // the agent stayed running. Counted from the CLI's launch, it is not.
+  it('12. still ends a turn interrupted just before a compaction registered the session again', async () => {
+    terminalFor('alpha');
+    const restart = await import('../../../electron/core/agent-restart');
+    restart.noteLaunch(pty.ptyProcesses.get('pty-alpha'), {} as never);
+    await settle(20);
+    const turnStarted = new Date().toISOString();
+    await settle(20);
+    interruptRecorded('alpha', new Date());
+    await settle(20);
+    putAgent({ id: 'alpha', status: 'running', lastTurnStartedAt: turnStarted, sessionRegisteredAt: new Date().toISOString() });
+    await settle(3500);
+
+    expect(manager.agents.get('alpha')!.status).toBe('idle');
   });
 
   it('12. does not end a turn on an interruption from before it began', async () => {

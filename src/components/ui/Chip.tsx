@@ -44,9 +44,15 @@ export function Chip({ active = false, marker, className = '', children, ...rest
  * branch. Not a control, so it sits below the 26px scale: it is a label with a
  * raised background, no border and no radius.
  */
-export function MetaChip({ className = '', children }: { className?: string; children: ReactNode }) {
+export function MetaChip({ className = '', raised = false, children }: {
+  className?: string;
+  /** On a row that is itself raised (an open team row in the Chat), where the
+   *  raised fill would make the chip vanish: it takes the card's instead. */
+  raised?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <span className={`inline-flex items-center h-5 px-1.5 font-mono text-[10.5px] leading-none text-muted-foreground bg-bg-tertiary ${className}`}>
+    <span className={`inline-flex items-center h-5 px-1.5 font-mono text-[10.5px] leading-none text-muted-foreground ${raised ? 'bg-card' : 'bg-bg-tertiary'} ${className}`}>
       {children}
     </span>
   );

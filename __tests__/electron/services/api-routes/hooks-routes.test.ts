@@ -19,6 +19,7 @@ import { agents, saveAgents } from '../../../../electron/core/agent-manager';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
+import { sid } from '../../../fixtures/session-id';
 
 function makeRouteApp(): RouteApp {
   const app: RouteApp = {
@@ -102,7 +103,7 @@ describe('hooks-routes', () => {
     });
 
     it('finds agent by session_id fallback', async () => {
-      const agent = makeAgent({ id: 'a2', currentSessionId: 'sess-1' });
+      const agent = makeAgent({ id: 'a2', currentSessionId: sid('sess-1') });
       agents.set('a2', agent);
 
       const app = makeRouteApp();
@@ -110,12 +111,12 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/output');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ agent_id: 'unknown', session_id: 'sess-1', output: 'hi' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'unknown', session_id: sid('sess-1'), output: 'hi' }), sendJson, ctx);
       expect(agent.lastCleanOutput).toBe('hi');
     });
 
     it('ignores output posted by a stale session', async () => {
-      const agent = makeAgent({ id: 'a1', currentSessionId: 'live-sess', lastCleanOutput: 'current task output' });
+      const agent = makeAgent({ id: 'a1', currentSessionId: sid('live-sess'), lastCleanOutput: 'current task output' });
       agents.set('a1', agent);
 
       const app = makeRouteApp();
@@ -123,7 +124,7 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/output');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ agent_id: 'a1', session_id: 'old-sess', output: 'stale output' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('old-sess'), output: 'stale output' }), sendJson, ctx);
 
       expect(agent.lastCleanOutput).toBe('current task output');
       expect(sendJson).toHaveBeenCalledWith({ success: false, stale: true });
@@ -144,10 +145,10 @@ describe('hooks-routes', () => {
       // carry calls made by the tests above it.
       const emitSpy = vi.spyOn(agentStatusEmitter, 'emit');
       emitSpy.mockClear();
-      await handler(makeReq({ agent_id: 'a1', session_id: 'sess', status: 'running' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('sess'), status: 'running' }), sendJson, ctx);
 
       expect(agent.status).toBe('running');
-      expect(agent.currentSessionId).toBe('sess');
+      expect(agent.currentSessionId).toBe(sid('sess'));
       expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenCalledWith(agent, 'running');
       expect(emitSpy).toHaveBeenCalledWith('status:a1');
       expect(sendJson).toHaveBeenCalledWith({ success: true, agent: { id: 'a1', status: 'running' } });
@@ -169,7 +170,7 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/status');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ agent_id: 'nope', session_id: 'sess-x', status: 'running' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'nope', session_id: sid('sess-x'), status: 'running' }), sendJson, ctx);
       expect(sendJson).toHaveBeenCalledWith({ success: false, message: 'Agent not found' });
     });
 
@@ -189,10 +190,10 @@ describe('hooks-routes', () => {
       // carry calls made by the tests above it.
       const emitSpy = vi.spyOn(agentStatusEmitter, 'emit');
       emitSpy.mockClear();
-      await handler(makeReq({ agent_id: 'a1', session_id: 'fresh-sess', status: 'idle', source: 'startup' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('fresh-sess'), status: 'idle', source: 'startup' }), sendJson, ctx);
 
       expect(agent.status).toBe('running');
-      expect(agent.currentSessionId).toBe('fresh-sess');
+      expect(agent.currentSessionId).toBe(sid('fresh-sess'));
       // No status event, which would answer a /wait for a change that did not
       // happen. The fleet change agent-watch flushes on is not one (#134).
       expect(emitSpy.mock.calls.map(c => String(c[0])).filter(name => name.startsWith('status:'))).toEqual([]);
@@ -202,7 +203,7 @@ describe('hooks-routes', () => {
 
     it('ignores status posts from a stale session', async () => {
       // Hooks of a killed PTY still in flight must not flip the live task's status.
-      const agent = makeAgent({ id: 'a1', status: 'running', currentSessionId: 'live-sess' });
+      const agent = makeAgent({ id: 'a1', status: 'running', currentSessionId: sid('live-sess') });
       agents.set('a1', agent);
 
       const app = makeRouteApp();
@@ -214,7 +215,7 @@ describe('hooks-routes', () => {
       // carry calls made by the tests above it.
       const emitSpy = vi.spyOn(agentStatusEmitter, 'emit');
       emitSpy.mockClear();
-      await handler(makeReq({ agent_id: 'a1', session_id: 'old-sess', status: 'idle' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('old-sess'), status: 'idle' }), sendJson, ctx);
 
       expect(agent.status).toBe('running');
       expect(emitSpy).not.toHaveBeenCalled();
@@ -222,34 +223,34 @@ describe('hooks-routes', () => {
     });
 
     it('applies idle from the registered session and keeps currentSessionId', async () => {
-      const agent = makeAgent({ id: 'a1', status: 'running', currentSessionId: 'live-sess' });
+      const agent = makeAgent({ id: 'a1', status: 'running', currentSessionId: sid('live-sess') });
       agents.set('a1', agent);
 
       const app = makeRouteApp();
       registerHooksRoutes(app, ctx);
       const handler = getHandler(app, '/api/hooks/status');
 
-      await handler(makeReq({ agent_id: 'a1', session_id: 'live-sess', status: 'idle' }), vi.fn(), ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('live-sess'), status: 'idle' }), vi.fn(), ctx);
 
       expect(agent.status).toBe('idle');
       // The one-shot claude process is still alive at its prompt; its later
       // hooks must keep matching the guard.
-      expect(agent.currentSessionId).toBe('live-sess');
+      expect(agent.currentSessionId).toBe(sid('live-sess'));
     });
 
     it('stores waiting_reason on waiting and clears it on running', async () => {
-      const agent = makeAgent({ id: 'a1', status: 'running', currentSessionId: 'sess' });
+      const agent = makeAgent({ id: 'a1', status: 'running', currentSessionId: sid('sess') });
       agents.set('a1', agent);
 
       const app = makeRouteApp();
       registerHooksRoutes(app, ctx);
       const handler = getHandler(app, '/api/hooks/status');
 
-      await handler(makeReq({ agent_id: 'a1', session_id: 'sess', status: 'waiting', waiting_reason: 'permission' }), vi.fn(), ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('sess'), status: 'waiting', waiting_reason: 'permission' }), vi.fn(), ctx);
       expect(agent.status).toBe('waiting');
       expect(agent.waitingReason).toBe('permission');
 
-      await handler(makeReq({ agent_id: 'a1', session_id: 'sess', status: 'running' }), vi.fn(), ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('sess'), status: 'running' }), vi.fn(), ctx);
       expect(agent.status).toBe('running');
       expect(agent.waitingReason).toBeUndefined();
     });
@@ -262,10 +263,10 @@ describe('hooks-routes', () => {
       registerHooksRoutes(app, ctx);
       const handler = getHandler(app, '/api/hooks/status');
 
-      await handler(makeReq({ agent_id: 'a1', session_id: 'sess-x', status: 'idle' }), vi.fn(), ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('sess-x'), status: 'idle' }), vi.fn(), ctx);
 
       expect(agent.status).toBe('idle');
-      expect(agent.currentSessionId).toBe('sess-x');
+      expect(agent.currentSessionId).toBe(sid('sess-x'));
     });
 
     it('never adopts a tombstoned (killed) session during the dispatch window', async () => {
@@ -277,7 +278,7 @@ describe('hooks-routes', () => {
         id: 'a1',
         status: 'running',
         currentSessionId: undefined,
-        lastKilledSessionId: 'dead-sess',
+        lastKilledSessionId: sid('dead-sess'),
       });
       agents.set('a1', agent);
 
@@ -287,22 +288,22 @@ describe('hooks-routes', () => {
       const outputHandler = getHandler(app, '/api/hooks/output');
 
       const sendJson = vi.fn();
-      await statusHandler(makeReq({ agent_id: 'a1', session_id: 'dead-sess', status: 'idle' }), sendJson, ctx);
+      await statusHandler(makeReq({ agent_id: 'a1', session_id: sid('dead-sess'), status: 'idle' }), sendJson, ctx);
       expect(agent.status).toBe('running');
       expect(agent.currentSessionId).toBeUndefined();
       expect(sendJson.mock.calls[0][0]).toMatchObject({ success: false, stale: true });
 
-      await outputHandler(makeReq({ agent_id: 'a1', session_id: 'dead-sess', output: 'old task output' }), vi.fn(), ctx);
+      await outputHandler(makeReq({ agent_id: 'a1', session_id: sid('dead-sess'), output: 'old task output' }), vi.fn(), ctx);
       expect(agent.lastCleanOutput).toBeUndefined();
 
       // A SessionStart from the killed session must not register either.
-      await statusHandler(makeReq({ agent_id: 'a1', session_id: 'dead-sess', status: 'idle', source: 'startup' }), vi.fn(), ctx);
+      await statusHandler(makeReq({ agent_id: 'a1', session_id: sid('dead-sess'), status: 'idle', source: 'startup' }), vi.fn(), ctx);
       expect(agent.currentSessionId).toBeUndefined();
 
       // The genuinely fresh session still registers and drives status.
-      await statusHandler(makeReq({ agent_id: 'a1', session_id: 'fresh-sess', status: 'idle', source: 'startup' }), vi.fn(), ctx);
-      expect(agent.currentSessionId).toBe('fresh-sess');
-      await statusHandler(makeReq({ agent_id: 'a1', session_id: 'fresh-sess', status: 'idle' }), vi.fn(), ctx);
+      await statusHandler(makeReq({ agent_id: 'a1', session_id: sid('fresh-sess'), status: 'idle', source: 'startup' }), vi.fn(), ctx);
+      expect(agent.currentSessionId).toBe(sid('fresh-sess'));
+      await statusHandler(makeReq({ agent_id: 'a1', session_id: sid('fresh-sess'), status: 'idle' }), vi.fn(), ctx);
       expect(agent.status).toBe('idle');
     });
   });
@@ -317,7 +318,7 @@ describe('hooks-routes', () => {
       const handler = getHandler(app, '/api/hooks/notification');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ agent_id: 'a1', session_id: 'sess', type: 'permission_prompt', title: 'Test', message: 'help' }), sendJson, ctx);
+      await handler(makeReq({ agent_id: 'a1', session_id: sid('sess'), type: 'permission_prompt', title: 'Test', message: 'help' }), sendJson, ctx);
 
       expect(ctx.sendNotificationCallback).toHaveBeenCalledWith('MyAgent needs permission', 'help', 'a1', expect.objectContaining({ notifyOnWaiting: true }));
       expect(sendJson).toHaveBeenCalledWith({ success: true });

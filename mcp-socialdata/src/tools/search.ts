@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { registerTools, text, tool } from "../../../mcp-shared/src/tools.js";
 import { socialDataRequest } from "../utils/api.js";
 
 interface Tweet {
@@ -29,26 +30,27 @@ function formatTweet(tweet: Tweet): string {
 }
 
 export function registerSearchTools(server: McpServer): void {
-  server.tool(
-    "twitter_search",
-    "Search tweets on Twitter/X. Supports Twitter Advanced Search operators like from:user, since:2024-01-01, min_faves:100, filter:images, lang:en, etc. Returns up to ~20 results per page with pagination.",
-    {
-      query: z
-        .string()
-        .describe(
-          "Search query. Supports Twitter operators: from:user, to:user, since:YYYY-MM-DD, until:YYYY-MM-DD, min_faves:N, min_retweets:N, filter:images, filter:videos, filter:links, lang:en, url:domain.com, etc."
-        ),
-      type: z
-        .enum(["Latest", "Top"])
-        .optional()
-        .describe("Sort order: 'Latest' (default) for recent tweets, 'Top' for most popular"),
-      cursor: z
-        .string()
-        .optional()
-        .describe("Pagination cursor from a previous search result's next_cursor"),
-    },
-    async ({ query, type, cursor }) => {
-      try {
+  registerTools(server, [
+    tool({
+      name: "twitter_search",
+      description: "Search tweets on Twitter/X. Supports Twitter Advanced Search operators like from:user, since:2024-01-01, min_faves:100, filter:images, lang:en, etc. Returns up to ~20 results per page with pagination.",
+      schema: {
+        query: z
+          .string()
+          .describe(
+            "Search query. Supports Twitter operators: from:user, to:user, since:YYYY-MM-DD, until:YYYY-MM-DD, min_faves:N, min_retweets:N, filter:images, filter:videos, filter:links, lang:en, url:domain.com, etc."
+          ),
+        type: z
+          .enum(["Latest", "Top"])
+          .optional()
+          .describe("Sort order: 'Latest' (default) for recent tweets, 'Top' for most popular"),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor from a previous search result's next_cursor"),
+      },
+      failure: "searching tweets",
+      async run({ query, type, cursor }) {
         const params: Record<string, string> = { query };
         if (type) params.type = type;
         if (cursor) params.cursor = cursor;
@@ -59,37 +61,18 @@ export function registerSearchTools(server: McpServer): void {
         };
 
         if (!result.tweets || result.tweets.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "No tweets found for this search query.",
-              },
-            ],
-          };
+          return text("No tweets found for this search query.");
         }
 
         const formatted = result.tweets.map(formatTweet).join("\n\n---\n\n");
-        let text = `Found ${result.tweets.length} tweets:\n\n${formatted}`;
+        let found = `Found ${result.tweets.length} tweets:\n\n${formatted}`;
 
         if (result.next_cursor) {
-          text += `\n\n📄 More results available. Use cursor: "${result.next_cursor}" to get the next page.`;
+          found += `\n\n📄 More results available. Use cursor: "${result.next_cursor}" to get the next page.`;
         }
 
-        return {
-          content: [{ type: "text" as const, text }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error searching tweets: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
+        return text(found);
+      },
+    }),
+  ]);
 }

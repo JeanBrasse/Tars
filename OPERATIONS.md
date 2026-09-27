@@ -280,10 +280,9 @@ Per surface the spec does two things:
 - `toHaveScreenshot()` against `e2e/__screenshots__/<name>.png` with
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
-The manifest is `e2e/surfaces.mjs`: **16 pages + 16 settings sections + 3 overlays = 35
-surfaces**. Note `e2e/__screenshots__/` holds **36** PNGs: `settings-obsidian.png` is an
-orphaned baseline with no manifest entry. Delete it or add the surface back; it is currently
-neither compared nor cleaned up.
+The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
+surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms and the
+two panel-history views that their own specs photograph.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings
@@ -811,13 +810,36 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/local-file` |
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
-| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` |
+| POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
 | POST | `/api/webhooks/hermes` |
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
 none, it answers nobody, and tells whoever mentions it or writes to it directly their own id,
-which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`; both read
-the settings as they are, so a change there counts without a restart (SECURITY §6).
+which is how to find yours. The Telegram bot answers the chats enrolled with `/auth`, which takes
+five wrong tokens from a chat and twenty from all chats in any fifteen minutes, then says "Too many
+attempts" without comparing, with the time it lifts; both read the settings as they are, so a change
+there counts without a restart (SECURITY §6). A lock-out from the count of all chats keeps your own
+new chat out too: turn Telegram off and on in Settings, which restarts the bot and clears the count.
+
+The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
+Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
+message only when it is mentioned, unless Require @mention is off (`discordRequireMention`); a
+direct message always. Its commands are Slack's words (`status`, `start <agent> <task>`...), and
+anything else goes to the orchestrator, which answers with `send_discord`. Nothing it posts can
+ping. Setting it up:
+
+1. In the Discord Developer Portal, create an application, then under Bot reset the token and
+   paste it in Settings > Discord. On the same page, switch on the **Message Content** intent,
+   or every message reaches the bot empty.
+2. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<the bot's id>&scope=bot&permissions=274877910016`
+   (view channels, send messages, send messages in threads: the bot does nothing else). "Test
+   token" in Settings gives this link, and main makes it from a token as it is typed
+   (`discord:inviteUrl`, which refuses anything over 200 characters). A mention in a thread or a
+   forum post is answered in that thread, which needs Send Messages in Threads: a server the bot
+   was invited to before 1.9.0 (3072 or 68608) must invite it again with this link, or give its
+   role that permission, or the answer there is refused.
+3. Add your Discord user id (Developer Mode, then Copy User ID), and mention the bot or DM it:
+   that channel becomes the one Tars posts to.
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
 raises its own fetch timeout to 600 s for any path containing `/wait` so the client never
@@ -953,6 +975,24 @@ Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and
 
 Plus `tasmania` when `appSettings.tasmaniaEnabled` and the configured
 `tasmaniaServerPath` exists on disk.
+
+Each server builds itself (`npm run build` in its folder): `tsc` checks the types, and esbuild
+bundles `src/index.ts` into `dist/bundle.js`, with `mcp-shared/` in it. That folder is what the
+seven share: the client to Tars, the tool table they register through, one request read whole,
+the settings file. It imports node's builtins only; a package imported from there would resolve
+from the repository's root, not from the server's own lock.
+
+What the seven answer is recorded in `__tests__/mcp/contracts/`. Before changing a server:
+
+```bash
+node __tests__/mcp/contracts/mcp-servers.contract.mjs            # builds the seven, compares
+node __tests__/mcp/contracts/mcp-servers.contract.mjs --only=x   # one server
+```
+
+It starts each bundle over stdio with an agent's environment, asks `tools/list`, then calls
+every tool along each of its answers against a fake Tars (SocialData, X and Telegram are
+faked too), and prints `identical` or the diff. `--record` rewrites the recording: only for a
+change meant to be seen, recorded on the code before the change.
 
 ### How registration works
 

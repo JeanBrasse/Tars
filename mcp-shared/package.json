@@ -1,0 +1,6 @@
+{
+  "name": "mcp-shared",
+  "private": true,
+  "description": "What the bundled MCP servers share. Each server's esbuild bundles it in; it depends on nothing.",
+  "type": "module"
+}

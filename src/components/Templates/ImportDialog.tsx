@@ -3,15 +3,12 @@
 import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { Button, DialogShell, StatusSquare } from '@/components/ui';
+import { importButtonLabel, reviewTemplateFile, skipsChecksNotice, type TemplateFileReview } from '@/lib/template-review';
+import { FactRow, PromptBlock, TemplateFactRows } from './TemplateReview';
 
 interface ImportDialogProps {
   onClose: () => void;
   onImport: (payload: unknown) => Promise<{ success: boolean; imported?: number; skipped?: number; errors?: string[]; error?: string }>;
-}
-
-interface ParsedPreview {
-  count: number;
-  names: string[];
 }
 
 interface ChosenFile {
@@ -19,66 +16,48 @@ interface ChosenFile {
   size: number;
 }
 
+/** A notice above the footer, marked by a status square rather than a tinted panel of its own. */
+function notice(tone: 'waiting' | 'error', text: string) {
+  return (
+    <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
+      <StatusSquare tone={tone} className="mt-[5px]" />
+      <p className="text-xs text-foreground">{text}</p>
+    </div>
+  );
+}
+
+/**
+ * Overlay · Import template · review. Nothing is saved until Import is
+ * pressed, and what is saved is what the review showed: each template's
+ * permission mode, the folders it adds, its skills and its whole prompt. A
+ * file the review cannot show as it will be used is refused whole.
+ */
 export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
-  const [parsed, setParsed] = useState<unknown>(null);
-  const [preview, setPreview] = useState<ParsedPreview | null>(null);
+  const [review, setReview] = useState<TemplateFileReview | null>(null);
   const [file, setFile] = useState<ChosenFile | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function tryParse(value: string) {
-    setParseError(null);
+  function read(content: string) {
     setSubmitError(null);
-    if (!value.trim()) {
-      setParsed(null);
-      setPreview(null);
+    let json: unknown;
+    try {
+      json = JSON.parse(content);
+    } catch {
+      setReview({ ok: false, error: 'Not imported: this file is not JSON.' });
       return;
     }
-    try {
-      const json = JSON.parse(value);
-      if (!json || typeof json !== 'object') {
-        setParseError('JSON must be an object');
-        setParsed(null);
-        setPreview(null);
-        return;
-      }
-      if (json.kind !== 'tars.agent-template') {
-        setParseError('Not a Tars template file (missing kind: "tars.agent-template")');
-        setParsed(null);
-        setPreview(null);
-        return;
-      }
-      if (!Array.isArray(json.templates)) {
-        setParseError('Missing or invalid "templates" array');
-        setParsed(null);
-        setPreview(null);
-        return;
-      }
-      const items = json.templates as unknown[];
-      const names = items
-        .filter((t): t is { displayName: string } =>
-          !!t && typeof t === 'object' && typeof (t as { displayName?: unknown }).displayName === 'string'
-        )
-        .map(t => t.displayName);
-      setParsed(json);
-      setPreview({ count: names.length, names });
-    } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'Invalid JSON');
-      setParsed(null);
-      setPreview(null);
-    }
+    setReview(reviewTemplateFile(json));
   }
 
   // The file itself is what the dialog shows back to you, so its name and size
   // are kept - reading `.text()` used to be the last anyone saw of it.
   async function handleFile(f: File) {
     setFile({ name: f.name, size: f.size });
-    const content = await f.text();
-    tryParse(content);
+    read(await f.text());
   }
 
   function handleDrop(e: DragEvent) {
@@ -88,12 +67,16 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
     if (f) handleFile(f);
   }
 
+  const accepted = review?.ok ? review : null;
+  const skipping = accepted?.templates.filter(t => t.facts.permissionMode === 'bypass').map(t => t.facts.name) ?? [];
+  const skipsChecks = skipsChecksNotice(skipping);
+
   async function handleSubmit() {
-    if (!parsed) return;
+    if (!accepted) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await onImport(parsed);
+      const result = await onImport(accepted.payload);
       if (!result.success) {
         setSubmitError(result.error ?? 'Import failed');
         return;
@@ -110,12 +93,12 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
     <DialogShell
       onClose={onClose}
       title="Import templates"
-      subtitle="Imported templates land under Your templates."
+      subtitle="Imported templates land under Your templates. Nothing runs when you import them."
       footerRight={
         <>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>Cancel</Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={!parsed || submitting}>
-            {submitting ? 'Importing…' : 'Import'}
+          <Button variant="primary" onClick={handleSubmit} disabled={!accepted || submitting}>
+            {submitting ? 'Importing…' : importButtonLabel(accepted?.templates.length ?? 0)}
           </Button>
         </>
       }
@@ -134,7 +117,7 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
           <span className="w-3 h-3 bg-border-accent" />
           <p className="text-xs text-muted-foreground">Drop a template file here, or choose one</p>
           {file && (
-            <p className="font-mono text-xs text-primary">
+            <p className="font-mono text-xs text-foreground">
               {file.name} · {(file.size / 1024).toFixed(1)} KB
             </p>
           )}
@@ -151,33 +134,33 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
           }}
         />
 
-        {preview && (
-          <div className="border border-border bg-bg-tertiary px-3 py-2.5">
+        {accepted && (
+          <>
             <p className="text-xs text-foreground">
-              {preview.count} template{preview.count === 1 ? '' : 's'} ready to import
+              {accepted.templates.length} template{accepted.templates.length === 1 ? '' : 's'} ready to import
             </p>
-            <div className="mt-1.5 space-y-0.5 font-mono text-xs text-muted-foreground">
-              {preview.names.slice(0, 8).map((n, i) => <p key={`${n}-${i}`}>{n}</p>)}
-              {preview.names.length > 8 && <p>…and {preview.names.length - 8} more</p>}
-            </div>
-          </div>
+            {accepted.templates.map(({ facts }, i) => (
+              <div key={i} className="space-y-2 border border-border bg-card px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 flex-1 text-[12.5px] font-medium leading-4 text-foreground break-words">{facts.name}</p>
+                  <p className="shrink-0 font-mono text-[11px] leading-4 text-text-muted">{facts.runs}</p>
+                </div>
+                <dl className="space-y-1.5">
+                  <TemplateFactRows facts={facts} />
+                  <FactRow label="Prompt">
+                    {facts.prompt
+                      ? <PromptBlock prompt={facts.prompt} />
+                      : <p className="text-xs text-text-muted">none</p>}
+                  </FactRow>
+                </dl>
+              </div>
+            ))}
+            {skipsChecks && notice('waiting', skipsChecks)}
+          </>
         )}
 
-        {/* Notices sit directly above the footer, marked by a status square
-            rather than a tinted panel of their own. */}
-        {parseError && (
-          <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
-            <StatusSquare tone="waiting" className="mt-[5px]" />
-            <p className="text-xs text-foreground">{parseError}</p>
-          </div>
-        )}
-
-        {submitError && (
-          <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
-            <StatusSquare tone="error" className="mt-[5px]" />
-            <p className="text-xs text-foreground">{submitError}</p>
-          </div>
-        )}
+        {review && !review.ok && notice('waiting', review.error)}
+        {submitError && notice('error', submitError)}
       </div>
     </DialogShell>
   );

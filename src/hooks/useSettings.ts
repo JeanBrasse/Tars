@@ -5,6 +5,9 @@ import { isElectron } from '@/hooks/useElectron';
 import type { ClaudeSettings, ClaudeInfo, Skill, AppSettings } from '@/components/Settings/types';
 import { DEFAULT_APP_SETTINGS } from '@/components/Settings/constants';
 
+/** The settings a bot fills in itself, which the page shows as they change. */
+const BOT_WRITTEN = ['slackChannelId', 'discordChannelId'] as const;
+
 export const useSettings = () => {
   const [settings, setSettings] = useState<ClaudeSettings | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
@@ -69,6 +72,21 @@ export const useSettings = () => {
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  // What a bot writes on its own: the channel it was first addressed from
+  // (Slack, Discord). It pushes the whole settings object, but only these keys
+  // are taken from it: the rest would replace a token being typed, or undo a
+  // switch whose save is still on its way.
+  useEffect(() => {
+    const off = window.electronAPI?.appSettings?.onUpdated?.(pushed => {
+      const from = pushed as Partial<AppSettings> | null;
+      if (!from) return;
+      const taken: Partial<AppSettings> = {};
+      for (const key of BOT_WRITTEN) if (typeof from[key] === 'string') taken[key] = from[key];
+      if (Object.keys(taken).length) setAppSettings(prev => ({ ...prev, ...taken }));
+    });
+    return () => { off?.(); };
+  }, []);
 
   const handleSave = async () => {
     if (!settings || !window.electronAPI?.settings) return;

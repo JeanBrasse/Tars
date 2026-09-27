@@ -56,6 +56,7 @@ import { agentStatusEmitter } from '../../../electron/services/agent-events';
 import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks-routes';
 import { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../electron/types';
+import { sid } from '../../fixtures/session-id';
 
 /** Past the fifteen second turn bound, well short of the ten minute one. */
 const PAST_THE_TURN_BOUND = 20_000;
@@ -147,7 +148,7 @@ async function afterRegistration(ms: number, between?: () => void): Promise<void
   try {
     const agent = agents.get('a1') as AgentStatus;
     armTaskStartWatch(agent, agent.ptyId, TASK);
-    post({ agent_id: 'a1', session_id: 'sess-1', status: 'idle', source: 'startup' });
+    post({ agent_id: 'a1', session_id: sid('sess-1'), status: 'idle', source: 'startup' });
     between?.();
     await vi.advanceTimersByTimeAsync(ms);
   } finally {
@@ -212,7 +213,7 @@ describe('a session that does begin a turn', () => {
     const agent = liveAgent();
 
     await afterRegistration(PAST_THE_TURN_BOUND, () => {
-      post({ agent_id: 'a1', session_id: 'sess-1', status: 'running', event: 'UserPromptSubmit' });
+      post({ agent_id: 'a1', session_id: sid('sess-1'), status: 'running', event: 'UserPromptSubmit' });
     });
 
     expect(retyped()).toHaveLength(0);
@@ -226,12 +227,12 @@ describe('a session that does begin a turn', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       armTaskStartWatch(agent, agent.ptyId, TASK);
-      post({ agent_id: 'a1', session_id: 'sess-1', status: 'idle', source: 'startup' });
+      post({ agent_id: 'a1', session_id: sid('sess-1'), status: 'idle', source: 'startup' });
       await vi.advanceTimersByTimeAsync(PAST_THE_TURN_BOUND);
       expect(retyped()).toHaveLength(1);
 
       // The retyped task landed: this is the recovery working, not a failure.
-      post({ agent_id: 'a1', session_id: 'sess-1', status: 'running', event: 'UserPromptSubmit' });
+      post({ agent_id: 'a1', session_id: sid('sess-1'), status: 'running', event: 'UserPromptSubmit' });
       await vi.advanceTimersByTimeAsync(PAST_EVERYTHING);
     } finally {
       vi.useRealTimers();

@@ -52,6 +52,7 @@ import {
   writeHumanInput,
   writeProgrammaticInput,
 } from '../../../electron/core/pty-manager';
+import { sid } from '../../fixtures/session-id';
 
 const NOTE = '[Tars] Tars-QA (worker) has completed: the suite is green.';
 
@@ -492,7 +493,7 @@ describe('the hook that says a prompt was submitted', () => {
     ptyProcesses.set('pty-orch', terminal.pty);
     agents.set('orch', {
       id: 'orch', name: 'Orchestrator', status: 'running', projectPath: process.cwd(),
-      skills: [], output: [], ptyId: 'pty-orch', currentSessionId: 's1',
+      skills: [], output: [], ptyId: 'pty-orch', currentSessionId: sid('s1'),
       lastActivity: new Date().toISOString(),
     } as never);
 
@@ -505,7 +506,7 @@ describe('the hook that says a prompt was submitted', () => {
     expect(terminal.typed).not.toContain(NOTE);
 
     routes.find(r => r.pattern === '/api/hooks/status')!.handler(
-      { body: { agent_id: 'orch', session_id: 's1', status: 'running', event: 'UserPromptSubmit' }, params: {} },
+      { body: { agent_id: 'orch', session_id: sid('s1'), status: 'running', event: 'UserPromptSubmit' }, params: {} },
       vi.fn(),
     );
     vi.advanceTimersByTime(TYPING_PAUSE_MS);

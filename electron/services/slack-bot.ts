@@ -1,69 +1,38 @@
-import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
 import { SLACK_CHARACTER_FACES } from '../constants';
 import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstructionsPath } from '../utils';
-import { agents, saveAgents, initAgentPty, killStalePty, armTaskStartWatch } from '../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
-import { cliRunningIn, shellReady } from '../core/agent-pty';
+import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
+import { ptyProcesses } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
-import { getProvider } from '../providers';
 import { getClaudeStats as readClaudeStats } from './claude-service';
-import { noteLaunch, launchSettings } from '../core/agent-restart';
-import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
+import {
+  findAgent, forwardToOrchestrator, projectsReport, startWithTask, statusReport, stopNow,
+  type BotFleet, type StatusGroup,
+} from './bot-core';
+
+/**
+ * The Slack side of the chat bots: Slack's words and command syntax, over the
+ * flows every bot shares (bot-core.ts).
+ */
 
 // Slack bot state
 let slackApp: SlackApp | null = null;
 let slackResponseChannel: string | null = null;
 let slackResponseThreadTs: string | null = null; // Track thread timestamp for replies
-let superAgentSlackTask = false;
-let superAgentSlackBuffer: string[] = [];
 
 // Export references for external access
 export function getSlackApp(): SlackApp | null {
   return slackApp;
 }
 
-export function setSlackApp(app: SlackApp | null): void {
-  slackApp = app;
-}
-
 export function getSlackResponseChannel(): string | null {
   return slackResponseChannel;
 }
 
-export function setSlackResponseChannel(channel: string | null): void {
-  slackResponseChannel = channel;
-}
-
 export function getSlackResponseThreadTs(): string | null {
   return slackResponseThreadTs;
-}
-
-export function setSlackResponseThreadTs(ts: string | null): void {
-  slackResponseThreadTs = ts;
-}
-
-export function getSuperAgentSlackTask(): boolean {
-  return superAgentSlackTask;
-}
-
-export function setSuperAgentSlackTask(value: boolean): void {
-  superAgentSlackTask = value;
-}
-
-export function getSuperAgentSlackBuffer(): string[] {
-  return superAgentSlackBuffer;
-}
-
-export function setSuperAgentSlackBuffer(buffer: string[]): void {
-  superAgentSlackBuffer = buffer;
-}
-
-export function clearSuperAgentSlackBuffer(): void {
-  superAgentSlackBuffer = [];
 }
 
 // Helper to initialize agent PTY with proper callbacks
@@ -77,6 +46,11 @@ async function initAgentPtyWithCallbacks(agent: AgentStatus): Promise<string> {
     },
     saveAgents
   );
+}
+
+/** The fleet as a Slack command sees it, with the settings it was handed. */
+function fleetFor(appSettings: AppSettings): BotFleet {
+  return { agents, ptyProcesses, settings: () => appSettings, saveAgents, initAgentPty: initAgentPtyWithCallbacks };
 }
 
 // Send message to Slack
@@ -243,6 +217,182 @@ export function initSlackBot(
   }
 }
 
+// ============== Slack's words ==============
+
+type Say = (msg: string) => Promise<unknown>;
+
+const DOTS: Record<StatusGroup, string> = {
+  running: ':large_green_circle:', waiting: ':large_yellow_circle:', error: ':red_circle:', idle: ':white_circle:',
+};
+const face = (a: AgentStatus) => SLACK_CHARACTER_FACES[a.character || ''] || ':robot_face:';
+
+const HELP =
+  `:crown: *Tars Bot*\n\n` +
+  `*Commands:*\n` +
+  `• \`status\` - Show all agents status\n` +
+  `• \`agents\` - List agents with details\n` +
+  `• \`projects\` - List all projects\n` +
+  `• \`start <agent> <task>\` - Start an agent\n` +
+  `• \`stop <agent>\` - Stop an agent\n` +
+  `• \`usage\` - Show usage & cost stats\n` +
+  `• \`help\` - Show this help message\n\n` +
+  `Or just send a message to talk to the Super Agent!`;
+
+// ============== `usage`, with Slack's own price table ==============
+
+/** The part of Claude's stats `usage` reads, each field of it defensively. */
+interface SlackClaudeStats {
+  modelUsage?: Record<string, {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+  }>;
+}
+
+// Another reader of Claude's stats, for tests; the app uses the Usage page's own.
+let getClaudeStatsRef: (() => Promise<SlackClaudeStats | undefined>) | null = null;
+
+export function setGetClaudeStatsRef(fn: () => Promise<SlackClaudeStats | undefined>): void {
+  getClaudeStatsRef = fn;
+}
+
+async function getClaudeStats(): Promise<SlackClaudeStats | undefined> {
+  if (!getClaudeStatsRef) {
+    // The stats the Usage page and Telegram's /usage read. Nothing in the app
+    // set a reader, and `usage` said "No usage data" whatever the data (#176).
+    return ((await readClaudeStats()) ?? undefined) as SlackClaudeStats | undefined;
+  }
+  return getClaudeStatsRef();
+}
+
+// Fewer models than Telegram's: every model but Opus 4.5 is priced as Sonnet 4.
+const MODEL_PRICING: Record<string, { inputPerMTok: number; outputPerMTok: number; cacheHitsPerMTok: number; cache5mWritePerMTok: number }> = {
+  'claude-opus-4-5-20251101': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.5, cache5mWritePerMTok: 6.25 },
+  'claude-opus-4-5': { inputPerMTok: 5, outputPerMTok: 25, cacheHitsPerMTok: 0.5, cache5mWritePerMTok: 6.25 },
+  'claude-sonnet-4': { inputPerMTok: 3, outputPerMTok: 15, cacheHitsPerMTok: 0.3, cache5mWritePerMTok: 3.75 },
+};
+
+function modelPricing(modelId: string) {
+  if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
+  const lower = modelId.toLowerCase();
+  if (lower.includes('opus-4-5') || lower.includes('opus-4.5')) return MODEL_PRICING['claude-opus-4-5'];
+  return MODEL_PRICING['claude-sonnet-4'];
+}
+
+function usageReport(stats: SlackClaudeStats): string {
+  let totalCost = 0;
+  let totalInput = 0;
+  let totalOutput = 0;
+  Object.entries(stats.modelUsage ?? {}).forEach(([modelId, usageUnknown]) => {
+    const usage = usageUnknown as Record<string, unknown>;
+    const input = (usage.inputTokens as number) || 0;
+    const output = (usage.outputTokens as number) || 0;
+    const cacheRead = (usage.cacheReadInputTokens as number) || 0;
+    const cacheWrite = (usage.cacheCreationInputTokens as number) || 0;
+    totalInput += input;
+    totalOutput += output;
+    const pricing = modelPricing(modelId);
+    const inputCost = (input * pricing.inputPerMTok) / 1000000;
+    const outputCost = (output * pricing.outputPerMTok) / 1000000;
+    const cacheReadCost = (cacheRead * pricing.cacheHitsPerMTok) / 1000000;
+    const cacheWriteCost = (cacheWrite * pricing.cache5mWritePerMTok) / 1000000;
+    totalCost += inputCost + outputCost + cacheReadCost + cacheWriteCost;
+  });
+
+  let statsText = ':bar_chart: *Usage Stats*\n\n';
+  statsText += `Input Tokens: ${totalInput.toLocaleString()}\n`;
+  statsText += `Output Tokens: ${totalOutput.toLocaleString()}\n`;
+  statsText += `Total Cost: $${totalCost.toFixed(2)}\n`;
+  return statsText;
+}
+
+// ============== The commands ==============
+
+async function startCommand(text: string, say: Say, appSettings: AppSettings): Promise<void> {
+  const parts = text.slice(5).trim().split(' ');
+  const agentName = parts[0].toLowerCase();
+  const task = parts.slice(1).join(' ');
+  if (!task) {
+    await say(':x: Usage: `start <agent> <task>`');
+    return;
+  }
+  const agent = findAgent(agents, agentName);
+  if (!agent) {
+    await say(`:x: Agent "${agentName}" not found.`);
+    return;
+  }
+  if (agent.status === 'running') {
+    await say(`:warning: ${agent.name} is already running.`);
+    return;
+  }
+  try {
+    // A new conversation each time: unlike Telegram, Slack never resumes one.
+    await startWithTask(fleetFor(appSettings), agent, task, 'Slack', {
+      resume: false,
+      reply: outcome => {
+        if (outcome === 'no-terminal') return say(':x: Failed to initialize agent terminal.');
+        if (outcome === 'refused') return say(`:x: ${agent.name} has too many messages waiting for its terminal.`);
+        if (outcome === 'held') return say(`:hourglass: ${agent.name}'s session is open but its field is in use: the task goes in once it is free.\n\nTask: ${task}`);
+        if (outcome === 'written') return say(`:incoming_envelope: Sent to *${agent.name}*, whose session is open\n\nTask: ${task}`);
+        const emoji = isSuperAgent(agent) ? ':crown:' : face(agent);
+        return say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);
+      },
+    });
+  } catch (err) {
+    console.error('Failed to start agent from Slack:', err);
+    await say(`:x: Failed to start agent: ${err}`);
+  }
+}
+
+async function stopCommand(text: string, say: Say, appSettings: AppSettings): Promise<void> {
+  const agentName = text.slice(5).trim().toLowerCase();
+  const agent = findAgent(agents, agentName);
+  if (!agent) {
+    await say(`:x: Agent "${agentName}" not found.`);
+    return;
+  }
+  if (agent.status !== 'running' && agent.status !== 'waiting') {
+    await say(`:warning: ${agent.name} is not running.`);
+    return;
+  }
+  stopNow(fleetFor(appSettings), agent);
+  await say(`:octagonal_sign: Stopped *${agent.name}*`);
+}
+
+/** The words Slack answers to, the first that matches; anything else goes to the orchestrator. */
+const COMMANDS: Array<[(lowerText: string) => boolean, (text: string, say: Say, appSettings: AppSettings) => Promise<unknown>]> = [
+  [lowerText => lowerText === 'help' || lowerText === '', (_text, say) => say(HELP)],
+  [lowerText => lowerText === 'status', (_text, say) => {
+    const list = Array.from(agents.values());
+    if (list.length === 0) return say(':package: No agents created yet.');
+    return say(statusReport(list, { title: `:bar_chart: *Agents Status*\n\n`, dot: DOTS, item: formatSlackAgentStatus, orchestratorFirst: false }));
+  }],
+  [lowerText => lowerText === 'agents', (_text, say) => {
+    const list = Array.from(agents.values());
+    if (list.length === 0) return say(':package: No agents created yet.');
+    return say(`:robot_face: *All Agents*\n\n` + list.map(a => formatSlackAgentStatus(a) + '\n').join(''));
+  }],
+  [lowerText => lowerText === 'projects', (_text, say) => say(projectsReport(agents, {
+    title: `:file_folder: *Projects*\n\n`, folder: ':open_file_folder:', indent: '    ', people: ':busts_in_silhouette:', face, dot: DOTS,
+  }) ?? ':package: No projects with agents yet.')],
+  [lowerText => lowerText === 'usage', async (_text, say) => {
+    try {
+      const stats = await getClaudeStats();
+      if (!stats) {
+        await say(':bar_chart: No usage data available yet.');
+        return;
+      }
+      await say(usageReport(stats));
+    } catch (err) {
+      console.error('Failed to get usage stats:', err);
+      await say(':x: Failed to get usage stats');
+    }
+  }],
+  [lowerText => lowerText.startsWith('start '), startCommand],
+  [lowerText => lowerText.startsWith('stop '), stopCommand],
+];
+
 // Handle Slack commands
 export async function handleSlackCommand(
   text: string,
@@ -252,363 +402,9 @@ export async function handleSlackCommand(
   mainWindow?: Electron.BrowserWindow | null
 ): Promise<void> {
   const lowerText = text.toLowerCase().trim();
-
-  if (lowerText === 'help' || lowerText === '') {
-    await say(
-      `:crown: *Tars Bot*\n\n` +
-        `*Commands:*\n` +
-        `• \`status\` - Show all agents status\n` +
-        `• \`agents\` - List agents with details\n` +
-        `• \`projects\` - List all projects\n` +
-        `• \`start <agent> <task>\` - Start an agent\n` +
-        `• \`stop <agent>\` - Stop an agent\n` +
-        `• \`usage\` - Show usage & cost stats\n` +
-        `• \`help\` - Show this help message\n\n` +
-        `Or just send a message to talk to the Super Agent!`
-    );
-    return;
-  }
-
-  if (lowerText === 'status') {
-    const agentList = Array.from(agents.values());
-    if (agentList.length === 0) {
-      await say(':package: No agents created yet.');
-      return;
-    }
-
-    const running = agentList.filter(a => a.status === 'running');
-    const waiting = agentList.filter(a => a.status === 'waiting');
-    const idle = agentList.filter(a => a.status === 'idle' || a.status === 'completed');
-    const error = agentList.filter(a => a.status === 'error');
-
-    let response = `:bar_chart: *Agents Status*\n\n`;
-    if (running.length > 0) {
-      response += `:large_green_circle: *Running (${running.length}):*\n`;
-      running.forEach(a => {
-        response += formatSlackAgentStatus(a);
-      });
-      response += '\n';
-    }
-    if (waiting.length > 0) {
-      response += `:large_yellow_circle: *Waiting (${waiting.length}):*\n`;
-      waiting.forEach(a => {
-        response += formatSlackAgentStatus(a);
-      });
-      response += '\n';
-    }
-    if (error.length > 0) {
-      response += `:red_circle: *Error (${error.length}):*\n`;
-      error.forEach(a => {
-        response += formatSlackAgentStatus(a);
-      });
-      response += '\n';
-    }
-    if (idle.length > 0) {
-      response += `:white_circle: *Idle (${idle.length}):*\n`;
-      idle.forEach(a => {
-        response += formatSlackAgentStatus(a);
-      });
-    }
-
-    await say(response);
-    return;
-  }
-
-  if (lowerText === 'agents') {
-    const agentList = Array.from(agents.values());
-    if (agentList.length === 0) {
-      await say(':package: No agents created yet.');
-      return;
-    }
-
-    let response = `:robot_face: *All Agents*\n\n`;
-    agentList.forEach(a => {
-      response += formatSlackAgentStatus(a) + '\n';
-    });
-
-    await say(response);
-    return;
-  }
-
-  if (lowerText === 'projects') {
-    const agentList = Array.from(agents.values()).filter(a => !isSuperAgent(a));
-
-    if (agentList.length === 0) {
-      await say(':package: No projects with agents yet.');
-      return;
-    }
-
-    const projectsMap = new Map<string, AgentStatus[]>();
-    agentList.forEach(agent => {
-      const path = agent.projectPath;
-      if (!projectsMap.has(path)) {
-        projectsMap.set(path, []);
-      }
-      projectsMap.get(path)!.push(agent);
-    });
-
-    let response = `:file_folder: *Projects*\n\n`;
-    projectsMap.forEach((projectAgents, projectPath) => {
-      const projectName = projectPath.split('/').pop() || 'Unknown';
-      response += `:open_file_folder: *${projectName}*\n`;
-      response += `    \`${projectPath}\`\n`;
-      response += `    :busts_in_silhouette: Agents: ${projectAgents
-        .map(a => {
-          const emoji = SLACK_CHARACTER_FACES[a.character || ''] || ':robot_face:';
-          const status =
-            a.status === 'running'
-              ? ':large_green_circle:'
-              : a.status === 'waiting'
-                ? ':large_yellow_circle:'
-                : a.status === 'error'
-                  ? ':red_circle:'
-                  : ':white_circle:';
-          return `${emoji}${a.name}${status}`;
-        })
-        .join(', ')}\n\n`;
-    });
-
-    await say(response);
-    return;
-  }
-
-  if (lowerText === 'usage') {
-    try {
-      const stats = await getClaudeStats();
-
-      if (!stats) {
-        await say(':bar_chart: No usage data available yet.');
-        return;
-      }
-
-      // Use same pricing as Telegram
-      const MODEL_PRICING: Record<
-        string,
-        {
-          inputPerMTok: number;
-          outputPerMTok: number;
-          cacheHitsPerMTok: number;
-          cache5mWritePerMTok: number;
-        }
-      > = {
-        'claude-opus-4-5-20251101': {
-          inputPerMTok: 5,
-          outputPerMTok: 25,
-          cacheHitsPerMTok: 0.5,
-          cache5mWritePerMTok: 6.25,
-        },
-        'claude-opus-4-5': {
-          inputPerMTok: 5,
-          outputPerMTok: 25,
-          cacheHitsPerMTok: 0.5,
-          cache5mWritePerMTok: 6.25,
-        },
-        'claude-sonnet-4': {
-          inputPerMTok: 3,
-          outputPerMTok: 15,
-          cacheHitsPerMTok: 0.3,
-          cache5mWritePerMTok: 3.75,
-        },
-      };
-
-      const getModelPricing = (modelId: string) => {
-        if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
-        const lower = modelId.toLowerCase();
-        if (lower.includes('opus-4-5') || lower.includes('opus-4.5'))
-          return MODEL_PRICING['claude-opus-4-5'];
-        if (lower.includes('sonnet')) return MODEL_PRICING['claude-sonnet-4'];
-        return MODEL_PRICING['claude-sonnet-4'];
-      };
-
-      let totalCost = 0;
-      let totalInput = 0;
-      let totalOutput = 0;
-
-      if (stats.modelUsage) {
-        Object.entries(stats.modelUsage).forEach(([modelId, usageUnknown]) => {
-          const usage = usageUnknown as Record<string, unknown>;
-          const input = (usage.inputTokens as number) || 0;
-          const output = (usage.outputTokens as number) || 0;
-          const cacheRead = (usage.cacheReadInputTokens as number) || 0;
-          const cacheWrite = (usage.cacheCreationInputTokens as number) || 0;
-
-          totalInput += input;
-          totalOutput += output;
-
-          const pricing = getModelPricing(modelId);
-          const inputCost = (input * pricing.inputPerMTok) / 1000000;
-          const outputCost = (output * pricing.outputPerMTok) / 1000000;
-          const cacheReadCost = (cacheRead * pricing.cacheHitsPerMTok) / 1000000;
-          const cacheWriteCost = (cacheWrite * pricing.cache5mWritePerMTok) / 1000000;
-          totalCost += inputCost + outputCost + cacheReadCost + cacheWriteCost;
-        });
-      }
-
-      let statsText = ':bar_chart: *Usage Stats*\n\n';
-      statsText += `Input Tokens: ${totalInput.toLocaleString()}\n`;
-      statsText += `Output Tokens: ${totalOutput.toLocaleString()}\n`;
-      statsText += `Total Cost: $${totalCost.toFixed(2)}\n`;
-
-      await say(statsText);
-    } catch (err) {
-      console.error('Failed to get usage stats:', err);
-      await say(':x: Failed to get usage stats');
-    }
-    return;
-  }
-
-  if (lowerText.startsWith('start ')) {
-    const parts = text.slice(5).trim().split(' ');
-    const agentName = parts[0].toLowerCase();
-    const task = parts.slice(1).join(' ');
-
-    if (!task) {
-      await say(':x: Usage: `start <agent> <task>`');
-      return;
-    }
-
-    const agent = Array.from(agents.values()).find(
-      a => a.name?.toLowerCase().includes(agentName) || a.id === agentName
-    );
-
-    if (!agent) {
-      await say(`:x: Agent "${agentName}" not found.`);
-      return;
-    }
-
-    if (agent.status === 'running') {
-      await say(`:warning: ${agent.name} is already running.`);
-      return;
-    }
-
-    let launch: object | null = null;
-    try {
-      const workingPath = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
-
-      // BUG 4 guard: if worktreePath changed after PTY spawn, the running
-      // PTY is in the wrong cwd. Kill it so initAgentPty respawns correctly.
-      killStalePty(agent);
-
-      // A launch on its way owns the terminal until its CLI runs: wait for it.
-      await sessionStarted(agent);
-      // No CLI up there: this is a launch from now on, for every other sender.
-      launch = launchUnlessRunning(agent);
-
-      if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) {
-        const ptyId = await initAgentPtyWithCallbacks(agent);
-        agent.ptyId = ptyId;
-      }
-
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (!ptyProcess) {
-        if (launch) launchAbandoned(agent.id, launch);
-        await say(':x: Failed to initialize agent terminal.');
-        return;
-      }
-
-      // A CLI already up in the terminal is a session between turns (every
-      // turn ends on `idle`, a failed one on `error`): the task goes in as a
-      // message. Typed as a launch command it landed in the CLI's own field.
-      if (cliRunningIn(ptyProcess)) {
-        const outcome = writeProgrammaticInput(ptyProcess, task, true, {
-          agentId: agent.id, from: 'Slack', sender: { kind: 'channel', channel: 'Slack' },
-        });
-        if (outcome === 'refused') {
-          await say(`:x: ${agent.name} has too many messages waiting for its terminal.`);
-          return;
-        }
-        // Running once it is typed. Held, it is not: a dialog may be what
-        // holds it, and `running` here would erase the one record of that
-        // dialog, and the message would go into it (the Audit's census).
-        if (outcome === 'written') agent.status = 'running';
-        agent.currentTask = task.slice(0, 100);
-        agent.lastActivity = new Date().toISOString();
-        saveAgents();
-        await say(outcome === 'held'
-          ? `:hourglass: ${agent.name}'s session is open but its field is in use: the task goes in once it is free.\n\nTask: ${task}`
-          : `:incoming_envelope: Sent to *${agent.name}*, whose session is open\n\nTask: ${task}`);
-        return;
-      }
-
-      const slackAgentProvider = getProvider(agent.provider);
-      let mcpConfigPath: string | undefined;
-      if (slackAgentProvider.getMcpConfigStrategy() === 'flag') {
-        const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
-        if (fs.existsSync(possibleMcpPath)) mcpConfigPath = possibleMcpPath;
-      }
-      // Through the provider builder, like Telegram. Its own copy of the command
-      // put the task straight after `--add-dir`, where claude's variadic option
-      // read it as one more directory and the session came up with no task; the
-      // copy had also drifted, missing `Task` from the orchestrator restrictions
-      // and hardcoding ~/.dorothy instead of DATA_DIR.
-      const command = slackAgentProvider.buildInteractiveCommand({
-        binaryPath: slackAgentProvider.resolveBinaryPath(appSettings),
-        prompt: task,
-        model: agent.model,
-        permissionMode: agent.permissionMode ?? (agent.skipPermissions ? 'bypass' : 'normal'),
-        effort: agent.effort,
-        secondaryProjectPath: agent.secondaryProjectPath,
-        obsidianVaultPaths: agent.obsidianVaultPaths,
-        mcpConfigPath,
-        // An orchestrator starts with its instructions from here too, as from
-        // the Dashboard and the API: without them it does the work itself.
-        systemPromptFile: isSuperAgent(agent) && fs.existsSync(getSuperAgentInstructionsPath())
-          ? getSuperAgentInstructionsPath()
-          : undefined,
-        skills: [...new Set(agent.skills || [])],
-        isSuperAgent: isSuperAgent(agent),
-        orchestratorMode: isSuperAgent(agent),
-      });
-
-      agent.status = 'running';
-      agent.currentTask = task.slice(0, 100);
-      agent.lastActivity = new Date().toISOString();
-      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
-      await shellReady(ptyProcess);
-      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-      noteLaunch(ptyProcess, launchSettings(agent));
-      saveAgents();
-      // Started from Slack, and just as able to come up with no task.
-      armTaskStartWatch(agent, agent.ptyId, task);
-
-      const emoji = isSuperAgent(agent) ? ':crown:' : SLACK_CHARACTER_FACES[agent.character || ''] || ':robot_face:';
-      await say(`:rocket: Started *${agent.name}*\n\n${emoji} Task: ${task}`);
-    } catch (err) {
-      if (launch) launchAbandoned(agent.id, launch);
-      console.error('Failed to start agent from Slack:', err);
-      await say(`:x: Failed to start agent: ${err}`);
-    }
-    return;
-  }
-
-  if (lowerText.startsWith('stop ')) {
-    const agentName = text.slice(5).trim().toLowerCase();
-
-    const agent = Array.from(agents.values()).find(
-      a => a.name?.toLowerCase().includes(agentName) || a.id === agentName
-    );
-
-    if (!agent) {
-      await say(`:x: Agent "${agentName}" not found.`);
-      return;
-    }
-
-    if (agent.status !== 'running' && agent.status !== 'waiting') {
-      await say(`:warning: ${agent.name} is not running.`);
-      return;
-    }
-
-    if (agent.ptyId) {
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (ptyProcess) {
-        ptyProcess.write('\x03'); // Ctrl+C
-      }
-    }
-    agent.status = 'idle';
-    agent.currentTask = undefined;
-    saveAgents();
-
-    await say(`:octagonal_sign: Stopped *${agent.name}*`);
+  const command = COMMANDS.find(([matches]) => matches(lowerText));
+  if (command) {
+    await command[1](text, say, appSettings);
     return;
   }
 
@@ -636,114 +432,28 @@ export async function sendToSuperAgentFromSlack(
   // Sanitize message - replace newlines with spaces for terminal compatibility
   const sanitizedMessage = message.replace(/\r?\n/g, ' ').trim();
 
-  let launch: object | null = null;
   try {
-    // BUG 4 guard: if worktreePath changed after PTY spawn, the existing
-    // PTY is stuck in the wrong cwd. Kill it so initAgentPty respawns.
-    killStalePty(superAgent);
-
-    // Initialize PTY if needed
-    // A launch on its way owns the terminal until its CLI runs: wait for it.
-    await sessionStarted(superAgent);
-    // No CLI up there: this is a launch from now on, for every other sender.
-    launch = launchUnlessRunning(superAgent);
-
-    if (!superAgent.ptyId || !ptyProcesses.has(superAgent.ptyId)) {
-      const ptyId = await initAgentPtyWithCallbacks(superAgent);
-      superAgent.ptyId = ptyId;
-    }
-
-    const ptyProcess = ptyProcesses.get(superAgent.ptyId);
-    if (!ptyProcess) {
-      if (launch) launchAbandoned(superAgent.id, launch);
-      await say(':x: Failed to connect to Super Agent terminal.');
-      return;
-    }
-
-    // A CLI up in its terminal gets the message, whatever the status says. The
-    // status said `running` or `waiting` over a bare shell after a CLI died
-    // without its SessionEnd, and the message typed there ran as a command.
-    if (cliRunningIn(ptyProcess)) {
-      superAgentSlackTask = true;
-      superAgentSlackBuffer = [];
-
-      superAgent.currentTask = sanitizedMessage.slice(0, 100);
-      superAgent.lastActivity = new Date().toISOString();
-      saveAgents();
-
-      const slackMessage = `[FROM SLACK - Use send_slack MCP tool to respond!] ${sanitizedMessage}`;
-
-      writeProgrammaticInput(ptyProcess, slackMessage, true, {
-        agentId: superAgent.id, from: 'Slack', sender: { kind: 'channel', channel: 'Slack' },
-      });
-
-      await say(':crown: Super Agent is processing...');
-    } else {
-      // No CLI in its terminal, whatever the status says: start one
-      const workingPath = (superAgent.worktreePath || superAgent.projectPath).replace(
-        /'/g,
-        "'\\''",
-      );
-
-      const superAgentSlackProvider = getProvider(superAgent.provider);
-      // Through the provider builder, like Telegram's cold start and like the
-      // other Slack site. This copy ended with `--disallowed-tools "Edit"
-      // "Write" "MultiEdit" "NotebookEdit"` immediately before the prompt, and
-      // claude's variadic option read the task as one more tool name: every
-      // super agent cold start from Slack came up with no task at all. The
-      // builder ends its options with `--`, so an operand stays an operand.
-      //
-      // The instructions still travel as a FILE, which is what this site was
-      // fixed for once before: inlined into a double-quoted shell word, the
-      // ~124 markdown backticks in super-agent-instructions.md became command
-      // substitutions, so `whoami` really ran, every backticked MCP tool name
-      // was executed and its text deleted from the prompt. A file path is data.
-      const superAgentInstructionsPath = getSuperAgentInstructionsPath();
-      const systemPromptFile = fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
-
-      let superAgentMcpConfigPath: string | undefined;
-      if (superAgentSlackProvider.getMcpConfigStrategy() === 'flag') {
-        const possibleMcpPath = path.join(os.homedir(), '.claude', 'mcp.json');
-        if (fs.existsSync(possibleMcpPath)) superAgentMcpConfigPath = possibleMcpPath;
-      }
-
+    await forwardToOrchestrator(fleetFor(appSettings), superAgent, 'Slack', {
+      message: sanitizedMessage,
       // Simple prompt with Slack context: the detail comes from the file.
-      const userPrompt = `[FROM SLACK - Use send_slack MCP tool to respond!] ${sanitizedMessage}`;
-
-      const command = superAgentSlackProvider.buildInteractiveCommand({
-        binaryPath: superAgentSlackProvider.resolveBinaryPath(appSettings),
-        prompt: userPrompt,
-        model: superAgent.model,
-        permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
-        effort: superAgent.effort,
-        secondaryProjectPath: superAgent.secondaryProjectPath,
-        obsidianVaultPaths: superAgent.obsidianVaultPaths,
-        mcpConfigPath: superAgentMcpConfigPath,
-        systemPromptFile,
-        skills: [...new Set(superAgent.skills || [])],
-        isSuperAgent: true,
-        orchestratorMode: true,
-      });
-
-      superAgent.status = 'running';
-      superAgent.currentTask = sanitizedMessage.slice(0, 100);
-      superAgent.lastActivity = new Date().toISOString();
-
-      superAgentSlackTask = true;
-      superAgentSlackBuffer = [];
-
-      // Once the shell is at its prompt: typed before, a long launch is cut (shellReady).
-      await shellReady(ptyProcess);
-      writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
-      noteLaunch(ptyProcess, launchSettings(superAgent));
-      saveAgents();
-      // A cold start of the super agent carries a task like any other start.
-      armTaskStartWatch(superAgent, superAgent.ptyId, userPrompt);
-
-      await say(':crown: Super Agent is processing your request...');
-    }
+      context: '[FROM SLACK - Use send_slack MCP tool to respond!]',
+      permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
+      resume: false,
+      // The instructions travel as a FILE: inlined into a double-quoted shell
+      // word, the ~124 markdown backticks in super-agent-instructions.md became
+      // command substitutions, so `whoami` really ran, every backticked MCP
+      // tool name was executed and its text deleted from the prompt.
+      systemPromptFile: () => {
+        const superAgentInstructionsPath = getSuperAgentInstructionsPath();
+        return fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
+      },
+      reply: outcome => {
+        if (outcome === 'no-terminal') return say(':x: Failed to connect to Super Agent terminal.');
+        if (outcome === 'typed') return say(':crown: Super Agent is processing...');
+        return say(':crown: Super Agent is processing your request...');
+      },
+    });
   } catch (err) {
-    if (launch) launchAbandoned(superAgent.id, launch);
     console.error('Failed to send to Super Agent:', err);
     await say(`:x: Error: ${err}`);
   }
@@ -756,30 +466,4 @@ export function stopSlackBot(): void {
     slackApp = null;
     console.log('Slack bot stopped');
   }
-}
-
-/** The part of Claude's stats `usage` reads, each field of it defensively. */
-interface SlackClaudeStats {
-  modelUsage?: Record<string, {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadInputTokens?: number;
-    cacheCreationInputTokens?: number;
-  }>;
-}
-
-// Another reader of Claude's stats, for tests; the app uses the Usage page's own.
-let getClaudeStatsRef: (() => Promise<SlackClaudeStats | undefined>) | null = null;
-
-export function setGetClaudeStatsRef(fn: () => Promise<SlackClaudeStats | undefined>): void {
-  getClaudeStatsRef = fn;
-}
-
-async function getClaudeStats(): Promise<SlackClaudeStats | undefined> {
-  if (!getClaudeStatsRef) {
-    // The stats the Usage page and Telegram's /usage read. Nothing in the app
-    // set a reader, and `usage` said "No usage data" whatever the data (#176).
-    return ((await readClaudeStats()) ?? undefined) as SlackClaudeStats | undefined;
-  }
-  return getClaudeStatsRef();
 }

@@ -76,6 +76,8 @@ import {
   getSlackResponseChannel,
   getSlackResponseThreadTs,
 } from './services/slack-bot';
+import { initDiscordBot } from './services/discord-bot';
+import { registerDiscordHandlers } from './handlers/discord-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -117,7 +119,8 @@ import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
-import { writeSecretFileSync, ensureSecretFileMode } from './utils/secret-file';
+import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
+import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
 // Utils
@@ -164,6 +167,11 @@ function loadAppSettings(): AppSettings {
     slackSigningSecret: '',
     slackChannelId: '',
     slackAllowedUserIds: [],
+    discordEnabled: false,
+    discordBotToken: '',
+    discordChannelId: '',
+    discordAllowedUserIds: [],
+    discordRequireMention: true,
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -303,6 +311,7 @@ function createIpcDependencies(): IpcHandlerDependencies {
       appSettings = settings;
       saveAppSettingsToFile(settings);
     }, getMainWindow()),
+    initDiscordBot: startDiscordBot,
     getTelegramBot,
     getSlackApp,
     getSuperAgentTelegramTask: () => {
@@ -326,6 +335,14 @@ function createIpcDependencies(): IpcHandlerDependencies {
     getClaudeSkills,
     getClaudeHistory,
   };
+}
+
+/** The Discord bot on the settings as they are now; the channel it detects is saved like Slack's. */
+function startDiscordBot() {
+  initDiscordBot(() => appSettings, (settings) => {
+    appSettings = settings;
+    saveAppSettingsToFile(settings);
+  }, getMainWindow());
 }
 
 // ============== API Server Initialization ==============
@@ -397,6 +414,9 @@ app.whenReady().then(async () => {
   for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
     ensureSecretFileMode(secret);
   }
+  // And the directory itself with everything in it: the fleet, the board, the
+  // ledger and the vault were readable by every account on the machine.
+  narrowDataDir(DATA_DIR);
 
   // Take Noah's conversation with the super chat out of ~/.dorothy, which is
   // the directory every agent is handed. Here rather than on the first read of
@@ -462,6 +482,7 @@ app.whenReady().then(async () => {
   registerTemplateHandlers();
   registerTeamTemplateHandlers();
   registerHermesHandlers();
+  registerDiscordHandlers({ getAppSettings: () => appSettings });
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
@@ -478,6 +499,7 @@ app.whenReady().then(async () => {
     startAgent: startAgentForTask,
     stopAgent: async (agentId: string) => {
       const agent = agents.get(agentId);
+      await stopAcpRuns(agentId, 'the agent was stopped');
       if (agent?.ptyId) {
         const ptyProcess = ptyProcesses.get(agent.ptyId);
         if (ptyProcess) {
@@ -499,6 +521,7 @@ app.whenReady().then(async () => {
     },
     deleteAgent: async (agentId: string) => {
       const agent = agents.get(agentId);
+      await stopAcpRuns(agentId, 'the agent was deleted');
       if (agent) {
         // Stop PTY if running
         if (agent.ptyId) {
@@ -642,6 +665,7 @@ app.whenReady().then(async () => {
     appSettings = settings;
     saveAppSettingsToFile(settings);
   }, getMainWindow());
+  startDiscordBot();
   initApiServer();
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
@@ -729,6 +753,9 @@ app.on('before-quit', () => {
   runShutdownSteps([
     ['flushBus', flushBus],
     ['saveAgents', saveAgents],
+    // Before the app exits, which neither the stop's timer nor a run left
+    // reparented to launchd would wait for: at most a second, then SIGKILL.
+    ['endAcpRunsOnQuit', endAcpRunsOnQuit],
     ['destroyTray', destroyTray],
     ['stopAgentAutosave', stopAgentAutosave],
     ['stopOverseerWatch', stopOverseerWatch],

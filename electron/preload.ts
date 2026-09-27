@@ -367,6 +367,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('slack:sendTest'),
   },
 
+  // Discord bot
+  discord: {
+    test: () =>
+      ipcRenderer.invoke('discord:test'),
+    sendTest: () =>
+      ipcRenderer.invoke('discord:sendTest'),
+    inviteUrl: (token: string) =>
+      ipcRenderer.invoke('discord:inviteUrl', token),
+  },
+
   // JIRA
   jira: {
     test: () =>

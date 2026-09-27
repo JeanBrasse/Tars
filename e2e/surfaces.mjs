@@ -21,10 +21,10 @@ import * as path from 'node:path';
 /** @type {Surface[]} */
 export const PAGES = [
   { name: 'dashboard', route: '/' },
-  // The fleet rail shows statuses that settle from running to idle in the first
-  // seconds after launch, and chat is the second surface visited. Waiting is
-  // better than masking the rail: a masked panel is a pink rectangle in the
-  // baseline and no coverage at all.
+  // The room list counts the agents the sweep launches as it starts, and chat
+  // is the second surface visited: waiting lets those counts settle. Better
+  // than masking the list: a masked panel is a pink rectangle in the baseline
+  // and no coverage at all.
   { name: 'chat', route: '/chat', settle: 3000 },
   { name: 'agents', route: '/agents' },
   { name: 'kanban', route: '/kanban' },
@@ -55,7 +55,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 16 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 17 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -68,6 +68,7 @@ const SETTINGS_TREE = [
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],
   ['slack', 'Integrations', 'Slack'],
+  ['discord', 'Integrations', 'Discord'],
   ['x-twitter', 'Integrations', 'X (Twitter)'],
   ['google-workspace', 'Integrations', 'Google Workspace'],
   ['skills-plugins', 'Extensions', 'Skills & Plugins'],
@@ -179,6 +180,14 @@ export const SCREENSHOT_TOLERANCE = {
  * they match, and e2e/known-errors.spec.ts fails a full run in which one of
  * them matched nothing anywhere, because a mask that stops matching hides
  * nothing and says nothing.
+ *
+ * A mask is painted magenta, and its shade is not fixed: (255, 0, 255) in the
+ * references recorded before 1.8.0, (234, 51, 247) in those recorded on
+ * Electron 44 for it (#173), and two runs a day apart have shown either. Mask
+ * against mask stays under the per-pixel threshold, so Playwright counts none
+ * of it; a count made by hand (the regions of the final runs of 1.8.0 and
+ * 1.8.1) must skip a pixel that is magenta on both sides, red and blue above
+ * 200 and green below 90, or it reports every mask as a change.
  */
 export const VOLATILE = {
   'terminal-bodies': {
@@ -222,17 +231,6 @@ export const VOLATILE = {
     surfaces: ['logs'],
     selector: 'text=/· \\d+ chunks$/',
     why: 'how much a live CLI has printed by the time the page is photographed',
-  },
-  'fleet-status-lines': {
-    surfaces: ['chat'],
-    // The whole line under the agent's name: its status and the last line its
-    // terminal printed. Since #149 the status is a <span> of its own, and a text
-    // selector takes the smallest element, so it masked the word alone. The line
-    // stayed hidden only when it held the sandbox path, which it does in some
-    // runs and not in others. `[0-9]` and not a backslash-d: in a CSS string a
-    // backslash starts an escape, and the minutes and hours stopped matching.
-    selector: 'p:has(span:text-matches("^(running|waiting) (just now|<1m|[0-9]+m|[0-9]+h)"))',
-    why: 'how long an agent has held its status, and the last line its terminal printed',
   },
   'changelog-body': {
     surfaces: ['whats-new'],
@@ -371,8 +369,9 @@ export function readPageErrorRecords() {
 // how fast that CLI registers its session. There nothing starts, the
 // Orchestrator reads a transcript seeded on disk, and the Backend Engineer
 // runs codex, which writes none.
-// The Chat room, the six frames `design/chat-design.pen` specifies as states
-// of the page rather than as overlays. One room per state, because a room is
+// The Chat room in six states of the page rather than overlays, first
+// specified in `design/chat-design.pen` and drawn since #165 from
+// `design/chat-redesign-a.pen`. One room per state, because a room is
 // derived from a project and a journal can only put a given one in a single
 // state at a time.
 //
@@ -385,7 +384,11 @@ export function readPageErrorRecords() {
 export const CHAT_ROOMS = [
   {
     name: 'chat-hermes-with-rooms', route: '/chat',
-    shows: 'All projects',
+    // Direction A (#165) no longer says `All projects`. The tars row's count
+    // comes from the bus journal and the placeholder from the failed Hermes
+    // connection, so the picture waits for both.
+    shows: '1 not sent',
+    placeholder: 'Fix the Hermes connection above',
   },
   {
     name: 'chat-room-agents-at-work', route: '/chat', clickText: 'tars',

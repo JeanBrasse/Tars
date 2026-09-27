@@ -45,6 +45,7 @@ import { registerHooksRoutes } from '../../../../electron/services/api-routes/ho
 import { agents } from '../../../../electron/core/agent-manager';
 import { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
+import { sid } from '../../../fixtures/session-id';
 
 function makeRouteApp(): RouteApp {
   const app: RouteApp = {
@@ -106,11 +107,11 @@ describe('the post that says a turn began', () => {
     // The agent has been `running` since the spawn, so nothing about its
     // status changes here. That is exactly the case the old route had no
     // answer for: it only ever acted on a transition.
-    const agent = putAgent({ status: 'running', currentSessionId: 'live-sess' });
+    const agent = putAgent({ status: 'running', currentSessionId: sid('live-sess') });
 
     post({
       agent_id: 'a1',
-      session_id: 'live-sess',
+      session_id: sid('live-sess'),
       status: 'running',
       event: 'UserPromptSubmit',
       current_task: 'rebase onto main',
@@ -121,9 +122,9 @@ describe('the post that says a turn began', () => {
   });
 
   it('is refused from a session that no longer owns the agent', async () => {
-    const agent = putAgent({ status: 'running', currentSessionId: 'live-sess' });
+    const agent = putAgent({ status: 'running', currentSessionId: sid('live-sess') });
 
-    post({ agent_id: 'a1', session_id: 'old-sess', status: 'running', event: 'UserPromptSubmit' });
+    post({ agent_id: 'a1', session_id: sid('old-sess'), status: 'running', event: 'UserPromptSubmit' });
 
     // A killed PTY's hooks outlive the kill. One of them claiming a turn would
     // cancel the redelivery for a task that never arrived.
@@ -131,9 +132,9 @@ describe('the post that says a turn began', () => {
   });
 
   it('is refused from the session that was killed, even before a new one registers', async () => {
-    const agent = putAgent({ status: 'running', currentSessionId: undefined, lastKilledSessionId: 'dead-sess' });
+    const agent = putAgent({ status: 'running', currentSessionId: undefined, lastKilledSessionId: sid('dead-sess') });
 
-    post({ agent_id: 'a1', session_id: 'dead-sess', status: 'running', event: 'UserPromptSubmit' });
+    post({ agent_id: 'a1', session_id: sid('dead-sess'), status: 'running', event: 'UserPromptSubmit' });
 
     expect(agent.lastTurnStartedAt).toBeFalsy();
     expect(agent.currentSessionId).toBeUndefined();
@@ -143,9 +144,9 @@ describe('the post that says a turn began', () => {
     // post-tool-use.sh posts `running` several times a turn. Reading that as a
     // turn beginning would make the watch cancel itself on any tool call of any
     // previous work, which is how the current watch is already blind.
-    const agent = putAgent({ status: 'running', currentSessionId: 'live-sess' });
+    const agent = putAgent({ status: 'running', currentSessionId: sid('live-sess') });
 
-    post({ agent_id: 'a1', session_id: 'live-sess', status: 'running' });
+    post({ agent_id: 'a1', session_id: sid('live-sess'), status: 'running' });
 
     expect(agent.lastTurnStartedAt).toBeFalsy();
   });

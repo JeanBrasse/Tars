@@ -329,6 +329,8 @@ export async function searchMemory(opts: {
   hermes?: HermesConnection | null;
   sources?: MemorySourceId[];
   limit?: number;
+  /** Hermes sessions the caller may not see: for an agent, the super chat's. */
+  hideHermesSession?: (sessionId: string | undefined) => boolean;
 }): Promise<{ hits: MemoryHit[]; errors: { source: MemorySourceId; error: string }[] }> {
   const { query, projectPath, settings, hermes } = opts;
   const wanted = new Set<MemorySourceId>(opts.sources ?? ['project', 'observations', 'obsidian', 'hermes', 'gbrain', 'honcho']);
@@ -370,6 +372,7 @@ export async function searchMemory(opts: {
         const res = await searchHermesSessions(hermes, query, limit);
         if (res.success) {
           for (const hit of res.hits) {
+            if (opts.hideHermesSession?.(hit.sessionId)) continue;
             hits.push({
               source: 'hermes',
               title: hit.title || hit.sessionId || 'Hermes session',

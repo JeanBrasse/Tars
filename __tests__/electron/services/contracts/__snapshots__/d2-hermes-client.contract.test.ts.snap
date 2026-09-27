@@ -26,6 +26,7 @@ exports[`hermes-client, as recorded before the D2 refactor > exports the same na
   "hermesCronAction",
   "hermesRequest",
   "probeHermes",
+  "safeUploadName",
   "searchHermesSessions",
   "setHermesMemoryProvider",
   "setHermesModel",

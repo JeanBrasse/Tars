@@ -245,3 +245,48 @@ export function clearOverseerHistory(): { cleared: number } {
   saveState(state);
   return { cleared };
 }
+
+/* ── The super chat's own Hermes sessions ────────────────────────────────── */
+
+/**
+ * Every Hermes session the super chat has opened, so that what searches
+ * Hermes for an agent can leave them out: that conversation is Noah's, kept in
+ * this private directory and never handed to an agent (SECURITY.md §5), and
+ * each of its turns is a Hermes session that memory_search returned with the
+ * rest (the Audit's table on a3d7c125, #13).
+ *
+ * A file of its own, beside the conversation, and not a field of the state: a
+ * turn loads the state when it starts and saves it when it ends, so an id
+ * written in between would be lost. The runs of its cron job are left out by
+ * their name (`cron_<jobId>_...`), and recorded here too, in case the job is
+ * ever replaced.
+ */
+const HERMES_SESSIONS_FILE = privatePath('overseer-hermes-sessions.json');
+const MAX_REMEMBERED_SESSIONS = 5000;
+
+function readHermesSessions(): string[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(HERMES_SESSIONS_FILE, 'utf-8'));
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberHermesSessions(...ids: Array<string | null | undefined>): void {
+  const known = readHermesSessions();
+  const fresh = ids.filter((id): id is string => !!id && !known.includes(id));
+  if (fresh.length === 0) return;
+  try {
+    writeSecretFileSync(HERMES_SESSIONS_FILE, JSON.stringify([...known, ...fresh].slice(-MAX_REMEMBERED_SESSIONS)));
+  } catch (err) {
+    console.error(`[overseer] could not record its Hermes session (${describeSecretFileError(err)})`);
+  }
+}
+
+/** Whether this Hermes session is one of the super chat's. */
+export function isOverseerHermesSession(sessionId: string): boolean {
+  const jobId = loadState().jobId;
+  if (jobId && sessionId.startsWith(`cron_${jobId}_`)) return true;
+  return readHermesSessions().includes(sessionId);
+}

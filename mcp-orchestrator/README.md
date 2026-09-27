@@ -19,7 +19,7 @@ Add to your Claude Code MCP settings (`~/.claude/mcp.json`):
   "mcpServers": {
     "claude-mgr-orchestrator": {
       "command": "node",
-      "args": ["/path/to/tars/mcp-orchestrator/dist/index.js"]
+      "args": ["/path/to/tars/mcp-orchestrator/dist/bundle.js"]
     }
   }
 }

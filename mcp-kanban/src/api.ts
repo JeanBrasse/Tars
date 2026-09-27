@@ -1,4 +1,6 @@
 import * as http from "http";
+import { send } from "../../mcp-shared/src/http.js";
+import { AGENT_API_TOKEN, API_URL } from "../../mcp-shared/src/tars-api.js";
 
 /**
  * Tars's local API, as this agent. The kanban lives on the Hermes board, and
@@ -7,12 +9,7 @@ import * as http from "http";
  */
 
 // The Tars that spawned this agent, as mcp-orchestrator and mcp-vault read it.
-const API_URL = new URL(process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415");
-
-// This agent's own token, minted by Tars when it spawned the process. The
-// kanban tools act for an agent, so the shared ~/.dorothy/api-token, which
-// names none, is no use here: Tars refuses it with a message that says so.
-const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
+const TARS = new URL(API_URL);
 
 // A Tars that stopped answering is not waited on for ever: the tool says so,
 // and the agent can act on it (the Backend's gate of #171). A claim or a
@@ -20,30 +17,23 @@ const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
 const REQUEST_TIMEOUT_MS = 60_000;
 
 export async function apiRequest(method: string, path_: string, body?: Record<string, unknown>): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (AGENT_API_TOKEN) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
-    const req = http.request({
-      hostname: API_URL.hostname,
-      port: Number(API_URL.port) || 80,
-      path: path_,
-      method,
-      headers,
-      timeout: REQUEST_TIMEOUT_MS,
-    }, (res) => {
-      let data = "";
-      res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => {
-        let parsed: { error?: string } | undefined;
-        try { parsed = JSON.parse(data); } catch { /* below */ }
-        if (!parsed) { reject(new Error(`Tars answered ${res.statusCode} with no JSON: ${data.slice(0, 200)}`)); return; }
-        if (res.statusCode && res.statusCode >= 400) reject(new Error(parsed.error || `HTTP ${res.statusCode}`));
-        else resolve(parsed);
-      });
-    });
-    req.on("timeout", () => req.destroy(new Error(`no answer within ${REQUEST_TIMEOUT_MS / 1000} s`)));
-    req.on("error", (err) => reject(new Error(`Tars did not answer at ${API_URL.origin}: ${err.message}`)));
-    if (body) req.write(JSON.stringify(body));
-    req.end();
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // This agent's own token, minted by Tars when it spawned the process. The
+  // kanban tools act for an agent, so the shared ~/.dorothy/api-token, which
+  // names none and which readApiToken would fall back to, is no use here: Tars
+  // refuses it with a message that says so.
+  if (AGENT_API_TOKEN) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
+  const { status, data } = await send(http, {
+    hostname: TARS.hostname,
+    port: Number(TARS.port) || 80,
+    path: path_,
+    method,
+    headers,
+    timeout: REQUEST_TIMEOUT_MS,
+  }, body && JSON.stringify(body), (err) => new Error(`Tars did not answer at ${TARS.origin}: ${err.message}`));
+  let parsed: { error?: string } | undefined;
+  try { parsed = JSON.parse(data); } catch { /* below */ }
+  if (!parsed) throw new Error(`Tars answered ${status} with no JSON: ${data.slice(0, 200)}`);
+  if (status && status >= 400) throw new Error(parsed.error || `HTTP ${status}`);
+  return parsed;
 }

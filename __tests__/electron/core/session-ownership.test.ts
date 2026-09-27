@@ -50,6 +50,7 @@ import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { sid } from '../../fixtures/session-id';
 
 /** Comfortably past the ten minute grace period. */
 const PAST_THE_GRACE = 700_000;
@@ -132,7 +133,7 @@ function postStatus(app: RouteApp, body: Record<string, unknown>): Record<string
 function live(): AgentStatus {
   const agent = putAgent({
     id: 'a1', name: 'Frontend', status: 'running', ptyId: 'pty-live',
-    currentSessionId: 'session-live', sessionPtyId: 'pty-live',
+    currentSessionId: sid('session-live'), sessionPtyId: 'pty-live',
   });
   ptyProcesses.set('pty-live', { write: vi.fn(), kill: vi.fn() } as never);
   return agent;
@@ -146,7 +147,7 @@ describe('an agent whose session is alive when it is handed a task', () => {
 
     // The six callers that reuse a live pty are the Agents page, Telegram
     // twice, Slack twice and the board. This is the field they were emptying.
-    expect(agent.currentSessionId).toBe('session-live');
+    expect(agent.currentSessionId).toBe(sid('session-live'));
   });
 
   it('accepts what that session reports, and still refuses another one', async () => {
@@ -160,16 +161,16 @@ describe('an agent whose session is alive when it is handed a task', () => {
       // The live session says it is waiting on Noah. With the owner emptied
       // this was unowned and thrown away, so the screen kept saying running.
       expect(postStatus(app, {
-        agent_id: 'a1', session_id: 'session-live', status: 'waiting', waiting_reason: 'idle',
+        agent_id: 'a1', session_id: sid('session-live'), status: 'waiting', waiting_reason: 'idle',
       })).toMatchObject({ success: true });
       expect(agent.status).toBe('waiting');
 
       // And keeping the owner is what makes the guard able to refuse: with the
       // field emptied, this post would have been adopted as the new owner.
       expect(postStatus(app, {
-        agent_id: 'a1', session_id: 'someone-else', status: 'running',
+        agent_id: 'a1', session_id: sid('someone-else'), status: 'running',
       })).toMatchObject({ stale: true });
-      expect(agent.currentSessionId).toBe('session-live');
+      expect(agent.currentSessionId).toBe(sid('session-live'));
     });
   });
 });
@@ -221,7 +222,7 @@ describe('the ways the watch learns the task landed', () => {
       armTaskStartWatch(agent, agent.ptyId, 'rebase onto main');
       await tick(1_000);
       // Neither stamp moves: the agent simply belongs to somebody else now.
-      agent.currentSessionId = 'session-that-took-over';
+      agent.currentSessionId = sid('session-that-took-over');
       await tick(PAST_THE_GRACE);
     });
 
@@ -240,7 +241,7 @@ describe('the ways the watch learns the task landed', () => {
     // The owner was kept, which is the new behaviour, and the accusation still
     // falls: keeping the field was never meant to cancel the check, and a
     // watch that stops firing is the shape of bug it exists to catch.
-    expect(agent.currentSessionId).toBe('session-live');
+    expect(agent.currentSessionId).toBe(sid('session-live'));
     expect(agent.status).toBe('error');
     expect(agent.error).toMatch(/never began the task/i);
   });
@@ -253,28 +254,28 @@ describe('what registration records', () => {
     const app = hooksApp();
 
     // `source` is the field only the session-start hooks set.
-    postStatus(app, { agent_id: 'a1', session_id: 'session-1', status: 'running', source: 'startup' });
+    postStatus(app, { agent_id: 'a1', session_id: sid('session-1'), status: 'running', source: 'startup' });
 
     // Without this the agent cannot tell a live owner from one left over by a
     // pty that died: on the agent alone the two look identical.
     expect(agent.sessionPtyId).toBe('pty-live');
-    expect(agent.currentSessionId).toBe('session-1');
+    expect(agent.currentSessionId).toBe(sid('session-1'));
     expect(agent.sessionRegisteredAt).toBeTruthy();
   });
 
   it('rewrites both fields together when a new session takes the same pty', async () => {
     const agent = putAgent({
       id: 'a1', name: 'Frontend', status: 'running', ptyId: 'pty-live',
-      currentSessionId: 'session-1', sessionPtyId: 'pty-live',
+      currentSessionId: sid('session-1'), sessionPtyId: 'pty-live',
     });
     ptyProcesses.set('pty-live', { write: vi.fn(), kill: vi.fn() } as never);
     const app = hooksApp();
 
-    postStatus(app, { agent_id: 'a1', session_id: 'session-2', status: 'running', source: 'startup' });
+    postStatus(app, { agent_id: 'a1', session_id: sid('session-2'), status: 'running', source: 'startup' });
 
     // The pair has to move as one. Leaving the old pty id beside a new session
     // would read as live in one place and stale in the other.
-    expect(agent.currentSessionId).toBe('session-2');
+    expect(agent.currentSessionId).toBe(sid('session-2'));
     expect(agent.sessionPtyId).toBe('pty-live');
   });
 });
@@ -284,7 +285,7 @@ describe('an owner that is not alive', () => {
     const agent = putAgent({
       id: 'a1', name: 'Frontend', status: 'running', ptyId: 'pty-second',
       // Registered from the pty that died. The session went with it.
-      currentSessionId: 'session-from-the-first-run', sessionPtyId: 'pty-first',
+      currentSessionId: sid('session-from-the-first-run'), sessionPtyId: 'pty-first',
     });
     ptyProcesses.set('pty-second', { write: vi.fn(), kill: vi.fn() } as never);
 
@@ -299,7 +300,7 @@ describe('an owner that is not alive', () => {
   it('is cleared for an agent read from an agents.json written before the field existed', async () => {
     const agent = putAgent({
       id: 'a1', name: 'Frontend', status: 'running', ptyId: 'pty-second',
-      currentSessionId: 'session-from-the-first-run',
+      currentSessionId: sid('session-from-the-first-run'),
     });
     ptyProcesses.set('pty-second', { write: vi.fn(), kill: vi.fn() } as never);
 
@@ -315,7 +316,7 @@ describe('an owner that is not alive', () => {
   it('is still accused when nothing lands, exactly as before', async () => {
     const agent = putAgent({
       id: 'a1', name: 'Frontend', status: 'running', ptyId: 'pty-second',
-      currentSessionId: 'session-from-the-first-run', sessionPtyId: 'pty-first',
+      currentSessionId: sid('session-from-the-first-run'), sessionPtyId: 'pty-first',
     });
     ptyProcesses.set('pty-second', { write: vi.fn(), kill: vi.fn() } as never);
 

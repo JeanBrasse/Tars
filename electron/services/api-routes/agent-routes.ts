@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { stopAcpRuns } from '../acp/delegate';
 import { publishedWaitingOn } from '../../utils/waiting-on';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -1158,7 +1159,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/agents/:id/stop
-  app_.post(/^\/api\/agents\/([^/]+)\/stop$/, (req, sendJson) => {
+  app_.post(/^\/api\/agents\/([^/]+)\/stop$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
       sendJson({ error: 'Agent not found' }, 404);
@@ -1166,6 +1167,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
+    // Its delegated run too (the Audit's table, #6).
+    await stopAcpRuns(agent.id, 'the agent was stopped');
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
@@ -1270,7 +1273,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   });
 
   // DELETE /api/agents/:id
-  app_.delete(/^\/api\/agents\/([^/]+)$/, (req, sendJson) => {
+  app_.delete(/^\/api\/agents\/([^/]+)$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
       sendJson({ error: 'Agent not found' }, 404);
@@ -1278,6 +1281,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
+    await stopAcpRuns(agent.id, 'the agent was deleted');
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isElectron } from '@/hooks/useElectron';
-import type { AgentStatus, AgentTickItem, BusMember } from '@/types/electron';
+import type { AgentStatus, AgentTickItem, AgentWaitingOn, BusMember } from '@/types/electron';
 
 /** One empty array for every empty answer. A fresh `[]` per call is a new
  *  dependency per render for anyone who watches the result. */
@@ -19,6 +19,9 @@ const NONE: RoomAgent[] = [];
  */
 export interface RoomAgent extends AgentStatus {
   hasEndOfTurn: boolean;
+  /** Tars can interrupt its turn for send now: a CLI on the claude binary
+   *  with hooks. From the room, like `hasEndOfTurn` (PR 169). */
+  canInterrupt: boolean;
   /**
    * Tars holds no live session for it, so nothing reaches it until it starts.
    *
@@ -33,6 +36,35 @@ export interface RoomAgent extends AgentStatus {
 type Liveness = AgentTickItem['displayStatus'];
 
 /**
+ * What the room takes from the tick, because only the tick keeps it current:
+ * whether the main process holds a live terminal, and whether a launch is on
+ * its way, which no status change announces (a restart keeps `idle`). With
+ * them, when the status the tick was computed with began and what it waits on:
+ * the list has both too, but a dialog refused in the terminal ends the wait
+ * with nothing sent but a tick.
+ */
+interface TickFacts {
+  status: AgentStatus['status'];
+  liveness: Liveness;
+  launching: boolean;
+  statusSince?: string;
+  waitingOn?: AgentWaitingOn;
+}
+
+const factsOf = (t: AgentTickItem): TickFacts => ({
+  status: t.status,
+  liveness: t.displayStatus,
+  launching: !!t.launching,
+  statusSince: t.statusSince,
+  waitingOn: t.waitingOn,
+});
+
+const sameFacts = (a: TickFacts | undefined, b: TickFacts): boolean =>
+  !!a && a.status === b.status && a.liveness === b.liveness && a.launching === b.launching
+  && a.statusSince === b.statusSince
+  && a.waitingOn?.kind === b.waitingOn?.kind && a.waitingOn?.text === b.waitingOn?.text;
+
+/**
  * Whether an agent has no live session, from what the renderer can know.
  *
  * The tick is computed in the main process against the terminals that are
@@ -40,9 +72,11 @@ type Liveness = AgentTickItem['displayStatus'];
  * settles it. For `done` and `error` it does not look, and a record can keep
  * the id of a pty that has exited, so there the only proof of absence is an id
  * that was cleared: stopping, a restart and a provider change all clear it.
- * Unproven is not stopped.
+ * Unproven is not stopped. Nor is an agent whose launch is on its way: it has
+ * no session yet, and the room says `starting` rather than offering a start.
  */
-function isStopped(agent: AgentStatus, liveness: Liveness | undefined): boolean {
+function isStopped(agent: AgentStatus, liveness: Liveness | undefined, launching: boolean): boolean {
+  if (launching) return false;
   if (liveness === 'stopped') return true;
   if (liveness === 'working' || liveness === 'waiting' || liveness === 'ready') return false;
   // Before any tick, a status that claims a turn is not contradicted: the tick
@@ -80,18 +114,18 @@ export function useRoomAgents(members: BusMember[]): RoomAgent[] {
     return () => { offStatus?.(); };
   }, [load]);
 
-  // Only one thing is taken from the tick, because only the tick has it: whether
-  // the main process still holds a live terminal for each agent. The status
-  // stays the list's. Replaced only when an entry changes, since the tick comes
-  // twice a second while anything is printing.
-  const [liveness, setLiveness] = useState<Record<string, Liveness>>({});
+  // What only the tick has (TickFacts). The status stays the list's. Replaced
+  // only when an entry changes, since the tick comes twice a second while
+  // anything is printing and every replacement renders the room again.
+  const [ticks, setTicks] = useState<Record<string, TickFacts>>({});
   useEffect(() => {
     if (!isElectron()) return;
     const offTick = window.electronAPI?.agent?.onTick?.(items => {
-      setLiveness(prev => {
+      setTicks(prev => {
+        const next = items.map(factsOf);
         const same = items.length === Object.keys(prev).length
-          && items.every(t => prev[t.id] === t.displayStatus);
-        return same ? prev : Object.fromEntries(items.map(t => [t.id, t.displayStatus]));
+          && items.every((t, i) => sameFacts(prev[t.id], next[i]));
+        return same ? prev : Object.fromEntries(items.map((t, i) => [t.id, next[i]]));
       });
     });
     return () => { offTick?.(); };
@@ -110,13 +144,26 @@ export function useRoomAgents(members: BusMember[]): RoomAgent[] {
     // the fleet is dropped rather than drawn as a ghost row.
     const byId = new Map(agents.map(a => [a.id, a]));
     const joined = members
-      .map(m => {
+      .map((m): RoomAgent | null => {
         const agent = byId.get(m.id);
-        return agent
-          ? { ...agent, hasEndOfTurn: m.hasEndOfTurn, stopped: isStopped(agent, liveness[m.id]) }
-          : null;
+        if (!agent) return null;
+        const tick = ticks[m.id];
+        // The tick's since and wait belong to the status it was computed with:
+        // once the list has moved past that status, the list's own are the
+        // current ones until the next tick.
+        const current = tick && tick.status === agent.status ? tick : undefined;
+        const launching = current ? current.launching : !!agent.launching;
+        return {
+          ...agent,
+          launching,
+          statusSince: current?.statusSince ?? agent.statusSince,
+          waitingOn: current ? current.waitingOn : agent.waitingOn,
+          hasEndOfTurn: m.hasEndOfTurn,
+          canInterrupt: !!m.canInterrupt,
+          stopped: isStopped(agent, tick?.liveness, launching),
+        };
       })
       .filter((a): a is RoomAgent => !!a);
     return joined.length ? joined : NONE;
-  }, [members, agents, liveness]);
+  }, [members, agents, ticks]);
 }

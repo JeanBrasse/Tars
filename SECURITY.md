@@ -308,7 +308,7 @@ the first path nobody thought to list.
 | Path | Holds | Reachable by an agent |
 |---|---|---|
 | `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's token (`hermes-connection.json`), and the files staged for a room (`bus-files/`, a week, then removed) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
-| `~/.tars-private/` | Noah's conversation with the super chat, and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700` |
+| `~/.tars-private/` | Noah's conversation with the super chat, the Hermes sessions it held that conversation in (`overseer-hermes-sessions.json`), and the Hermes webhook secret | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700`. The conversation also lives in Hermes, one session per turn: `memory_search` (`/api/memory/search`, what agents call) leaves out every session the super chat opened, every run of its cron job and any hit that names no session. Sessions opened before 1.9.0 were not recorded, so only their cron runs are left out; an agent holding `hermes-connection.json` can still ask the gateway itself (§5, the paragraph below) |
 
 So what the kanban tools let an agent do on the Hermes board (since #183, delete
 only a task it filed that nobody claimed, or one it claimed) is a rule of Tars's
@@ -373,10 +373,29 @@ list Noah keeps in Settings, and nobody when the list is empty.
   allows at the moment it is sent: the chat that last asked was remembered and
   never checked again, so a chat removed after asking kept receiving all three
   (the audit's gate of #137). It is forgotten now, and what it would have
-  received goes to the chats that are allowed.
+  received goes to the chats that are allowed. Since 2026-09-24, `/auth` takes
+  five wrong tokens from a chat, and twenty from all chats together, in any
+  fifteen minutes (the Audit's gate of #176); past that it answers "Too many
+  attempts" without comparing, the same to a right token as to a wrong one. The
+  token Tars generates is 128 random bits: the limit is for a token set by hand,
+  and against a bot that answers a stranger for ever. The count from all chats
+  is a lock-out anyone who finds the bot can cause: twenty wrong tokens in
+  fifteen minutes keep every new chat out, Noah's included (chats already
+  enrolled are not affected). Kept for 1.9.0 on purpose (the Audit's gate of
+  #200), with its way out said in the refusal itself: "Try again at HH:MM, or
+  turn Telegram off and on in Tars's Settings". The toggle restarts the bot,
+  which starts the count again. Only toggling Telegram in Settings or
+  restarting Tars clears it: the count lives in memory, no API route restarts
+  the bot and nothing watches app-settings.json.
 - **Slack**: the member ids in Settings > Slack (`slackAllowedUserIds`). Before
   it, anyone who could mention or message the bot could list agents and project
   paths, start, stop and brief them, and move the channel agents post to
   (lead #15). A sender not on the list is told its own id, in a mention or a
   direct message, so the owner can add it; other channel messages are ignored
   without a word.
+- **Discord**: the user ids in Settings > Discord (`discordAllowedUserIds`), and
+  in a server channel only a message that mentions the bot, unless Require
+  @mention is off. A stranger is told its id where it addressed the bot. Nothing
+  the bot posts can ping (`allowedMentions` with nothing in it). Its invite asks
+  for View Channels and Send Messages and nothing else: until the Audit's gate
+  of #195 it asked for Read Message History too, which the bot never uses.

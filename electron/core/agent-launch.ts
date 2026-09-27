@@ -152,6 +152,27 @@ export function sessionStarting(agent: StartingAgent): boolean {
   return true;
 }
 
+/**
+ * When the CLI now running in each terminal was launched, noted by every
+ * launch (`noteLaunch`). Keyed by the terminal, so a new one never inherits it,
+ * and moved by a new CLI typed into the same terminal.
+ *
+ * What background work is counted from. A job started before this moment was
+ * started by a CLI that is gone, and is not running whatever the transcript
+ * copied from it says. A session's registration is no substitute: claude sends
+ * a SessionStart at every compaction too, in the same process and session, and
+ * a job started before the compaction is still running after it.
+ */
+const cliLaunchedAtByTerminal = new WeakMap<object, number>();
+
+export function noteCliLaunched(ptyProcess: object): void {
+  cliLaunchedAtByTerminal.set(ptyProcess, Date.now());
+}
+
+export function cliLaunchedAt(ptyProcess: object | undefined): number | undefined {
+  return ptyProcess ? cliLaunchedAtByTerminal.get(ptyProcess) : undefined;
+}
+
 type StartingAgent = {
   id: string; ptyId?: string; provider?: AgentProvider; sessionRegisteredAt?: string; lastTurnStartedAt?: string;
 };

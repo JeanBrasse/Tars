@@ -64,6 +64,7 @@ import { registerHooksRoutes } from '../../../../electron/services/api-routes/ho
 import { RouteApp, RouteRequest } from '../../../../electron/services/api-routes/types';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { AgentStatus, AppSettings } from '../../../../electron/types';
+import { sid } from '../../../fixtures/session-id';
 
 /** Comfortably past the ten minute grace period, plus the tick's own delay. */
 const PAST_THE_GRACE = 700_000;
@@ -227,7 +228,7 @@ describe('a session that never begins its task', () => {
     const agent = putAgent({
       id: 'a1',
       name: 'Frontend',
-      currentSessionId: 'session-from-the-last-task',
+      currentSessionId: sid('session-from-the-last-task'),
     });
 
     await dispatchThenWait(agent, 'do the thing');
@@ -259,7 +260,7 @@ describe('a session that does begin its task', () => {
 
     await dispatchThenWait(agent, 'do the thing', () => {
       // What the SessionStart hook does when the CLI actually starts.
-      agent.currentSessionId = 'session-abc';
+      agent.currentSessionId = sid('session-abc');
     });
 
     expect(agent.status).toBe('running');
@@ -417,7 +418,7 @@ describe('an agent started outside the API', () => {
 
     await letTheGracePass(() => {
       armTaskStartWatch(agent, agent.ptyId);
-      agent.currentSessionId = 'session-abc';
+      agent.currentSessionId = sid('session-abc');
     });
 
     expect(agent.status).toBe('running');
@@ -450,7 +451,7 @@ describe('an agent relaunched after it had already run once', () => {
       status: 'running',
       ptyId: 'pty-second',
       // Left over from the session that died. Nothing on this path clears it.
-      currentSessionId: 'session-from-the-first-run',
+      currentSessionId: sid('session-from-the-first-run'),
     });
     ptyProcesses.set('pty-second', { write: vi.fn(), kill: vi.fn() } as never);
     return agent;
@@ -491,7 +492,7 @@ describe('an agent relaunched after it had already run once', () => {
     await letTheGracePass(() => {
       armTaskStartWatch(agent, agent.ptyId);
       // The SessionStart hook of the run that actually began.
-      agent.currentSessionId = 'session-from-the-second-run';
+      agent.currentSessionId = sid('session-from-the-second-run');
     });
 
     expect(agent.status).toBe('running');
@@ -579,7 +580,7 @@ describe('a session that registers for real', () => {
       name: 'Frontend',
       status: 'running',
       ptyId: 'pty-live',
-      currentSessionId: 'session-from-the-first-run',
+      currentSessionId: sid('session-from-the-first-run'),
     });
     ptyProcesses.set('pty-live', { write: vi.fn(), kill: vi.fn() } as never);
     return agent;
@@ -598,7 +599,7 @@ describe('a session that registers for real', () => {
       await vi.advanceTimersByTimeAsync(1_000);
       postStatus(app, {
         agent_id: 'a1',
-        session_id: 'session-live-1',
+        session_id: sid('session-live-1'),
         status: 'running',
         current_task: 'rebase onto main',
       });
@@ -610,7 +611,7 @@ describe('a session that registers for real', () => {
     // Ownership restored by adoption, and the agent is working, so it is not
     // accused. Without the retry that post existed once and could be lost for
     // good, and this agent would have been marked broken while working.
-    expect(agent.currentSessionId).toBe('session-live-1');
+    expect(agent.currentSessionId).toBe(sid('session-live-1'));
     expect(agent.status).toBe('running');
     expect(agent.error).toBeUndefined();
   });
@@ -642,7 +643,7 @@ describe('a session that registers for real', () => {
       // What hooks/session-start.sh sends: `source` is the field only it sets.
       postStatus(app, {
         agent_id: 'a1',
-        session_id: 'session-from-the-second-run',
+        session_id: sid('session-from-the-second-run'),
         status: 'idle',
         source: 'startup',
       });
@@ -651,7 +652,7 @@ describe('a session that registers for real', () => {
       vi.useRealTimers();
     }
 
-    expect(agent.currentSessionId).toBe('session-from-the-second-run');
+    expect(agent.currentSessionId).toBe(sid('session-from-the-second-run'));
     expect(agent.status).not.toBe('error');
   });
 
@@ -671,7 +672,7 @@ describe('a session that registers for real', () => {
       // id and no `source`. Adoption is what makes the agent owned again.
       postStatus(app, {
         agent_id: 'a1',
-        session_id: 'session-still-running',
+        session_id: sid('session-still-running'),
         status: 'running',
       });
       await vi.advanceTimersByTimeAsync(PAST_THE_GRACE);
@@ -679,7 +680,7 @@ describe('a session that registers for real', () => {
       vi.useRealTimers();
     }
 
-    expect(agent.currentSessionId).toBe('session-still-running');
+    expect(agent.currentSessionId).toBe(sid('session-still-running'));
     expect(agent.status).not.toBe('error');
     expect(agent.error).toBeUndefined();
   });
