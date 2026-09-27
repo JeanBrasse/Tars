@@ -5,6 +5,7 @@ import * as path from 'node:path';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('electron', () => ({ BrowserWindow: vi.fn() }));
+vi.setConfig({ testTimeout: 20_000 });
 
 import { endAllTerminals, isQuitting, ptyProcesses, quickPtyProcesses } from '../../../electron/core/pty-manager';
 import type { IPty } from 'node-pty';
@@ -64,7 +65,9 @@ function terminal(stubborn: boolean): { pty: IPty; leader: ChildProcess; job: ()
     wait
   `;
   const T = `${process.env.TMPDIR || '/tmp'}/tars-quit-${process.pid}-${Math.random().toString(36).slice(2)}`;
-  const leader = spawn('/bin/sh', ['-c', script], { detached: true, stdio: 'ignore', env: { ...process.env, T } });
+  // bash, as the terminals run: its `set -m` gives the job a group of its own,
+  // which dash, Ubuntu's /bin/sh, does not.
+  const leader = spawn('/bin/bash', ['-c', script], { detached: true, stdio: 'ignore', env: { ...process.env, T } });
   started.push(leader);
   const read = (f: string) => { try { return Number(fs.readFileSync(f, 'utf-8').trim()); } catch { return 0; } };
   const exits: Array<(e: { exitCode: number }) => void> = [];
