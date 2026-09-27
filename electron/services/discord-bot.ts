@@ -374,12 +374,16 @@ export async function sendDiscordMessage(text: string, settings: AppSettings, ch
 }
 
 /**
- * View Channels and Send Messages (1024 + 2048): all the bot does in a server
- * is read what it is sent and answer with channel.send. It fetches no history
- * and replies to no message, so Read Message History (65536), which it asked
- * for until the Audit's gate of #195, is not requested.
+ * View Channels, Send Messages and Send Messages in Threads (1024 + 2048 +
+ * 2^38): all the bot does in a server is read what it is sent and answer with
+ * channel.send, in the channel or the thread it was mentioned in. A mention in
+ * a thread or a forum post reaches it, and without the third Discord refuses
+ * the answer there, and send_discord to that thread (the Audit's gate of #200).
+ * It fetches no history and replies to no message, so Read Message History
+ * (65536), which it asked for until the gate of #195, is not requested. Past
+ * 31 bits, so written out, never with a shift.
  */
-export const DISCORD_BOT_PERMISSIONS = 3072;
+export const DISCORD_BOT_PERMISSIONS = 274877910016;
 
 /** The link that adds the bot to a server. A bot's application id is its user id. */
 export function discordInviteUrl(applicationId: string): string {
@@ -394,7 +398,10 @@ export function discordInviteUrl(applicationId: string): string {
  * link, and only the id goes into it, never the rest, which is the secret.
  */
 export function inviteUrlFromToken(token: unknown): string | null {
-  if (typeof token !== 'string') return null;
+  // A bot token is about seventy characters. Anything much longer is not one,
+  // and splitting it is work the renderer can ask of the main process: 50 MB
+  // of dots held it 3.3 s (the Audit's gate of #200).
+  if (typeof token !== 'string' || token.length > 200) return null;
   const [first, ...rest] = token.split('.');
   // A token has its three parts: a blank field, or an id pasted alone, invites nobody.
   if (!rest.length) return null;

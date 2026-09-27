@@ -21,10 +21,10 @@ import * as path from 'node:path';
 /** @type {Surface[]} */
 export const PAGES = [
   { name: 'dashboard', route: '/' },
-  // The fleet rail shows statuses that settle from running to idle in the first
-  // seconds after launch, and chat is the second surface visited. Waiting is
-  // better than masking the rail: a masked panel is a pink rectangle in the
-  // baseline and no coverage at all.
+  // The room list counts the agents the sweep launches as it starts, and chat
+  // is the second surface visited: waiting lets those counts settle. Better
+  // than masking the list: a masked panel is a pink rectangle in the baseline
+  // and no coverage at all.
   { name: 'chat', route: '/chat', settle: 3000 },
   { name: 'agents', route: '/agents' },
   { name: 'kanban', route: '/kanban' },
@@ -232,17 +232,6 @@ export const VOLATILE = {
     selector: 'text=/· \\d+ chunks$/',
     why: 'how much a live CLI has printed by the time the page is photographed',
   },
-  'fleet-status-lines': {
-    surfaces: ['chat'],
-    // The whole line under the agent's name: its status and the last line its
-    // terminal printed. Since #149 the status is a <span> of its own, and a text
-    // selector takes the smallest element, so it masked the word alone. The line
-    // stayed hidden only when it held the sandbox path, which it does in some
-    // runs and not in others. `[0-9]` and not a backslash-d: in a CSS string a
-    // backslash starts an escape, and the minutes and hours stopped matching.
-    selector: 'p:has(span:text-matches("^(running|waiting) (just now|<1m|[0-9]+m|[0-9]+h)"))',
-    why: 'how long an agent has held its status, and the last line its terminal printed',
-  },
   'changelog-body': {
     surfaces: ['whats-new'],
     selector: 'div.space-y-2:has(ul li)',
@@ -395,7 +384,11 @@ export function readPageErrorRecords() {
 export const CHAT_ROOMS = [
   {
     name: 'chat-hermes-with-rooms', route: '/chat',
-    shows: 'All projects',
+    // Direction A (#165) no longer says `All projects`. The tars row's count
+    // comes from the bus journal and the placeholder from the failed Hermes
+    // connection, so the picture waits for both.
+    shows: '1 not sent',
+    placeholder: 'Fix the Hermes connection above',
   },
   {
     name: 'chat-room-agents-at-work', route: '/chat', clickText: 'tars',
