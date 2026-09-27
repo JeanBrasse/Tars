@@ -23,7 +23,11 @@ import * as path from 'node:path';
  *    broken file;
  * 4. a file Settings wrote stops working, in any of its modes;
  * 5. the Settings form stops showing the default connection to save, or a
- *    handler added later reads the connection unchecked to call the gateway.
+ *    handler added later reads the connection unchecked to call the gateway;
+ * 6. hermes:connection:get hands the pages the default port's URL for a missing
+ *    or broken file: Settings > Hermes and the Chat probe the base URL it gives
+ *    them as soon as they open (hermes:connection:test), so opening either one
+ *    reached the default port. Found on the merge with 1.9.0.
  */
 
 const sent = vi.hoisted(() => [] as string[]);
@@ -151,11 +155,27 @@ describe('the Hermes pages\' handlers', () => {
     expect(sent.map(u => new URL(u).origin)).toEqual(['http://127.0.0.1:9', 'http://127.0.0.1:9']);
   });
 
-  it('still shows the default connection in the Settings form, to be saved, without calling it', async () => {
-    const r = await call('hermes:connection:get', []) as unknown as { connection: { mode: string; localPort: number }; baseUrl: string };
+  type Shown = { connection: { mode: string; localPort?: number }; baseUrl: string };
+
+  it('still shows the default connection in the Settings form, to be saved, and gives no base URL to probe', async () => {
+    const r = await call('hermes:connection:get', []) as unknown as Shown;
     expect(r.connection).toMatchObject({ mode: 'local', localPort: 9119 });
-    expect(r.baseUrl).toBe('http://127.0.0.1:9119');
+    expect(r.baseUrl).toBe('');
     expect(sent).toEqual([]);
+  });
+
+  it.each(BROKEN)('gives no base URL to probe when the file is %s', async (_what, content) => {
+    writeConnection(content);
+    const r = await call('hermes:connection:get', []) as unknown as Shown;
+    expect(r.baseUrl).toBe('');
+    expect(sent).toEqual([]);
+  });
+
+  it('gives the base URL of the gateway the file names', async () => {
+    writeConnection('{"mode":"local","localPort":9,"authMode":"token"}');
+    const r = await call('hermes:connection:get', []) as unknown as Shown;
+    expect(r.connection).toMatchObject({ mode: 'local', localPort: 9 });
+    expect(r.baseUrl).toBe('http://127.0.0.1:9');
   });
 
   it('reads the saved connection unchecked only to show it, and to lend its token to a URL under test', () => {
