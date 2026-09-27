@@ -1361,8 +1361,10 @@ Tars calls a gateway only when this file names one: it reads, parses to an objec
 address its mode needs (a `local` port, an `ssh` host, a `remote` or `cloud` URL). Without it, or
 with a broken one, the Chat, the memory hub, the Kanban, Schedules and memory-provider pages and
 the agents' kanban say Hermes is not configured. Nothing falls back to 127.0.0.1:9119, which on a
-machine with an SSH tunnel to a real gateway is that gateway. A local Hermes on 9119 is reached
-once its connection is saved in Settings, Hermes.
+machine with an SSH tunnel to a real gateway is that gateway. Settings, Hermes, shows that local
+default unsaved, with Save available, and contacts it only on Test connection or Sign in: opening
+it, or the Chat, probes nothing (`hermes:connection:get` gives no base URL without a file). A local
+Hermes on 9119 is reached once its connection is saved there.
 
 Two auth flavours, advertised by the gateway on `GET /api/status`:
 
