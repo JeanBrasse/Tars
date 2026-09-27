@@ -29,7 +29,9 @@ vi.mock('react', async (importOriginal) => ({
  *    the value it already had;
  * 4. the row does not say what a report holds and what it never holds, or has
  *    no way to the privacy policy, or a link that would open in Tars's own
- *    window rather than in the browser;
+ *    window rather than in the browser; or it promises what is not true: the
+ *    Audit's gate found it said a report never holds files or paths, when #221
+ *    sends a path under home as ~/... and one outside it whole;
  * 5. the switch has no name of its own for assistive technology.
  */
 
@@ -97,12 +99,14 @@ describe('flipping it saves that key alone (3)', () => {
 });
 
 describe('what the row tells (4, 5)', () => {
-  it('says what a report holds, and what it never holds', () => {
+  it('says what a report holds, and what it never holds, and promises nothing a report carries', () => {
     const said = textOf(preferences(withoutTheKey()).row().props.description as never);
     for (const sent of ['the error', "where it happened in Tars's code", 'the version', 'the system', 'a random install id']) {
       expect(said).toContain(sent);
     }
-    expect(said).toContain('Never your code, prompts, conversations, files, paths or keys.');
+    expect(said).toContain('File paths keep their names, with your home folder shown as ~.');
+    expect(said).toContain('Never your code, prompts, conversations or keys.');
+    expect(said).not.toMatch(/never[^.]*\b(files?|paths?)\b/i);
   });
 
   it('links to the privacy policy, opened in the browser', () => {
