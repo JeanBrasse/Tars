@@ -75,10 +75,14 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (cancelled) return;
       if (!r) { setAuthChecked(true); return; }
       setConn(r.connection);
-      setSavedConn(JSON.stringify(r.connection));
+      // A base URL comes only with a gateway a connection file names. Without
+      // one the form shows the default, which is not saved: Save writes it as
+      // it stands, the one way a local Hermes on that port is reached.
+      setSavedConn(r.baseUrl ? JSON.stringify(r.connection) : '');
       setDesktopAvailable(r.desktopConfigAvailable);
-      // Nothing configured to call yet (remote/cloud without a URL): there is
-      // no probe to make, so let the row show its normal form.
+      // Nothing configured to call yet (no connection file that names a
+      // gateway, or remote/cloud without a URL): there is no probe to make, so
+      // let the row show its normal form.
       if (!r.baseUrl) { setAuthChecked(true); return; }
       await probeGateway(r.connection);
     })();

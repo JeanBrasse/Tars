@@ -447,7 +447,7 @@ Remote backends are probed rather than assumed. `pickSearchTool()` scans the end
 
 | Tool | Purpose |
 |---|---|
-| `memory_search` | Federated search. Optional `sources[]` and `limit`. Reports which sources could not answer |
+| `memory_search` | Federated search. Optional `sources[]` and `limit` (10 when none is named). Reports which sources could not answer |
 | `memory_read` | The full digest for the project |
 | `memory_write` | Append a durable fact. `file` defaults to `MEMORY.md`; topic files for detail |
 | `memory_sources` | Per-backend reachability, so an empty search is diagnosable |
@@ -675,6 +675,8 @@ Tars deliberately has no scheduler and no server-side task harness. Both live in
 | `local` | `http://127.0.0.1:<localPort ?? 9119>` |
 | `ssh` | `http://127.0.0.1:<ssh.localPort ?? ssh.remotePort ?? 9119>` (tunnel) |
 | `remote` / `cloud` | the configured absolute URL |
+
+Only a connection saved in `~/.dorothy/hermes-connection.json`, readable and naming the address its mode needs, is called (`configuredHermesConnection`, `usableHermesConnection`); a missing or broken file is "not configured", never the default port, and `hermes:connection:get` then gives the pages no base URL to probe.
 
 Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
 
