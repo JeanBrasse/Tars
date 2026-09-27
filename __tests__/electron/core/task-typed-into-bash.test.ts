@@ -5,6 +5,18 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
+/** A folder this test says another user owns, as lstat would report it. */
+const foreign = vi.hoisted(() => ({ path: '' }));
+vi.mock('fs', async importOriginal => {
+  const real = await importOriginal<typeof import('fs')>();
+  const lstatSync = ((p: import('fs').PathLike, o?: unknown) => {
+    const st = real.lstatSync(p, o as never) as import('fs').Stats;
+    if (!foreign.path || String(p) !== foreign.path) return st;
+    return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { uid: (process.getuid?.() ?? 0) + 1 });
+  }) as typeof real.lstatSync;
+  return { ...real, lstatSync, default: { ...real, lstatSync } };
+});
+vi.setConfig({ testTimeout: 20_000 });
 vi.mock('electron', () => ({ BrowserWindow: vi.fn() }));
 
 import { writeProgrammaticInput } from '../../../electron/core/pty-manager';
@@ -37,6 +49,12 @@ import type { IPty } from 'node-pty';
  *    more on the way.
  * 6. Over-correction: a command with no tab and no newline is no longer typed
  *    as it is, so the terminal stops showing what was launched.
+ * 7. (the Audit's gate of #224) The folder is made once and reused whenever it
+ *    exists: on a multi-user Linux whose /tmp is cleaned, another user can
+ *    make a folder of that name, and swap the file Tars writes in it before
+ *    the shell reads it (reproduced). Before each reuse, the folder must be a
+ *    directory and not a link, owned by this user, and closed to others;
+ *    otherwise a new one is made, and the one found is left untouched.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-task-bash-'));
@@ -125,5 +143,46 @@ describe('a task typed into bash', () => {
     const command = "cd '/tmp' && claude --model opus 'plain task'";
     expect(typedFor(command)).toBe(`${command}\r`);
     expect(launch('a plain task, with "quotes"').argv).toEqual(['--model', 'opus', 'a plain task, with "quotes"']);
+  });
+});
+
+describe('the launch folder, before it is used again', () => {
+  const folderOf = (typed: string) => path.dirname(typed.match(/'([^']+)'/)![1]);
+
+  it.each([
+    ['replaced by a link to a folder of someone else\'s', (dir: string) => {
+      const elsewhere = fs.mkdtempSync(path.join(tmp, 'elsewhere-'));
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.symlinkSync(elsewhere, dir);
+      return elsewhere;
+    }],
+    ['opened to others', (dir: string) => { fs.chmodSync(dir, 0o777); return dir; }],
+  ])('7. is not used when it was %s', (_what, tamper) => {
+    const first = folderOf(typedFor("cd '/tmp' && cli 'a\tb'"));
+    const watched = tamper(first);
+    const before = fs.readdirSync(watched);
+
+    const second = folderOf(typedFor("cd '/tmp' && cli 'c\td'"));
+
+    expect(second).not.toBe(first);
+    expect(fs.readdirSync(watched)).toEqual(before);
+    expect(fs.lstatSync(second).isDirectory()).toBe(true);
+    expect(fs.statSync(second).mode & 0o077).toBe(0);
+  });
+
+  it('7. is not used when another user owns it', () => {
+    const first = folderOf(typedFor("cd '/tmp' && cli 'a\tb'"));
+    foreign.path = first;
+    try {
+      const second = folderOf(typedFor("cd '/tmp' && cli 'c\td'"));
+      expect(second).not.toBe(first);
+    } finally {
+      foreign.path = '';
+    }
+  });
+
+  it('7. is used again when it is still ours', () => {
+    const first = folderOf(typedFor("cd '/tmp' && cli 'a\tb'"));
+    expect(folderOf(typedFor("cd '/tmp' && cli 'c\td'"))).toBe(first);
   });
 });
