@@ -18,6 +18,8 @@ import * as path from 'node:path';
  *    memory), screenshots, breadcrumbs of network requests and console lines,
  *    sessions, the renderer preload injection, OpenTelemetry, the offline
  *    queue on disk that sends later; or with another address than Tars's DSN.
+ * 4b. The request to Sentry carries the system's language: Chromium adds an
+ *    Accept-Language header to every request the net module makes.
  * 5. The SDK failing to load or to start throws out of the main process.
  *    (It is loaded with import(), resolved by the time sync()'s promise is.)
  * 6. The setting's default is not false, in the settings main starts with.
@@ -97,6 +99,7 @@ describe('the SDK in the main process', () => {
     expect(options.enableRendererProfiling).toBeFalsy();
     expect(typeof options.beforeSend).toBe('function');
     expect(typeof options.transport).toBe('function');
+    expect(options.transportOptions).toEqual({ headers: { 'Accept-Language': 'en' } });
   });
 
   it('5. never throws when the SDK cannot be loaded or started', async () => {

@@ -27,6 +27,11 @@ import { ReportBudget } from '../../../electron/services/error-reports/budget';
  *    address, extra, tags, the host name, device names, source lines around a
  *    frame, a frame's local variables, the modules list, the SDK's own data.
  * 4. A conversation or a prompt travels, wherever the SDK put it.
+ * 4b. A conversation or a prompt travels inside the error's own message,
+ *    quoted, the way an error names the input it choked on (JSON.parse, a
+ *    CLI's refusal): quoted text that reads as words (a space in it, more than
+ *    24 characters) is replaced by its length. A quoted name (a module, a
+ *    channel, a short id) is kept: it is what says where it broke.
  * 5. An event with no exception leaves: a message, a console capture, a log.
  * 6. A huge message or a deep stack leaves whole.
  * 7. Over-correction: the type, the message, the functions, the lines, the
@@ -148,6 +153,19 @@ describe('the report built from an event', () => {
     for (const absent of [PROMPT, 'Acme Corp', 'noah@example.com', '10.0.0.2', 'MacBook', 'Asia/Dubai', 'some-module', 'Bearer', 'cookies']) {
       expect(text, absent).not.toContain(absent);
     }
+  });
+
+  it('4b. replaces quoted words in the message by their length, and keeps a quoted name', () => {
+    const value = `Unexpected token in "${PROMPT}" after 'answer the user about their invoices', see \`${PROMPT}\`; `
+      + `Cannot find module 'discord.js' for "agent:start" in “${PROMPT}”`;
+    const report = toReport(sdkEvent({ exception: { values: [{ type: 'SyntaxError', value }] } }), FACTS)!;
+    const out = report.exception.values[0].value!;
+
+    expect(out).not.toContain('refactor');
+    expect(out).not.toContain('invoices');
+    expect(out).toContain(`"[${PROMPT.length} characters]"`);
+    expect(out).toContain("'[36 characters]'");
+    expect(out).toContain("Cannot find module 'discord.js' for \"agent:start\"");
   });
 
   it('5. is no report for an event without an exception', () => {

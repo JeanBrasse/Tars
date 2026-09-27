@@ -25,6 +25,8 @@ import type { ReportFacts } from '../../../electron/services/error-reports/repor
  * 4. The daily budget is not applied on this path: the same error twice.
  * 5. Tracing, sessions or client reports are on in the options.
  * 6. Over-correction: an error with the setting on does not leave at all.
+ * 7. Errors thrown while the setting is off use up the day's budget, so the
+ *    same error, once it is turned on, is never sent.
  */
 
 const HOME = os.homedir();
@@ -120,6 +122,17 @@ describe('what reaches the transport', () => {
     scope.captureException(new Error('after'));
     await c.flush(2_000);
     expect(sent).toEqual([]);
+  });
+
+  it('7. an error thrown while off does not use the budget: once on, it is sent', async () => {
+    enabled = false;
+    const { c, scope } = client();
+    scope.captureException(failure());
+    await c.flush(2_000);
+    enabled = true;
+    scope.captureException(failure());
+    await c.flush(2_000);
+    expect(sent).toHaveLength(1);
   });
 
   it('3. no message, and no envelope that holds no error event', async () => {
