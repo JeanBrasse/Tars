@@ -19,6 +19,9 @@ import { pollGithub, githubRepoOf, GH_READ_ARGS } from '../../../electron/servic
  * 5. `gh` is asked for anything but a read: a merge, a comment, an edit.
  * 6. A project whose remote is not on GitHub, or has none, is polled.
  * 7. A restart forgets what was seen, and reports it again.
+ * 8. Polling resumes after a long pause (the bot off, Tars closed) and
+ *    reports everything merged in the meantime: a repository not polled for
+ *    an hour is taken as a new baseline.
  */
 
 const REPO = 'JeanBrasse/Tars';
@@ -94,5 +97,16 @@ describe('the repository of a project', () => {
     expect(githubRepoOf('https://github.com.evil.example/x/y')).toBeUndefined();
     expect(githubRepoOf(undefined)).toBeUndefined();
     expect(githubRepoOf('https://github.com/x/y;rm -rf')).toBeUndefined();
+  });
+});
+
+describe('after a pause', () => {
+  it('8. takes a repository not polled for an hour as a new baseline', async () => {
+    const t0 = Date.UTC(2026, 8, 28, 9, 0, 0);
+    await pollGithub([REPO], gh, t0);
+    merged = [pr(300, { mergedAt: '2026-09-28T11:00:00Z' }), ...merged];
+    expect(await pollGithub([REPO], gh, t0 + 2 * 3_600_000)).toEqual([]);
+    merged = [pr(301, { mergedAt: '2026-09-28T11:05:00Z' }), ...merged];
+    expect((await pollGithub([REPO], gh, t0 + 2 * 3_600_000 + 300_000)).map(e => e.number)).toEqual([301]);
   });
 });
