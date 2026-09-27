@@ -38,7 +38,7 @@ vi.mock('../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(()
 
 import { initAgentPty, agents } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
-import { agentForToken } from '../../../electron/core/agent-tokens';
+import { agentForToken, tarsInstanceId } from '../../../electron/core/agent-tokens';
 import type { AgentStatus } from '../../../electron/types';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-token-spawn-home-'));
@@ -64,6 +64,19 @@ function spawnWith(env: Record<string, string | undefined>) {
   spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd, cols: 80, rows: 24, env });
   return spawnCalls[spawnCalls.length - 1].env;
 }
+
+describe('the instance id a hook checks before it sends the token (#11)', () => {
+  // The hook sends its token only to a port that proves it knows this id
+  // (hook-checks-the-instance.test.ts), so every agent process needs it, and
+  // it is the same for every one this Tars starts.
+  it('reaches every agent process, the same for all of them in this run', () => {
+    const first = spawnWith({});
+    const second = spawnWith({ TARS_INSTANCE_ID: 'forged-by-a-parent-agent' });
+    expect(first.TARS_INSTANCE_ID).toMatch(/^[0-9a-f]{32}$/);
+    expect(first.TARS_INSTANCE_ID).toBe(tarsInstanceId());
+    expect(second.TARS_INSTANCE_ID, 'a value from the caller won over Tars\'s own').toBe(tarsInstanceId());
+  });
+});
 
 describe('the token an agent process starts with', () => {
   it('reaches an agent started from the interface or restored, and names that agent', async () => {
