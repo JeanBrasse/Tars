@@ -57,8 +57,10 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
         description={
           <>
             <span className="block">{"Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id."}</span>
+            {/* True of what #221 sends: a path under home as ~/..., one outside it whole. */}
+            <span className="block">File paths keep their names, with your home folder shown as ~.</span>
             <span className="block">
-              Never your code, prompts, conversations, files, paths or keys.{' '}
+              Never your code, prompts, conversations or keys.{' '}
               <a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privacy policy</a>
             </span>
           </>
