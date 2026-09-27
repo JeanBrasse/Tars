@@ -60,7 +60,8 @@ describe('an event report', () => {
   it('1. is neither sent nor kept while the Telegram bot is off', async () => {
     r.setReportChannel(null);
     r.reportEvent(error('a1'));
-    await minutes(3);
+    // Back on before the 2 minutes are up: what came while it was off still does not go.
+    await minutes(1);
     r.setReportChannel(channel);
     await minutes(3);
     expect(sent).toEqual([]);
@@ -88,6 +89,10 @@ describe('an event report', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].match(/Agent a1/g)).toHaveLength(1);
     expect(sent[0].match(/#231/g)).toHaveLength(1);
+    // Still in error, said again in a later window: not news.
+    r.reportEvent(error('a1'));
+    await minutes(2.01);
+    expect(sent).toHaveLength(1);
     // Out of error, then in it again: a new event.
     r.agentRecovered('a1');
     r.reportEvent(error('a1'));
