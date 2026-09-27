@@ -122,9 +122,11 @@ describe('the scratch folders earlier updates could not remove', () => {
     const file = path.join(tmp, 'tars-cli-update-m3N4o5');
     fs.writeFileSync(file, 'not a folder');
     backdate(file, 120);
+    // The link and what it points to are both old: only the link's own kind keeps them.
     const elsewhere = path.join(root, 'elsewhere');
     fs.mkdirSync(elsewhere);
     fs.writeFileSync(path.join(elsewhere, 'keep'), 'keep');
+    backdate(elsewhere, 120);
     const link = path.join(tmp, 'tars-cli-update-p6Q7r8');
     fs.symlinkSync(elsewhere, link);
     backdate(link, 120);
@@ -135,6 +137,7 @@ describe('the scratch folders earlier updates could not remove', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('not a folder');
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(elsewhere, 'keep'), 'utf8')).toBe('keep');
+    expect(fs.statSync(elsewhere).mode & 0o777).toBe(0o755);
   });
 
   // Root removes it all the same, and a read-only folder on Windows still lets its children go.
