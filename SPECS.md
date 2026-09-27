@@ -447,7 +447,7 @@ Remote backends are probed rather than assumed. `pickSearchTool()` scans the end
 
 | Tool | Purpose |
 |---|---|
-| `memory_search` | Federated search. Optional `sources[]` and `limit`. Reports which sources could not answer |
+| `memory_search` | Federated search. Optional `sources[]` and `limit` (10 when none is named). Reports which sources could not answer |
 | `memory_read` | The full digest for the project |
 | `memory_write` | Append a durable fact. `file` defaults to `MEMORY.md`; topic files for detail |
 | `memory_sources` | Per-backend reachability, so an empty search is diagnosable |
