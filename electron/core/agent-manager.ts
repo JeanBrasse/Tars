@@ -241,7 +241,11 @@ export function handleStatusChangeNotification(
 
   if (!prevStatus) {
     previousAgentStatus.set(agent.id, newStatus);
-    return;
+    // Every caller calls on a change, so this one is a change too, with the
+    // status before it unknown: an agent whose first change after Tars
+    // starts is to error was neither notified nor reported (found in the
+    // app proof of the event reports). The other statuses stay as they were.
+    if (newStatus !== 'error') return;
   }
 
   if (prevStatus === newStatus) {
