@@ -4,6 +4,7 @@ import { Toggle } from './Toggle';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
 import type { ClaudeInfo, AppSettings } from './types';
+import { PRIVACY_POLICY_URL } from './constants';
 import { PROVIDER_REGISTRY, computeProviderAvailability } from '@/lib/providers';
 
 interface GeneralSectionProps {
@@ -44,6 +45,29 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
           <Toggle
             enabled={appSettings.autoCheckUpdates !== false}
             onChange={() => onSaveAppSettings({ autoCheckUpdates: !appSettings.autoCheckUpdates })}
+          />
+        }
+      />
+
+      {/* Off unless turned on, including in a settings file older than the
+          key: main sends nothing to Sentry while it reads anything but true. */}
+      <SettingsRow
+        wrap
+        label="Send error reports"
+        description={
+          <>
+            <span className="block">{"Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id."}</span>
+            <span className="block">
+              Never your code, prompts, conversations, files, paths or keys.{' '}
+              <a href={PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privacy policy</a>
+            </span>
+          </>
+        }
+        control={
+          <Toggle
+            label="Send error reports"
+            enabled={appSettings.errorReportsEnabled === true}
+            onChange={() => onSaveAppSettings({ errorReportsEnabled: appSettings.errorReportsEnabled !== true })}
           />
         }
       />
