@@ -101,7 +101,7 @@ describe('what reaches the transport', () => {
     // Every item in the envelope is the one error event.
     const lines = bytes.trim().split('\n').map(line => JSON.parse(line));
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toEqual({ type: 'event', length: expect.any(Number) });
+    expect(lines[1]).toEqual({ type: 'event' });
   });
 
   it('2. nothing at all while the setting is off', async () => {

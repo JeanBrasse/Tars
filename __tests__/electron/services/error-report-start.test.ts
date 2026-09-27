@@ -19,6 +19,7 @@ import * as path from 'node:path';
  *    sessions, the renderer preload injection, OpenTelemetry, the offline
  *    queue on disk that sends later; or with another address than Tars's DSN.
  * 5. The SDK failing to load or to start throws out of the main process.
+ *    (It is loaded with import(), resolved by the time sync()'s promise is.)
  * 6. The setting's default is not false, in the settings main starts with.
  * 7. A settings change is not followed: main.ts never tells the reports
  *    that the settings were replaced.
@@ -61,8 +62,8 @@ describe('the SDK in the main process', () => {
   it('1. is neither loaded nor started while the setting is off', async () => {
     const start = await fresh();
     const reports = start(() => false);
-    reports.sync();
-    reports.sync();
+    await reports.sync();
+    await reports.sync();
     expect(loaded.count).toBe(0);
     expect(init).not.toHaveBeenCalled();
   });
@@ -72,17 +73,17 @@ describe('the SDK in the main process', () => {
     const start = await fresh();
     const reports = start(() => on);
     on = true;
-    reports.sync();
+    await reports.sync();
     on = false;
-    reports.sync();
+    await reports.sync();
     on = true;
-    reports.sync();
+    await reports.sync();
     expect(init).toHaveBeenCalledTimes(1);
   });
 
   it('4. with Tars\'s DSN, errors only, and none of the SDK\'s defaults', async () => {
     const start = await fresh();
-    start(() => true);
+    await start(() => true).sync();
     const options = init.mock.calls[0][0];
 
     expect(options.dsn).toBe(ERROR_REPORTS_DSN);
@@ -101,13 +102,13 @@ describe('the SDK in the main process', () => {
   it('5. never throws when the SDK cannot be loaded or started', async () => {
     loaded.fail = true;
     let start = await fresh();
-    expect(() => start(() => true).sync()).not.toThrow();
+    await expect(start(() => true).sync()).resolves.toBeUndefined();
 
     vi.resetModules();
     loaded.fail = false;
     init.mockImplementation(() => { throw new Error('init failed'); });
     start = await fresh();
-    expect(() => start(() => true).sync()).not.toThrow();
+    await expect(start(() => true).sync()).resolves.toBeUndefined();
   });
 });
 
