@@ -16,6 +16,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * 3. A packaged Tars obeys it: an environment variable would choose the
  *    program Tars runs for a user who never asked.
  * 4. Over-correction: unset, the three places are no longer tried.
+ *
+ * Two more, found at QA's gate of #226 (2026-09-28): each passes on the code
+ * and fails on a mutant that the four above let through.
+ * 1b. With a binary named, `tailscale serve status` is asked of another one,
+ *     so the page's serve line comes from the Mac again.
+ * 5. The named binary fails (moved, not executable), and the three places
+ *    are tried after it, so the sandbox asks the Mac's own tailscale again.
+ * And 2 with a blank value, which is none too.
  */
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => Promise<unknown>>());
@@ -61,10 +69,12 @@ describe('the tailscale the Hermes page asks', () => {
     const result = await info();
     expect(status()).toEqual(['/sandbox/fake-tailscale']);
     expect(result.webhookTailnetUrl).toBe('https://tars-sandbox.example.ts.net/api/webhooks/hermes');
+    // 1b. serve status too
+    expect(ran).toEqual(['/sandbox/fake-tailscale status --json', '/sandbox/fake-tailscale serve status']);
   });
 
-  it('2. is none when it is empty', async () => {
-    process.env.DOROTHY_TAILSCALE_BIN = '';
+  it.each([['empty', ''], ['blank', '   ']])('2. is none when it is %s', async (_what, value) => {
+    process.env.DOROTHY_TAILSCALE_BIN = value;
     const result = await info();
     expect(ran).toEqual([]);
     expect(result.webhookTailnetUrl).toBeUndefined();
@@ -81,5 +91,13 @@ describe('the tailscale the Hermes page asks', () => {
     delete process.env.DOROTHY_TAILSCALE_BIN;
     await info();
     expect(status()).toEqual(['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale']);
+  });
+
+  it('5. is still the named one alone when that one fails, and the page reads not installed', async () => {
+    process.env.DOROTHY_TAILSCALE_BIN = '/sandbox/missing-tailscale';
+    const result = await info();
+    expect(ran).toEqual(['/sandbox/missing-tailscale status --json']);
+    expect(result.tailscale?.installed).toBe(false);
+    expect(result.webhookTailnetUrl).toBeUndefined();
   });
 });
