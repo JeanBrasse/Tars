@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'The checks that decide whether a file may be sent to Telegram or attached in the vault tell one file from another on a drive whose file numbers are 64 bits wide, such as an NTFS drive, or a Windows share mounted on Linux: an ordinary file is no longer refused as if it were in ~/.tars-private or ~/.ssh, and a file outside your home is no longer sent to Telegram as if it were in it',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
