@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { Splash } from '@/components/Splash';
 import { Button, BrandSpinner } from '@/components/ui';
+import { followErrorReportsSetting } from '@/lib/error-reports';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -184,6 +185,10 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
     // throwing, which is what left the panel on "Restarting" forever.
     setTimeout(() => setUpdateFlowState(prev => (prev === 'restarting' ? 'restart-failed' : prev)), 8000);
   }, []);
+
+  // Error reports, the window's half: started only if Settings has them on
+  // (src/lib/error-reports.ts); the switch starts them itself when turned on.
+  useEffect(() => { void followErrorReportsSetting(window.electronAPI); }, []);
 
   // Initialize dark mode from localStorage on mount. Dark is the launch
   // default: only an explicit 'light' pref moves off it. The old
