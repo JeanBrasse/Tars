@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 50,
+    version: '1.9.1',
+    date: '2026-09-26',
+    updates: [
+      'An Amp update Tars ran is reported as what it came to, updated, up to date or failed with npm\'s own reason, even when Tars cannot delete the temporary folder it downloaded into; it read "failed" with the deletion\'s error, and Tars\'s log now names the folder left behind instead',
+    ],
+  },
+  {
     id: 49,
     version: '1.9.0',
     date: '2026-09-24',
