@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -87,6 +87,10 @@ if [ "$last" = "$lock" ] && before=$(/usr/bin/stat "$@" 2>/dev/null); then
 fi
 exec /usr/bin/stat "$@"
 `;
+
+// Every case starts real renders, each waiting its second on a held lock: under
+// load that is well past vitest's default 5 s (a load average of 89 measured).
+vi.setConfig({ testTimeout: 60_000 });
 
 let script: string;
 const homes: string[] = [];
