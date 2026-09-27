@@ -21,15 +21,19 @@ HOOK_DEBUG_LOG="$TARS_LOG_DIR/hooks-debug.log"
 # token posted to it. So the port is asked first to prove it knows this
 # CLI's TARS_INSTANCE_ID: a fresh random challenge goes to /api/health, and
 # the answer must be sha256("<id>:<challenge>"). The id itself never leaves.
-# No id, no answer within 2 s, or a wrong one: no token, and the post is
-# refused as if it had none. Asked once, here, as the hook starts: tars_auth
+# No id, no answer within 5 s, or a wrong one: no token, and the post is
+# refused as if it had none. 5 s, longer than any post waits (3 s): a Tars
+# whose main thread is held (a transcript scan, 2.7 s; the Usage page, 4.15 s)
+# still gets its token. At 2 s it did not, and a Stop was lost (the Audit's
+# gate of #212). A closed port answers at once; only a squatter that holds
+# the connection costs each hook those 5 s. Asked once, here, as the hook starts: tars_auth
 # runs in a subshell of its own for each post, where nothing it learnt would
 # be kept.
 TARS_TOKEN_OK=no
 if [ -n "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -n "${TARS_INSTANCE_ID:-}" ]; then
   tars_challenge=$(od -An -tx1 -N16 /dev/urandom 2>/dev/null | tr -d ' \n')
   if [ ${#tars_challenge} -eq 32 ]; then
-    tars_proof=$(curl -s --max-time 2 "${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}/api/health?challenge=$tars_challenge" 2>/dev/null \
+    tars_proof=$(curl -s --max-time 5 "${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}/api/health?challenge=$tars_challenge" 2>/dev/null \
       | jq -r '.proof // empty' 2>/dev/null)
     if command -v sha256sum >/dev/null 2>&1; then
       tars_expected=$(printf '%s' "$TARS_INSTANCE_ID:$tars_challenge" | sha256sum | cut -d' ' -f1)

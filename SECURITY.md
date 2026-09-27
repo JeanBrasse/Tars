@@ -103,7 +103,7 @@ the 1.9.0 hook sent it `Bearer <the terminal's token>`. Tars now mints an instan
 per run (`tarsInstanceId`, in memory, never written) and hands it to each CLI beside the
 token (`TARS_INSTANCE_ID`). As it starts, a hook sends a fresh random challenge to
 `/api/health` and sends the token only when the answer is sha256 of the id and the
-challenge; with no id, no answer within 2 s or a wrong one, it posts without a token.
+challenge; with no id, no answer within 5 s (longer than any post waits: a Tars whose main thread is held a few seconds still gets its token) or a wrong one, it posts without a token.
 The same listener got the challenge and a post with no Authorization. The id is as
 readable as the token by a process of the same user (`ps -Eww`), and no more: this
 closes the port to other accounts and to a replay, not to that.
