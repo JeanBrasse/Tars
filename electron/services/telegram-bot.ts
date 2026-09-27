@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
@@ -674,7 +674,11 @@ export function initTelegramBot() {
   authMisses = [];
 
   try {
-    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
+    // A development run may point the bot at a stand-in for Telegram's API
+    // (DOROTHY_TELEGRAM_API), for the proof of ask_noah against a fake
+    // Telegram; a packaged Tars never reads it.
+    const fakeApi = app?.isPackaged ? undefined : process.env.DOROTHY_TELEGRAM_API;
+    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true, ...(fakeApi ? { baseApiUrl: fakeApi } : {}) });
     console.log('Telegram bot started');
     setNoahChannel(noahChannel);
 

@@ -39,9 +39,11 @@ import * as path from 'node:path';
  */
 
 const typed = vi.hoisted(() => [] as string[]);
+/** What runs in the terminals spawned next: claude's version, or `bash` at its prompt. */
+const foreground = vi.hoisted(() => ({ value: '2.1.280' }));
 vi.mock('node-pty', () => ({
   spawn: vi.fn(() => ({
-    pid: 4242, process: '2.1.280',
+    pid: 4242, process: foreground.value,
     write: vi.fn((data: string) => { typed.push(data); }),
     kill: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn(),
   })),
@@ -103,7 +105,7 @@ const reply = (over: Partial<Parameters<Questions['answerNoahReply']>[0]> = {}) 
 });
 
 beforeEach(async () => {
-  typed.length = 0; sent.length = 0; told.length = 0; chats = [NOAH]; nextId = 100;
+  typed.length = 0; sent.length = 0; told.length = 0; chats = [NOAH]; nextId = 100; foreground.value = '2.1.280';
   fs.rmSync(path.join(os.homedir(), '.tars-private'), { recursive: true, force: true });
   fs.rmSync(path.join(os.homedir(), '.dorothy'), { recursive: true, force: true });
   await load();
@@ -207,6 +209,18 @@ describe('Noah\'s reply', () => {
     expect(typed.join('')).toBe('');
     expect(told.at(-1)?.text).toMatch(/not delivered|no session/i);
     expect(q.openQuestionOf('a1')).toBeDefined();
+  });
+});
+
+describe('Noah\'s reply, to a terminal back at its shell', () => {
+  it('7. is not typed into bash at its prompt, where it would run as a command', async () => {
+    foreground.value = 'bash';
+    agent('a1', 'Exited');
+    await q.askNoah({ agentId: 'a1', question: 'Which database?' }, T0);
+    expect(q.answerNoahReply(reply({ text: 'rm -rf ~/work' }), T0 + 1000)).toBe(true);
+    await settle();
+    expect(typed.join('')).toBe('');
+    expect(told.at(-1)?.text).toMatch(/not delivered|no session/i);
   });
 });
 
