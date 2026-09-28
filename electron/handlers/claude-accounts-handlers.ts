@@ -17,7 +17,7 @@ import {
   setThresholds,
   writeAccountsSettings,
 } from '../services/claude-accounts/registry';
-import { provisionAccountDir } from '../services/claude-accounts/provision';
+import { accountDirProblem, claudeCredentialOverrides, provisionAccountDir } from '../services/claude-accounts/provision';
 import { claudeAuthLogout, claudeAuthStatus, loginCommand } from '../services/claude-accounts/auth';
 import type { AgentStatus, AppSettings, ClaudeAccount, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView } from '../types';
 
@@ -191,8 +191,21 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     }
   });
 
+  /**
+   * On only when each folder's own login is what Claude Code would use: an API
+   * key, a token or a key helper in ~/.claude/settings.json or in Tars's own
+   * environment signs every folder in as that one credential, and switching
+   * would change nothing the cards say it did (the Audit's B3). Named, never
+   * quoted.
+   */
   ipcMain.handle('claude-accounts:set-enabled', async (_e, enabled: unknown): Promise<Result<ClaudeAccountsView>> => {
     try {
+      if (enabled === true) {
+        const overrides = claudeCredentialOverrides();
+        if (overrides.length) {
+          throw new Error(`Claude Code is set to sign in with ${overrides.join(', ')}, so every account would run on that one credential. Remove it to use several accounts.`);
+        }
+      }
       return { success: true, ...save(setEnabled(readAccountsSettings(), enabled)) };
     } catch (err) {
       return failure(err);
@@ -249,16 +262,22 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
   });
 
   /**
-   * Signed out by Claude Code first, so that no signed-in keychain item is
-   * left behind with nobody able to see it; a logout that fails keeps the
-   * account. Then the directory goes to the Trash, not a deletion: it holds
-   * the account's own sessions and history.
+   * The folder is checked first: one that is not Tars's own (a link, open to
+   * others, not this user's) is refused, with nothing signed out or moved.
+   * Then signed out by Claude Code, with the folder's exact string (another
+   * spelling is another keychain item), so that no signed-in item is left
+   * behind with nobody able to see it; a logout that fails keeps the account.
+   * Then the folder goes to the Trash, never deleted: it holds the account's
+   * own sessions and history, and a Trash that fails keeps it, and the
+   * account, and says so.
    */
   ipcMain.handle('claude-accounts:remove', async (_e, id: unknown): Promise<Result<ClaudeAccountsView>> => {
     try {
       const current = readAccountsSettings();
       const next = removeAccount(current, id);
       const account = current.accounts.find(a => a.id === id) as ClaudeAccount;
+      const problem = accountDirProblem(account.configDir as string);
+      if (problem) throw new Error(`${problem} Nothing was signed out or moved.`);
 
       for (const [ptyId, forId] of loginFor) {
         if (forId !== account.id) continue;
@@ -278,7 +297,8 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       try {
         await shell.trashItem(account.configDir as string);
       } catch (err) {
-        console.warn(`[claude-accounts] ${account.label}: signed out, but its folder did not go to the Trash:`, err);
+        auth.delete(account.id);
+        throw new Error(`Signed out, but its folder could not go to the Trash (${err instanceof Error ? err.message : String(err)}). Nothing was deleted, and the account stays until its folder can be moved.`);
       }
 
       let pinsCleared = false;

@@ -13,6 +13,14 @@
  *   signed out again, by Claude Code, and the page says which account has it;
  * - removing an account leaving a signed-in keychain item behind: the logout
  *   runs first, and a failed logout keeps the account and its directory;
+ * - removing, or writing into, a folder that is not Tars's own (the Audit's B2):
+ *   a registry edited by an agent cannot point an account elsewhere, and a
+ *   folder that fails the checks is refused, with nothing signed out or moved;
+ *   a Trash that fails keeps the folder and the account, never a deletion (N7);
+ * - the option turned on while Claude Code signs in with one credential for
+ *   every folder (the Audit's B3): refused, saying which one, never its value;
+ * - the login terminal's traffic (the OAuth URL, a pasted code) in a log (N1);
+ *   the e-mail and plan anywhere but in memory (N2);
  * - account 1 removed;
  * - an agent pinned to an account that no longer exists;
  * - bad input (labels, thresholds, orders, ids) saved, or thrown at the renderer
@@ -25,7 +33,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { makeFakeClaude, signIn, type FakeClaude } from '../claude-accounts/fake-claude';
 
-const { handlers, broadcasts, spawned, trashed } = vi.hoisted(() => ({
+const { handlers, broadcasts, spawned, trashed, trash } = vi.hoisted(() => ({
+  trash: { fails: false },
   handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
   broadcasts: [] as { channel: string; payload: unknown }[],
   spawned: [] as {
@@ -37,7 +46,7 @@ const { handlers, broadcasts, spawned, trashed } = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn((channel: string, fn: (...args: unknown[]) => Promise<unknown>) => { handlers.set(channel, fn); }) },
-  shell: { trashItem: vi.fn(async (p: string) => { trashed.push(p); }) },
+  shell: { trashItem: vi.fn(async (p: string) => { if (trash.fails) throw new Error('no trash here'); trashed.push(p); }) },
 }));
 
 vi.mock('node-pty', () => ({
@@ -104,6 +113,7 @@ beforeEach(() => {
   broadcasts.length = 0;
   spawned.length = 0;
   trashed.length = 0;
+  trash.fails = false;
   if (fs.existsSync(accountsFile())) fs.unlinkSync(accountsFile());
   fake = makeFakeClaude();
   agents = new Map();
@@ -258,12 +268,75 @@ describe('removing', () => {
     expect(trashed).toEqual([a.configDir]);
   });
 
+  it('refuses a folder that fails the checks: nothing signed out, nothing moved, the account kept', async () => {
+    const a = await add('Max two');
+    signIn(a.configDir!, 'two@example.com');
+    fs.chmodSync(a.configDir!, 0o755);
+    const r = await call('claude-accounts:remove', a.id);
+    expect(r).toMatchObject({ success: false, error: expect.stringMatching(/other users/) });
+    expect(fake.calls().filter(c => c.endsWith('auth logout'))).toEqual([]);
+    expect(trashed).toEqual([]);
+    expect((await view()).accounts.map(x => x.id)).toContain(a.id);
+    fs.chmodSync(a.configDir!, 0o700);
+  });
+
+  it('keeps the folder and the account when the Trash fails, and deletes nothing', async () => {
+    const a = await add('Max two');
+    trash.fails = true;
+    const r = await call('claude-accounts:remove', a.id);
+    expect(r).toMatchObject({ success: false, error: expect.stringMatching(/Trash/) });
+    expect(fs.existsSync(path.join(a.configDir!, '.claude.json'))).toBe(true);
+    expect((await view()).accounts.map(x => x.id)).toContain(a.id);
+  });
+
+  it('signs out with the folder derived from the id, whatever an agent wrote into the registry', async () => {
+    const a = await add('Max two');
+    const file = accountsFile();
+    const saved = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const decoy = fs.mkdtempSync(path.join(os.homedir(), 'Documents-'));
+    saved.accounts[1].configDir = decoy;
+    fs.writeFileSync(file, JSON.stringify(saved));
+    signIn(a.configDir!, 'two@example.com');
+    expect((await view()).accounts[1].configDir).toBe(a.configDir);
+    await call('claude-accounts:login-start', { id: a.id });
+    expect(spawned.at(-1)!.opts.env.CLAUDE_CONFIG_DIR).toBe(a.configDir);
+    await call('claude-accounts:remove', a.id);
+    expect(fake.calls()).toContain(`${a.configDir}|<unset>|auth logout`);
+    expect(trashed).toEqual([a.configDir]);
+    expect(fs.readdirSync(decoy)).toEqual([]);
+  });
+
   it('refuses account 1', async () => {
     expect(await call('claude-accounts:remove', 'default')).toMatchObject({ success: false });
   });
 });
 
 describe('settings', () => {
+  it('refuses to turn the option on while Claude Code signs in with one credential for every folder, and says which', async () => {
+    const claudeDir = path.join(os.homedir(), '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_API_KEY: 'sk-ant-never-shown' } }));
+    const r = await call<{ success: boolean; error?: string }>('claude-accounts:set-enabled', true);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('ANTHROPIC_API_KEY');
+    expect(r.error).not.toContain('sk-ant-never-shown');
+    expect(fs.existsSync(accountsFile()) ? JSON.parse(fs.readFileSync(accountsFile(), 'utf-8')).enabled : false).toBe(false);
+
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({}));
+    const saved = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'never-shown-either';
+    try {
+      const again = await call<{ success: boolean; error?: string }>('claude-accounts:set-enabled', true);
+      expect(again.success).toBe(false);
+      expect(again.error).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+      expect(again.error).not.toContain('never-shown-either');
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN; else process.env.CLAUDE_CODE_OAUTH_TOKEN = saved;
+    }
+    expect(await call('claude-accounts:set-enabled', true)).toMatchObject({ success: true });
+    expect(await call('claude-accounts:set-enabled', false)).toMatchObject({ success: true });
+  });
+
   it('turns the option on and off, saved', async () => {
     expect(await call('claude-accounts:set-enabled', true)).toMatchObject({ success: true, settings: { enabled: true } });
     expect(JSON.parse(fs.readFileSync(accountsFile(), 'utf-8')).enabled).toBe(true);
@@ -280,6 +353,35 @@ describe('settings', () => {
     expect(r.accounts.map(x => [x.id, x.label, x.enabled])).toEqual([[a.id, 'Work', false], ['default', 'Account 1', true]]);
     expect(await call('claude-accounts:reorder', [a.id])).toMatchObject({ success: false });
     expect(lastChanged().accounts.map(x => x.id)).toEqual([a.id, 'default']);
+  });
+});
+
+describe('what stays in memory', () => {
+  it('never logs what goes through the login terminal', async () => {
+    const logged: string[] = [];
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(m => vi.spyOn(console, m).mockImplementation((...args: unknown[]) => { logged.push(args.map(String).join(' ')); }));
+    try {
+      const a = await add('Max two');
+      const r = await call<{ ptyId: string }>('claude-accounts:login-start', { id: a.id });
+      spawned.at(-1)!.data.forEach(cb => cb('https://claude.ai/oauth/authorize?code=LOGIN-URL-SECRET'));
+      await call('claude-accounts:login-write', { ptyId: r.ptyId, data: 'PASTED-CODE-SECRET' });
+      signIn(a.configDir!, 'two@example.com');
+      spawned.at(-1)!.exit.forEach(cb => cb({ exitCode: 0 }));
+      await settle();
+    } finally {
+      spies.forEach(s => s.mockRestore());
+    }
+    expect(logged.join('\n')).not.toMatch(/LOGIN-URL-SECRET|PASTED-CODE-SECRET|two@example\.com/);
+  });
+
+  it('keeps the e-mail and the plan out of the registry file', async () => {
+    const a = await add('Max two');
+    signIn(a.configDir!, 'two@example.com');
+    await call('claude-accounts:refresh');
+    await call('claude-accounts:rename', { id: a.id, label: 'Work' });
+    const onDisk = fs.readFileSync(accountsFile(), 'utf-8');
+    expect(onDisk).not.toContain('two@example.com');
+    expect(onDisk).not.toMatch(/subscriptionType|"max"/);
   });
 });
 

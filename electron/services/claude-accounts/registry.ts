@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
-import { dataPath } from '../../constants';
-import { writeAtomicSync } from '../../utils/secret-file';
+import { privatePath } from '../../constants';
+import { writeSecretFileSync } from '../../utils/secret-file';
 import type { ClaudeAccount, ClaudeAccountsSettings } from '../../types';
 
 /**
@@ -13,6 +13,13 @@ import type { ClaudeAccount, ClaudeAccountsSettings } from '../../types';
  * whatever the renderer sends over what is saved, so a Settings page holding
  * an older copy of the list would have put back an account removed since, or
  * dropped one added since. Only the claude-accounts channels write this one.
+ * And in ~/.tars-private, not ~/.dorothy: every agent is handed ~/.dorothy with
+ * --add-dir and can write there (the Audit's B2).
+ *
+ * The file names accounts, not folders. An account's folder is derived from
+ * its id, ~/.claude-accounts/<id>, whatever the file says: an entry pointing
+ * an account at ~/Documents would otherwise have Tars write links there and
+ * Remove trash it.
  *
  * Everything below takes settings and returns new ones, without touching the
  * ones it was given; the handlers read, change, write.
@@ -31,7 +38,7 @@ const ACCOUNT_ID = /^acct-[0-9a-f]{6}$/;
 const UNREADABLE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
 
 export function accountsFile(): string {
-  return dataPath('claude-accounts.json');
+  return privatePath('claude-accounts.json');
 }
 
 /**
@@ -67,13 +74,18 @@ function isThreshold(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= MIN_THRESHOLD && value <= 100;
 }
 
+/** The folder of an account id: under the root, named by the id. */
+export function accountDir(id: string, root: string = accountsRoot()): string {
+  if (!ACCOUNT_ID.test(id)) throw new Error('There is no such account.');
+  return path.join(root, id);
+}
+
 /** One entry of the file as an account, or null when it is not one. */
-function readAccount(raw: unknown, fallbackLabel: string): ClaudeAccount | null {
+function readAccount(raw: unknown, fallbackLabel: string, root: string): ClaudeAccount | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const isDefault = r.id === DEFAULT_ACCOUNT_ID;
   if (!isDefault && !(typeof r.id === 'string' && ACCOUNT_ID.test(r.id))) return null;
-  if (!isDefault && !(typeof r.configDir === 'string' && path.isAbsolute(r.configDir))) return null;
   let label: string;
   try {
     label = validateLabel(r.label);
@@ -83,14 +95,14 @@ function readAccount(raw: unknown, fallbackLabel: string): ClaudeAccount | null 
   return {
     id: r.id as string,
     label,
-    // Kept exactly as written: see ClaudeAccount.configDir.
-    configDir: isDefault ? null : (r.configDir as string),
+    // Derived, never read from the file: see the top of this file.
+    configDir: isDefault ? null : accountDir(r.id as string, root),
     enabled: r.enabled !== false,
   };
 }
 
 /** What the file holds, made valid. Anything it cannot read is the defaults. */
-export function normalizeAccountsSettings(raw: unknown): ClaudeAccountsSettings {
+export function normalizeAccountsSettings(raw: unknown, root: string = accountsRoot()): ClaudeAccountsSettings {
   const defaults = defaultAccountsSettings();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
   const r = raw as Record<string, unknown>;
@@ -98,7 +110,7 @@ export function normalizeAccountsSettings(raw: unknown): ClaudeAccountsSettings 
   const accounts: ClaudeAccount[] = [];
   const seen = new Set<string>();
   for (const entry of Array.isArray(r.accounts) ? r.accounts : []) {
-    const account = readAccount(entry, `Account ${accounts.length + 1}`);
+    const account = readAccount(entry, `Account ${accounts.length + 1}`, root);
     if (!account || seen.has(account.id)) continue;
     seen.add(account.id);
     accounts.push(account);
@@ -125,8 +137,7 @@ export function readAccountsSettings(): ClaudeAccountsSettings {
 }
 
 export function writeAccountsSettings(settings: ClaudeAccountsSettings): void {
-  fs.mkdirSync(path.dirname(accountsFile()), { recursive: true });
-  writeAtomicSync(accountsFile(), JSON.stringify(settings, null, 2), 0o600);
+  writeSecretFileSync(accountsFile(), JSON.stringify(settings, null, 2));
 }
 
 function find(settings: ClaudeAccountsSettings, id: unknown): ClaudeAccount {
@@ -161,7 +172,7 @@ export function addAccount(settings: ClaudeAccountsSettings, label: unknown, roo
   do {
     id = `acct-${randomBytes(3).toString('hex')}`;
   } while (settings.accounts.some(a => a.id === id));
-  const account: ClaudeAccount = { id, label: clean, configDir: path.join(root, id), enabled: true };
+  const account: ClaudeAccount = { id, label: clean, configDir: accountDir(id, root), enabled: true };
   return { settings: withAccounts(settings, [...settings.accounts.map(a => ({ ...a })), account]), account };
 }
 

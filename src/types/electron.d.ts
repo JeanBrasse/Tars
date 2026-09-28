@@ -833,7 +833,7 @@ export interface ClaudeAccount {
   id: ClaudeAccountId;
   /** 1 to 40 characters. */
   label: string;
-  /** Absolute; null for 'default'. */
+  /** ~/.claude-accounts/<id>, derived from the id; null for 'default'. */
   configDir: string | null;
   enabled: boolean;
 }

@@ -30,7 +30,9 @@ const TIMEOUT_MS = 20_000;
  *   item after it when it is set, so one inherited would aim every account at
  *   the same item;
  * - CLAUDECODE, the nested-session marker of a Tars started from a claude
- *   session, is dropped;
+ *   session, is dropped, and so is TARS_CLAUDE_ACCOUNT, which names the
+ *   account a status line reports for and would be an agent's own in a Tars
+ *   started from its terminal;
  * - the auto-updater is off, as in every terminal Tars starts.
  */
 export function accountEnv(configDir: string | null, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -38,6 +40,7 @@ export function accountEnv(configDir: string | null, base: NodeJS.ProcessEnv = p
   delete env.CLAUDE_CONFIG_DIR;
   delete env.CLAUDE_SECURESTORAGE_CONFIG_DIR;
   delete env.CLAUDECODE;
+  delete env.TARS_CLAUDE_ACCOUNT;
   env.DISABLE_AUTOUPDATER = '1';
   if (configDir !== null) env.CLAUDE_CONFIG_DIR = configDir;
   return env;
