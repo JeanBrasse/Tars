@@ -55,6 +55,8 @@ import { ReportBudget } from '../../../electron/services/error-reports/budget';
  * 14. The machine's name leaves: "MacBook-Pro-de-Somebody.local" carries its
  *     owner's first name, and the user name rule does not see a name inside
  *     a word joined by dashes.
+ * 14b. Over-correction: a short, generic machine name ("Mac" of "Mac.lan",
+ *     measured on this machine) masks that word wherever it appears.
  */
 
 const HOME = '/Users/somebody';
@@ -164,6 +166,12 @@ describe('the report built from an event', () => {
   ])('takes the machine out: %s', (_what, value, expected) => {
     const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value }] } }), FACTS)!;
     expect(report.exception.values[0].value).toBe(expected);
+  });
+
+  it('14b. masks a generic machine name only whole', () => {
+    const value = 'not on Mac OS, on Mac.lan';
+    const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value }] } }), { ...FACTS, host: 'Mac.lan' })!;
+    expect(report.exception.values[0].value).toBe('not on Mac OS, on <host>');
   });
 
   it('14. leaves a longer name that only starts like the machine\'s', () => {
