@@ -327,8 +327,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   review: {
-    diff: (repoPath: string, baseBranch?: string) =>
-      ipcRenderer.invoke('review:diff', { repoPath, baseBranch }),
+    // listOnly: the file list without the patches, which review:file reads one at a time.
+    diff: (repoPath: string, baseBranch?: string, opts?: { listOnly?: boolean }) =>
+      ipcRenderer.invoke('review:diff', { repoPath, baseBranch, listOnly: opts?.listOnly === true }),
     file: (repoPath: string, file: string, baseBranch?: string) =>
       ipcRenderer.invoke('review:file', { repoPath, file, baseBranch }),
     repo: (repoPath: string) =>
