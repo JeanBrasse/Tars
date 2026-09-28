@@ -85,6 +85,9 @@ export interface AppSettings {
   verboseModeEnabled: boolean;
   chromeEnabled: boolean;
   autoCheckUpdates: boolean;
+  /** Error reports to Sentry: off unless the user turns them on. Main reads
+   *  it at launch and follows every change, so off stops them at once. */
+  errorReportsEnabled: boolean;
   /** Resume idle agents once at launch (not on navigation). */
   autoStartAgentsOnLaunch?: boolean;
   cliPaths: CLIPaths;

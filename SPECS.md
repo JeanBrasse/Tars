@@ -4,7 +4,7 @@
 
 A desktop app that runs a team of AI coding-agent CLIs on your own machine, in parallel, on your own repositories. Each agent is a real terminal process (`claude`, `codex`, `gemini`, `grok`, `opencode`, `pi`, or the `claude` binary re-pointed at another vendor) running in its own git worktree, with its own model, its own permission mode and its own PTY. Tars owns the process lifecycle, the orchestration path between agents, one shared memory, and the cost accounting.
 
-Nothing runs in the cloud. No account, no server, no telemetry. The state lives in `~/.dorothy`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the ACP registry, the update feed, and whatever integration you switch on.
+Nothing runs in the cloud. No account, no server, no analytics. The state lives in `~/.dorothy`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the ACP registry, the update feed, and whatever integration you switch on: error reports to Sentry among them, off unless you turn them on (§11, Error reports).
 
 ---
 
@@ -100,7 +100,7 @@ Four maps in `electron/core/pty-manager.ts`: `ptyProcesses` (agents), `quickPtyP
 
 `writeProgrammaticInput(pty, data, bracketPaste)` is the only sanctioned way to inject text into a running agent:
 
-- `bracketPaste: false` means plain `data + '\r'`, for the initial shell command.
+- `bracketPaste: false` means plain `data + '\r'`, for the initial shell command. A command holding a tab or a newline is never typed: bash's readline reads a typed tab as the completion key (macOS's /bin/bash 3.2 has no bracketed paste to protect it), and a task with a tab reached the CLI with its tabs eaten. Such a command is written to a file of its own (`tars-launch-*` under the temp folder, `0700`, the file `0600`) whose first line removes it, and the shell is given `. '<file>'` (`shellLine`, `core/pty-manager.ts`). Before each reuse the folder must still be a directory, not a link, owned by this user and closed to others, or a new one is made (a multi-user /tmp that is cleaned let another user make one of that name, the Audit's gate of #224); it goes when Tars quits, if it is still ours. A file whose command never runs stays until then, or until the temp folder is cleaned if Tars is killed. A command with neither is typed as it is, so the terminal shows what was launched.
 - `bracketPaste: true` is for a live Claude Code TUI. Input over 200 chars or containing a newline is wrapped in `\x1b[200~ … \x1b[201~`. **The carriage return is always a separate write delayed 300 ms**, because the TUI treats a rapid `text\r` burst as one paste event: the text lands in the box as `[Pasted text]` and is never submitted.
 
 It must never be used for keystroke passthrough from an xterm.js terminal.
@@ -783,6 +783,14 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Route matching | first match wins; regex routes map their first capture group to `params.id` |
 
 53 routes are registered across eleven modules: bus (2), health (1), hooks (5), agents (13), telegram (4), slack (1), discord (1), kanban (9), vault (10 + `local-file`), memory (5), webhooks (1).
+
+### Error reports: `services/error-reports/`
+
+Off by default (`errorReportsEnabled` in `app-settings.json`, written by Settings through `app:saveSettings`). Off, `@sentry/electron` is not even loaded. Turned on, at start or while Tars runs (`main.ts` calls `errorReports.sync()` whenever the settings are replaced), it is loaded and started once for the run, with none of its default integrations: only uncaught exceptions, unhandled rejections and the causes linked to an error. No native crash dumps, screenshots, breadcrumbs, sessions, tracing, OpenTelemetry, logs, replay or offline queue. Turned off again, nothing leaves from that moment: the setting is read at each event (`beforeSend`) and again as each envelope is about to leave (the transport), and a report already on its way is dropped.
+
+What a report carries is built field by field (`report.ts`), never scrubbed from the SDK's event: `event_id`, `timestamp`, `platform`, `level`, `release` (`tars@<version>`); up to 5 exceptions (the error and its causes), each with its `type`, its message (home folder as `~` wherever the name ends, in any case and URL-encoded too, the user name alone as `<user>`, a macOS temp folder as `<tmp>`, secrets masked by `redactSecrets`, quoted text with a space and more than 24 characters replaced by its length, 1000 characters at most), its mechanism `{ type, handled }` and the 50 frames nearest the throw (`filename` with the same paths rewritten, `function`, `lineno`, `colno`, `in_app`); `tags.process` (`main` or `renderer`); `contexts.os` `{ name, version }`; `contexts.runtime` `{ name: Electron, version }`; `user.id`, a random id made on this machine. The transport sends error events only, rebuilt the same way, and drops every other item (sessions, attachments, replays, feedback, spans, logs, client reports): @sentry/electron hands some of a renderer's envelopes to it past `beforeSend`. The request carries the public DSN key in its URL, `User-Agent: sentry.javascript.electron/<v>` and `Accept-Language: en`; like any request, it reaches Sentry from the machine's IP address.
+
+At most one report of the same error in 24 hours, and 20 in any 24 hours, per installation, across restarts (`~/.dorothy/error-reports.json`, `0600`, which holds the install id). The renderer's errors reach main through the preload's `__SENTRY_IPC__` bridge (the window is sandboxed and cannot load the SDK's own preload): only its start and its envelopes pass; its scope, feedback, logs, metrics and status go nowhere. A development run may point reports at a stand-in with `DOROTHY_ERROR_REPORTS_DSN`; a packaged Tars ignores it.
 
 ### Residual risk
 
