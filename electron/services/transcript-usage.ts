@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { StringDecoder } from 'string_decoder';
-import { priceFor } from './model-catalog';
+import { createHash } from 'crypto';
+import { priceFor, catalogSync } from './model-catalog';
 
 /**
  * Token usage read from the Claude Code transcripts themselves.
@@ -145,8 +146,7 @@ function isZero(c: Counts): boolean {
   return COUNT_KEYS.every(k => c[k] === 0);
 }
 
-function costOf(model: string, c: Counts): number {
-  const price = pricingFor(model);
+function costOf(price: Pricing, c: Counts): number {
   return (
     (c.input / 1e6) * price.input +
     (c.output / 1e6) * price.output +
@@ -202,7 +202,14 @@ function listTranscripts(root: string): string[] {
  *
  * `fileCache` needs no key: it is keyed by absolute path already.
  */
-let cache: { at: number; homeDir: string; value: TranscriptUsage } | null = null;
+let cache: {
+  at: number;
+  homeDir: string;
+  value: TranscriptUsage;
+  /** The transcripts it was computed from (fingerprintOf), and the catalogue that priced them. */
+  fingerprint: string;
+  catalog: unknown;
+} | null = null;
 
 /** Bumped by clearTranscriptUsageCache, so a scan that started before a clear
  *  cannot write its result into the memo afterwards. Without it, "clear" meant
@@ -434,17 +441,74 @@ export function computeTranscriptUsage(homeDir = os.homedir()): Promise<Transcri
   }
   const running = inFlight.get(homeDir);
   if (running) return running;
-  const scan = scanTranscripts(homeDir).finally(() => { inFlight.delete(homeDir); });
+  const scan = refresh(homeDir).finally(() => { inFlight.delete(homeDir); });
   inFlight.set(homeDir, scan);
   return scan;
 }
 
-async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
-  // Which generation this scan belongs to. A clear that happens while it runs
+/**
+ * What the transcripts are now: each one's path, time and size, in order. Two
+ * passes that would read the same files agree on it, and a transcript added,
+ * deleted, grown or rewritten changes it. A stat per file, 14 to 39 ms on
+ * Noah's 1826 transcripts, where the adding up it can spare is 0.2 to 0.5 s.
+ */
+async function fingerprintOf(root: string): Promise<string> {
+  const hash = createHash('sha1');
+  lastBreath = Date.now();
+  for (const file of listTranscripts(root).sort()) {
+    await breatheIfDue();
+    try {
+      const stat = fs.statSync(file);
+      hash.update(`${file}\0${stat.mtimeMs}\0${stat.size}\n`);
+    } catch {
+      hash.update(`${file}\0gone\n`);
+    }
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * Past the minute, the memo is kept while no transcript moved and the
+ * catalogue is the one that priced it: its time is renewed, and nothing is
+ * added up again. The memo was rebuilt every minute a page polled, all night,
+ * for numbers that could not have changed. Anything else is the scan, and so
+ * is a memo that could not read a transcript: a file made readable again keeps
+ * its time and its size, and a failure is never remembered (contributionFor).
+ */
+async function refresh(homeDir: string): Promise<TranscriptUsage> {
+  // Which generation this pass belongs to. A clear that happens while it runs
   // makes its result stale before it exists, and it must not be memoised.
   const startedAt = generation;
+  const catalog = catalogSync();
+  const fingerprint = await fingerprintOf(path.join(homeDir, '.claude', 'projects'));
+  const kept = cache;
+  if (kept && kept.homeDir === homeDir && kept.fingerprint === fingerprint && kept.catalog === catalog && !kept.value.unreadable) {
+    if (generation === startedAt) cache = { ...kept, at: Date.now() };
+    return kept.value;
+  }
+  return scanTranscripts(homeDir, { startedAt, fingerprint, catalog });
+}
 
+async function scanTranscripts(
+  homeDir: string,
+  { startedAt, fingerprint, catalog }: { startedAt: number; fingerprint: string; catalog: unknown },
+): Promise<TranscriptUsage> {
   const root = path.join(homeDir, '.claude', 'projects');
+  // A model's price, looked up once for this scan. costOf asked the catalogue
+  // at every turn, and priceFor walks every model it lists when the id is
+  // dated: about 608 thousand walks on Noah's transcripts, and with no
+  // catalogue in memory yet (a first launch, offline) a failed read of the
+  // cache file at each. The adding up took 5 to 16 s that way. Kept for the
+  // scan only, so the next one prices from the catalogue as it is then.
+  const prices = new Map<string, Pricing>();
+  const priceOf = (model: string): Pricing => {
+    let price = prices.get(model);
+    if (!price) {
+      price = pricingFor(model);
+      prices.set(model, price);
+    }
+    return price;
+  };
   // Null-prototype: a transcript's model id is attacker-influenceable, and
   // `modelUsage[model] ||= …` on a plain object would let "__proto__" write
   // onto Object.prototype inside the main process.
@@ -508,7 +572,7 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
       bucket.cacheCreation5mTokens += delta.write5m;
       bucket.webSearchRequests += delta.searches;
 
-      const cost = costOf(turn.model, delta);
+      const cost = costOf(priceOf(turn.model), delta);
       bucket.costUSD += cost;
 
       if (turn.date) {
@@ -568,7 +632,7 @@ async function scanTranscripts(homeDir: string): Promise<TranscriptUsage> {
   // Returned to whoever asked either way: they asked before the clear, and
   // these numbers were true then. Only the memo is refused, so the next caller
   // reads the world as it is now rather than as it was.
-  if (generation === startedAt) cache = { at: Date.now(), homeDir, value };
+  if (generation === startedAt) cache = { at: Date.now(), homeDir, value, fingerprint, catalog };
   return value;
 }
 
