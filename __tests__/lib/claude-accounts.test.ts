@@ -111,6 +111,8 @@ describe('what an account says about itself (3)', () => {
     expect(whoLine(account({ id: 'a', label: 'A', signedIn: false }))).toBeNull();
     expect(accountFolder(account({ id: 'default', label: 'Account 1' }))).toBe('~/.claude');
     expect(accountFolder(account({ id: 'acct-2a3b4c', label: 'Second' }))).toBe('~/.claude-accounts/acct-2a3b4c');
+    // Every folder Tars makes is <home>/.claude-accounts/<id> (#263, B1), whatever the home is called.
+    expect(accountFolder(account({ id: 'acct-000009', label: 'Nine', configDir: '/private/var/folders/xy/T/home/.claude-accounts/acct-000009' }))).toBe('~/.claude-accounts/acct-000009');
     expect(tildify('/home/someone/.claude-accounts/acct-1')).toBe('~/.claude-accounts/acct-1');
     expect(tildify('/Volumes/work/acct')).toBe('/Volumes/work/acct');
   });
