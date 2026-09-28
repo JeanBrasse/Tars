@@ -6,6 +6,7 @@ import type { AgentStatus } from '@/types/electron';
 import { AgentMark, SegmentedControl } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import { STATUS_COLORS, errorReason } from '@/app/agents/constants';
+import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 export type PanelView = 'live' | 'history';
 
@@ -176,6 +177,9 @@ export default function TerminalPanelHeader({
           {[agent.provider, model].filter(Boolean).join(' · ')}
         </span>
       )}
+      {/* The Claude account it runs on, after provider and model, when several
+          subscriptions are on. Frame: `Agent · Claude account`. */}
+      <AgentAccountControl agent={agent} stopMouseDown />
 
       {/* Live or history. It is the panel's view switch, so it sits with the
           panel's actions and uses the app's segmented control rather than a

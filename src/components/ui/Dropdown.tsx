@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import { filterOptions, initialIndex, stepIndex } from './dropdown-logic';
 
@@ -8,7 +9,13 @@ export interface DropdownOption<T extends string = string> {
   value: T;
   label: string;
   hint?: string;
+  /** Ink for `hint`, a status token class, when it reports something that
+   *  needs the eye: an account past its threshold. Muted when absent. */
+  hintClassName?: string;
   disabled?: boolean;
+  /** A rule above this option, between a choice that stands for the rest and
+   *  the rest: Automatic, then the accounts. */
+  dividerBefore?: boolean;
 }
 
 /**
@@ -39,6 +46,9 @@ export function Dropdown<T extends string = string>({
   size = 'md',
   drop = 'down',
   quiet = false,
+  triggerLabel,
+  caption,
+  footer,
 }: {
   value: T | '';
   options: DropdownOption<T>[];
@@ -63,6 +73,14 @@ export function Dropdown<T extends string = string>({
    *  picker that describes something rather than acting on it, where a full
    *  bordered control would carry the same weight as the button beside it. */
   quiet?: boolean;
+  /** What the trigger says instead of the picked option's label, when the
+   *  pick is not the thing to name: an agent pinned to nothing still runs on
+   *  an account, and the trigger names that account. */
+  triggerLabel?: ReactNode;
+  /** A section label at the head of the panel, above the options. */
+  caption?: string;
+  /** A note at the foot of the panel, under the options, as wide as they are. */
+  footer?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -203,7 +221,7 @@ export function Dropdown<T extends string = string>({
         } ${mono ? 'font-mono' : ''}`}
       >
         <span className={`truncate ${current || quiet ? '' : 'text-muted-foreground'}`}>
-          {current?.label ?? placeholder}
+          {triggerLabel ?? current?.label ?? placeholder}
         </span>
         <ChevronDown
           className={`w-3 h-3 text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -233,13 +251,18 @@ export function Dropdown<T extends string = string>({
             </div>
           )}
 
+          {caption && (
+            <p className="h-7 px-3 flex items-center text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{caption}</p>
+          )}
           <div ref={listRef} role="listbox" className="max-h-64 overflow-y-auto">
             {visible.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">No match for “{query}”.</p>
             ) : visible.map((o, i) => (
+              <Fragment key={o.value}>
+              {o.dividerBefore && <div role="separator" className="h-px bg-border" />}
               <button
-                key={o.value}
                 data-index={i}
+                data-value={o.value}
                 role="option"
                 aria-selected={o.value === value}
                 type="button"
@@ -258,11 +281,17 @@ export function Dropdown<T extends string = string>({
                 <span className={`w-1 h-1 shrink-0 ${o.value === value ? 'bg-primary' : 'opacity-0'}`} />
                 <span className={`min-w-0 truncate ${mono ? 'font-mono' : ''}`}>{o.label}</span>
                 {o.hint && (
-                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{o.hint}</span>
+                  <span className={`ml-auto shrink-0 text-[10px] ${o.hintClassName ?? 'text-muted-foreground'}`}>{o.hint}</span>
                 )}
               </button>
+              </Fragment>
             ))}
           </div>
+          {footer && (
+            // As wide as the options, never wider: `w-0 min-w-full` keeps a
+            // long note from widening the panel it sits in.
+            <p className="w-0 min-w-full px-3 py-2 border-t border-border text-[11px] leading-snug text-muted-foreground">{footer}</p>
+          )}
         </div>
       )}
     </div>
