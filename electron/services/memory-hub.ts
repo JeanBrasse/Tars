@@ -369,10 +369,19 @@ export async function searchMemory(opts: {
   if (hermes && wanted.has('hermes')) {
     remote.push((async () => {
       try {
-        const res = await searchHermesSessions(hermes, query, limit);
+        // Filtered before it is cut: asked for `limit` and filtered after, the
+        // super chat's hits took an agent's places and it could get none (the
+        // Audit's gate of #190). So a filtering caller asks for the gateway's
+        // most, and keeps `limit` of what is left. A session Hermes compressed
+        // is answered under its newest id, which was never recorded: its root
+        // and its parent say whose it is.
+        const hide = opts.hideHermesSession;
+        const res = await searchHermesSessions(hermes, query, hide ? 100 : limit);
         if (res.success) {
+          let kept = 0;
           for (const hit of res.hits) {
-            if (opts.hideHermesSession?.(hit.sessionId)) continue;
+            if (hide && [hit.sessionId, hit.lineageRoot, hit.parentSessionId].some((id, i) => (i === 0 || id) && hide(id))) continue;
+            if (kept++ >= limit) break;
             hits.push({
               source: 'hermes',
               title: hit.title || hit.sessionId || 'Hermes session',

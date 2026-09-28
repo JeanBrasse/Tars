@@ -14,6 +14,24 @@ type AgentEventCallback = (event: {
 type PtyDataCallback = (event: { id: string; data: string }) => void;
 type PtyExitCallback = (event: { id: string; exitCode: number }) => void;
 
+// What the renderer's Sentry SDK talks to main through, as @sentry/electron's
+// own preload would expose it: this window is sandboxed and cannot load that
+// one. Only the renderer's start and its envelopes pass, to main's
+// IPCMode.Classic listeners, where report.ts rebuilds each error; its scope
+// (user, extra, breadcrumbs, attachments), feedback, logs, metrics and status
+// pings go nowhere. Main listens only once error reports are turned on.
+contextBridge.exposeInMainWorld('__SENTRY_IPC__', {
+  'sentry-ipc': {
+    sendRendererStart: () => ipcRenderer.send('sentry-ipc.start'),
+    sendEnvelope: (envelope: string | Uint8Array) => ipcRenderer.send('sentry-ipc.envelope', envelope),
+    sendScope: () => undefined,
+    sendFeedback: async () => ({}),
+    sendStatus: () => undefined,
+    sendStructuredLog: () => undefined,
+    sendMetric: () => undefined,
+  },
+});
+
 // Expose protected APIs to renderer
 contextBridge.exposeInMainWorld('electronAPI', {
   // PTY terminal management
