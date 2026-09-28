@@ -45,7 +45,7 @@ import { DATA_DIR } from '../constants';
 export function mcpNodeCommand(
   appBinary: string = lastingAppBinary(),
   platform: NodeJS.Platform = process.platform,
-  mayWrite: boolean = isPackaged() && !isTransient(appBinary),
+  mayWrite: boolean = isPackaged() && !isTransientAppPath(appBinary),
 ): string {
   if (platform === 'win32') return 'node';
   const bin = path.join(DATA_DIR, 'bin');
@@ -94,7 +94,11 @@ function lastingAppBinary(): string {
   return process.env.APPIMAGE || process.execPath;
 }
 
-/** A copy run from a disk image, or translocated by macOS, is gone once it quits. */
-function isTransient(appBinary: string): boolean {
-  return appBinary.startsWith('/Volumes/') || appBinary.includes('/AppTranslocation/');
+/**
+ * A copy run from a disk image, or translocated by macOS, is gone once it
+ * quits: nothing that outlives it may name a path inside it (the launcher,
+ * the MCP servers' registrations).
+ */
+export function isTransientAppPath(appPath: string): boolean {
+  return appPath.startsWith('/Volumes/') || appPath.includes('/AppTranslocation/');
 }
