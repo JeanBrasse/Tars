@@ -94,9 +94,7 @@ describe('the review diff, asked for its list only', () => {
     expect(patchRuns(listRuns)).toEqual([]);
     expect(list.patch).toBe('');
     expect(list.truncated).toBe(false);
-    const { patch: _p, truncated: _t, ...fullRest } = full;
-    const { patch: _lp, truncated: _lt, ...listRest } = list;
-    expect(listRest).toEqual(fullRest);
+    expect({ ...list, patch: full.patch, truncated: full.truncated }).toEqual(full);
     expect(list.files.map(f => [f.path, f.status])).toEqual(expect.arrayContaining([
       ['a.txt', 'modified'], ['gone.txt', 'deleted'], ['new.txt', 'untracked'],
     ]));
