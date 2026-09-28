@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'Settings > System says Claude Code is ready only when a claude answers, looked for the way Tars finds it when it starts an agent, Settings > CLI Paths included. With no claude installed it said ready, and now says not installed',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
