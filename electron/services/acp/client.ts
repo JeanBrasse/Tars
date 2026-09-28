@@ -76,6 +76,8 @@ export interface SessionOptions {
   permissionMode?: 'normal' | 'auto' | 'bypass';
   /** Tools the agent must not be allowed to use, by name fragment. */
   denyTools?: string[];
+  /** Variables of Tars's own environment the agent must not inherit (its Claude account's). */
+  unsetEnv?: string[];
 }
 
 interface Pending {
@@ -313,7 +315,9 @@ export class AcpSession extends EventEmitter {
 
   /** Spawns the agent, negotiates the protocol and opens a session. */
   async start(): Promise<{ sessionId: string; agentName?: string; capabilities?: unknown }> {
-    const env = { ...process.env, ...this.options.env };
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of this.options.unsetEnv ?? []) delete env[name];
+    Object.assign(env, this.options.env);
     const child = spawn(this.launch.command, this.launch.args, {
       cwd: this.options.cwd,
       env,

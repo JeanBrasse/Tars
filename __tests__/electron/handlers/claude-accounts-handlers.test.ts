@@ -70,6 +70,7 @@ vi.mock('../../../electron/utils/broadcast', () => ({
 
 import { registerClaudeAccountsHandlers, CLAUDE_ACCOUNTS_CHANNELS } from '../../../electron/handlers/claude-accounts-handlers';
 import { accountsFile } from '../../../electron/services/claude-accounts/registry';
+import { resetAccountState } from '../../../electron/services/claude-accounts/state';
 import type { ClaudeAccountsView, ClaudeAccountState } from '../../../electron/types';
 
 let fake: FakeClaude;
@@ -116,6 +117,8 @@ beforeEach(() => {
   trashed.length = 0;
   trash.fails = false;
   if (fs.existsSync(accountsFile())) fs.unlinkSync(accountsFile());
+  // What Claude Code said about the sign-ins is kept in memory, across registrations.
+  resetAccountState();
   fake = makeFakeClaude();
   agents = new Map();
   saves = 0;

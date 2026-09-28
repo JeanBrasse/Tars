@@ -80,6 +80,10 @@ import {
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
 import { registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
+import { setAccountEnvResolver } from './core/account-env';
+import { claudeAccountEnvFor } from './services/claude-accounts/launch';
+import { readAccountsSettings } from './services/claude-accounts/registry';
+import { restartForSettings } from './core/agent-restart';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -492,12 +496,22 @@ app.whenReady().then(async () => {
   registerTeamTemplateHandlers();
   registerHermesHandlers();
   registerDiscordHandlers({ getAppSettings: () => appSettings });
-  registerClaudeAccountsHandlers({
+  const claudeAccounts = registerClaudeAccountsHandlers({
     getAppSettings: () => appSettings,
     agents,
     saveAgents,
     loginPtys: pluginPtyProcesses,
+    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
   });
+  // Every agent process asks which Claude account it starts on. With the
+  // option off the answer is null and nothing changes (core/account-env.ts).
+  setAccountEnvResolver((agentId, cwd) => {
+    const agent = agents.get(agentId);
+    return agent ? claudeAccountEnvFor(agent, { agents: agents.values(), cwd }) : null;
+  });
+  // Which accounts are signed in, asked of Claude Code before the first
+  // launches need it; until it answers, only account 1 is used.
+  if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();

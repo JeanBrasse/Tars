@@ -17,7 +17,10 @@ import { accountsRoot } from './registry';
  * - Shared through links to ~/.claude: projects/ (the transcripts, and every
  *   agent's memory, which lives in projects/<project>/memory; Usage, the Chat,
  *   resume and the Memory page all read ~/.claude/projects, and `--resume`
- *   from another account finds nothing without it), and the user's own
+ *   from another account finds nothing without it), history.jsonl and
+ *   sessions/ (the stats Tars reads, the Audit's N3; measured on 2.1.283, a
+ *   prompt is appended through the link and a session's file written and
+ *   removed through it, the links staying links), and the user's own
  *   CLAUDE.md, skills, agents, commands, plugins and output styles.
  * - settings.json: a copy of ~/.claude/settings.json, which is the source. It
  *   carries Tars's hooks and status line, so every account reports like
@@ -40,7 +43,7 @@ import { accountsRoot } from './registry';
  * .credentials.json on Linux) is Claude Code's alone.
  */
 
-export const SHARED_ENTRIES = ['projects', 'CLAUDE.md', 'skills', 'agents', 'commands', 'plugins', 'output-styles'] as const;
+export const SHARED_ENTRIES = ['projects', 'history.jsonl', 'sessions', 'CLAUDE.md', 'skills', 'agents', 'commands', 'plugins', 'output-styles'] as const;
 
 /** Keys of ~/.claude.json an account mirrors. */
 const MIRRORED_KEYS = ['mcpServers', 'theme', 'bypassPermissionsModeAccepted'] as const;
@@ -144,9 +147,14 @@ function linkShared(configDir: string, claudeDir: string, conflicts: string[]): 
   for (const name of SHARED_ENTRIES) {
     const target = path.join(claudeDir, name);
     const link = path.join(configDir, name);
-    // projects/ must be shared even before account 1 has run anything, or the
-    // account's first session would create a folder of its own there.
+    // These must be shared even before account 1 has run anything, or the
+    // account's first session would create its own there, and then keep it.
     if (name === 'projects') fs.mkdirSync(target, { recursive: true });
+    if (name === 'sessions') fs.mkdirSync(target, { recursive: true, mode: 0o700 });
+    if (name === 'history.jsonl' && !lstatOrNull(target)) {
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(target, '', { flag: 'a', mode: 0o600 });
+    }
     const current = lstatOrNull(link);
     if (current) {
       if (!current.isSymbolicLink()) {

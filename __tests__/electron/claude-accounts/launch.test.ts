@@ -101,7 +101,7 @@ describe('another account', () => {
     const own = JSON.parse(fs.readFileSync(path.join(dir, '.claude.json'), 'utf-8'));
     expect(own.projects[project]).toEqual({ hasTrustDialogAccepted: true, enabledMcpjsonServers: ['s'] });
     expect(own.bypassPermissionsModeAccepted).toBe(true);
-    expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(home(), '.claude', 'projects'));
+    expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(os.homedir(), '.claude', 'projects'));
   });
 
   it('follows the pin', () => {
@@ -111,16 +111,20 @@ describe('another account', () => {
 
   it('falls back to account 1 when the folder fails its checks, and leaves the folder as it is', () => {
     const dir = path.join(accountsRoot(), A);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
     fs.mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir);
     fs.chmodSync(dir, 0o755);
-    const a = agent({ claudeAccountPin: A });
-    const env = claudeAccountEnvFor(a, ctx())!;
-    expect(env.accountId).toBe('default');
-    expect(a.claudeAccountId).toBe('default');
-    expect(fs.statSync(dir).mode & 0o777).toBe(0o755);
-    expect(fs.existsSync(path.join(dir, 'settings.json'))).toBe(false);
-    fs.chmodSync(dir, 0o700);
+    try {
+      const a = agent({ claudeAccountPin: A });
+      const env = claudeAccountEnvFor(a, ctx())!;
+      expect(env.accountId).toBe('default');
+      expect(a.claudeAccountId).toBe('default');
+      expect(fs.statSync(dir).mode & 0o777).toBe(0o755);
+      expect(fs.existsSync(path.join(dir, 'settings.json'))).toBe(false);
+    } finally {
+      fs.chmodSync(dir, 0o700);
+    }
   });
 
   it('falls back to account 1 while a credential would sign every folder in as one', () => {
