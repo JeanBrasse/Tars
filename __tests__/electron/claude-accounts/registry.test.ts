@@ -151,7 +151,7 @@ describe('adding', () => {
     expect(() => addAccount(s, 'Sixth', ROOT)).toThrow(/5/);
   });
 
-  it('does not hand a removed account's id to the next one, as a next free number would', () => {
+  it("does not hand a removed account's id to the next one, as a next free number would", () => {
     const first = addAccount(defaultAccountsSettings(), 'Max two', ROOT);
     const removed = first.account.id;
     let s = removeAccount(first.settings, removed);
