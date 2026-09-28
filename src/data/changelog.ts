@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'Settings > Hermes says signed out, in the waiting colour, when the gateway answers but wants you to sign in. It said unreachable, in red, for a gateway that had just given its version, and stayed on connected after you signed out',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',

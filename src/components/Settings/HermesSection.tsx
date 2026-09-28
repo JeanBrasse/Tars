@@ -38,6 +38,24 @@ const AUTH_MODES = [
   { value: 'oauth' as const, label: 'OAuth' },
 ];
 
+/**
+ * What the Status badge says. A gateway that answered but wants a sign-in is
+ * signed out, not unreachable: the page's result is not a success then, and
+ * the badge read that as "unreachable" in the error tone. `needsSignIn` is the
+ * test's own answer, the one the Chat keys its `needs_sign_in` on. Frame:
+ * `row Status · signed out` (zBCak) in `Settings · Connection`.
+ */
+export function gatewayStatus(
+  testing: boolean,
+  result: { success: boolean } | null,
+  needsSignIn: boolean,
+): { word: string; tone: AnyTone } {
+  if (testing) return { word: 'checking', tone: result ? (result.success ? 'running' : 'error') : 'idle' };
+  if (!result) return { word: 'unknown', tone: 'idle' };
+  if (needsSignIn) return { word: 'signed out', tone: 'waiting' };
+  return result.success ? { word: 'connected', tone: 'running' } : { word: 'unreachable', tone: 'error' };
+}
+
 export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionProps) => {
   const [info, setInfo] = useState<ConnectionInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -193,10 +211,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
     : `http://127.0.0.1:${conn.localPort ?? 9119}`;
   const typedUrl = conn.mode === 'remote' || conn.mode === 'cloud';
 
-  const statusTone: AnyTone = gatewayResult ? (gatewayResult.success ? 'running' : 'error') : 'idle';
-  const statusWord = gatewayTesting
-    ? 'checking'
-    : gatewayResult ? (gatewayResult.success ? 'connected' : 'unreachable') : 'unknown';
+  const { word: statusWord, tone: statusTone } = gatewayStatus(gatewayTesting, gatewayResult, needsSignIn);
 
   // What Tailscale is doing decides whether a VPS can reach the webhook at all,
   // so it stays - as the row's one muted line, not as a panel of prose.
