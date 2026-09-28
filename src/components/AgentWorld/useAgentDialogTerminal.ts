@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
-import { attachShiftEnterHandler, disposeTerminalSafely, passWheelToProgram, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, connectionLine, disposeTerminalSafely, keySender, passWheelToProgram, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseAgentDialogTerminalOptions {
@@ -120,56 +120,57 @@ export function useAgentDialogTerminal({
         setTimeout(fitAndResize, 200);
         setTimeout(() => { fitAndResize(); term.focus(); }, 350);
 
-        attachShiftEnterHandler(term, (data) => {
+        // Keys that reach no terminal (an idle agent has none since #164) are
+        // said so in the panel rather than dropped. See keySender.
+        const typeKeys = keySender(term, (input) => {
           const id = agentIdRef.current;
-          if (id && window.electronAPI?.agent?.sendInput) {
-            window.electronAPI.agent.sendInput({ id, input: data }).catch(() => {});
-          }
+          return id && window.electronAPI?.agent?.sendInput
+            ? window.electronAPI.agent.sendInput({ id, input })
+            : Promise.resolve(undefined);
         });
+
+        attachShiftEnterHandler(term, typeKeys);
 
         // The terminal's own replies to queries from the CLI arrive here like a
         // keystroke and must never be forwarded. See stripTerminalReplies.
-        term.onData(async (data) => {
+        term.onData((data) => {
           const cleaned = stripTerminalReplies(data);
           if (!cleaned) return;
-          const id = agentIdRef.current;
-          if (id && window.electronAPI?.agent?.sendInput) {
-            try {
-              await window.electronAPI.agent.sendInput({ id, input: cleaned });
-            } catch (err) {
-              console.error('Error sending input:', err);
-            }
-          }
+          typeKeys(cleaned);
         });
 
         if (!cancelled) setTerminalReady(true);
 
-        term.writeln(`\x1b[36m● Connected to ${agent.name || 'Agent'}\x1b[0m`);
-        term.writeln('');
-
+        // Connected only to an agent that has a terminal: agent:get names none
+        // for an idle agent, whose dialog used to say "Connected" all the same.
+        let latestAgent: Awaited<ReturnType<NonNullable<typeof window.electronAPI>['agent']['get']>> | null = null;
         if (window.electronAPI?.agent?.get) {
           try {
-            const latestAgent = await window.electronAPI.agent.get(agent.id);
-            if (latestAgent?.output?.length) {
-              // Since #127 an agent with a live terminal answers with one
-              // redraw of its screen, which opens with RIS and places every
-              // cell with the very cursor sequences gemini's strip removes.
-              // The strip is for raw output only.
-              const isSnapshot = latestAgent.output.length === 1 && latestAgent.output[0].startsWith('\x1bc');
-              const strip = agent.provider === 'gemini' && !isSnapshot;
-              const writeLine = (line: string) => term.write(strip ? stripCursorSequences(line) : line);
-
-              if (skipHistoricalOutput) {
-                latestAgent.output.slice(-20).forEach(writeLine);
-              } else {
-                term.writeln('\x1b[33m--- Previous output ---\x1b[0m');
-                latestAgent.output.forEach(writeLine);
-              }
-              setTimeout(fitAndResize, 50);
-            }
+            latestAgent = await window.electronAPI.agent.get(agent.id);
           } catch (err) {
             console.error('Failed to fetch agent output:', err);
           }
+        }
+        if (cancelled) return;
+        term.writeln(connectionLine(agent.name || 'Agent', !!latestAgent?.ptyId));
+        term.writeln('');
+
+        if (latestAgent?.output?.length) {
+          // Since #127 an agent with a live terminal answers with one
+          // redraw of its screen, which opens with RIS and places every
+          // cell with the very cursor sequences gemini's strip removes.
+          // The strip is for raw output only.
+          const isSnapshot = latestAgent.output.length === 1 && latestAgent.output[0].startsWith('\x1bc');
+          const strip = agent.provider === 'gemini' && !isSnapshot;
+          const writeLine = (line: string) => term.write(strip ? stripCursorSequences(line) : line);
+
+          if (skipHistoricalOutput) {
+            latestAgent.output.slice(-20).forEach(writeLine);
+          } else {
+            term.writeln('\x1b[33m--- Previous output ---\x1b[0m');
+            latestAgent.output.forEach(writeLine);
+          }
+          setTimeout(fitAndResize, 50);
         }
       } catch (e) {
         console.error('Failed to initialize terminal:', e);
