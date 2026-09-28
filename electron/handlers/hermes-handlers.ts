@@ -131,7 +131,9 @@ function importDesktopRegistry(): DesktopImport | null {
       mode: 'ssh', authMode: 'token',
       ssh: { host: entry.host, user: entry.user, port: entry.port, keyPath: entry.keyPath, remotePort: HERMES_DEFAULT_PORT },
     };
-    return { conn, tokenNotImported: encryptedToken(entry.token) };
+    // No SSH token is imported, plain or encrypted, as before, and the page has
+    // no token field in SSH mode: a notice asking to paste one could not be answered.
+    return { conn, tokenNotImported: false };
   }
   if (entry?.kind === 'local') return { conn: { mode: 'local', authMode: 'token', localPort: desktopLocalPort() }, tokenNotImported: false };
   return null;

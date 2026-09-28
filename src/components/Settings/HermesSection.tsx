@@ -94,7 +94,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   function patchConn(patch: Partial<HermesConnection>) {
     setConn(prev => ({ ...prev, ...patch }));
-    if (patch.token) setTokenNotImported(false);
+    if (patch.token || (patch.mode && patch.mode !== conn.mode)) setTokenNotImported(false);
     setGatewayResult(null);
   }
   function patchSsh(patch: Partial<NonNullable<HermesConnection['ssh']>>) {

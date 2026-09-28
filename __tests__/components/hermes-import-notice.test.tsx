@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mount, settle, elements, ofType, textOf, type Mount } from './hook-runtime';
 import { HermesSection } from '../../src/components/Settings/HermesSection';
-import { Button, PasswordInput, StatusSquare } from '../../src/components/ui';
+import { Button, PasswordInput, SegmentedControl, StatusSquare } from '../../src/components/ui';
 import type { AppSettings } from '../../src/components/Settings/types';
 
 vi.mock('react', async (importOriginal) => ({
@@ -21,7 +21,8 @@ vi.mock('react', async (importOriginal) => ({
  *    or shows other words than the frame's, or no waiting square;
  * 2. an import that brought its token, or had none to bring, shows the notice;
  * 3. the notice outlives what answers it: a token typed in the field, a
- *    sign-in that succeeds, or an import run again that brought the token;
+ *    sign-in that succeeds, an import run again that brought the token, or a
+ *    change of mode, after which the token field it asks for may be gone;
  * 4. it goes before one of those: on a failed sign-in, or on its own.
  */
 
@@ -61,6 +62,11 @@ async function section(imports: Array<Record<string, unknown>>, signIn: { succes
     typeToken: (value: string) => {
       const field = (ofType(page!.result, PasswordInput) as unknown as El[]).find(p => p.props.placeholder === 'X-Hermes-Session-Token')!;
       (field.props.onChange as (e: unknown) => void)({ target: { value } });
+      page!.rerender();
+    },
+    pickMode: (mode: string) => {
+      const control = (ofType(page!.result, SegmentedControl) as unknown as El[]).find(c => c.props.ariaLabel === 'Hermes connection mode')!;
+      (control.props.onChange as (m: string) => void)(mode);
       page!.rerender();
     },
     signIn: async () => { (button('Sign in').props.onClick as () => Promise<void>)(); await settle(); },
@@ -105,6 +111,13 @@ describe('the notice that an import left the token behind', () => {
     const s = await section([notImported]);
     await s.importIt();
     await s.signIn();
+    expect(s.notice()).toBeNull();
+  });
+
+  it('goes when the mode changes (3)', async () => {
+    const s = await section([notImported]);
+    await s.importIt();
+    s.pickMode('ssh');
     expect(s.notice()).toBeNull();
   });
 

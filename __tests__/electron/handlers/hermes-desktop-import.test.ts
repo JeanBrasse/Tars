@@ -30,7 +30,9 @@ import * as path from 'node:path';
  * 9. a connection.json that cannot be parsed has its text, a plain token
  *    included, written to the log;
  * 10. an import that leaves an encrypted token behind does not say so
- *    (`tokenNotImported`), or says so of a token it brought, or of none.
+ *    (`tokenNotImported`), or says so of a token it brought, or of none, or of
+ *    an SSH primary's: Tars imports no SSH token, plain or encrypted, and the
+ *    page has no token field in SSH mode for the user to paste one.
  *
  * The handler is the real one, over a Hermes Desktop folder in the test's home.
  */
@@ -183,6 +185,9 @@ describe('importing Hermes Desktop\'s connection', () => {
 
     write(V2, box());
     expect((await importDesktop()).tokenNotImported).toBeFalsy();
+
+    write(V2, registry('vps', { id: 'vps', kind: 'ssh', label: 'vps', host: 'vps.example', user: 'root', token: { encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' } }));
+    expect((await importDesktop()).tokenNotImported).toBe(false);
 
     // connection.json alone, as an older Hermes Desktop writes it.
     fs.rmSync(V2);
