@@ -15,6 +15,8 @@
  *   item after it instead, so every account would read the same one;
  * - the nested-session marker (CLAUDECODE) inherited from a Tars started inside
  *   a claude session changes how the child behaves;
+ * - TARS_CLAUDE_ACCOUNT inherited: it names the account a status line reports
+ *   for, and a Tars started from an agent's terminal carries that agent's;
  * - the auto-updater downloading a release inside a status check;
  * - a signed-out directory read as an error (exit 1 is the answer, not a
  *   failure), or output that is not JSON read as signed out;
@@ -47,7 +49,7 @@ afterEach(() => {
 
 describe('the environment', () => {
   it('names the directory for an account, and none for account 1', () => {
-    const base = { PATH: '/usr/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/elsewhere', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/x', CLAUDECODE: '1' };
+    const base = { PATH: '/usr/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/elsewhere', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/x', CLAUDECODE: '1', TARS_CLAUDE_ACCOUNT: 'acct-ffffff' };
     const a = accountEnv(dirA, base);
     expect(a.CLAUDE_CONFIG_DIR).toBe(dirA);
     const d = accountEnv(null, base);
@@ -55,6 +57,7 @@ describe('the environment', () => {
     for (const env of [a, d]) {
       expect('CLAUDE_SECURESTORAGE_CONFIG_DIR' in env).toBe(false);
       expect('CLAUDECODE' in env).toBe(false);
+      expect('TARS_CLAUDE_ACCOUNT' in env).toBe(false);
       expect(env.DISABLE_AUTOUPDATER).toBe('1');
       expect(env.HOME).toBe('/h');
     }

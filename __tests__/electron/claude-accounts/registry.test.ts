@@ -11,9 +11,14 @@
  * - an id is reused: an account's directory names its keychain item, so a new
  *   account given a removed one's id would sign in as whoever that was if the
  *   logout had failed. Ids are random, not the next free number;
- * - the directory string moves: Claude Code hashes the path exactly as given
- *   (measured: /tmp/x, /private/tmp/x and x/ are three logins), so it is
- *   resolved once when the account is created and read back verbatim;
+ * - the folder taken from the file: every agent can write ~/.dorothy, and one
+ *   that pointed an account at ~/Documents would have Tars write links there
+ *   and Remove trash it (the Audit's B2). The folder is derived from the id,
+ *   under ~/.claude-accounts, whatever the file says, and the file itself
+ *   lives in ~/.tars-private, which no agent is handed;
+ * - the folder string moves: Claude Code hashes the path exactly as given
+ *   (measured: /tmp/x, /private/tmp/x and x/ are three logins), so it is the
+ *   same string every time, the home resolved once;
  * - a label a person cannot read (empty, over 40 characters, control or bidi
  *   characters) reaches the Settings page and the agent cards;
  * - thresholds out of range (a 0 % threshold would switch every agent at once);
@@ -43,7 +48,7 @@ import {
   validateLabel,
 } from '../../../electron/services/claude-accounts/registry';
 
-const ROOT = '/Users/someone/.claude-accounts';
+const ROOT = accountsRoot();
 
 describe('defaults', () => {
   it('is the option off, account 1 alone, thresholds 90 and 95', () => {
@@ -85,23 +90,32 @@ describe('normalizing what the file holds', () => {
     expect(s.accounts[0].configDir).toBeNull();
   });
 
-  it('drops entries that are not accounts: bad id, relative or missing directory, duplicate id', () => {
+  it('drops entries that are not accounts: bad id, duplicate id', () => {
     const s = normalizeAccountsSettings({
       accounts: [
         other,
         { ...other },
         { id: '../../etc', label: 'x', configDir: `${ROOT}/x`, enabled: true },
-        { id: 'acct-000001', label: 'rel', configDir: 'relative/dir', enabled: true },
-        { id: 'acct-000002', label: 'none', enabled: true },
+        { id: 'acct-1A2B3C', label: 'upper', enabled: true },
+        { id: 'acct-00001', label: 'short', enabled: true },
         'nonsense',
       ],
     });
     expect(s.accounts.map(a => a.id)).toEqual(['default', other.id]);
   });
 
-  it('keeps the directory string verbatim, never resolved again', () => {
-    const odd = { ...other, configDir: '/tmp/../tmp/acct-1a2b3c' };
-    expect(normalizeAccountsSettings({ accounts: [odd] }).accounts[1].configDir).toBe('/tmp/../tmp/acct-1a2b3c');
+  it('derives the folder from the id under ~/.claude-accounts, whatever the file says', () => {
+    for (const written of ['/Users/someone/Documents', path.join(os.homedir(), '.claude'), 'relative/dir', `${ROOT}/../Documents`, undefined]) {
+      const s = normalizeAccountsSettings({ accounts: [{ ...other, configDir: written }] });
+      expect(s.accounts[1].configDir).toBe(path.join(ROOT, other.id));
+    }
+  });
+
+  it('gives the same folder string at every read, the home resolved once', () => {
+    const a = normalizeAccountsSettings({ accounts: [other] }).accounts[1].configDir;
+    const b = normalizeAccountsSettings({ accounts: [other] }).accounts[1].configDir;
+    expect(a).toBe(b);
+    expect(a).toBe(path.join(fs.realpathSync(os.homedir()), '.claude-accounts', other.id));
   });
 
   it('keeps five accounts at most, account 1 among them', () => {
@@ -227,8 +241,8 @@ describe('changing', () => {
 });
 
 describe('the file', () => {
-  it('lives in the data directory, and its absence reads as the defaults', () => {
-    expect(accountsFile()).toBe(path.join(os.homedir(), '.dorothy', 'claude-accounts.json'));
+  it('lives in ~/.tars-private, which no agent is handed, and its absence reads as the defaults', () => {
+    expect(accountsFile()).toBe(path.join(os.homedir(), '.tars-private', 'claude-accounts.json'));
     if (fs.existsSync(accountsFile())) fs.unlinkSync(accountsFile());
     expect(readAccountsSettings()).toEqual(defaultAccountsSettings());
   });
@@ -245,6 +259,7 @@ describe('the file', () => {
     writeAccountsSettings(settings);
     expect(readAccountsSettings()).toEqual(settings);
     expect(fs.statSync(accountsFile()).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(accountsFile())).mode & 0o777).toBe(0o700);
   });
 
   it('puts the accounts outside the data directory the agents are given (--add-dir ~/.dorothy)', () => {

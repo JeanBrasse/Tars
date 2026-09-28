@@ -20,7 +20,22 @@
  *   mirrors (oauthAccount is the account's own);
  * - user data destroyed: something real where a link should be is left alone
  *   and reported, never removed;
- * - a directory other users can read (Linux keeps the credential in it).
+ * - a folder that is not Tars's own (the Audit's B2): a link, a folder open to
+ *   other users (Linux keeps the credential in it), one owned by somebody
+ *   else, or anything that is not ~/.claude-accounts/<id>. Refused before any
+ *   write, and never repaired: Tars does not chmod or replace what it finds;
+ * - a switched agent stopped on a dialog (the Audit's B1, measured with the real
+ *   binary): `--dangerously-skip-permissions` in a folder without
+ *   bypassPermissionsModeAccepted stops on "Bypass Permissions mode" with
+ *   "No, exit" preselected, and a project's approvals (its .mcp.json servers,
+ *   CLAUDE.md imports) live in its projects[] entry. Both are copied from
+ *   ~/.claude.json, the entry whole;
+ * - a credential copied (the Audit's B3): ~/.claude/settings.json can hold
+ *   apiKeyHelper or ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
+ *   CLAUDE_CODE_OAUTH_TOKEN in its env. The copy leaves them out, and
+ *   claudeCredentialOverrides names them, from the file and from Tars's own
+ *   environment, so the option can refuse to turn on while every account would
+ *   in fact run on that one credential.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -43,7 +58,7 @@ vi.mock('fs', async (importOriginal) => {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { provisionAccountDir, SHARED_ENTRIES } from '../../../electron/services/claude-accounts/provision';
+import { provisionAccountDir, accountDirProblem, claudeCredentialOverrides, SHARED_ENTRIES } from '../../../electron/services/claude-accounts/provision';
 
 let home: string;
 let claudeDir: string;
@@ -53,7 +68,7 @@ let n = 0;
 beforeEach(() => {
   home = fs.realpathSync(os.homedir());
   claudeDir = path.join(home, '.claude');
-  dir = path.join(home, '.claude-accounts', `acct-00000${n++}`);
+  dir = path.join(home, '.claude-accounts', `acct-${(n++).toString(16).padStart(6, '0')}`);
 });
 
 function readJson(file: string): Record<string, unknown> {
@@ -61,16 +76,52 @@ function readJson(file: string): Record<string, unknown> {
 }
 
 describe('the directory', () => {
-  it('is created owner-only, and narrowed if it already existed wider', () => {
+  it('is created owner-only, under a root that is owner-only too', () => {
     provisionAccountDir(dir, home);
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
-    fs.chmodSync(dir, 0o755);
-    provisionAccountDir(dir, home);
-    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(path.dirname(dir)).mode & 0o777).toBe(0o700);
+    expect(accountDirProblem(dir)).toBeNull();
   });
 
-  it('refuses a relative directory', () => {
-    expect(() => provisionAccountDir('relative/acct', home)).toThrow();
+  it('refuses a folder open to other users, and leaves it as it is', () => {
+    provisionAccountDir(dir, home);
+    fs.chmodSync(dir, 0o755);
+    expect(accountDirProblem(dir)).toMatch(/other users/);
+    expect(() => provisionAccountDir(dir, home)).toThrow(/other users/);
+    expect(fs.statSync(dir).mode & 0o777).toBe(0o755);
+  });
+
+  it('refuses a link in place of the folder, and writes nothing through it', () => {
+    const elsewhere = fs.mkdtempSync(path.join(home, 'documents-'));
+    fs.chmodSync(elsewhere, 0o700);
+    fs.mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
+    fs.symlinkSync(elsewhere, dir);
+    expect(accountDirProblem(dir)).toMatch(/link/);
+    expect(() => provisionAccountDir(dir, home)).toThrow(/link/);
+    expect(fs.readdirSync(elsewhere)).toEqual([]);
+  });
+
+  it('refuses a root that is a link, or open to others', () => {
+    const root = path.join(home, '.claude-accounts');
+    if (fs.existsSync(root)) fs.rmSync(root, { recursive: true });
+    const elsewhere = fs.mkdtempSync(path.join(home, 'root-'));
+    fs.chmodSync(elsewhere, 0o700);
+    fs.symlinkSync(elsewhere, root);
+    expect(() => provisionAccountDir(dir, home)).toThrow(/link/);
+    expect(fs.readdirSync(elsewhere)).toEqual([]);
+    fs.unlinkSync(root);
+    fs.mkdirSync(root, { mode: 0o755 });
+    fs.chmodSync(root, 0o755);
+    expect(() => provisionAccountDir(dir, home)).toThrow(/other users/);
+    fs.chmodSync(root, 0o700);
+  });
+
+  it('refuses anything that is not ~/.claude-accounts/<id>', () => {
+    for (const bad of ['relative/acct', path.join(home, 'Documents'), path.join(home, '.claude'), path.join(home, '.claude-accounts', 'default'), path.join(home, '.claude-accounts', 'acct-1a2b3c', 'deeper')]) {
+      expect(() => provisionAccountDir(bad, home)).toThrow();
+      expect(accountDirProblem(bad)).not.toBeNull();
+    }
+    expect(fs.existsSync(path.join(home, 'Documents', 'settings.json'))).toBe(false);
   });
 });
 
@@ -131,18 +182,43 @@ describe('what is shared through links', () => {
 });
 
 describe('settings.json, a copy of ~/.claude/settings.json', () => {
-  it('copies it byte for byte, hooks and status line included, and again when it changes', () => {
+  it('copies it, hooks and status line included, and again when it changes', () => {
     fs.mkdirSync(claudeDir, { recursive: true });
-    const first = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: '/x/on-stop.sh' }] }] }, statusLine: { type: 'command', command: '/x/statusline.sh' } }, null, 2);
-    fs.writeFileSync(path.join(claudeDir, 'settings.json'), first);
+    const first = { hooks: { Stop: [{ hooks: [{ type: 'command', command: '/x/on-stop.sh' }] }] }, statusLine: { type: 'command', command: '/x/statusline.sh' }, skipDangerousModePermissionPrompt: true, env: { FOO: 'bar' } };
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify(first));
     provisionAccountDir(dir, home);
-    expect(fs.readFileSync(path.join(dir, 'settings.json'), 'utf-8')).toBe(first);
+    expect(readJson(path.join(dir, 'settings.json'))).toEqual(first);
     expect(fs.lstatSync(path.join(dir, 'settings.json')).isSymbolicLink()).toBe(false);
+    expect(fs.statSync(path.join(dir, 'settings.json')).mode & 0o777).toBe(0o600);
 
-    const second = first.replace('on-stop', 'on-stop-2');
-    fs.writeFileSync(path.join(claudeDir, 'settings.json'), second);
+    const second = { ...first, statusLine: { type: 'command', command: '/x/statusline-2.sh' } };
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify(second));
     provisionAccountDir(dir, home);
-    expect(fs.readFileSync(path.join(dir, 'settings.json'), 'utf-8')).toBe(second);
+    expect(readJson(path.join(dir, 'settings.json'))).toEqual(second);
+  });
+
+  it('leaves out every credential Claude Code would sign in with, keeping the rest', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({
+      apiKeyHelper: '/usr/local/bin/get-key',
+      awsAuthRefresh: 'aws sso login',
+      awsCredentialExport: '/x/export',
+      env: { ANTHROPIC_API_KEY: 'sk-ant-trap-1', ANTHROPIC_AUTH_TOKEN: 'trap-2', CLAUDE_CODE_OAUTH_TOKEN: 'trap-3', KEEP: 'me' },
+      model: 'opus',
+    }));
+    provisionAccountDir(dir, home);
+    const text = fs.readFileSync(path.join(dir, 'settings.json'), 'utf-8');
+    expect(text).not.toMatch(/trap|apiKeyHelper|awsAuthRefresh|awsCredentialExport|get-key|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN/);
+    expect(JSON.parse(text)).toEqual({ env: { KEEP: 'me' }, model: 'opus' });
+  });
+
+  it('copies nothing from a settings.json that does not parse, and keeps the copy it had', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ model: 'opus' }));
+    provisionAccountDir(dir, home);
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), '{ "apiKeyHelper": "/x", broken');
+    provisionAccountDir(dir, home);
+    expect(readJson(path.join(dir, 'settings.json'))).toEqual({ model: 'opus' });
   });
 
   it('writes none when ~/.claude/settings.json does not exist', () => {
@@ -154,10 +230,11 @@ describe('settings.json, a copy of ~/.claude/settings.json', () => {
 });
 
 describe(".claude.json, the account's own", () => {
-  it('gets onboarding done, and mcpServers and theme mirrored from ~/.claude.json', () => {
+  it('gets onboarding done, and mcpServers, theme and the bypass acceptance mirrored from ~/.claude.json', () => {
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
       mcpServers: { mem: { type: 'http', url: 'http://127.0.0.1:1/mcp' } },
       theme: 'dark',
+      bypassPermissionsModeAccepted: true,
       oauthAccount: { emailAddress: 'someone@example.com' },
       projects: { '/p': { hasTrustDialogAccepted: true } },
     }));
@@ -166,10 +243,28 @@ describe(".claude.json, the account's own", () => {
     expect(own.hasCompletedOnboarding).toBe(true);
     expect(own.mcpServers).toEqual({ mem: { type: 'http', url: 'http://127.0.0.1:1/mcp' } });
     expect(own.theme).toBe('dark');
+    expect(own.bypassPermissionsModeAccepted).toBe(true);
     // Account 1's identity and trust are not the account's: never carried over.
     expect(own.oauthAccount).toBeUndefined();
     expect(own.projects).toBeUndefined();
     expect(fs.statSync(path.join(dir, '.claude.json')).mode & 0o777).toBe(0o600);
+  });
+
+  it("copies the launched project's whole entry, approvals included, and no other project", () => {
+    const entry = { hasTrustDialogAccepted: true, enabledMcpjsonServers: ['repo-server'], hasClaudeMdExternalIncludesApproved: true, allowedTools: ['Bash(ls)'] };
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ projects: { '/work/app': entry, '/work/other': { hasTrustDialogAccepted: true } } }));
+    provisionAccountDir(dir, home, { projectPath: '/work/app' });
+    expect(readJson(path.join(dir, '.claude.json')).projects).toEqual({ '/work/app': entry });
+
+    // A later launch of another project adds it, and keeps what the account wrote into the first.
+    const file = path.join(dir, '.claude.json');
+    const own = readJson(file);
+    (own.projects as Record<string, Record<string, unknown>>)['/work/app'].lastSessionId = 'mine';
+    fs.writeFileSync(file, JSON.stringify(own));
+    provisionAccountDir(dir, home, { projectPath: '/work/other' });
+    const after = readJson(file).projects as Record<string, Record<string, unknown>>;
+    expect(after['/work/other']).toEqual({ hasTrustDialogAccepted: true });
+    expect(after['/work/app'].lastSessionId).toBe('mine');
   });
 
   it("keeps every key of the account's own it does not mirror, and follows a removed server", () => {
@@ -192,6 +287,33 @@ describe(".claude.json, the account's own", () => {
     fs.writeFileSync(path.join(home, '.claude.json'), '{ broken');
     provisionAccountDir(dir, home);
     expect(readJson(file).mcpServers).toEqual({ keep: { command: 'k' } });
+  });
+});
+
+describe('credentials Claude Code would use instead of the account', () => {
+  const vars = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
+
+  it('finds none in a plain setup', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ env: { FOO: 'x' } }));
+    expect(claudeCredentialOverrides(home, { PATH: '/usr/bin' })).toEqual([]);
+  });
+
+  it.each(vars)('names %s in the settings env, and in Tars\'s own environment, never its value', (name) => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ env: { [name]: 'secret-value-1' } }));
+    const found = claudeCredentialOverrides(home, { [name]: 'secret-value-2' });
+    expect(found).toHaveLength(2);
+    expect(found.join(' ')).toContain(name);
+    expect(found.join(' ')).not.toMatch(/secret-value/);
+  });
+
+  it('names apiKeyHelper, and reads nothing it cannot parse as clean', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ apiKeyHelper: '/x/key' }));
+    expect(claudeCredentialOverrides(home, {}).join(' ')).toContain('apiKeyHelper');
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), '{ broken');
+    expect(claudeCredentialOverrides(home, {}).join(' ')).toMatch(/settings.json/);
   });
 });
 
