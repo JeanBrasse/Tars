@@ -50,9 +50,12 @@ function ToneSquare({ tone }: { tone: RowTone }) {
  * baseline one pixel above the 11px mono count beside it (measured on the
  * pen engine's glyphs, the same fonts as the app).
  */
+/** Cut with an ellipsis where its line runs out: a long project name ran past
+ *  its count and, positioned as it is, over the + beside it, which it took the
+ *  clicks of. Frame: `Chat · A · Team rows · states` > `state HEADER`. */
 function Caption({ children }: { children: ReactNode }) {
   return (
-    <span className="relative top-px text-[10px] leading-4 uppercase tracking-[0.08em] text-text-secondary whitespace-nowrap">
+    <span className="relative top-px min-w-0 truncate text-[10px] leading-4 uppercase tracking-[0.08em] text-text-secondary">
       {children}
     </span>
   );
@@ -132,7 +135,7 @@ function SectionHead({
       </Lead>
       <span className="flex items-center gap-2 min-w-0">
         <Caption>{label}</Caption>
-        {count != null && <span className="font-mono text-[11px] leading-4 text-text-muted">{count}</span>}
+        {count != null && <span className="shrink-0 font-mono text-[11px] leading-4 text-text-muted">{count}</span>}
         {folded && summary?.map(c => (
           <Fragment key={c.label}>
             <span className="text-[12px] leading-4 text-text-muted">·</span>
