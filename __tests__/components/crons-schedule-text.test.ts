@@ -11,7 +11,7 @@ import { formatSchedule } from '@/app/crons/schedule-text';
  */
 describe('formatSchedule', () => {
   it('renders the object Hermes actually sends for a cron job', () => {
-    // Verbatim from the live gateway (http://100.81.229.49:9119/api/cron/jobs).
+    // Verbatim from a live gateway's /api/cron/jobs (its tailnet address left out).
     const out = formatSchedule({
       schedule: { kind: 'cron', expr: '*/15 * * * *', display: '*/15 * * * *' },
       schedule_display: '*/15 * * * *',

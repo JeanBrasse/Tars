@@ -21,7 +21,7 @@ import { sessionModel, withSessionTruth, clearAgentTruthCache, pendingBackground
  */
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-truth-'));
-const PROJECT = '/Users/noah/tars';
+const PROJECT = '/Users/you/tars';
 const SESSION = '4ab31f00-ce51-4676-ab80-4023cf6e3f4e';
 
 function writeTranscript(projectPath: string, sessionId: string, lines: string[]) {
@@ -68,7 +68,7 @@ describe('reading the model back from the session', () => {
   });
 
   it('looks in the worktree, which is where an agent with one ran', () => {
-    const worktree = '/Users/noah/tars/.worktrees/feat-x';
+    const worktree = '/Users/you/tars/.worktrees/feat-x';
     writeTranscript(worktree, SESSION, [assistant('claude-haiku-4-5')]);
     expect(
       sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT, worktreePath: worktree }, home),
