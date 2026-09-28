@@ -104,6 +104,9 @@ export const SECTION_GROUPS: SettingsGroup[] = [
 /** Flat view of the same sections, for deep-links and the mobile picker. */
 export const SECTIONS: SettingsLeaf[] = SECTION_GROUPS.flatMap(g => g.children);
 
+/** The privacy policy Cooper Labs publishes, as the repository holds it. */
+export const PRIVACY_POLICY_URL = 'https://github.com/JeanBrasse/Tars/blob/main/landing/src/content/privacy.md';
+
 export const DEFAULT_APP_SETTINGS = {
   notificationsEnabled: true,
   notifyOnWaiting: true,
@@ -142,6 +145,7 @@ export const DEFAULT_APP_SETTINGS = {
   verboseModeEnabled: false,
   chromeEnabled: false,
   autoCheckUpdates: true,
+  errorReportsEnabled: false,
   autoStartAgentsOnLaunch: true,
   opencodeEnabled: false,
   opencodeDefaultModel: '',

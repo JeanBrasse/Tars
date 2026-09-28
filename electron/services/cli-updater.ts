@@ -94,6 +94,16 @@ const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 const QUERY_TIMEOUT_MS = 60 * 1000;
 /** Past this the log moves to `.1`, replacing the previous one. */
 const LOG_MAX_BYTES = 256 * 1024;
+/** What mkdtemp names an update's scratch folder: this prefix and six characters, nothing else. */
+const SCRATCH_PREFIX = 'tars-cli-update-';
+const SCRATCH_NAME = /^tars-cli-update-[A-Za-z0-9]{6}$/;
+/**
+ * How old a scratch folder must be before a pass removes it as left behind:
+ * past the longest an update holds its own (a one-minute view, a ten-minute
+ * download, a ten-minute install and two one-minute lsof checks: 23 minutes),
+ * so that a folder another Tars is still using is never taken from it.
+ */
+const SCRATCH_STALE_MS = 60 * 60 * 1000;
 
 export const CLI_UPDATES_LOG = dataPath('cli-updates.log');
 
@@ -119,6 +129,8 @@ export interface CliUpdateContext {
   /** Every child's environment, PATH included. HOME must be `home`. */
   env: NodeJS.ProcessEnv;
   logFile: string;
+  /** Where an update makes its scratch folder, and where a pass sweeps the ones left behind. os.tmpdir() in the app. */
+  tmpDir: string;
 }
 
 interface Run {
@@ -332,7 +344,7 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
   // publishes about ten a day. The price is the package's metadata fetched whole
   // on every check instead of revalidated: 1.2 MB on the wire for
   // @sourcegraph/amp.
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-cli-update-'));
+  const scratch = fs.mkdtempSync(path.join(ctx.tmpDir, SCRATCH_PREFIX));
   const cache = path.join(scratch, 'npm-cache');
   try {
     // No retries: npm retries a refused connection for 70 s, past the query
@@ -365,7 +377,16 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
     }
     return { cli, outcome: 'failed', from, detail: `npm install -g ${install.pkg}@${latest}: ${failure(run)}, ${took}` };
   } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    // A folder left behind is said, never reported in place of the update's
+    // outcome: a throw from here replaced it, and an update that went through
+    // read "failed".
+    try {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    } catch (err) {
+      // In the update log, which is what a user reads (the gates of #218), and
+      // swept by a later pass (sweepScratch).
+      writeLog(ctx.logFile, `${new Date().toISOString()} ${cli} could not remove ${scratch}: ${err instanceof Error ? err.message : String(err)}. A pass removes it once it is an hour old`);
+    }
   }
 }
 
@@ -422,6 +443,49 @@ function writeLog(file: string, line: string): void {
 /** What each CLI last came to, per log, so a check that changes nothing is written once and not every half hour. */
 const lastOutcome = new Map<string, string>();
 
+/** The leftovers a sweep could not remove, so that each is said once and not every half hour. */
+const unsweepable = new Set<string>();
+
+/**
+ * Removes the scratch folders earlier updates could not remove themselves,
+ * which piled up one a pass where the removal kept failing (the gates of
+ * #218). Only ours: mkdtemp's name for them, a real folder and never a link,
+ * this user's where the system has users, and over an hour old, so none an
+ * update may still be using. A folder left read-only, which is how a removal
+ * can fail, is made writable first. What goes is said in the log, and what
+ * cannot go is said once, without stopping the pass.
+ */
+function sweepScratch(ctx: CliUpdateContext): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(ctx.tmpDir);
+  } catch {
+    return;
+  }
+  const uid = process.getuid?.();
+  for (const name of names) {
+    if (!SCRATCH_NAME.test(name)) continue;
+    const folder = path.join(ctx.tmpDir, name);
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(folder);
+    } catch {
+      continue;
+    }
+    if (!stat.isDirectory() || (uid !== undefined && stat.uid !== uid) || Date.now() - stat.mtimeMs < SCRATCH_STALE_MS) continue;
+    try {
+      fs.chmodSync(folder, 0o700);
+      fs.rmSync(folder, { recursive: true, force: true });
+      unsweepable.delete(folder);
+      writeLog(ctx.logFile, `${new Date().toISOString()} removed ${folder}, a scratch folder an earlier update could not remove`);
+    } catch (err) {
+      if (unsweepable.has(folder)) continue;
+      unsweepable.add(folder);
+      writeLog(ctx.logFile, `${new Date().toISOString()} could not remove ${folder}, a scratch folder an earlier update left: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
 /**
  * One pass over the CLIs, one at a time. A result is logged when it differs
  * from that CLI's previous one, and a failure every time.
@@ -430,6 +494,7 @@ export async function runCliUpdatePass(
   targets: Array<{ cli: string; command: string; inUse?: boolean }>,
   ctx: CliUpdateContext,
 ): Promise<CliUpdateResult[]> {
+  sweepScratch(ctx);
   const results: CliUpdateResult[] = [];
   for (const { cli, command, inUse } of targets) {
     let result: CliUpdateResult;
@@ -483,6 +548,7 @@ export function startCliUpdates(
       home: os.homedir(),
       env: { ...process.env, PATH: buildFullPath() },
       logFile: CLI_UPDATES_LOG,
+      tmpDir: os.tmpdir(),
     };
     if (settings.autoCheckUpdates === false) {
       if (!wasOff) writeLog(ctx.logFile, `${new Date().toISOString()} all off: "Check for updates" is off in Settings, so no CLI is checked`);

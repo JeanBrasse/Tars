@@ -392,3 +392,72 @@ describe('cost per model per day', () => {
     expect(overDays(OPUS)).toBeCloseTo(modelUsage[OPUS].costUSD - M5, 12);
   });
 });
+
+describe('an expired memo, scanned again only when a transcript moved', () => {
+  /**
+   * Past the minute, the memo was rebuilt whether a transcript had moved or
+   * not: the walk, a stat per file and the whole adding up, 0.2 to 0.5 s on
+   * Noah's 1826 transcripts, once a minute for as long as a page polls, all
+   * night. It is kept now while every transcript has the path, the size and the
+   * time it had (and the prices are the ones it was priced with:
+   * transcript-usage-pricing.test.ts).
+   *
+   * How it can fail, written before the code:
+   * 1. an unchanged memo is rebuilt all the same;
+   * 2. a change is missed: a transcript rewritten to the same size with a new
+   *    time, one added in a folder of its own. A deleted one is "stops counting
+   *    a transcript that has been deleted" above;
+   * 3. a pass that could not read a transcript is kept, and the failure with
+   *    it: a file made readable again keeps its time and size. "is not
+   *    remembered as empty" in transcript-usage-chunking.test.ts holds that
+   *    one, and caught the first version of this change.
+   */
+  let skew = 0;
+  beforeEach(() => { skew = 0; });
+
+  /** A minute later each time, the per-file map left as it is. */
+  async function aMinuteLater() {
+    const real = Date.now;
+    skew += 61_000;
+    const at = real();
+    Date.now = () => at + skew;
+    try {
+      return await computeTranscriptUsage(home);
+    } finally {
+      Date.now = real;
+    }
+  }
+
+  it('1. keeps the memo it had, the same object, while no transcript moved', async () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    const before = await computeTranscriptUsage(home);
+
+    expect(await aMinuteLater()).toBe(before);
+    expect(await aMinuteLater()).toBe(before);
+  });
+
+  it('2. reads again a transcript rewritten to the same size, with a new time', async () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    expect((await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].inputTokens).toBe(1000);
+
+    const file = path.join(home, '.claude', 'projects', 'demo', 'a.jsonl');
+    const size = fs.statSync(file).size;
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1', { input_tokens: 3000 })]);
+    expect(fs.statSync(file).size).toBe(size);
+    const later = new Date(Date.now() + 5_000);
+    fs.utimesSync(file, later, later);
+
+    expect((await aMinuteLater()).modelUsage['claude-opus-5'].inputTokens).toBe(3000);
+  });
+
+  it('2. counts a transcript added in a folder of its own', async () => {
+    writeTranscript('a.jsonl', [assistant('msg_1', 'req_1')]);
+    expect((await computeTranscriptUsage(home)).modelUsage['claude-opus-5'].inputTokens).toBe(1000);
+
+    const other = path.join(home, '.claude', 'projects', 'another-project');
+    fs.mkdirSync(other, { recursive: true });
+    fs.writeFileSync(path.join(other, 'b.jsonl'), JSON.stringify(assistant('msg_2', 'req_2')));
+
+    expect((await aMinuteLater()).modelUsage['claude-opus-5'].inputTokens).toBe(2000);
+  });
+});
