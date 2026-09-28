@@ -95,9 +95,12 @@ describe('the most room', () => {
     expect(c).toMatchObject({ accountId: 'acct-bbbbbb', reason: 'most-headroom' });
   });
 
-  it('within 5 points, prefers a measured account over one nobody measured', () => {
-    // default measured at 1 % (margin 89); a unknown (margin 90): within 5, measured wins.
-    const c = chooseAccount(input({ usage: { default: used(1, 1), 'acct-bbbbbb': used(50, 50) } }));
+  it('within 5 points, prefers a measured account over one nobody measured, whatever the order', () => {
+    // a unknown (margin 90) first in the list; default measured at 1 % (margin 89): within 5, measured wins.
+    const c = chooseAccount(input({
+      accounts: [{ id: 'acct-aaaaaa', enabled: true, signedIn: true }, { id: 'default', enabled: true, signedIn: true }],
+      usage: { default: used(1, 1) },
+    }));
     expect(c.accountId).toBe('default');
   });
 
@@ -124,17 +127,22 @@ describe('the most room', () => {
     expect(c.accountId).toBe('acct-aaaaaa');
   });
 
-  it('reads a window whose reset has passed as empty, however old the counter', () => {
-    const c = chooseAccount(input({
-      accounts: [{ id: 'acct-aaaaaa', enabled: true, signedIn: true }, { id: 'acct-bbbbbb', enabled: true, signedIn: true }],
-      usage: { 'acct-aaaaaa': used(100, 10, 6 * 3600_000, S(NOW - 60_000)), 'acct-bbbbbb': used(50, 50) },
-    }));
-    expect(c.accountId).toBe('acct-aaaaaa');
+  it('reads a window whose reset has passed as empty, from a fresh counter or an old one', () => {
+    for (const age of [60_000, 6 * 3600_000]) {
+      const c = chooseAccount(input({
+        accounts: [{ id: 'acct-aaaaaa', enabled: true, signedIn: true }, { id: 'acct-bbbbbb', enabled: true, signedIn: true }],
+        usage: { 'acct-aaaaaa': used(100, 10, age, S(NOW - 60_000)), 'acct-bbbbbb': used(50, 50) },
+      }));
+      expect(c.accountId).toBe('acct-aaaaaa');
+    }
   });
 
-  it('treats account 1 as usable while Claude Code has not answered about it yet', () => {
-    const c = chooseAccount(input({ accounts: [{ id: 'default', enabled: true, signedIn: null }, { id: 'acct-aaaaaa', enabled: true, signedIn: null }] }));
-    expect(c.accountId).toBe('default');
+  it('treats account 1 as usable while Claude Code has not answered about it yet, and no other account', () => {
+    const c = chooseAccount(input({
+      accounts: [{ id: 'acct-aaaaaa', enabled: true, signedIn: true }, { id: 'default', enabled: true, signedIn: null }, { id: 'acct-bbbbbb', enabled: true, signedIn: null }],
+      usage: { 'acct-aaaaaa': used(50, 50) },
+    }));
+    expect(c).toMatchObject({ accountId: 'default', reason: 'most-headroom' });
   });
 });
 
