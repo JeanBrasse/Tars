@@ -59,19 +59,31 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
 
-## Settings (6 groups, 18 sections)
+## Settings (6 groups, 19 sections)
 
 | Group | Sections |
 |---|---|
 | General | Preferences, Terminal, Notifications, System |
-| AI & Providers | Providers, CLI Paths, Permissions |
+| AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules) |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
-## Overlays and dialogs (14)
+Claude accounts is off until turned on. On, it lists up to five Claude
+subscriptions, each with its 5 h and weekly use, and the two thresholds that
+move agents between them; the account an agent runs on then shows, with a menu
+that pins it, on its card in Agents, its pane header on the Dashboard and its
+window. Frames: Settings · Claude accounts, Settings · Claude accounts · states,
+Agent · Claude account (and their light copies).
 
+## Overlays and dialogs (15)
+
+- Add a Claude account, Sign in <account>, Remove <account>? (Settings >
+  Claude accounts): adding names the account, then a terminal on its new
+  folder runs Claude Code's own sign-in, which Tars never sees; the account
+  reads signed in once Claude Code says so. Remove asks first. Frames:
+  Settings · Claude accounts · states (and its light copy)
 - New agent / New team (`NewChatModal`): one screen, a "One agent | A team"
   switch in the header. One agent: project, provider tiles + model, task
   textarea, one collapsed Options row (skills, effort, permissions, worktree,
