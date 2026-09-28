@@ -86,6 +86,7 @@ const NAME_START = '(?<![A-Za-z0-9._-])';
  * Audit's gate of #221).
  */
 type Machine = Pick<ReportFacts, 'home' | 'host'>;
+const MIN_SHORT_HOST = 6;
 
 function scrub(value: string, machine: Machine): string {
   const { home, host } = machine;
@@ -103,9 +104,12 @@ function scrub(value: string, machine: Machine): string {
     }
   }
   // The machine's name often carries its owner's ("MacBook-Pro-de-Noah"),
-  // inside a word the user name rule below does not look into.
+  // inside a word the user name rule below does not look into. Its first
+  // label alone is masked only when long enough to be a name: "Mac" of
+  // "Mac.lan" would take the word out of every message.
   if (host) {
-    for (const name of new Set([host, host.split('.')[0]])) {
+    const short = host.split('.')[0];
+    for (const name of new Set([host, short.length >= MIN_SHORT_HOST ? short : host])) {
       if (name.length >= 3) out = out.replace(new RegExp(`${NAME_START}${escape(name)}${NAME_END}`, 'gi'), '<host>');
     }
   }
