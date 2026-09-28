@@ -109,7 +109,8 @@ describe('what it says (2)', () => {
   it('names the account the agent runs on, chosen by Tars', async () => {
     const c = await control(mkView(true, [MAIN, SECOND, THIRD]), agent());
     const d = c.dropdown();
-    expect(d.props).toMatchObject({ value: 'auto', triggerLabel: 'Main', title: 'Runs on Main, chosen by Tars.', size: 'sm', quiet: true, align: 'right', mono: true });
+    // The frame: the control in mono, the menu's rows in the ui face, the panel 280 wide.
+    expect(d.props).toMatchObject({ value: 'auto', triggerLabel: 'Main', title: 'Runs on Main, chosen by Tars.', size: 'sm', quiet: true, align: 'right', mono: 'trigger', panelMinWidth: 280 });
     expect(d.props.ariaLabel).toBe('Claude account of Frontend Engineer');
   });
 
@@ -178,7 +179,7 @@ describe('the panel (5)', () => {
     // An open panel listens for a press outside it on the window.
     g.window = { addEventListener: () => {}, removeEventListener: () => {} };
     mounted = mount(() => mods.ui.Dropdown({
-      value: 'auto', size: 'sm', quiet: true, triggerLabel: 'Main', caption: 'Run this agent on',
+      value: 'auto', size: 'sm', quiet: true, mono: 'trigger', panelMinWidth: 280, triggerLabel: 'Main', caption: 'Run this agent on',
       footer: 'A note at the foot.',
       options: [
         { value: 'auto', label: 'Automatic', hint: 'now on Main' },
@@ -199,5 +200,11 @@ describe('the panel (5)', () => {
     const rule = all.findIndex(e => e.props.role === 'separator');
     expect(rule).toBeGreaterThan(-1);
     expect(rule).toBeLessThan(mainRow);
+    // Mono on the trigger alone, and the panel at least as wide as drawn.
+    expect(String(trigger().props.className)).toContain('font-mono');
+    const label = all.find(e => e.props.children === 'Automatic')!;
+    expect(String(label.props.className)).not.toContain('font-mono');
+    const panel = all.find(e => (e.props.style as { minWidth?: number } | undefined)?.minWidth !== undefined)!;
+    expect((panel.props.style as { minWidth: number }).minWidth).toBe(280);
   });
 });
