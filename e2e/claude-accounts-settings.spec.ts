@@ -53,7 +53,8 @@ function writeFakeClaude(home: string): string {
   return bin;
 }
 
-const registry = (dataDir: string) => JSON.parse(fs.readFileSync(path.join(dataDir, 'claude-accounts.json'), 'utf8'));
+/** Main's registry of accounts, kept where no agent is handed it (#263, after the design gate). */
+const registry = (home: string) => JSON.parse(fs.readFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), 'utf8'));
 const row = (page: Page, id: string) => page.locator(`[data-account-row="${id}"]`);
 
 test('claude accounts: the section, the sign-in terminal, and an agent pinned from its card', async () => {
@@ -116,7 +117,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     await dialog.getByRole('button', { name: 'Add and sign in' }).click();
     await expect(dialog.locator('.xterm-rows')).toContainText('Opening browser to sign in', { timeout: 20_000 });
     await stepShot(page, '03-signing-in');
-    const two = (registry(dataDir).accounts as Array<{ id: string; label: string }>).find(a => a.label === 'Max two')!;
+    const two = (registry(home).accounts as Array<{ id: string; label: string }>).find(a => a.label === 'Max two')!;
     expect(two.id).toMatch(/^acct-[0-9a-f]{6}$/);
     await expect(dialog.getByText(`Signed in as ${two.id}@example.com.`)).toBeVisible({ timeout: 20_000 });
     await stepShot(page, '04-signed-in');
@@ -130,18 +131,18 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     await row(page, two.id).getByRole('button', { name: 'Rename Max two' }).click();
     await row(page, two.id).getByLabel('Name of Max two').fill('Work');
     await row(page, two.id).getByLabel('Name of Max two').press('Enter');
-    await expect.poll(() => registry(dataDir).accounts.find((a: { id: string }) => a.id === two.id)?.label).toBe('Work');
+    await expect.poll(() => registry(home).accounts.find((a: { id: string }) => a.id === two.id)?.label).toBe('Work');
     await row(page, two.id).getByRole('button', { name: 'Move Work up' }).click();
-    await expect.poll(() => registry(dataDir).accounts.map((a: { id: string }) => a.id)).toEqual([two.id, 'default']);
+    await expect.poll(() => registry(home).accounts.map((a: { id: string }) => a.id)).toEqual([two.id, 'default']);
     const five = page.getByLabel('5 h threshold');
     await five.fill('85');
     await five.press('Tab');
-    await expect.poll(() => registry(dataDir).fiveHourThreshold).toBe(85);
+    await expect.poll(() => registry(home).fiveHourThreshold).toBe(85);
     await five.fill('120');
     await five.press('Tab');
     await expect(page.getByText('A threshold is a whole percentage from 50 to 100.')).toBeVisible();
     await expect(five).toHaveValue('85');
-    expect(registry(dataDir).fiveHourThreshold).toBe(85);
+    expect(registry(home).fiveHourThreshold).toBe(85);
     await stepShot(page, '05-renamed-moved-threshold-refused');
 
     // Remove asks first; Cancel removes nothing.
@@ -150,7 +151,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     await stepShot(page, '06-remove-asks');
     await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    expect(registry(dataDir).accounts).toHaveLength(2);
+    expect(registry(home).accounts).toHaveLength(2);
 
     // The agent's card names its account, and its menu pins the agent.
     await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
@@ -171,7 +172,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
 
     expect(errors, errors.join('\n')).toEqual([]);
     recordValues({
-      registry: registry(dataDir),
+      registry: registry(home),
       pin: two.id,
       pageErrors: errors,
     });
