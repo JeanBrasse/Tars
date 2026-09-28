@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { AgentStatus, AgentEvent, ElectronAPI, AgentCharacter, AgentProvider } from '@/types/electron';
 
+/** Asks every agent list in the window to read the agents again from main. */
+export const AGENTS_CHANGED_EVENT = 'tars:agents-changed';
+
 // Check if we're running in Electron
 export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -52,7 +55,11 @@ export function useElectronAgents() {
             // change moves nothing else on the record.
             prevAgent.role !== agent.role ||
             // A rename, which every agent row draws the mark from.
-            prevAgent.name !== agent.name
+            prevAgent.name !== agent.name ||
+            // The Claude account it runs on, and the one it is pinned to,
+            // which its account control names.
+            prevAgent.claudeAccountId !== agent.claudeAccountId ||
+            prevAgent.claudeAccountPin !== agent.claudeAccountPin
           );
         });
         return hasChanged ? list : prev;
@@ -196,6 +203,9 @@ export function useElectronAgents() {
 
     // Also subscribe to agents:tick for reliable live status updates
     // (proven to reach all windows: tray panel uses this successfully)
+    // A change main saves without an agent event, such as a pin from an
+    // agent's account control: whoever made it asks the list to read again.
+    window.addEventListener?.(AGENTS_CHANGED_EVENT, fetchAgents);
     const unsubTick = window.electronAPI!.agent.onTick?.((tickAgents) => {
       // If agent count changed, refetch full data (tick only has partial fields).
       // This comparison and the fetch used to live *inside* the setAgents
@@ -252,6 +262,7 @@ export function useElectronAgents() {
       unsubComplete();
       unsubStatus?.();
       unsubTick?.();
+      window.removeEventListener?.(AGENTS_CHANGED_EVENT, fetchAgents);
     };
   }, [fetchAgents]);
 

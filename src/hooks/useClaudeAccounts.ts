@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ClaudeAccountsResult, ClaudeAccountsView, ClaudeAccountId } from '@/types/electron';
+import { AGENTS_CHANGED_EVENT } from '@/hooks/useElectron';
 
 /**
  * The Claude accounts as main sees them (#263, DESIGN-COMPTES-CLAUDE.md B6),
@@ -76,7 +77,13 @@ export const claudeAccountActions = {
   reorder: (ids: ClaudeAccountId[]) => run(b => b.reorder(ids)),
   remove: (id: ClaudeAccountId) => run(b => b.remove(id)),
   refresh: (id?: ClaudeAccountId) => run(b => b.refresh(id)),
-  setAgentAccount: (p: { agentId: string; accountId: ClaudeAccountId | null }) => run(b => b.setAgentAccount(p)),
+  // Main saves a pin without an agent event: once it has, the window's agent
+  // lists read the agents again, so the control says pinned.
+  setAgentAccount: async (p: { agentId: string; accountId: ClaudeAccountId | null }) => {
+    const r = await run(b => b.setAgentAccount(p));
+    if (r.success && typeof window !== 'undefined') window.dispatchEvent?.(new Event(AGENTS_CHANGED_EVENT));
+    return r;
+  },
   clearError: () => publish({ error: null }),
 };
 
