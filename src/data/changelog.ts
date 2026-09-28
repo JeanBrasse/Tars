@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'The Chat lists its rooms after a slow start. The list was asked for once and given 10 s: an answer that came later was dropped, and a read that failed was not asked again, so the Chat showed "The bus did not answer" and no room until you clicked retry or a message arrived. An answer is now taken whenever it comes, and a failed read is asked again three more times, after waits of 3, 9 and 18 s, the note staying up meanwhile',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
