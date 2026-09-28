@@ -82,6 +82,8 @@ import { registerDiscordHandlers } from './handlers/discord-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
+  getClaudeStatsNow,
+  prewarmClaudeStats,
   getClaudeProjects,
   getClaudePlugins,
   getClaudeSkills,
@@ -331,9 +333,11 @@ function createIpcDependencies(): IpcHandlerDependencies {
       buffer.forEach(item => getSuperAgentOutputBuffer().push(item));
     },
 
-    // Claude data functions
+    // Claude data functions. The page's stats come at once, as last computed,
+    // and are computed again behind it once a minute old; the bots keep
+    // getClaudeStats, which waits for numbers no older than that.
     getClaudeSettings,
-    getClaudeStats,
+    getClaudeStats: getClaudeStatsNow,
     getClaudeProjects,
     getClaudePlugins,
     getClaudeSkills,
@@ -475,6 +479,9 @@ app.whenReady().then(async () => {
   // Register all IPC handlers
   const deps = createIpcDependencies();
   registerIpcHandlers(deps);
+  // The transcript scan, started now rather than by the first page to ask for
+  // it: 2.4 to 3 s on Noah's 1826 transcripts, which that page used to wait for.
+  prewarmClaudeStats();
   registerMcpOrchestratorHandlers();
   registerCLIPathsHandlers({
     getAppSettings: () => appSettings,

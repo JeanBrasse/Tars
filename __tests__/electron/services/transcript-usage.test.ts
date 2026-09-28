@@ -406,7 +406,11 @@ describe('an expired memo, scanned again only when a transcript moved', () => {
    * 1. an unchanged memo is rebuilt all the same;
    * 2. a change is missed: a transcript rewritten to the same size with a new
    *    time, one added in a folder of its own. A deleted one is "stops counting
-   *    a transcript that has been deleted" above.
+   *    a transcript that has been deleted" above;
+   * 3. a pass that could not read a transcript is kept, and the failure with
+   *    it: a file made readable again keeps its time and size. "is not
+   *    remembered as empty" in transcript-usage-chunking.test.ts holds that
+   *    one, and caught the first version of this change.
    */
   let skew = 0;
   beforeEach(() => { skew = 0; });
