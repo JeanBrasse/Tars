@@ -22,7 +22,12 @@ import * as path from 'node:path';
  *    refresh of its own;
  * 6. a refresh that fails drops the numbers the page had, or leaves no refresh
  *    possible after it;
- * 7. /stats on a bot is handed numbers older than the minute.
+ * 7. /stats on a bot is handed numbers older than the minute;
+ * 8. the launch's scan is priced with a catalogue the app replaces a moment
+ *    later: loadCatalog installs its fresh disk copy as it is called, and a
+ *    scan started before it saw another object, so the first minute past it
+ *    scanned everything again (measured in the app: the first expired visit's
+ *    claude:getData 185 ms, the reads it holds sharing the loop with that scan).
  *
  * The scan itself is a stand-in here, one that answers when a case says so:
  * what is under test is who waits for it and who does not.
@@ -152,6 +157,13 @@ describe("the bots' /stats", () => {
 
 describe('main.ts', () => {
   const main = fs.readFileSync(path.join(__dirname, '../../../electron/main.ts'), 'utf-8');
+
+  it('8. starts the scan after the catalogue has installed its copy on disk', () => {
+    const ready = main.indexOf('app.whenReady()');
+    const catalogue = main.indexOf('loadCatalog()', ready);
+    expect(catalogue).toBeGreaterThan(ready);
+    expect(main.indexOf('prewarmClaudeStats()', ready)).toBeGreaterThan(catalogue);
+  });
 
   it('1. starts the scan once the app is ready, hands the page the stats at once, and the bots fresh ones', () => {
     const ready = main.indexOf('app.whenReady()');
