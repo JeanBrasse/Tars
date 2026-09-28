@@ -1246,7 +1246,8 @@ export interface ElectronAPI {
 
   /** What an agent changed: per-file stats plus the actual patch. */
   review?: {
-    diff: (repoPath: string, baseBranch?: string) =>
+    /** `listOnly`: the files and counts, with `patch` empty; read each file's patch with `file`. */
+    diff: (repoPath: string, baseBranch?: string, opts?: { listOnly?: boolean }) =>
       Promise<{ success: boolean; diff?: ReviewDiff; error?: string }>;
     file: (repoPath: string, file: string, baseBranch?: string) =>
       Promise<{ success: boolean; patch?: string; error?: string }>;
