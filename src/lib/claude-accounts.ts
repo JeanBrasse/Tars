@@ -53,9 +53,15 @@ export function tildify(path: string): string {
   return path.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~');
 }
 
-/** Account 1 is Claude Code's own folder; the others were made by Tars. */
+/**
+ * Account 1 is Claude Code's own folder. Tars makes every other one as
+ * <home>/.claude-accounts/<id> (#263, B1), so that suffix names it whatever
+ * the home is called; anything else is shown with the home as ~ where it can.
+ */
 export function accountFolder(a: ClaudeAccountState): string {
-  return a.configDir ? tildify(a.configDir) : '~/.claude';
+  if (!a.configDir) return '~/.claude';
+  const made = a.configDir.match(/\/\.claude-accounts\/([^/]+)$/);
+  return made ? `~/.claude-accounts/${made[1]}` : tildify(a.configDir);
 }
 
 const nowSec = (now: Date) => now.getTime() / 1000;
