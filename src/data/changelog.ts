@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'Import, in Settings > Hermes, brings the gateway Hermes Desktop uses now, with its token. Hermes Desktop has kept its connections in connections.json for a while, and Tars read only the older connection.json, so an import could bring an old address, or the address without its token. A token Hermes Desktop keeps encrypted, when its keychain encryption is on, is still left behind: sign in or paste it',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
