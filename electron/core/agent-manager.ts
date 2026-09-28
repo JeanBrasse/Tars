@@ -1,3 +1,4 @@
+import { agentRecovered, reportEvent } from '../services/event-reports';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -235,9 +236,16 @@ export function handleStatusChangeNotification(
 ) {
   const prevStatus = previousAgentStatus.get(agent.id);
 
+  // Out of error: its next error is news for Noah's reports again.
+  if (newStatus !== 'error') agentRecovered(agent.id);
+
   if (!prevStatus) {
     previousAgentStatus.set(agent.id, newStatus);
-    return;
+    // Every caller calls on a change, so this one is a change too, with the
+    // status before it unknown: an agent whose first change after Tars
+    // starts is to error was neither notified nor reported (found in the
+    // app proof of the event reports). The other statuses stay as they were.
+    if (newStatus !== 'error') return;
   }
 
   if (prevStatus === newStatus) {
@@ -303,7 +311,19 @@ export function handleStatusChangeNotification(
         sendSuperAgentResponseToTelegram(currentAgent);
         superAgentTelegramTask = false;
       }
-    } else if (newStatus === 'error' && appSettings.notifyOnError) {
+    }
+    // To Noah's Telegram whatever the desktop switch says: that one is the
+    // Mac's, this is his phone's (services/event-reports.ts).
+    if (newStatus === 'error') {
+      reportEvent({
+        kind: 'agent-error',
+        agentId: currentAgent.id,
+        agentName,
+        project: path.basename(currentAgent.projectPath || '') || currentAgent.projectPath || '',
+        reason: currentAgent.error,
+      });
+    }
+    if (newStatus === 'error' && appSettings.notifyOnError) {
       if (!isSuper) {
         sendNotification(
           `${agentName} encountered an error`,

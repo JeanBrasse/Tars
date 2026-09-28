@@ -7,6 +7,7 @@ import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
 import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR, dataPath } from '../constants';
 import { redactSecrets } from '../utils/redact-secrets';
+import { setReportChannel } from './event-reports';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
 import {
   findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
@@ -675,6 +676,7 @@ export function initTelegramBot() {
   try {
     telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
     console.log('Telegram bot started');
+    setReportChannel(reportChannel);
 
     // Fetch and cache bot username for mention detection
     telegramBot.getMe().then((me) => {
@@ -935,7 +937,30 @@ function telegramSystemPromptFile(): string | undefined {
 /**
  * Stop Telegram bot
  */
+/**
+ * Where the event reports go (services/event-reports.ts): the private chats
+ * Settings authorizes, as they are at each send; never a group. HTML, so a
+ * name or a title is shown as the text it is.
+ */
+const reportChannel = {
+  async send(html: string): Promise<number> {
+    let reached = 0;
+    const privateChats = (getSettings().telegramAuthorizedChatIds ?? []).map(String).filter(id => /^\d+$/.test(id));
+    for (const chatId of privateChats) {
+      if (!telegramBot) break;
+      try {
+        await telegramBot.sendMessage(chatId, html, { parse_mode: 'HTML', disable_web_page_preview: true });
+        reached += 1;
+      } catch (err) {
+        console.error(`[reports] could not send to chat ${chatId}:`, err);
+      }
+    }
+    return reached;
+  },
+};
+
 export function stopTelegramBot() {
+  setReportChannel(null);
   if (telegramBot) {
     telegramBot.stopPolling();
     telegramBot = null;
