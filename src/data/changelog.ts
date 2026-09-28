@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'Agents start when your home folder\'s name holds an apostrophe, such as /Users/o\'neil: Tars hands each CLI its ~/.dorothy folder as one quoted argument, where the apostrophe ended the quote and the command did not run. A folder name made to close that quote can no longer add options of its own to the command',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
