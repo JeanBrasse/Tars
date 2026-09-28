@@ -9,7 +9,7 @@ export const CHANGELOG: Release[] = [
   {
     id: 50,
     version: '1.9.1',
-    date: '2026-09-26',
+    date: '2026-09-28',
     updates: [
       'Tars can send error reports to Sentry, off unless you turn on Send error reports in Settings > Preferences, and nothing is sent while it is off. Once on, it sends errors alone, each report built from a fixed list of fields: the error, where it happened in Tars\'s code, the version, the system and a random install id. File paths keep their names, with your home folder written ~ and your user name <user>. The same error is sent once a day at most, and no more than 20 reports a day',
       'With several Claude agents at work at once, the Usage page no longer misses one of their sessions: an agent\'s status line could remove the lock another had just taken on the token count, and two of them then wrote the count over each other. Fixed by Nexarion434',
