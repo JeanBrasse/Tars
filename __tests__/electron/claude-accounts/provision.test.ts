@@ -116,6 +116,18 @@ describe('the directory', () => {
     fs.chmodSync(root, 0o700);
   });
 
+  it('reports a folder whose root was opened to others as not ours', () => {
+    provisionAccountDir(dir, home);
+    const root = path.dirname(dir);
+    fs.chmodSync(root, 0o755);
+    try {
+      expect(accountDirProblem(dir)).toMatch(/~\/\.claude-accounts is open to other users/);
+    } finally {
+      fs.chmodSync(root, 0o700);
+    }
+    expect(accountDirProblem(dir)).toBeNull();
+  });
+
   it('refuses anything that is not ~/.claude-accounts/<id>', () => {
     for (const bad of ['relative/acct', path.join(home, 'Documents'), path.join(home, '.claude'), path.join(home, '.claude-accounts', 'default'), path.join(home, '.claude-accounts', 'acct-1a2b3c', 'deeper')]) {
       expect(() => provisionAccountDir(bad, home)).toThrow();
