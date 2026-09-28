@@ -21,6 +21,7 @@ exports[`hermes-client, as recorded before the D2 refactor > exports the same na
   "fetchHermesMemoryState",
   "fetchHermesModelOptions",
   "fetchHermesSessionMessages",
+  "fetchHermesSessionParent",
   "getHermesTask",
   "hasHermesSession",
   "hermesCronAction",
