@@ -25,8 +25,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *   streams to the page, and the account reads as signed in once it closes;
  * - the same Claude account added a second time is signed out again and says
  *   which account already has it;
+ * - the option refuses to turn on while ~/.claude/settings.json names an API
+ *   key, and says which without quoting it;
  * - settings, order and an agent's pin are saved where the next launch reads
- *   them.
+ *   them, the registry in ~/.tars-private.
  * Removing an account is left to the unit tests: shell.trashItem goes through
  * macOS, whose Trash is the real user's, not the sandbox's.
  */
@@ -173,16 +175,25 @@ test('claude accounts: added, signed in by their own login, refused twice, saved
     expect((await a.state(third.id))?.signedIn).toBe(false);
     expect(fs.existsSync(path.join(third.configDir!, '.fake-signed-in'))).toBe(false);
 
+    // Not while Claude Code would sign every folder in with one API key (the Audit's B3).
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_API_KEY: 'sk-ant-e2e-never-shown' } }));
+    const refused = await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.setEnabled(true)) as { success: boolean; error?: string };
+    expect(refused.success).toBe(false);
+    expect(refused.error).toContain('ANTHROPIC_API_KEY');
+    expect(refused.error).not.toContain('sk-ant-e2e-never-shown');
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
+
     // Settings, order and a pin, saved where the next launch reads them.
-    await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.setEnabled(true));
+    const enabled = await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.setEnabled(true));
+    expect(enabled.success).toBe(true);
     await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.setThresholds({ fiveHour: 85, weekly: 97 }));
     const order = [two.id, 'default', third.id];
     const reordered = await page.evaluate(ids => (window as unknown as Api).electronAPI.claudeAccounts.reorder(ids), order);
     expect(reordered.accounts.map(x => x.id)).toEqual(order);
-    const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'claude-accounts.json'), 'utf8'));
+    const saved = JSON.parse(fs.readFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), 'utf8'));
     expect(saved).toMatchObject({ enabled: true, fiveHourThreshold: 85, weeklyThreshold: 97 });
     expect(saved.accounts.map((x: { id: string }) => x.id)).toEqual(order);
-    expect(fs.statSync(path.join(dataDir, 'claude-accounts.json')).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.join(home, '.tars-private', 'claude-accounts.json')).mode & 0o777).toBe(0o600);
 
     const pinned = await page.evaluate(p => (window as unknown as Api).electronAPI.claudeAccounts.setAgentAccount(p), { agentId: AGENT.id, accountId: two.id });
     expect(pinned.success, pinned.error).toBe(true);

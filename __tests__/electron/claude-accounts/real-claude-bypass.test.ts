@@ -53,11 +53,19 @@ function hasPython(): boolean {
 
 const CLAUDE = realClaude();
 
-/** Runs argv in a real terminal for `seconds`, then kills that PID, and returns the screen as plain text. */
+/**
+ * Runs argv in a real terminal until its screen shows one of the markers (or
+ * `seconds` pass, loaded machines start claude slowly), then kills that PID,
+ * and prints the screen as plain text without spaces.
+ */
 const PTY_RUN = `
 import os, pty, sys, time, select, signal, json, re, fcntl, termios, struct
-secs, cwd, env = float(sys.argv[1]), sys.argv[2], json.loads(sys.argv[3])
-argv = sys.argv[4:]
+secs, cwd, env, markers = float(sys.argv[1]), sys.argv[2], json.loads(sys.argv[3]), sys.argv[4].split('|')
+argv = sys.argv[5:]
+def plain(b):
+    s = b.decode('utf-8', 'replace')
+    s = re.sub(r'\\x1b\\[[0-9;?<>=]*[A-Za-z~]|\\x1b\\][^\\x07\\x1b]*(\\x07|\\x1b\\\\)|\\x1b[()][A-Z0-9]|\\x1b[=>78]', '', s)
+    return re.sub(r'\\s+', '', s)
 pid, fd = pty.fork()
 if pid == 0:
     os.chdir(cwd); os.execve(argv[0], argv, env)
@@ -70,13 +78,14 @@ while time.time() - t0 < secs:
         except OSError: break
         if not d: break
         out += d
+        if any(m in plain(out) for m in markers):
+            time.sleep(0.5)
+            break
 for sig in (signal.SIGTERM, signal.SIGKILL):
     try: os.kill(pid, sig)
     except ProcessLookupError: break
     time.sleep(1)
-s = out.decode('utf-8', 'replace')
-s = re.sub(r'\\x1b\\[[0-9;?<>=]*[A-Za-z~]|\\x1b\\][^\\x07\\x1b]*(\\x07|\\x1b\\\\)|\\x1b[()][A-Z0-9]|\\x1b[=>78]', '', s)
-sys.stdout.write(re.sub(r'\\s+', '', s))
+sys.stdout.write(plain(out))
 `;
 
 describe.skipIf(!CLAUDE || !hasPython())('bypass mode on a provisioned account, real claude', () => {
@@ -104,7 +113,7 @@ describe.skipIf(!CLAUDE || !hasPython())('bypass mode on a provisioned account, 
         DISABLE_AUTOUPDATER: '1', CLAUDE_CONFIG_DIR: dir,
         HTTPS_PROXY: 'http://127.0.0.1:9', HTTP_PROXY: 'http://127.0.0.1:9', NO_PROXY: '', https_proxy: 'http://127.0.0.1:9', http_proxy: 'http://127.0.0.1:9',
       };
-      return execFileSync('python3', [runner, '12', project, JSON.stringify(env), CLAUDE as string, '--dangerously-skip-permissions'], { encoding: 'utf-8', timeout: 40_000 });
+      return execFileSync('python3', [runner, '45', project, JSON.stringify(env), 'bypasspermissionson|No,exit', CLAUDE as string, '--dangerously-skip-permissions'], { encoding: 'utf-8', timeout: 70_000 });
     };
 
     const provisioned = screenFor(true, 'acct-b1b1b1');
@@ -114,5 +123,5 @@ describe.skipIf(!CLAUDE || !hasPython())('bypass mode on a provisioned account, 
     const witness = screenFor(false, 'acct-b1b1b2');
     expect(witness).toContain('BypassPermissionsmode');
     expect(witness).toContain('No,exit');
-  }, 90_000);
+  }, 150_000);
 });

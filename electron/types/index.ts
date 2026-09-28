@@ -654,7 +654,8 @@ export interface ClaudeAccount {
   /** Chosen by the user, 1 to 40 characters. */
   label: string;
   /**
-   * Absolute, fixed when the account is created, and passed exactly as it is:
+   * ~/.claude-accounts/<id>, the home resolved once: derived from the id,
+   * never read from the registry file, and passed exactly as it is, since
    * Claude Code names the keychain item after this string, not after the
    * folder it resolves to. null for 'default'.
    */

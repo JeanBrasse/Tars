@@ -248,7 +248,7 @@ describe('the file', () => {
   });
 
   it('reads a file that does not parse as the defaults, and leaves it alone', () => {
-    fs.mkdirSync(path.dirname(accountsFile()), { recursive: true });
+    fs.mkdirSync(path.dirname(accountsFile()), { recursive: true, mode: 0o700 });
     fs.writeFileSync(accountsFile(), '{ not json');
     expect(readAccountsSettings()).toEqual(defaultAccountsSettings());
     expect(fs.readFileSync(accountsFile(), 'utf-8')).toBe('{ not json');

@@ -166,6 +166,8 @@ describe('what is shared through links', () => {
 
   it('leaves something real where a link should be, and reports it', () => {
     fs.mkdirSync(path.join(claudeDir, 'agents'), { recursive: true });
+    fs.mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(dir, { mode: 0o700 });
     fs.mkdirSync(path.join(dir, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'agents', 'keep.md'), 'keep');
     const report = provisionAccountDir(dir, home);
@@ -174,7 +176,8 @@ describe('what is shared through links', () => {
   });
 
   it('repoints a link of its own that points elsewhere', () => {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(dir, { mode: 0o700 });
     fs.symlinkSync('/nowhere', path.join(dir, 'projects'));
     provisionAccountDir(dir, home);
     expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(claudeDir, 'projects'));

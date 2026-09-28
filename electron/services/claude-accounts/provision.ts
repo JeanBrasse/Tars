@@ -2,15 +2,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { updateSharedJsonSync } from '../../utils/shared-file';
-import { writeAtomicSync } from '../../utils/secret-file';
+import { writeSecretFileSync } from '../../utils/secret-file';
+import { accountsRoot } from './registry';
 
 /**
- * Makes an account's configuration directory one Tars's agents can work in
- * (DESIGN-COMPTES-CLAUDE.md, B2). Run when the account is added, and again at
- * each launch on it, so what it copies stays current.
+ * Makes an account's configuration folder one Tars's agents can work in
+ * (DESIGN-COMPTES-CLAUDE.md, B2). Run when the account is added, before its
+ * login terminal, and again at each launch on it, so what it copies stays
+ * current.
  *
  * Measured on claude 2.1.283: with CLAUDE_CONFIG_DIR set, everything below is
- * read from that directory, symbolic links followed.
+ * read from that folder, symbolic links followed.
  *
  * - Shared through links to ~/.claude: projects/ (the transcripts, and every
  *   agent's memory, which lives in projects/<project>/memory; Usage, the Chat,
@@ -21,20 +23,33 @@ import { writeAtomicSync } from '../../utils/secret-file';
  *   carries Tars's hooks and status line, so every account reports like
  *   account 1. A copy and not a link: a file Claude Code rewrites by renaming
  *   a new one over it would turn a link into a file of its own, silently.
- * - .claude.json: the account's own (its identity lives there). Only
- *   mcpServers and theme are mirrored from ~/.claude.json, and onboarding is
- *   marked done so an agent does not stop on first-run screens. Trust for a
- *   project is written at launch (ensureProjectTrusted), not here.
+ *   Without any credential Claude Code would sign in with (see
+ *   CREDENTIAL_KEYS): a copied API key would make every account one account,
+ *   and copying a credential is exactly what Tars never does.
+ * - .claude.json: the account's own (its identity lives there). Mirrored from
+ *   ~/.claude.json: the MCP servers, the theme, and the bypass acceptance
+ *   (measured: without it, `--dangerously-skip-permissions` stops on a warning
+ *   with "No, exit" preselected); and, for the project being launched, its
+ *   whole projects[] entry: trust, and the approvals of its .mcp.json servers
+ *   and CLAUDE.md imports, which would otherwise ask again in every account.
+ *   Onboarding is marked done.
  *
- * Nothing else in the directory is opened, listed or read. The credential
- * (the keychain item named after the directory, or .credentials.json on
- * Linux) is Claude Code's alone.
+ * The folder must be Tars's own before anything is written (accountDirProblem).
+ * One that is not is refused, never repaired. Nothing else in it is opened,
+ * listed or read: the credential (the keychain item named after the folder, or
+ * .credentials.json on Linux) is Claude Code's alone.
  */
 
 export const SHARED_ENTRIES = ['projects', 'CLAUDE.md', 'skills', 'agents', 'commands', 'plugins', 'output-styles'] as const;
 
 /** Keys of ~/.claude.json an account mirrors. */
-const MIRRORED_KEYS = ['mcpServers', 'theme'] as const;
+const MIRRORED_KEYS = ['mcpServers', 'theme', 'bypassPermissionsModeAccepted'] as const;
+
+/** What in settings.json signs Claude Code in instead of the account's own login. */
+const CREDENTIAL_KEYS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport'] as const;
+const CREDENTIAL_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'] as const;
+
+const ACCOUNT_ID = /^acct-[0-9a-f]{6}$/;
 
 export interface ProvisionReport {
   /** Shared entries where something real sits in place of the link, left alone. */
@@ -47,6 +62,29 @@ function lstatOrNull(p: string): fs.Stats | null {
   } catch {
     return null;
   }
+}
+
+/** A folder Tars made: a directory, not a link, this user's, closed to others (as #224's stillOurs). */
+function folderProblem(p: string, what: string): string | null {
+  const st = lstatOrNull(p);
+  if (!st) return `${what} does not exist.`;
+  if (st.isSymbolicLink()) return `${what} is a link, not a folder Tars made.`;
+  if (!st.isDirectory()) return `${what} is not a folder.`;
+  const uid = typeof process.getuid === 'function' ? process.getuid() : st.uid;
+  if (st.uid !== uid) return `${what} belongs to another user.`;
+  if ((st.mode & 0o077) !== 0) return `${what} is open to other users.`;
+  return null;
+}
+
+/**
+ * Why `dir` is not an account folder Tars may use, or null. It must be exactly
+ * <root>/<id>, and both it and the root must pass folderProblem.
+ */
+export function accountDirProblem(dir: string, root: string = accountsRoot()): string | null {
+  if (!path.isAbsolute(dir) || path.dirname(dir) !== root || !ACCOUNT_ID.test(path.basename(dir))) {
+    return 'This is not an account folder under ~/.claude-accounts.';
+  }
+  return folderProblem(root, 'The accounts folder ~/.claude-accounts') ?? folderProblem(dir, 'This account folder');
 }
 
 function readJsonOrUndefined(file: string): Record<string, unknown> | undefined | 'unreadable' {
@@ -62,6 +100,44 @@ function readJsonOrUndefined(file: string): Record<string, unknown> | undefined 
   } catch {
     return 'unreadable';
   }
+}
+
+/**
+ * What would sign every account in with one credential, by name, never by
+ * value: in ~/.claude/settings.json (its keys and its env) and in Tars's own
+ * environment, which every CLI inherits. A settings.json that does not parse
+ * is named too, since nobody can tell what it holds.
+ */
+export function claudeCredentialOverrides(home: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
+  const found: string[] = [];
+  const settings = readJsonOrUndefined(path.join(home, '.claude', 'settings.json'));
+  if (settings === 'unreadable') {
+    found.push('~/.claude/settings.json, which does not parse');
+  } else if (settings) {
+    for (const key of CREDENTIAL_KEYS) if (settings[key] !== undefined) found.push(`${key} in ~/.claude/settings.json`);
+    const settingsEnv = settings.env && typeof settings.env === 'object' ? settings.env as Record<string, unknown> : {};
+    for (const name of CREDENTIAL_ENV) if (settingsEnv[name] !== undefined) found.push(`${name} in the env of ~/.claude/settings.json`);
+  }
+  for (const name of CREDENTIAL_ENV) if (env[name]) found.push(`${name} in the environment Tars was started with`);
+  return found;
+}
+
+/** ~/.claude/settings.json without its credentials. */
+function withoutCredentials(settings: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...settings };
+  for (const key of CREDENTIAL_KEYS) delete copy[key];
+  if (copy.env && typeof copy.env === 'object' && !Array.isArray(copy.env)) {
+    const env = { ...(copy.env as Record<string, unknown>) };
+    for (const name of CREDENTIAL_ENV) delete env[name];
+    copy.env = env;
+  }
+  return copy;
+}
+
+function ensureOwnFolder(p: string, what: string): void {
+  if (!lstatOrNull(p)) fs.mkdirSync(p, { mode: 0o700 });
+  const problem = folderProblem(p, what);
+  if (problem) throw new Error(problem);
 }
 
 function linkShared(configDir: string, claudeDir: string, conflicts: string[]): void {
@@ -87,12 +163,11 @@ function linkShared(configDir: string, claudeDir: string, conflicts: string[]): 
 }
 
 function copySettings(configDir: string, claudeDir: string): void {
-  let source: string;
-  try {
-    source = fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf-8');
-  } catch {
-    return;
-  }
+  const source = readJsonOrUndefined(path.join(claudeDir, 'settings.json'));
+  // Unreadable: nobody can tell what to leave out, so nothing is copied and
+  // the account keeps the copy it had.
+  if (source === undefined || source === 'unreadable') return;
+  const next = JSON.stringify(withoutCredentials(source), null, 2);
   const copy = path.join(configDir, 'settings.json');
   let current: string | undefined;
   try {
@@ -100,34 +175,47 @@ function copySettings(configDir: string, claudeDir: string): void {
   } catch {
     current = undefined;
   }
-  if (current !== source) writeAtomicSync(copy, source, 0o600);
+  if (current !== next) writeSecretFileSync(copy, next);
 }
 
-function mirrorClaudeJson(configDir: string, home: string): void {
+function mirrorClaudeJson(configDir: string, home: string, projectPath: string | undefined): void {
   const source = readJsonOrUndefined(path.join(home, '.claude.json'));
   updateSharedJsonSync<Record<string, unknown>>(path.join(configDir, '.claude.json'), current => {
     const next: Record<string, unknown> = { ...(current ?? {}) };
     next.hasCompletedOnboarding = true;
     // Unreadable: the account keeps what it has rather than losing its servers.
-    if (source !== 'unreadable') {
-      for (const key of MIRRORED_KEYS) {
-        if (source && source[key] !== undefined) next[key] = source[key];
-        else delete next[key];
-      }
+    if (source === 'unreadable') return next;
+    for (const key of MIRRORED_KEYS) {
+      if (source && source[key] !== undefined) next[key] = source[key];
+      else delete next[key];
+    }
+    const entry = projectPath && source?.projects && typeof source.projects === 'object'
+      ? (source.projects as Record<string, unknown>)[projectPath]
+      : undefined;
+    if (projectPath && entry && typeof entry === 'object') {
+      const projects = next.projects && typeof next.projects === 'object' ? { ...(next.projects as Record<string, unknown>) } : {};
+      const own = projects[projectPath] && typeof projects[projectPath] === 'object' ? projects[projectPath] as Record<string, unknown> : {};
+      // Account 1's approvals over what the account had, and what the account
+      // wrote itself (its last session, its costs) kept.
+      projects[projectPath] = { ...own, ...(entry as Record<string, unknown>) };
+      next.projects = projects;
     }
     return next;
   }, { createMode: 0o600 });
 }
 
-export function provisionAccountDir(configDir: string, home: string = os.homedir()): ProvisionReport {
-  if (!path.isAbsolute(configDir)) throw new Error('An account directory must be an absolute path.');
-  const claudeDir = path.join(home, '.claude');
-  fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
-  fs.chmodSync(configDir, 0o700);
+export function provisionAccountDir(configDir: string, home: string = os.homedir(), opts: { projectPath?: string } = {}): ProvisionReport {
+  const root = path.join(fs.realpathSync(home), '.claude-accounts');
+  if (!path.isAbsolute(configDir) || path.dirname(configDir) !== root || !ACCOUNT_ID.test(path.basename(configDir))) {
+    throw new Error('This is not an account folder under ~/.claude-accounts.');
+  }
+  ensureOwnFolder(root, 'The accounts folder ~/.claude-accounts');
+  ensureOwnFolder(configDir, 'This account folder');
 
+  const claudeDir = path.join(home, '.claude');
   const conflicts: string[] = [];
   linkShared(configDir, claudeDir, conflicts);
   copySettings(configDir, claudeDir);
-  mirrorClaudeJson(configDir, home);
+  mirrorClaudeJson(configDir, home, opts.projectPath);
   return { conflicts };
 }
