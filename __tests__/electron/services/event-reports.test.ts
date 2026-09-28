@@ -122,7 +122,7 @@ describe('an event report', () => {
   });
 
   it('7. masks a key that the cut of a long error text would split', async () => {
-    r.reportEvent({ ...error('a9'), reason: `${'x'.repeat(285)}sk-ant-api03-QrStUvWxYz0123456789AbCdEfGh` });
+    r.reportEvent({ ...error('a9'), reason: `${'x'.repeat(284)} sk-ant-api03-QrStUvWxYz0123456789AbCdEfGh` });
     await minutes(2.01);
     expect(sent[0]).not.toContain('sk-ant-api03');
   });

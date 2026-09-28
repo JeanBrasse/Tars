@@ -106,7 +106,10 @@ const escapeHtml = (s: string) => redactSecrets(s).replace(/&/g, '&amp;').replac
 
 function line(e: ReportEvent): string {
   if (e.kind === 'agent-error') {
-    return `❌ <b>${escapeHtml(e.agentName)}</b> (${escapeHtml(e.project)}) stopped on an error${e.reason ? `: ${escapeHtml(e.reason.slice(0, 300))}` : ''}`;
+    // Masked, then cut: cut first, a key that starts near the end kept its
+    // first characters in clear (the Audit's gate of #234).
+    const reason = e.reason ? redactSecrets(e.reason).slice(0, 300) : '';
+    return `❌ <b>${escapeHtml(e.agentName)}</b> (${escapeHtml(e.project)}) stopped on an error${reason ? `: ${escapeHtml(reason)}` : ''}`;
   }
   const link = `<a href="${escapeHtml(e.url)}">#${e.number}</a>`;
   if (e.kind === 'pr-merged') return `✅ ${link} merged in ${escapeHtml(e.repo)}: ${escapeHtml(e.title)}`;

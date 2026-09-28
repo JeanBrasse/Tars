@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { privatePath } from '../constants';
 import { writeSecretFileSync } from '../utils/secret-file';
 import { reportEvent, type ReportEvent } from './event-reports';
+import { buildFullPath } from '../utils/path-builder';
 
 /**
  * What Tars reads from GitHub for the event reports (step 4 of the relay
@@ -79,9 +80,26 @@ export function githubRepoOf(url: string | undefined): string | undefined {
   return m ? `${m[1]}/${m[2]}` : undefined;
 }
 
+/**
+ * gh and git, found where a shell would find them: Tars opened from the Dock
+ * or Finder has /usr/bin:/bin:/usr/sbin:/sbin for a PATH, and gh lives in
+ * /opt/homebrew/bin, so every poll failed there, silently (the Audit's gate
+ * of #234).
+ */
 const run = (file: string, args: string[], cwd?: string) => new Promise<string>((resolve, reject) => {
-  execFile(file, args, { cwd, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
+  execFile(file, args, { cwd, timeout: 20_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PATH: buildFullPath() } },
+    (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
 });
+
+/** One poll of the GitHub repositories of these projects. */
+export async function pollProjects(projectPaths: string[], now: number = Date.now()): Promise<PrEvent[]> {
+  const repos = new Set<string>();
+  for (const project of new Set(projectPaths)) {
+    try { const repo = githubRepoOf(await run('git', ['-C', project, 'remote', 'get-url', 'origin'])); if (repo) repos.add(repo); } catch { /* not a repository */ }
+  }
+  if (repos.size === 0) return [];
+  return pollGithub([...repos], args => run('gh', args), now);
+}
 
 let timer: NodeJS.Timeout | undefined;
 
@@ -93,12 +111,7 @@ export function startGithubWatch(projectPaths: () => string[], isOn: () => boole
   if (timer) return;
   const tick = async () => {
     if (!isOn()) return;
-    const repos = new Set<string>();
-    for (const project of new Set(projectPaths())) {
-      try { const repo = githubRepoOf(await run('git', ['-C', project, 'remote', 'get-url', 'origin'])); if (repo) repos.add(repo); } catch { /* not a repository */ }
-    }
-    if (repos.size === 0) return;
-    for (const event of await pollGithub([...repos], args => run('gh', args))) reportEvent(event);
+    for (const event of await pollProjects(projectPaths())) reportEvent(event);
   };
   timer = setInterval(() => { void tick(); }, POLL_MS);
   timer.unref?.();

@@ -118,7 +118,9 @@ describe('after a pause', () => {
 describe('the gh and git a real poll runs', () => {
   it('9. are found under the bare PATH of an app opened from the Dock', async () => {
     const home = os.homedir();
-    const bin = path.join(home, '.local', 'bin');
+    // The first of the folders buildFullPath adds, ahead of /opt/homebrew/bin:
+    // the machine's own gh is never the one answering here.
+    const bin = path.join(home, '.nvm', 'versions', 'node', 'v20.11.1', 'bin');
     fs.mkdirSync(bin, { recursive: true });
     const log = path.join(home, 'gh-calls.log');
     fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" >> '${log}'\necho '[]'\n`, { mode: 0o755 });
