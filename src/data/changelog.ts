@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'A field you cannot type in looks it. In Settings, a read-only field, such as the Gateway URL of Settings > Hermes in Local mode, the Hermes webhook address or the channel Slack and Discord detect, takes the panel\'s own fill, grey text and an arrow pointer instead of a text cursor, where it looked exactly like a field you can edit. In Local and SSH mode the Gateway URL\'s hint is whole, "Derived from the port below. Switch to Remote to type a URL.", where it was cut to one line',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
