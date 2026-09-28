@@ -479,9 +479,6 @@ app.whenReady().then(async () => {
   // Register all IPC handlers
   const deps = createIpcDependencies();
   registerIpcHandlers(deps);
-  // The transcript scan, started now rather than by the first page to ask for
-  // it: 2.4 to 3 s on Noah's 1826 transcripts, which that page used to wait for.
-  prewarmClaudeStats();
   registerMcpOrchestratorHandlers();
   registerCLIPathsHandlers({
     getAppSettings: () => appSettings,
@@ -697,6 +694,12 @@ app.whenReady().then(async () => {
   // Warm the model/price catalogue without blocking the window: a stale disk
   // copy answers immediately, the network refresh lands whenever it lands.
   loadCatalog().catch(() => { /* cached or floor prices carry the app */ });
+  // The transcript scan, started now rather than by the first page to ask for
+  // it: 2.4 to 3 s on Noah's 1826 transcripts, which that page used to wait for.
+  // After loadCatalog, which installs a fresh disk copy as it is called: a scan
+  // started before it priced with another object, and the first minute past it
+  // scanned everything again for the swap.
+  prewarmClaudeStats();
 
   // Registration only has to finish before an agent starts, not before the
   // window paints. It used to hold the main thread through the first render.
