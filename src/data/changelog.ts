@@ -15,7 +15,9 @@ export const CHANGELOG: Release[] = [
       'The Usage page opens at once the first time after a launch: Tars reads the Claude transcripts as it starts, where the page used to wait for all of them, 2.4 to 3 s for 1826 transcripts. Later visits are shown the figures Tars last found while it reads them again, which it does only when a transcript or a price has changed',
       'Tars no longer talks to a Hermes whose connection you never saved, even one running on your Mac at its default address, 127.0.0.1:9119. Until you save a connection in Settings > Hermes, the Chat says no Hermes gateway is configured, and Brain, the Kanban page and the Schedules page say Hermes is not configured. Settings > Hermes shows the local default with Save available, and saving it as it stands connects Tars to that Hermes again',
       'A Tars tool whose process was held for a few seconds between two calls to Tars no longer has its next call fail with a connection reset, "fetch failed": Tars keeps an idle connection open for a minute, where it closed it after six seconds. Fixed by Nexarion434',
+      'When a status line dies holding the lock on the token count, the next ones take it over one at a time, where two could both take it and write the count at once; and a status line that ran past 5 seconds no longer removes, as it ends, the lock another took over from it',
       'An Amp update Tars ran is reported as what it came to, updated, up to date or failed with npm\'s own reason, even when Tars cannot delete the temporary folder it downloaded into; it read "failed" with the deletion\'s error. Fixed by Nexarion434',
+      'A temporary folder Tars could not delete after an Amp update is named in ~/.dorothy/cli-updates.log, and a later check removes it once it is an hour old, where such folders stayed in the system\'s temp folder for good',
     ],
   },
   {

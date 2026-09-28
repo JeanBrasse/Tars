@@ -21,8 +21,11 @@ import { runCliUpdatePass, type CliUpdateContext } from '../../../electron/servi
  *  2. a check that found nothing newer is reported as failed the same way;
  *  3. an update that really failed carries the removal's error instead of its
  *     own reason, npm's;
- *  4. the folder left behind goes unsaid, or is said more than once: exactly
- *     one [cli-updates] line names it;
+ *  4. the folder left behind goes unsaid, or is said more than once, or is said
+ *     where nobody reads it: exactly one line of the update log
+ *     (~/.dorothy/cli-updates.log, the context's logFile) names it. The main
+ *     process's console, where it went first, is not that log (the gates of
+ *     #218);
  *  5. the removal did not fail at all, and the test proves nothing: the folder
  *     is still there once the update has come back.
  *
@@ -30,7 +33,8 @@ import { runCliUpdatePass, type CliUpdateContext } from '../../../electron/servi
  * folder read-only (0o555) once npm's cache is in it, so the cache cannot be
  * removed from it (EACCES). Root is not held back by a folder's mode, and on
  * Windows a read-only folder does not keep its children from being deleted, so
- * these skip under both.
+ * these skip under both. The scratch folder is made in the test's own folder
+ * (the context's tmpDir), not in the system's temp folder.
  */
 
 const NODE_DIR = path.dirname(process.execPath);
@@ -70,13 +74,13 @@ process.exit(0);
 
 let root: string;
 let hold: string;
-let errors: string[];
 
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-cli-update-cleanup-')));
   hold = path.join(root, 'hold');
-  errors = [];
-  vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(' ')); });
+  // What the update prints on the main console, kept out of the test's output.
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(async () => {
@@ -109,6 +113,7 @@ function ctxFor(home: string, env: Record<string, string>): CliUpdateContext {
   return {
     home,
     logFile: path.join(root, 'cli-updates.log'),
+    tmpDir: root,
     env: {
       HOME: home,
       PATH: [NODE_DIR, '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter),
@@ -126,9 +131,10 @@ async function updateAmp(env: Record<string, string>) {
   return { result, scratch };
 }
 
-/** The [cli-updates] lines that name this folder. */
+/** The lines of the update log that name this folder. */
 function linesNaming(scratch: string): string[] {
-  return errors.filter(e => e.startsWith('[cli-updates] ') && e.includes(scratch));
+  const log = path.join(root, 'cli-updates.log');
+  return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(line => line.includes(scratch)) : [];
 }
 
 function hasLsof(): boolean {
@@ -150,7 +156,7 @@ describe.skipIf(IS_ROOT || process.platform === 'win32')('an npm update whose sc
     expect(result).toMatchObject({ cli: 'amp', outcome: 'updated', from: '0.0.1', to: '0.0.2' });
     expect(fs.existsSync(scratch)).toBe(true);
     expect(linesNaming(scratch)).toHaveLength(1);
-    expect(linesNaming(scratch)[0]).toMatch(/^\[cli-updates\] could not remove .+: \S/);
+    expect(linesNaming(scratch)[0]).toMatch(/^\S+Z amp could not remove .+: \S/);
   });
 
   it('2, 4, 5. a check that found nothing newer is reported as unchanged', async () => {
@@ -158,7 +164,7 @@ describe.skipIf(IS_ROOT || process.platform === 'win32')('an npm update whose sc
 
     expect(result).toMatchObject({ cli: 'amp', outcome: 'unchanged', from: '0.0.1' });
     expect(fs.existsSync(scratch)).toBe(true);
-    expect(linesNaming(scratch)).toEqual([expect.stringMatching(/^\[cli-updates\] could not remove .+: \S/)]);
+    expect(linesNaming(scratch)).toEqual([expect.stringMatching(/^\S+Z amp could not remove .+: \S/)]);
   });
 
   it('3, 4, 5. a real failure keeps its own reason', async () => {
