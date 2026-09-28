@@ -93,7 +93,6 @@ let mods: {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  vi.resetModules();
   mods = { Login: await import('../../src/components/Settings/ClaudeAccountLoginModal'), ui: await import('../../src/components/ui') };
 });
 afterEach(() => {

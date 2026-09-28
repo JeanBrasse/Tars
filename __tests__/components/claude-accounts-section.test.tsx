@@ -70,7 +70,7 @@ function bridge(initial: ClaudeAccountsView, fail: Record<string, string> = {}) 
   };
   const api = {
     list: () => answer('list', undefined),
-    setEnabled: (on: boolean) => answer('setEnabled', on, v => mkView(on, v.accounts, v.settings)),
+    setEnabled: (on: boolean) => answer('setEnabled', on, v => mkView(on, v.accounts, { fiveHourThreshold: v.settings.fiveHourThreshold, weeklyThreshold: v.settings.weeklyThreshold })),
     setThresholds: (p: { fiveHour: number; weekly: number }) => answer('setThresholds', p, v => mkView(v.settings.enabled, v.accounts, { fiveHourThreshold: p.fiveHour, weeklyThreshold: p.weekly })),
     add: (p: { label: string }) => { calls.push(['add', p]); return Promise.resolve({ success: true, account: acct({ id: 'acct-00000n', label: p.label, signedIn: false }) }); },
     rename: (p: unknown) => answer('rename', p),
@@ -103,8 +103,7 @@ let mods: {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  // A fresh store for each test: it is one per window, like the bridge.
-  vi.resetModules();
+  // Each test hands the store a new bridge, which starts it over.
   mods = {
     Section: await import('../../src/components/Settings/ClaudeAccountsSection'),
     Row: await import('../../src/components/Settings/ClaudeAccountRow'),

@@ -70,7 +70,6 @@ let mods: {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  vi.resetModules();
   mods = { Control: await import('../../src/components/ClaudeAccounts/AgentAccountControl'), ui: await import('../../src/components/ui') };
 });
 afterEach(() => {
@@ -176,6 +175,8 @@ describe('the three places (4)', () => {
 describe('the panel (5)', () => {
   it('draws the caption, the rule, the hint in its tone and the foot note, under a trigger that names the account', async () => {
     const picked: string[] = [];
+    // An open panel listens for a press outside it on the window.
+    g.window = { addEventListener: () => {}, removeEventListener: () => {} };
     mounted = mount(() => mods.ui.Dropdown({
       value: 'auto', size: 'sm', quiet: true, triggerLabel: 'Main', caption: 'Run this agent on',
       footer: 'A note at the foot.',
