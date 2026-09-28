@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -134,8 +134,23 @@ interface TailscaleInfo {
   serveConfigured: boolean;
 }
 
+const TAILSCALE_PLACES = ['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'];
+
+/**
+ * Where to look for `tailscale`. A development run may name the one binary to
+ * ask, or none with an empty value (DOROTHY_TAILSCALE_BIN): the e2e fixture
+ * does, since two of the places are absolute paths no sandbox HOME hides, and
+ * a sandbox asked the Mac's own Tailscale, whose MagicDNS name ended up in the
+ * reference screenshots (QA's note on #222). A packaged Tars never reads it.
+ */
+function tailscalePlaces(): string[] {
+  const named = app?.isPackaged ? undefined : process.env.DOROTHY_TAILSCALE_BIN;
+  if (named === undefined) return TAILSCALE_PLACES;
+  return named.trim() ? [named] : [];
+}
+
 async function detectTailscale(): Promise<TailscaleInfo> {
-  const candidates = ['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'];
+  const candidates = tailscalePlaces();
   for (const bin of candidates) {
     try {
       const { stdout } = await execFileAsync(bin, ['status', '--json'], { timeout: 4000 });
