@@ -49,6 +49,7 @@ export function Dropdown<T extends string = string>({
   triggerLabel,
   caption,
   footer,
+  panelMinWidth,
 }: {
   value: T | '';
   options: DropdownOption<T>[];
@@ -56,7 +57,9 @@ export function Dropdown<T extends string = string>({
   placeholder?: string;
   className?: string;
   align?: 'left' | 'right';
-  mono?: boolean;
+  /** Mono type for the trigger and the options, or `'trigger'` for the trigger
+   *  alone: a control that names a value in mono over a menu of words. */
+  mono?: boolean | 'trigger';
   /** Show a filter field above the list. Worth it past roughly a dozen options. */
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -81,6 +84,8 @@ export function Dropdown<T extends string = string>({
   caption?: string;
   /** A note at the foot of the panel, under the options, as wide as they are. */
   footer?: ReactNode;
+  /** The panel's width at least, when its frame draws it wider than its rows. */
+  panelMinWidth?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -237,6 +242,7 @@ export function Dropdown<T extends string = string>({
              keeps a long label from running off the window; rows still
              truncate, so one degrades gracefully instead of widening the page. */
           className={`absolute z-[90] w-max min-w-full max-w-[min(24rem,calc(100vw-2rem))] bg-card border border-border ${drop === 'up' ? 'bottom-full mb-1' : 'mt-1'} ${align === 'right' ? 'right-0' : 'left-0'}`}
+          style={panelMinWidth ? { minWidth: panelMinWidth } : undefined}
         >
           {searchable && (
             <div className="flex items-center gap-2 h-8 px-2.5 border-b border-border">
@@ -279,7 +285,7 @@ export function Dropdown<T extends string = string>({
               >
                 {/* 4px accent square marks the selection; kept in flow when unselected so labels stay aligned */}
                 <span className={`w-1 h-1 shrink-0 ${o.value === value ? 'bg-primary' : 'opacity-0'}`} />
-                <span className={`min-w-0 truncate ${mono ? 'font-mono' : ''}`}>{o.label}</span>
+                <span className={`min-w-0 truncate ${mono === true ? 'font-mono' : ''}`}>{o.label}</span>
                 {o.hint && (
                   <span className={`ml-auto shrink-0 text-[10px] ${o.hintClassName ?? 'text-muted-foreground'}`}>{o.hint}</span>
                 )}

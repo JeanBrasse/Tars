@@ -36,7 +36,8 @@ export function AgentAccountControl({
     <Dropdown
       size="sm"
       quiet
-      mono
+      mono="trigger"
+      panelMinWidth={280}
       align="right"
       className={className}
       value={agent.claudeAccountPin ?? AUTOMATIC}
