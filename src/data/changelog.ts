@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-09-28',
+    updates: [
+      'With Auth set to OAuth in Settings > Hermes, Tars calls the gateway with its session cookie alone. A token typed while Auth was on Token stayed in the saved connection, hidden, and went out with every call to the gateway, the Chat\'s included; it is sent in token mode only, as Hermes Desktop does',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
