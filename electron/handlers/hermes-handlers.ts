@@ -77,6 +77,15 @@ function plainToken(token: unknown): string | undefined {
   return t?.encoding === 'plain' && typeof t.value === 'string' && t.value ? t.value : undefined;
 }
 
+/** A token Hermes Desktop encrypted: the one an import has to leave behind, and say so. */
+function encryptedToken(token: unknown): boolean {
+  const t = token as { encoding?: unknown; value?: unknown } | undefined;
+  return t?.encoding === 'safeStorage' && typeof t.value === 'string' && t.value.length > 0;
+}
+
+/** What an import brings, and whether it left an encrypted token behind. */
+interface DesktopImport { conn: HermesConnection; tokenNotImported: boolean }
+
 /**
  * The port connection.json gives Hermes Desktop's local runtime, or the
  * default. Only the port is read from it: once the registry exists, the rest of
@@ -97,7 +106,7 @@ function desktopLocalPort(): number {
  * runtime. Null when there is no registry, when it cannot be read, or when its
  * primary names no entry: connection.json then describes it, as before.
  */
-function importDesktopRegistry(): HermesConnection | null {
+function importDesktopRegistry(): DesktopImport | null {
   if (!fs.existsSync(HERMES_DESKTOP_REGISTRY)) return null;
   let raw;
   try {
@@ -115,20 +124,21 @@ function importDesktopRegistry(): HermesConnection | null {
     const token = plainToken(entry.token);
     if (token) conn.token = token;
     if (entry.org) conn.org = entry.org;
-    return conn;
+    return { conn, tokenNotImported: encryptedToken(entry.token) };
   }
   if (entry?.kind === 'ssh') {
-    return {
+    const conn: HermesConnection = {
       mode: 'ssh', authMode: 'token',
       ssh: { host: entry.host, user: entry.user, port: entry.port, keyPath: entry.keyPath, remotePort: HERMES_DEFAULT_PORT },
     };
+    return { conn, tokenNotImported: encryptedToken(entry.token) };
   }
-  if (entry?.kind === 'local') return { mode: 'local', authMode: 'token', localPort: desktopLocalPort() };
+  if (entry?.kind === 'local') return { conn: { mode: 'local', authMode: 'token', localPort: desktopLocalPort() }, tokenNotImported: false };
   return null;
 }
 
 /** Hermes Desktop's config shape -> ours (same vocabulary, nested differently). */
-function importDesktopConfig(): HermesConnection | null {
+function importDesktopConfig(): DesktopImport | null {
   try {
     const fromRegistry = importDesktopRegistry();
     if (fromRegistry) return fromRegistry;
@@ -138,10 +148,12 @@ function importDesktopConfig(): HermesConnection | null {
     if (!mode) return null;
     const conn: HermesConnection = { mode, authMode: 'token' };
     const section = raw?.[mode] ?? {};
+    let tokenNotImported = false;
     if (mode === 'remote' || mode === 'cloud') {
       conn.url = section.url;
       conn.authMode = section.authMode === 'oauth' ? 'oauth' : 'token';
       if (section.token?.encoding === 'plain' && section.token?.value) conn.token = section.token.value;
+      tokenNotImported = encryptedToken(section.token);
       if (section.org) conn.org = section.org;
     } else if (mode === 'ssh') {
       conn.ssh = {
@@ -153,7 +165,7 @@ function importDesktopConfig(): HermesConnection | null {
     } else {
       conn.localPort = section.port || HERMES_DEFAULT_PORT;
     }
-    return conn;
+    return { conn, tokenNotImported };
   } catch (err) {
     // The kind only: a parse error quotes the file, which can hold a plain token.
     console.error(`[hermes] cannot import Hermes Desktop config: ${describeSecretFileError(err)}`);
@@ -335,9 +347,14 @@ export function registerHermesHandlers(): void {
   ipcMain.handle('hermes:connection:import', async () => {
     const imported = importDesktopConfig();
     if (!imported) return { success: false, error: 'No Hermes Desktop configuration found on this machine.' };
-    writeConnection(imported);
+    writeConnection(imported.conn);
     resetLiveSession();
-    return { success: true, connection: imported, baseUrl: resolveHermesBaseUrl(imported) };
+    return {
+      success: true,
+      connection: imported.conn,
+      baseUrl: resolveHermesBaseUrl(imported.conn),
+      tokenNotImported: imported.tokenNotImported,
+    };
   });
 
   /**

@@ -28,7 +28,9 @@ import * as path from 'node:path';
  * 8. a registry whose primary is the local runtime imports a remote gateway
  *    connection.json still names, v1 being left behind once the registry exists;
  * 9. a connection.json that cannot be parsed has its text, a plain token
- *    included, written to the log.
+ *    included, written to the log;
+ * 10. an import that leaves an encrypted token behind does not say so
+ *    (`tokenNotImported`), or says so of a token it brought, or of none.
  *
  * The handler is the real one, over a Hermes Desktop folder in the test's home.
  */
@@ -69,7 +71,7 @@ beforeAll(async () => {
 }, 60_000);
 
 async function importDesktop() {
-  return await handlers.get('hermes:connection:import')!({}) as { success: boolean; connection?: Record<string, unknown>; error?: string };
+  return await handlers.get('hermes:connection:import')!({}) as { success: boolean; connection?: Record<string, unknown>; error?: string; tokenNotImported?: boolean };
 }
 
 beforeEach(() => { fs.rmSync(desktopDir, { recursive: true, force: true }); });
@@ -168,5 +170,23 @@ describe('importing Hermes Desktop\'s connection', () => {
 
     expect(r.success).toBe(false);
     expect(log).not.toContain('plaintok');
+  });
+
+  it('says when it left an encrypted token behind, and only then (10)', async () => {
+    const box = (token?: object) => registry('box', { id: 'box', kind: 'remote', label: 'Box', url: 'http://box.example:9119', authMode: 'token', ...(token ? { token } : {}) });
+
+    write(V2, box({ encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' }));
+    expect((await importDesktop()).tokenNotImported).toBe(true);
+
+    write(V2, box({ encoding: 'plain', value: 'tok-box' }));
+    expect((await importDesktop()).tokenNotImported).toBeFalsy();
+
+    write(V2, box());
+    expect((await importDesktop()).tokenNotImported).toBeFalsy();
+
+    // connection.json alone, as an older Hermes Desktop writes it.
+    fs.rmSync(V2);
+    write(V1, { mode: 'remote', remote: { url: 'http://box.example:9119', authMode: 'token', token: { encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' } } });
+    expect((await importDesktop()).tokenNotImported).toBe(true);
   });
 });
