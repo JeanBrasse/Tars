@@ -92,9 +92,11 @@ async function add(label: string): Promise<ClaudeAccountState> {
   return r.account;
 }
 
-/** Waits for an asynchronous refresh the handler started to reach the page. */
+let idle: () => Promise<void>;
+
+/** Waits for the work the handler started in the background to reach the page. */
 async function settle(): Promise<void> {
-  for (let i = 0; i < 50; i++) await new Promise(r => setTimeout(r, 10));
+  await idle();
 }
 
 beforeEach(() => {
@@ -107,15 +109,17 @@ beforeEach(() => {
   agents = new Map();
   saves = 0;
   loginPtys = new Map();
-  registerClaudeAccountsHandlers({
+  ({ idle } = registerClaudeAccountsHandlers({
     getAppSettings: () => ({ cliPaths: { claude: fake.bin } }) as never,
     agents: agents as never,
     saveAgents: () => { saves++; },
     loginPtys: loginPtys as never,
-  });
+  }));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Nothing a test started may land in the next one's broadcasts.
+  await idle();
   for (const p of loginPtys.keys()) loginPtys.delete(p);
 });
 

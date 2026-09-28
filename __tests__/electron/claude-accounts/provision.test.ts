@@ -23,6 +23,23 @@
  * - a directory other users can read (Linux keeps the credential in it).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Every path the code under test hands to fs, while `watch.on`: a namespace
+// cannot be spied on in ESM, so the module is wrapped instead.
+const watch = vi.hoisted(() => ({ on: false, touched: [] as { fn: string; p: string }[] }));
+vi.mock('fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('fs')>();
+  const wrapped: Record<string, unknown> = { ...real };
+  for (const fn of ['readFileSync', 'openSync', 'readdirSync', 'statSync', 'lstatSync', 'existsSync', 'copyFileSync', 'createReadStream', 'readlinkSync', 'realpathSync', 'opendirSync'] as const) {
+    const original = (real as unknown as Record<string, (...a: unknown[]) => unknown>)[fn];
+    wrapped[fn] = (...args: unknown[]) => {
+      if (watch.on && typeof args[0] === 'string') watch.touched.push({ fn, p: args[0] });
+      return original(...args);
+    };
+  }
+  return { ...wrapped, default: wrapped };
+});
+
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -182,22 +199,15 @@ describe('credentials', () => {
   it('never opens, stats or lists anything in the directory but the files it owns', () => {
     provisionAccountDir(dir, home);
     fs.writeFileSync(path.join(dir, '.credentials.json'), '{"claudeAiOauth":{"accessToken":"trap"}}', { mode: 0o600 });
-    const names = ['readFileSync', 'openSync', 'readdirSync', 'statSync', 'lstatSync', 'existsSync', 'copyFileSync', 'createReadStream', 'readlinkSync', 'realpathSync'] as const;
-    const touched: { fn: string; p: string }[] = [];
-    const spies = names.map((fn) => {
-      const original = (fs as unknown as Record<string, (...a: unknown[]) => unknown>)[fn].bind(fs);
-      return vi.spyOn(fs as never, fn as never).mockImplementation(((...args: unknown[]) => {
-        if (typeof args[0] === 'string') touched.push({ fn, p: args[0] });
-        return original(...args);
-      }) as never);
-    });
+    watch.touched.length = 0;
+    watch.on = true;
     try {
       provisionAccountDir(dir, home);
     } finally {
-      spies.forEach(s => s.mockRestore());
+      watch.on = false;
     }
-    expect(touched.length).toBeGreaterThan(0);
-    expect(touched.filter(t => t.p.includes('.credentials'))).toEqual([]);
-    expect(touched.filter(t => t.fn === 'readdirSync' && t.p.startsWith(dir))).toEqual([]);
+    expect(watch.touched.length).toBeGreaterThan(0);
+    expect(watch.touched.filter(t => t.p.includes('.credentials'))).toEqual([]);
+    expect(watch.touched.filter(t => (t.fn === 'readdirSync' || t.fn === 'opendirSync') && t.p.startsWith(dir))).toEqual([]);
   });
 });

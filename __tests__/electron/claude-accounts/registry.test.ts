@@ -10,7 +10,7 @@
  * - a sixth account: Noah's ceiling is five at once;
  * - an id is reused: an account's directory names its keychain item, so a new
  *   account given a removed one's id would sign in as whoever that was if the
- *   logout had failed. Ids are random and never taken from the list again;
+ *   logout had failed. Ids are random, not the next free number;
  * - the directory string moves: Claude Code hashes the path exactly as given
  *   (measured: /tmp/x, /private/tmp/x and x/ are three logins), so it is
  *   resolved once when the account is created and read back verbatim;
@@ -129,7 +129,7 @@ describe('labels', () => {
     expect(validateLabel('x'.repeat(40))).toBe('x'.repeat(40));
   });
 
-  it.each(['', '   ', 'x'.repeat(41), 'a\nb', 'a\u0007b', 'abc‮evil', 'a⁦b', 42, null])('refuses %j with a sentence', (label) => {
+  it.each(['', '   ', 'x'.repeat(41), 'a\nb', 'a\u0007b', 'abc\u202eevil', 'a\u2066b', 42, null])('refuses %j with a sentence', (label) => {
     expect(() => validateLabel(label)).toThrow(/label/i);
   });
 });
@@ -149,6 +149,17 @@ describe('adding', () => {
     }
     expect(s.accounts).toHaveLength(MAX_ACCOUNTS);
     expect(() => addAccount(s, 'Sixth', ROOT)).toThrow(/5/);
+  });
+
+  it('does not hand a removed account's id to the next one, as a next free number would', () => {
+    const first = addAccount(defaultAccountsSettings(), 'Max two', ROOT);
+    const removed = first.account.id;
+    let s = removeAccount(first.settings, removed);
+    for (let i = 0; i < 20; i++) {
+      const r = addAccount(s, `Again ${i}`, ROOT);
+      expect(r.account.id).not.toBe(removed);
+      s = removeAccount(r.settings, r.account.id);
+    }
   });
 
   it('refuses a relative root', () => {
