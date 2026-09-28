@@ -47,6 +47,14 @@ import { ReportBudget } from '../../../electron/services/error-reports/budget';
  *     `/`, a space, `:`, a quote or `)`: `cwd /Users/x, exit 1`, `/Users/x;`,
  *     `/users/x` (another case), `%2FUsers%2Fx` (URL-encoded) and a bare
  *     `x@Host.local` leave the full path, or the user name.
+ * 12. (QA's gate of #221) The home folder behind /private, the name macOS
+ *     also gives it, leaves as `/private~`: the shorter name was replaced
+ *     first, inside the longer one.
+ * 13. A path URL-encoded twice (`%252F`, a URL inside a URL's query) leaves
+ *     whole, with the user name in it.
+ * 14. The machine's name leaves: "MacBook-Pro-de-Somebody.local" carries its
+ *     owner's first name, and the user name rule does not see a name inside
+ *     a word joined by dashes.
  */
 
 const HOME = '/Users/somebody';
@@ -54,6 +62,7 @@ const FACTS: ReportFacts = {
   installId: '3b1f6c2e-5d7a-4e8b-9c0d-1a2b3c4d5e6f',
   release: 'tars@1.9.1',
   home: HOME,
+  host: 'MacBook-Pro-de-Somebody.local',
   os: { name: 'macOS', version: '26.0' },
   electron: '44.4.4',
 };
@@ -144,6 +153,23 @@ describe('the report built from an event', () => {
   ])('11. takes the home folder out %s', (_what, value, expected) => {
     const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value }] } }), FACTS)!;
     expect(report.exception.values[0].value).toBe(expected);
+  });
+
+  it.each([
+    ['12. behind /private', `open /private${HOME}/notes.md`, 'open ~/notes.md'],
+    ['12. behind /private, in another case', `open /PRIVATE/users/somebody`, 'open ~'],
+    ['13. URL-encoded twice', `GET /a?u=%2Fb%3Fp%3D%252FUsers%252Fsomebody%252Fnotes.md`, 'GET /a?u=%2Fb%3Fp%3D~%252Fnotes.md'],
+    ['14. the machine\'s name', 'connect ECONNREFUSED MacBook-Pro-de-Somebody.local:5000', 'connect ECONNREFUSED <host>:5000'],
+    ['14. the machine\'s short name, in another case', 'bonjour name macbook-pro-de-somebody, again', 'bonjour name <host>, again'],
+  ])('takes the machine out: %s', (_what, value, expected) => {
+    const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value }] } }), FACTS)!;
+    expect(report.exception.values[0].value).toBe(expected);
+  });
+
+  it('14. leaves a longer name that only starts like the machine\'s', () => {
+    const value = 'MacBook-Pro-de-Somebody-2.local and MacBook-Pro';
+    const report = toReport(sdkEvent({ exception: { values: [{ type: 'Error', value }] } }), FACTS)!;
+    expect(report.exception.values[0].value).toBe(value);
   });
 
   it('11. leaves a longer name that only starts like the home folder or the user', () => {
