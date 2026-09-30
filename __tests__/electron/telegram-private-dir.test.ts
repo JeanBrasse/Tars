@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,6 +92,65 @@ const DATA_FILES = [
 ];
 const ORDINARY = path.join(home, 'Documents', 'not-there-report.pdf');
 
+/**
+ * Runs `body` as on a volume whose file ids are 64 bits wide, such as NTFS,
+ * or a share whose client passes the server's ids through, as Linux's CIFS
+ * does by default. Above 2^53 a
+ * Number holds only some of the integers (every 256th near 2^60), so two ids
+ * a few apart are two BigInts and one Number. Node's plain stat reports the
+ * id as a Number, rounded; `{ bigint: true }` reports it whole.
+ *
+ * Every file keeps its real metadata, and its id is renumbered from 2^60 up,
+ * far apart, except each pair in `twins`, whose ids are one apart. Only the
+ * width of the id is made up: no volume the suite runs on (APFS, ext4) hands
+ * out ids that wide, and mounting one takes root. The files, the hard links,
+ * the real paths and the directory walks are the file system's own.
+ */
+async function onWideIds<T>(twins: Array<[string, string]>, body: () => T | Promise<T>): Promise<T> {
+  // The CommonJS object, which a spy can replace, and every ESM view of it
+  // brought up to date, the guards' included.
+  const cjsFs = createRequire(import.meta.url)('fs') as typeof fs;
+  const { statSync, lstatSync } = cjsFs;
+  const ids = new Map<string, bigint>();
+  let count = BigInt(0);
+  const fresh = () => WIDE_IDS_FROM + WIDE_IDS_APART * count++;
+  const keyOf = (whole: fs.BigIntStats) => `${whole.dev}:${whole.ino}`;
+  for (const [a, b] of twins) {
+    const id = fresh();
+    ids.set(keyOf(statSync(a, { bigint: true })), id);
+    ids.set(keyOf(statSync(b, { bigint: true })), id + BigInt(1));
+  }
+  const widen = (real: typeof fs.statSync) => (target: fs.PathLike, options?: fs.StatSyncOptions) => {
+    const whole = real(target, { ...options, bigint: true });
+    if (!whole) return whole;
+    let id = ids.get(keyOf(whole));
+    if (id === undefined) ids.set(keyOf(whole), id = fresh());
+    if (options?.bigint) return Object.assign(whole, { ino: id });
+    return Object.assign(real(target, options) as fs.Stats, { ino: Number(id) });
+  };
+  const spies = [
+    vi.spyOn(cjsFs, 'statSync').mockImplementation(widen(statSync) as typeof fs.statSync),
+    vi.spyOn(cjsFs, 'lstatSync').mockImplementation(widen(lstatSync) as typeof fs.lstatSync),
+  ];
+  syncBuiltinESMExports();
+  try {
+    return await body();
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+    syncBuiltinESMExports();
+  }
+}
+const WIDE_IDS_FROM = BigInt(2) ** BigInt(60);
+const WIDE_IDS_APART = BigInt(2) ** BigInt(20);
+
+/** `a` and `b` are two files whose ids read as one Number: what the test that calls it is about. */
+function expectTwoIdsOneNumber(a: string, b: string) {
+  expect(fs.statSync(a, { bigint: true }).ino, `${a} and ${b} are one file, so this proves nothing`)
+    .not.toBe(fs.statSync(b, { bigint: true }).ino);
+  expect(fs.statSync(a).ino, `${a} and ${b} read as two numbers, so this proves nothing`)
+    .toBe(fs.statSync(b).ino);
+}
+
 describe('the guard of the app\'s own Telegram routes', () => {
   it('refuses the private directory as it refuses the data directory', () => {
     for (const file of [...PRIVATE_FILES, ...DATA_FILES]) {
@@ -167,6 +227,76 @@ describe('the guard of the app\'s own Telegram routes', () => {
       expect(isSafeTelegramPath(copy), 'a copy is another file').toBe(true);
     } finally {
       fs.rmSync(exit, { force: true });
+    }
+  });
+
+  /**
+   * A file is told from another by its whole id. On a volume whose ids are 64
+   * bits wide, two ids a few apart read as one Number (onWideIds says where).
+   * How the guard can fail there, written before the fix:
+   * 1. an ordinary file with two names is refused, because a file in the
+   *    private directory reads as the same Number;
+   * 2. a file in an ordinary folder is refused, because the folder reads as
+   *    the same Number as ~/.ssh;
+   * 3. a file outside the home is sent, because the folder it is in reads as
+   *    the same Number as the home;
+   * 4. once ids are compared whole, a real second name for the secret, a key
+   *    in ~/.ssh or a file in the home is judged the wrong way round.
+   */
+  it('does not take a file with two names for one in the private directory because their ids read as one Number', async () => {
+    const docs = path.join(home, 'Documents');
+    fs.mkdirSync(docs, { recursive: true });
+    const secret = path.join(home, '.tars-private', 'wide-ids-secret');
+    fs.mkdirSync(path.dirname(secret), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(secret, 'the webhook secret', { mode: 0o600 });
+    const first = path.join(docs, 'wide-ids-first.pdf');
+    const second = path.join(docs, 'wide-ids-second.pdf');
+    const notes = path.join(docs, 'wide-ids-notes.txt');
+    for (const at of [first, second, notes]) fs.rmSync(at, { force: true });
+    fs.writeFileSync(first, 'one file, two names');
+    fs.linkSync(first, second);
+    fs.linkSync(secret, notes);
+
+    await onWideIds([[second, secret]], () => {
+      expectTwoIdsOneNumber(second, secret);
+      expect(isSafeTelegramPath(second), 'an ordinary file with two names').toBe(true);
+      expect(isSafeTelegramPath(notes), 'a second name for the secret').toBe(false);
+    });
+  });
+
+  it('does not take a folder for ~/.ssh because their ids read as one Number', async () => {
+    const ssh = path.join(home, '.ssh');
+    fs.mkdirSync(ssh, { recursive: true, mode: 0o700 });
+    const key = path.join(ssh, 'wide-ids-key');
+    fs.writeFileSync(key, 'a private key', { mode: 0o600 });
+    const folder = path.join(home, 'Documents', 'wide-ids-folder');
+    fs.mkdirSync(folder, { recursive: true });
+    const report = path.join(folder, 'report.pdf');
+    fs.writeFileSync(report, 'a report');
+
+    await onWideIds([[folder, ssh]], () => {
+      expectTwoIdsOneNumber(folder, ssh);
+      expect(isSafeTelegramPath(report), 'a file in an ordinary folder').toBe(true);
+      expect(isSafeTelegramPath(key), 'a key in ~/.ssh').toBe(false);
+    });
+  });
+
+  it('does not take a folder outside the home for the home because their ids read as one Number', async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'wide-ids-outside-'));
+    try {
+      const report = path.join(outside, 'report.pdf');
+      fs.writeFileSync(report, 'a file outside the home');
+      expect(report.startsWith(home + path.sep), `${report} is in the home, so this proves nothing`).toBe(false);
+      const inside = path.join(home, 'wide-ids-report.pdf');
+      fs.writeFileSync(inside, 'a file in the home');
+
+      await onWideIds([[outside, home]], () => {
+        expectTwoIdsOneNumber(outside, home);
+        expect(isSafeTelegramPath(report), 'a file outside the home').toBe(false);
+        expect(isSafeTelegramPath(inside), 'a file in the home').toBe(true);
+      });
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
     }
   });
 
@@ -290,4 +420,31 @@ describe('the Telegram MCP server, which every agent is given', () => {
       }
     });
   }
+
+  it('does not take a file with two names for one in the private directory because their ids read as one Number', async () => {
+    // The server's own copy of the hard link search, held to the case the
+    // app's guard is held to above.
+    const docs = path.join(tmpHome, 'Documents');
+    fs.mkdirSync(docs, { recursive: true });
+    const secret = path.join(tmpHome, '.tars-private', 'wide-ids-secret');
+    fs.mkdirSync(path.dirname(secret), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(secret, 'the webhook secret', { mode: 0o600 });
+    const first = path.join(docs, 'wide-ids-first.pdf');
+    const second = path.join(docs, 'wide-ids-second.pdf');
+    const notes = path.join(docs, 'wide-ids-notes.txt');
+    for (const at of [first, second, notes]) fs.rmSync(at, { force: true });
+    fs.writeFileSync(first, 'one file, two names');
+    fs.linkSync(first, second);
+    fs.linkSync(secret, notes);
+    const send = tools.get('send_telegram_document')!;
+
+    await onWideIds([[second, secret]], async () => {
+      expectTwoIdsOneNumber(second, secret);
+      const ordinary = await send({ document_path: second });
+      expect(ordinary.content[0].text, 'an ordinary file with two names').not.toContain('Refused');
+      expect(ordinary.content[0].text).toContain('a test reached the network');
+      const linked = await send({ document_path: notes });
+      expect(linked.content[0].text, 'a second name for the secret').toContain('Refused');
+    });
+  });
 });

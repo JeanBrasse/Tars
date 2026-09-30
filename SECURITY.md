@@ -363,6 +363,28 @@ deciding what an agent may attach. Each of these is a refusal of the one-call
 route, not a wall: an agent with a shell copies the file somewhere else first,
 because §1.
 
+The renderer's file channels (`fs:read-text-file`, `fs:write-text-file`,
+`fs:read-project-files`, `local-file://`) confine a path to a list of roots:
+`~/.dorothy`, the CLIs' folders and the projects. Until 1.9.2 a root could be
+the home or a folder above it (a project added as `~` or `/Users`, or written
+into `projects.json`), and the path was judged as spelled while the read or
+the write followed links: one symlink under `~/.dorothy` or in a cloned
+repository to the home opened `~/.ssh`, `~/.tars-private` and the shell's
+startup files, to read and to write. A root that is the home or above it is
+now refused, by spelling and by device and inode, and the path must really
+lie, links followed, under the real location of a root
+(`electron/utils/home-root.ts`, `real-target.ts`). One file link to a markdown
+file outside every root and outside the Telegram guard's blocked places stays
+allowed on the three IPC channels, for a CLAUDE.md kept in a dotfiles
+repository. `/api/local-file`, which takes no token, got the same real-path
+test without that exception, and refuses a file with a second name, since an
+attachment is a copy the vault made: before, one symlink or hard link planted
+in `~/.dorothy/vault/attachments` served, to any process on the loopback,
+another account's included, the file it named or every file under the folder
+it led to. What is left:
+the check and the read are two calls, so a link swapped in between is
+followed, by a process that could open the file itself (§1).
+
 Made on a new install by the first save, the directory came out `0755`, since
 only the migration asked for `0700`. Whichever write makes it now, the
 migration or the first save of the conversation or of the webhook secret, makes
