@@ -1,11 +1,11 @@
 import * as os from 'os';
 import type { AgentStatus, ClaudeAccountsSettings } from '../../types';
-import type { AccountEnv } from '../../core/account-env';
+import type { AccountEnv, AccountEnvPurpose } from '../../core/account-env';
 import { DEFAULT_ACCOUNT_ID, readAccountsSettings } from './registry';
 import { claudeCredentialOverrides, provisionAccountDir } from './provision';
 import { readAccountUsage } from './counters';
-import { chooseAccount, type AccountUsage } from './choose';
-import { blockedUntil, getAuth, noteMove, recentMoves } from './state';
+import { chooseAccount, type AccountUsage, type Choice } from './choose';
+import { blockedUntil, getAuth, noteMove, recentMoves, takeMove } from './state';
 
 /**
  * The environment an agent's CLI starts with, per account
@@ -26,6 +26,12 @@ import { blockedUntil, getAuth, noteMove, recentMoves } from './state';
  * The choice is recorded on the agent (what its card shows, and what the next
  * relaunch keeps while it has room) and counted for a minute, so that agents
  * launched together spread out before their terminals exist (N5).
+ *
+ * A move switching.ts asked for is made by the agent's next terminal launch,
+ * and said on the env it returns (`move`), for main.ts to tell the windows.
+ * Not by a delegated run, which has no terminal to move; not over a pin set
+ * since; not onto an account that can no longer run, where the choice
+ * decides as it would have.
  */
 
 export const ACCOUNT_ENV_UNSET = ['CLAUDE_CONFIG_DIR', 'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'TARS_CLAUDE_ACCOUNT'] as const;
@@ -33,6 +39,8 @@ export const ACCOUNT_ENV_UNSET = ['CLAUDE_CONFIG_DIR', 'CLAUDE_SECURESTORAGE_CON
 export interface LaunchContext {
   /** The fleet, to count who runs where. */
   agents: Iterable<AgentStatus>;
+  /** A terminal (the default), or a delegated run. */
+  purpose?: AccountEnvPurpose;
   /** The folder the CLI starts in. */
   cwd?: string;
   now?: number;
@@ -42,7 +50,7 @@ export interface LaunchContext {
   overrides?: string[];
 }
 
-function isClaudeSubscription(agent: AgentStatus): boolean {
+export function isClaudeSubscription(agent: AgentStatus): boolean {
   return !agent.provider || agent.provider === 'claude';
 }
 
@@ -56,18 +64,20 @@ function record(agent: AgentStatus, env: AccountEnv, now: number): AccountEnv {
   return env;
 }
 
-export function claudeAccountEnvFor(agent: AgentStatus, ctx: LaunchContext): AccountEnv | null {
-  const settings = ctx.settings ?? readAccountsSettings();
-  if (!settings.enabled || !isClaudeSubscription(agent)) return null;
-  const now = ctx.now ?? Date.now();
-  const name = agent.name || agent.id;
+/** Whether an account can take an agent now: enabled and signed in (account 1 until it says otherwise). */
+export function accountCanRun(settings: ClaudeAccountsSettings, id: string): boolean {
+  const account = settings.accounts.find(a => a.id === id);
+  const signedIn = getAuth(id)?.signedIn ?? null;
+  return !!account && account.enabled && (id === DEFAULT_ACCOUNT_ID ? signedIn !== false : signedIn === true);
+}
 
-  const overrides = ctx.overrides ?? claudeCredentialOverrides();
-  if (overrides.length) {
-    console.warn(`[claude-accounts] ${name}: on account 1, since Claude Code would sign every account in with ${overrides.join(', ')}`);
-    return record(agent, defaultEnv(), now);
-  }
-
+/**
+ * The account the choice gives this agent now, from the registry, the counters,
+ * the sign-ins, the blocks and who runs where. `ignorePin` for a move, which
+ * never applies to a pinned agent anyway.
+ */
+export function choiceFor(agent: AgentStatus, settings: ClaudeAccountsSettings, ctx: Pick<LaunchContext, 'agents' | 'usage'> & { now: number; ignorePin?: boolean }): Choice {
+  const now = ctx.now;
   // Who runs where: agents with a terminal, and choices made a moment ago for
   // agents whose terminal is not there yet. Not this agent.
   const load: Record<string, number> = {};
@@ -82,20 +92,47 @@ export function claudeAccountEnvFor(agent: AgentStatus, ctx: LaunchContext): Acc
     load[accountId] = (load[accountId] ?? 0) + 1;
   }
 
-  const choice = chooseAccount({
+  return chooseAccount({
     accounts: settings.accounts.map(a => ({ id: a.id, enabled: a.enabled, signedIn: getAuth(a.id)?.signedIn ?? null })),
     fiveHourThreshold: settings.fiveHourThreshold,
     weeklyThreshold: settings.weeklyThreshold,
     usage: ctx.usage ?? readAccountUsage(),
     blockedUntil: blockedUntil(),
     load,
-    pin: agent.claudeAccountPin,
+    pin: ctx.ignorePin ? undefined : agent.claudeAccountPin,
     last: agent.claudeAccountId,
     now,
   });
+}
 
+export function claudeAccountEnvFor(agent: AgentStatus, ctx: LaunchContext): AccountEnv | null {
+  const settings = ctx.settings ?? readAccountsSettings();
+  if (!settings.enabled || !isClaudeSubscription(agent)) return null;
+  const now = ctx.now ?? Date.now();
+  const name = agent.name || agent.id;
+
+  const overrides = ctx.overrides ?? claudeCredentialOverrides();
+  if (overrides.length) {
+    console.warn(`[claude-accounts] ${name}: on account 1, since Claude Code would sign every account in with ${overrides.join(', ')}`);
+    return record(agent, defaultEnv(), now);
+  }
+
+  const move = (ctx.purpose ?? 'terminal') === 'terminal' ? takeMove(agent.id) : undefined;
+  const moveTo = move && !agent.claudeAccountPin && accountCanRun(settings, move.to) ? move.to : undefined;
+  const choice: Choice = moveTo ? { accountId: moveTo, reason: 'moved' } : choiceFor(agent, settings, { agents: ctx.agents, usage: ctx.usage, now });
+  const from = agent.claudeAccountId ?? DEFAULT_ACCOUNT_ID;
+
+  const env = envFor(agent, settings, choice, ctx, name);
+  // The move is made only when the launch did land on its account.
+  if (move && moveTo && env.accountId === moveTo) {
+    env.move = { agentId: agent.id, from, to: moveTo, reason: move.reason, window: move.window, usedPercentage: move.usedPercentage, at: now };
+  }
+  return record(agent, env, now);
+}
+
+function envFor(agent: AgentStatus, settings: ClaudeAccountsSettings, choice: Choice, ctx: LaunchContext, name: string): AccountEnv {
   const account = settings.accounts.find(a => a.id === choice.accountId);
-  if (!account || !account.configDir) return record(agent, defaultEnv(), now);
+  if (!account || !account.configDir) return defaultEnv();
 
   try {
     const home = ctx.home ?? os.homedir();
@@ -103,12 +140,12 @@ export function claudeAccountEnvFor(agent: AgentStatus, ctx: LaunchContext): Acc
     if (ctx.cwd !== agent.projectPath && agent.projectPath) provisionAccountDir(account.configDir, home, { projectPath: agent.projectPath });
   } catch (err) {
     console.warn(`[claude-accounts] ${name}: on account 1, since ${account.label} cannot be used: ${err instanceof Error ? err.message : String(err)}`);
-    return record(agent, defaultEnv(), now);
+    return defaultEnv();
   }
   console.log(`[claude-accounts] ${name}: on ${account.label} (${choice.reason})`);
-  return record(agent, {
+  return {
     accountId: account.id,
     set: { CLAUDE_CONFIG_DIR: account.configDir, TARS_CLAUDE_ACCOUNT: account.id },
     unset: ['CLAUDE_SECURESTORAGE_CONFIG_DIR'],
-  }, now);
+  };
 }

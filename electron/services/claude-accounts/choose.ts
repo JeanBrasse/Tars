@@ -49,7 +49,8 @@ export interface ChooseInput {
   now: number;
 }
 
-export type ChoiceReason = 'pinned' | 'kept' | 'most-headroom' | 'all-at-limit' | 'fallback';
+/** 'moved' is not the chooser's: the launch that makes a move switching.ts asked for. */
+export type ChoiceReason = 'pinned' | 'kept' | 'most-headroom' | 'all-at-limit' | 'fallback' | 'moved';
 
 export interface Choice {
   accountId: string;
