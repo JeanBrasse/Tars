@@ -24,7 +24,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - a rename, a move and a threshold reach the registry main keeps, and a
  *   threshold main would refuse never does;
  * - remove asks first, and Cancel removes nothing;
- * - the agent's card names its account, and its menu pins the agent.
+ * - the agent's card names its account, and its menu pins the agent, which
+ *   the card hears from main's push (claude-accounts:agent-changed);
+ * - a registry main cannot read is said in the section, in main's words.
  * Removing for real is left to #263's unit tests: shell.trashItem goes to the
  * real user's Trash.
  */
@@ -56,6 +58,8 @@ function writeFakeClaude(home: string): string {
 /** Main's registry of accounts, kept where no agent is handed it (#263, after the design gate). */
 const registry = (home: string) => JSON.parse(fs.readFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), 'utf8'));
 const row = (page: Page, id: string) => page.locator(`[data-account-row="${id}"]`);
+/** Main's sentence for a registry that does not parse (#263, registryProblem). */
+const UNREADABLE = '~/.tars-private/claude-accounts.json does not read as a list of accounts. Nothing is changed until it is fixed or removed.';
 
 test('claude accounts: the section, the sign-in terminal, and an agent pinned from its card', async () => {
   test.setTimeout(180_000);
@@ -170,10 +174,21 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     await expect(control).toHaveText('Work · pinned', { timeout: 10_000 });
     await stepShot(page, '08-agent-pinned');
 
+    // A registry main cannot read: the section says so, in main's words, and
+    // every change waits for it to be fixed or removed.
+    fs.writeFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), '{ not a list');
+    await page.goto(`${DEV_URL}/settings`, { waitUntil: 'domcontentloaded' });
+    await page.getByText('AI & Providers', { exact: true }).click();
+    await page.getByText('Claude accounts', { exact: true }).click();
+    await expect(page.getByText(UNREADABLE)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(UNREADABLE)).toHaveCount(1);
+    await stepShot(page, '09-registry-unreadable');
+
     expect(errors, errors.join('\n')).toEqual([]);
     recordValues({
       registry: registry(home),
       pin: two.id,
+      unreadableSaid: UNREADABLE,
       pageErrors: errors,
     });
   } finally {
