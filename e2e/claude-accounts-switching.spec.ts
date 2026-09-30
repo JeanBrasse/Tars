@@ -11,7 +11,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * real app.
  *
  * The agent's CLI is a stand-in that does what claude does through its hooks,
- * with the agent's own token: it registers its session (SessionStart), and on
+ * with the agent's own token: it files a transcript through its account's
+ * projects/ link, registers its session (SessionStart), and on
  * its first launch starts a turn (UserPromptSubmit), leaves its account's 5 h
  * counter at 100 % as the status line would, and ends the turn on
  * StopFailure `rate_limit` with Claude Code's own sentence. Every launch is
@@ -68,6 +69,10 @@ function writeStandIn(home: string): string {
     "const n = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\\n').filter(Boolean).length : 0;",
     "const session = crypto.randomUUID();",
     "fs.appendFileSync(log, JSON.stringify({ n, session, args, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null, TARS_CLAUDE_ACCOUNT: process.env.TARS_CLAUDE_ACCOUNT ?? null }) + '\\n');",
+    // A transcript as claude files it: under the account's projects/, which is ~/.claude/projects shared.
+    "const transcripts = path.join(d, 'projects', fs.realpathSync(process.cwd()).replace(/[/.]/g, '-'));",
+    "fs.mkdirSync(transcripts, { recursive: true });",
+    "fs.writeFileSync(path.join(transcripts, session + '.jsonl'), JSON.stringify({ type: 'user', sessionId: session, message: { role: 'user', content: 'work' } }) + '\\n');",
     "process.stdin.on('data', b => fs.appendFileSync(path.join(home, 'typed.jsonl'), JSON.stringify({ n, text: b.toString('utf8') }) + '\\n'));",
     "const post = body => fetch(process.env.CLAUDE_MGR_API_URL + '/api/hooks/status', {",
     "  method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.CLAUDE_MGR_API_TOKEN },",
@@ -153,7 +158,9 @@ test('an agent cut by its account\'s limit goes on, on another account', async (
     await expect.poll(() => lines(launchLog).length, { timeout: 60_000, message: 'started again after the limit' }).toBe(2);
     const second = lines(launchLog)[1] as { args: string[]; CLAUDE_CONFIG_DIR: string | null; TARS_CLAUDE_ACCOUNT: string };
     expect(second).toMatchObject({ CLAUDE_CONFIG_DIR: two.configDir, TARS_CLAUDE_ACCOUNT: two.id });
+    expect(second.args).toContain('--resume');
     expect(second.args[second.args.indexOf('--resume') + 1]).toBe(first.session);
+    expect(second.args).toContain('--fork-session');
 
     // Told to go on, from Tars, in the new session only.
     const typedLog = path.join(home, 'typed.jsonl');
