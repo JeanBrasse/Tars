@@ -29,6 +29,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
+import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -180,6 +181,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
 
   // Create a new PTY terminal
   ipcMain.handle('pty:create', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
+    refuseWhileQuitting('terminal');
     const id = uuidv4();
     const shell = defaultShell();
 
@@ -1352,6 +1354,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const fullPath = buildFullPath();
+    refuseWhileQuitting('skill install');
     const ptyProcess = pty.spawn('npx', npxArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -1543,6 +1546,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
       ? ['--no-rcs', '-c', finalCommand]
       : ['-c', finalCommand];
 
+    refuseWhileQuitting('plugin install');
     const ptyProcess = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -2923,6 +2927,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
 
   // Start a new quick terminal PTY
   ipcMain.handle('shell:startPty', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
+    refuseWhileQuitting('terminal');
     const id = uuidv4();
     const shell = defaultShell();
 

@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
-import { ProcessTree, processTable } from '../services/acp/client';
+import { ProcessTree, processTable, processTableNow } from '../services/acp/client';
+import { beginQuit, isQuitting, refuseWhileQuitting } from './quit-state';
 import * as pty from 'node-pty';
 import { defaultShell } from '../utils/default-shell';
 import { v4 as uuidv4 } from 'uuid';
@@ -28,21 +29,18 @@ export function killPty(ptyId: string, isQuick = false): boolean {
   return false;
 }
 
-/** Kill all PTY processes across all maps. Called on app quit. */
-let quitting = false;
-
-/** Whether Tars is ending its terminals to quit: their exits are not agent news. */
-export function isQuitting(): boolean {
-  return quitting;
-}
+export { isQuitting };
 
 /** How long the quit gives the terminals to end on the hangup before SIGKILL. */
 export const TERMINAL_GRACE_MS = 1_500;
-const QUIT_POLL_MS = 50;
+/** How often the quit looks again, ps included, while it waits. */
+export const QUIT_POLL_MS = 100;
+/** How long the quit may wait on ps for the trees, read before the hangup. */
+const FIRST_READ_MS = 1_000;
 
 /**
- * Ends every terminal Tars holds, and everything they started, before the
- * quit goes on.
+ * Ends every terminal Tars holds, and everything the agents' terminals
+ * started, before the quit goes on.
  *
  * killAllPty sent SIGHUP to each shell and returned, inside a synchronous
  * before-quit: the shell relays the hangup to its jobs, and the CLIs died
@@ -50,45 +48,69 @@ const QUIT_POLL_MS = 50;
  * node-pty's exit callbacks, which need the event loop, came after the quit
  * had moved on. One was delivered during Electron's final cleanup, threw from
  * pty.node's ThreadSafeFunction and aborted the app (the crash report of
- * #231's proof). So: each terminal's process tree is read first, while the
- * parents that tie it together live (ProcessTree, as for the ACP runs); the
- * shells get their hangup as before; the event loop turns until every
- * process of those trees has ended and every exit was delivered, at most
- * `graceMs`; then whatever is left, in those trees only, gets SIGKILL.
+ * #231's proof). So:
+ * - the quit begins (quit-state.ts): nothing new is spawned from here on, and
+ *   no exit is its agent's news;
+ * - each agent, skill and plugin terminal's process tree is read while the
+ *   parents that tie it together live (ProcessTree, as for the ACP runs), and
+ *   every shell gets its hangup, both before this first gives the event loop
+ *   back: a caller that does something synchronous next (the delegated runs'
+ *   own grace) has both graces run at once;
+ * - the event loop turns, a pause at a time, until every exit was delivered
+ *   and nothing of those trees is left, at most `graceMs`; then whatever is
+ *   left in them gets SIGKILL.
+ *
+ * The user's own shell panels (the quick terminals) get the hangup only, as
+ * in any terminal app: a job they left with nohup or disown survives the
+ * quit. Only a shell the hangup did not end is SIGKILLed itself, its jobs
+ * left alone, or node-pty's waitpid would hold the quit on it for good (the
+ * Audit's gate of #235).
  */
 export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Promise<void> {
-  quitting = true;
-  const maps = [ptyProcesses, quickPtyProcesses, skillPtyProcesses, pluginPtyProcesses];
-  const terminals = maps.flatMap(map => [...map.values()]);
-  for (const map of maps) map.clear();
+  beginQuit();
+  const agentMaps = [ptyProcesses, skillPtyProcesses, pluginPtyProcesses];
+  const trees = agentMaps.flatMap(map => [...map.values()]);
+  const shells = [...quickPtyProcesses.values()];
+  for (const map of [...agentMaps, quickPtyProcesses]) map.clear();
+  const terminals = [...trees, ...shells];
   if (terminals.length === 0) return;
 
-  const tree = new ProcessTree(terminals.map(t => t.pid));
-  tree.grow(await processTable());
+  const tree = new ProcessTree(trees.map(t => t.pid));
+  if (trees.length) tree.grow(processTableNow(FIRST_READ_MS));
+  const ended = new Set<pty.IPty>();
   const exited = terminals.map(t => new Promise<void>(resolve => {
-    try { t.onExit(() => resolve()); } catch { resolve(); }
+    const done = () => { ended.add(t); resolve(); };
+    try { t.onExit(done); } catch { done(); }
   }));
   for (const t of terminals) {
     try { t.kill(); } catch { /* already gone */ }
   }
 
   const deadline = Date.now() + graceMs;
-  const allExited = Promise.all(exited).then(() => true);
-  const pause = () => new Promise(resolve => setTimeout(resolve, QUIT_POLL_MS));
-  for (;;) {
-    const done = await Promise.race([allExited, pause().then(() => false)]);
-    if (done && !tree.anyLeft(await processTable())) break;
-    if (Date.now() >= deadline) break;
+  let exitsIn = false;
+  const allExited = Promise.all(exited).then(() => { exitsIn = true; });
+  const pause = (ms = QUIT_POLL_MS) => new Promise(resolve => setTimeout(resolve, ms));
+  while (Date.now() < deadline) {
+    await pause(Math.min(QUIT_POLL_MS, Math.max(1, deadline - Date.now())));
+    if (exitsIn && !tree.anyLeft(await processTable())) break;
   }
-  const table = await processTable();
-  if (tree.anyLeft(table)) {
+
+  const table = trees.length ? await processTable() : undefined;
+  const treesLeft = tree.anyLeft(table);
+  if (treesLeft) {
     tree.grow(table);
     tree.signal('SIGKILL');
+  }
+  const stubbornShells = shells.filter(t => !ended.has(t));
+  for (const t of stubbornShells) {
+    try { process.kill(t.pid, 'SIGKILL'); } catch { /* gone */ }
+  }
+  if (treesLeft || stubbornShells.length) {
     // Until they are gone, and the leaders' exits delivered, while the event
     // loop still runs: half a second at most, SIGKILL is not refused.
     const until = Date.now() + 500;
     while (Date.now() < until && tree.anyLeft(await processTable())) await pause();
-    await Promise.race([allExited, new Promise(resolve => setTimeout(resolve, 300))]);
+    await Promise.race([allExited, pause(300)]);
   }
   console.log(`Ended ${terminals.length} terminal(s) on quit`);
 }
@@ -979,6 +1001,7 @@ export function createQuickPty(
   rows: number | undefined,
   mainWindow: BrowserWindow | null
 ): string {
+  refuseWhileQuitting('terminal');
   const shell = defaultShell();
 
   const ptyProcess = pty.spawn(shell, ['-l'], {

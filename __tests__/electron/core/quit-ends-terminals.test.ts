@@ -7,7 +7,14 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('electron', () => ({ BrowserWindow: vi.fn() }));
 vi.setConfig({ testTimeout: 20_000 });
 
-import { endAllTerminals, isQuitting, ptyProcesses, quickPtyProcesses } from '../../../electron/core/pty-manager';
+// ps, counted: the quit polls it, and must pause between reads.
+const ps = vi.hoisted(() => ({ reads: 0 }));
+vi.mock('../../../electron/services/acp/client', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../electron/services/acp/client')>();
+  return { ...real, processTable: () => { ps.reads++; return real.processTable(); } };
+});
+
+import { endAllTerminals, isQuitting, ptyProcesses, quickPtyProcesses, QUIT_POLL_MS } from '../../../electron/core/pty-manager';
 import type { IPty } from 'node-pty';
 
 /**
@@ -34,10 +41,31 @@ import type { IPty } from 'node-pty';
  * 5. A process that is not in a terminal's tree is signalled.
  * 6. Over-correction: a CLI that ends on the hangup is killed before it has
  *    had its time, and loses what it writes when it exits.
+ *
+ * And from the Audit's gate of #235 (2026-09-28):
+ * 7. The stubborn fixture was not stubborn: `trap '' HUP TERM` spliced into a
+ *    single-quoted `sh -c` became `trap HUP TERM`, SIGHUP kept its default,
+ *    and a quit with no SIGKILL at all passed. The fixture is checked to
+ *    survive SIGHUP before anything is trusted to it.
+ * 8. Something the CLI starts after the hangup, in a group of its own, is not
+ *    in the tree read before it, and outlives the quit.
+ * 9. node-pty delivers an exit about 200 ms after the process ended: the quit
+ *    goes on before it arrives.
+ * 10. The user's own shell panel (the quick terminal) is not an agent: a job
+ *    left there with nohup or disown survives the quit, as in any terminal
+ *    app. Only the shell itself is ended if the hangup does not end it, or the
+ *    quit would wait on it forever (node-pty's waitpid).
+ * 11. ps is read back to back once the exits are in, instead of once a pause.
+ * 12. The hangup waits for the event loop: a quit that runs something
+ *    synchronous next (the delegated runs' own grace) starts the terminals'
+ *    grace only after it, and the two add up.
  */
 
 const started: ChildProcess[] = [];
+const pids: { job: () => number; grandchild: () => number; late: () => number }[] = [];
 afterEach(() => {
+  // By pid as well as by group: a run that fails leaves the job and its children behind otherwise.
+  for (const t of pids.splice(0)) for (const pid of [t.job(), t.grandchild(), t.late()]) if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
   for (const c of started.splice(0)) { try { process.kill(-c.pid!, 'SIGKILL'); } catch { /* gone */ } try { c.kill('SIGKILL'); } catch { /* gone */ } }
   ptyProcesses.clear();
   quickPtyProcesses.clear();
@@ -49,19 +77,35 @@ const alive = (pid: number) => {
   try { return !execFileSync('ps', ['-o', 'stat=', '-p', String(pid)]).toString().trim().startsWith('Z'); } catch { return false; }
 };
 
+type Job = 'polite' | 'stubborn' | 'slow' | 'late';
+
 /**
- * A terminal: a shell-like leader that relays SIGHUP to its job, and the job
- * in a group of its own with a child of its own. `stubborn` makes the job and
- * its child ignore SIGHUP and SIGTERM.
+ * A terminal: a shell-like leader and its job, the job in a group of its own
+ * with a child of its own. The leader relays SIGHUP to the job, as bash does,
+ * unless `disowned`. The job:
+ * - polite: ends on the hangup;
+ * - stubborn: it and its child ignore SIGHUP and SIGTERM;
+ * - slow: takes 0.5 s to end on the hangup, then writes `<T>.done`;
+ * - late: stubborn, and on the hangup starts another child in a group of its own.
+ * `exitDelayMs`: how long after the leader's end its exit is delivered, as
+ * node-pty's comes about 200 ms after the process.
  */
-function terminal(stubborn: boolean): { pty: IPty; leader: ChildProcess; job: () => number; grandchild: () => number } {
-  const trap = stubborn ? "trap '' HUP TERM;" : '';
+function terminal(kind: Job, opts: { disowned?: boolean; exitDelayMs?: number } = {}): {
+  pty: IPty; leader: ChildProcess; job: () => number; grandchild: () => number; late: () => number; done: () => boolean;
+} {
+  const traps: Record<Job, string> = {
+    polite: '',
+    stubborn: 'trap "" HUP TERM;',
+    slow: 'trap "sleep 0.5; echo done > \\"$0.done\\"; exit 0" HUP;',
+    late: 'set -m; trap "sleep 300 & echo \\$! > \\"$0.late\\"" HUP; trap "" TERM;',
+  };
+  const relay = opts.disowned ? 'trap "exit 0" HUP' : "trap 'kill -HUP -$job 2>/dev/null; exit 0' HUP";
   const script = `
     set -m
-    sh -c '${trap} sleep 300 & echo $! > "$0.child"; wait' "$T" &
+    bash -c '${traps[kind]} sleep 300 & echo $! > "$0.child"; wait; wait' "$T" &
     job=$!
     echo $job > "$T.job"
-    trap 'kill -HUP -$job 2>/dev/null; exit 0' HUP
+    ${relay}
     wait
   `;
   const T = `${process.env.TMPDIR || '/tmp'}/tars-quit-${process.pid}-${Math.random().toString(36).slice(2)}`;
@@ -71,13 +115,22 @@ function terminal(stubborn: boolean): { pty: IPty; leader: ChildProcess; job: ()
   started.push(leader);
   const read = (f: string) => { try { return Number(fs.readFileSync(f, 'utf-8').trim()); } catch { return 0; } };
   const exits: Array<(e: { exitCode: number }) => void> = [];
-  leader.on('exit', code => { for (const cb of exits) cb({ exitCode: code ?? 0 }); });
+  leader.on('exit', code => {
+    const deliver = () => { for (const cb of [...exits]) cb({ exitCode: code ?? 0 }); };
+    if (opts.exitDelayMs) setTimeout(deliver, opts.exitDelayMs); else deliver();
+  });
   const pty = {
     pid: leader.pid!,
     kill: (signal = 'SIGHUP') => { process.kill(leader.pid!, signal as NodeJS.Signals); },
     onExit: (cb: (e: { exitCode: number }) => void) => { exits.push(cb); return { dispose: () => exits.splice(exits.indexOf(cb), 1) }; },
   } as unknown as IPty;
-  return { pty, leader, job: () => read(`${T}.job`), grandchild: () => read(`${T}.child`) };
+  const t = {
+    pty, leader,
+    job: () => read(`${T}.job`), grandchild: () => read(`${T}.child`), late: () => read(`${T}.late`),
+    done: () => fs.existsSync(`${T}.done`),
+  };
+  pids.push(t);
+  return t;
 }
 
 const settle = async (t: { job: () => number; grandchild: () => number }) => {
@@ -86,7 +139,7 @@ const settle = async (t: { job: () => number; grandchild: () => number }) => {
 
 describe('the quit, for the agents\' terminals', () => {
   it('1, 2. ends a CLI that ignores the hangup, and its children, within the grace', async () => {
-    const t = terminal(true);
+    const t = terminal('stubborn');
     ptyProcesses.set('pty-1', t.pty);
     await settle(t);
     const began = Date.now();
@@ -101,7 +154,7 @@ describe('the quit, for the agents\' terminals', () => {
   });
 
   it('3, 6. returns as soon as a CLI that ends on the hangup has ended, without killing it first', async () => {
-    const t = terminal(false);
+    const t = terminal('polite');
     quickPtyProcesses.set('pty-2', t.pty);
     await settle(t);
     const began = Date.now();
@@ -113,7 +166,7 @@ describe('the quit, for the agents\' terminals', () => {
   });
 
   it('4. resolves only once every terminal\'s exit was delivered', async () => {
-    const t = terminal(false);
+    const t = terminal('polite');
     ptyProcesses.set('pty-3', t.pty);
     await settle(t);
     let delivered = false;
@@ -125,7 +178,7 @@ describe('the quit, for the agents\' terminals', () => {
   });
 
   it('5. signals nothing outside the terminals\' trees', async () => {
-    const t = terminal(true);
+    const t = terminal('stubborn');
     ptyProcesses.set('pty-4', t.pty);
     const bystander = spawn('/bin/sh', ['-c', 'sleep 300'], { detached: true, stdio: 'ignore' });
     started.push(bystander);
@@ -134,6 +187,100 @@ describe('the quit, for the agents\' terminals', () => {
     await endAllTerminals(500);
 
     expect(alive(bystander.pid!)).toBe(true);
+  });
+});
+
+describe('the fixture', () => {
+  it('7. is stubborn when it says so: its job and child outlive a SIGHUP to their group', async () => {
+    const t = terminal('stubborn');
+    await settle(t);
+    process.kill(-t.job(), 'SIGHUP');
+    await new Promise(r => setTimeout(r, 300));
+    expect(alive(t.job())).toBe(true);
+    expect(alive(t.grandchild())).toBe(true);
+  });
+});
+
+describe('the quit, after the Audit\'s gate', () => {
+  it('6. lets a CLI that takes half a second to end on the hangup end by itself', async () => {
+    const t = terminal('slow');
+    ptyProcesses.set('pty-slow', t.pty);
+    await settle(t);
+
+    await endAllTerminals(1_500);
+
+    expect(t.done(), 'SIGKILLed before it had written what it writes on exit').toBe(true);
+  });
+
+  it('8. ends what the CLI started after the hangup, in a group of its own', async () => {
+    const t = terminal('late');
+    ptyProcesses.set('pty-late', t.pty);
+    await settle(t);
+
+    await endAllTerminals(800);
+
+    expect(t.late(), 'the late child was never started').toBeGreaterThan(0);
+    expect(alive(t.late()), 'what the CLI started after the hangup outlived the quit').toBe(false);
+    expect(alive(t.job())).toBe(false);
+  });
+
+  it('9. waits for an exit node-pty delivers 200 ms after the process ended', async () => {
+    const t = terminal('polite', { exitDelayMs: 200 });
+    ptyProcesses.set('pty-delayed', t.pty);
+    await settle(t);
+    let delivered = false;
+    t.pty.onExit(() => { delivered = true; });
+
+    await endAllTerminals(3_000);
+
+    expect(delivered).toBe(true);
+  });
+
+  it("10. leaves a job the user disowned in their own shell panel, and ends the shell", async () => {
+    const t = terminal('stubborn', { disowned: true });
+    quickPtyProcesses.set('shell-1', t.pty);
+    await settle(t);
+
+    await endAllTerminals(500);
+
+    expect(alive(t.job()), "the user's nohup job was killed").toBe(true);
+    expect(alive(t.leader.pid!), 'the shell outlived the quit').toBe(false);
+  });
+
+  it('10. still ends an agent terminal\'s disowned job', async () => {
+    const t = terminal('stubborn', { disowned: true });
+    ptyProcesses.set('pty-disowned', t.pty);
+    await settle(t);
+
+    await endAllTerminals(500);
+
+    expect(alive(t.job())).toBe(false);
+  });
+
+  it('11. pauses between reads of ps', async () => {
+    const t = terminal('stubborn');
+    ptyProcesses.set('pty-ps', t.pty);
+    await settle(t);
+    ps.reads = 0;
+
+    await endAllTerminals(1_000);
+
+    // One read before the hangup, one a pause during the grace, a few for the SIGKILL.
+    expect(ps.reads).toBeLessThanOrEqual(Math.ceil(1_000 / QUIT_POLL_MS) + 6);
+  });
+
+  it('12. sends the hangup before it first gives the event loop back', async () => {
+    const t = terminal('polite');
+    ptyProcesses.set('pty-sync', t.pty);
+    await settle(t);
+
+    const ending = endAllTerminals(3_000);
+    // Something synchronous right after, as the delegated runs' grace is.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
+    const jobAfterBlock = alive(t.job());
+    await ending;
+
+    expect(jobAfterBlock, 'the hangup waited for the event loop').toBe(false);
   });
 });
 

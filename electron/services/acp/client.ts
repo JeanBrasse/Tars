@@ -1,6 +1,7 @@
 import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import { refuseWhileQuitting } from '../../core/quit-state';
 
 /**
  * An Agent Client Protocol session against one agent process.
@@ -150,7 +151,7 @@ export function processTable(): Promise<ProcessRow[] | undefined> {
 }
 
 /** The same, read while the caller waits, for at most `timeoutMs`: for the quit, which nothing outlives. */
-function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
+export function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
   try {
     return parseProcessTable(String(execFileSync('ps', PS_ARGS, { timeout: timeoutMs })));
   } catch {
@@ -313,6 +314,7 @@ export class AcpSession extends EventEmitter {
 
   /** Spawns the agent, negotiates the protocol and opens a session. */
   async start(): Promise<{ sessionId: string; agentName?: string; capabilities?: unknown }> {
+    refuseWhileQuitting('delegated run');
     const env = { ...process.env, ...this.options.env };
     const child = spawn(this.launch.command, this.launch.args, {
       cwd: this.options.cwd,
