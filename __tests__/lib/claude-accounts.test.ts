@@ -12,12 +12,14 @@ import {
   menuOptions,
   meterTone,
   moveInOrder,
+  moveLine,
+  moveNote,
   showsAccountControl,
   suggestLabel,
   tildify,
   whoLine,
 } from '../../src/lib/claude-accounts';
-import type { ClaudeAccountState, ClaudeAccountsView } from '../../src/types/electron';
+import type { ClaudeAccountMove, ClaudeAccountState, ClaudeAccountsView } from '../../src/types/electron';
 
 /**
  * What the Claude accounts section and an agent's account control say, worked
@@ -38,7 +40,14 @@ import type { ClaudeAccountState, ClaudeAccountsView } from '../../src/types/ele
  * 6. the agent's control shown with the option off, with a single account, or
  *    on an agent that does not run Claude on a subscription; or naming the
  *    wrong account, or hiding that it is pinned;
- * 7. a menu that lets an agent be pinned to an account that cannot take it.
+ * 7. a menu that lets an agent be pinned to an account that cannot take it;
+ * 8. a move by Tars (#269's claude-accounts:agent-moved) told wrong in the
+ *    agent's window: the wrong account, time or window, a limit told as a
+ *    threshold or the reverse, a use that was not measured written as a
+ *    number, or a line that is not a grey notice on a line of its own;
+ * 9. the control's title that hides a move by Tars, or tells one that no
+ *    longer holds (the agent pinned since, or started on another account
+ *    since), or tells a move from an earlier day by its time alone.
  */
 
 const NOW = new Date(2026, 8, 28, 14, 50, 0);
@@ -231,5 +240,47 @@ describe("an agent's account control (6, 7)", () => {
     expect(more[2]).toMatchObject({ hint: 'at its limit until 21:40', hintTone: 'error' });
     expect(more[3]).toMatchObject({ hint: 'turned off', disabled: true });
     expect(more[4]).toMatchObject({ hint: 'checking', disabled: true });
+  });
+});
+
+describe('a move by Tars (8, 9)', () => {
+  const main = account({ id: 'default', label: 'Main' });
+  const second = account({ id: 'acct-000002', label: 'Second' });
+  const v = view([main, second]);
+  const at1402 = new Date(2026, 8, 28, 14, 2, 0).getTime();
+  const past: ClaudeAccountMove = { agentId: 'a1', from: 'default', to: 'acct-000002', reason: 'threshold', window: 'fiveHour', usedPercentage: 91.4, at: at1402 };
+  const cut: ClaudeAccountMove = { ...past, reason: 'limit', usedPercentage: 100 };
+
+  it('says why, in the words of the frame, for each reason and window (8)', () => {
+    expect(moveNote(v, past)).toBe('Main was at 91% of its 5 h window.');
+    expect(moveNote(v, cut)).toBe('Main hit its 5 h limit.');
+    expect(moveNote(v, { ...past, window: 'sevenDay', usedPercentage: 96 })).toBe('Main was at 96% of its weekly window.');
+    expect(moveNote(v, { ...cut, window: 'sevenDay' })).toBe('Main hit its weekly limit.');
+    expect(moveNote(v, { ...past, usedPercentage: null })).toBe('Main was past its 5 h threshold.');
+    expect(moveNote(v, { ...past, from: 'acct-gone00' })).toBe('a removed account was at 91% of its 5 h window.');
+  });
+
+  it("writes one grey line of its own in the agent's window, as the other notices (8)", () => {
+    expect(moveLine(v, past)).toBe('\r\n\x1b[90m(Moved to Second at 14:02: Main was at 91% of its 5 h window.)\x1b[0m\r\n');
+    expect(moveLine(v, cut)).toBe('\r\n\x1b[90m(Moved to Second at 14:02: Main hit its 5 h limit.)\x1b[0m\r\n');
+    expect(moveLine(v, { ...cut, from: 'acct-000002', to: 'default', at: new Date(2026, 8, 28, 9, 5, 0).getTime() }))
+      .toBe('\r\n\x1b[90m(Moved to Main at 09:05: Second hit its 5 h limit.)\x1b[0m\r\n');
+  });
+
+  it('says in the title where an agent Tars moved came from, and when (9)', () => {
+    const moved = { claudeAccountId: 'acct-000002', claudeAccountMove: past };
+    expect(controlLabel(v, moved)).toBe('Second');
+    expect(controlTitle(v, moved, NOW)).toBe('Runs on Second, chosen by Tars. Moved from Main at 14:02: Main was at 91% of its 5 h window.');
+    expect(controlTitle(v, { ...moved, claudeAccountMove: cut }, NOW)).toBe('Runs on Second, chosen by Tars. Moved from Main at 14:02: Main hit its 5 h limit.');
+    const nextDay = new Date(2026, 8, 29, 10, 0, 0);
+    expect(controlTitle(v, moved, nextDay)).toBe('Runs on Second, chosen by Tars. Moved from Main on 28 Sep at 14:02: Main was at 91% of its 5 h window.');
+    expect(controlTitle(v, {}, NOW)).toBe('Runs on Main, chosen by Tars.');
+  });
+
+  it('says no move that no longer holds: pinned since, or started on another account since (9)', () => {
+    expect(controlTitle(v, { claudeAccountId: 'acct-000002', claudeAccountPin: 'acct-000002', claudeAccountMove: past }, NOW))
+      .toBe('Runs on Second, pinned by you. It stays there past its thresholds, and waits at its limit.');
+    expect(controlTitle(v, { claudeAccountId: 'default', claudeAccountMove: past }, NOW)).toBe('Runs on Main, chosen by Tars.');
+    expect(controlTitle(v, { claudeAccountMove: past }, NOW)).toBe('Runs on Main, chosen by Tars.');
   });
 });
