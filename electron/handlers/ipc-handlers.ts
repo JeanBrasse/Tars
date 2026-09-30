@@ -26,6 +26,7 @@ import { projectFolders } from '../services/project-index';
 import { marketplaceListing } from '../services/skills-marketplace';
 import { skillsProblem } from '../utils/skill-name';
 import { resolveWorktreePath } from '../utils/worktree-path';
+import { landsUnderSafeRoot } from '../utils/real-target';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
@@ -2375,9 +2376,17 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     ...readCustomProjects(),
   ];
 
+  /**
+   * Under a root that is not the home nor above it, where the path really
+   * lands: a project added as `~` or `/Users` made every file of the home
+   * readable and writable here, and so did a link under ~/.dorothy or in a
+   * project, followed by the read or the write. One file link to a markdown
+   * file may lead out, a CLAUDE.md kept in a dotfiles repository
+   * (utils/real-target.ts).
+   */
   const isAllowedTextFile = (target: string) => {
     const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return textFileRoots().some(root => resolved === root || resolved.startsWith(root + path.sep));
+    return landsUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true });
   };
 
   /**
@@ -2484,7 +2493,11 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
         const target = path.resolve(resolvedBase, rel);
         if (target !== resolvedBase && !target.startsWith(resolvedBase + path.sep)) continue;
         try {
-          if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+          // Under a root that is not the home nor above it, where the read
+          // really lands: a link in the base or in `rel` may lead out of every
+          // root, except one file link to a markdown file (utils/real-target.ts).
+          if (fs.existsSync(target) && fs.statSync(target).isFile()
+            && landsUnderSafeRoot(target, roots, (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true })) {
             out[target] = fs.readFileSync(target, 'utf-8');
           }
         } catch { /* unreadable, skip */ }

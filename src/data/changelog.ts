@@ -9,9 +9,12 @@ export const CHANGELOG: Release[] = [
   {
     id: 51,
     version: '1.9.2',
-    date: '2026-09-28',
+    date: '2026-10-01',
     updates: [
-      'With Auth set to OAuth in Settings > Hermes, Tars calls the gateway with its session cookie alone. A token typed while Auth was on Token stayed in the saved connection, hidden, and went out with every call to the gateway, the Chat\'s included; it is sent in token mode only, as Hermes Desktop does',
+      'The Brain page and the other views that read and save your files no longer reach the rest of your home through a project that is your home folder or a folder above it, such as /Users, nor through a symbolic link, under ~/.dorothy or inside a project, that leads out of the folders they may use: ~/.ssh, ~/.tars-private and your shell\'s startup files stay out of reach, to read and to write. A CLAUDE.md or AGENTS.md linked to a markdown file kept in a dotfiles repository is still read and saved. Any other file linked from outside those folders is no longer read: an mcp.json linked into a dotfiles repository no longer adds its MCP servers to the Brain graph, and the Code panel shows nothing for a linked source file that points outside them. The vault\'s file previews serve only a file that really lies in the vault\'s attachments, and not one that has a second name elsewhere. Fixed by Nexarion434',
+      'The checks that decide whether a file may be sent to Telegram or attached in the vault tell one file from another on a drive whose file numbers are 64 bits wide, such as an NTFS drive, or a Windows share mounted on Linux: an ordinary file is no longer refused as if it were in ~/.tars-private or ~/.ssh, and a file outside your home is no longer sent to Telegram as if it were in it. Fixed by Nexarion434',
+      'Agents start when your home folder\'s name holds an apostrophe, such as /Users/o\'neil: Tars hands each CLI its ~/.dorothy folder as one quoted argument, where the apostrophe ended the quote and the command did not run. A folder name made to close that quote can no longer add options of its own to the command. Fixed by Nexarion434',
+      'With Auth set to OAuth in Settings > Hermes, Tars calls the gateway with its session cookie alone. A token typed while Auth was on Token stayed in the saved connection, hidden, and went out with every call to the gateway, the Chat\'s included; it is sent in token mode only, as Hermes Desktop does. Fixed by Nexarion434',
     ],
   },
   {
