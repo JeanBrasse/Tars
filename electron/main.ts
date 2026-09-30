@@ -79,7 +79,12 @@ import {
 } from './services/slack-bot';
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
-import { registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
+import { announceAgentAccount, registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
+import { setAccountEnvResolver } from './core/account-env';
+import { claudeAccountEnvFor } from './services/claude-accounts/launch';
+import { movedLaunch } from './services/claude-accounts/switching';
+import { readAccountsSettings } from './services/claude-accounts/registry';
+import { restartForSettings } from './core/agent-restart';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -492,12 +497,29 @@ app.whenReady().then(async () => {
   registerTeamTemplateHandlers();
   registerHermesHandlers();
   registerDiscordHandlers({ getAppSettings: () => appSettings });
-  registerClaudeAccountsHandlers({
+  const claudeAccounts = registerClaudeAccountsHandlers({
     getAppSettings: () => appSettings,
     agents,
     saveAgents,
     loginPtys: pluginPtyProcesses,
+    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
   });
+  // Every agent process asks which Claude account it starts on. With the
+  // option off the answer is null and nothing changes (core/account-env.ts).
+  setAccountEnvResolver((agentId, cwd, purpose) => {
+    const agent = agents.get(agentId);
+    if (!agent) return null;
+    const before = agent.claudeAccountId;
+    const env = claudeAccountEnvFor(agent, { agents: agents.values(), cwd, purpose });
+    // A move Tars asked for (services/claude-accounts/switching.ts), made by this launch.
+    if (env?.move) movedLaunch(agent, env.move);
+    // Every window shows the account an agent runs on.
+    if (agent.claudeAccountId !== before) announceAgentAccount(agent);
+    return env;
+  });
+  // Which accounts are signed in, asked of Claude Code before the first
+  // launches need it; until it answers, only account 1 is used.
+  if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();

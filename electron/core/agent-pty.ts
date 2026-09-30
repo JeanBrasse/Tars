@@ -5,6 +5,9 @@ import { mintAgentToken, revokeTerminalToken, tarsInstanceId } from './agent-tok
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
+import { accountEnvFor, withAccountEnv } from './account-env';
+
+export { setAccountEnvResolver } from './account-env';
 
 /**
  * How each agent PTY was started: the shell, as it was given to node-pty, and
@@ -83,6 +86,10 @@ export function spawnAgentPty(opts: {
   // rememberPanelSize.
   const size = panelSizeOf(agentId) ?? { cols: opts.cols, rows: opts.rows };
   const token = agentId ? mintAgentToken(agentId) : undefined;
+  // The Claude account this agent starts on, when the option is on (see
+  // core/account-env.ts): here for the reason this module exists, since an
+  // account a caller forgot would be a CLI billed to the wrong subscription.
+  const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
@@ -90,7 +97,7 @@ export function spawnAgentPty(opts: {
     rows: size.rows,
     cwd: opts.cwd,
     env: {
-      ...opts.env,
+      ...env,
       // Which Tars this CLI answers to: its hooks, its bundled MCP servers and
       // anything else that calls back. It is set here, after the caller's env,
       // for the reason this module exists. initAgentPty set it and

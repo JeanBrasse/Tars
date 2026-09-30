@@ -605,7 +605,8 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `observations/<encoded>.jsonl` | one `Observation` per line | `/api/memory/remember` | append-only, 1000 → 500 |
 | `model-catalog.json` + `.meta.json` | models.dev payload + `{ etag, fetchedAt }` | `writeCache()` | "a cache we cannot write is a slower app, not a broken one" |
 | `acp-registry.json` | `{ fetchedAt, agents }` | `writeCache()` | same |
-| `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
+| `rate-limits.json` | quota snapshot of account 1 | `statusline.sh` | deleted when the statusline is disabled |
+| `rate-limits.d/<account>.json` | `{ updatedAt, rate_limits }` per Claude account (`default` or `acct-<6 hex>`, from `TARS_CLAUDE_ACCOUNT`) | `statusline.sh` | temp file + `mv`; any other name writes nothing. Read by `services/claude-accounts/counters.ts`: names and numbers only, a counter older than 30 min counts as unknown when choosing |
 | `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock that holds its owner's token and is released only by that owner; a lock over 5 s old is taken over by one render at a time, and only while it is still the one judged dead. Anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
 | `skills-marketplace.json` | `{ skills, fetchedAt }`: the last skills.sh listing | `services/skills-marketplace.ts` | served at once to the Extensions page, fetched again behind it once an hour old; a failed fetch keeps it. Agents can write `~/.dorothy`, so every entry is checked on the way back as on the way in (`repo` is `owner/name` or `owner/name/skill`, no segment `.`, `..` or starting with `-`), and a file with no valid entry is fetched afresh |

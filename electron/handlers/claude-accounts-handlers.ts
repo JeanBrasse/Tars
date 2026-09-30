@@ -1,5 +1,4 @@
 import { ipcMain, shell } from 'electron';
-import * as fs from 'fs';
 import * as os from 'os';
 import * as pty from 'node-pty';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,14 +20,17 @@ import {
 } from '../services/claude-accounts/registry';
 import { accountDirProblem, claudeCredentialOverrides, ensureAccountDir, provisionAccountDir } from '../services/claude-accounts/provision';
 import { claudeAuthLogout, claudeAuthStatus, loginCommand } from '../services/claude-accounts/auth';
+import { countersDir, readAccountUsage, usageForView } from '../services/claude-accounts/counters';
+import { blockedUntil, deleteAuth, getAuth, hasAuth, setAuth, type AuthState } from '../services/claude-accounts/state';
+import * as fs from 'fs';
 import type { AgentStatus, AppSettings, ClaudeAccount, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView } from '../types';
 
 /**
  * The Settings contract for several Claude accounts (DESIGN-COMPTES-CLAUDE.md, B6).
  *
- * This file manages the list and the sign-ins. Choosing an account when an
- * agent starts, and the usage counters, come with the launch path; until
- * then the option changes nothing for any agent, on or off.
+ * This file manages the list, the sign-ins and what the page shows: each
+ * account's counters as its status line left them, and the agents on it.
+ * Choosing an account when an agent starts is services/claude-accounts/launch.ts.
  */
 
 export const CLAUDE_ACCOUNTS_CHANNELS = [
@@ -54,13 +56,12 @@ export interface ClaudeAccountsHandlerDeps {
   saveAgents: () => void;
   /** Where the login terminals are kept, so that quitting kills them with the rest. */
   loginPtys: Map<string, pty.IPty>;
-}
-
-interface AuthState {
-  signedIn: boolean | null;
-  email: string | null;
-  subscriptionType: string | null;
-  error: string | null;
+  /**
+   * An agent's pin changed while the option is on: its CLI reads the account
+   * at launch, so main.ts restarts it through agent-restart.ts, at a moment
+   * that cuts nothing.
+   */
+  onAgentAccountChanged?: (agentId: string) => void;
 }
 
 /**
@@ -87,8 +88,8 @@ function failure(err: unknown): { success: false; error: string } {
  * work it started in the background have finished: what a caller waits on
  * before reading the result, instead of a delay.
  */
-export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps): { idle: () => Promise<void> } {
-  const { getAppSettings, agents, saveAgents, loginPtys } = deps;
+export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps): { idle: () => Promise<void>; refreshAll: () => Promise<void> } {
+  const { getAppSettings, agents, saveAgents, loginPtys, onAgentAccountChanged } = deps;
 
   const background = new Set<Promise<unknown>>();
   function inBackground(p: Promise<unknown>): void {
@@ -99,25 +100,27 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     while (background.size) await Promise.allSettled([...background]);
   }
 
-  /** What Claude Code last said about each account, by id. */
-  const auth = new Map<string, AuthState>();
+  // What Claude Code last said about each account lives in
+  // services/claude-accounts/state.ts, in memory only, where the launch reads it.
   const checking = new Map<string, Promise<void>>();
   /** Login terminal → the account it signs in. */
   const loginFor = new Map<string, string>();
 
   const binary = (): string => getAppSettings().cliPaths?.claude || 'claude';
 
-  function stateOf(account: ClaudeAccount): ClaudeAccountState {
-    const a = auth.get(account.id);
+  function stateOf(account: ClaudeAccount, usage: ReturnType<typeof readAccountUsage>, blocked: Record<string, number>, now: number): ClaudeAccountState {
+    const a = getAuth(account.id);
+    const counters = usageForView(usage[account.id], now);
+    const until = blocked[account.id];
     return {
       ...account,
       signedIn: a?.signedIn ?? null,
       email: a?.email ?? null,
       subscriptionType: a?.subscriptionType ?? null,
-      fiveHour: null,
-      sevenDay: null,
-      updatedAt: null,
-      blockedUntil: null,
+      fiveHour: counters.fiveHour,
+      sevenDay: counters.sevenDay,
+      updatedAt: counters.updatedAt,
+      blockedUntil: until !== undefined && until * 1000 > now ? until : null,
       agentIds: [...agents.values()]
         .filter(agent => agent.ptyId && (agent.claudeAccountId ?? DEFAULT_ACCOUNT_ID) === account.id)
         .map(agent => agent.id),
@@ -126,7 +129,10 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
   }
 
   function view(settings: ClaudeAccountsSettings = readAccountsSettings()): ClaudeAccountsView {
-    return { settings, accounts: settings.accounts.map(stateOf), registryError: registryProblem() };
+    const usage = readAccountUsage();
+    const blocked = blockedUntil();
+    const now = Date.now();
+    return { settings, accounts: settings.accounts.map(a => stateOf(a, usage, blocked, now)), registryError: registryProblem() };
   }
 
   function announce(settings?: ClaudeAccountsSettings): ClaudeAccountsView {
@@ -145,10 +151,10 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     if (running) return running;
     const p = claudeAuthStatus(binary(), account.configDir)
       .then(info => {
-        auth.set(account.id, { signedIn: info.signedIn, email: info.email, subscriptionType: info.subscriptionType, error: null });
+        setAuth(account.id, { signedIn: info.signedIn, email: info.email, subscriptionType: info.subscriptionType, error: null });
       })
       .catch(err => {
-        auth.set(account.id, { signedIn: null, email: null, subscriptionType: null, error: err instanceof Error ? err.message : String(err) });
+        setAuth(account.id, { signedIn: null, email: null, subscriptionType: null, error: err instanceof Error ? err.message : String(err) });
       })
       .finally(() => checking.delete(account.id));
     checking.set(account.id, p);
@@ -169,11 +175,11 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     await checkAll();
     const settings = readAccountsSettings();
     const account = settings.accounts.find(a => a.id === accountId);
-    const mine = auth.get(accountId);
+    const mine = getAuth(accountId);
     if (!account || !mine?.signedIn || !mine.email) return;
     const other = settings.accounts.find(a => a.id !== accountId
-      && auth.get(a.id)?.signedIn
-      && auth.get(a.id)?.email?.toLowerCase() === mine.email!.toLowerCase());
+      && getAuth(a.id)?.signedIn
+      && getAuth(a.id)?.email?.toLowerCase() === mine.email!.toLowerCase());
     if (!other) return;
     let why = `This Claude account is already added as "${other.label}", and was signed out here.`;
     try {
@@ -182,13 +188,13 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       why = `This Claude account is already added as "${other.label}". Signing it out here failed too: ${err instanceof Error ? err.message : String(err)}`;
     }
     await check(account);
-    auth.set(accountId, { ...(auth.get(accountId) as AuthState), error: why });
+    setAuth(accountId, { ...(getAuth(accountId) as AuthState), error: why });
   }
 
   ipcMain.handle('claude-accounts:list', async (): Promise<Result<ClaudeAccountsView>> => {
     try {
       const settings = readAccountsSettings();
-      const unknown = settings.accounts.filter(a => !auth.has(a.id)).map(a => a.id);
+      const unknown = settings.accounts.filter(a => !hasAuth(a.id)).map(a => a.id);
       if (unknown.length) inBackground(checkAll(unknown).then(() => announce()));
       return { success: true, ...view(settings) };
     } catch (err) {
@@ -245,7 +251,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       const { settings, account } = addAccount(readAccountsSettings(), label, accountsRoot());
       provisionAccountDir(account.configDir as string);
       // A directory nobody has signed in yet: no need to ask Claude Code.
-      auth.set(account.id, { signedIn: false, email: null, subscriptionType: null, error: null });
+      setAuth(account.id, { signedIn: false, email: null, subscriptionType: null, error: null });
       const v = save(settings);
       return { success: true, account: v.accounts.find(a => a.id === account.id) as ClaudeAccountState };
     } catch (err) {
@@ -335,7 +341,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       try {
         await shell.trashItem(account.configDir as string);
       } catch (err) {
-        auth.delete(account.id);
+        deleteAuth(account.id);
         throw new Error(`Signed out, but its folder could not go to the Trash (${err instanceof Error ? err.message : String(err)}). Nothing was deleted, and the account stays until its folder can be moved.`);
       }
 
@@ -349,7 +355,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
         saveAgents();
         unpinned.forEach(announceAgentAccount);
       }
-      auth.delete(account.id);
+      deleteAuth(account.id);
       return { success: true, ...save(next) };
     } catch (err) {
       return failure(err);
@@ -424,6 +430,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       const { agentId, accountId } = (p ?? {}) as { agentId?: unknown; accountId?: unknown };
       const agent = typeof agentId === 'string' ? agents.get(agentId) : undefined;
       if (!agent) throw new Error('There is no such agent.');
+      const before = agent.claudeAccountPin;
       if (accountId === null) {
         delete agent.claudeAccountPin;
       } else {
@@ -433,11 +440,32 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       }
       saveAgents();
       announceAgentAccount(agent);
+      if (agent.claudeAccountPin !== before && readAccountsSettings().enabled) onAgentAccountChanged?.(agent.id);
       return { success: true };
     } catch (err) {
       return failure(err);
     }
   });
 
-  return { idle };
+  // The counters move whenever a status line renders: the page hears of it
+  // without asking. A folder that cannot be watched (not made yet, a
+  // filesystem without events) only means the page sees them at its next list.
+  let countersTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    fs.mkdirSync(countersDir(), { recursive: true });
+    const watcher = fs.watch(countersDir(), () => {
+      if (countersTimer) return;
+      countersTimer = setTimeout(() => {
+        countersTimer = undefined;
+        if (readAccountsSettings().enabled) announce();
+      }, 1000);
+      countersTimer.unref?.();
+    });
+    watcher.unref?.();
+  } catch {
+    /* seen at the next list */
+  }
+
+  return { idle, refreshAll: () => checkAll() };
+
 }
