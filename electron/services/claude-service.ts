@@ -79,13 +79,52 @@ export async function getClaudeSettings(): Promise<ClaudeSettings | null> {
  */
 let statsMemo: { at: number; value: ClaudeStats | null } | null = null;
 const STATS_TTL_MS = 60_000;
+/** The computation under way, if any: the launch, the page and the bots wait on one. */
+let computing: Promise<ClaudeStats | null> | null = null;
 
 export function clearClaudeStatsCache(): void {
   statsMemo = null;
+  computing = null;
 }
 
-export async function getClaudeStats(): Promise<ClaudeStats | null> {
-  if (statsMemo && Date.now() - statsMemo.at < STATS_TTL_MS) return statsMemo.value;
+/**
+ * The stats no older than the minute: computed again, and waited for, when the
+ * memo is older. What the bots' /stats read, since whoever asks a bot asks for
+ * now.
+ */
+export function getClaudeStats(): Promise<ClaudeStats | null> {
+  if (statsMemo && Date.now() - statsMemo.at < STATS_TTL_MS) return Promise.resolve(statsMemo.value);
+  if (computing) return computing;
+  const run: Promise<ClaudeStats | null> = computeClaudeStats().finally(() => {
+    // Only its own: after a clear, the one under way may be a newer one.
+    if (computing === run) computing = null;
+  });
+  computing = run;
+  return run;
+}
+
+/**
+ * The stats as last computed, at once: what the Usage page reads through
+ * claude:getData. The first claude:getData after a launch waited for the whole
+ * transcript scan, 2.4 to 3 s on Noah's 1826 transcripts, and each one after
+ * the minute ran out waited again. A memo older than the minute is handed over
+ * all the same while it is computed again behind it, and the page, which polls
+ * every 10 s, picks the new numbers up at its next tick. With nothing computed
+ * yet, it waits for the computation under way: the one prewarmClaudeStats
+ * started.
+ */
+export function getClaudeStatsNow(): Promise<ClaudeStats | null> {
+  if (!statsMemo) return getClaudeStats();
+  if (Date.now() - statsMemo.at >= STATS_TTL_MS) void getClaudeStats();
+  return Promise.resolve(statsMemo.value);
+}
+
+/** Started once the app is ready, so the first page to ask finds the scan done or under way. */
+export function prewarmClaudeStats(): void {
+  void getClaudeStats();
+}
+
+async function computeClaudeStats(): Promise<ClaudeStats | null> {
   try {
     let base: ClaudeStats | null = null;
 

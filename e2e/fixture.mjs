@@ -553,19 +553,23 @@ const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', '
  * what macOS calls home, so application support, caches and logs follow. Then
  * the app is asked where each of those landed, and one outside the sandbox
  * closes it and fails the spec before a page is opened.
+ *
+ * DOROTHY_TAILSCALE_BIN names the sandbox's own `tailscale` (writeFakeTailscale),
+ * unless the spec's env names another, or none with ''.
  */
 export async function launchSandboxed(electron, sandboxHome, { env = {}, ...options } = {}) {
   const app = await electron.launch({
     ...options,
     args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`],
-    env: { ...inheritable(process.env), ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
+    env: { ...inheritable(process.env), DOROTHY_TAILSCALE_BIN: writeFakeTailscale(sandboxHome), ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
   });
   // What the app inherited, checked the way its folders are below: a run
   // started by an agent inside Tars carries that agent's CLAUDE_MGR_API_URL
   // (the live Tars, 31415) and its token, and handed them to the app until
-  // 2026-09-23. Anything of that family the app holds now came from the spec.
+  // 2026-09-23. Anything of that family the app holds now came from the spec,
+  // or is the fixture's own DOROTHY_TAILSCALE_BIN.
   const leaked = await app.evaluate((_electron, { allowed, pattern }) => Object.keys(process.env)
-    .filter(name => new RegExp(pattern).test(name) && !allowed.includes(name)), { allowed: Object.keys(env), pattern: LEAKY.source });
+    .filter(name => new RegExp(pattern).test(name) && !allowed.includes(name)), { allowed: [...Object.keys(env), 'DOROTHY_TAILSCALE_BIN'], pattern: LEAKY.source });
   if (leaked.length > 0) {
     await app.close();
     throw new Error(`the app inherited the caller's ${leaked.join(', ')}; launchSandboxed hands it nothing of that family`);
@@ -622,6 +626,38 @@ function writeFakeCli(home) {
     `#!${process.execPath}`,
     "process.stdout.write('\\x1b[2J\\x1b[Ha CLI of the E2E sandbox: no model, no network, no hook\\r\\n> ');",
     'process.stdin.resume();',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  return file;
+}
+
+/** The tailnet the sandbox's `tailscale` reports: a name no machine has, and the first address of the tailnet range. */
+const FAKE_TAILNET = { name: 'tars-sandbox.example.ts.net', ip: '100.64.0.1' };
+
+/**
+ * The `tailscale` the Hermes page asks in the sandbox (DOROTHY_TAILSCALE_BIN,
+ * #226): a running tailnet with `tailscale serve` on, the same answer every
+ * run. Left to itself the page asked the Mac's own Tailscale, from PATH and
+ * from two absolute paths no sandbox HOME hides, and settings-hermes.png
+ * showed the MagicDNS name of the machine recording until a mask hid it.
+ *
+ * Running rather than none: with no tailnet, the Incoming webhook row shows
+ * the local URL instead, and its port moves with E2E_PORT_OFFSET. A shell
+ * script rather than node, so it answers well inside the page's 4 s timeout
+ * on a loaded machine.
+ */
+function writeFakeTailscale(home) {
+  const dir = path.join(home, 'bin');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'fake-tailscale');
+  const status = JSON.stringify({ BackendState: 'Running', Self: { DNSName: `${FAKE_TAILNET.name}.`, TailscaleIPs: [FAKE_TAILNET.ip] } });
+  fs.writeFileSync(file, [
+    '#!/bin/sh',
+    'case "$1" in',
+    `  status) printf '%s\\n' '${status}' ;;`,
+    `  serve) printf '%s\\n' 'https://${FAKE_TAILNET.name} (tailnet only)' ;;`,
+    '  *) exit 1 ;;',
+    'esac',
     '',
   ].join('\n'), { mode: 0o755 });
   return file;

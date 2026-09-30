@@ -9,7 +9,9 @@
   --color-line-strong: #3A3A3A;
   --color-ink: #F5F4F2;
   --color-ink-soft: #9B9B9B;
-  --color-ink-muted: #727272;
+  /* #898989, the app's text-muted since DESIGN.md's contrast pass: #727272 was
+     3.89:1 on the page and 4.5:1 is the floor for its 12px text. */
+  --color-ink-muted: #898989;
   --color-accent: #FF9E42;
   --color-accent-deep: #C77012;
   --color-ok: #4CC38A;
@@ -21,11 +23,11 @@ html { scroll-behavior: smooth; }
 body {
   background: #121212;
   color: #F5F4F2;
-  font-family: 'Roboto Condensed', system-ui, sans-serif;
+  font-family: var(--font-ui), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-.font-display { font-family: 'Instrument Serif', Georgia, serif; }
-.font-mono { font-family: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+.font-display { font-family: var(--font-display), Georgia, serif; }
+.font-mono { font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 ::selection { background: #FF9E42; color: #121212; }

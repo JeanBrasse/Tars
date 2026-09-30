@@ -265,8 +265,9 @@ The spec launches the **real Electron app** (`electron.launch({ args: ['.'] })`)
 | `DOROTHY_E2E` | `1` | suppresses `openDevTools()` |
 | `CFFIXED_USER_HOME` | the sandbox HOME | macOS ignores `HOME` for application support, caches and logs |
 | `--user-data-dir` (argument) | `<sandbox>/electron-profile` | the Chromium profile, which `HOME` does not move |
+| `DOROTHY_TAILSCALE_BIN` | `<sandbox>/bin/fake-tailscale`, a script the fixture writes: a running tailnet with `tailscale serve` on, named `tars-sandbox.example.ts.net` | the one `tailscale` the Hermes page asks, or none when empty; unset, it asks the one on `PATH`, `/usr/local/bin` and `/Applications/Tailscale.app`, absolute paths no sandbox HOME hides, and the Mac's MagicDNS name reached `settings-hermes.png`. A development run only: a packaged Tars ignores it |
 
-The sandbox HOME is `rm -rf`'d in `afterAll`. `HOME` alone did not keep the live install out of reach: the dev app is named `tars`, and on a case-insensitive disk its profile is the installed Tars's `~/Library/Application Support/Tars`, which every run opened until 2026-09-16. Every spec launches through `launchSandboxed` in `e2e/fixture.mjs`, which adds the two rows above and asks the running app where each of its folders landed before any page opens.
+The sandbox HOME is `rm -rf`'d in `afterAll`. `HOME` alone did not keep the live install out of reach: the dev app is named `tars`, and on a case-insensitive disk its profile is the installed Tars's `~/Library/Application Support/Tars`, which every run opened until 2026-09-16. Every spec launches through `launchSandboxed` in `e2e/fixture.mjs`, which adds the three rows above and asks the running app where each of its folders landed before any page opens.
 
 **Nothing in the E2E path compiles the main process.** `main` points at
 `electron/dist/main.js`; if it is stale or missing, Playwright launches an old build or fails
@@ -616,7 +617,10 @@ An Amp update is never started while a process has the Amp binary open (`lsof -t
 removes the old package before the new one is in place: `amp` is missing for a few seconds while
 it runs, and a launch in those seconds fails. npm's cache for it lives in the scratch folder and
 goes with it, so `~/.npm` does not grow by an Amp release each time; each check fetches the
-package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`.
+package's metadata whole instead, 1.2 MB for `@sourcegraph/amp`. A scratch folder that cannot be
+removed (`tars-cli-update-` and six characters, in the system's temp folder) is named in the log,
+and a later pass removes it once it is an hour old, which is past the longest an update holds its
+own.
 
 Everything else an agent runs is left alone and named once per launch in the log: codex, gemini, grok,
 opencode, pi, claude installed through npm or Homebrew, Amp installed any other way. Update those
@@ -1353,9 +1357,18 @@ Tars instead.
 
 | mode | base URL |
 |---|---|
-| `local` | `http://127.0.0.1:<localPort>`, default port **9119** |
+| `local` | `http://127.0.0.1:<localPort>`, which the Settings form offers as **9119** |
 | `ssh` | `http://127.0.0.1:<ssh.localPort ?? ssh.remotePort ?? 9119>` |
 | `remote` / `cloud` | `conn.url`, trailing slashes stripped |
+
+Tars calls a gateway only when this file names one: it reads, parses to an object, and gives the
+address its mode needs (a `local` port, an `ssh` host, a `remote` or `cloud` URL). Without it, or
+with a broken one, the Chat, the memory hub, the Kanban, Schedules and memory-provider pages and
+the agents' kanban say Hermes is not configured. Nothing falls back to 127.0.0.1:9119, which on a
+machine with an SSH tunnel to a real gateway is that gateway. Settings, Hermes, shows that local
+default unsaved, with Save available, and contacts it only on Test connection or Sign in: opening
+it, or the Chat, probes nothing (`hermes:connection:get` gives no base URL without a file). A local
+Hermes on 9119 is reached once its connection is saved there.
 
 Two auth flavours, advertised by the gateway on `GET /api/status`:
 

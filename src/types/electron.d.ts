@@ -1117,6 +1117,8 @@ export interface ElectronAPI {
       discordChannelId: string;
       discordAllowedUserIds: string[];
       discordRequireMention: boolean;
+      /** Error reports to Sentry, off by default (services/error-reports in main). */
+      errorReportsEnabled: boolean;
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1219,6 +1221,7 @@ export interface ElectronAPI {
       discordChannelId?: string;
       discordAllowedUserIds?: string[];
       discordRequireMention?: boolean;
+      errorReportsEnabled?: boolean;
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;

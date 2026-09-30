@@ -7581,7 +7581,7 @@
                                                   "id": "uzS20",
                                                   "name": "v",
                                                   "fill": "$text-primary",
-                                                  "content": "/Users/noah/tars",
+                                                  "content": "~/projects/tars",
                                                   "lineHeight": 1.6666666666666667,
                                                   "fontFamily": "$font-mono",
                                                   "fontSize": 12,
@@ -15873,7 +15873,7 @@
                                                   "id": "SGdpH",
                                                   "name": "v",
                                                   "fill": "$text-primary",
-                                                  "content": "/Users/noah/tars",
+                                                  "content": "~/projects/tars",
                                                   "lineHeight": 1.6666666666666667,
                                                   "fontFamily": "$font-mono",
                                                   "fontSize": 12,
@@ -76630,7 +76630,7 @@
                                                   "id": "HBcBo",
                                                   "name": "v",
                                                   "fill": "$text-primary",
-                                                  "content": "/Users/noah/tars",
+                                                  "content": "~/projects/tars",
                                                   "lineHeight": 1.6666666666666667,
                                                   "fontFamily": "$font-mono",
                                                   "fontSize": 12,
@@ -89265,7 +89265,7 @@
                   "id": "L3Opx",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "The header folds the team to one line that keeps its counts. + adds an agent from this project.",
+                  "content": "The header folds the team to one line that keeps its counts. + adds an agent from this project. A long project name is cut; the count and + stay.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -89553,6 +89553,134 @@
                           "name": "sp",
                           "width": "fill_container",
                           "height": 1
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "rRQzQ",
+                  "name": "column",
+                  "clip": true,
+                  "width": 256,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "SRlHz",
+                      "name": "head TEAM · a long project name",
+                      "width": "fill_container",
+                      "height": 32,
+                      "stroke": "$border",
+                      "strokeWidth": {
+                        "bottom": 1
+                      },
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        5,
+                        0,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "H6Mh5v",
+                          "name": "lead",
+                          "width": 16,
+                          "height": 16,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "sxUqB",
+                              "name": "chevron-down",
+                              "width": 12,
+                              "height": 12,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$text-muted"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "CNd53",
+                          "name": "label",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "tAYPs",
+                              "name": "baseline +1",
+                              "padding": [
+                                2,
+                                0,
+                                0,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "EKQEs",
+                                  "name": "PanelCaption",
+                                  "fill": "$text-secondary",
+                                  "content": "TEAM · 1212-CAPITAL-MARKET…",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "nnDdI",
+                              "name": "mono",
+                              "fill": "$text-muted",
+                              "content": "6",
+                              "lineHeight": 1.4545454545454546,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "PQFme",
+                          "name": "sp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "atyVZ",
+                          "name": "Button ghost sm · add agent",
+                          "width": 26,
+                          "height": 26,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "UhXnn",
+                              "name": "plus",
+                              "width": 12,
+                              "height": 12,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
                         }
                       ]
                     }
@@ -91227,7 +91355,7 @@
                                   "id": "TLUOe",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -91617,7 +91745,7 @@
                                   "id": "osN25",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -91979,7 +92107,7 @@
                                   "id": "NapyU",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -92312,7 +92440,7 @@
                                   "id": "F6Hkdc",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -92644,7 +92772,7 @@
                                   "id": "ta813",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -145730,7 +145858,7 @@
                                                   "id": "Msxqc",
                                                   "name": "v",
                                                   "fill": "$text-primary",
-                                                  "content": "/Users/noah/tars",
+                                                  "content": "~/projects/tars",
                                                   "lineHeight": 1.6666666666666667,
                                                   "fontFamily": "$font-mono",
                                                   "fontSize": 12,
@@ -158377,7 +158505,7 @@
                   "id": "nISxc",
                   "name": "note",
                   "fill": "$text-secondary",
-                  "content": "The header folds the team to one line that keeps its counts. + adds an agent from this project.",
+                  "content": "The header folds the team to one line that keeps its counts. + adds an agent from this project. A long project name is cut; the count and + stay.",
                   "lineHeight": 1.3333333333333333,
                   "fontFamily": "$font-ui",
                   "fontSize": 12,
@@ -158665,6 +158793,134 @@
                           "name": "sp",
                           "width": "fill_container",
                           "height": 1
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OtHO1",
+                  "name": "column",
+                  "clip": true,
+                  "width": 256,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "FqyK7",
+                      "name": "head TEAM · a long project name",
+                      "width": "fill_container",
+                      "height": 32,
+                      "stroke": "$border",
+                      "strokeWidth": {
+                        "bottom": 1
+                      },
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        5,
+                        0,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "IjnPr",
+                          "name": "lead",
+                          "width": 16,
+                          "height": 16,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "kTvhM",
+                              "name": "chevron-down",
+                              "width": 12,
+                              "height": 12,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$text-muted"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "H61tQI",
+                          "name": "label",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "c5nfb",
+                              "name": "baseline +1",
+                              "padding": [
+                                2,
+                                0,
+                                0,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "z20sX4",
+                                  "name": "PanelCaption",
+                                  "fill": "$text-secondary",
+                                  "content": "TEAM · 1212-CAPITAL-MARKET…",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "RO9xi",
+                              "name": "mono",
+                              "fill": "$text-muted",
+                              "content": "6",
+                              "lineHeight": 1.4545454545454546,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "t6R4dg",
+                          "name": "sp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "rb7q6",
+                          "name": "Button ghost sm · add agent",
+                          "width": 26,
+                          "height": 26,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "F32a69",
+                              "name": "plus",
+                              "width": 12,
+                              "height": 12,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "$text-secondary"
+                            }
+                          ]
                         }
                       ]
                     }
@@ -160342,7 +160598,7 @@
                                   "id": "cwDBN",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -160732,7 +160988,7 @@
                                   "id": "G3AtkM",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -161094,7 +161350,7 @@
                                   "id": "joGn3",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -161427,7 +161683,7 @@
                                   "id": "JlKYG",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
@@ -161759,7 +162015,7 @@
                                   "id": "EUVHW",
                                   "name": "v",
                                   "fill": "$text-primary",
-                                  "content": "/Users/noah/tars",
+                                  "content": "~/projects/tars",
                                   "lineHeight": 1.6666666666666667,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 12,
