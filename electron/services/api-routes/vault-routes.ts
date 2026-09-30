@@ -5,6 +5,7 @@ import { VAULT_DIR, MIME_TYPES, PRIVATE_DIR } from '../../constants';
 import { getVaultDb, ftsSearch } from '../vault-db';
 import { RouteApp, RouteContext } from './types';
 import { isHardLinkInto, isWithinDir } from '../../utils/path-identity';
+import { landsUnderSafeRoot } from '../../utils/real-target';
 
 export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
   // GET /api/vault/documents
@@ -290,7 +291,10 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
 
     const resolved = path.resolve(filePath);
     const allowedDir = path.join(VAULT_DIR, 'attachments');
-    if (!resolved.startsWith(allowedDir + path.sep) && resolved !== allowedDir) {
+    // Where the file really lies, links followed: a link planted in the
+    // attachments served the home to anyone on the loopback, with no token
+    // (utils/real-target.ts).
+    if (!landsUnderSafeRoot(resolved, [allowedDir], (root, p) => p === root || p.startsWith(root + path.sep))) {
       sendJson({ error: 'Access denied: path outside allowed directory' }, 403);
       return;
     }
@@ -306,6 +310,14 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
       // folder read as a file is EISDIR.
       if (!stat.isFile()) {
         sendJson({ error: 'File not found' }, 404);
+        return;
+      }
+      // A hard link has no path back to the file it names, so no path check
+      // sees one (SECURITY.md §5). An attachment is a copy the vault made, its
+      // file's only name: a file here with another name is refused, whatever
+      // the other name is.
+      if (stat.nlink > 1) {
+        sendJson({ error: 'Access denied: path outside allowed directory' }, 403);
         return;
       }
       const stream = fs.createReadStream(resolved);
