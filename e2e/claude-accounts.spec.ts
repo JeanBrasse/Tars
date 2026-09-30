@@ -26,14 +26,17 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - the same Claude account added a second time is signed out again and says
  *   which account already has it;
  * - the option refuses to turn on while ~/.claude/settings.json names an API
- *   key, and says which without quoting it;
+ *   key, or turns Bedrock on, and says which without quoting it; the
+ *   account's copy of settings.json keeps none of the cloud credentials;
  * - settings, order and an agent's pin are saved where the next launch reads
- *   them, the registry in ~/.tars-private.
+ *   them, the registry in ~/.tars-private, and the pin is pushed to the window;
+ * - a registry that does not parse is shown as such, and never written over.
  * Removing an account is left to the unit tests: shell.trashItem goes through
  * macOS, whose Trash is the real user's, not the sandbox's.
  */
 
 type View = {
+  registryError: string | null;
   settings: { enabled: boolean; fiveHourThreshold: number; weeklyThreshold: number; accounts: { id: string }[] };
   accounts: { id: string; label: string; configDir: string | null; signedIn: boolean | null; email: string | null; error: string | null }[];
 };
@@ -50,11 +53,15 @@ type Api = {
       reorder(ids: string[]): Promise<{ success: boolean } & View>;
       remove(id: string): Promise<{ success: boolean; error?: string }>;
       setAgentAccount(p: { agentId: string; accountId: string | null }): Promise<{ success: boolean; error?: string }>;
+      onAgentChanged(cb: (e: { agentId: string; claudeAccountId: string | null; claudeAccountPin: string | null }) => void): () => void;
     };
     agent: { list(): Promise<Array<{ id: string; claudeAccountPin?: string }>> };
   };
 };
-type Win = Api & { loginSeen?: Record<string, { data: string; exit?: number }> };
+type Win = Api & {
+  loginSeen?: Record<string, { data: string; exit?: number }>;
+  agentChanges?: { agentId: string; claudeAccountId: string | null; claudeAccountPin: string | null }[];
+};
 
 const AGENT = { id: 'w1', name: 'Worker One' };
 
@@ -181,6 +188,19 @@ test('claude accounts: added, signed in by their own login, refused twice, saved
     expect(refused.success).toBe(false);
     expect(refused.error).toContain('ANTHROPIC_API_KEY');
     expect(refused.error).not.toContain('sk-ant-e2e-never-shown');
+
+    // Nor while it runs on Bedrock, whose credentials every folder would share;
+    // and the account's copy of settings.json keeps none of them.
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ env: {
+      CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'e2e-aws-never-shown', KEEP: 'me',
+    } }));
+    const bedrock = await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.setEnabled(true)) as { success: boolean; error?: string };
+    expect(bedrock.success).toBe(false);
+    expect(bedrock.error).toContain('CLAUDE_CODE_USE_BEDROCK');
+    expect(bedrock.error).not.toContain('e2e-aws-never-shown');
+    await login(page, third.id);
+    const copied = fs.readFileSync(path.join(third.configDir!, 'settings.json'), 'utf8');
+    expect(JSON.parse(copied)).toEqual({ env: { KEEP: 'me' } });
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
 
     // Settings, order and a pin, saved where the next launch reads them.
@@ -195,8 +215,15 @@ test('claude accounts: added, signed in by their own login, refused twice, saved
     expect(saved.accounts.map((x: { id: string }) => x.id)).toEqual(order);
     expect(fs.statSync(path.join(home, '.tars-private', 'claude-accounts.json')).mode & 0o777).toBe(0o600);
 
+    await page.evaluate(() => {
+      const w = window as unknown as Win;
+      w.agentChanges = [];
+      w.electronAPI.claudeAccounts.onAgentChanged(e => w.agentChanges!.push(e));
+    });
     const pinned = await page.evaluate(p => (window as unknown as Api).electronAPI.claudeAccounts.setAgentAccount(p), { agentId: AGENT.id, accountId: two.id });
     expect(pinned.success, pinned.error).toBe(true);
+    await expect.poll(() => page.evaluate(() => (window as unknown as Win).agentChanges), { timeout: 10_000 })
+      .toEqual([{ agentId: AGENT.id, claudeAccountId: null, claudeAccountPin: two.id }]);
     expect((await page.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find(x => x.id === AGENT.id)?.claudeAccountPin).toBe(two.id);
     await expect.poll(() => {
       // A bare array before the app first saves it, { version, agents } after.
@@ -207,10 +234,26 @@ test('claude accounts: added, signed in by their own login, refused twice, saved
 
     expect(await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.remove('default'))).toMatchObject({ success: false });
 
+    // A registry that does not parse: shown as account 1 alone, said so, and
+    // never written over by the next change.
+    const registry = path.join(home, '.tars-private', 'claude-accounts.json');
+    const good = fs.readFileSync(registry, 'utf8');
+    fs.writeFileSync(registry, '{ "accounts": [ broken');
+    const frozen = await a.list();
+    expect(frozen.registryError).toContain('claude-accounts.json');
+    expect(frozen.accounts.map(x => x.id)).toEqual(['default']);
+    const blocked = await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.add({ label: 'Max four' }));
+    expect(blocked.success).toBe(false);
+    expect(fs.readFileSync(registry, 'utf8')).toBe('{ "accounts": [ broken');
+    fs.writeFileSync(registry, good);
+    expect((await a.list()).registryError).toBeNull();
+
     recordValues({
       accounts: (await a.list()).accounts.map(x => ({ id: x.id, label: x.label, signedIn: x.signedIn, email: x.email, error: x.error })),
       claudeCalls: calls(home),
       savedRegistry: saved,
+      bedrockRefusal: bedrock.error,
+      frozenRegistryError: frozen.registryError,
     });
   } finally {
     await app.close();
