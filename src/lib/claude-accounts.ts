@@ -1,4 +1,4 @@
-import type { AgentStatus, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView, ClaudeAccountWindow } from '@/types/electron';
+import type { AgentStatus, ClaudeAccountMove, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView, ClaudeAccountWindow } from '@/types/electron';
 
 /**
  * What Settings > Claude accounts and an agent's account control say, worked
@@ -14,7 +14,9 @@ export const MAX_ACCOUNTS = 5;
 export const AUTOMATIC = 'auto';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad = (n: number) => String(n).padStart(2, '0');
+const timeOfDay = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 /** A whole percentage from 50 to 100, as main takes it. */
 export function isThreshold(value: number): boolean {
@@ -24,7 +26,7 @@ export function isThreshold(value: number): boolean {
 /** A reset within a day as the time of day, a later one with its weekday: 16:40, Thu 09:00. */
 export function formatReset(resetsAt: number, now: Date): string {
   const at = new Date(resetsAt * 1000);
-  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  const time = timeOfDay(at);
   return at.getTime() - now.getTime() < 24 * 3_600_000 ? time : `${WEEKDAYS[at.getDay()]} ${time}`;
 }
 
@@ -141,7 +143,7 @@ export function suggestLabel(view: ClaudeAccountsView): string {
   return `Account ${n}`;
 }
 
-type AgentAccountFields = Pick<AgentStatus, 'provider' | 'claudeAccountId' | 'claudeAccountPin'>;
+type AgentAccountFields = Pick<AgentStatus, 'provider' | 'claudeAccountId' | 'claudeAccountPin' | 'claudeAccountMove'>;
 
 /**
  * Only with the option on and more than one account, and only on an agent
@@ -161,9 +163,42 @@ export function controlLabel(view: ClaudeAccountsView, agent: Partial<AgentAccou
   return agent.claudeAccountPin ? `${labelOf(view, agent.claudeAccountPin)} · pinned` : labelOf(view, runningOn(agent));
 }
 
-export function controlTitle(view: ClaudeAccountsView, agent: Partial<AgentAccountFields>): string {
+const WINDOW_WORDS: Record<ClaudeAccountMove['window'], string> = { fiveHour: '5 h', sevenDay: 'weekly' };
+
+/** Why Tars moved an agent, from the account it left: "Main hit its 5 h limit." */
+export function moveNote(view: ClaudeAccountsView, move: ClaudeAccountMove): string {
+  const from = labelOf(view, move.from);
+  const window = WINDOW_WORDS[move.window];
+  if (move.reason === 'limit') return `${from} hit its ${window} limit.`;
+  return move.usedPercentage === null
+    ? `${from} was past its ${window} threshold.`
+    : `${from} was at ${Math.round(move.usedPercentage)}% of its ${window} window.`;
+}
+
+/**
+ * The grey line a move writes in the agent's terminal, on a line of its own
+ * like its other notices: "(Moved to Second at 14:02: Main hit its 5 h limit.)".
+ * Written as the move is told, so its time is today's.
+ */
+export function moveLine(view: ClaudeAccountsView, move: ClaudeAccountMove): string {
+  return `\r\n\x1b[90m(Moved to ${labelOf(view, move.to)} at ${timeOfDay(new Date(move.at))}: ${moveNote(view, move)})\x1b[0m\r\n`;
+}
+
+/** "at 14:02" today, "on 28 Sep at 14:02" before. */
+function movedAt(at: number, now: Date): string {
+  const d = new Date(at);
+  const today = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return today ? `at ${timeOfDay(d)}` : `on ${d.getDate()} ${MONTHS[d.getMonth()]} at ${timeOfDay(d)}`;
+}
+
+export function controlTitle(view: ClaudeAccountsView, agent: Partial<AgentAccountFields>, now: Date = new Date()): string {
   const running = labelOf(view, runningOn(agent));
   const pin = agent.claudeAccountPin;
+  // The last move by Tars, while the agent still runs where it took it.
+  const move = agent.claudeAccountMove;
+  if (!pin && move && move.to === runningOn(agent)) {
+    return `Runs on ${running}, chosen by Tars. Moved from ${labelOf(view, move.from)} ${movedAt(move.at, now)}: ${moveNote(view, move)}`;
+  }
   if (!pin) return `Runs on ${running}, chosen by Tars.`;
   if (pin === runningOn(agent)) return `Runs on ${running}, pinned by you. It stays there past its thresholds, and waits at its limit.`;
   return `Pinned by you to ${labelOf(view, pin)}. It runs on ${running} until its turn ends, then moves.`;

@@ -56,7 +56,9 @@ export function useElectronAgents() {
             // The Claude account it runs on, and the one it is pinned to,
             // which its account control names.
             prevAgent.claudeAccountId !== agent.claudeAccountId ||
-            prevAgent.claudeAccountPin !== agent.claudeAccountPin
+            prevAgent.claudeAccountPin !== agent.claudeAccountPin ||
+            // The last move by Tars, which its control's title tells.
+            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at
           );
         });
         return hasChanged ? list : prev;
@@ -206,6 +208,11 @@ export function useElectronAgents() {
         ? { ...a, claudeAccountId: change.claudeAccountId ?? undefined, claudeAccountPin: change.claudeAccountPin ?? undefined }
         : a));
     });
+    // A move by Tars, kept on the agent for its control's title; the new
+    // account follows on onAgentChanged.
+    const unsubMove = window.electronAPI!.claudeAccounts?.onAgentMoved?.((move) => {
+      setAgents(prev => prev.map(a => a.id === move.agentId ? { ...a, claudeAccountMove: move } : a));
+    });
 
     // Also subscribe to agents:tick for reliable live status updates
     // (proven to reach all windows: tray panel uses this successfully)
@@ -266,6 +273,7 @@ export function useElectronAgents() {
       unsubStatus?.();
       unsubTick?.();
       unsubAccount?.();
+      unsubMove?.();
     };
   }, [fetchAgents]);
 

@@ -23,7 +23,7 @@ export function AgentAccountControl({
   className = '',
   stopMouseDown = false,
 }: {
-  agent: Pick<AgentStatus, 'id' | 'name' | 'provider' | 'claudeAccountId' | 'claudeAccountPin'>;
+  agent: Pick<AgentStatus, 'id' | 'name' | 'provider' | 'claudeAccountId' | 'claudeAccountPin' | 'claudeAccountMove'>;
   className?: string;
   /** In a pane header, a press on the control must not start dragging the pane. */
   stopMouseDown?: boolean;

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ClaudeAccountsResult, ClaudeAccountsView, ClaudeAccountId } from '@/types/electron';
+import { moveLine } from '@/lib/claude-accounts';
 
 /**
  * The Claude accounts as main sees them (#263, DESIGN-COMPTES-CLAUDE.md B6),
@@ -80,6 +81,21 @@ export const claudeAccountActions = {
   setAgentAccount: (p: { agentId: string; accountId: ClaudeAccountId | null }) => run(b => b.setAgentAccount(p)),
   clearError: () => publish({ error: null }),
 };
+
+/**
+ * Hands `write` the grey line of each move Tars makes (#269's
+ * claude-accounts:agent-moved), for the agent it names, in the words of the
+ * view this window holds; nothing while it holds none, since the line names
+ * the accounts. Each terminal that shows agents passes its own writer: the
+ * Dashboard's panels and the agent's window. Returns the unsubscribe.
+ */
+export function onAgentMoveLine(write: (agentId: string, line: string) => void): () => void {
+  start();
+  const unsubscribe = api()?.onAgentMoved?.(move => {
+    if (snapshot.view) write(move.agentId, moveLine(snapshot.view, move));
+  });
+  return unsubscribe ?? (() => {});
+}
 
 export function useClaudeAccounts(): Snapshot & { actions: typeof claudeAccountActions } {
   const [current, setCurrent] = useState(snapshot);
