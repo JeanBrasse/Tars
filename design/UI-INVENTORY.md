@@ -74,7 +74,9 @@ Claude accounts is off until turned on. On, it lists up to five Claude
 subscriptions, each with its 5 h and weekly use, and the two thresholds that
 move agents between them; the account an agent runs on then shows, with a menu
 that pins it, on its card in Agents, its pane header on the Dashboard and its
-window. Frames: Settings · Claude accounts, Settings · Claude accounts · states,
+window. A move by Tars is one grey line in the agent's pane and window, and the
+control's title says where the agent came from. Frames: Settings · Claude
+accounts, Settings · Claude accounts · states,
 Agent · Claude account (and their light copies).
 
 ## Overlays and dialogs (15)
