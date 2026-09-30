@@ -168,6 +168,12 @@ describe('a move Tars asked for', () => {
     expect(claudeAccountEnvFor(a, ctx())!.move).toBeUndefined();
   });
 
+  it('says the account the agent was on, not account 1', () => {
+    const a = agent({ claudeAccountId: A });
+    asked(a, B);
+    expect(claudeAccountEnvFor(a, ctx())!.move).toMatchObject({ from: A, to: B });
+  });
+
   it('is left for the terminal by a delegated run', () => {
     const a = agent({ claudeAccountId: 'default' });
     asked(a, B);

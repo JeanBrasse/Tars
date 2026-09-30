@@ -186,8 +186,9 @@ describe('an agent cut by its limit', () => {
     expect(onUsageLimit(a, SESSION_LIMIT)).toBe(true);
     expect(blockedUntil().default).toBe(S(NOW) + 3600);
     expect(pendingMove(a.id)).toMatchObject({ to: B, reason: 'limit', window: 'fiveHour' });
+    vi.advanceTimersByTime(RESTART_AFTER_MS - 1);
     expect(h.restarts).toEqual([]);
-    vi.advanceTimersByTime(RESTART_AFTER_MS);
+    vi.advanceTimersByTime(1);
     expect(h.restarts).toEqual([{ agentId: a.id, changed: ['claudeAccount'], opts: { always: true } }]);
   });
 
@@ -256,6 +257,14 @@ describe('an agent cut by its limit', () => {
 
   it('waits for its own reset when no other account comes back sooner: nothing planned', () => {
     counter('default', 100, 10, { fiveReset: S(NOW) + 600 });
+    counter(A, 100, 10, { fiveReset: S(NOW) + 3600 });
+    counter(B, 100, 10, { fiveReset: S(NOW) + 7200 });
+    expect(onUsageLimit(agent(), SESSION_LIMIT)).toBe(false);
+  });
+
+  it('sets nothing for an account that comes back only when its own does', () => {
+    registry({ accounts: [{ id: A, label: 'Max two' }, { id: 'default', label: 'Account 1' }, { id: B, label: 'Max three' }] });
+    counter('default', 100, 10, { fiveReset: S(NOW) + 3600 });
     counter(A, 100, 10, { fiveReset: S(NOW) + 3600 });
     counter(B, 100, 10, { fiveReset: S(NOW) + 7200 });
     expect(onUsageLimit(agent(), SESSION_LIMIT)).toBe(false);
