@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron, type Page } from '@playwright/test';
+import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -26,6 +26,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - remove asks first, and Cancel removes nothing;
  * - the agent's card names its account, and its menu pins the agent, which
  *   the card hears from main's push (claude-accounts:agent-changed);
+ * - a move by Tars (#269) is said as one grey line in the agent's window and
+ *   in its Dashboard panel, and the account's title says where it came from.
+ *   The move is made by main's own movedLaunch and announceAgentAccount, the
+ *   calls a launch on another account ends with; the launch itself is #269's
+ *   e2e (claude-accounts-switching.spec.ts);
  * - a registry main cannot read is said in the section, in main's words.
  * Removing for real is left to #263's unit tests: shell.trashItem goes to the
  * real user's Trash.
@@ -58,6 +63,25 @@ function writeFakeClaude(home: string): string {
 /** Main's registry of accounts, kept where no agent is handed it (#263, after the design gate). */
 const registry = (home: string) => JSON.parse(fs.readFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), 'utf8'));
 const row = (page: Page, id: string) => page.locator(`[data-account-row="${id}"]`);
+type Move = { agentId: string; from: string; to: string; reason: 'limit' | 'threshold'; window: 'fiveHour' | 'sevenDay'; usedPercentage: number | null; at: number };
+/** What a launch on another account ends with in main (#269): the move told, then the account. */
+async function moveInMain(app: ElectronApplication, move: Move): Promise<void> {
+  await app.evaluate(({ app: electronApp }, m) => {
+    // By absolute path: the module cache then hands back main's own instances.
+    const main = (process as unknown as { mainModule: NodeJS.Module }).mainModule;
+    const req = (file: string) => main.require(`${electronApp.getAppPath()}/electron/dist/${file}`);
+    const { agents } = req('core/agent-manager');
+    const { movedLaunch } = req('services/claude-accounts/switching');
+    const { announceAgentAccount } = req('handlers/claude-accounts-handlers');
+    const agent = agents.get(m.agentId);
+    if (!agent) throw new Error(`no agent ${m.agentId} in main`);
+    movedLaunch(agent, m);
+    agent.claudeAccountId = m.to;
+    announceAgentAccount(agent);
+  }, move);
+}
+const hhmm = (at: number) => { const d = new Date(at); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
 /** Main's sentence for a registry that does not parse (#263, registryProblem). */
 const UNREADABLE = '~/.tars-private/claude-accounts.json does not read as a list of accounts. Nothing is changed until it is fixed or removed.';
 
@@ -174,20 +198,61 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     await expect(control).toHaveText('Work · pinned', { timeout: 10_000 });
     await stepShot(page, '08-agent-pinned');
 
+    // Back to Automatic, then a move by Tars while the agent's window is open:
+    // one grey line in its terminal, and the account's title says it.
+    await control.click();
+    await page.locator('[role="option"][data-value="auto"]').click();
+    await expect(control).toHaveText('Account 1', { timeout: 10_000 });
+    await page.getByRole('button', { name: 'open', exact: true }).click();
+    const agentWindow = page.getByRole('dialog');
+    const windowControl = agentWindow.getByRole('button', { name: `Claude account of ${AGENT.name}` });
+    await expect(windowControl).toHaveText('Account 1', { timeout: 20_000 });
+    // The header shows before the terminal: a line is written in a terminal
+    // that is there when the move is told, so wait for its first line.
+    await expect(agentWindow.locator('.xterm-rows')).toContainText(`${AGENT.name} is not running`, { timeout: 30_000 });
+    const past: Move = { agentId: AGENT.id, from: 'default', to: two.id, reason: 'threshold', window: 'fiveHour', usedPercentage: 91.4, at: Date.now() };
+    await moveInMain(app, past);
+    const pastLine = `(Moved to Work at ${hhmm(past.at)}: Account 1 was at 91% of its 5 h window.)`;
+    await expect(agentWindow.locator('.xterm-rows')).toContainText(pastLine, { timeout: 10_000 });
+    await expect(windowControl).toHaveText('Work', { timeout: 10_000 });
+    const pastTitle = `Runs on Work, chosen by Tars. Moved from Account 1 at ${hhmm(past.at)}: Account 1 was at 91% of its 5 h window.`;
+    await expect(windowControl).toHaveAttribute('title', pastTitle);
+    await expect(agentWindow.locator('.xterm-rows').getByText('(Moved to', { exact: false })).toHaveCount(1);
+    await stepShot(page, '09-moved-in-the-window');
+    // Its close button: Escape goes to the terminal, which has the focus.
+    await agentWindow.getByRole('button', { name: 'close', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    // Then one at a limit while its Dashboard panel shows.
+    await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+    const panelControl = page.getByRole('button', { name: `Claude account of ${AGENT.name}` });
+    await expect(panelControl).toHaveText('Work', { timeout: 20_000 });
+    await expect(panelControl).toHaveAttribute('title', pastTitle);
+    await expect(page.locator('.xterm-rows').first()).toContainText('(Session idle)', { timeout: 30_000 });
+    const cut: Move = { agentId: AGENT.id, from: two.id, to: 'default', reason: 'limit', window: 'fiveHour', usedPercentage: 100, at: Date.now() };
+    await moveInMain(app, cut);
+    const cutLine = `(Moved to Account 1 at ${hhmm(cut.at)}: Work hit its 5 h limit.)`;
+    await expect(page.locator('.xterm-rows').first()).toContainText(cutLine, { timeout: 10_000 });
+    await expect(panelControl).toHaveText('Account 1', { timeout: 10_000 });
+    await expect(panelControl).toHaveAttribute('title', `Runs on Account 1, chosen by Tars. Moved from Work at ${hhmm(cut.at)}: Work hit its 5 h limit.`);
+    await stepShot(page, '10-moved-in-the-panel');
+
     // A registry main cannot read: the section says so, in main's words, and
     // every change waits for it to be fixed or removed.
+    const kept = registry(home);
     fs.writeFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), '{ not a list');
     await page.goto(`${DEV_URL}/settings`, { waitUntil: 'domcontentloaded' });
     await page.getByText('AI & Providers', { exact: true }).click();
     await page.getByText('Claude accounts', { exact: true }).click();
     await expect(page.getByText(UNREADABLE)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(UNREADABLE)).toHaveCount(1);
-    await stepShot(page, '09-registry-unreadable');
+    await stepShot(page, '11-registry-unreadable');
 
     expect(errors, errors.join('\n')).toEqual([]);
     recordValues({
-      registry: registry(home),
+      registry: kept,
       pin: two.id,
+      moves: { windowLine: pastLine, windowTitle: pastTitle, panelLine: cutLine },
       unreadableSaid: UNREADABLE,
       pageErrors: errors,
     });
