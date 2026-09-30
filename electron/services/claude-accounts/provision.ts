@@ -47,7 +47,32 @@ const MIRRORED_KEYS = ['mcpServers', 'theme', 'bypassPermissionsModeAccepted'] a
 
 /** What in settings.json signs Claude Code in instead of the account's own login. */
 const CREDENTIAL_KEYS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport'] as const;
-const CREDENTIAL_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'] as const;
+/** Credentials Claude Code signs in with, whenever they are set. */
+const CREDENTIAL_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_REFRESH_TOKEN'] as const;
+/**
+ * Switches that send Claude Code to another provider (names read from the
+ * 2.1.285 binary): with one on, every account runs on that provider's
+ * credentials, whichever folder it is launched with.
+ */
+const PROVIDER_SWITCHES = [
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_GATEWAY',
+  'CLAUDE_CODE_USE_MANTLE',
+  'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+  'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
+] as const;
+/**
+ * Those providers' own credentials: used only behind a switch, so they do not
+ * refuse the option, but a credential all the same, never copied.
+ */
+const CLOUD_CREDENTIAL_ENV = /^(AWS_|ANTHROPIC_(FOUNDRY|AWS|IDENTITY)_|GOOGLE_APPLICATION_CREDENTIALS$)/;
+
+/** A switch as Claude Code reads one: on for 1, true, yes or on. */
+function switchedOn(value: unknown): boolean {
+  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
 
 const ACCOUNT_ID = /^acct-[0-9a-f]{6}$/;
 
@@ -105,7 +130,8 @@ function readJsonOrUndefined(file: string): Record<string, unknown> | undefined 
 /**
  * What would sign every account in with one credential, by name, never by
  * value: in ~/.claude/settings.json (its keys and its env) and in Tars's own
- * environment, which every CLI inherits. A settings.json that does not parse
+ * environment, which every CLI inherits. A provider switch turned on counts:
+ * Bedrock, Vertex and the others sign in with their own credentials. A settings.json that does not parse
  * is named too, since nobody can tell what it holds.
  */
 export function claudeCredentialOverrides(home: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
@@ -117,18 +143,28 @@ export function claudeCredentialOverrides(home: string = os.homedir(), env: Node
     for (const key of CREDENTIAL_KEYS) if (settings[key] !== undefined) found.push(`${key} in ~/.claude/settings.json`);
     const settingsEnv = settings.env && typeof settings.env === 'object' ? settings.env as Record<string, unknown> : {};
     for (const name of CREDENTIAL_ENV) if (settingsEnv[name] !== undefined) found.push(`${name} in the env of ~/.claude/settings.json`);
+    for (const name of PROVIDER_SWITCHES) if (switchedOn(settingsEnv[name])) found.push(`${name} in the env of ~/.claude/settings.json`);
   }
   for (const name of CREDENTIAL_ENV) if (env[name]) found.push(`${name} in the environment Tars was started with`);
+  for (const name of PROVIDER_SWITCHES) if (switchedOn(env[name])) found.push(`${name} in the environment Tars was started with`);
   return found;
 }
 
-/** ~/.claude/settings.json without its credentials. */
+/**
+ * ~/.claude/settings.json without its credentials: the sign-in keys, and in
+ * its env the credentials, the provider switches and those providers' own
+ * credentials (AWS_*, GOOGLE_APPLICATION_CREDENTIALS, ANTHROPIC_FOUNDRY_*...).
+ */
 function withoutCredentials(settings: Record<string, unknown>): Record<string, unknown> {
   const copy: Record<string, unknown> = { ...settings };
   for (const key of CREDENTIAL_KEYS) delete copy[key];
   if (copy.env && typeof copy.env === 'object' && !Array.isArray(copy.env)) {
     const env = { ...(copy.env as Record<string, unknown>) };
-    for (const name of CREDENTIAL_ENV) delete env[name];
+    for (const name of Object.keys(env)) {
+      if ((CREDENTIAL_ENV as readonly string[]).includes(name)
+        || (PROVIDER_SWITCHES as readonly string[]).includes(name)
+        || CLOUD_CREDENTIAL_ENV.test(name)) delete env[name];
+    }
     copy.env = env;
   }
   return copy;
@@ -195,8 +231,9 @@ function mirrorClaudeJson(configDir: string, home: string, projectPath: string |
     if (projectPath && entry && typeof entry === 'object') {
       const projects = next.projects && typeof next.projects === 'object' ? { ...(next.projects as Record<string, unknown>) } : {};
       const own = projects[projectPath] && typeof projects[projectPath] === 'object' ? projects[projectPath] as Record<string, unknown> : {};
-      // Account 1's approvals over what the account had, and what the account
-      // wrote itself (its last session, its costs) kept.
+      // Account 1's entry over the account's, every key it has winning (its
+      // last session and costs included, which only feed the exit summary);
+      // keys only the account wrote are kept.
       projects[projectPath] = { ...own, ...(entry as Record<string, unknown>) };
       next.projects = projects;
     }
@@ -204,13 +241,22 @@ function mirrorClaudeJson(configDir: string, home: string, projectPath: string |
   }, { createMode: 0o600 });
 }
 
-export function provisionAccountDir(configDir: string, home: string = os.homedir(), opts: { projectPath?: string } = {}): ProvisionReport {
+/**
+ * The account folder, and its root, made when missing (owner-only) and
+ * checked as Tars's own; nothing is written into it. Throws for anything that
+ * is not ~/.claude-accounts/<id> or not Tars's own.
+ */
+export function ensureAccountDir(configDir: string, home: string = os.homedir()): void {
   const root = path.join(fs.realpathSync(home), '.claude-accounts');
   if (!path.isAbsolute(configDir) || path.dirname(configDir) !== root || !ACCOUNT_ID.test(path.basename(configDir))) {
     throw new Error('This is not an account folder under ~/.claude-accounts.');
   }
   ensureOwnFolder(root, 'The accounts folder ~/.claude-accounts');
   ensureOwnFolder(configDir, 'This account folder');
+}
+
+export function provisionAccountDir(configDir: string, home: string = os.homedir(), opts: { projectPath?: string } = {}): ProvisionReport {
+  ensureAccountDir(configDir, home);
 
   const claudeDir = path.join(home, '.claude');
   const conflicts: string[] = [];

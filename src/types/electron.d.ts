@@ -875,6 +875,21 @@ export interface ClaudeAccountState extends ClaudeAccount {
 export interface ClaudeAccountsView {
   settings: ClaudeAccountsSettings;
   accounts: ClaudeAccountState[];
+  /**
+   * Set when ~/.tars-private/claude-accounts.json is there and does not read:
+   * the view shows account 1 alone, and every change is refused until the
+   * file is fixed or removed, so the other accounts are not written over.
+   */
+  registryError: string | null;
+}
+
+/** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
+export interface ClaudeAccountAgentChange {
+  agentId: string;
+  /** The account its CLI was last launched on; null is account 1. */
+  claudeAccountId: ClaudeAccountId | null;
+  /** The account it is held to; null is automatic. */
+  claudeAccountPin: ClaudeAccountId | null;
 }
 
 /** What the claude-accounts channels answer: the result, or a sentence. */
@@ -1020,7 +1035,9 @@ export interface ElectronAPI {
     /** The account is checked again after this; onChanged follows. */
     onLoginExit: (callback: (event: { ptyId: string; exitCode: number }) => void) => () => void;
     onChanged: (callback: (view: ClaudeAccountsView) => void) => () => void;
-    /** Holds an agent to an account, or null for automatic. */
+    /** An agent's account or pin changed, from any window or from main. */
+    onAgentChanged: (callback: (event: ClaudeAccountAgentChange) => void) => () => void;
+    /** Holds an agent to an account, or null for automatic. Pushed to every window by onAgentChanged. */
     setAgentAccount: (params: { agentId: string; accountId: ClaudeAccountId | null }) => Promise<ClaudeAccountsResult>;
   };
 
