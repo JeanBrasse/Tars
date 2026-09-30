@@ -207,6 +207,18 @@ async function telegramApiRequest(
   });
 }
 
+/**
+ * The slowest link a file still reaches Telegram over: a poor mobile link,
+ * half the 20 KB/s QA measured. Telegram's largest upload, 50 MB, is then
+ * given about an hour and a half.
+ */
+const UPLOAD_FLOOR_BYTES_PER_S = 10_000;
+
+/** How long a request carrying `bytes` to Telegram may take in all: the bytes at the floor rate, then the minute any answer gets. */
+function uploadDeadlineMs(bytes: number): number {
+  return API_WAIT_MS + Math.ceil(bytes / UPLOAD_FLOOR_BYTES_PER_S) * 1000;
+}
+
 // Send file via multipart form data
 async function sendFile(
   token: string,
@@ -275,8 +287,15 @@ async function sendFile(
     });
 
     req.on("error", reject);
-    // The same for a file. Silence only: an upload that is still going is not cut off.
-    req.setTimeout(API_WAIT_MS, () => req.destroy(new Error(noAnswerWithin(API_WAIT_MS))));
+    // No timer of silence on a file: Node hands the body to the kernel's send
+    // buffer (up to 4 MB on macOS) and sees nothing while a slow link drains
+    // it, so a minute of silence ran from the last byte handed over and cut
+    // uploads Telegram was still reading (QA's gate of #227: 3 MB read at
+    // 20 KB/s, cut at 116 s with 2.31 MB received). A deadline for the whole
+    // request instead, which grows with the file.
+    const deadline = uploadDeadlineMs(fullBody.length);
+    const timer = setTimeout(() => req.destroy(new Error(noAnswerWithin(deadline))), deadline);
+    req.on("close", () => clearTimeout(timer));
     req.write(fullBody);
     req.end();
   });

@@ -9,8 +9,9 @@ import type { EventEmitter } from 'node:events';
  * left the tool waiting until Claude Code gave up on the call, about half an
  * hour later, with nothing said to the agent (QA's gate of #207). mcp-vault
  * calls Tars; mcp-socialdata and mcp-x call their APIs. mcp-telegram's two
- * requests are proven by the contract instead (__tests__/mcp/contracts): its
- * tools live in its index.ts, which starts the server as it loads.
+ * requests are proven elsewhere, since its tools live in its index.ts, which
+ * starts the server as it loads: by the contract (__tests__/mcp/contracts),
+ * and by telegram-upload-deadline.test.ts, which loads it with a fake SDK.
  *
  * How this can fail, written before the code:
  * 1. the request sets no deadline, so a silent host is waited on for ever;

@@ -11,8 +11,10 @@ export const TARS_WAIT_MS = 30_000;
 /**
  * How long a call to an outside API (SocialData, X, Telegram) may stay silent
  * before the server says so, where it used to wait for Claude Code to give up
- * on the call, about half an hour later. Silence, not a total: an upload still
- * going is not cut off, and an answer that is only slow gets a minute.
+ * on the call, about half an hour later. Silence, not a total: an answer that
+ * is only slow gets a minute. Not for a file sent to Telegram, which is timed
+ * by its size instead (sendFile in mcp-telegram): once its bytes sit in the
+ * kernel's send buffer, silence is all Node sees while a slow link carries them.
  */
 export const API_WAIT_MS = 60_000;
 

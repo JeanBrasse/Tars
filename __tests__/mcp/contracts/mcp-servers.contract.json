@@ -9060,7 +9060,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Error sending photo to Telegram: no answer within 60 s"
+                "text": "Error sending photo to Telegram: no answer within 61 s"
               }
             ],
             "isError": true

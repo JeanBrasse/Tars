@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.9.2',
     date: '2026-09-30',
     updates: [
-      'An agent\'s vault, SocialData, X and Telegram tools no longer wait about half an hour on a host that has stopped answering: they say there was no answer, and after how long, 30 seconds for Tars and 60 for SocialData, X and Telegram',
+      'An agent\'s vault, SocialData, X and Telegram tools no longer wait about half an hour on a host that has stopped answering: they say there was no answer, and after how long, 30 seconds for Tars and 60 for SocialData, X and a Telegram message. A photo, a video or a document sent to Telegram is given the time a slow link, 10 KB/s, takes to carry it, then the same minute, so a large file on a slow connection still arrives whole',
     ],
   },
   {
