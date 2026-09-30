@@ -23,7 +23,11 @@
  *   characters) reaches the Settings page and the agent cards;
  * - thresholds out of range (a 0 % threshold would switch every agent at once);
  * - a reorder that loses or invents an account;
- * - a file written half-way, or readable by other users.
+ * - a file written half-way, or readable by other users;
+ * - a file that does not parse, overwritten: it reads as account 1 alone, and
+ *   the next change would write that over it, the other accounts gone from
+ *   Tars while their folders stay signed in (the Audit's gate of #263). No
+ *   write while it does not parse.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'fs';
@@ -46,6 +50,7 @@ import {
   setThresholds,
   setEnabled,
   validateLabel,
+  registryProblem,
 } from '../../../electron/services/claude-accounts/registry';
 
 const ROOT = accountsRoot();
@@ -252,6 +257,22 @@ describe('the file', () => {
     fs.writeFileSync(accountsFile(), '{ not json');
     expect(readAccountsSettings()).toEqual(defaultAccountsSettings());
     expect(fs.readFileSync(accountsFile(), 'utf-8')).toBe('{ not json');
+  });
+
+  it.each([['does not parse', '{ not json'], ['is not an object', '[]']])('refuses to write over a file that %s, and says why', (_what, content) => {
+    fs.mkdirSync(path.dirname(accountsFile()), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(accountsFile(), content);
+    expect(registryProblem()).toMatch(/claude-accounts\.json/);
+    const { settings } = addAccount(defaultAccountsSettings(), 'Max two', ROOT);
+    expect(() => writeAccountsSettings(settings)).toThrow(/claude-accounts\.json/);
+    expect(fs.readFileSync(accountsFile(), 'utf-8')).toBe(content);
+  });
+
+  it('has no problem with a file that is absent or reads', () => {
+    if (fs.existsSync(accountsFile())) fs.unlinkSync(accountsFile());
+    expect(registryProblem()).toBeNull();
+    writeAccountsSettings(defaultAccountsSettings());
+    expect(registryProblem()).toBeNull();
   });
 
   it('writes and reads back, readable by its owner only', () => {
