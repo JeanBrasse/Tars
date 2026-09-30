@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 51,
+    version: '1.9.2',
+    date: '2026-10-01',
+    updates: [
+      'The Brain page and the other views that read and save your files no longer reach the rest of your home through a project that is your home folder or a folder above it, such as /Users, nor through a symbolic link, under ~/.dorothy or inside a project, that leads out of the folders they may use: ~/.ssh, ~/.tars-private and your shell\'s startup files stay out of reach, to read and to write. A CLAUDE.md or AGENTS.md linked to a markdown file kept in a dotfiles repository is still read and saved. Any other file linked from outside those folders is no longer read: an mcp.json linked into a dotfiles repository no longer adds its MCP servers to the Brain graph, and the Code panel shows nothing for a linked source file that points outside them. The vault\'s file previews serve only a file that really lies in the vault\'s attachments, and not one that has a second name elsewhere. Fixed by Nexarion434',
+    ],
+  },
+  {
     id: 50,
     version: '1.9.1',
     date: '2026-09-28',
