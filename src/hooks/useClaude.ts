@@ -50,6 +50,18 @@ function tokenStatsOf(stats: TokenStats | null | undefined): string {
   return stats ? `${stats.totalCostUsd}|${stats.extraCostUsd}|${stats.sessionCount}` : '';
 }
 
+/**
+ * What Extensions and Settings show of the skills and plugins, and Claude's
+ * settings, which say which plugins are on. The store keeps its data from one
+ * page to the next, so a comparison that skipped these kept an install or a
+ * plugin turned off out of every page until something else moved.
+ */
+function extensionsOf(skills: unknown, plugins: unknown, settings: unknown): string {
+  const s = ((skills || []) as ClaudeSkill[]).map(k => `${k.source}:${k.name}:${k.path}:${k.description ?? ''}`).join('|');
+  const p = ((plugins || []) as ClaudePlugin[]).map(k => `${k.fullName}:${k.enabled}:${k.version}:${k.installPath}`).join('|');
+  return `${s}#${p}#${JSON.stringify(settings ?? null)}`;
+}
+
 interface ClaudeData {
   settings: ClaudeSettings | null;
   stats: ClaudeStats | null;
@@ -105,6 +117,7 @@ function fromPayload(prev: ClaudeData | null, result: Record<string, unknown>): 
     // every ten seconds: the date, the unreadable count, and the
     // latest day and token-stats.json as latestDayOf and
     // tokenStatsOf sum them up.
+    extensionsOf(prev.skills, prev.plugins, prev.settings) === extensionsOf(result.skills, result.plugins, result.settings) &&
     prev.stats?.lastComputedDate === (result.stats as ClaudeStats | null)?.lastComputedDate &&
     prev.stats?.unreadable === (result.stats as ClaudeStats | null)?.unreadable &&
     latestDayOf(prev.stats) === latestDayOf(result.stats as ClaudeStats | null) &&
@@ -185,6 +198,17 @@ function read(): Promise<void> {
 
 const stale = () => !known.data || Date.now() - known.at >= POLL_MS;
 
+/**
+ * A read that starts after the call: what a page asks for once it changed
+ * something (SkillsTab when an install's terminal closes). A read already in
+ * flight may have been answered before the change, so a refresh then waits for
+ * it and reads again. Refreshes asked during the same read share the next one,
+ * as read() lets every caller share the read in flight.
+ */
+function refresh(): Promise<void> {
+  return reading ? reading.then(read) : read();
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   if (listeners.size === 1) {
@@ -234,7 +258,7 @@ export function useClaude() {
     return unsubscribe;
   }, []);
 
-  return { data, loading: !data && !error, error, refresh: read };
+  return { data, loading: !data && !error, error, refresh };
 }
 
 export function useSessionMessages(projectId: string | null, sessionId: string | null) {
