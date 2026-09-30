@@ -13,7 +13,7 @@ import { ClaudeAccountLoginModal } from './ClaudeAccountLoginModal';
 
 /** One line above the rows, in its tone: main's refusal, or every account at its limit. */
 const notice = (tone: 'error' | 'waiting', text: string) => (
-  <div data-settings-row className="px-4 py-[11px] shrink-0">
+  <div key={text} data-settings-row className="px-4 py-[11px] shrink-0">
     <div className="flex items-center gap-2 px-2.5 py-2 bg-secondary border border-border">
       <StatusSquare tone={tone} />
       <span className={`text-[11.5px] leading-snug ${tone === 'error' ? 'text-status-error' : 'text-foreground'}`}>{text}</span>
@@ -44,10 +44,13 @@ export const ClaudeAccountsSection = () => {
   const ids = accounts.map(a => a.id);
   const full = accounts.length >= MAX_ACCOUNTS;
   const limit = on && view ? allAtLimit(view, now) : null;
+  // A registry main cannot read is said for as long as the view says so; a
+  // change it refuses in the meantime says the same sentence, said once.
+  const refusals = [...new Set([view?.registryError, error])].filter((s): s is string => !!s);
 
   return (
     <SettingsCard>
-      {error && notice('error', error)}
+      {refusals.map(text => notice('error', text))}
 
       <SettingsRow
         wrap
