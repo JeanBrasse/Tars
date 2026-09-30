@@ -287,6 +287,12 @@ export interface AppSettings {
   discordAllowedUserIds: string[];
   /** In server channels, answer only a message that mentions the bot. Direct messages always work. */
   discordRequireMention: boolean;
+  /**
+   * Send error reports to Tars's Sentry project: the error, its stack, Tars's
+   * version, the system and a random install id, nothing else
+   * (services/error-reports). Off by default; followed live.
+   */
+  errorReportsEnabled: boolean;
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;
