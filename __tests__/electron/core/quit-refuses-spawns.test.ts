@@ -88,14 +88,14 @@ describe('once the quit has begun', () => {
     vi.mocked(pty.spawn).mockClear();
     const agent = { id: 'a1', status: 'idle', projectPath: '/test/project', skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
     agents.set('a1', agent);
-    const routes: { method: string; pattern: string; handler: (...a: unknown[]) => unknown }[] = [];
-    const app = { add(method: string, pattern: string, handler: (...a: unknown[]) => unknown) { routes.push({ method, pattern, handler }); },
+    const routes: { method: string; pattern: string | RegExp; handler: (...a: unknown[]) => unknown }[] = [];
+    const app = { add(method: string, pattern: string | RegExp, handler: (...a: unknown[]) => unknown) { routes.push({ method, pattern, handler }); },
       get(p: string, h: never) { this.add('GET', p, h); }, post(p: string, h: never) { this.add('POST', p, h); },
       put(p: string, h: never) { this.add('PUT', p, h); }, delete(p: string, h: never) { this.add('DELETE', p, h); }, routes: [] } as unknown as RouteApp;
     const appSettings = {} as AppSettings;
     const ctx = { getAppSettings: () => appSettings, appSettings, agentStatusEmitter: new EventEmitter(), handleStatusChangeNotificationCallback: vi.fn() } as unknown as RouteContext;
     registerAgentRoutes(app, ctx);
-    const start = routes.find(r => r.method === 'POST' && r.pattern.endsWith('/start'))!.handler;
+    const start = routes.find(r => r.method === 'POST' && String(r.pattern).includes('\\/start'))!.handler;
     const sendJson = vi.fn();
 
     await start({ params: { id: 'a1' }, body: { prompt: 'work' }, callerAgentId: 'a1' } as unknown as RouteRequest, sendJson, ctx);
@@ -124,8 +124,14 @@ describe('every spawn site and exit handler in electron/', () => {
     const unguarded: string[] = [];
     for (const { f, text } of files) {
       for (const m of text.matchAll(/\bpty\.spawn\(|\bspawn\(this\.launch\.command/g)) {
+        // A comment that names pty.spawn() starts nothing.
+        const line = text.slice(text.lastIndexOf('\n', m.index!) + 1, m.index!);
+        if (/^\s*(\/\/|\*)/.test(line)) continue;
         const before = text.slice(Math.max(0, m.index! - 1500), m.index!);
-        const fnStart = Math.max(before.lastIndexOf('function '), before.lastIndexOf('=> {'), before.lastIndexOf('async ('));
+        // Where the enclosing function starts: a declaration, an arrow, or a
+        // class method (`async start(): Promise<...> {`, the ACP client's).
+        const method = [...before.matchAll(/\n\s*(?:private |public |static )*(?:async )?[A-Za-z_]\w*\([^)]*\)[^{;=\n]*\{\s*\n/g)].pop();
+        const fnStart = Math.max(before.lastIndexOf('function '), before.lastIndexOf('=> {'), before.lastIndexOf('async ('), method?.index ?? -1);
         if (!before.slice(fnStart).includes('refuseWhileQuitting(')) unguarded.push(`${f}:${text.slice(0, m.index!).split('\n').length}`);
       }
     }

@@ -294,4 +294,10 @@ describe('main.ts, at quit', () => {
     expect(quit).toMatch(/app\.quit\(\)/);
     expect(quit).not.toMatch(/\['killAllPty', killAllPty\]/);
   });
+
+  it('12. begins the quit and sends the hangups before the delegated runs\' own grace, so the two graces run together', () => {
+    const ending = quit.indexOf('endAllTerminals(');
+    expect(ending).toBeGreaterThan(-1);
+    expect(ending, 'endAllTerminals starts after the steps, so its grace adds to endAcpRunsOnQuit\'s').toBeLessThan(quit.indexOf("['endAcpRunsOnQuit'"));
+  });
 });

@@ -491,10 +491,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     ptyProcess.onExit(({ exitCode }) => {
       const agent = agents.get(id);
+      // Ended by the quit: neither the agent's completion nor its error, and
+      // the closing window is not told it was (the Audit's gate of #235).
+      const newStatus = agentStatusOnExit(exitCode);
       // Skip status update if this PTY was replaced by a newer one
-      if (agent && agent.ptyId === ptyId) {
+      if (newStatus && agent && agent.ptyId === ptyId) {
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
-        const newStatus = exitCode === 0 ? 'completed' : 'error';
         agent.status = newStatus;
         agent.lastActivity = new Date().toISOString();
         handleStatusChangeNotification(agent, newStatus);
@@ -602,6 +604,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // Writing `export ...` to an already-running shell is racy: the shell may not
       // process the export before the claude command runs. Baking vars into pty.spawn()
       // guarantees they're in the process environment from the start.
+      refuseWhileQuitting('agent terminal');
       const oldPty = ptyProcesses.get(agent.ptyId!);
       if (oldPty) {
         oldPty.kill();
@@ -685,15 +688,18 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
       newPty.onExit(({ exitCode }) => {
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
+        ptyProcesses.delete(newPtyId);
+        // Ended by the quit: neither the agent's completion nor its error, and
+        // the closing window is not told it was (the Audit's gate of #235).
+        const newStatus = agentStatusOnExit(exitCode);
+        if (!newStatus) return;
         const agentData = agents.get(id);
         // Guard: only mutate if this PTY is still the active one (prevents race on restart)
         if (agentData && agentData.ptyId === newPtyId) {
-          const newStatus = exitCode === 0 ? 'completed' : 'error';
           agentData.status = newStatus;
           agentData.lastActivity = new Date().toISOString();
           handleStatusChangeNotification(agentData, newStatus);
         }
-        ptyProcesses.delete(newPtyId);
         broadcastToAllWindows('agent:complete', {
           type: 'complete',
           agentId: id,

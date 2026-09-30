@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
@@ -87,6 +88,14 @@ async function spawnAgentSession(
   ctx: RouteContext,
   sendJson: SendJson
 ): Promise<boolean> {
+  // A session started while the quit ends the others would be in no map the
+  // quit ends: refused before anything here ends the old terminal (the Audit's
+  // gate of #235: a /start 200 ms into the quit answered 200 and its CLI
+  // outlived Tars). spawnAgentPty refuses too, for the callers that are not here.
+  if (isQuitting()) {
+    sendJson({ error: 'Tars is quitting: no new session is started.', quitting: true }, 503);
+    return false;
+  }
   // Raw cwd for pty.spawn, shell-escaped form for the `cd` command. These
   // must be separate: passing the shell-escaped form to pty.spawn would
   // break when the path legitimately contains a single quote.
@@ -385,8 +394,12 @@ async function spawnAgentSession(
       if (agent.ptyId !== ptyId) {
         return;
       }
+      // Ended by the quit: neither the agent's completion nor its error, and
+      // the closing window is not told it was (the Audit's gate of #235).
+      const outcome = agentStatusOnExit(exitCode);
+      if (!outcome) return;
       if (agent.status === 'running') {
-        agent.status = exitCode === 0 ? 'completed' : 'error';
+        agent.status = outcome;
       } else if (agent.status === 'waiting') {
         // PTY exited while agent was waiting for input: the claude process
         // crashed. Mark as error so /wait is unblocked and the orchestrator

@@ -50,9 +50,9 @@ import {
   skillPtyProcesses,
   pluginPtyProcesses,
   endAllTerminals,
-  isQuitting,
   setFieldProbe,
 } from './core/pty-manager';
+import { agentStatusOnExit } from './core/quit-state';
 import { startErrorReports } from './services/error-reports';
 import { lastLocalCommandAt } from './services/agent-truth';
 
@@ -638,20 +638,22 @@ app.whenReady().then(async () => {
       });
 
       ptyProcess.onExit(({ exitCode }) => {
+        ptyProcesses.delete(ptyId);
+        // Ended by the quit: neither the agent's completion nor its error, and
+        // the closing window is not told it was (the Audit's gate of #235).
+        const newStatus = agentStatusOnExit(exitCode);
+        if (!newStatus) return;
         const agent = agents.get(id);
-        // Ended by the quit: not the agent's error, nor its completion.
-        if (agent && !isQuitting()) {
-          const newStatus = exitCode === 0 ? 'completed' : 'error';
+        if (agent) {
           agent.status = newStatus;
           agent.lastActivity = new Date().toISOString();
           handleStatusChangeNotificationWrapper(agent, newStatus);
         }
-        ptyProcesses.delete(ptyId);
         // Emit status event so kanban sync can detect completion
         broadcastToAllWindows('agent:status', {
           type: 'status',
           agentId: id,
-          status: exitCode === 0 ? 'completed' : 'error',
+          status: newStatus,
           timestamp: new Date().toISOString(),
         });
         broadcastToAllWindows('agent:complete', {
@@ -775,6 +777,12 @@ app.on('before-quit', (event) => {
     if (endingTerminals) return;
     endingTerminals = true;
     console.log('App quitting, saving agents and ending every terminal...');
+    // First, before anything waits: the quit begins (nothing new is spawned
+    // from here on, no exit is its agent's news), and every terminal has its
+    // tree read and its hangup sent before endAllTerminals first yields. The
+    // delegated runs' grace below is synchronous, so the two graces run at
+    // once instead of one after the other.
+    const terminals = endAllTerminals();
     // Each step guarded, and the two that write to disk first: see shutdown.ts.
     // The bus journal writes once per turn of the event loop rather than once
     // per row, so a turn that ends in a quit is the one that never gets there.
@@ -788,7 +796,7 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
     ]);
-    void endAllTerminals()
+    void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))
       .finally(() => {
         terminalsEnded = true;
