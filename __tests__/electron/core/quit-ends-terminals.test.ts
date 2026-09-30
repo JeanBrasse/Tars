@@ -87,10 +87,11 @@ type Job = 'polite' | 'stubborn' | 'slow' | 'late';
  * - stubborn: it and its child ignore SIGHUP and SIGTERM;
  * - slow: takes 0.5 s to end on the hangup, then writes `<T>.done`;
  * - late: stubborn, and on the hangup starts another child in a group of its own.
+ * `deafShell`: the leader ignores SIGHUP and SIGTERM, and relays nothing.
  * `exitDelayMs`: how long after the leader's end its exit is delivered, as
  * node-pty's comes about 200 ms after the process.
  */
-function terminal(kind: Job, opts: { disowned?: boolean; exitDelayMs?: number } = {}): {
+function terminal(kind: Job, opts: { disowned?: boolean; deafShell?: boolean; exitDelayMs?: number } = {}): {
   pty: IPty; leader: ChildProcess; job: () => number; grandchild: () => number; late: () => number; done: () => boolean;
 } {
   const traps: Record<Job, string> = {
@@ -99,7 +100,10 @@ function terminal(kind: Job, opts: { disowned?: boolean; exitDelayMs?: number } 
     slow: 'trap "sleep 0.5; echo done > \\"$0.done\\"; exit 0" HUP;',
     late: 'set -m; trap "sleep 300 & echo \\$! > \\"$0.late\\"" HUP; trap "" TERM;',
   };
-  const relay = opts.disowned ? 'trap "exit 0" HUP' : "trap 'kill -HUP -$job 2>/dev/null; exit 0' HUP";
+  // deafShell: a shell that ignores the hangup itself, as one running a
+  // foreground job that traps it does; node-pty's waitpid would hold the quit.
+  const relay = opts.deafShell ? 'trap "" HUP TERM'
+    : opts.disowned ? 'trap "exit 0" HUP' : "trap 'kill -HUP -$job 2>/dev/null; exit 0' HUP";
   const script = `
     set -m
     bash -c '${traps[kind]} sleep 300 & echo $! > "$0.child"; wait; wait' "$T" &
@@ -247,6 +251,20 @@ describe('the quit, after the Audit\'s gate', () => {
     expect(alive(t.leader.pid!), 'the shell outlived the quit').toBe(false);
   });
 
+  it("10. ends the user's shell when it ignores the hangup, and only the shell", async () => {
+    const t = terminal('stubborn', { deafShell: true });
+    quickPtyProcesses.set('shell-deaf', t.pty);
+    await settle(t);
+    process.kill(t.leader.pid!, 'SIGHUP');
+    await new Promise(r => setTimeout(r, 200));
+    expect(alive(t.leader.pid!), 'the fixture shell is not deaf').toBe(true);
+
+    await endAllTerminals(500);
+
+    expect(alive(t.leader.pid!), 'a shell that ignores the hangup outlived the quit').toBe(false);
+    expect(alive(t.job()), "the user's job was killed with its shell").toBe(true);
+  });
+
   it('10. still ends an agent terminal\'s disowned job', async () => {
     const t = terminal('stubborn', { disowned: true });
     ptyProcesses.set('pty-disowned', t.pty);
@@ -296,8 +314,10 @@ describe('main.ts, at quit', () => {
   });
 
   it('12. begins the quit and sends the hangups before the delegated runs\' own grace, so the two graces run together', () => {
-    const ending = quit.indexOf('endAllTerminals(');
-    expect(ending).toBeGreaterThan(-1);
+    // Called at once, on a line of its own: deferred by a then() or a timer,
+    // its hangups would wait for the synchronous steps.
+    const ending = quit.search(/\n\s*const \w+ = endAllTerminals\(\);\n/);
+    expect(ending, 'endAllTerminals is not called directly').toBeGreaterThan(-1);
     expect(ending, 'endAllTerminals starts after the steps, so its grace adds to endAcpRunsOnQuit\'s').toBeLessThan(quit.indexOf("['endAcpRunsOnQuit'"));
   });
 });
