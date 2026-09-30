@@ -7,7 +7,7 @@ import { dialogOpen, sessionStarted } from '../../core/agent-launch';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { DEFAULT_ACCOUNT_ID, readAccountsSettings } from './registry';
 import { readAccountUsage } from './counters';
-import { STALE_AFTER_MS, type AccountUsage } from './choose';
+import type { AccountUsage } from './choose';
 import { choiceFor, isClaudeSubscription } from './launch';
 import { blockedUntil, lastMovedAt, noteMovedAt, requestMove, setBlocked, type RequestedMove } from './state';
 
@@ -172,9 +172,10 @@ export function onTurnEnded(agent: AgentStatus, now: number = Date.now()): boole
   if (agent.status === 'running') return false;
   const settings = readAccountsSettings();
   if (!moving(settings, agent) || !agent.claudeAccountId) return false;
+  // A stale counter needs no check here: the choice reads it as unknown, and
+  // keeps the agent where it is.
   const usage = readAccountUsage()[agent.claudeAccountId];
-  // A stale counter says nothing about now (claude.ai use is unseen).
-  if (!usage || usage.updatedAt === null || now - usage.updatedAt > STALE_AFTER_MS) return false;
+  if (!usage) return false;
   const thresholds: Record<Window, number> = { fiveHour: settings.fiveHourThreshold, sevenDay: settings.weeklyThreshold };
   const window = (['fiveHour', 'sevenDay'] as const).find(w => (liveWindow(usage, w, now)?.usedPercentage ?? 0) >= thresholds[w]);
   if (!window) return false;
