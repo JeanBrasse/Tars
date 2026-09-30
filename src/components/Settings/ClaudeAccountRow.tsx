@@ -164,9 +164,11 @@ export function ThresholdFields({ fiveHour, weekly, onSave }: { fiveHour: number
   const [refused, setRefused] = useState(false);
   const sent = useRef({ fiveHour, weekly });
 
-  // Main's values win whenever they change: another window, or the answer to
-  // what was just sent.
+  // Main's values win whenever they change, from another window or a refusal.
+  // Its answer to what was just sent changes nothing on screen: whatever was
+  // typed since is newer, and its own blur decides it.
   useEffect(() => {
+    if (fiveHour === sent.current.fiveHour && weekly === sent.current.weekly) return;
     setFive(String(fiveHour));
     setWeek(String(weekly));
     sent.current = { fiveHour, weekly };
