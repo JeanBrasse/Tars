@@ -33,7 +33,11 @@ vi.mock('react', async (importOriginal) => ({
  *    shown;
  * 8. every account at its limit is not said, with when agents resume and on
  *    which account;
- * 9. thresholds outside 50 to 100 are sent, or valid ones are not.
+ * 9. thresholds outside 50 to 100 are sent, or valid ones are not;
+ * 10. a registry main cannot read (#263's registryError, after its gates) is
+ *    not said, from the first view or from one main pushes, or stays said once
+ *    a view reads again, or is said twice when a change it refuses says the
+ *    same sentence.
  */
 
 type El = { type: unknown; props: Record<string, unknown> };
@@ -51,8 +55,8 @@ function acct(over: Partial<ClaudeAccountState> & { id: string; label: string })
     ...over,
   };
 }
-function mkView(enabled: boolean, accounts: ClaudeAccountState[], thresholds = { fiveHourThreshold: 90, weeklyThreshold: 95 }): ClaudeAccountsView {
-  return { settings: { enabled, accounts: accounts.map(a => ({ id: a.id, label: a.label, configDir: a.configDir, enabled: a.enabled })), ...thresholds }, accounts };
+function mkView(enabled: boolean, accounts: ClaudeAccountState[], thresholds = { fiveHourThreshold: 90, weeklyThreshold: 95 }, registryError: string | null = null): ClaudeAccountsView {
+  return { settings: { enabled, accounts: accounts.map(a => ({ id: a.id, label: a.label, configDir: a.configDir, enabled: a.enabled })), ...thresholds }, accounts, registryError };
 }
 const MAIN = acct({ id: 'default', label: 'Main' });
 const SECOND = acct({ id: 'acct-000002', label: 'Second' });
@@ -268,6 +272,31 @@ describe('what main says (7, 8)', () => {
     s.push(mkView(true, [full, SECOND]));
     await settle();
     expect(textOf(page!.result as never)).not.toContain('Every account is at its limit');
+  });
+});
+
+describe('a registry main cannot read (10)', () => {
+  const FROZEN = '~/.tars-private/claude-accounts.json does not read as a list of accounts. Nothing is changed until it is fixed or removed.';
+  const times = (text: string) => textOf(page!.result as never).split(text).length - 1;
+
+  it('says so from the first view, and no longer once a view main pushes reads again', async () => {
+    const s = await open(mkView(true, [MAIN], undefined, FROZEN));
+    expect(times(FROZEN)).toBe(1);
+    s.push(mkView(true, [MAIN, SECOND]));
+    await settle();
+    expect(times(FROZEN)).toBe(0);
+    s.push(mkView(true, [MAIN], undefined, FROZEN));
+    await settle();
+    expect(times(FROZEN)).toBe(1);
+  });
+
+  it('says it once when a change it refuses says the same sentence', async () => {
+    const s = await open(mkView(true, [MAIN], undefined, FROZEN), { setEnabled: FROZEN });
+    const toggle = ofType(page!.result, mods.Toggle.Toggle)[0] as unknown as El;
+    (toggle.props.onChange as () => void)();
+    await settle();
+    expect(s.calls.map(([name]) => name)).toContain('setEnabled');
+    expect(times(FROZEN)).toBe(1);
   });
 });
 
