@@ -680,7 +680,7 @@ Tars deliberately has no scheduler and no server-side task harness. Both live in
 
 Only a connection saved in `~/.dorothy/hermes-connection.json`, readable and naming the address its mode needs, is called (`configuredHermesConnection`, `usableHermesConnection`); a missing or broken file is "not configured", never the default port, and `hermes:connection:get` then gives the pages no base URL to probe.
 
-Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
+Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The header goes out only while the connection's auth is `token` (`sessionToken` in `electron/types/hermes.ts`): under `oauth` a token kept from token mode is not sent, as in Hermes Desktop. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
 
 Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` in §5), `/api/plugins/kanban` (the board behind `/kanban`), and the cron endpoints behind `/crons`.
 
