@@ -342,7 +342,6 @@ async function findEntry(repo, nameOrPath, ctx) {
     ?? entries.find(e => !e.main && e.name === nameOrPath && inside(e.path, repo.worktreesDir))
     ?? entries.find(e => !e.main && e.name === nameOrPath);
   if (!entry) throw new WorktreeRefusal(`no worktree named ${nameOrPath}`);
-  if (entry.main) throw new WorktreeRefusal(`${entry.path} is the main checkout, which is never removed`);
   return entry;
 }
 
@@ -355,20 +354,25 @@ async function freeWipName(ctx, repo, name) {
 }
 
 /**
- * The removal every path shares. The checks come first and nothing is
- * written until all of them pass.
+ * Why this worktree cannot be removed now, or null. It only reads, and both
+ * remove and prune ask it, so a dry run says what a real one would do.
  */
-async function removeEntry(repo, entry, { save = false, why = 'removed' } = {}, ctx) {
-  if (entry.locked) throw new WorktreeRefusal(`${entry.name} is locked (${entry.locked}): git worktree unlock it first if it is done`);
+async function blocker(ctx, entry, { save = false } = {}) {
+  if (entry.main) return `${entry.path} is the main checkout, which is never removed`;
+  if (entry.locked) return `it is locked (${entry.locked}): git worktree unlock it first if it is done`;
   const busy = await occupants(ctx, entry.path);
-  if (busy === null) throw new WorktreeRefusal(`cannot tell which processes work in ${entry.path}, so it is kept`);
-  if (busy.length) {
-    throw new WorktreeRefusal(`${entry.name} is in use: ${busy.map(p => `PID ${p.pid} (${p.command})`).join(', ')}`);
-  }
+  if (busy === null) return 'the processes working in it cannot be listed';
+  if (busy.length) return `it is in use: ${busy.map(p => `PID ${p.pid} (${p.command})`).join(', ')}`;
   const dirty = await dirtyFiles(ctx, entry.path);
-  if (dirty.length && !save) {
-    throw new WorktreeRefusal(`${entry.name} has uncommitted work: ${dirty.join(', ')}. Commit it, or pass --save to keep it on a wip/ branch.`);
-  }
+  if (dirty.length && !save) return `it has uncommitted work: ${dirty.join(', ')}. Commit it, or pass --save to keep it on a wip/ branch`;
+  return null;
+}
+
+/** The removal every path shares: nothing is written until blocker() has found nothing. */
+async function removeEntry(repo, entry, { save = false, why = 'removed' } = {}, ctx) {
+  const blocked = await blocker(ctx, entry, { save });
+  if (blocked) throw new WorktreeRefusal(`${entry.name} is kept: ${blocked}`);
+  const dirty = await dirtyFiles(ctx, entry.path);
 
   let savedAs = null;
   if (dirty.length) {
@@ -414,7 +418,6 @@ export async function prune(repo, { olderThanDays = OLDER_THAN_DAYS, dryRun = fa
   for (const entry of await listWorktrees(repo, ctx)) {
     if (entry.main || entry.prunable) continue;
     const keep = why => kept.push({ name: entry.name, path: entry.path, why });
-    if (entry.locked) { keep(`locked: ${entry.locked}`); continue; }
 
     const idle = now - await lastActivity(ctx, entry, registry);
     const pr = github && entry.branch ? await ctx.prState(entry.branch) : null;
@@ -424,11 +427,8 @@ export async function prune(repo, { olderThanDays = OLDER_THAN_DAYS, dryRun = fa
     else if (idle >= olderThanDays * DAY) why = `inactive for ${Math.floor(idle / DAY)} days`;
     if (!why) { keep(`active ${Math.max(0, Math.round(idle / HOUR))} h ago`); continue; }
 
-    const busy = await occupants(ctx, entry.path);
-    if (busy === null) { keep(`${why}, but its processes cannot be listed`); continue; }
-    if (busy.length) { keep(`${why}, but in use: ${busy.map(p => `PID ${p.pid} (${p.command})`).join(', ')}`); continue; }
-    const dirty = await dirtyFiles(ctx, entry.path);
-    if (dirty.length) { keep(`${why}, but uncommitted: ${dirty.join(', ')}`); continue; }
+    const blocked = await blocker(ctx, entry);
+    if (blocked) { keep(`${why}, but ${blocked}`); continue; }
 
     if (dryRun) { removed.push({ name: entry.name, path: entry.path, why }); continue; }
     try {

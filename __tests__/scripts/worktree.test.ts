@@ -96,7 +96,7 @@ function world(over: Partial<{ free: number; cwds: { pid: number; command: strin
   const gitCalls: string[][] = [];
   const ctx = {
     freeBytes: () => over.free ?? 200 * GB,
-    processCwds: async () => over.cwds ?? [],
+    processCwds: async (): Promise<{ pid: number; command: string; cwd: string }[] | null> => over.cwds ?? [],
     now: () => over.now ?? Date.now(),
     prState: async (branch: string) => over.pr?.[branch] ?? null,
     runTool: async (command: string, args: string[], options: { cwd?: string } = {}) => {
@@ -312,11 +312,39 @@ describe('remove', () => {
     expect(fs.existsSync(wt.path)).toBe(true);
   });
 
-  it('never removes the main checkout', async () => {
+  it('refuses a locked worktree before saving anything, even with --save', async () => {
+    const { repo, wt } = await made('held');
+    git(root, 'worktree', 'lock', '--reason', 'kept for the gate', wt.path);
+    fs.writeFileSync(path.join(wt.path, 'README.md'), 'changed\n');
+    const { ctx } = world();
+
+    const message = await refusal(removeWorktree(repo, 'held', { save: true }, ctx));
+    expect(message).toContain('kept for the gate');
+    expect(git(root, 'branch', '--list', 'wip/*')).toBe('');
+    expect(git(wt.path, 'branch', '--show-current')).toBe('held');
+  });
+
+  it('keeps a worktree when the processes cannot be listed', async () => {
+    const { repo, wt } = await made('unknown');
+    const { ctx } = world();
+    ctx.processCwds = async () => null;
+
+    await refusal(removeWorktree(repo, 'unknown', {}, ctx));
+    expect(fs.existsSync(wt.path)).toBe(true);
+  });
+
+  it('never removes the main checkout, nor commits in it, even with --save', async () => {
     const { ctx } = world();
     const repo = await openRepo(root);
     await refusal(removeWorktree(repo, root, {}, ctx));
-    expect(fs.existsSync(path.join(root, 'README.md'))).toBe(true);
+    fs.writeFileSync(path.join(root, 'README.md'), 'mine\n');
+
+    await refusal(removeWorktree(repo, root, { save: true }, ctx));
+
+    expect(fs.readFileSync(path.join(root, 'README.md'), 'utf8')).toBe('mine\n');
+    expect(git(root, 'branch', '--show-current')).toBe('main');
+    expect(git(root, 'branch', '--list', 'wip/*')).toBe('');
+    expect(git(root, 'status', '--porcelain')).toBe('M README.md');
   });
 });
 
@@ -394,10 +422,15 @@ describe('prune', () => {
     for (const wt of [dirty, locked, busy]) expect(fs.existsSync(wt.path)).toBe(true);
   });
 
-  it('removes nothing on a dry run', async () => {
+  it('removes nothing on a dry run, and says what a real one would do', async () => {
     const { repo, wt } = await withCommit('dry');
+    const dirty = (await withCommit('dry-dirty')).wt;
+    fs.writeFileSync(path.join(dirty.path, 'scratch.txt'), 'x');
+
     const result = await prune(repo, { olderThanDays: 7, dryRun: true }, world({ now: Date.now() + 30 * DAY }).ctx);
+
     expect(result.removed.map(r => r.name)).toEqual(['dry']);
+    expect(result.kept).toEqual([expect.objectContaining({ name: 'dry-dirty', why: expect.stringContaining('scratch.txt') })]);
     expect(fs.existsSync(wt.path)).toBe(true);
   });
 
