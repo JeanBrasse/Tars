@@ -32,10 +32,12 @@
  *   ~/.claude.json, the entry whole;
  * - a credential copied (the Audit's B3): ~/.claude/settings.json can hold
  *   apiKeyHelper or ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
- *   CLAUDE_CODE_OAUTH_TOKEN in its env. The copy leaves them out, and
- *   claudeCredentialOverrides names them, from the file and from Tars's own
- *   environment, so the option can refuse to turn on while every account would
- *   in fact run on that one credential.
+ *   CLAUDE_CODE_OAUTH_TOKEN in its env, and a Bedrock, Vertex or Foundry
+ *   setup (a CLAUDE_CODE_USE_* switch and its AWS_* or Google credentials,
+ *   the Audit's gate of #263). The copy leaves them all out, and
+ *   claudeCredentialOverrides names the ones Claude Code would sign in with,
+ *   from the file and from Tars's own environment, so the option can refuse
+ *   to turn on while every account would in fact run on that one credential.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -227,6 +229,31 @@ describe('settings.json, a copy of ~/.claude/settings.json', () => {
     expect(JSON.parse(text)).toEqual({ env: { KEEP: 'me' }, model: 'opus' });
   });
 
+  it('leaves out a Bedrock, Vertex or Foundry setup, its switches and its cloud credentials', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({
+      env: {
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_BEARER_TOKEN_BEDROCK: 'trap-4',
+        AWS_ACCESS_KEY_ID: 'trap-5',
+        AWS_SECRET_ACCESS_KEY: 'trap-6',
+        AWS_SESSION_TOKEN: 'trap-7',
+        AWS_PROFILE: 'trap-8',
+        AWS_REGION: 'trap-9',
+        CLAUDE_CODE_USE_VERTEX: '1',
+        GOOGLE_APPLICATION_CREDENTIALS: '/x/trap-10.json',
+        CLAUDE_CODE_USE_FOUNDRY: '1',
+        ANTHROPIC_FOUNDRY_API_KEY: 'trap-11',
+        CLAUDE_CODE_OAUTH_REFRESH_TOKEN: 'trap-12',
+        KEEP: 'me',
+      },
+    }));
+    provisionAccountDir(dir, home);
+    const text = fs.readFileSync(path.join(dir, 'settings.json'), 'utf-8');
+    expect(text).not.toMatch(/trap|AWS_|GOOGLE_APPLICATION_CREDENTIALS|CLAUDE_CODE_USE_|FOUNDRY|REFRESH_TOKEN/);
+    expect(JSON.parse(text)).toEqual({ env: { KEEP: 'me' } });
+  });
+
   it('copies nothing from a settings.json that does not parse, and keeps the copy it had', () => {
     fs.mkdirSync(claudeDir, { recursive: true });
     fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ model: 'opus' }));
@@ -321,6 +348,29 @@ describe('credentials Claude Code would use instead of the account', () => {
     expect(found).toHaveLength(2);
     expect(found.join(' ')).toContain(name);
     expect(found.join(' ')).not.toMatch(/secret-value/);
+  });
+
+  const switches = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_OAUTH_REFRESH_TOKEN'];
+
+  it.each(switches)('names %s turned on in the settings env and in Tars\'s own environment, never its value', (name) => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ env: { [name]: 'true', AWS_SECRET_ACCESS_KEY: 'secret-value-3' } }));
+    const found = claudeCredentialOverrides(home, { [name]: '1', GOOGLE_APPLICATION_CREDENTIALS: '/secret-value-4' });
+    expect(found).toHaveLength(2);
+    expect(found.join(' ')).toContain(name);
+    expect(found.join(' ')).not.toMatch(/secret-value/);
+  });
+
+  it('does not name a provider switch that is turned off, as Claude Code reads it', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ env: { CLAUDE_CODE_USE_BEDROCK: '0', CLAUDE_CODE_USE_VERTEX: 'false' } }));
+    expect(claudeCredentialOverrides(home, { CLAUDE_CODE_USE_FOUNDRY: '' })).toEqual([]);
+  });
+
+  it('does not name cloud credentials alone: without a switch Claude Code does not use them', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({ env: { AWS_ACCESS_KEY_ID: 'x' } }));
+    expect(claudeCredentialOverrides(home, { AWS_PROFILE: 'work', GOOGLE_APPLICATION_CREDENTIALS: '/x.json' })).toEqual([]);
   });
 
   it('names apiKeyHelper, and reads nothing it cannot parse as clean', () => {

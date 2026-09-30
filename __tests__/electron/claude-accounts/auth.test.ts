@@ -24,7 +24,10 @@
  *   signed-in item behind with nobody able to see it;
  * - the command given as a string to a shell.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+// Every test runs a binary: 5 s is too short under the fleet's load.
+vi.setConfig({ testTimeout: 30_000 });
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

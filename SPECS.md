@@ -608,7 +608,6 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
 | `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock that holds its owner's token and is released only by that owner; a lock over 5 s old is taken over by one render at a time, and only while it is still the one judged dead. Anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
-| `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds names and folders, never a credential. The folders are `~/.claude-accounts/<id>`, outside `~/.dorothy` |
 | `skills-marketplace.json` | `{ skills, fetchedAt }`: the last skills.sh listing | `services/skills-marketplace.ts` | served at once to the Extensions page, fetched again behind it once an hour old; a failed fetch keeps it. Agents can write `~/.dorothy`, so every entry is checked on the way back as on the way in (`repo` is `owner/name` or `owner/name/skill`, no segment `.`, `..` or starting with `-`), and a file with no valid entry is fetched afresh |
 | `cli-updates.log` (+ `.1`) | one line per CLI update result: time, CLI, outcome, versions, what it said | `services/cli-updater.ts` | append-only, moved to `.1` past 256 KB. A check that changes nothing is written once, a failure every time |
 | `telegram-downloads/` | media from Telegram | Telegram bot | |
@@ -621,6 +620,7 @@ Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes
 |---|---|---|---|
 | `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
 | `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
+| `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds ids and names, never a credential and never a folder: an account's folder is `~/.claude-accounts/<id>`, derived from its id. A file that does not parse reads as account 1 alone and is never written over: every change is refused, and Settings says why |
 
 Files Tars writes **outside** its own directory:
 

@@ -31,6 +31,9 @@ case "$1 $2" in
     exit 1;;
   "auth logout")
     [ -f "$d/.fake-logout-fails" ] && { echo "Failed to log out" >&2; exit 1; }
+    # Measured on 2.1.285: a logout in a folder that is gone makes it again,
+    # 0755, with a .claude.json of its own.
+    [ -d "$d" ] || { mkdir -p "$d"; chmod 755 "$d"; echo '{}' > "$d/.claude.json"; }
     rm -f "$d/.fake-signed-in"; echo "Successfully logged out from your Anthropic account."; exit 0;;
   "auth login")
     echo "Opening browser to sign in"; exit 0;;
