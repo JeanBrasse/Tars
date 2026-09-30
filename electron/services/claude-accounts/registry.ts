@@ -136,7 +136,32 @@ export function readAccountsSettings(): ClaudeAccountsSettings {
   }
 }
 
+/**
+ * Why the file cannot be written, or null: it is there and does not read as
+ * a registry. It then reads as account 1 alone, and a change written over it
+ * would lose the other accounts while their folders stay signed in, with
+ * nobody able to see them from Settings (the Audit's gate of #263).
+ */
+export function registryProblem(): string | null {
+  let text: string;
+  try {
+    text = fs.readFileSync(accountsFile(), 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    return `~/.tars-private/claude-accounts.json cannot be read (${(err as NodeJS.ErrnoException).code ?? 'error'}). Nothing is changed until it can.`;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return null;
+  } catch {
+    // Said below.
+  }
+  return '~/.tars-private/claude-accounts.json does not read as a list of accounts. Nothing is changed until it is fixed or removed.';
+}
+
 export function writeAccountsSettings(settings: ClaudeAccountsSettings): void {
+  const problem = registryProblem();
+  if (problem) throw new Error(problem);
   writeSecretFileSync(accountsFile(), JSON.stringify(settings, null, 2));
 }
 

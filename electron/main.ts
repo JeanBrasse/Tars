@@ -79,7 +79,7 @@ import {
 } from './services/slack-bot';
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
-import { registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
+import { announceAgentAccount, registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
 import { setAccountEnvResolver } from './core/account-env';
 import { claudeAccountEnvFor } from './services/claude-accounts/launch';
 import { readAccountsSettings } from './services/claude-accounts/registry';
@@ -507,7 +507,12 @@ app.whenReady().then(async () => {
   // option off the answer is null and nothing changes (core/account-env.ts).
   setAccountEnvResolver((agentId, cwd) => {
     const agent = agents.get(agentId);
-    return agent ? claudeAccountEnvFor(agent, { agents: agents.values(), cwd }) : null;
+    if (!agent) return null;
+    const before = agent.claudeAccountId;
+    const env = claudeAccountEnvFor(agent, { agents: agents.values(), cwd });
+    // Every window shows the account an agent runs on.
+    if (agent.claudeAccountId !== before) announceAgentAccount(agent);
+    return env;
   });
   // Which accounts are signed in, asked of Claude Code before the first
   // launches need it; until it answers, only account 1 is used.

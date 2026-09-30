@@ -25,9 +25,19 @@
  * - an agent pinned to an account that no longer exists;
  * - bad input (labels, thresholds, orders, ids) saved, or thrown at the renderer
  *   instead of answered with a sentence;
- * - a change the page does not hear about (claude-accounts:changed).
+ * - a change the page does not hear about (claude-accounts:changed), or a pin
+ *   only the window that set it sees (claude-accounts:agent-changed);
+ * - a registry that does not parse, overwritten by the next change (the other
+ *   accounts vanish, still signed in): every change refused, and the page told;
+ * - an account whose folder was deleted by hand that can never be removed: its
+ *   keychain item outlives the folder, so it is signed out with the derived
+ *   string all the same, and the folder the logout makes again goes to the Trash.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Every test runs the fake binary several times: 5 s is too short under the
+// fleet's load (QA, gate of #263).
+vi.setConfig({ testTimeout: 30_000 });
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -428,5 +438,100 @@ describe("an agent's account", () => {
     expect(agents.get('ag1')!.claudeAccountPin).toBeUndefined();
     expect(await call('claude-accounts:set-agent-account', { agentId: 'nope', accountId: null })).toMatchObject({ success: false });
     expect(await call('claude-accounts:set-agent-account', { agentId: 'ag1', accountId: 'acct-ffffff' })).toMatchObject({ success: false });
+  });
+});
+
+describe('a registry that does not parse', () => {
+  it('is left alone: every change is refused, and the page is told why', async () => {
+    fs.mkdirSync(path.dirname(accountsFile()), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(accountsFile(), '{ "accounts": [ broken');
+    const root = path.join(fs.realpathSync(os.homedir()), '.claude-accounts');
+    const seenBefore = new Set(fs.existsSync(root) ? fs.readdirSync(root) : []);
+    const v = await view();
+    expect(v.registryError).toMatch(/claude-accounts\.json/);
+    expect(await call('claude-accounts:add', { label: 'Max two' })).toMatchObject({ success: false, error: expect.stringMatching(/claude-accounts\.json/) });
+    expect(await call('claude-accounts:set-thresholds', { fiveHour: 80, weekly: 90 })).toMatchObject({ success: false });
+    expect(fs.readFileSync(accountsFile(), 'utf-8')).toBe('{ "accounts": [ broken');
+    expect((fs.existsSync(root) ? fs.readdirSync(root) : []).filter(n => !seenBefore.has(n))).toEqual([]);
+  });
+
+  it('is not a problem when absent or readable', async () => {
+    expect((await view()).registryError).toBeNull();
+    await add('Max two');
+    expect((await view()).registryError).toBeNull();
+  });
+});
+
+describe('an account whose folder was deleted by hand', () => {
+  it('is signed out with the derived folder all the same, its folder made again goes to the Trash, and it is gone', async () => {
+    const a = await add('Max two');
+    fs.rmSync(a.configDir!, { recursive: true, force: true });
+    const r = await call<{ success: boolean; error?: string } & ClaudeAccountsView>('claude-accounts:remove', a.id);
+    expect(r.error).toBeUndefined();
+    expect(fake.calls()).toContain(`${a.configDir}|<unset>|auth logout`);
+    expect(trashed).toEqual([a.configDir]);
+    expect(r.accounts.map(x => x.id)).toEqual(['default']);
+  });
+});
+
+describe('a pin every window hears about', () => {
+  it('pushes the agent\'s account and pin when it is pinned or unpinned', async () => {
+    const a = await add('Max two');
+    agents.set('ag1', { id: 'ag1', claudeAccountId: 'default' });
+    await call('claude-accounts:set-agent-account', { agentId: 'ag1', accountId: a.id });
+    await call('claude-accounts:set-agent-account', { agentId: 'ag1', accountId: null });
+    expect(broadcasts.filter(b => b.channel === 'claude-accounts:agent-changed').map(b => b.payload)).toEqual([
+      { agentId: 'ag1', claudeAccountId: 'default', claudeAccountPin: a.id },
+      { agentId: 'ag1', claudeAccountId: 'default', claudeAccountPin: null },
+    ]);
+  });
+
+  it('pushes the pins a removal clears', async () => {
+    const a = await add('Max two');
+    agents.set('ag1', { id: 'ag1', claudeAccountPin: a.id });
+    agents.set('ag2', { id: 'ag2' });
+    expect(await call('claude-accounts:remove', a.id)).toMatchObject({ success: true });
+    expect(broadcasts.filter(b => b.channel === 'claude-accounts:agent-changed').map(b => b.payload)).toEqual([
+      { agentId: 'ag1', claudeAccountId: null, claudeAccountPin: null },
+    ]);
+  });
+});
+
+// QA's gate of #263: each kills a mutant the tests above let through.
+describe('what QA found the tests above let through', () => {
+  it('removing signs out even when Claude Code could not say whether the account is signed in', async () => {
+    const a = await add('Max two');
+    signIn(a.configDir!, 'two@example.com');
+    fs.writeFileSync(path.join(a.configDir!, '.fake-broken'), '');
+    fs.rmSync(path.join(a.configDir!, '.fake-signed-in'));
+    const r = await call('claude-accounts:remove', a.id);
+    expect(r).toMatchObject({ success: true });
+    expect(fake.calls()).toContain(`${a.configDir}|<unset>|auth logout`);
+  });
+
+  it('removing an account kills its open login terminal', async () => {
+    const a = await add('Max two');
+    const r = await call<{ ptyId: string }>('claude-accounts:login-start', { id: a.id });
+    const term = spawned.at(-1)!;
+    expect(r.ptyId).toBeTruthy();
+    expect(await call('claude-accounts:remove', a.id)).toMatchObject({ success: true });
+    expect(term.killed).toBe(true);
+  });
+
+  it('the login channels reach login terminals only, never another terminal of the same map', async () => {
+    const other = { written: [] as string[], killed: false, resized: false,
+      write(d: string) { this.written.push(d); }, kill() { this.killed = true; }, resize() { this.resized = true; } };
+    loginPtys.set('plugin-1', other);
+    expect(await call('claude-accounts:login-write', { ptyId: 'plugin-1', data: 'y\r' })).toMatchObject({ success: false });
+    expect(await call('claude-accounts:login-resize', { ptyId: 'plugin-1', cols: 80, rows: 24 })).toMatchObject({ success: false });
+    expect(await call('claude-accounts:login-kill', { ptyId: 'plugin-1' })).toMatchObject({ success: false });
+    expect(other).toMatchObject({ written: [], killed: false, resized: false });
+  });
+
+  it('a login provisions the folder again when it was removed by hand', async () => {
+    const a = await add('Max two');
+    fs.rmSync(a.configDir!, { recursive: true, force: true });
+    expect(await call('claude-accounts:login-start', { id: a.id })).toMatchObject({ success: true });
+    expect(fs.lstatSync(path.join(a.configDir!, 'projects')).isSymbolicLink()).toBe(true);
   });
 });

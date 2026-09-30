@@ -9,6 +9,7 @@ import {
   accountsRoot,
   addAccount,
   readAccountsSettings,
+  registryProblem,
   removeAccount,
   renameAccount,
   reorderAccounts,
@@ -17,7 +18,7 @@ import {
   setThresholds,
   writeAccountsSettings,
 } from '../services/claude-accounts/registry';
-import { accountDirProblem, claudeCredentialOverrides, provisionAccountDir } from '../services/claude-accounts/provision';
+import { accountDirProblem, claudeCredentialOverrides, ensureAccountDir, provisionAccountDir } from '../services/claude-accounts/provision';
 import { claudeAuthLogout, claudeAuthStatus, loginCommand } from '../services/claude-accounts/auth';
 import { countersDir, readAccountUsage, usageForView } from '../services/claude-accounts/counters';
 import { blockedUntil, deleteAuth, getAuth, hasAuth, setAuth, type AuthState } from '../services/claude-accounts/state';
@@ -61,6 +62,19 @@ export interface ClaudeAccountsHandlerDeps {
    * that cuts nothing.
    */
   onAgentAccountChanged?: (agentId: string) => void;
+}
+
+/**
+ * Tells every window an agent's account or pin changed: the list each window
+ * holds is otherwise only read again on its own schedule, so a pin set from
+ * one window (or cleared by a removal) went unseen in the others.
+ */
+export function announceAgentAccount(agent: AgentStatus): void {
+  broadcastToAllWindows('claude-accounts:agent-changed', {
+    agentId: agent.id,
+    claudeAccountId: agent.claudeAccountId ?? null,
+    claudeAccountPin: agent.claudeAccountPin ?? null,
+  });
 }
 
 type Result<T extends object = object> = ({ success: true } & T) | { success: false; error: string };
@@ -118,7 +132,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     const usage = readAccountUsage();
     const blocked = blockedUntil();
     const now = Date.now();
-    return { settings, accounts: settings.accounts.map(a => stateOf(a, usage, blocked, now)) };
+    return { settings, accounts: settings.accounts.map(a => stateOf(a, usage, blocked, now)), registryError: registryProblem() };
   }
 
   function announce(settings?: ClaudeAccountsSettings): ClaudeAccountsView {
@@ -231,6 +245,9 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
   ipcMain.handle('claude-accounts:add', async (_e, p: unknown): Promise<Result<{ account: ClaudeAccountState }>> => {
     try {
       const { label } = (p ?? {}) as { label?: unknown };
+      // Before the folder is made: the save would refuse, and leave it behind.
+      const problem = registryProblem();
+      if (problem) throw new Error(problem);
       const { settings, account } = addAccount(readAccountsSettings(), label, accountsRoot());
       provisionAccountDir(account.configDir as string);
       // A directory nobody has signed in yet: no need to ask Claude Code.
@@ -277,13 +294,31 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
    * Then the folder goes to the Trash, never deleted: it holds the account's
    * own sessions and history, and a Trash that fails keeps it, and the
    * account, and says so.
+   *
+   * A folder deleted by hand is made again, empty and owner-only, and signed
+   * out whatever it says: its keychain item outlives it, and Claude Code's
+   * logout makes the folder again anyway (measured on 2.1.285, open to
+   * others), which would then fail the check before the Trash.
    */
   ipcMain.handle('claude-accounts:remove', async (_e, id: unknown): Promise<Result<ClaudeAccountsView>> => {
     try {
       const current = readAccountsSettings();
       const next = removeAccount(current, id);
       const account = current.accounts.find(a => a.id === id) as ClaudeAccount;
-      const problem = accountDirProblem(account.configDir as string);
+      const dir = account.configDir as string;
+      let gone = false;
+      try {
+        fs.lstatSync(dir);
+      } catch {
+        gone = true;
+      }
+      let problem: string | null;
+      try {
+        if (gone) ensureAccountDir(dir);
+        problem = accountDirProblem(dir);
+      } catch (err) {
+        problem = err instanceof Error ? err.message : String(err);
+      }
       if (problem) throw new Error(`${problem} Nothing was signed out or moved.`);
 
       for (const [ptyId, forId] of loginFor) {
@@ -293,11 +328,13 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
         loginFor.delete(ptyId);
       }
 
-      let signedIn: boolean | null;
-      try {
-        signedIn = (await claudeAuthStatus(binary(), account.configDir)).signedIn;
-      } catch {
-        signedIn = null;
+      let signedIn: boolean | null = null;
+      if (!gone) {
+        try {
+          signedIn = (await claudeAuthStatus(binary(), account.configDir)).signedIn;
+        } catch {
+          signedIn = null;
+        }
       }
       if (signedIn !== false) await claudeAuthLogout(binary(), account.configDir);
 
@@ -308,13 +345,16 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
         throw new Error(`Signed out, but its folder could not go to the Trash (${err instanceof Error ? err.message : String(err)}). Nothing was deleted, and the account stays until its folder can be moved.`);
       }
 
-      let pinsCleared = false;
+      const unpinned: AgentStatus[] = [];
       for (const agent of agents.values()) {
         if (agent.claudeAccountPin !== account.id) continue;
         delete agent.claudeAccountPin;
-        pinsCleared = true;
+        unpinned.push(agent);
       }
-      if (pinsCleared) saveAgents();
+      if (unpinned.length) {
+        saveAgents();
+        unpinned.forEach(announceAgentAccount);
+      }
       deleteAuth(account.id);
       return { success: true, ...save(next) };
     } catch (err) {
@@ -383,7 +423,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
 
   /**
    * Holds an agent to one account, or gives it back to the automatic choice
-   * (null). Read by the launch path; saved here.
+   * (null). Read by the launch path; saved here, and pushed to every window.
    */
   ipcMain.handle('claude-accounts:set-agent-account', async (_e, p: unknown): Promise<Result> => {
     try {
@@ -399,6 +439,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
         agent.claudeAccountPin = account.id;
       }
       saveAgents();
+      announceAgentAccount(agent);
       if (agent.claudeAccountPin !== before && readAccountsSettings().enabled) onAgentAccountChanged?.(agent.id);
       return { success: true };
     } catch (err) {
