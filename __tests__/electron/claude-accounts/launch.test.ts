@@ -18,14 +18,18 @@
  * - the choice not remembered: agent.claudeAccountId is what the card shows and
  *   what the next relaunch keeps;
  * - several agents launched at once all counted as nowhere (N5): a choice is
- *   counted for 60 s, until the agent's terminal is there to be counted.
+ *   counted for 60 s, until the agent's terminal is there to be counted;
+ * - a move Tars asked for (switching.ts) not made by the launch it restarts,
+ *   or made by a delegated run instead, which has no terminal to move; made
+ *   over a pin set since, or onto an account that can no longer run; or made
+ *   without saying from where, so the card and the move event cannot tell.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { claudeAccountEnvFor, ACCOUNT_ENV_UNSET } from '../../../electron/services/claude-accounts/launch';
-import { setAuth, resetAccountState } from '../../../electron/services/claude-accounts/state';
+import { setAuth, resetAccountState, requestMove, pendingMove } from '../../../electron/services/claude-accounts/state';
 import { accountsRoot, normalizeAccountsSettings } from '../../../electron/services/claude-accounts/registry';
 import type { AgentStatus, ClaudeAccountsSettings } from '../../../electron/types';
 
@@ -148,5 +152,42 @@ describe('counting agents that are moving', () => {
     const first = agent();
     claudeAccountEnvFor(first, ctx({ usage }));
     expect(claudeAccountEnvFor(agent(), ctx({ usage, now: NOW + 61_000 }))!.accountId).toBe('default');
+  });
+});
+
+describe('a move Tars asked for', () => {
+  const asked = (a: AgentStatus, to: string) => requestMove(a.id, { to, reason: 'limit', window: 'fiveHour', usedPercentage: 100 });
+
+  it('is made by the next terminal launch, which says from where, and only once', () => {
+    const a = agent({ claudeAccountId: 'default' });
+    asked(a, B);
+    const env = claudeAccountEnvFor(a, ctx({ usage: { default: light(99) } }))!;
+    expect(env.accountId).toBe(B);
+    expect(env.move).toEqual({ agentId: a.id, from: 'default', to: B, reason: 'limit', window: 'fiveHour', usedPercentage: 100, at: NOW });
+    expect(pendingMove(a.id)).toBeUndefined();
+    expect(claudeAccountEnvFor(a, ctx())!.move).toBeUndefined();
+  });
+
+  it('is left for the terminal by a delegated run', () => {
+    const a = agent({ claudeAccountId: 'default' });
+    asked(a, B);
+    expect(claudeAccountEnvFor(a, ctx({ purpose: 'delegation' }))!.move).toBeUndefined();
+    expect(pendingMove(a.id)).toMatchObject({ to: B });
+  });
+
+  it('gives way to a pin set since, and to an account that can no longer run', () => {
+    const pinned = agent({ claudeAccountId: 'default', claudeAccountPin: A });
+    asked(pinned, B);
+    const env = claudeAccountEnvFor(pinned, ctx())!;
+    expect(env.accountId).toBe(A);
+    expect(env.move).toBeUndefined();
+    expect(pendingMove(pinned.id)).toBeUndefined();
+
+    const b = agent({ claudeAccountId: 'default' });
+    asked(b, B);
+    setAuth(B, { signedIn: false, email: null, subscriptionType: null, error: null });
+    const other = claudeAccountEnvFor(b, ctx({ usage: { default: light(10), [A]: light(50) } }))!;
+    expect(other.accountId).toBe('default');
+    expect(other.move).toBeUndefined();
   });
 });
