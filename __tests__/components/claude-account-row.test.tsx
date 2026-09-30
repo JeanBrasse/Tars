@@ -30,7 +30,11 @@ vi.mock('react', async (importOriginal) => ({
  *    it in; the page's note or main's own sentence about it is lost;
  * 7. a rename sends an empty label, the old label, or a label after Escape;
  * 8. a threshold field sends what is not a whole percentage from 50 to 100,
- *    or keeps showing it once refused.
+ *    or keeps showing it once refused;
+ * 9. main's answer to a save, landing once something else has been typed,
+ *    writes the saved value over it: the new value is lost, or refused
+ *    without a word (seen in the e2e at a load average of 180); or a change
+ *    from another window does not replace what the fields show.
  */
 
 type El = { type: unknown; props: Record<string, unknown> };
@@ -208,6 +212,40 @@ describe('threshold fields (8)', () => {
     expect(textOf(m.result as never)).not.toContain('A threshold is a whole percentage');
     blur('Weekly threshold');
     expect(saved).toHaveLength(1);
+    m.unmount();
+  });
+
+  it("keeps what was typed after a save when main's answer to it lands, and says a refusal of it (9)", () => {
+    const saved: Array<{ fiveHour: number; weekly: number }> = [];
+    let main = { fiveHour: 90, weekly: 95 };
+    const m = mount(() => ThresholdFields({ ...main, onSave: p => saved.push(p) }));
+    const input = (name: string) => (ofType(m.result, Input) as unknown as El[]).find(e => e.props['aria-label'] === name)!;
+    const type = (name: string, value: string) => (input(name).props.onChange as (e: { target: { value: string } }) => void)({ target: { value } });
+    const blur = (name: string) => (input(name).props.onBlur as () => void)();
+
+    type('5 h threshold', '85');
+    blur('5 h threshold');
+    expect(saved).toEqual([{ fiveHour: 85, weekly: 95 }]);
+    type('5 h threshold', '120');
+    main = { fiveHour: 85, weekly: 95 };
+    m.rerender();
+    expect(input('5 h threshold').props.value).toBe('120');
+    blur('5 h threshold');
+    expect(input('5 h threshold').props.value).toBe('85');
+    expect(textOf(m.result as never)).toContain('A threshold is a whole percentage from 50 to 100.');
+    expect(saved).toHaveLength(1);
+    m.unmount();
+  });
+
+  it('shows a change made from another window, over what was typed (9)', () => {
+    let main = { fiveHour: 90, weekly: 95 };
+    const m = mount(() => ThresholdFields({ ...main, onSave: () => {} }));
+    const input = (name: string) => (ofType(m.result, Input) as unknown as El[]).find(e => e.props['aria-label'] === name)!;
+    (input('5 h threshold').props.onChange as (e: { target: { value: string } }) => void)({ target: { value: '88' } });
+    main = { fiveHour: 70, weekly: 99 };
+    m.rerender();
+    expect(input('5 h threshold').props.value).toBe('70');
+    expect(input('Weekly threshold').props.value).toBe('99');
     m.unmount();
   });
 });
