@@ -10,7 +10,7 @@ import { builtinModules } from 'node:module';
  * inside the root, that is `/node_modules/vitest/dist`, and no bare import
  * starts with a slash. Installed outside it, as for a worktree that resolves to
  * the repository's node_modules, it is whatever of the install's path lies past
- * the root's length. Under /Users/noah/tars/.worktrees/, a name of 11
+ * the root's length. Under /Users/you/tars/.worktrees/, a name of 11
  * characters leaves `st`, so `import { StringDecoder } from 'string_decoder'`
  * is looked for as <worktree>/string_decoder; 12 leaves `t`, which takes
  * timers, tls and tty.

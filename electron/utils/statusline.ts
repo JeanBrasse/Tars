@@ -54,28 +54,59 @@ TOKEN_STATS_FILE="${DATA_DIR_SHELL}/token-stats.json"
 if [ -n "$SESSION_ID" ]; then
   IS_EXTRA=$(awk -v a="$PCT_5H" -v b="$PCT_7D" 'BEGIN { print (a > 100 || b > 100) ? "true" : "false" }')
 
-  # Acquire lock to prevent concurrent read-modify-write races
+  # Acquire lock to prevent concurrent read-modify-write races. The lock is a
+  # folder holding its owner's token, and a render removes only its own: a
+  # render slow past 5 s, whose lock had been taken over, removed the new
+  # holder's as it released (QA's gate of #216).
   LOCK_DIR="${DATA_DIR_SHELL}/token-stats.lock"
+  LOCK_OWNER="$LOCK_DIR/owner"
+  LOCK_TOKEN="$$.$RANDOM$RANDOM"
+  # Past this many seconds a lock is taken for its holder's, dead.
+  LOCK_STALE_AFTER=5
   LOCK_ACQUIRED=false
+  take_lock() { mkdir "$LOCK_DIR" 2>/dev/null && printf '%s' "$LOCK_TOKEN" > "$LOCK_OWNER"; }
+  lock_owner() { cat "$LOCK_OWNER" 2>/dev/null || true; }
+  lock_age() { echo $(( $(date +%s) - $(stat -f%m "$1" 2>/dev/null || stat -c%Y "$1" 2>/dev/null || echo 0) )); }
+  release_lock() {
+    if [ "$(lock_owner)" = "$LOCK_TOKEN" ]; then
+      rm -f "$LOCK_OWNER"
+      rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
+  }
   for _i in $(seq 1 20); do
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
+    if take_lock; then
       LOCK_ACQUIRED=true
       break
     fi
     sleep 0.05
   done
-  # Stale lock cleanup: if lock dir is older than 5s, remove and retry once
+  # A lock over 5 s old was left by a render that died holding it, and is taken
+  # over by one render at a time (the takeover folder), and only while it is
+  # still the lock that was judged dead. Removed and made again by whoever
+  # passed, it let two renders that had both judged it dead remove the one the
+  # first had just taken, and write the count at once (the Audit's review of #216).
   if [ "$LOCK_ACQUIRED" = "false" ] && [ -d "$LOCK_DIR" ]; then
-    LOCK_AGE=$(( $(date +%s) - $(stat -f%m "$LOCK_DIR" 2>/dev/null || stat -c%Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
-    if [ "$LOCK_AGE" -gt 5 ]; then
-      rmdir "$LOCK_DIR" 2>/dev/null || true
-      mkdir "$LOCK_DIR" 2>/dev/null && LOCK_ACQUIRED=true
+    STALE_OWNER=$(lock_owner)
+    if [ "$(lock_age "$LOCK_DIR")" -gt "$LOCK_STALE_AFTER" ]; then
+      TAKEOVER_DIR="$LOCK_DIR.takeover"
+      # One left by a render killed while taking a lock over would stop every takeover after it.
+      if [ -d "$TAKEOVER_DIR" ] && [ "$(lock_age "$TAKEOVER_DIR")" -gt "$LOCK_STALE_AFTER" ]; then
+        rmdir "$TAKEOVER_DIR" 2>/dev/null || true
+      fi
+      if mkdir "$TAKEOVER_DIR" 2>/dev/null; then
+        if [ "$(lock_owner)" = "$STALE_OWNER" ] && [ "$(lock_age "$LOCK_DIR")" -gt "$LOCK_STALE_AFTER" ]; then
+          rm -f "$LOCK_OWNER"
+          rmdir "$LOCK_DIR" 2>/dev/null || true
+        fi
+        take_lock && LOCK_ACQUIRED=true
+        rmdir "$TAKEOVER_DIR" 2>/dev/null || true
+      fi
     fi
   fi
 
   if [ "$LOCK_ACQUIRED" = "true" ]; then
     # Ensure lock is released on exit
-    trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+    trap 'release_lock' EXIT
 
     # The file as text, parsed inside jq, so that anything which is not one
     # JSON object starts again from {}. It used to be piped straight into jq:
@@ -87,6 +118,9 @@ if [ -n "$SESSION_ID" ]; then
     # Update session entry via temp file for atomic write
     T_DATE=$(date +%Y-%m-%d)
     T_PROVIDER="\${CLAUDE_PROVIDER:-claude}"
+    # The account the session runs on (TARS_CLAUDE_ACCOUNT), so the Usage page
+    # can say which one spent what; empty for a session that names none.
+    T_ACCOUNT="\${TARS_CLAUDE_ACCOUNT:-}"
     TMP_FILE="\${TOKEN_STATS_FILE}.tmp.$$"
     printf '%s' "$EXISTING" | jq -c -R -s \
       --arg sid "$SESSION_ID" \
@@ -97,15 +131,16 @@ if [ -n "$SESSION_ID" ]; then
       --argjson extra "$IS_EXTRA" \
       --arg date "$T_DATE" \
       --arg provider "$T_PROVIDER" \
+      --arg account "$T_ACCOUNT" \
       '(try fromjson catch {}) | (if type == "object" then . else {} end)
-       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider}' \
+       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider, "account": $account}' \
       > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$TOKEN_STATS_FILE" 2>/dev/null || rm -f "$TMP_FILE"
 
     # Release lock, once. The trap goes first: the script runs on (git, for
     # the branch) before it exits, another render can take the lock by then,
     # and the trap would remove that render's lock.
     trap - EXIT
-    rmdir "$LOCK_DIR" 2>/dev/null || true
+    release_lock
   fi
 fi
 

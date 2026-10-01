@@ -190,12 +190,12 @@ full:
 ```
 1. hello.txt - written successfully, contains `confined`.
 2. git status --short - succeeded: `?? f.txt` and `?? hello.txt`
-3. ls /Users/noah/Documents - failed: ls: /Users/noah/Documents: Operation not permitted
+3. ls /Users/you/Documents - failed: ls: /Users/you/Documents: Operation not permitted
 4. ps -Eww -p 39401 - failed: (eval):1: operation not permitted: ps
 ```
 
 So: it did its work, and it could not read Noah's home. Separately measured
-under the same profile: `~/.dorothy/api-token` denied, `/Users/noah/tars`
+under the same profile: `~/.dorothy/api-token` denied, `/Users/you/tars`
 denied, the loopback API reachable, `api.anthropic.com` reachable, `git`,
 `node` and `npm` working.
 
@@ -232,19 +232,19 @@ visible.
 ; --- the toolchain, wherever the user installed it -------------------------
 ; On this machine node, npm and claude itself all live under $HOME, so a
 ; profile that allows only /usr and /opt starts nothing.
-(allow file-read* (subpath "/Users/noah/.nvm")
-                  (subpath "/Users/noah/.local/bin")
-                  (subpath "/Users/noah/.local/share/claude")
-                  (subpath "/Users/noah/.config/git")
-                  (literal "/Users/noah/.gitconfig")
-                  (literal "/Users/noah/.gitignore_global")
-                  (literal "/Users/noah/.npmrc"))
+(allow file-read* (subpath "/Users/you/.nvm")
+                  (subpath "/Users/you/.local/bin")
+                  (subpath "/Users/you/.local/share/claude")
+                  (subpath "/Users/you/.config/git")
+                  (literal "/Users/you/.gitconfig")
+                  (literal "/Users/you/.gitignore_global")
+                  (literal "/Users/you/.npmrc"))
 
 ; --- the credential store -------------------------------------------------
 ; Measured: without this the CLI answers "Not logged in · Please run /login".
 ; The OAuth token lives in the login keychain, so a profile that walls off the
 ; user's Library walls off the agent's own account with it.
-(allow file-read* file-write* (subpath "/Users/noah/Library/Keychains"))
+(allow file-read* file-write* (subpath "/Users/you/Library/Keychains"))
 
 ; --- the agent's own world, read and write ---------------------------------
 (allow file-read* file-write* (subpath "PROJECT"))
@@ -362,6 +362,28 @@ It still copies any other file its caller names, `~/.ssh` included; that is olde
 deciding what an agent may attach. Each of these is a refusal of the one-call
 route, not a wall: an agent with a shell copies the file somewhere else first,
 because §1.
+
+The renderer's file channels (`fs:read-text-file`, `fs:write-text-file`,
+`fs:read-project-files`, `local-file://`) confine a path to a list of roots:
+`~/.dorothy`, the CLIs' folders and the projects. Until 1.9.2 a root could be
+the home or a folder above it (a project added as `~` or `/Users`, or written
+into `projects.json`), and the path was judged as spelled while the read or
+the write followed links: one symlink under `~/.dorothy` or in a cloned
+repository to the home opened `~/.ssh`, `~/.tars-private` and the shell's
+startup files, to read and to write. A root that is the home or above it is
+now refused, by spelling and by device and inode, and the path must really
+lie, links followed, under the real location of a root
+(`electron/utils/home-root.ts`, `real-target.ts`). One file link to a markdown
+file outside every root and outside the Telegram guard's blocked places stays
+allowed on the three IPC channels, for a CLAUDE.md kept in a dotfiles
+repository. `/api/local-file`, which takes no token, got the same real-path
+test without that exception, and refuses a file with a second name, since an
+attachment is a copy the vault made: before, one symlink or hard link planted
+in `~/.dorothy/vault/attachments` served, to any process on the loopback,
+another account's included, the file it named or every file under the folder
+it led to. What is left:
+the check and the read are two calls, so a link swapped in between is
+followed, by a process that could open the file itself (§1).
 
 Made on a new install by the first save, the directory came out `0755`, since
 only the migration asked for `0700`. Whichever write makes it now, the

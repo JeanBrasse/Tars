@@ -2,7 +2,7 @@ import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
-import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
+import { HermesConnection, resolveHermesBaseUrl, sessionToken } from '../types/hermes';
 import { DATA_DIR } from '../constants';
 import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-file';
 
@@ -248,13 +248,13 @@ export function hermesRequest(
   });
 }
 
-/** One request to the gateway `conn` points at, carrying its token. */
+/** One request to the gateway `conn` points at, carrying its token in token mode. */
 function gatewayCall(
   conn: HermesConnection,
   pathname: string,
   options: { method?: string; body?: unknown; timeoutMs?: number } = {},
 ): Promise<HermesResponse> {
-  return hermesRequest(resolveHermesBaseUrl(conn), pathname, { ...options, token: conn.token });
+  return hermesRequest(resolveHermesBaseUrl(conn), pathname, { ...options, token: sessionToken(conn) });
 }
 
 /** A call the gateway refused, flagged when signing in is what would fix it. */
@@ -314,7 +314,7 @@ export async function probeHermes(conn: HermesConnection): Promise<HermesStatus 
     return { baseUrl: '', reachable: false, authRequired: false, authFlows: [], authProviders: [], signedIn: false, error: 'No gateway URL for this mode.' };
   }
   try {
-    const { status, body } = await hermesRequest(baseUrl, '/api/status', { token: conn.token });
+    const { status, body } = await hermesRequest(baseUrl, '/api/status', { token: sessionToken(conn) });
     const info = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     const authRequired = info.auth_required === true;
     return {
@@ -328,7 +328,7 @@ export async function probeHermes(conn: HermesConnection): Promise<HermesStatus 
       authProviders: Array.isArray(info.auth_providers) ? info.auth_providers as string[] : [],
       // Asked of the gateway rather than of the jar: holding a cookie and
       // being accepted are different things, and this is where they parted.
-      signedIn: !authRequired || await verifyHermesSession(baseUrl, conn.token),
+      signedIn: !authRequired || await verifyHermesSession(baseUrl, sessionToken(conn)),
     };
   } catch (err) {
     return { baseUrl, reachable: false, authRequired: false, authFlows: [], authProviders: [], signedIn: false, error: err instanceof Error ? err.message : String(err) };

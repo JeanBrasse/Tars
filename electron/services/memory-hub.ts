@@ -264,6 +264,19 @@ async function searchBackend(endpoint: McpEndpoint, query: string, source: Memor
 /* ── Public API ────────────────────────────────────────── */
 
 /**
+ * How long a session's start waits for Hermes's memory, whoever starts it: the
+ * SessionStart hook (its curl gives up after 3 s, hooks/session-start.sh) and
+ * the CLIs without it, which get the block in their prompt. It was 4000 ms by
+ * default and 3000 for the prompt, so a Hermes that accepts the connection and
+ * never answers (the ssh tunnel up, the server silent) held the block past the
+ * hook, and the agent started with no memory at all, its own project's
+ * included: 4005 ms, measured by the Audit. One budget, under the hook's, with
+ * no caller allowed a longer one: the project's own memory never waits on
+ * Hermes.
+ */
+export const HERMES_START_BUDGET_MS = 1500;
+
+/**
  * The block injected into a fresh session. Local sources are read
  * synchronously; the gateway is only consulted when a connection exists, and
  * a slow gateway must never hold up an agent starting.
@@ -272,7 +285,6 @@ export async function assembleDigest(opts: {
   projectPath: string;
   settings: MemorySettings;
   hermes?: HermesConnection | null;
-  budgetMs?: number;
 }): Promise<string> {
   const { projectPath, settings, hermes } = opts;
   const sections: string[] = [];
@@ -296,7 +308,7 @@ export async function assembleDigest(opts: {
     try {
       const res = await Promise.race([
         fetchHermesMemoryFiles(hermes),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), opts.budgetMs ?? 4000)),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), HERMES_START_BUDGET_MS)),
       ]);
       if (res && res.success) {
         for (const file of res.files) {

@@ -219,7 +219,6 @@ test('a panel whose claude left fullscreen', async () => {
           notice: notice ? notice.textContent.replace(/\s+/g, ' ').trim() : null,
           noticeHeight: notice ? notice.getBoundingClientRect().height : null,
           noticeButtons: notice ? [...notice.querySelectorAll('button')].map(x => ({ text: x.textContent.trim(), height: x.getBoundingClientRect().height })) : [],
-          history: (root.textContent || '').includes('· snapshot'),
           screen: rows ? rows.innerText.split('\n').map(l => l.trimEnd()).filter(Boolean) : null,
           viewportTop: viewport ? viewport.scrollTop : null,
           screenSize: screen ? { w: Math.round(screen.getBoundingClientRect().width), h: Math.round(screen.getBoundingClientRect().height) } : null,
@@ -347,21 +346,6 @@ test('a panel whose claude left fullscreen', async () => {
     };
     fact('copy output', values.copy);
 
-    // ---- Read history, from the notice.
-    {
-      await panels();
-      await page.locator('[data-notice="Left agent"]').getByRole('button', { name: 'read history' }).click();
-      await waitFor(async () => (await panels())['Left agent'].history, 20_000, 'the history view on Left');
-      await sleep(3000);
-      const p = (await panels())['Left agent'];
-      const historyText = await page.locator('[data-panel="Left agent"]').innerText();
-      values.history = { history: p.history, noticeButtons: p.noticeButtons.map(b => b.text), mentionsAnswer: /L line \d+ of 40|R line \d+ of 40/.test(historyText), excerpt: historyText.replace(/\s+/g, ' ').slice(0, 400) };
-      fact('read history', values.history);
-      await shot('3-left-history');
-      await page.locator('[data-panel="Left agent"]').getByRole('radio', { name: 'live' }).click();
-      await waitFor(async () => !(await panels())['Left agent'].history, 10_000, 'back to live');
-    }
-
     // ---- A new PTY under a panel: the size it is born at, and the size it ends at.
     // Another window asks Full's terminal for 120x30 (the Agents window, the
     // tray); then Full is stopped and started from its own header.
@@ -423,7 +407,7 @@ test('a panel whose claude left fullscreen', async () => {
       'no notice before R1': Object.values(values.baseline.panels).every(p => p.notice === null),
       'main flags Left only': values.flagged.list.every(a => (a.id === 'left') === (a.leftFullscreen === true)),
       'the notice on Left only': (values.flaggedPanels['Left agent'].notice || '').startsWith('Claude left fullscreen: the wheel cannot scroll this terminal.')
-        && values.flaggedPanels['Left agent'].noticeButtons.map(b => b.text).join() === 'read history,restart'
+        && values.flaggedPanels['Left agent'].noticeButtons.map(b => b.text).join() === 'restart'
         && values.flaggedPanels['Full agent'].notice === null && values.flaggedPanels['Inline agent'].notice === null,
       'the notice row and its buttons are 26 high': values.flaggedPanels['Left agent'].noticeHeight === 26 && values.flaggedPanels['Left agent'].noticeButtons.every(b => b.height === 26),
       'no report leaves Left': w['Left agent'].reportsSent === 0,
@@ -431,7 +415,6 @@ test('a panel whose claude left fullscreen', async () => {
       'Inline scrolls its own history': w['Inline agent'].reportsSent === 0 && w['Inline agent'].viewportTop[1] < w['Inline agent'].viewportTop[0],
       'Copy Output is the text on screen': values.copy.hasEscape === false && values.copy.hasTheAnswer === true,
       'a new PTY ends at its panel\'s size': values.sizeResend.newPty.cols === values.sizeResend.panelSize.cols && values.sizeResend.newPty.rows === values.sizeResend.panelSize.rows,
-      'read history opens the history view': !!(values.history && values.history.history && values.history.noticeButtons.join() === 'restart'),
       'restart gives a fullscreen session and the wheel back': !!(values.restart && values.restart.stops === 1 && values.restart.starts.length === 1
         && values.restart.alternateScreen && values.restart.list.leftFullscreen === false && values.restart.panel.notice === null && values.restart.wheel.reportsSent > 0),
       'no page error': pageErrors.length === 0,
