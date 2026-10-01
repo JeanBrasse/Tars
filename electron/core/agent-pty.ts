@@ -5,6 +5,7 @@ import { mintAgentToken, revokeTerminalToken, tarsInstanceId } from './agent-tok
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
+import { refuseWhileQuitting } from './quit-state';
 
 /**
  * How each agent PTY was started: the shell, as it was given to node-pty, and
@@ -84,6 +85,9 @@ export function spawnAgentPty(opts: {
   const size = panelSizeOf(agentId) ?? { cols: opts.cols, rows: opts.rows };
   const token = agentId ? mintAgentToken(agentId) : undefined;
 
+  // Once the quit has begun, a terminal spawned here would be in no map the
+  // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused.
+  refuseWhileQuitting('agent terminal');
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
     cols: size.cols,

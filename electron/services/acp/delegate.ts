@@ -13,6 +13,7 @@ import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { mcpNodeCommand } from '../../utils/mcp-node';
 import { API_PORT } from '../../constants';
 import { isSuperAgent } from '../../utils';
+import { isQuitting } from '../../core/quit-state';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -147,6 +148,10 @@ export async function delegateOverAcp(opts: {
   onEvent?: (event: { type: string; payload: unknown }) => void;
 }): Promise<DelegationResult> {
   const { agent, task, appSettings, onEvent } = opts;
+  // A run started while the quit ends the others would outlive Tars.
+  if (isQuitting()) {
+    return { ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'Tars is quitting: no new delegated run is started.' };
+  }
 
   await loadAcpRegistry().catch(() => undefined);
   const launch = acpLaunchFor(agent.provider ?? 'claude');
