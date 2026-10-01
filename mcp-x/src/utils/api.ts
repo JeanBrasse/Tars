@@ -1,5 +1,5 @@
 import * as https from "https";
-import { send } from "../../../mcp-shared/src/http.js";
+import { API_WAIT_MS, send } from "../../../mcp-shared/src/http.js";
 import { readAppSettings } from "../../../mcp-shared/src/settings.js";
 import { generateOAuthHeader, type OAuthCredentials } from "./oauth.js";
 
@@ -69,6 +69,7 @@ export async function xApiRequest(
       "Content-Type": "application/json",
       Accept: "application/json",
     },
+    timeout: API_WAIT_MS,
   }, bodyStr, (err) => new Error(`X API request failed: ${err.message}`));
 
   // An error whose body is JSON null reads as unparseable, as it always has:
