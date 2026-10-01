@@ -158,8 +158,11 @@ describe('the patch of one file', () => {
     expect(patch).toContain('rename to new-name.txt');
   });
 
-  it('2. a name with accents shows its content', async () => {
-    expect(await fileDiff(branch, 'café é.txt', 'main')).toContain('+é');
+  it('2. a name with accents shows its content, under its name as it is', async () => {
+    const patch = await fileDiff(branch, 'café é.txt', 'main');
+
+    expect(patch).toContain('+é');
+    expect(patch).toContain('+++ b/café é.txt');
   });
 
   it('3. an untracked binary is said to be binary, not shown as text', async () => {
