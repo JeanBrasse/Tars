@@ -12,6 +12,7 @@
 // First: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
 
+import { startGithubWatch } from './services/github-watch';
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -746,6 +747,10 @@ app.whenReady().then(async () => {
   // every half hour, logged to ~/.dorothy/cli-updates.log. Under the same
   // switch. See services/cli-updater.ts.
   startCliUpdates(() => appSettings, () => [...agents.values()].map(agent => agent.provider));
+
+  // PRs merged and changes requested in the agents' repositories, read with
+  // `gh` while the Telegram bot runs, for Noah's event reports.
+  startGithubWatch(() => [...agents.values()].map(agent => agent.projectPath).filter(Boolean), () => !!getTelegramBot());
 
   console.log('App initialization complete');
 });

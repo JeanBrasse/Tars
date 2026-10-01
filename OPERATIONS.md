@@ -833,6 +833,14 @@ group, or to another message goes where any message goes. One open question per 
 A development run may point the bot at a stand-in for Telegram's API with `DOROTHY_TELEGRAM_API` (a packaged Tars
 ignores it).
 
+While the Telegram bot runs, Tars reports to the private chats enrolled with `/auth` as things happen
+(`services/event-reports.ts`): an agent gone to error (once Tars is sure of it, 5 s, whatever the desktop
+notification switch says), and, read with `gh pr list` every 5 minutes in the GitHub repositories of the agents'
+projects (`services/github-watch.ts`, read-only, needs `gh` signed in), a PR merged and changes requested on an
+open PR. Events that come within 2 minutes leave in one message; 40 messages a day at most, and the next day's
+first message says how many events were held. With the bot off, nothing is sent and nothing kept. A repository's
+first poll, or one after an hour without polling, reports nothing: it is the new baseline.
+
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
 message only when it is mentioned, unless Require @mention is off (`discordRequireMention`); a
