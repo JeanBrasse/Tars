@@ -1,14 +1,12 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
-import { app, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
 import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR, dataPath } from '../constants';
 import { redactSecrets } from '../utils/redact-secrets';
-import { answerUserReply, setUserChannel } from './user-questions';
-import { setReportChannel } from './event-reports';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
 import {
   findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
@@ -675,14 +673,8 @@ export function initTelegramBot() {
   authMisses = [];
 
   try {
-    // A development run may point the bot at a stand-in for Telegram's API
-    // (DOROTHY_TELEGRAM_API), for the proof of ask_user against a fake
-    // Telegram; a packaged Tars never reads it.
-    const fakeApi = app?.isPackaged ? undefined : process.env.DOROTHY_TELEGRAM_API;
-    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true, ...(fakeApi ? { baseApiUrl: fakeApi } : {}) });
+    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
     console.log('Telegram bot started');
-    setUserChannel(userChannel);
-    setReportChannel(reportChannel);
 
     // Fetch and cache bot username for mention detection
     telegramBot.getMe().then((me) => {
@@ -840,19 +832,6 @@ export function initTelegramBot() {
         return;
       }
 
-      // The user's reply to a question an agent asked them goes to that agent, and
-      // nowhere else (services/user-questions.ts decides whether it is one).
-      if (msg.reply_to_message && answerUserReply({
-        chatId,
-        chatType: msg.chat.type,
-        fromId: msg.from?.id,
-        replyToMessageId: msg.reply_to_message.message_id,
-        text: msg.text,
-        messageId: msg.message_id,
-      })) {
-        return;
-      }
-
       // Check if we should respond (mention required in groups)
       if (!shouldRespondToMessage(msg)) {
         return;
@@ -956,65 +935,7 @@ function telegramSystemPromptFile(): string | undefined {
 /**
  * Stop Telegram bot
  */
-/**
- * Where ask_user's questions go (services/user-questions.ts): the private
- * chats Settings authorizes, as they are at each send. A group is never
- * asked: somebody else would read the question, and could answer it. HTML,
- * so an agent's words are shown as the text they are.
- */
-const userChannel = {
-  async send(html: string): Promise<Array<{ chatId: string; messageId: number }>> {
-    const sentTo: Array<{ chatId: string; messageId: number }> = [];
-    const privateChats = (getSettings().telegramAuthorizedChatIds ?? []).map(String).filter(id => /^\d+$/.test(id));
-    for (const chatId of privateChats) {
-      if (!telegramBot) break;
-      try {
-        // No link preview: a URL in an agent's question would have Telegram
-        // fetch it and show that site's title and picture (gate of #231).
-        const sent = await telegramBot.sendMessage(chatId, html, {
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          link_preview_options: JSON.stringify({ is_disabled: true }),
-        } as TelegramBot.SendMessageOptions);
-        sentTo.push({ chatId, messageId: sent.message_id });
-      } catch (err) {
-        console.error(`[ask_user] could not send the question to chat ${chatId}:`, err);
-      }
-    }
-    return sentTo;
-  },
-  tell(chatId: string, replyTo: number, text: string): void {
-    telegramBot?.sendMessage(chatId, text, { reply_to_message_id: replyTo })
-      .catch(err => console.error('[ask_user] could not answer the user:', err));
-  },
-  authorizes: (chatId: string) => isAuthorized(chatId),
-};
-
-/**
- * Where the event reports go (services/event-reports.ts): the private chats
- * Settings authorizes, as they are at each send; never a group. HTML, so a
- * name or a title is shown as the text it is.
- */
-const reportChannel = {
-  async send(html: string): Promise<number> {
-    let reached = 0;
-    const privateChats = (getSettings().telegramAuthorizedChatIds ?? []).map(String).filter(id => /^\d+$/.test(id));
-    for (const chatId of privateChats) {
-      if (!telegramBot) break;
-      try {
-        await telegramBot.sendMessage(chatId, html, { parse_mode: 'HTML', disable_web_page_preview: true });
-        reached += 1;
-      } catch (err) {
-        console.error(`[reports] could not send to chat ${chatId}:`, err);
-      }
-    }
-    return reached;
-  },
-};
-
 export function stopTelegramBot() {
-  setUserChannel(null);
-  setReportChannel(null);
   if (telegramBot) {
     telegramBot.stopPolling();
     telegramBot = null;

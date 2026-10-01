@@ -139,3 +139,23 @@ describe('the gh and git a real poll runs', () => {
     expect(fs.existsSync(log) ? fs.readFileSync(log, 'utf-8') : '', 'gh was never run').toMatch(/^pr list --repo JeanBrasse\/Tars/m);
   });
 });
+
+describe('a PR event of a project', () => {
+  it('10. carries the project whose repository it was found in: a reply to its report goes to that project', async () => {
+    const home = os.homedir();
+    const bin = path.join(home, '.nvm', 'versions', 'node', 'v20.11.1', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const mergedFile = path.join(home, 'merged.json');
+    fs.writeFileSync(mergedFile, '[]');
+    fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\ncase "$*" in *"--state merged"*) cat '${mergedFile}' ;; *) echo '[]' ;; esac\n`, { mode: 0o755 });
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-gh-project-'));
+    execFileSync('git', ['init', '-q', project]);
+    execFileSync('git', ['-C', project, 'remote', 'add', 'origin', 'https://github.com/someone/elsewhere.git']);
+
+    await pollProjects([project]);
+    fs.writeFileSync(mergedFile, JSON.stringify([{ number: 7, title: 'Seven', url: 'https://github.com/someone/elsewhere/pull/7', mergedAt: '2026-10-01T01:00:00Z' }]));
+    const events = await pollProjects([project]);
+
+    expect(events).toEqual([expect.objectContaining({ kind: 'pr-merged', repo: 'someone/elsewhere', number: 7, projectPath: project })]);
+  });
+});
