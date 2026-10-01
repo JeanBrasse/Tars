@@ -87,6 +87,8 @@ export class FakeHermes implements KanbanHermes {
         todo: ['scheduled', 'blocked', 'todo', 'triage', 'ready', 'review'],
         triage: ['scheduled', 'blocked', 'todo', 'triage', 'ready', 'review'],
         blocked: ['todo', 'ready', 'running'],
+        // archive_task (kanban_db.py): from any status but archived itself.
+        archived: ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done'],
       };
       if (!(allowed[s] ?? []).includes(from)) return { success: false as const, error: `status transition to '${s}' not valid from current state` };
       t.status = s; if (s === 'done') t.result = (patch.result as string) ?? (patch.summary as string) ?? null;

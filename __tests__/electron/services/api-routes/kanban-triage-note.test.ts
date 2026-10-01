@@ -14,6 +14,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *    starts anybody;
  * 4. a project named with a trailing slash reaches nobody, or a project with
  *    no orchestrator throws.
+ * 5. it says the note went when nobody got it: an orchestrator whose CLI does
+ *    not run, or none at all, must be told apart from a note typed or held for
+ *    a turn's end, so that the error triage keeps the note it owes (since the
+ *    user's go-ahead, DESIGN-RELAIS-HERMES-V2.md on #242).
  */
 
 vi.mock('../../../../electron/core/agent-manager', () => ({ agents: new Map(), saveAgents: vi.fn() }));
@@ -67,7 +71,7 @@ describe("the error triage's note", () => {
       agent('orch-tars', TARS, { role: 'orchestrator' }),
     );
 
-    tellOrchestratorAsTars(TARS, NOTE);
+    expect(tellOrchestratorAsTars(TARS, NOTE)).toBe('typed');
 
     await vi.waitFor(() => expect(dispatched).toHaveLength(1));
     expect(dispatched[0]).toEqual({ agentId: 'orch-tars', message: NOTE, from: 'Tars', sender: { kind: 'tars' } });
@@ -77,7 +81,7 @@ describe("the error triage's note", () => {
     const orch = agent('orch-tars', TARS, { role: 'orchestrator', status: 'running' });
     put(orch);
 
-    tellOrchestratorAsTars(TARS, NOTE);
+    expect(tellOrchestratorAsTars(TARS, NOTE)).toBe('held');
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(dispatched).toEqual([]);
 
@@ -90,7 +94,7 @@ describe("the error triage's note", () => {
   it('3. never starts an orchestrator whose CLI is not running', async () => {
     put(agent('orch-tars', TARS, { role: 'orchestrator', ptyId: undefined }));
 
-    tellOrchestratorAsTars(TARS, NOTE);
+    expect(tellOrchestratorAsTars(TARS, NOTE), '5. not delivered: the triage keeps it').toBe('not-running');
     await new Promise(resolve => setTimeout(resolve, 20));
 
     expect(dispatched).toEqual([]);
@@ -99,8 +103,8 @@ describe("the error triage's note", () => {
   it('4. finds the orchestrator of a project named with a trailing slash, and does nothing where there is none', async () => {
     put(agent('orch-tars', TARS, { role: 'orchestrator' }));
 
-    expect(() => tellOrchestratorAsTars(OTHER, NOTE)).not.toThrow();
-    tellOrchestratorAsTars(`${TARS}/`, NOTE);
+    expect(tellOrchestratorAsTars(OTHER, NOTE), '5. nobody to tell').toBe('no-orchestrator');
+    expect(tellOrchestratorAsTars(`${TARS}/`, NOTE)).toBe('typed');
 
     await vi.waitFor(() => expect(dispatched).toHaveLength(1));
     expect(dispatched[0].agentId).toBe('orch-tars');
