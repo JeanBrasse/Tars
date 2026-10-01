@@ -1,11 +1,12 @@
 """tars-relay, dashboard half: the routes Tars calls, under /api/plugins/tars-relay/, behind the dashboard's
 session token like every dashboard route.
 
-  GET  /status            configured or not, sends in the last hour, replies waiting
+  GET  /status            configured or not, sends in the last hour, replies waiting, the projects registered
   POST /send              {text, kind, ref?, project?}: sent as written, in plain text, to the user id in the
                           plugin's settings and to nobody else; returns the message id
   GET  /replies?after=N   the replies and @project messages Tars has not taken, oldest first
   POST /ack               {through: N}: Tars has taken them up to N; they are deleted
+  POST /projects          {projects: [name, ...]}: the projects "@name" may address, in place of the last ones
 
 Tars cannot choose the recipient: the user id comes from Hermes's config on this server.
 """
@@ -78,7 +79,8 @@ async def _send_plain(chat_id: str, text: str):
 def status():
     store = _store()
     return {'plugin': core.PLUGIN_ID, 'version': core.VERSION, 'configured': core.noah_of(_settings()) is not None,
-            'sends_last_hour': store.sends_last_hour(), 'waiting_replies': store.waiting_replies()}
+            'sends_last_hour': store.sends_last_hour(), 'waiting_replies': store.waiting_replies(),
+            'projects': store.projects()}
 
 
 @router.post('/send')
@@ -95,16 +97,19 @@ async def send(request: Request):
     if noah is None:
         raise HTTPException(status_code=503, detail='tars-relay has no user_id in its settings')
     store = await asyncio.to_thread(_store)
-    if not await asyncio.to_thread(store.may_send):
+    # The place is taken before the message goes out, so that sends made at once cannot all pass the count.
+    slot = await asyncio.to_thread(store.reserve, noah)
+    if slot is None:
         raise HTTPException(status_code=429, detail='%d sends in the last hour already' % core.SENDS_PER_HOUR)
     try:
         message = await _send_plain(noah, outgoing['text'])
     except Exception as error:
+        await asyncio.to_thread(store.release, slot)
         # The class only: an error from the HTTP client can carry the request's URL, and the bot token is in it.
         log.warning('tars-relay: Telegram did not take a message (%s)', type(error).__name__)
         raise HTTPException(status_code=502, detail='Telegram did not take the message (%s)' % type(error).__name__)
     await asyncio.to_thread(store.record_sent, chat_id=noah, message_id=str(message.message_id), ref=outgoing['ref'],
-                            kind=outgoing['kind'], project=outgoing['project'], text=outgoing['text'])
+                            kind=outgoing['kind'], project=outgoing['project'], text=outgoing['text'], slot=slot)
     return {'message_id': str(message.message_id)}
 
 
@@ -123,3 +128,17 @@ async def ack(request: Request):
     if not isinstance(through, int) or isinstance(through, bool) or through < 0:
         raise HTTPException(status_code=400, detail='through must be the last seq taken, a whole number')
     return {'deleted': await asyncio.to_thread(_store().ack, through)}
+
+
+@router.post('/projects')
+async def projects(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    try:
+        names = core.check_projects(body)
+    except core.Refused as refused:
+        raise HTTPException(status_code=400, detail=str(refused))
+    store = await asyncio.to_thread(_store)
+    return {'projects': await asyncio.to_thread(store.set_projects, names)}

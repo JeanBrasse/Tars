@@ -1486,9 +1486,9 @@ neither is a place to park.
 
 `hermes-plugins/tars-relay/` is a Hermes plugin, not part of the app: it is installed by hand on the server where
 Hermes runs, and never shipped in Tars. Through it Tars writes to Noah with Hermes's Telegram bot, and gets back his
-replies to those messages and the messages he starts with `@project`, which never reach Hermes's model. The model
-gets a read-only copy of what Tars sent, on Noah's next turn in his private chat. Its README says how to install,
-check and remove it, and what it keeps.
+replies to those messages and the messages he starts with `@project` for a project Tars registered with it, which
+never reach Hermes's model. The model gets a read-only copy of what Tars sent, on Noah's next turn in his private
+chat. Its README says how to install, check and remove it, and what it keeps.
 
 Nothing in Tars calls it yet: Tars's side of the relay comes next, with the dashboard token moved to
 `~/.tars-private` (SECURITY.md, section 5). Install the plugin with that release, not before.

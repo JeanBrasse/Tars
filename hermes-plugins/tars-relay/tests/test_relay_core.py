@@ -144,7 +144,7 @@ class WhatIsKeptForTars(Base):
         self.assertEqual((kept['project'], kept['text']), ('tars', 'go'))
 
         for text in ['@', '@ tars fais-le', 'noah@cooperlabs.xyz', 'dis à @tars bonjour', '@tars', '@tars   ',
-                     '@tarsfais-le', '@@tars go']:
+                     '@tarsfais-le', '@tarsx', '@@tars go']:
             with self.subTest(text=text):
                 self.assertIsNone(relay_core.decide(message(text=text), SETTINGS, self.store))
 

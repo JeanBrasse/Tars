@@ -40,7 +40,10 @@ describe('the tars-relay Hermes plugin', () => {
     const python = findPython();
     if (!python) {
       expect(process.env.CI, 'no Python 3.9 or later on CI (python3, python, py -3): the plugin\'s tests must run there').toBeFalsy();
-      ctx.skip('no Python 3.9 or later on PATH (tried python3, python, py -3): the tars-relay plugin\'s own tests did not run');
+      // Printed as well: the default reporter counts a skip without showing its note.
+      const why = 'no Python 3.9 or later on PATH (tried python3, python, py -3): the tars-relay plugin\'s own tests did not run';
+      console.warn(why);
+      ctx.skip(why);
     }
 
     const run = spawnSync(python!.command, [...python!.args, '-m', 'unittest', 'discover', '-s', 'tests', '-v'], {
