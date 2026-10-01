@@ -13,10 +13,10 @@ Nothing runs in the cloud. No account, no server, no analytics. The state lives 
 ### Data Flow
 
 ```
-Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
-├── BrowserWindow  → Next.js 16.3 static export (src/, ~40k LOC)
+Electron 44 main process (Node 24.21, Chromium 152; electron/, ~47k LOC)
+├── BrowserWindow  → Next.js 16.3 static export (src/, ~44k LOC)
 │                     contextIsolation, nodeIntegration off, app:// protocol
-│                     ↕ 201 IPC channels via contextBridge (electron/preload.ts)
+│                     ↕ 215 IPC channels via contextBridge (electron/preload.ts)
 │
 ├── PTY layer (node-pty)          agent PTYs · quick PTYs · skill PTYs · plugin PTYs
 │     └─ one shell per agent, cwd = worktreePath ?? projectPath
@@ -83,7 +83,7 @@ orchestrator agent's CLI
 | 5 | `loadAgents()` + `startAgentAutosave()` | 30 s dirty-flush timer, `unref`'d |
 | 6 | `setupProtocolHandler()` → `createWindow()` | `app://` and `local-file://` |
 | 7 | `initTray()` | menu-bar popover rendering `/tray-panel` |
-| 8 | IPC registration | 201 channels across 16 files: the 15 handler modules plus `mcp-orchestrator.ts` |
+| 8 | IPC registration | 215 channels across 17 files: the 16 handler modules plus `mcp-orchestrator.ts` |
 | 9 | `initVaultDb()` | better-sqlite3, WAL, foreign keys on |
 | 10 | Telegram + Slack + Discord + `startApiServer()` | |
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
@@ -630,6 +630,7 @@ Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes
 |---|---|---|---|
 | `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
 | `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
+| `overseer-hermes-sessions.json` | the ids of the Hermes sessions the super chat's turns ran in, the last 5000 | `rememberHermesSessions()` in `services/overseer-store.ts` | **Atomic**, mode `0600`. `memory_search` leaves these sessions out, so no agent is handed the super chat through Hermes |
 | `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds ids and names, never a credential and never a folder: an account's folder is `~/.claude-accounts/<id>`, derived from its id. A file that does not parse reads as account 1 alone and is never written over: every change is refused, and Settings says why |
 
 Files Tars writes **outside** its own directory:
@@ -714,12 +715,12 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | Route | Name | What it is | Frame |
 |---|---|---|---|
 | `/` | Dashboard | The terminal grid. Every running agent as a live xterm pane, project tab bar, layout presets, add-agent dropdown. A pane in error shows the reason in its header | `Dashboard · dark` / `· light`, `Agent error · reason` |
-| `/agents` | Agents | Roster grouped by project, in the order of the Dashboard's tabs: each project's name, path and agent count over its cards. A project picker narrows the page to one project, the status chips (All, Running, Waiting, Idle, Error) count within it, with a completed agent counted as idle as its card says, and a filter field matches name, branch, project and task. None of the three filters outlives the visit. Management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agents · one project`, `Agents · project picker open`, `Agent error · reason` |
+| `/agents` | Agents | Roster grouped by project, in the order of the Dashboard's tabs: each project's name, path and agent count over its cards. A project picker narrows the page to one project, the status chips (All, Running, Waiting, Idle, Stopped, Error) count within it, with a completed agent counted as idle as its card says, and a filter field matches name, branch, project and task. None of the three filters outlives the visit. Management card per agent. A card in error shows the reason in place of the task | `Agents · dark`, `Agents · one project`, `Agents · project picker open`, `Agent error · reason` |
 | `/projects` | Projects | Project registry (backed by `~/.dorothy/projects.json`), file browser, per-project agent view. 1153 lines | `Projects · dark` |
 | `/kanban` | Kanban | The Hermes board, in Hermes's own eight columns. The agents' tasks sit there too: parked in `scheduled` on the Tars lane, claimed in `ready` on their agent's lane (OPERATIONS.md, "The agents' kanban") | `Kanban · dark` |
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, with the projects added in Tars that no agent works in, changed-file list with add/delete counts, real patches cut at 4000 lines with a note, a file's read error said. Refresh rereads the list. Replaced a 20-line `git diff --stat` | `Review · dark`, `Review · light`, `Review · states` |
-| `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
+| `/logs` | Logs | One search box for the whole fleet, over each agent's output as its terminal shows it (the live mirror, else its kept output replayed headless), a Claude agent's transcript first, since a full-screen session keeps no history. Plain substring, or `/regex/` when delimited | `Logs · dark` |
 | `/usage` | Usage | Cost and tokens over one timeframe chosen in the header (24 hours, 14 days, 12 weeks, 12 months): four tiles, the provider rows, and cost, token and message charts on the same bars. Budget rows stay month to date and rate windows live. See §6, On the page | `Usage · dark` (14 days) / `· light` (12 months) / `· daily messages` / `· last 24 hours` |
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
@@ -762,11 +763,11 @@ webPreferences: { preload, contextIsolation: true, nodeIntegration: false, webvi
 
 ### The `local-file://` protocol
 
-Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot()` to `~/.dorothy`, `~/.claude`, and the project roots read fresh from `~/.dorothy/projects.json` on every request (so a newly added project works at once). Containment is checked on `path.resolve`d paths with an explicit separator boundary. Unrestricted, this protocol served `~/.ssh/id_rsa` and `~/.aws/credentials` to anything that could put a URL in the renderer.
+Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot()` to `~/.dorothy`, `~/.claude`, and the project roots read fresh from `~/.dorothy/projects.json` on every request (so a newly added project works at once). Containment is judged where the file really lies, links followed (`landsUnderSafeRoot`, `electron/utils/real-target.ts`), under a root that neither is nor covers the home: a project added as `~`, or a link under `~/.dorothy` or in a project, no longer opens the rest of the home. Unrestricted, this protocol served `~/.ssh/id_rsa` and `~/.aws/credentials` to anything that could put a URL in the renderer.
 
 ### The IPC boundary
 
-`electron/preload.ts` (845 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 201 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `api:`. Every event subscription returns its own unsubscribe closure.
+`electron/preload.ts` (913 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 215 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`. Every event subscription returns its own unsubscribe closure.
 
 ### What is validated where
 
@@ -778,7 +779,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Branch name | `resolveWorktreePath()` | `/^[A-Za-z0-9][A-Za-z0-9._/-]*$/`, no `..`, no `//`, no trailing `/` `.` `.lock`, no `@{`, ≤200 chars, **plus** a resolved-path containment check against `<project>/.worktrees`. The old regex admitted `.` and `/` and therefore `../../..`; `path.join` resolved outside the project, the "worktree already exists, reusing it" branch never invoked git, and the agent was spawned with its cwd there. `../../../etc` was enough |
 | Memory file name | `writeProjectMemory()` | `/^[A-Za-z0-9._-]+\.md$/` |
 | Memory sources | `parseSources()` | allowlist of the five ids |
-| Vault attachment path | `GET /api/local-file` | must resolve under `<VAULT_DIR>/attachments` |
+| Vault attachment path | `GET /api/local-file` | must resolve under `<VAULT_DIR>/attachments`, where the file really lies, links followed, and as the file's only name (`nlink` 1) |
 | Transcript model id | `computeTranscriptUsage()` | null-prototype map; `__proto__` / `constructor` / `prototype` rejected |
 | Request body | `api-server.ts` | 4 MB cap enforced *while streaming* (it reads before routing, and on auth-exempt hook paths, so an unbounded stream was a way to exhaust main-process memory with no credential at all); `__proto__` and `constructor` deleted from the parsed object |
 | Git arguments | `git-review.ts` | `execFile` with an argv array: no shell, so a branch or path containing a quote or a semicolon is data, not syntax |
