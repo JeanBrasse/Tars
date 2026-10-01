@@ -180,8 +180,10 @@ describe('where the transcripts are, and whose session they are', () => {
 
   it('8. a provider the status line writes after a first pass is picked up by the next one', async () => {
     transcript(projects(home), 'sess-late', [turn('late', HOUR, 'llama3.3:70b')]);
+    // The file is there already, as it is on a machine that has run Claude: it changes, it does not appear.
+    tokenStats({ 'sess-other': { provider: 'claude' } });
     const first = (await computeTranscriptUsage(home)) as { providerByModel?: Record<string, string> };
-    tokenStats({ 'sess-late': { provider: 'ollama', account: '2' } });
+    tokenStats({ 'sess-other': { provider: 'claude' }, 'sess-late': { provider: 'ollama', account: '2' } });
 
     // The 60 s memo expired, the transcripts as they were.
     const real = Date.now;
