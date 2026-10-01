@@ -67,7 +67,8 @@ beforeEach(() => {
 
 describe('review:file reads the repository and nothing else', () => {
   it('1. a path with ../.. is refused, and the file outside is never shown', async () => {
-    for (const file of ['../secret-outside.txt', 'sub/../../secret-outside.txt', '../outside-dir/secret.txt']) {
+    // Refused before git or the disk is asked: a folder outside that does not exist is refused too, not read as empty.
+    for (const file of ['../secret-outside.txt', 'sub/../../secret-outside.txt', '../outside-dir/secret.txt', '../no-such-folder/x.txt']) {
       const shown = await fileDiff(repo, file).catch((e: Error) => `refused: ${e.message}`);
       expect(shown, file).toMatch(/^refused: /);
       expect(shown, file).not.toContain('SECRET OUTSIDE');

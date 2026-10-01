@@ -5,6 +5,8 @@ import { DATA_DIR } from '../constants';
 import { probeMcpEndpoint, callMcpTool, listMcpTools, type McpEndpoint } from './mcp-http-client';
 import {
   fetchHermesMemoryFiles,
+  fetchHermesMemoryFile,
+  HERMES_MEMORY_FILES,
   searchHermesSessions,
   fetchHermesMemoryState,
   appendHermesMemory,
@@ -304,21 +306,22 @@ export async function assembleDigest(opts: {
   }
 
   if (hermes) {
-    try {
-      const res = await Promise.race([
-        fetchHermesMemoryFiles(hermes),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), HERMES_START_BUDGET_MS)),
-      ]);
-      if (res && res.success) {
-        for (const file of res.files) {
-          const body = file.content.length > MAX_SECTION_CHARS
-            ? `${file.content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
-            : file.content;
-          sections.push(`## Hermes memory: ${file.name}\n${body.trim()}`);
-        }
-      }
-    } catch {
-      // A gateway that is down must not delay the agent.
+    // Each file on its own, both at once, under one budget. Read one after the
+    // other inside a single race, a Hermes that answered MEMORY.md and never
+    // USER.md kept neither (the Audit's gate of #271). What has come back when
+    // the budget runs out goes in; a gateway that is down delays nobody.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), HERMES_START_BUDGET_MS); });
+    const reads = await Promise.all(HERMES_MEMORY_FILES.map(name =>
+      Promise.race([fetchHermesMemoryFile(hermes, name).catch(() => null), late])));
+    clearTimeout(timer);
+    for (const read of reads) {
+      if (!read || !read.success || !read.file) continue;
+      const { name, content } = read.file;
+      const body = content.length > MAX_SECTION_CHARS
+        ? `${content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
+        : content;
+      sections.push(`## Hermes memory: ${name}\n${body.trim()}`);
     }
   }
 
