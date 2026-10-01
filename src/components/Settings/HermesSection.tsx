@@ -233,7 +233,8 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
       <SettingsRow
         label="Gateway URL"
-        description={typedUrl ? 'Where the Hermes gateway answers.' : 'Derived from the port below.'}
+        description={typedUrl ? 'Where the Hermes gateway answers.' : 'Derived from the port below. Switch to Remote to type a URL.'}
+        wrap
         control={
           <div className="flex items-center gap-2 w-full">
             <Input
