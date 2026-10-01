@@ -31,6 +31,7 @@ export const CHANGELOG: Release[] = [
       'Quitting Tars ends the CLIs your agents run, and what they started, even one that ignores the hangup a closing terminal sends: each gets 1.5 s to end on its own, then is ended, and Tars waits for them before it closes. Such a CLI used to outlive every quit. A job you left running with nohup in your own shell panel still survives the quit, as in any terminal app. While Tars quits it starts nothing new, so an agent started in that moment is refused rather than left running after Tars has closed, and an agent whose terminal the quit ended is no longer saved as finished',
       'The Logs page reads each agent\'s output as its terminal showed it, one line per row. It split the raw output on line breaks, and Claude Code draws its screen with cursor moves: the words of a line ran together, a whole session came out as a single line, and a search for words as they appear on screen found nothing',
       'On the Usage page, a Claude window whose reset time has passed says reset, over an empty bar, where it kept the percentage of the window before, "97% used · resetting", until the next status line, sometimes for hours with no agent running',
+      'An agent that reads running but has written nothing for 30 minutes and runs no command, which is what a frozen Claude Code looks like, is marked stalled, and the orchestrator that gave it the work, or its project\'s orchestrator, is told once. A long build or test run under it is not taken for a stall',
     ],
   },
   {
