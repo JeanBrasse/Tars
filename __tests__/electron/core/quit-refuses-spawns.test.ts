@@ -138,7 +138,9 @@ describe('every spawn site and exit handler in electron/', () => {
         // Where the enclosing function starts: a declaration, an arrow, or a
         // class method (`async start(): Promise<...> {`, the ACP client's).
         const method = [...before.matchAll(/\n\s*(?:private |public |static )*(?:async )?[A-Za-z_]\w*\([^)]*\)[^{;=\n]*\{\s*\n/g)].pop();
-        const fnStart = Math.max(before.lastIndexOf('function '), before.lastIndexOf('=> {'), before.lastIndexOf('async ('), method?.index ?? -1);
+        const found = Math.max(before.lastIndexOf('function '), before.lastIndexOf('=> {'), before.lastIndexOf('async ('), method?.index ?? -1);
+        // No start in the window: the function began earlier, so the whole window lies inside it.
+        const fnStart = found < 0 ? 0 : found;
         if (!before.slice(fnStart).includes('refuseWhileQuitting(')) unguarded.push(`${f}:${text.slice(0, m.index!).split('\n').length}`);
       }
     }
