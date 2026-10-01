@@ -148,7 +148,7 @@ describe('usageByProvider, per day', () => {
   const write = (lines: string[]) => fs.writeFileSync(ledger.ledgerPath(), `${lines.join('\n')}\n`);
 
   it('is empty, and names no first day, when nothing was recorded', () => {
-    expect(ledger.usageByProvider()).toEqual({ providers: [], dailyCost: {}, daily: [], oldest: null });
+    expect(ledger.usageByProvider()).toEqual({ providers: [], dailyCost: {}, daily: [], oldest: null, hourly: [] });
   });
 
   it('keys a turn by its local day: 02:30 in Tbilisi is that day, not the UTC day before', () => {
