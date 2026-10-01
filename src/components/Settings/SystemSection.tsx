@@ -231,7 +231,7 @@ export const SystemSection = ({ info }: SystemSectionProps) => {
 
           <SettingsRow
             label="Claude Code"
-            description={`${info.claudeVersion} · ${info.settingsPath}`}
+            description={info.claudeVersion ? `${info.claudeVersion} · ${info.settingsPath}` : info.settingsPath}
             control={
               info.claudeVersion
                 ? <StatusBadge tone="running">ready</StatusBadge>
