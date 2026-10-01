@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterAll, beforeEach, afterEach } from 'vitest';
 import type { ReactElement } from 'react';
 import { mount, settle, elements, ofType, textOf, type Mount } from './hook-runtime';
 import UsagePage from '../../src/app/usage/page';
@@ -37,6 +37,13 @@ vi.mock('react', async (importOriginal) => ({
  * clock is pinned to 22 Sep 2026 at 12:30 in Tbilisi (UTC+4), so the current
  * hour starts at 12:00 local, 08:00 UTC, and the window at 13:00 yesterday.
  */
+
+// The zone is pinned here, before anything below reads the clock: the seed's
+// hours are computed as this file loads. Pinned in a beforeAll, it came after
+// them, and in any zone but UTC+4 (CI runs in UTC) the page's clock and its
+// seed were four hours apart.
+const zone = process.env.TZ;
+process.env.TZ = 'Asia/Tbilisi';
 
 const H = 3_600_000;
 const NOW = () => new Date(2026, 8, 22, 12, 30, 0);
@@ -156,9 +163,6 @@ type Tree = unknown;
 type El = ReactElement<Record<string, unknown>>;
 const g = globalThis as unknown as { window?: unknown; document?: unknown };
 let page: Mount<Tree> | null = null;
-const zone = process.env.TZ;
-
-beforeAll(() => { process.env.TZ = 'Asia/Tbilisi'; });
 afterAll(() => {
   if (zone === undefined) delete process.env.TZ;
   else process.env.TZ = zone;
