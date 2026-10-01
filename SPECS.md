@@ -13,7 +13,7 @@ Nothing runs in the cloud. No account, no server, no analytics. The state lives 
 ### Data Flow
 
 ```
-Electron 44 main process (Node 24.21, Chromium 152; electron/, ~39k LOC)
+Electron 44 main process (Node 24.21, Chromium 152; electron/, ~47k LOC)
 ├── BrowserWindow  → Next.js 16.3 static export (src/, ~44k LOC)
 │                     contextIsolation, nodeIntegration off, app:// protocol
 │                     ↕ 215 IPC channels via contextBridge (electron/preload.ts)
