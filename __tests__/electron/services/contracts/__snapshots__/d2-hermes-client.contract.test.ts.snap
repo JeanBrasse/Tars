@@ -3,6 +3,7 @@
 exports[`hermes-client, as recorded before the D2 refactor > exports the same names 1`] = `
 [
   "HERMES_KANBAN_COLUMNS",
+  "HERMES_MEMORY_FILES",
   "MAX_ATTACHMENT_BYTES",
   "addHermesTaskComment",
   "appendHermesMemory",
@@ -16,6 +17,7 @@ exports[`hermes-client, as recorded before the D2 refactor > exports the same na
   "fetchHermesCronRuns",
   "fetchHermesCrons",
   "fetchHermesMcpServers",
+  "fetchHermesMemoryFile",
   "fetchHermesMemoryFiles",
   "fetchHermesMemoryProviders",
   "fetchHermesMemoryState",
