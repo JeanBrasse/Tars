@@ -1574,6 +1574,14 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 | the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
 | Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
 
+### An agent marked stalled
+
+`stalledSince` on an agent (and a `[Tars] ... has written nothing to its transcript for N minutes and runs no tool`
+note in its orchestrator) means: `running`, no transcript write for 30 minutes, nothing at work under its CLI. Check
+with `ps -A -o pid,ppid,stat,etime,command | grep -A12 claude` (a frozen claude has no live `caffeinate` under it,
+often an unreaped zombie, and 0 % CPU) and `sample <pid> 1`. If nothing moves: stop it, and start it again with a
+brief of what is already done. A long tool that runs no process (a web fetch, a subagent) is not caught by this rule.
+
 ### Agent stuck in the wrong directory
 
 `killStalePty()` compares the PTY's recorded `ptyCwd` against `worktreePath || projectPath` and
