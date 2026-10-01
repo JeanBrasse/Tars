@@ -25,6 +25,7 @@ export const CHANGELOG: Release[] = [
       'The Review page lists a renamed file once, under its new name, and shows it as a rename; names with accents as they are; an untracked binary as binary rather than as lines of text; and a file changed in a commit and again since with all its lines. A one-line new file counts one line, and a repository with no commit yet shows its staged files on its own branch',
       'The Usage page also counts the Claude sessions kept in the folder CLAUDE_CONFIG_DIR names, when Tars itself was started with that variable set (from a terminal; a Tars opened from the Dock does not see it)',
       'An agent\'s panel on the Dashboard no longer has a history view, the conversation read from its transcript: the panel shows its session, and its header says session where it said live. Fullscreen is one press on the arrows after start or stop, which turn inward while the panel fills the window, where it was an item of the panel\'s ··· menu. A panel whose claude left fullscreen offers restart alone',
+      'The Projects page no longer shows Invalid Date on a folder you added that Claude Code has never run in: Tars knows no date for it, so its card shows none and its own view says unknown',
     ],
   },
   {
