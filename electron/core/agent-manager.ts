@@ -10,9 +10,9 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { rolesOnLoad } from './agent-role';
-import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-manager';
+import { ptyProcesses, setDialogProbe, setCliProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
-import { spawnAgentPty } from './agent-pty';
+import { cliStoppedIn, spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
@@ -75,6 +75,8 @@ export const agents: Map<string, AgentStatus> = new AgentMap();
  * main.ts at startup, beside the field probe.
  */
 export function wireDialogProbe(): void {
+  // And a held message goes into a CLI only, never its shell (setCliProbe).
+  setCliProbe(ptyProcess => !cliStoppedIn(ptyProcess));
   setDialogProbe(agentId => {
     const agent = agents.get(agentId);
     return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
