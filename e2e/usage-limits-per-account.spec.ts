@@ -22,6 +22,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  */
 
 const ROWS = 'Budget & limits';
+/** The launch splash, over the page on every document load until its checks answer (4 s at most). */
+const SPLASH = 'div.fixed.inset-0.z-\\[200\\]';
 
 /** Every row of the panel: its label, its detail, and how wide its bar is drawn. */
 async function budgetRows(page: Page) {
@@ -92,6 +94,7 @@ test('Budget & limits shows each Claude account\'s windows, and Claude\'s own wi
     ]);
     expect(claudeOn[2].bar).toBe('0%');
     expect(on.some(r => r.label.includes('Paused'))).toBe(false);
+    await expect(page.locator(SPLASH)).toHaveCount(0, { timeout: 15_000 });
     await stepShot(page, '01-accounts-on');
 
     // The option off: Claude's two rows are account 1's, as before.
@@ -105,6 +108,7 @@ test('Budget & limits shows each Claude account\'s windows, and Claude\'s own wi
       ['Claude', '5h window · 44% used · resets'],
       ['Claude', '7d window · 22% used · resets'],
     ]);
+    await expect(page.locator(SPLASH)).toHaveCount(0, { timeout: 15_000 });
     await stepShot(page, '02-accounts-off');
 
     recordValues({ on, off, pageErrors: errors });
