@@ -95,6 +95,13 @@ describe("the app's own before-quit handler", () => {
     expect(steps).not.toContain('<not a literal>');
   });
 
+  it('stops the stall watch in its first pass, before the terminals it reads are ended (#283)', () => {
+    // Its check reads each agent's process tree and posts to an orchestrator:
+    // run against a fleet whose trees are being ended, every agent reads
+    // stalled, or its notice lands in a terminal that is going away.
+    expect(shutdownStepNames()).toContain('stopStallWatch');
+  });
+
   it('does its work through the guarded runner and not as bare statements', () => {
     const source = fs.readFileSync(MAIN, 'utf-8');
     const handler = source.slice(source.indexOf("app.on('before-quit'"));
