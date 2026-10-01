@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, settle, type Mount } from '../components/hook-runtime';
-import { useClaude } from '../../src/hooks/useClaude';
+import { useClaude, forgetClaudeData } from '../../src/hooks/useClaude';
 
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
@@ -34,6 +34,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   g.document = { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() };
   g.window = { electronAPI: { claude: { getData: vi.fn(async () => payload(62)) } } };
+  // The window's one store keeps what it read across mounts (#233): each test
+  // starts from nothing, as a window does.
+  forgetClaudeData();
 });
 afterEach(() => {
   hook?.unmount();
