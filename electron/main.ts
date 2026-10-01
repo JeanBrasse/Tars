@@ -112,7 +112,6 @@ import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
-import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
@@ -498,7 +497,6 @@ app.whenReady().then(async () => {
     saveAgents,
     loginPtys: pluginPtyProcesses,
   });
-  registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
 
