@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BusDelivery, BusMember, BusMessage, BusRoom, BusThread } from '@/types/electron';
+import { BUS_READ_MS, noAnswer, retryingRead, type RetryingRead } from '@/lib/bus-read';
 
 /**
  * The agent bus, as the Chat page sees it.
@@ -33,9 +34,6 @@ export function hasBus(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI?.bus;
 }
 
-/** How long a read of the bus is given before the page says it did not answer. */
-const BUS_READ_MS = 10_000;
-
 /**
  * A read of the bus that says so when it does not come back. A main process
  * that never answered left the room list empty and a room spinning for good,
@@ -45,7 +43,7 @@ const BUS_READ_MS = 10_000;
 function busRead<T>(channel: string, call: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${channel}, no answer in ${BUS_READ_MS / 1000} s`)), BUS_READ_MS);
+    timer = setTimeout(() => reject(noAnswer(channel)), BUS_READ_MS);
   });
   return Promise.race([call(), late]).finally(() => clearTimeout(timer));
 }
@@ -58,22 +56,33 @@ export function useBusRooms() {
   const [rooms, setRooms] = useState<BusRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const reader = useRef<RetryingRead | null>(null);
 
-  const reload = useCallback(async () => {
+  // Read once, and again by itself when the bus was slow or failed: an answer
+  // after the 10 s still lists the rooms, and the note stays while it tries.
+  useEffect(() => {
     if (!hasBus()) { setLoading(false); return; }
-    try {
-      const r = await busRead('bus:listRooms', () => window.electronAPI!.bus!.listRooms());
-      setRooms(r?.rooms ?? []);
-      setError(r?.error ?? null);
-    } catch (err) {
-      // The rooms already listed stay: the note says the list is not whole.
-      setError(readError(err));
-    } finally {
-      setLoading(false);
-    }
+    const read = retryingRead({
+      channel: 'bus:listRooms',
+      call: () => window.electronAPI!.bus!.listRooms(),
+      failure: r => r?.error,
+      onAnswer: r => {
+        setRooms(r?.rooms ?? []);
+        setError(r?.error ?? null);
+        setLoading(false);
+      },
+      onFailure: err => {
+        // The rooms already listed stay: the note says the list is not whole.
+        setError(readError(err));
+        setLoading(false);
+      },
+    });
+    reader.current = read;
+    read.read();
+    return () => { read.stop(); reader.current = null; };
   }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
+  const reload = useCallback(() => { reader.current?.read(); }, []);
 
   // A room appears when its first message lands, and `setMembers` emits nothing
   // of its own, so this refresh is the only thing keeping the list's member
