@@ -1788,7 +1788,8 @@ export interface ElectronAPI {
   hermes?: {
     getConnection: () => Promise<{ connection: HermesConnection; baseUrl: string; desktopConfigAvailable: boolean }>;
     saveConnection: (connection: HermesConnection) => Promise<{ success: boolean; error?: string }>;
-    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string }>;
+    /** `tokenNotImported`: the connection came without the token Hermes Desktop keeps encrypted, which Tars cannot read. */
+    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string; tokenNotImported?: boolean }>;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;
