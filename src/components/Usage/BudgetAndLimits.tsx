@@ -135,12 +135,15 @@ function accountRows(accounts: AccountWindows[], nowSec: number): BudgetRow[] {
     ['5h window', account.fiveHour],
     ['7d window', account.sevenDay],
   ] as const).map(([key, window]): BudgetRow => {
-    const pct = window ? Math.round(window.usedPercentage) : 0;
+    // One that passed its reset since it was read is reset too, as Claude's
+    // own rows say it: humanReset times a window that has not.
+    const reset = !window || (!!window.resetsAt && window.resetsAt <= nowSec);
+    const pct = reset ? 0 : Math.round(window.usedPercentage);
     return {
       providerId: 'claude',
       label: `Claude · ${account.label}`,
       kind: 'subscription',
-      detail: window ? [key, `${pct}% used`, humanReset(window.resetsAt, nowSec)].filter(Boolean).join(' · ') : `${key} · reset`,
+      detail: reset ? `${key} · reset` : [key, `${pct}% used`, humanReset(window.resetsAt, nowSec)].filter(Boolean).join(' · '),
       percent: pct,
     };
   })));
