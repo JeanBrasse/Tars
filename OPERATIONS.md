@@ -1583,7 +1583,8 @@ dispatch. To force it:
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:31415/api/agents/<id>?full=true" | jq '{projectPath, worktreePath, ptyCwd, ptyId}'
 # then stop and re-dispatch
-curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents/<id>/stop
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"reason":"wrong working directory, re-dispatching"}' http://127.0.0.1:31415/api/agents/<id>/stop
 ```
 
 ### An agent restarted by itself after its model or effort changed
