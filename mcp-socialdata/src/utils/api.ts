@@ -1,5 +1,5 @@
 import * as https from "https";
-import { send } from "../../../mcp-shared/src/http.js";
+import { API_WAIT_MS, send } from "../../../mcp-shared/src/http.js";
 import { readAppSettings } from "../../../mcp-shared/src/settings.js";
 
 const SOCIALDATA_BASE = "api.socialdata.tools";
@@ -44,6 +44,7 @@ export async function socialDataRequest(
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
     },
+    timeout: API_WAIT_MS,
   }, undefined, (err) => new Error(`SocialData API request failed: ${err.message}`));
 
   let parsed: unknown;

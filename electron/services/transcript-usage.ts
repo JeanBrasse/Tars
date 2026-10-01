@@ -68,10 +68,44 @@ export interface TranscriptUsage {
      *  split here: `breakdownByModel` keeps cache writes as one number, so
      *  pricing it again downstream cannot tell a 2x write from a 1.25x one. */
     costByModel: Record<string, number>;
+    /** The day's cost by the account each session ran on, as the status line
+     *  writes it into token-stats.json (TARS_CLAUDE_ACCOUNT); '' for a session
+     *  that names none. Summed over accounts it is `costUSD`. */
+    costByAccount: Record<string, number>;
   }>;
+  /**
+   * The last 48 hours, by the hour each turn was made in, in the same shape as
+   * a day. `hour` is when the hour starts, in milliseconds since the epoch.
+   * The Usage page could not show the last 24 hours (Noah, 01/10): the days
+   * were all there was, so at 09:00 the choice was today since midnight or
+   * today and all of yesterday. The hours of a rolling 24 hours are those with
+   * `hour` past now minus a day.
+   */
+  hourlyModelTokens: Array<{
+    hour: number;
+    tokensByModel: Record<string, number>;
+    breakdownByModel: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
+    messagesByModel: Record<string, number>;
+    costUSD: number;
+    costByModel: Record<string, number>;
+    costByAccount: Record<string, number>;
+  }>;
+  /**
+   * The provider each model ran under, taken from its sessions: the status
+   * line writes every session's provider into token-stats.json, and a
+   * transcript is named after its session. The page guessed it from the
+   * model's name, and an OpenRouter or Ollama model came out as Claude at $0
+   * (the Audit, AUDIT-USAGE-COMPTES.md). Only models some session speaks for
+   * are here; a model that ran under several, under the one that ran most of
+   * its replies.
+   */
+  providerByModel: Record<string, string>;
   /** Most recent day with real activity */
   lastComputedDate: string | null;
 }
+
+/** How far back the hours go: a rolling day, and the day before it to compare. */
+const HOURLY_WINDOW_MS = 48 * 3_600_000;
 
 interface Pricing {
   input: number;
@@ -191,6 +225,60 @@ function listTranscripts(root: string): string[] {
 }
 
 /**
+ * Where Claude Code writes its transcripts: ~/.claude/projects, and with a
+ * CLAUDE_CONFIG_DIR the projects/ under it as well. All the usage of a user's
+ * own CLAUDE_CONFIG_DIR was missing (the Audit, AUDIT-USAGE-COMPTES.md: a
+ * reply of 5000/500 written there did not appear). The same folder under two
+ * names, as an account folder's projects/ links to ~/.claude's, is walked once.
+ */
+function transcriptRoots(homeDir: string): string[] {
+  const roots = [path.join(homeDir, '.claude', 'projects')];
+  const own = process.env.CLAUDE_CONFIG_DIR;
+  if (own) roots.push(path.join(own, 'projects'));
+  const seen = new Set<string>();
+  return roots.filter((root) => {
+    let real = root;
+    try {
+      real = fs.realpathSync(root);
+    } catch { /* absent: it lists nothing */ }
+    if (seen.has(real)) return false;
+    seen.add(real);
+    return true;
+  });
+}
+
+/** What the status line writes about each session, in ~/.dorothy/token-stats.json. */
+function sessionsFile(homeDir: string): string {
+  return path.join(homeDir, '.dorothy', 'token-stats.json');
+}
+
+/**
+ * The provider and the account of each session, by session id. A transcript is
+ * named after its session, so this is how a reply is filed under who ran it.
+ * The file is written by a shell script any agent can run, so only short plain
+ * strings are taken from it, and never a name that would reach Object.prototype.
+ */
+function sessionsOf(homeDir: string): Map<string, { provider: string; account: string }> {
+  const sessions = new Map<string, { provider: string; account: string }>();
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(sessionsFile(homeDir), 'utf-8'));
+  } catch {
+    return sessions;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return sessions;
+  const plain = (v: unknown) => (typeof v === 'string' && v.length <= 64 && !FORBIDDEN_KEYS.has(v) ? v : '');
+  for (const [sid, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    sessions.set(sid, { provider: plain(e.provider), account: plain(e.account) });
+  }
+  return sessions;
+}
+
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
  * The memo, and which home it was computed for.
  *
  * `homeDir` is a parameter of the scan, but the memo was module scope and
@@ -242,6 +330,11 @@ interface TurnEntry {
   model: string;
   /** Local calendar day, or null when the line carried no usable timestamp. */
   date: string | null;
+  /** When the line was written, in whole minutes since the epoch, or null:
+   *  a number that small is held in the object itself, where milliseconds
+   *  took a heap number for every turn (10 MB on Noah's 2.7 GB of
+   *  transcripts, measured with the hours added). */
+  minute: number | null;
   counts: Counts;
 }
 
@@ -271,6 +364,20 @@ function localDateKey(isoTimestamp: string): string | null {
   if (Number.isNaN(d.getTime())) return null;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * One string for each day and each model, shared by every turn that names it.
+ * Each turn held its own copy, parsed out of its line: hundreds of thousands
+ * of identical strings on Noah's transcripts.
+ */
+const sharedStrings = new Map<string, string>();
+function shared<T extends string | null>(value: T): T {
+  if (value === null) return value;
+  const known = sharedStrings.get(value);
+  if (known !== undefined) return known as T;
+  sharedStrings.set(value, value);
+  return value;
 }
 
 /**
@@ -369,13 +476,15 @@ async function readTranscript(file: string): Promise<FileContribution | null> {
     };
 
     const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
+    const at = timestamp ? Date.parse(timestamp) : NaN;
     turns.push({
       key: `${message.id ?? ''}:${entry.requestId ?? ''}`,
-      model,
+      model: shared(model),
       // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
       // the first ten characters gave the UTC date while the chart labelled its
       // bars with the local one, putting every bar a day out east of Greenwich.
-      date: timestamp ? localDateKey(timestamp) : null,
+      date: timestamp ? shared(localDateKey(timestamp)) : null,
+      minute: Number.isNaN(at) ? null : Math.floor(at / 60_000),
       counts,
     });
   }
@@ -452,10 +561,18 @@ export function computeTranscriptUsage(homeDir = os.homedir()): Promise<Transcri
  * deleted, grown or rewritten changes it. A stat per file, 14 to 39 ms on
  * Noah's 1826 transcripts, where the adding up it can spare is 0.2 to 0.5 s.
  */
-async function fingerprintOf(root: string): Promise<string> {
+async function fingerprintOf(homeDir: string): Promise<string> {
   const hash = createHash('sha1');
   lastBreath = Date.now();
-  for (const file of listTranscripts(root).sort()) {
+  // Who ran each session decides where its replies are filed: a provider or an
+  // account written after a pass must be picked up by the next one.
+  try {
+    const stat = fs.statSync(sessionsFile(homeDir));
+    hash.update(`sessions\0${stat.mtimeMs}\0${stat.size}\n`);
+  } catch {
+    hash.update('sessions\0none\n');
+  }
+  for (const file of transcriptRoots(homeDir).flatMap(listTranscripts).sort()) {
     await breatheIfDue();
     try {
       const stat = fs.statSync(file);
@@ -480,7 +597,7 @@ async function refresh(homeDir: string): Promise<TranscriptUsage> {
   // makes its result stale before it exists, and it must not be memoised.
   const startedAt = generation;
   const catalog = catalogSync();
-  const fingerprint = await fingerprintOf(path.join(homeDir, '.claude', 'projects'));
+  const fingerprint = await fingerprintOf(homeDir);
   const kept = cache;
   if (kept && kept.homeDir === homeDir && kept.fingerprint === fingerprint && kept.catalog === catalog && !kept.value.unreadable) {
     if (generation === startedAt) cache = { ...kept, at: Date.now() };
@@ -493,7 +610,6 @@ async function scanTranscripts(
   homeDir: string,
   { startedAt, fingerprint, catalog }: { startedAt: number; fingerprint: string; catalog: unknown },
 ): Promise<TranscriptUsage> {
-  const root = path.join(homeDir, '.claude', 'projects');
   // A model's price, looked up once for this scan. costOf asked the catalogue
   // at every turn, and priceFor walks every model it lists when the id is
   // dated: about 608 thousand walks on Noah's transcripts, and with no
@@ -513,15 +629,48 @@ async function scanTranscripts(
   // `modelUsage[model] ||= …` on a plain object would let "__proto__" write
   // onto Object.prototype inside the main process.
   const modelUsage: Record<string, ModelUsage> = Object.create(null);
-  const dailyMap = new Map<string, Record<string, number>>();
+  /** A day or an hour, added up the same way. `messagesByModel` counts replies
+   *  off the same dedup key as the tokens: one API response is written as
+   *  several lines sharing a message id, so counting turns would roughly double
+   *  every day. */
   type Split = { input: number; output: number; cacheRead: number; cacheWrite: number };
-  const dailyBreakdown = new Map<string, Record<string, Split>>();
-  const dailyCost = new Map<string, number>();
-  const dailyCostByModel = new Map<string, Record<string, number>>();
-  /** How many replies came back each day, per model. Counted off the same
-   *  dedup key as the tokens: one API response is written as several lines
-   *  sharing a message id, so counting turns would roughly double every day. */
-  const dailyMessages = new Map<string, Record<string, number>>();
+  type Bucket = {
+    tokensByModel: Record<string, number>;
+    breakdownByModel: Record<string, Split>;
+    messagesByModel: Record<string, number>;
+    costUSD: number;
+    costByModel: Record<string, number>;
+    costByAccount: Record<string, number>;
+  };
+  const bucket = <K>(map: Map<K, Bucket>, key: K): Bucket => {
+    let b = map.get(key);
+    if (!b) {
+      b = { tokensByModel: Object.create(null), breakdownByModel: Object.create(null), messagesByModel: Object.create(null),
+        costUSD: 0, costByModel: Object.create(null), costByAccount: Object.create(null) };
+      map.set(key, b);
+    }
+    return b;
+  };
+  const addTo = (b: Bucket, model: string, delta: Counts, cost: number, isNewMessage: boolean, account: string) => {
+    b.tokensByModel[model] = (b.tokensByModel[model] || 0) + delta.input + delta.output;
+    const cell = b.breakdownByModel[model] ?? (b.breakdownByModel[model] = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    cell.input += delta.input;
+    cell.output += delta.output;
+    cell.cacheRead += delta.cacheRead;
+    cell.cacheWrite += delta.cacheWrite;
+    // Priced from its own tokens, cache reads and cache writes included,
+    // rather than left to be reconstructed downstream from input+output alone.
+    b.costUSD += cost;
+    b.costByModel[model] = (b.costByModel[model] || 0) + cost;
+    b.costByAccount[account] = (b.costByAccount[account] || 0) + cost;
+    if (isNewMessage) b.messagesByModel[model] = (b.messagesByModel[model] || 0) + 1;
+  };
+  const days = new Map<string, Bucket>();
+  const hours = new Map<number, Bucket>();
+  const since = Date.now() - HOURLY_WINDOW_MS;
+  const sessions = sessionsOf(homeDir);
+  /** Replies per provider, per model, to say which provider ran a model. */
+  const providerReplies = new Map<string, Map<string, number>>();
   let lastComputedDate: string | null = null;
 
   // One API response is written as several lines, one per content block, all
@@ -536,15 +685,26 @@ async function scanTranscripts(
   // its earlier messages into a new transcript under the same ids.
   const applied = new Map<string, Counts>();
 
-  const files = listTranscripts(root);
+  const files = transcriptRoots(homeDir).flatMap(listTranscripts);
   let unreadable = 0;
   lastBreath = Date.now();
+  const contributions: Array<{ file: string; mtimeMs: number; turns: FileContribution }> = [];
   for (const file of files) {
     await breatheIfDue();
     const turns = await contributionFor(file);
     // Counted, not skipped in silence: see `unreadable` on TranscriptUsage.
     if (!turns) { unreadable += 1; continue; }
+    contributions.push({ file, mtimeMs: fileCache.get(file)?.mtimeMs ?? 0, turns });
+  }
+  // Oldest first: a resumed or forked session replays earlier replies into its
+  // own transcript, and a reply is filed under the session that wrote it first.
+  // The totals do not depend on the order.
+  contributions.sort((a, b) => a.mtimeMs - b.mtimeMs);
 
+  for (const { file, turns } of contributions) {
+    await breatheIfDue();
+    const session = sessions.get(path.basename(file, '.jsonl'));
+    const account = session?.account ?? '';
     for (const turn of turns) {
       let delta = turn.counts;
       // A key seen for the first time is a reply that has not been counted
@@ -563,45 +723,29 @@ async function scanTranscripts(
         }
       }
 
-      const bucket = (modelUsage[turn.model] ||= emptyUsage());
-      bucket.inputTokens += delta.input;
-      bucket.outputTokens += delta.output;
-      bucket.cacheReadInputTokens += delta.cacheRead;
-      bucket.cacheCreationInputTokens += delta.cacheWrite;
-      bucket.cacheCreation1hTokens += delta.write1h;
-      bucket.cacheCreation5mTokens += delta.write5m;
-      bucket.webSearchRequests += delta.searches;
+      const modelBucket = (modelUsage[turn.model] ||= emptyUsage());
+      modelBucket.inputTokens += delta.input;
+      modelBucket.outputTokens += delta.output;
+      modelBucket.cacheReadInputTokens += delta.cacheRead;
+      modelBucket.cacheCreationInputTokens += delta.cacheWrite;
+      modelBucket.cacheCreation1hTokens += delta.write1h;
+      modelBucket.cacheCreation5mTokens += delta.write5m;
+      modelBucket.webSearchRequests += delta.searches;
 
       const cost = costOf(priceOf(turn.model), delta);
-      bucket.costUSD += cost;
+      modelBucket.costUSD += cost;
 
       if (turn.date) {
-        const day = dailyMap.get(turn.date) ?? Object.create(null);
-        day[turn.model] = (day[turn.model] || 0) + delta.input + delta.output;
-        dailyMap.set(turn.date, day);
-
-        const split = dailyBreakdown.get(turn.date) ?? Object.create(null);
-        const cell = split[turn.model] ?? (split[turn.model] = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-        cell.input += delta.input;
-        cell.output += delta.output;
-        cell.cacheRead += delta.cacheRead;
-        cell.cacheWrite += delta.cacheWrite;
-        dailyBreakdown.set(turn.date, split);
-        // The day priced from its own tokens, cache reads and cache writes
-        // included, rather than left to be reconstructed downstream from
-        // input+output alone.
-        dailyCost.set(turn.date, (dailyCost.get(turn.date) ?? 0) + cost);
-        const costs = dailyCostByModel.get(turn.date) ?? Object.create(null);
-        costs[turn.model] = (costs[turn.model] || 0) + cost;
-        dailyCostByModel.set(turn.date, costs);
-
-        if (isNewMessage) {
-          const count = dailyMessages.get(turn.date) ?? Object.create(null);
-          count[turn.model] = (count[turn.model] || 0) + 1;
-          dailyMessages.set(turn.date, count);
-        }
-
+        addTo(bucket(days, turn.date), turn.model, delta, cost, isNewMessage, account);
         if (!lastComputedDate || turn.date > lastComputedDate) lastComputedDate = turn.date;
+      }
+      if (turn.minute !== null && turn.minute * 60_000 >= since) {
+        addTo(bucket(hours, Math.floor(turn.minute / 60) * 3_600_000), turn.model, delta, cost, isNewMessage, account);
+      }
+      if (isNewMessage && session?.provider) {
+        const byProvider = providerReplies.get(turn.model) ?? new Map<string, number>();
+        byProvider.set(session.provider, (byProvider.get(session.provider) ?? 0) + 1);
+        providerReplies.set(turn.model, byProvider);
       }
     }
   }
@@ -613,18 +757,28 @@ async function scanTranscripts(
     for (const key of fileCache.keys()) if (!live.has(key)) fileCache.delete(key);
   }
 
+  const plain = (b: Bucket) => ({
+    tokensByModel: { ...b.tokensByModel },
+    breakdownByModel: { ...b.breakdownByModel },
+    messagesByModel: { ...b.messagesByModel },
+    costUSD: b.costUSD,
+    costByModel: { ...b.costByModel },
+    costByAccount: { ...b.costByAccount },
+  });
+  const providerByModel: Record<string, string> = Object.create(null);
+  for (const [model, byProvider] of providerReplies) {
+    providerByModel[model] = [...byProvider.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+
   const value: TranscriptUsage = {
     modelUsage: { ...modelUsage },
-    dailyModelTokens: Array.from(dailyMap.entries())
-      .map(([date, tokensByModel]) => ({
-        date,
-        tokensByModel: { ...tokensByModel },
-        breakdownByModel: { ...(dailyBreakdown.get(date) ?? {}) },
-        messagesByModel: { ...(dailyMessages.get(date) ?? {}) },
-        costUSD: dailyCost.get(date) ?? 0,
-        costByModel: { ...(dailyCostByModel.get(date) ?? {}) },
-      }))
+    dailyModelTokens: Array.from(days.entries())
+      .map(([date, b]) => ({ date, ...plain(b) }))
       .sort((a, b) => a.date.localeCompare(b.date)),
+    hourlyModelTokens: Array.from(hours.entries())
+      .map(([hour, b]) => ({ hour, ...plain(b) }))
+      .sort((a, b) => a.hour - b.hour),
+    providerByModel: { ...providerByModel },
     lastComputedDate,
     unreadable,
   };

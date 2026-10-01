@@ -1,23 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { GripVertical, ShieldOff, Bot, Shield, Gauge } from 'lucide-react';
+import { GripVertical, ShieldOff, Bot, Shield, Gauge, Maximize2, Minimize2 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { AgentMark, SegmentedControl } from '@/components/ui';
+import { AgentMark } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import { STATUS_COLORS, errorReason } from '@/app/agents/constants';
 
-export type PanelView = 'live' | 'history';
-
-const VIEWS = [
-  { value: 'live' as const, label: 'live', title: 'The terminal as it is running' },
-  { value: 'history' as const, label: 'history', title: 'The conversation, read from the transcript' },
-];
-
 interface TerminalPanelHeaderProps {
   agent: AgentStatus;
-  view: PanelView;
-  onViewChange: (view: PanelView) => void;
   isFullscreen: boolean;
   isBroadcasting: boolean;
   tabType: 'custom' | 'project';
@@ -37,8 +28,6 @@ function statusTone(status: AgentStatus['status']): StatusTone {
 
 export default function TerminalPanelHeader({
   agent,
-  view,
-  onViewChange,
   isFullscreen,
   isBroadcasting,
   tabType,
@@ -177,20 +166,16 @@ export default function TerminalPanelHeader({
         </span>
       )}
 
-      {/* Live or history. It is the panel's view switch, so it sits with the
-          panel's actions and uses the app's segmented control rather than a
-          third vocabulary. The control is offered on every panel, including the
-          CLIs that write no transcript: pressing it there is what surfaces the
-          reason, which is better than a switch that is silently missing. */}
-      <div onMouseDown={e => e.stopPropagation()}>
-        <SegmentedControl
-          options={VIEWS}
-          value={view}
-          onChange={onViewChange}
-          ariaLabel="Panel view"
-          className="mr-0.5"
-        />
-      </div>
+      {/* What the panel shows: its agent's session, as it runs. It named the
+          live view while a history view sat beside it, and is a word now,
+          boxed as that selected segment was. Frame: `Panel header · session
+          and fullscreen`. */}
+      <span
+        className="inline-flex items-center h-[26px] px-2.5 mr-0.5 text-xs border bg-secondary border-border-accent text-foreground shrink-0"
+        title="The agent's session, in its terminal"
+      >
+        session
+      </span>
 
       {/* Start / stop. The panel's primary action, so it is a button you can
           see and hit - not a row inside the overflow menu. A grid of terminals
@@ -213,7 +198,20 @@ export default function TerminalPanelHeader({
         {isLive ? 'stop' : 'start'}
       </button>
 
-      {/* Overflow menu: clear, fullscreen and remove */}
+      {/* Fullscreen in one press, out of the menu: the arrows point out at
+          rest and turn inward while the panel fills the window. */}
+      <button
+        type="button"
+        onMouseDown={e => e.stopPropagation()}
+        onClick={isFullscreen ? onExitFullscreen : onFullscreen}
+        className="h-[26px] w-[26px] shrink-0 inline-flex items-center justify-center border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+        aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+      >
+        {isFullscreen ? <Minimize2 className="w-3 h-3" aria-hidden /> : <Maximize2 className="w-3 h-3" aria-hidden />}
+      </button>
+
+      {/* Overflow menu: clear and remove */}
       <div
         ref={menuRef}
         className="relative [&_button]:cursor-pointer"
@@ -240,14 +238,6 @@ export default function TerminalPanelHeader({
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 z-[90] min-w-[190px] bg-card border border-border">
             <button type="button" onClick={run(onClear)} className={menuItemClass}>clear</button>
-
-            <button
-              type="button"
-              onClick={run(isFullscreen ? onExitFullscreen : onFullscreen)}
-              className={menuItemClass}
-            >
-              {isFullscreen ? 'exit fullscreen' : 'fullscreen'}
-            </button>
 
             {/* Taking a panel off a board and destroying an agent are two
                 different intentions, so they are two different items. */}

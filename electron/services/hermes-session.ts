@@ -1,4 +1,4 @@
-import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
+import { HermesConnection, resolveHermesBaseUrl, sessionToken } from '../types/hermes';
 import { errorDetail, hermesRequest } from './hermes-client';
 
 /**
@@ -104,7 +104,7 @@ async function mintTicket(conn: HermesConnection): Promise<string> {
   const baseUrl = resolveHermesBaseUrl(conn);
   const { status, body } = await hermesRequest(baseUrl, '/api/auth/ws-ticket', {
     method: 'POST',
-    token: conn.token,
+    token: sessionToken(conn),
     body: {},
   });
   if (status >= 300) throw new Error(`the gateway refused a WebSocket ticket (HTTP ${status})`);
@@ -288,7 +288,7 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export async function getReasoningEffort(conn: HermesConnection): Promise<string | null> {
   const baseUrl = resolveHermesBaseUrl(conn);
-  const { status, body } = await hermesRequest(baseUrl, '/api/config', { token: conn.token });
+  const { status, body } = await hermesRequest(baseUrl, '/api/config', { token: sessionToken(conn) });
   if (status >= 300) return null;
   const agent = (body as { agent?: Record<string, unknown> })?.agent;
   const value = agent?.reasoning_effort;
@@ -303,7 +303,7 @@ export async function setReasoningEffort(
   // Read-modify-write, because the gateway takes the whole config object. A
   // PUT built from anything but the current config would silently revert every
   // other setting on it.
-  const current = await hermesRequest(baseUrl, '/api/config', { token: conn.token });
+  const current = await hermesRequest(baseUrl, '/api/config', { token: sessionToken(conn) });
   if (current.status >= 300) return { success: false, error: `could not read the gateway config (HTTP ${current.status})` };
   const config = (current.body ?? {}) as Record<string, unknown>;
   const agent = (config.agent && typeof config.agent === 'object' ? { ...config.agent } : {}) as Record<string, unknown>;
@@ -311,7 +311,7 @@ export async function setReasoningEffort(
 
   const { status, body } = await hermesRequest(baseUrl, '/api/config', {
     method: 'PUT',
-    token: conn.token,
+    token: sessionToken(conn),
     body: { ...config, agent },
     timeoutMs: 20_000,
   });
