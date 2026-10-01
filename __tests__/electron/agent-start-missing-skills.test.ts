@@ -34,7 +34,7 @@ describe('getPtyEnvVars with no skills array', () => {
     it(`${provider.id} survives undefined`, () => {
       const env = provider.getPtyEnvVars(
         'agent-1',
-        '/Users/noah/proj',
+        '/Users/you/proj',
         undefined as unknown as string[],
         {} as never,
       );
@@ -48,7 +48,7 @@ describe('getPtyEnvVars with no skills array', () => {
   it('still passes real skills through', () => {
     const env = getProvider('claude').getPtyEnvVars(
       'agent-1',
-      '/Users/noah/proj',
+      '/Users/you/proj',
       ['superpowers', 'remember'],
       {} as never,
     );

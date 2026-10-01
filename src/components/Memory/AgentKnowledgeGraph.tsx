@@ -5,6 +5,7 @@ import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
 import { BrandSpinner, Button, Panel, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
+import { readClaudeData } from '@/hooks/useClaude';
 
 // ── Node / edge types ─────────────────────────────────────────────────────────
 
@@ -401,7 +402,7 @@ export default function AgentKnowledgeGraph() {
     try {
       const [agentList, claudeData, memResult, mcpResult] = await Promise.all([
         window.electronAPI?.agent.list().catch(() => []) ?? [],
-        window.electronAPI?.claude?.getData().catch(() => null) ?? null,
+        readClaudeData().catch(() => null),
         window.electronAPI?.memory?.listProjects().catch(() => ({ projects: [], error: null })) ?? { projects: [], error: null },
         window.electronAPI?.fs?.readTextFile('~/.claude/mcp.json').catch(() => null) ?? null,
       ]);

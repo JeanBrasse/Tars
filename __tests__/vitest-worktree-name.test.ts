@@ -8,8 +8,8 @@ import { builtinsVitestCannotLoad } from './setup/vitest-root-prefix';
  * of its own. setup/worktree-name.ts fails every file when the list is not
  * empty.
  */
-const DIST = '/Users/noah/tars/node_modules/vitest/dist';
-const worktree = (name: string) => `/Users/noah/tars/.worktrees/${name}`;
+const DIST = '/Users/you/tars/node_modules/vitest/dist';
+const worktree = (name: string) => `/Users/you/tars/.worktrees/${name}`;
 
 describe('the built-in modules vitest cannot load', () => {
   it('are stream and string_decoder in a worktree named in 11 characters, as fe-appclean was', () => {
@@ -31,7 +31,7 @@ describe('the built-in modules vitest cannot load', () => {
   });
 
   it('are none at the repository root, or in a worktree with its own install', () => {
-    expect(builtinsVitestCannotLoad(DIST, '/Users/noah/tars')).toEqual([]);
+    expect(builtinsVitestCannotLoad(DIST, '/Users/you/tars')).toEqual([]);
     expect(builtinsVitestCannotLoad(`${worktree('fe-appclean')}/node_modules/vitest/dist`, worktree('fe-appclean'))).toEqual([]);
   });
 });
