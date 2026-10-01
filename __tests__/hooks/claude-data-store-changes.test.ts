@@ -211,14 +211,23 @@ describe('times with a fraction, as APFS gives them (12)', () => {
     expect(p.result.data).toBe(before);
   });
 
-  it('still shows a date that moved by a whole millisecond', async () => {
+  it('still shows a project\'s date that alone moved by a whole millisecond', async () => {
     getData().mockImplementation(async () => payload('same', { projects: [project(F1, F1)] }));
     const p = page();
     await settle();
-    getData().mockImplementation(async () => payload('same', { projects: [project(F1 + 1, F1 + 1)] }));
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1, F1 + 1)] }));
     await p.result.refresh();
     await settle();
     expect(p.result.data?.projects[0].lastActivity.getTime()).toBe(T1 + 1);
+  });
+
+  it('still shows a session\'s time that alone moved by a whole millisecond', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1, F2)] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1 + 1, F2)] }));
+    await p.result.refresh();
+    await settle();
     expect(p.result.data?.projects[0].sessions[0].lastActivity.getTime()).toBe(T1 + 1);
   });
 });
