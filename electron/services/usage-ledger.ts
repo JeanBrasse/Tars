@@ -213,6 +213,54 @@ function daysOf(entries: UsageEntry[]): { daily: LedgerDay[]; oldest: string | n
   return { daily, oldest };
 }
 
+/** What the ledger holds for one hour, provider and model. */
+export interface LedgerHour extends Omit<LedgerDay, 'date'> {
+  /** When the hour starts, in milliseconds since the epoch. */
+  hour: number;
+}
+
+/** The last 48 hours, as for the transcripts. */
+const HOURLY_WINDOW_MS = 48 * 3_600_000;
+
+/**
+ * The turns of the last 48 hours by the hour, provider and model: a rolling 24
+ * hours is the hours past now minus a day. The days alone left the Usage page
+ * nothing finer than a calendar day to cut it from.
+ */
+function hoursOf(entries: UsageEntry[]): LedgerHour[] {
+  const since = Date.now() - HOURLY_WINDOW_MS;
+  const rows = new Map<string, LedgerHour>();
+  for (const entry of entries) {
+    const at = Date.parse(entry.ts);
+    if (Number.isNaN(at) || at < since) continue;
+    const hour = Math.floor(at / 3_600_000) * 3_600_000;
+    const model = entry.model ?? null;
+    const key = JSON.stringify([hour, entry.provider, model]);
+    const row = rows.get(key) ?? {
+      hour,
+      provider: entry.provider,
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedReadTokens: 0,
+      cachedWriteTokens: 0,
+      costUSD: 0,
+      turns: 0,
+    };
+    row.inputTokens += entry.inputTokens || 0;
+    row.outputTokens += entry.outputTokens || 0;
+    row.cachedReadTokens += entry.cachedReadTokens || 0;
+    row.cachedWriteTokens += entry.cachedWriteTokens || 0;
+    row.costUSD += entry.costUSD || 0;
+    row.turns += 1;
+    rows.set(key, row);
+  }
+  return Array.from(rows.values()).sort((a, b) =>
+    a.hour - b.hour
+    || a.provider.localeCompare(b.provider)
+    || (a.model ?? '').localeCompare(b.model ?? ''));
+}
+
 /**
  * The whole answer of the `usage:by-provider` channel, from one read.
  *
@@ -235,12 +283,14 @@ export function usageByProvider(sinceDays?: number): {
   dailyCost: Record<string, number>;
   daily: LedgerDay[];
   oldest: string | null;
+  hourly: LedgerHour[];
 } {
   const all = readAll();
   return {
     providers: totalsOf(within(all, sinceDays)),
     dailyCost: dailyCostOf(within(all, sinceDays ?? 30)),
     ...daysOf(all),
+    hourly: hoursOf(all),
   };
 }
 

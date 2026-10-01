@@ -25,6 +25,10 @@ import { splitPageErrors } from './surfaces.mjs';
  *    box that was also `justify-end`, so what overflowed went above its top,
  *    where no scroll reaches: QA measured 30 messages in tars, the first 2584 px
  *    above the thread and the wheel moving nothing.
+ * 4. The room list stays empty after a slow start. It was read once and given
+ *    10 s; an answer after that was thrown away, and a refused read was not
+ *    sent again, so the note "The bus did not answer" stood where the rows
+ *    would be until a click on retry or a message (red on 1.9.1).
  *
  * Same sandbox as chat-rooms.spec.ts: the seeded journal, nothing started. The
  * statuses a test needs are set on the app's own agent map and pushed with a
@@ -178,3 +182,72 @@ test('an older message of a busy room can be scrolled back to', async () => {
   expect.soft(first.y, 'the first message, after scrolling to the top').toBeGreaterThanOrEqual(box.y);
   expect.soft(splitPageErrors(pageErrors.slice(errorsBefore)).fatal, 'page errors').toEqual([]);
 });
+
+/**
+ * Puts a bus:listRooms in the app's main process that is slow or refuses, over
+ * the app's own journal, and notes when each ask came, in ms after the first;
+ * `null` puts the app's own back. A slow start, as CI met it: the list was read
+ * once, given 10 s, and the answer that came after was thrown away. By time,
+ * not by count: next dev mounts the page twice (React's strict mode), so two
+ * asks leave together.
+ */
+async function listRoomsAnswers(how: 'held 12 s' | 'refused for 2 s' | null) {
+  const dist = path.resolve(process.cwd(), 'electron', 'dist');
+  await app.evaluate(({ ipcMain }, { dist, how }) => {
+    const { listRooms } = process.mainModule!.require(`${dist}/services/bus-store.js`);
+    const g = globalThis as { e2eListRoomsAsks?: number[] };
+    const asks: number[] = g.e2eListRoomsAsks = [];
+    let first = 0;
+    ipcMain.removeHandler('bus:listRooms');
+    ipcMain.handle('bus:listRooms', async () => {
+      if (!asks.length) first = Date.now();
+      const at = Date.now() - first;
+      asks.push(at);
+      if (how === 'held 12 s') await new Promise(resolve => setTimeout(resolve, 12_000));
+      if (how === 'refused for 2 s' && at < 2_000) throw new Error('the bus is not ready');
+      try {
+        return { rooms: listRooms() };
+      } catch (err) {
+        return { rooms: [], error: err instanceof Error ? err.message : 'Failed to list rooms' };
+      }
+    });
+  }, { dist, how });
+}
+
+for (const how of ['held 12 s', 'refused for 2 s'] as const) {
+  test(`the room list is read again by itself when the bus was ${how}`, async () => {
+    // Red before the retry (1.9.1): the note stayed, and the rows never came
+    // without a click on retry or a message.
+    const errorsBefore = pageErrors.length;
+    const sidebar = page.locator('[data-chat-sidebar]');
+    const note = sidebar.getByText('The bus did not answer', { exact: false });
+    const row = (name: string) => sidebar.getByRole('button', { name, exact: false }).filter({ hasText: name }).first();
+    await listRoomsAnswers(how);
+    try {
+      const started = Date.now();
+      await page.goto(DEV_URL + '/chat', { waitUntil: 'domcontentloaded' });
+      await expect(note, 'the note, while the bus has not given the list').toBeVisible({ timeout: 30_000 });
+      const noteAt = Date.now() - started;
+      const said = (await note.locator('xpath=ancestor::div[1]').locator('p').allInnerTexts()).join(' ').replace(/\s+/g, ' ').trim();
+      await stepShot(page, `bus-retry-${how.replace(/\s+/g, '-')}-1-note`);
+
+      // Nobody clicks retry, and no message comes.
+      await expect(row('orion'), 'orion, listed with no click').toBeVisible({ timeout: 45_000 });
+      const listedAt = Date.now() - started;
+      await expect(row('tars'), 'tars, listed with no click').toBeVisible();
+      await expect(note, 'the note, once the list is read').toBeHidden();
+      await stepShot(page, `bus-retry-${how.replace(/\s+/g, '-')}-2-listed`);
+      const asks = await app.evaluate(() => (globalThis as { e2eListRoomsAsks?: number[] }).e2eListRoomsAsks ?? []);
+      recordValues({ [`busRetry ${how}`]: { noteAt, said, listedAt, asks } });
+
+      // One read at a time: a held read is waited for, not asked again when the
+      // note goes up at 10 s; a refused one is asked once more, after a pause.
+      const later = asks.filter(at => at >= 2_000);
+      expect.soft(later.length, `bus:listRooms asks after the first 2 s (all asks, in ms: ${asks.join(', ')})`)
+        .toBe(how === 'held 12 s' ? 0 : 1);
+    } finally {
+      await listRoomsAnswers(null);
+    }
+    expect.soft(splitPageErrors(pageErrors.slice(errorsBefore)).fatal, 'page errors').toEqual([]);
+  });
+}

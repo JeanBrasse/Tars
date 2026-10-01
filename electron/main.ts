@@ -80,6 +80,7 @@ import {
 } from './services/slack-bot';
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
+import { registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -492,6 +493,12 @@ app.whenReady().then(async () => {
   registerTeamTemplateHandlers();
   registerHermesHandlers();
   registerDiscordHandlers({ getAppSettings: () => appSettings });
+  registerClaudeAccountsHandlers({
+    getAppSettings: () => appSettings,
+    agents,
+    saveAgents,
+    loginPtys: pluginPtyProcesses,
+  });
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();

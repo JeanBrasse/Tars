@@ -282,8 +282,8 @@ Per surface the spec does two things:
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
 The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
-surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms and the
-two panel-history views that their own specs photograph.
+surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms that
+their own spec photographs.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings
@@ -569,7 +569,7 @@ silently drops to the GitHub-API fallback.
 
 ### Which builds are kept
 
-**The kept folder is `release/` of the main checkout**, `/Users/noah/tars/release/`, the one Noah
+**The kept folder is `release/` of the main checkout**, `~/tars/release/` on this machine, the one Noah
 opens. `scripts/prune-releases.mjs` finds it through git (the parent of
 `git rev-parse --git-common-dir`) from the main checkout or any worktree, and never uses
 `release/` of the current directory; tests name their folder with `--release-dir` or
@@ -696,9 +696,9 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
-| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session, rewritten at every render; anything that is not one JSON object starts again from `{}` |
+| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
-Two files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
+Three files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
 every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
 to a CLI, and Tars makes it `0700` whichever write creates it:
 
@@ -706,6 +706,7 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 |---|---|---|
 | `~/.tars-private/overseer.json` | `electron/services/overseer.ts` | Noah's conversation with the super chat, plus the standing job id and the Chat's settings. Mode `0600`. Moved out of `~/.dorothy/overseer.json` at the first startup that finds it there: the copy is read back before the old file is deleted, an old file that will not parse is left exactly where it is and still read, and when both exist the private one wins and the old one is moved into the private directory rather than deleted |
 | `~/.tars-private/hermes-webhook-secret` | `electron/services/hermes-webhook-secret.ts` (`provisionWebhookSecret`) | the bearer for `POST /api/webhooks/hermes` and the only credential that opens it: 32 random bytes hex, mode `0600`, minted the first time Settings > Hermes asks for it. Moved out of `~/.dorothy/hermes-webhook-secret` at the first startup that finds it there, value unchanged, so Hermes keeps working; read back before the old file is deleted, and while it cannot be moved the webhook opens to nobody. An old file found beside the private one opens nothing and is deleted |
+| `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout` |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
 *Hooks*. Memory files it reads live in `~/.claude/projects/<encoded-path>/memory/`, where the
@@ -1570,7 +1571,7 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 | Symptom | Look for |
 |---|---|
 | a panel blank but for the spinner after coming back to the Dashboard | `[terminal-mirror] xterm-headless could not be loaded` at startup: without it the panels replay the kept chunks, as they did before the mirror. `[terminal-mirror] <agent id>: dropped after a parse failure`: that one terminal fell back |
-| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
+| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's notice offers restart, which brings a fullscreen session back on the same conversation |
 | Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
 
 ### Agent stuck in the wrong directory
@@ -1663,8 +1664,8 @@ Two independent sources feed the Usage page:
    Codex, Gemini, Grok and the rest. When the agent does not report a cost, the ledger prices
    the turn itself from the catalogue; cache reads default to 10 % of input and cache writes to
    125 % when the catalogue omits them.
-2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, parsed by
-   `electron/services/transcript-usage.ts`. Claude Code only writes
+2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, and `$CLAUDE_CONFIG_DIR/projects`
+   too when Tars has one in its environment, parsed by `electron/services/transcript-usage.ts`. Claude Code only writes
    `~/.claude/stats-cache.json` for some account types; the per-message `usage` block in the
    transcripts is always there. 1 h cache writes are kept apart from 5 m ones because they
    price at 2× base rather than 1.25×.
@@ -1675,9 +1676,17 @@ through `claude:getData` (`stats.dailyModelTokens[i]`, with the day's `costUSD` 
 `oldest` for the first day it still holds). A ledger row whose provider is `claude` is in the
 transcripts too: the Claude ACP adapter runs the claude binary, which writes one.
 
+The last 48 hours come by the hour as well, for a rolling 24 hours: `stats.hourlyModelTokens`
+(the same shape as a day, `hour` being when it starts, in milliseconds since the epoch) and the
+ledger's `hourly`. A rolling day is the hours past now minus 24 hours.
+
 `~/.dorothy/token-stats.json`, which the status line writes, is not a third source. Every
 session in it ran in the claude binary and is in the transcripts already, so its `extraCost`
-says how much of that spend went over quota; it is never added to it.
+says how much of that spend went over quota; it is never added to it. What it does say is who
+ran each session: its `provider`, and its `account` (`TARS_CLAUDE_ACCOUNT`, empty when none). A
+transcript is named after its session, so the transcripts are filed by it: `stats.providerByModel`
+gives the provider a model ran under, where the page used to guess it from the model's name, and
+each day and hour carries `costByAccount`.
 
 Prices come from **models.dev** (`https://models.dev/api.json`, mirror
 `raw.githubusercontent.com/anomalyco/models.dev/dev/models.json`), USD per million tokens,

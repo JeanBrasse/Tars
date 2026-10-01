@@ -68,6 +68,8 @@ function afterRender(sessionId: string): { text: string; why: string } {
 const NEW_SESSION = {
   in: 1200, out: 340, cost: 0.42, model: 'claude-opus-5', extra: false,
   date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), provider: 'claude',
+  // The account the session ran on (statusline-account.test.ts); none here.
+  account: '',
 };
 
 describe('the status line writing token-stats.json', () => {
