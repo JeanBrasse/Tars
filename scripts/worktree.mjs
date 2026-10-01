@@ -42,6 +42,7 @@
  */
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +50,8 @@ import { fileURLToPath } from 'node:url';
 export const MIN_FREE_GB = 30;
 export const MAX_WORKTREES = 20;
 export const OLDER_THAN_DAYS = 7;
+/** Commits behind its base past which an active worktree is told to merge it in. */
+export const BEHIND_FLAG = 5;
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 /** How long after its last activity a worktree whose PR is merged or closed may go. */
@@ -185,11 +188,59 @@ function inside(child, parent) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-/** The processes working in this folder, or null when they cannot be known. */
-async function occupants(ctx, at) {
+/**
+ * The processes working in this folder, or null when they cannot be known.
+ * `exemptCaller`: the caller's own processes (this one and the ones that
+ * started it) do not count, so an agent may remove the worktree it is in.
+ * For an explicit remove only: prune leaves a worktree its caller works in
+ * (the Audit's gate of #270).
+ */
+async function occupants(ctx, at, { exemptCaller = false } = {}) {
   const cwds = await ctx.processCwds();
   if (!cwds) return null;
-  return cwds.filter(p => inside(p.cwd, at));
+  const mine = exemptCaller ? await ctx.lineage() : new Set();
+  return cwds.filter(p => inside(p.cwd, at) && !mine.has(p.pid));
+}
+
+/**
+ * Ignored files git would delete with the worktree, but the rebuildable caches:
+ * a .env.local, the e2e run directories Rule 3 asks a PR to name, a release
+ * build went without a word (the Audit's gate of #270). Folded as git lists
+ * them, a folder once.
+ */
+const CACHES = [
+  /(^|\/)node_modules\/?$/, /^\.next\/?$/, /^out\/?$/, /^electron\/dist\/?$/, /^mcp-[^/]+\/dist\/?$/,
+  /\.tsbuildinfo$/, /(^|\/)next-env\.d\.ts$/, /(^|\/)\.DS_Store$/, /(^|\/)\.vite(-temp)?\/?$/,
+];
+
+async function ignoredNotCaches(ctx, at) {
+  const r = await git(ctx, at, ['status', '--porcelain', '--ignored', '--untracked-files=normal']);
+  if (r.code !== 0) throw new WorktreeRefusal(`git status --ignored failed in ${at}: ${r.stderr.trim()}`);
+  return r.stdout.split('\n')
+    .filter(line => line.startsWith('!! '))
+    .map(line => line.slice(3))
+    .filter(file => !CACHES.some(cache => cache.test(file)));
+}
+
+/** A git operation the worktree is in the middle of: removing it would drop its state. */
+const IN_PROGRESS = { 'rebase-merge': 'a rebase', 'rebase-apply': 'a rebase', MERGE_HEAD: 'a merge', CHERRY_PICK_HEAD: 'a cherry-pick', REVERT_HEAD: 'a revert', BISECT_LOG: 'a bisect' };
+
+async function operationInProgress(ctx, at) {
+  const gitDir = await gitOk(ctx, at, ['rev-parse', '--absolute-git-dir']);
+  for (const [file, what] of Object.entries(IN_PROGRESS)) {
+    if (fs.existsSync(path.join(gitDir, file))) return what;
+  }
+  return null;
+}
+
+const real = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+
+/** The Tars agent whose worktree this is, by ~/.dorothy/agents.json, or null. */
+function agentOf(ctx, at) {
+  const here = real(at);
+  const found = ctx.agentWorktrees().map(w => (typeof w === 'string' ? { path: w, name: w } : w))
+    .find(w => real(w.path) === here);
+  return found ? found.name : null;
 }
 
 function depsKind(at) {
@@ -295,10 +346,76 @@ export async function prepareDeps(repo, target, ctx) {
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
+/**
+ * One `new` at a time from the prune to the `git worktree add`: two at once
+ * both counted the worktrees before either added one, and passed the cap
+ * together (the Audit's gate of #270). A lock older than LOCK_STALE_MS is
+ * taken for one a killed run left behind.
+ */
+const LOCK_STALE_MS = 10 * 60_000;
+async function withLock(repo, work) {
+  fs.mkdirSync(repo.worktreesDir, { recursive: true });
+  const lock = path.join(repo.worktreesDir, '.lock');
+  for (let waited = 0; ; waited += 100) {
+    try {
+      fs.closeSync(fs.openSync(lock, 'wx'));
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) fs.rmSync(lock, { force: true });
+      } catch { /* gone meanwhile */ }
+      if (waited > 120_000) throw new WorktreeRefusal(`${lock} has been held for two minutes: another new is stuck, or delete it`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    fs.rmSync(lock, { force: true });
+  }
+}
+
+/**
+ * The main checkout on its default branch, clean, and fast-forwarded to
+ * origin's: Tars shows an agent the branch of the folder it works in, and the
+ * root sat on test/final-1.7.1 from 16/09 while everyone worked in
+ * worktrees ("vraiment confusing", Noah, 01/10). Without an origin there is
+ * nothing to fetch, and the local branch is the base.
+ */
+async function freshMainCheckout(ctx, repo) {
+  const base = await defaultBase(ctx, repo);
+  const branch = base.replace(/^origin\//, '');
+  const current = (await git(ctx, repo.root, ['symbolic-ref', '--short', '-q', 'HEAD'])).stdout.trim();
+  if (current !== branch) {
+    throw new WorktreeRefusal(`the main checkout ${repo.root} is on ${current || 'a detached HEAD'}, not ${branch}: switch it back to ${branch} first, nothing created`);
+  }
+  const changed = (await git(ctx, repo.root, ['status', '--porcelain', '--untracked-files=no'])).stdout
+    .split('\n').filter(Boolean).map(line => line.slice(3));
+  if (changed.length) {
+    throw new WorktreeRefusal(`the main checkout ${repo.root} has uncommitted changes (${changed.join(', ')}): nothing created`);
+  }
+  if (base === branch) return base;
+  const fetched = await git(ctx, repo.root, ['fetch', '-q', 'origin']);
+  if (fetched.code !== 0) ctx.log(`git fetch failed (${fetched.stderr.trim()}): starting from origin/${branch} as it was`);
+  const ff = await git(ctx, repo.root, ['merge', '--ff-only', '-q', base]);
+  if (ff.code !== 0) {
+    throw new WorktreeRefusal(`the main checkout's ${branch} cannot be fast-forwarded to ${base} (${ff.stderr.trim()}): nothing created`);
+  }
+  return base;
+}
+
 export async function createWorktree(repo, name, opts, ctx) {
   if (!NAME.test(name) || name.includes('..')) {
     throw new WorktreeRefusal(`"${name}" is not a worktree name: letters, digits, dot, dash and underscore, 64 at most`);
   }
+  const made = await withLock(repo, () => addWorktree(repo, name, opts, ctx));
+  const deps = opts.deps === false ? 'skipped' : await prepareDeps(repo, made.path, ctx);
+  return { ...made, deps };
+}
+
+async function addWorktree(repo, name, opts, ctx) {
+  const freshBase = await freshMainCheckout(ctx, repo);
   const pruned = await prune(repo, { olderThanDays: OLDER_THAN_DAYS, github: false }, ctx);
   for (const r of pruned.removed) ctx.log(`pruned ${r.name}: ${r.why}`);
 
@@ -319,7 +436,7 @@ export async function createWorktree(repo, name, opts, ctx) {
   if (fs.existsSync(target)) throw new WorktreeRefusal(`${target} already exists`);
   const branch = opts.branch ?? name;
   await gitOk(ctx, repo.root, ['check-ref-format', '--branch', branch]);
-  const from = opts.from ?? await defaultBase(ctx, repo);
+  const from = opts.from ?? freshBase;
 
   const exists = (await git(ctx, repo.root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0;
   fs.mkdirSync(repo.worktreesDir, { recursive: true });
@@ -330,9 +447,7 @@ export async function createWorktree(repo, name, opts, ctx) {
   const registry = readRegistry(repo);
   registry[name] = { branch, base: exists ? null : from, agent: opts.agent ?? null, task: opts.task ?? null, createdAt: ctx.now() };
   writeRegistry(repo, registry);
-
-  const deps = opts.deps === false ? 'skipped' : await prepareDeps(repo, target, ctx);
-  return { name, path: target, branch, deps, pruned: pruned.removed };
+  return { name, path: target, branch, pruned: pruned.removed };
 }
 
 async function findEntry(repo, nameOrPath, ctx) {
@@ -357,20 +472,30 @@ async function freeWipName(ctx, repo, name) {
  * Why this worktree cannot be removed now, or null. It only reads, and both
  * remove and prune ask it, so a dry run says what a real one would do.
  */
-async function blocker(ctx, entry, { save = false } = {}) {
+async function blocker(ctx, entry, { save = false, exemptCaller = false } = {}) {
   if (entry.main) return `${entry.path} is the main checkout, which is never removed`;
   if (entry.locked) return `it is locked (${entry.locked}): git worktree unlock it first if it is done`;
-  const busy = await occupants(ctx, entry.path);
+  const agent = agentOf(ctx, entry.path);
+  // Tars starts that agent there; without it, the agent works in the home folder.
+  if (agent) return `it is the worktree of the Tars agent ${agent}, which Tars starts in it: delete the agent first if it is done`;
+  const operation = await operationInProgress(ctx, entry.path);
+  if (operation) return `${operation} is in progress in it: finish it or abort it first`;
+  const busy = await occupants(ctx, entry.path, { exemptCaller });
   if (busy === null) return 'the processes working in it cannot be listed';
   if (busy.length) return `it is in use: ${busy.map(p => `PID ${p.pid} (${p.command})`).join(', ')}`;
   const dirty = await dirtyFiles(ctx, entry.path);
   if (dirty.length && !save) return `it has uncommitted work: ${dirty.join(', ')}. Commit it, or pass --save to keep it on a wip/ branch`;
+  const ignored = await ignoredNotCaches(ctx, entry.path);
+  if (ignored.length) {
+    return `it holds ignored files git would delete with it: ${ignored.join(', ')}. `
+      + 'Move what must survive (an e2e run directory under ~/Documents, say), delete the rest, then remove it';
+  }
   return null;
 }
 
 /** The removal every path shares: nothing is written until blocker() has found nothing. */
-async function removeEntry(repo, entry, { save = false, why = 'removed' } = {}, ctx) {
-  const blocked = await blocker(ctx, entry, { save });
+async function removeEntry(repo, entry, { save = false, why = 'removed', exemptCaller = false } = {}, ctx) {
+  const blocked = await blocker(ctx, entry, { save, exemptCaller });
   if (blocked) throw new WorktreeRefusal(`${entry.name} is kept: ${blocked}`);
   const dirty = await dirtyFiles(ctx, entry.path);
 
@@ -379,7 +504,8 @@ async function removeEntry(repo, entry, { save = false, why = 'removed' } = {}, 
     savedAs = await freeWipName(ctx, repo, entry.name);
     await gitOk(ctx, entry.path, ['switch', '-q', '-c', savedAs]);
     await gitOk(ctx, entry.path, ['add', '-A']);
-    await gitOk(ctx, entry.path, ['commit', '-q', '-m', `wip: ${entry.name}, saved by scripts/worktree.mjs before removal`]);
+    // A backup, not a delivery: a refusing commit hook would leave it all staged on wip/.
+    await gitOk(ctx, entry.path, ['commit', '-q', '--no-verify', '-m', `wip: ${entry.name}, saved by scripts/worktree.mjs before removal`]);
   } else if (!entry.branch) {
     const holders = await gitOk(ctx, repo.root, ['for-each-ref', '--contains', entry.head, '--format=%(refname)', 'refs/heads', 'refs/remotes']);
     if (!holders) {
@@ -404,7 +530,7 @@ async function removeEntry(repo, entry, { save = false, why = 'removed' } = {}, 
 
 export async function removeWorktree(repo, nameOrPath, { save = false, reason } = {}, ctx) {
   const entry = await findEntry(repo, nameOrPath, ctx);
-  return removeEntry(repo, entry, { save, why: reason ?? 'removed by hand' }, ctx);
+  return removeEntry(repo, entry, { save, why: reason ?? 'removed by hand', exemptCaller: true }, ctx);
 }
 
 export async function prune(repo, { olderThanDays = OLDER_THAN_DAYS, dryRun = false, github = true, base } = {}, ctx) {
@@ -450,6 +576,9 @@ export async function status(repo, ctx) {
     if (entry.main || entry.prunable) continue;
     const activity = await lastActivity(ctx, entry, registry);
     const own = registry[entry.name] ?? {};
+    const behind = entry.head
+      ? Number((await git(ctx, repo.root, ['rev-list', '--count', `${entry.head}..${baseRef}`])).stdout.trim()) || 0
+      : 0;
     worktrees.push({
       name: entry.name,
       path: entry.path,
@@ -461,6 +590,9 @@ export async function status(repo, ctx) {
       idleDays: Math.round(((now - activity) / DAY) * 10) / 10,
       dirty: await dirtyFiles(ctx, entry.path),
       merged: entry.head ? await isMerged(ctx, repo, entry.head, baseRef) : false,
+      behind,
+      // Active and well behind its base: merge it in before any gate.
+      mergeMainFirst: behind >= BEHIND_FLAG && now - activity < OLDER_THAN_DAYS * DAY,
       locked: entry.locked,
       deps: depsKind(entry.path),
     });
@@ -494,9 +626,13 @@ async function ownLineage() {
   return pids;
 }
 
-/** Every process's working directory: /proc on Linux, lsof elsewhere. Null when neither answers. */
+/**
+ * Every process's working directory: /proc on Linux, lsof elsewhere. Null when
+ * neither answers. The caller's own processes are in it (occupants exempts them
+ * for a remove only); the lsof this runs is not, though it inherits this cwd and
+ * made every remove from inside a worktree read "in use: (lsof)" on macOS.
+ */
 async function processCwds() {
-  const mine = await ownLineage();
   const found = [];
   if (process.platform === 'linux') {
     for (const pid of fs.readdirSync('/proc').filter(n => /^\d+$/.test(n))) {
@@ -507,16 +643,32 @@ async function processCwds() {
       } catch { /* gone, or not ours to read */ }
     }
   } else {
-    const r = await run('lsof', ['-w', '-a', '-d', 'cwd', '-F', 'pcn']);
+    const r = await run('lsof', ['-w', '-a', '-d', 'cwd', '-F', 'pcRn']);
     if (r.missing || (r.code !== 0 && !r.stdout)) return null;
     let current = null;
     for (const line of r.stdout.split('\n')) {
-      if (line.startsWith('p')) current = { pid: Number(line.slice(1)), command: '', cwd: '' };
+      if (line.startsWith('p')) current = { pid: Number(line.slice(1)), ppid: 0, command: '', cwd: '' };
+      else if (current && line.startsWith('R')) current.ppid = Number(line.slice(1));
       else if (current && line.startsWith('c')) current.command = line.slice(1);
-      else if (current && line.startsWith('n')) { current.cwd = line.slice(1); found.push(current); }
+      else if (current && line.startsWith('n')) {
+        current.cwd = line.slice(1);
+        if (!(current.command === 'lsof' && current.ppid === process.pid)) found.push(current);
+      }
     }
   }
-  return found.filter(p => !mine.has(p.pid));
+  return found;
+}
+
+/** The worktrees of Tars's own agents, from ~/.dorothy/agents.json (a list, or { agents }). */
+function tarsAgentWorktrees() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.dorothy', 'agents.json'), 'utf8'));
+    const list = Array.isArray(raw) ? raw : raw.agents ?? [];
+    return list.filter(a => a && typeof a.worktreePath === 'string')
+      .map(a => ({ path: a.worktreePath, name: a.name || a.id }));
+  } catch {
+    return [];
+  }
 }
 
 /** The state of the PR opened from this branch on the repository of build.publish, or null. */
@@ -546,6 +698,8 @@ function realContext(repo) {
   return {
     freeBytes,
     processCwds,
+    lineage: ownLineage,
+    agentWorktrees: tarsAgentWorktrees,
     now: () => Date.now(),
     prState: githubPrState(repo),
     runTool: (command, args, options) => run(command, args, options),
@@ -604,7 +758,8 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`${s.freeGb} GB free (floor ${s.minFreeGb} GB), ${s.worktrees.length} of ${s.max} worktrees, base ${s.base}`);
     for (const w of s.worktrees) {
       const flags = [
-        w.merged && 'merged', w.locked && 'locked', w.dirty.length && `${w.dirty.length} uncommitted`, `deps ${w.deps}`,
+        w.merged && 'merged', w.behind && `${w.behind} behind`, w.mergeMainFirst && 'merge main in before a gate',
+        w.locked && 'locked', w.dirty.length && `${w.dirty.length} uncommitted`, `deps ${w.deps}`,
       ].filter(Boolean).join(', ');
       console.log(`${w.name.padEnd(28)} ${(w.branch ?? `(detached ${w.head})`).padEnd(40)} ${String(w.idleDays).padStart(5)} d  ${w.agent ?? '-'}${w.task ? ` / ${w.task}` : ''}  ${flags}`);
     }

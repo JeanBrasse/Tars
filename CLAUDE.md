@@ -265,16 +265,23 @@ repository that has it, never with `git worktree add` or `npm ci` by hand:
 nvm use 22
 node scripts/worktree.mjs new <name> --branch <branch> --agent <you> --task <PR or task>
 node scripts/worktree.mjs remove <name>        # as soon as its PR is opened and gated, merged, or abandoned
-node scripts/worktree.mjs status               # free space, count, owner, idle days, uncommitted, merged
+node scripts/worktree.mjs status               # free space, count, owner, idle days, uncommitted, merged, behind
 node scripts/worktree.mjs prune --dry-run      # what the cleanup would remove, and why it keeps the rest
 ```
 
 - **`new`** refuses under 30 GB free and past 20 worktrees (`TARS_WORKTREE_MIN_FREE_GB`,
-  `TARS_WORKTREE_MAX`), counting every worktree of the repository. Its `node_modules` is an APFS
+  `TARS_WORKTREE_MAX`), counting every worktree of the repository, one `new` at a time
+  (`.worktrees/.lock`). It also refuses while the main checkout is off `main` or has uncommitted
+  changes, then fetches and fast-forwards it, and starts the worktree from that fresh `origin/main`:
+  Tars shows each agent the branch of the folder it works in. Its `node_modules` is an APFS
   clone of an installed one (9.8 s and about 65 MB of real space for 1.2 GB, measured 01/10),
   reconciled by `npm install` when the lock differs. Never a symlink: `next dev` refuses one
 - **`remove`** refuses a dirty worktree (commit, or `--save` to keep the work on `wip/<name>`), one
-  any process works in, and a locked one. Git is never told `--force`. The branch stays, and
+  any process works in (your own shell excepted, for `remove` only), a locked one, one with a
+  rebase, merge, cherry-pick or bisect in progress, the worktree of one of Tars's own agents
+  (`~/.dorothy/agents.json`), and one holding ignored files other than rebuildable caches
+  (`node_modules`, `.next`, `electron/dist`, `mcp-*/dist`...): move an e2e run directory you named in
+  a PR under `~/Documents` first. Git is never told `--force`. The branch stays, and
   `.worktrees/.removed.log` records its head
 - **`prune`** runs before every `new`, so the cleanup needs no schedule. Under the same rules it
   removes a worktree whose PR is merged or closed (an hour after its HEAD last moved), one merged

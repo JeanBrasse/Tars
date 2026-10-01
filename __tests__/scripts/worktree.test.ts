@@ -40,6 +40,23 @@ import {
  * 12. prune never runs because nobody schedules it;
  * 13. a dry run removes something.
  *
+ * And from the Audit's gate of #270 (2026-10-01):
+ * 14. a "clean" worktree goes with its ignored files: a .env.local, the e2e
+ *     run directories Rule 3 asks a PR to name, a release build; only
+ *     rebuildable caches (node_modules, .next, electron/dist...) may go;
+ * 15. prune takes the worktree of one of Tars's own agents (agents.json), and
+ *     that agent then starts in the home folder;
+ * 16. prune spares a worktree the caller itself works in (the exemption is for
+ *     an explicit remove only);
+ * 17. two `new` at once both pass the cap;
+ * 18. --save behind a refusing commit hook leaves everything staged on wip/;
+ * 19. a rebase, merge, cherry-pick or bisect in progress is dropped;
+ * And the brief's additions:
+ * 20. a worktree is made while the main checkout is off main, or dirty, or
+ *     behind origin/main;
+ * 21. status does not say how far behind its base each worktree is, nor flag
+ *     an active one that needs main merged in before a gate.
+ *
  * Every repository here is a throwaway one in the temp directory. Free space,
  * the processes' working directories, the clock, npm and gh are handed in, so
  * no test depends on this machine's disk, its processes or the network.
@@ -74,7 +91,7 @@ const INSTALLED = (version: string) => JSON.stringify({
 function makeRepo(opts: { installed?: string | null } = {}): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-wt-')));
   git(root, 'init', '-q', '-b', 'main');
-  fs.writeFileSync(path.join(root, '.gitignore'), '/node_modules\n/.next/\n.worktrees/\n');
+  fs.writeFileSync(path.join(root, '.gitignore'), '/node_modules\n/.next/\n.worktrees/\n.env*\ntest-results/\n');
   fs.writeFileSync(path.join(root, 'package-lock.json'), LOCK('1.0.0'));
   fs.writeFileSync(path.join(root, 'README.md'), 'hello\n');
   git(root, 'add', '-A');
@@ -91,7 +108,7 @@ function makeRepo(opts: { installed?: string | null } = {}): string {
 type Call = { command: string; args: string[]; cwd?: string };
 
 /** What the outside world answers, and a record of the commands the tool ran other than git and cp. */
-function world(over: Partial<{ free: number; cwds: { pid: number; command: string; cwd: string }[]; now: number; pr: Record<string, string> }> = {}) {
+function world(over: Partial<{ free: number; cwds: { pid: number; command: string; cwd: string }[]; now: number; pr: Record<string, string>; agentWorktrees: string[]; lineage: number[] }> = {}) {
   const calls: Call[] = [];
   const gitCalls: string[][] = [];
   const ctx = {
@@ -104,6 +121,8 @@ function world(over: Partial<{ free: number; cwds: { pid: number; command: strin
       return { code: 0, stdout: '', stderr: '' };
     },
     onGit: (args: string[]) => { gitCalls.push(args); },
+    agentWorktrees: () => over.agentWorktrees ?? [],
+    lineage: async () => new Set(over.lineage ?? []),
     minFreeGb: 30,
     max: 20,
     log: () => {},
@@ -463,3 +482,168 @@ describe('status', () => {
     })]);
   });
 });
+
+describe("after the Audit's gate of #270", () => {
+  let root: string;
+  beforeEach(() => { root = makeRepo(); });
+
+  async function made(name: string) {
+    const repo = await openRepo(root);
+    const wt = await createWorktree(repo, name, { from: 'main' }, world().ctx);
+    fs.writeFileSync(path.join(wt.path, `${name}.txt`), name);
+    git(wt.path, 'add', '-A');
+    git(wt.path, 'commit', '-q', '-m', name);
+    return { repo, wt };
+  }
+
+  it('14. refuses a worktree holding ignored files that are not caches, and names them; caches do not count', async () => {
+    const { repo, wt } = await made('artefacts');
+    fs.mkdirSync(path.join(wt.path, '.next', 'cache'), { recursive: true });
+    fs.writeFileSync(path.join(wt.path, '.next', 'cache', 'x'), 'x');
+    fs.writeFileSync(path.join(wt.path, '.env.local'), 'SECRET=1');
+    fs.mkdirSync(path.join(wt.path, 'test-results', 'runs', 'r1'), { recursive: true });
+    fs.writeFileSync(path.join(wt.path, 'test-results', 'runs', 'r1', 'values.json'), '{}');
+
+    const message = await refusal(removeWorktree(repo, 'artefacts', {}, world().ctx));
+    expect(message).toContain('.env.local');
+    expect(message).toContain('test-results');
+    expect(message).not.toContain('.next');
+    expect(message).not.toContain('node_modules');
+    expect(fs.existsSync(path.join(wt.path, '.env.local'))).toBe(true);
+
+    const pruned = await prune(repo, { olderThanDays: 7 }, world({ now: Date.now() + 30 * DAY }).ctx);
+    expect(pruned.removed).toEqual([]);
+    expect(pruned.kept.find(k => k.name === 'artefacts')?.why).toContain('.env.local');
+
+    fs.rmSync(path.join(wt.path, '.env.local'));
+    fs.rmSync(path.join(wt.path, 'test-results'), { recursive: true });
+    await removeWorktree(repo, 'artefacts', {}, world().ctx);
+    expect(fs.existsSync(wt.path)).toBe(false);
+  });
+
+  it("15. never removes the worktree of one of Tars's own agents", async () => {
+    const { repo, wt } = await made('agent-home');
+    git(root, 'merge', '-q', '--ff-only', 'agent-home');
+    const ctx = world({ now: Date.now() + 30 * DAY, agentWorktrees: [wt.path] }).ctx;
+
+    const pruned = await prune(repo, { olderThanDays: 7, base: 'main' }, ctx);
+    expect(pruned.removed).toEqual([]);
+    expect(pruned.kept.find(k => k.name === 'agent-home')?.why).toMatch(/Tars agent/);
+    expect(await refusal(removeWorktree(repo, 'agent-home', {}, ctx))).toMatch(/Tars agent/);
+    expect(fs.existsSync(wt.path)).toBe(true);
+  });
+
+  it('16. spares the caller its own worktree on remove only: prune leaves it', async () => {
+    const { repo, wt } = await made('mine');
+    const cwds = [{ pid: 4321, command: 'zsh', cwd: wt.path }];
+
+    const pruned = await prune(repo, { olderThanDays: 7 }, world({ now: Date.now() + 30 * DAY, cwds, lineage: [4321] }).ctx);
+    expect(pruned.removed).toEqual([]);
+    expect(fs.existsSync(wt.path)).toBe(true);
+
+    await removeWorktree(repo, 'mine', {}, world({ cwds, lineage: [4321] }).ctx);
+    expect(fs.existsSync(wt.path)).toBe(false);
+  });
+
+  it('17. holds the cap when two new worktrees are made at once', async () => {
+    const repo = await openRepo(root);
+    const ctx = world().ctx;
+    ctx.max = 2;
+    await createWorktree(repo, 'first', { from: 'main' }, ctx);
+
+    const results = await Promise.allSettled([
+      createWorktree(repo, 'racer-a', { from: 'main', deps: false }, ctx),
+      createWorktree(repo, 'racer-b', { from: 'main', deps: false }, ctx),
+    ]);
+
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(git(root, 'worktree', 'list').split('\n')).toHaveLength(3);
+  });
+
+  it('18. saves with --save behind a commit hook that refuses', async () => {
+    const { repo, wt } = await made('hooked');
+    const hooks = path.join(root, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(wt.path, 'draft.txt'), 'draft');
+
+    await removeWorktree(repo, 'hooked', { save: true }, world().ctx);
+
+    expect(fs.existsSync(wt.path)).toBe(false);
+    expect(git(root, 'show', 'wip/hooked:draft.txt')).toBe('draft');
+  });
+
+  it('19. refuses a worktree with a rebase in progress, and says so', async () => {
+    const { repo, wt } = await made('rebasing');
+    fs.writeFileSync(path.join(wt.path, 'second.txt'), '2');
+    git(wt.path, 'add', '-A');
+    git(wt.path, 'commit', '-q', '-m', 'second');
+    execFileSync('git', ['rebase', '-i', 'HEAD~1'], {
+      cwd: wt.path, env: { ...process.env, GIT_SEQUENCE_EDITOR: "perl -pi -e 's/^pick/edit/'" }, stdio: 'ignore',
+    });
+
+    const message = await refusal(removeWorktree(repo, 'rebasing', {}, world().ctx));
+    expect(message).toMatch(/rebase/);
+    expect(fs.existsSync(wt.path)).toBe(true);
+  });
+});
+
+describe('the main checkout and how far behind a worktree is', () => {
+  /** A main checkout cloned from a bare origin, so origin/main exists and can move. */
+  function cloned(): { origin: string; root: string; upstream: string } {
+    const upstream = makeRepo();
+    const origin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-wt-origin-')));
+    git(origin, 'clone', '-q', '--bare', upstream, 'repo.git');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-wt-clone-')));
+    git(root, 'clone', '-q', path.join(origin, 'repo.git'), 'main');
+    return { origin: path.join(origin, 'repo.git'), root: path.join(root, 'main'), upstream };
+  }
+
+  function pushCommit(upstream: string, origin: string, n: number): void {
+    for (let i = 0; i < n; i++) {
+      fs.writeFileSync(path.join(upstream, `c${i}.txt`), String(i));
+      git(upstream, 'add', '-A');
+      git(upstream, 'commit', '-q', '-m', `c${i}`);
+    }
+    git(upstream, 'push', '-q', origin, 'main');
+  }
+
+  it('20. refuses a new worktree while the main checkout is off main, or dirty', async () => {
+    const { root } = cloned();
+    const repo = await openRepo(root);
+    git(root, 'switch', '-q', '-c', 'side');
+    expect(await refusal(createWorktree(repo, 'off', { deps: false }, world().ctx))).toMatch(/main checkout.*side/);
+
+    git(root, 'switch', '-q', 'main');
+    fs.writeFileSync(path.join(root, 'README.md'), 'edited\n');
+    expect(await refusal(createWorktree(repo, 'dirty', { deps: false }, world().ctx))).toMatch(/README\.md/);
+    expect(fs.existsSync(path.join(root, '.worktrees', 'dirty'))).toBe(false);
+  });
+
+  it('20. fast-forwards the main checkout and starts the worktree from a fresh origin/main', async () => {
+    const { origin, root, upstream } = cloned();
+    pushCommit(upstream, origin, 2);
+    const repo = await openRepo(root);
+
+    const wt = await createWorktree(repo, 'fresh', { deps: false }, world().ctx);
+
+    const tip = git(upstream, 'rev-parse', 'HEAD');
+    expect(git(root, 'rev-parse', 'HEAD')).toBe(tip);
+    expect(git(wt.path, 'rev-parse', 'HEAD')).toBe(tip);
+  });
+
+  it('21. says how far behind its base each worktree is, and flags an active one well behind', async () => {
+    const { origin, root, upstream } = cloned();
+    const repo = await openRepo(root);
+    await createWorktree(repo, 'lagging', { deps: false }, world().ctx);
+    pushCommit(upstream, origin, 6);
+    git(root, 'fetch', '-q', 'origin');
+
+    const report = await status(repo, world().ctx);
+
+    const lagging = report.worktrees.find(w => w.name === 'lagging')!;
+    expect(lagging.behind).toBe(6);
+    expect(lagging.mergeMainFirst).toBe(true);
+  });
+});
+
