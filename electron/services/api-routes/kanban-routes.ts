@@ -126,6 +126,19 @@ function tellOrchestrator(creator: KanbanCaller, task: AgentTask, ctx: RouteCont
   typeInto(orchestrator, { ...landingNote(creator, task), purpose: 'note', what: `the note of kanban task ${task.id}` }, ctx);
 }
 
+/**
+ * A note from Tars itself to a project's orchestrator: the Sentry errors the
+ * error triage filed on its board (services/error-triage.ts). Typed as Tars,
+ * so the note carries Tars's words only, never an error's; and like the
+ * landing note, only into a CLI that runs, never mid-turn.
+ */
+export function tellOrchestratorAsTars(projectPath: string, message: string): void {
+  const project = projectPath.replace(/\/+$/, '');
+  const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath.replace(/\/+$/, '') === project);
+  if (!orchestrator || !routeCtx) return;
+  typeInto(orchestrator, { message, sender: { kind: 'tars' }, purpose: 'note', what: "the error triage's note" }, routeCtx);
+}
+
 export function registerKanbanRoutes(app: RouteApp, ctx: RouteContext): void {
   routeCtx = ctx;
   // POST /api/kanban/generate

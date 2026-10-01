@@ -309,6 +309,14 @@ export interface AppSettings {
    * (services/error-reports). Off by default; followed live.
    */
   errorReportsEnabled: boolean;
+  /**
+   * The error triage (services/error-triage): a Sentry auth token with the
+   * event:read scope and nothing more, and the project whose Hermes board gets
+   * a parked task for each new error. While either is empty, or error reports
+   * are off, or Hermes is not configured, nothing polls. Read at each poll.
+   */
+  sentryAuthToken: string;
+  sentryTriageProject: string;
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;

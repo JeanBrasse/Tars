@@ -680,6 +680,7 @@ work.
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
+| `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
@@ -1525,6 +1526,28 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 | "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
 | Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name, the name is not one word, or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
 | An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
+
+### Sentry's errors on the board
+
+`electron/services/error-triage.ts` files the unresolved issues of Tars's Sentry project (the one
+the error reports go to) as parked tasks on the Hermes board of one project, and tells that
+project's orchestrator which tasks to hand to QA or the Audit, who reproduce each error in a
+sandbox and report. SPECS.md, "The error triage", has the whole contract.
+
+To turn it on:
+
+1. Make a Sentry token with the `event:read` scope and nothing more: an internal integration with
+   Issue & Event on Read, or a personal token with that scope alone.
+2. Set `sentryAuthToken` to it and `sentryTriageProject` to the project's path, in Settings once it
+   has the section, or in `~/.dorothy/app-settings.json` while Tars is closed. Error reports must be
+   on and Hermes configured.
+3. A minute after launch, then every 15 minutes, Tars's log says `[error-triage] filed N on
+   <project>: TARS-1 as t_...`, or, once each time the reason changes, `[error-triage] not polling
+   Sentry: <why>`. Nothing is logged while no token is set.
+
+At most 10 tasks in any 24 hours, the oldest issue first; the others wait for room. What was filed
+is in `~/.dorothy/error-triage.json`. To have an issue filed again, remove its entry with Tars
+closed: the idempotency key hands back its task still on the board, unless that task was archived.
 
 ---
 
