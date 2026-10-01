@@ -29,6 +29,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { landsUnderSafeRoot } from '../utils/real-target';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
+import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
 import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
@@ -2001,13 +2002,21 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
                              newSettings.discordBotToken !== undefined;
 
       const currentSettings = getAppSettings();
-      const updatedSettings = { ...currentSettings, ...newSettings };
+      // With the relay on, Hermes is the only voice on the user's Telegram: the
+      // Tars bot's token is erased and the bot off, whatever else was saved
+      // (hermes-relay-switch.ts).
+      const updatedSettings = settingsForRelay({ ...currentSettings, ...newSettings });
+      const relayTurnedOn = updatedSettings.hermesRelayEnabled === true && currentSettings.hermesRelayEnabled !== true;
       setAppSettings(updatedSettings);
       saveAppSettings(updatedSettings);
 
       // Reinitialize Telegram bot if settings changed
-      if (telegramChanged) {
+      if (telegramChanged || relayTurnedOn) {
         initTelegramBot();
+      }
+      // mcp-telegram sends with the bot's token past the relay: out of every CLI.
+      if (relayTurnedOn) {
+        void retireTelegramMcp(getAllProviders());
       }
 
       // Reinitialize Slack bot if settings changed

@@ -74,7 +74,8 @@ async function load() {
   const agent = (id: string, name: string, projectPath: string, role?: 'orchestrator') => {
     const term = spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: id } });
     ptyProcesses.set(`pty-${id}`, term as unknown);
-    const a = { id, name, status: 'running', provider: 'claude', projectPath, role, ptyId: `pty-${id}`, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
+    // Its terminal opened in its project, as Tars opens one: a terminal elsewhere is stale, and is replaced.
+    const a = { id, name, status: 'running', provider: 'claude', projectPath, role, ptyId: `pty-${id}`, ptyCwd: projectPath, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus;
     agents.set(id, a);
   };
   // The first orchestrator of the fleet is another project's: "the first orchestrator" is never the answer.

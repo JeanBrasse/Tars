@@ -85,10 +85,10 @@ describe('a send', () => {
   });
 
   it('2. what went out is in Tars\'s own list, in ~/.tars-private, readable by its owner alone', async () => {
-    await relay.relaySend({ text: 'x', kind: 'question', ref: 'question:q-1', projectPath: PROJECT }, T0);
+    const sent = await relay.relaySend({ text: 'x', kind: 'question', ref: 'question:q-1', projectPath: PROJECT }, T0);
 
     const list = JSON.parse(fs.readFileSync(privateFile('relay-sent.json'), 'utf-8'));
-    expect(list).toEqual([expect.objectContaining({ messageId: '501', ref: 'question:q-1', kind: 'question', projectPath: PROJECT })]);
+    expect(list).toEqual([expect.objectContaining({ messageId: (sent as { messageId: string }).messageId, ref: 'question:q-1', kind: 'question', projectPath: PROJECT })]);
     expect(fs.statSync(privateFile('relay-sent.json')).mode & 0o777).toBe(0o600);
     expect(fs.statSync(path.join(os.homedir(), '.tars-private')).mode & 0o777).toBe(0o700);
     expect(fs.existsSync(path.join(os.homedir(), '.dorothy', 'relay-sent.json'))).toBe(false);

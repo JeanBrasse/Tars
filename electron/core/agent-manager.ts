@@ -321,7 +321,7 @@ export function handleStatusChangeNotification(
         kind: 'agent-error',
         agentId: currentAgent.id,
         agentName,
-        project: path.basename(currentAgent.projectPath || '') || currentAgent.projectPath || '',
+        projectPath: currentAgent.projectPath || '',
         reason: currentAgent.error,
       });
     }

@@ -28,6 +28,8 @@ vi.mock('electron', () => ({
 import type { AppSettings } from '../../../electron/types';
 
 const geminiSettings = () => path.join(os.homedir(), '.gemini', 'settings.json');
+// Where a packaged Tars keeps its bundled MCP servers, as Electron sets it.
+(process as { resourcesPath?: string }).resourcesPath = path.join(os.homedir(), 'Tars.app', 'Contents', 'Resources');
 type Switch = typeof import('../../../electron/services/hermes-relay-switch');
 let sw: Switch;
 

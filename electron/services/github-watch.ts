@@ -9,8 +9,8 @@ import { buildFullPath } from '../utils/path-builder';
  * What Tars reads from GitHub for the event reports (step 4 of the relay
  * plan): PRs merged, and changes requested on an open PR, in the repositories
  * of the projects its agents work in. Through `gh`, read-only (`gh pr list
- * --json`, and nothing else), every POLL_MS, and only while the Telegram bot
- * is on: there is nobody to tell otherwise.
+ * --json`, and nothing else), every POLL_MS, and only while the reports go out
+ * (the relay is on): there is nobody to tell otherwise.
  *
  * The first poll of a repository is its baseline and reports nothing, and so
  * is a poll that follows a pause of more than an hour: what happened while
@@ -26,6 +26,8 @@ type Gh = (args: string[]) => Promise<string>;
 interface RepoState { polledAt: number; merged: number[]; changes: number[] }
 type State = Record<string, RepoState>;
 type PrEvent = Extract<ReportEvent, { kind: 'pr-merged' | 'changes-requested' }>;
+/** What a poll finds in a repository, before it is put under a project. */
+export type PrSeen = Omit<PrEvent, 'projectPath'>;
 
 const FILE = () => privatePath('github-watch.json');
 function load(): State {
@@ -42,9 +44,9 @@ const list = async (gh: Gh, repo: string, state: 'merged' | 'open', fields: stri
   JSON.parse(await gh([...GH_READ_ARGS, '--repo', repo, '--state', state, '--limit', state === 'merged' ? '30' : '50', '--json', fields])) as Pr[];
 
 /** One poll of these repositories: the events since the last, and what was seen recorded. */
-export async function pollGithub(repos: string[], gh: Gh, now: number = Date.now()): Promise<PrEvent[]> {
+export async function pollGithub(repos: string[], gh: Gh, now: number = Date.now()): Promise<PrSeen[]> {
   const state = load();
-  const events: PrEvent[] = [];
+  const events: PrSeen[] = [];
   for (const repo of repos) {
     let merged: Pr[];
     let open: Pr[];
@@ -91,21 +93,30 @@ const run = (file: string, args: string[], cwd?: string) => new Promise<string>(
     (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
 });
 
-/** One poll of the GitHub repositories of these projects. */
+/**
+ * One poll of the GitHub repositories of these projects. Each event goes under
+ * the project its repository was found in, the first when several share it: a
+ * reply to its report goes to that project's orchestrator.
+ */
 export async function pollProjects(projectPaths: string[], now: number = Date.now()): Promise<PrEvent[]> {
-  const repos = new Set<string>();
+  const projectOfRepo = new Map<string, string>();
   for (const project of new Set(projectPaths)) {
-    try { const repo = githubRepoOf(await run('git', ['-C', project, 'remote', 'get-url', 'origin'])); if (repo) repos.add(repo); } catch { /* not a repository */ }
+    try {
+      const repo = githubRepoOf(await run('git', ['-C', project, 'remote', 'get-url', 'origin']));
+      if (repo && !projectOfRepo.has(repo)) projectOfRepo.set(repo, project);
+    } catch { /* not a repository */ }
   }
-  if (repos.size === 0) return [];
-  return pollGithub([...repos], args => run('gh', args), now);
+  if (projectOfRepo.size === 0) return [];
+  const seen = await pollGithub([...projectOfRepo.keys()], args => run('gh', args), now);
+  return seen.map(event => ({ ...event, projectPath: projectOfRepo.get(event.repo) ?? '' }));
 }
 
 let timer: NodeJS.Timeout | undefined;
 
 /**
  * Polls the repositories of these projects every POLL_MS, while `isOn` says
- * the Telegram bot runs, and hands what it finds to the event reports.
+ * the reports go out (the relay is on), and hands what it finds to the event
+ * reports.
  */
 export function startGithubWatch(projectPaths: () => string[], isOn: () => boolean): void {
   if (timer) return;

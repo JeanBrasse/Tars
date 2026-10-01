@@ -98,7 +98,7 @@ describe('the bots', () => {
     for (const [id, name, projectPath, role] of [['orch-capital', 'Capital-Orchestrator', CAPITAL, 'orchestrator'], ['orch-tars', 'Tars-Orchestrator', TARS, 'orchestrator']] as const) {
       const term = spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: id } });
       ptyProcesses.set(`pty-${id}`, term as never);
-      agents.set(id, { id, name, projectPath, role, status: 'running', provider: 'claude', ptyId: `pty-${id}`, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus);
+      agents.set(id, { id, name, projectPath, role, status: 'running', provider: 'claude', ptyId: `pty-${id}`, ptyCwd: projectPath, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus);
     }
   });
 

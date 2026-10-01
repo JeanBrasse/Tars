@@ -795,9 +795,16 @@ describe('POST /api/user/ask', () => {
     expect((await ask(alphaToken, { question: 'ok?', context: 'x'.repeat(4_001) })).status).toBe(400);
   });
 
-  it('4. takes the agent\'s own terminal token, and says when Telegram cannot carry the question', async () => {
+  it('4. takes an orchestrator\'s own terminal token, and says when the relay to Hermes cannot carry the question', async () => {
+    agents.get(ALPHA.id)!.role = 'orchestrator';
     const { status, body } = await ask(alphaToken, { question: 'Staging or prod?' });
     expect(status, JSON.stringify(body)).toBe(503);
-    expect(String(body.error)).toMatch(/Telegram/);
+    expect(String(body.error)).toMatch(/Hermes/);
+  });
+
+  it('5. refuses a worker\'s own terminal token: only a project\'s orchestrator asks the user (Noah, 2026-10-01)', async () => {
+    const { status, body } = await ask(alphaToken, { question: 'Staging or prod?' });
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(String(body.error)).toMatch(/orchestrator/);
   });
 });

@@ -4,36 +4,31 @@ import { randomUUID } from 'crypto';
 import { privatePath } from '../constants';
 import { writeSecretFileSync } from '../utils/secret-file';
 import { redactSecrets } from '../utils/redact-secrets';
+import { isSuperAgent } from '../utils';
 import { agents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
+import { onRelayReply, relaySend, relayWasSent, tellUser, type RelayReply } from './hermes-relay';
 
 /**
- * ask_user: an agent asks the user a question on their Telegram, and their answer is
- * typed into that agent's terminal (step 2 of PLAN-RELAIS-SENTRY.md; the
- * design's part A3).
+ * ask_user: a project's orchestrator asks the user a question on their Telegram, through their Hermes (the relay,
+ * DESIGN-RELAIS-HERMES-V2.md), and their answer is typed into that orchestrator's terminal.
  *
- * - A question is recorded (id, agent, time, expiry) and sent to the private
- *   chats Settings authorizes, as a quote under the agent's and the project's
- *   names: the agent's words are data for the user, never an order, and whatever
- *   markup they hold is escaped and whatever secret they hold masked.
- * - The user answers with Telegram's "reply" on that very message. It is taken
- *   only from a private chat Settings still authorizes, from the person of
- *   that chat (in a private chat, the chat's id is the user's), and only as a
- *   reply to a message Tars sent as a question, matched by its message id.
- * - The answer is typed into the asking agent's terminal through the writer
- *   every message takes (its dialog guard included), after a line only Tars
- *   writes, "Message from the user via Telegram: " (senderLine). Into a CLI only:
- *   an agent with no CLI running is not typed into, and the user is told.
- * - One open question per agent, 20 a day for the whole fleet, and 4 hours
- *   to answer: then the agent is told there was no answer, and a later reply
- *   is refused.
- * - Kept in ~/.tars-private (0600), not in ~/.dorothy, which every agent can
- *   write: a record rewritten there would send their answer to another agent.
- *
- * Every private chat Settings authorizes is taken for the user's: today that is
- * the owner's one chat. Telegram only: the Slack and Discord bots have no reply
- * matching to share, and are not asked.
+ * - Only an orchestrator asks (Noah's rule of 2026-10-01): a worker asks its orchestrator, which decides whether to
+ *   ask the user, and passes the answer on.
+ * - A question is recorded (id, agent, time, expiry) and sent through the relay as plain text under the agent's and
+ *   the project's names, every line of the agent's words quoted, so none can pass for Tars's own, and every secret
+ *   masked. Hermes down: it waits, the agent is told it has not gone, and it goes when Hermes takes it.
+ * - The user answers with Telegram's "reply" on that very message. The tars-relay plugin keeps it from Hermes's model,
+ *   and Tars takes it only as a reply to a message on its own list of what it sent (hermes-relay.ts).
+ * - The answer is typed into the asking agent's terminal through the writer every message takes (its dialog guard
+ *   included), after a line only Tars writes, "Message from the user via Telegram: " (senderLine): the answer alone,
+ *   never the question, named by the time it was asked. Into a CLI only: an agent with no CLI running is not typed
+ *   into, and the user is told.
+ * - One open question per agent, 20 a day for the whole fleet, and 4 hours to answer: then the agent is told there was
+ *   no answer, by the time it asked, never by its words, and a later reply is refused.
+ * - Kept in ~/.tars-private (0600), not in ~/.dorothy, which every agent can write: a record rewritten there would
+ *   send their answer to another agent.
  */
 
 export const QUESTION_LIFETIME_MS = 4 * 3_600_000;
@@ -41,6 +36,7 @@ export const QUESTIONS_PER_DAY = 20;
 export const MAX_QUESTION = 2_000;
 export const MAX_CONTEXT = 4_000;
 const DAY_MS = 24 * 3_600_000;
+const TELEGRAM_MAX_UNITS = 4096;
 const FILE = () => privatePath('user-questions.json');
 
 interface Question {
@@ -52,25 +48,7 @@ interface Question {
   context?: string;
   askedAt: number;
   expiresAt: number;
-  /** Where it went: each chat and the id of the message there, which their reply names. */
-  sentTo: Array<{ chatId: string; messageId: number }>;
   state: 'open' | 'answered' | 'expired';
-}
-
-/** Telegram, as the bot hands it over when it starts, and takes it back when it stops. */
-export interface UserChannel {
-  /** Sends to the private chats Settings authorizes, and says where each landed. */
-  send(html: string): Promise<Array<{ chatId: string; messageId: number }>>;
-  /** Answers the user, in a reply to their own message. */
-  tell(chatId: string, replyTo: number, text: string): void;
-  /** Whether Settings authorizes this chat, now. */
-  authorizes(chatId: string): boolean;
-}
-
-let channel: UserChannel | null = null;
-
-export function setUserChannel(next: UserChannel | null): void {
-  channel = next;
 }
 
 function load(): Question[] {
@@ -96,23 +74,31 @@ export function openQuestionOf(agentId: string): Question | undefined {
   return load().find(q => q.agentId === agentId && q.state === 'open');
 }
 
-const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
-const cut = (s: string, n: number) => (Array.from(s).length > n ? `${Array.from(s).slice(0, n - 3).join('')}...` : s);
+const units = (s: string) => Buffer.byteLength(s, 'utf16le') / 2;
+const oneLine = (s: string) => s.replace(/[\r\n\u2028\u2029]+/g, ' ').trim();
+/** Every line quoted: no line of the agent's can pass for one of Tars's. */
+const quoted = (s: string) => redactSecrets(s).split(/\r?\n/).map(line => `> ${line}`).join('\n');
 
+/** The question as the user reads it, within what Telegram takes: the context is cut first. */
 function compose(q: Question): string {
-  const name = escapeHtml(q.agentName);
-  const lines = [
-    `❓ <b>Question from ${name}</b>, project <b>${escapeHtml(path.basename(q.projectPath) || q.projectPath)}</b>`,
-    `<blockquote>${escapeHtml(redactSecrets(q.question))}</blockquote>`,
-  ];
-  if (q.context) lines.push('<i>Context</i>', `<blockquote expandable>${escapeHtml(redactSecrets(q.context))}</blockquote>`);
-  lines.push('', `<i>Reply to this message to answer: your reply is typed into ${name}'s terminal. Open until ${clock(q.expiresAt)}.</i>`);
-  return lines.join('\n');
+  const head = `Question from ${oneLine(q.agentName)}, project ${oneLine(path.basename(q.projectPath) || q.projectPath)}:`;
+  const tail = `Reply to this message to answer: your reply is typed into ${oneLine(q.agentName)}'s terminal. Open until ${clock(q.expiresAt)}.`;
+  const body = quoted(q.question);
+  if (!q.context) return [head, body, '', tail].join('\n');
+  const without = [head, body, 'Context:', '', tail].join('\n');
+  let context = quoted(q.context);
+  const room = TELEGRAM_MAX_UNITS - units(without) - 1;
+  if (units(context) > room) {
+    const cut = '\n> ...(cut)';
+    while (context && units(context) + units(cut) > room) context = context.slice(0, Math.max(0, context.length - 64));
+    context += cut;
+  }
+  return [head, body, 'Context:', context, '', tail].join('\n');
 }
 
 export type AskResult =
-  | { ok: true; id: string; expiresAt: string }
+  | { ok: true; id: string; expiresAt: string; queued?: true; reason?: string }
   | { ok: false; status: number; error: string };
 
 export async function askUser(
@@ -121,6 +107,9 @@ export async function askUser(
 ): Promise<AskResult> {
   const agent = agents.get(input.agentId);
   if (!agent) return { ok: false, status: 404, error: 'The asking agent is not one Tars knows about.' };
+  if (!isSuperAgent(agent)) {
+    return { ok: false, status: 403, error: 'Only a project\'s orchestrator asks the user. Ask your orchestrator: it decides whether to ask them, and passes their answer on.' };
+  }
   const question = input.question.trim();
   const context = input.context?.trim() || undefined;
   if (!question || question.length > MAX_QUESTION) return { ok: false, status: 400, error: `A question is 1 to ${MAX_QUESTION} characters.` };
@@ -136,9 +125,8 @@ export async function askUser(
     };
   }
   if (list.filter(q => q.askedAt > now - DAY_MS).length >= QUESTIONS_PER_DAY) {
-    return { ok: false, status: 429, error: `The user has been asked ${QUESTIONS_PER_DAY} questions in the last 24 hours, the most Tars sends. Decide without him, or ask later.` };
+    return { ok: false, status: 429, error: `The user has been asked ${QUESTIONS_PER_DAY} questions in the last 24 hours, the most Tars sends. Decide without them, or ask later.` };
   }
-  if (!channel) return { ok: false, status: 503, error: 'Telegram is not on in Tars, so the user cannot be asked.' };
 
   const record: Question = {
     id: randomUUID(),
@@ -149,69 +137,48 @@ export async function askUser(
     context,
     askedAt: now,
     expiresAt: now + QUESTION_LIFETIME_MS,
-    sentTo: [],
     state: 'open',
   };
   // Recorded before it is sent, so a second call from the same agent while
-  // this one waits on Telegram is refused rather than sent too.
+  // this one waits on Hermes is refused rather than sent too.
   save([...list, record], now);
-  let sentTo: Question['sentTo'] = [];
-  try {
-    sentTo = await channel.send(compose(record));
-  } catch (err) {
-    console.error('[ask_user] Telegram refused the question:', err instanceof Error ? err.message : err);
+  const sent = await relaySend({ text: compose(record), kind: 'question', ref: `question:${record.id}`, projectPath: record.projectPath, expiresAt: record.expiresAt }, now);
+  if (sent.state === 'refused') {
+    save(load().filter(q => q.id !== record.id), now);
+    return { ok: false, status: 503, error: `The user cannot be asked: ${sent.reason}` };
   }
-  const after = load().filter(q => q.id !== record.id);
-  if (sentTo.length === 0) {
-    save(after, now);
-    return { ok: false, status: 503, error: 'No private Telegram chat is authorized in Settings, or Telegram refused the message, so the user cannot be asked.' };
-  }
-  save([...after, { ...record, sentTo }], now);
-  return { ok: true, id: record.id, expiresAt: new Date(record.expiresAt).toISOString() };
+  const expiresAt = new Date(record.expiresAt).toISOString();
+  return sent.state === 'queued'
+    ? { ok: true, id: record.id, expiresAt, queued: true, reason: sent.reason }
+    : { ok: true, id: record.id, expiresAt };
 }
 
-/** A Telegram message, as far as a reply to a question is concerned. */
-export interface UserReply {
-  chatId: string;
-  chatType: string;
-  fromId?: number;
-  replyToMessageId?: number;
-  text?: string;
-  /** the user's own message, which Tars answers in a reply to. */
-  messageId?: number;
-}
-
-/**
- * Takes the user's reply to a question, and says whether it was one: false leaves
- * the message to whatever else the bot does with it.
- */
-export function answerUserReply(reply: UserReply, now: number = Date.now()): boolean {
-  if (!channel || reply.replyToMessageId === undefined) return false;
-  if (!channel.authorizes(reply.chatId)) return false;
-  // A private chat's id is its person's: in a group, the chat is not the user.
-  if (reply.chatType !== 'private' || String(reply.fromId) !== reply.chatId) return false;
+/** The user's reply to a question, from the relay, which has checked it answers a message Tars sent. */
+async function answerQuestion(reply: RelayReply, now: number): Promise<void> {
   expireUserQuestions(now);
   const list = load();
-  const q = list.find(x => x.sentTo.some(s => s.chatId === reply.chatId && s.messageId === reply.replyToMessageId));
-  if (!q) return false;
-  const tell = (text: string) => channel?.tell(reply.chatId, reply.messageId ?? reply.replyToMessageId!, text);
-
+  const q = list.find(x => x.id === reply.refId);
+  const tell = (text: string) => tellUser(text, q?.projectPath ?? reply.projectPath, now);
+  if (!q) {
+    await tell('That question is no longer one Tars keeps, so your reply reached nobody.');
+    return;
+  }
   if (q.state !== 'open') {
-    tell(q.state === 'answered'
+    await tell(q.state === 'answered'
       ? `That question from ${q.agentName} is closed: it was already answered.`
       : `That question from ${q.agentName} is closed: it expired at ${clock(q.expiresAt)}, and ${q.agentName} was told there was no answer.`);
-    return true;
+    return;
   }
-  const answer = reply.text?.trim();
+  const answer = reply.text.trim();
   if (!answer) {
-    tell('Only a text reply is typed into the agent\'s terminal.');
-    return true;
+    await tell('Only a text reply is typed into the agent\'s terminal.');
+    return;
   }
   const agent = agents.get(q.agentId);
   const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   if (!agent || !cliRunningIn(terminal)) {
-    tell(`Not delivered: ${q.agentName} has no session running. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`);
-    return true;
+    await tell(`Not delivered: ${q.agentName} has no session running. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`);
+    return;
   }
   // Their answer alone, never the question: the agent wrote the question, and
   // typed back under the user's sender line it would be the user's words, newlines and a
@@ -225,21 +192,24 @@ export function answerUserReply(reply: UserReply, now: number = Date.now()): boo
     // open again, and the user is told.
     onDropped: () => {
       save(load().map(x => (x.id === q.id && x.state === 'answered' ? { ...x, state: 'open' as const } : x)), Date.now());
-      tell(`Not delivered: ${q.agentName}'s session stopped before your answer could go in. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`);
+      void tellUser(`Not delivered: ${q.agentName}'s session stopped before your answer could go in. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`, q.projectPath);
     },
   });
   if (outcome === 'refused') {
-    tell(`Not delivered: ${q.agentName}'s terminal is not taking messages. The question stays open until ${clock(q.expiresAt)}.`);
-    return true;
+    await tell(`Not delivered: ${q.agentName}'s terminal is not taking messages. The question stays open until ${clock(q.expiresAt)}.`);
+    return;
   }
   save(list.map(x => (x.id === q.id ? { ...x, state: 'answered' as const } : x)), now);
-  tell(outcome === 'held'
+  await tell(outcome === 'held'
     ? `Held for ${q.agentName}'s terminal: it goes in once the field is free.`
     : `Typed into ${q.agentName}'s terminal.`);
-  return true;
 }
 
-/** Ends the questions whose time is up, and tells each agent there was no answer. */
+/**
+ * Ends the questions whose time is up, and tells each agent: there was no answer, or the question never reached the
+ * user. By the time it was asked, never by its words, which the agent wrote: typed back under Tars's line, they
+ * would be Tars's (the gate of #231).
+ */
 export function expireUserQuestions(now: number = Date.now()): void {
   const list = load();
   const due = list.filter(q => q.state === 'open' && q.expiresAt <= now);
@@ -248,11 +218,10 @@ export function expireUserQuestions(now: number = Date.now()): void {
     const agent = agents.get(q.agentId);
     const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
     if (agent && cliRunningIn(terminal)) {
-      writeProgrammaticInput(terminal!, `The user did not answer your question "${cut(q.question, 200)}" within 4 hours. Carry on without their answer, or ask again.`, true, {
-        agentId: agent.id,
-        from: 'Tars',
-        sender: { kind: 'tars' },
-      });
+      const words = relayWasSent(`question:${q.id}`)
+        ? `The user did not answer your question asked at ${clock(q.askedAt)} within 4 hours. Carry on without their answer, or ask again.`
+        : `Your question asked at ${clock(q.askedAt)} could not reach the user: Hermes did not take it within 4 hours. Carry on without their answer, or ask again.`;
+      writeProgrammaticInput(terminal!, words, true, { agentId: agent.id, from: 'Tars', sender: { kind: 'tars' } });
     }
   }
   const ids = new Set(due.map(q => q.id));
@@ -261,9 +230,13 @@ export function expireUserQuestions(now: number = Date.now()): void {
 
 let sweep: NodeJS.Timeout | undefined;
 
-/** Checks for expired questions every minute, for as long as Tars runs. */
-export function startUserQuestions(): void {
-  if (sweep) return;
+/**
+ * Takes the user's replies to questions from the relay, and checks for expired questions every minute, for as long as
+ * Tars runs. `sweep: false` leaves the check to the caller (tests).
+ */
+export function startUserQuestions(opts: { sweep?: boolean } = {}): void {
+  onRelayReply('question', answerQuestion);
+  if (opts.sweep === false || sweep) return;
   sweep = setInterval(() => expireUserQuestions(), 60_000);
   sweep.unref?.();
 }
