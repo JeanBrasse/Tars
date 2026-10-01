@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { decodedProjectPath } from './project-index';
+import { decodedProjectPaths } from './project-index';
 import { computeTranscriptUsage } from './transcript-usage';
 
 // Type definitions for Claude data structures
@@ -296,14 +296,13 @@ export async function getClaudeProjects(): Promise<ClaudeProject[]> {
     const projects: ClaudeProject[] = [];
     const seenPaths = new Set<string>();
 
-    const dirs = fs.readdirSync(projectsDir);
-    for (const dir of dirs) {
-      const fullPath = path.join(projectsDir, dir);
-      const stat = fs.statSync(fullPath);
-      if (!stat.isDirectory()) continue;
-
-      // Decode project path smartly
-      const decodedPath = await decodedProjectPath(dir);
+    const folders = fs.readdirSync(projectsDir)
+      .map(dir => ({ dir, fullPath: path.join(projectsDir, dir), stat: fs.statSync(path.join(projectsDir, dir)) }))
+      .filter(folder => folder.stat.isDirectory());
+    // Decode project path smartly, a few folders at a time (project-index).
+    const decodedPaths = await decodedProjectPaths(folders.map(folder => folder.dir));
+    for (const [i, { dir, fullPath, stat }] of folders.entries()) {
+      const decodedPath = decodedPaths[i];
 
       // Skip junk entries: the decoder falls back to '/' or to fabricated
       // paths for stale/renamed folders, and worktrees are views of a repo
