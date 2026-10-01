@@ -14,10 +14,11 @@ import { localDayKey } from '@/lib/usage-dates';
  * the rows under it.
  */
 
-export type Timeframe = 'daily' | 'weekly' | 'monthly';
+export type Timeframe = 'hourly' | 'daily' | 'weekly' | 'monthly';
 
 /** How the page names each timeframe: the control, the captions, the latest tile. */
 export const TIMEFRAME_TEXT: Record<Timeframe, { control: string; length: string; unit: string; latest: string; now: string }> = {
+  hourly: { control: '24 hours', length: '24 HOURS', unit: 'HOURLY', latest: 'THIS HOUR', now: 'this hour' },
   daily: { control: '14 days', length: '14 DAYS', unit: 'DAILY', latest: 'TODAY', now: 'today' },
   weekly: { control: '12 weeks', length: '12 WEEKS', unit: 'WEEKLY', latest: 'THIS WEEK', now: 'this week' },
   monthly: { control: '12 months', length: '12 MONTHS', unit: 'MONTHLY', latest: 'THIS MONTH', now: 'this month' },
@@ -35,6 +36,20 @@ export function dateLabel(d: Date): string {
   return `${dayLabel(d)} ${d.getFullYear()}`;
 }
 
+const HOUR = 3_600_000;
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** The start of the hour a time falls in, as both sources file their hours (#275): floored since the epoch. */
+export function hourOf(ms: number): number {
+  return Math.floor(ms / HOUR) * HOUR;
+}
+
+/** `06:00`, on this machine's clock. */
+export function hourClock(ms: number): string {
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** A `YYYY-MM-DD` local key back to local midnight of that day. */
 export function dayOf(key: string): Date {
   const [y, m, d] = key.split('-').map(Number);
@@ -42,7 +57,7 @@ export function dayOf(key: string): Date {
 }
 
 export interface Bucket {
-  /** Its first day, as a local key: unique across the window. */
+  /** Its first day, as a local key, or for an hour its start in ms: unique across the window. */
   key: string;
   /** `10 Sep`, `week of 5 Jul`, `Oct 2025`: the card's title and the chart's left edge. */
   label: string;
@@ -53,9 +68,9 @@ export interface Bucket {
 export interface UsageWindow {
   timeframe: Timeframe;
   buckets: Bucket[];
-  /** Which bucket each local day belongs to. A day absent from it is outside the window. */
+  /** Which bucket each local day, or each hour's start, belongs to. A key absent from it is outside the window. */
   bucketOf: Map<string, number>;
-  /** The window's first day, and today. */
+  /** The window's first day, and today; for 24 hours its first hour, and this hour. */
   start: Date;
   end: Date;
 }
@@ -72,9 +87,22 @@ export interface UsageWindow {
  * fell outside every window.
  */
 export function usageWindow(timeframe: Timeframe, today: Date): UsageWindow {
-  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const buckets: Bucket[] = [];
   const bucketOf = new Map<string, number>();
+
+  // The current hour and the 23 before it, keyed by each hour's start: an
+  // hour of the clock, so a day that changes its time still has 24 of them.
+  // Frame: `Usage · last 24 hours`.
+  if (timeframe === 'hourly') {
+    const last = hourOf(today.getTime());
+    for (let i = 23; i >= 0; i--) {
+      const start = last - i * HOUR;
+      bucketOf.set(String(start), buckets.push({ key: String(start), label: hourClock(start), tick: pad(new Date(start).getHours()) }) - 1);
+    }
+    return { timeframe, buckets, bucketOf, start: new Date(last - 23 * HOUR), end: new Date(last) };
+  }
+
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const add = (first: Date, days: number, label: string, tick: string) => {
     const index = buckets.push({ key: localDayKey(first), label, tick }) - 1;
     for (let i = 0; i < days; i++) {
@@ -103,16 +131,21 @@ export function usageWindow(timeframe: Timeframe, today: Date): UsageWindow {
   return { timeframe, buckets, bucketOf, start: dayOf(buckets[0].key), end };
 }
 
-/** `10 Sep to 23 Sep`, with the years once the window crosses one. */
+/** `10 Sep to 23 Sep`, with the years once the window crosses one; `since 06:00 yesterday` for 24 hours. */
 export function spanLabel(window: UsageWindow): string {
   const { start, end } = window;
+  if (window.timeframe === 'hourly') {
+    return `since ${hourClock(start.getTime())} ${start.toDateString() === end.toDateString() ? 'today' : 'yesterday'}`;
+  }
   return start.getFullYear() === end.getFullYear()
     ? `${dayLabel(start)} to ${dayLabel(end)}`
     : `${dateLabel(start)} to ${dateLabel(end)}`;
 }
 
 type LedgerDay = Awaited<ReturnType<NonNullable<ElectronAPI['usage']>['byProvider']>>['daily'][number];
+type LedgerHour = Awaited<ReturnType<NonNullable<ElectronAPI['usage']>['byProvider']>>['hourly'][number];
 type TranscriptDay = ClaudeStats['dailyModelTokens'][number];
+type TranscriptHour = NonNullable<ClaudeStats['hourlyModelTokens']>[number];
 
 /**
  * One provider and model on one local day, from either source, in the page's
@@ -123,6 +156,7 @@ type TranscriptDay = ClaudeStats['dailyModelTokens'][number];
  * counts it, and out is output.
  */
 export interface UsageRow {
+  /** Its bucket key: the local day of a day's row, the hour's start in ms of an hour's. */
   date: string;
   provider: string;
   /** null when the ledger recorded a turn without one */
@@ -157,6 +191,64 @@ export function providerForModel(modelId: string): string {
 }
 
 /**
+ * The provider a model's spend is filed under: the one its sessions ran under,
+ * as the status line wrote it in token-stats.json (`stats.providerByModel`,
+ * #275), and its name only for a model no session speaks for. A model served
+ * through OpenRouter or Ollama was filed under Claude by its name. The map
+ * crossed IPC as a plain object and a transcript names its model as it likes,
+ * so only a string is taken: `constructor` would hand back a function. Its
+ * failures are listed, and pinned, in __tests__/lib/usage-provider-of.test.ts.
+ */
+export function providerOf(model: string, providerByModel?: Record<string, string>): string {
+  const named: unknown = providerByModel?.[model];
+  return typeof named === 'string' && named ? named : providerForModel(model);
+}
+
+type Bucketed = Pick<TranscriptDay, 'breakdownByModel' | 'costByModel' | 'messagesByModel'> & { key: string };
+type LedgerTurn = Pick<LedgerDay, 'provider' | 'model' | 'inputTokens' | 'outputTokens' | 'cachedReadTokens' | 'cachedWriteTokens' | 'costUSD'> & { key: string };
+
+/** Both sources' buckets, days or hours, as rows under each bucket's key. */
+function rowsOf(buckets: Bucketed[], ledger: LedgerTurn[], providerByModel?: Record<string, string>): UsageRow[] {
+  const rows: UsageRow[] = [];
+  for (const bucket of buckets) {
+    const models = new Set([
+      ...Object.keys(bucket.breakdownByModel ?? {}),
+      ...Object.keys(bucket.costByModel ?? {}),
+      ...Object.keys(bucket.messagesByModel ?? {}),
+    ]);
+    for (const model of models) {
+      const split = bucket.breakdownByModel?.[model];
+      rows.push({
+        date: bucket.key,
+        provider: providerOf(model, providerByModel),
+        model,
+        input: split?.input ?? 0,
+        output: split?.output ?? 0,
+        cacheRead: split?.cacheRead ?? 0,
+        cacheWrite: split?.cacheWrite ?? 0,
+        cost: bucket.costByModel?.[model] ?? 0,
+        messages: bucket.messagesByModel?.[model] ?? 0,
+      });
+    }
+  }
+  for (const turn of ledger) {
+    if (turn.provider === 'claude') continue;
+    rows.push({
+      date: turn.key,
+      provider: turn.provider,
+      model: turn.model,
+      input: turn.inputTokens,
+      output: turn.outputTokens,
+      cacheRead: turn.cachedReadTokens,
+      cacheWrite: turn.cachedWriteTokens,
+      cost: turn.costUSD,
+      messages: 0,
+    });
+  }
+  return rows;
+}
+
+/**
  * Every day both sources hold, as rows.
  *
  * One definition of cost: the transcripts priced per model by the main process
@@ -171,44 +263,27 @@ export function providerForModel(modelId: string): string {
  * tokens leave out the cache and it carries no price, so it has nothing to add
  * to figures defined as above.
  */
-export function usageRows(days: TranscriptDay[] | undefined, ledger: LedgerDay[]): UsageRow[] {
-  const rows: UsageRow[] = [];
-  for (const day of days ?? []) {
-    const models = new Set([
-      ...Object.keys(day.breakdownByModel ?? {}),
-      ...Object.keys(day.costByModel ?? {}),
-      ...Object.keys(day.messagesByModel ?? {}),
-    ]);
-    for (const model of models) {
-      const split = day.breakdownByModel?.[model];
-      rows.push({
-        date: day.date,
-        provider: providerForModel(model),
-        model,
-        input: split?.input ?? 0,
-        output: split?.output ?? 0,
-        cacheRead: split?.cacheRead ?? 0,
-        cacheWrite: split?.cacheWrite ?? 0,
-        cost: day.costByModel?.[model] ?? 0,
-        messages: day.messagesByModel?.[model] ?? 0,
-      });
-    }
-  }
-  for (const turn of ledger) {
-    if (turn.provider === 'claude') continue;
-    rows.push({
-      date: turn.date,
-      provider: turn.provider,
-      model: turn.model,
-      input: turn.inputTokens,
-      output: turn.outputTokens,
-      cacheRead: turn.cachedReadTokens,
-      cacheWrite: turn.cachedWriteTokens,
-      cost: turn.costUSD,
-      messages: 0,
-    });
-  }
-  return rows;
+export function usageRows(days: TranscriptDay[] | undefined, ledger: LedgerDay[], providerByModel?: Record<string, string>): UsageRow[] {
+  return rowsOf(
+    (days ?? []).map(day => ({ ...day, key: day.date })),
+    ledger.map(turn => ({ ...turn, key: turn.date })),
+    providerByModel,
+  );
+}
+
+/**
+ * The hours both sources hold (the last 48, #275), as rows keyed by each
+ * hour's start: the 24 hours window picks its own out of them. The same one
+ * definition of cost as the days, the ledger's claude rows left out: they are
+ * Claude's ACP turns, which its transcripts hold already (#275's gate), and
+ * counted here they would count twice in the last 24 hours.
+ */
+export function usageHourRows(hours: TranscriptHour[] | undefined, ledger: LedgerHour[] | undefined, providerByModel?: Record<string, string>): UsageRow[] {
+  return rowsOf(
+    (hours ?? []).map(hour => ({ ...hour, key: String(hour.hour) })),
+    (ledger ?? []).map(turn => ({ ...turn, key: String(turn.hour) })),
+    providerByModel,
+  );
 }
 
 /**

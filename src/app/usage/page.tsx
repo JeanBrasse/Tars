@@ -9,9 +9,11 @@ import {
   TIMEFRAME_TEXT,
   dateLabel,
   dayOf,
+  hourOf,
   monthToDateByProvider,
   recordsStart,
   spanLabel,
+  usageHourRows,
   usageRows,
   usageWindow,
   windowTotals,
@@ -54,7 +56,7 @@ function getModelDisplayName(modelId: string): string {
  * read over it. Named by the window it selects rather than by its bars:
  * `daily` over a total read as the day's total.
  */
-const TIMEFRAMES: readonly SegmentedOption<Timeframe>[] = (['daily', 'weekly', 'monthly'] as const)
+const TIMEFRAMES: readonly SegmentedOption<Timeframe>[] = (['hourly', 'daily', 'weekly', 'monthly'] as const)
   .map(value => ({ value, label: TIMEFRAME_TEXT[value].control }));
 
 /**
@@ -106,7 +108,7 @@ function modelName(model: Pick<ModelTotals, 'provider' | 'model'>): string {
   return model.model ? getModelDisplayName(model.model) : (getProviderDef(model.provider)?.label ?? model.provider);
 }
 
-type Ledger = Pick<Awaited<ReturnType<NonNullable<ElectronAPI['usage']>['byProvider']>>, 'daily' | 'oldest'>;
+type Ledger = Pick<Awaited<ReturnType<NonNullable<ElectronAPI['usage']>['byProvider']>>, 'daily' | 'oldest' | 'hourly'>;
 
 /**
  * Where a bar's hover card hangs, by the bar's place in the series.
@@ -127,8 +129,11 @@ type Ledger = Pick<Awaited<ReturnType<NonNullable<ElectronAPI['usage']>['byProvi
 const ANCHORED_BARS = 4;
 
 function hoverCardAnchor(index: number, count: number): string {
-  if (index < ANCHORED_BARS) return 'left-0';
-  if (index >= count - ANCHORED_BARS) return 'right-0';
+  // Four of fourteen bars, and as many bars as cover the same width when
+  // they are narrower: seven of the 24 hours.
+  const anchored = Math.ceil((count * ANCHORED_BARS) / 14);
+  if (index < anchored) return 'left-0';
+  if (index >= count - anchored) return 'right-0';
   return 'left-1/2 -translate-x-1/2';
 }
 
@@ -147,7 +152,7 @@ export default function UsagePage() {
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [hoveredTokenBar, setHoveredTokenBar] = useState<string | null>(null);
   const [hoveredMessageBar, setHoveredMessageBar] = useState<string | null>(null);
-  const [ledger, setLedger] = useState<Ledger>({ daily: [], oldest: null });
+  const [ledger, setLedger] = useState<Ledger>({ daily: [], oldest: null, hourly: [] });
 
   // Per-turn usage reported by the agents themselves. This is the only source
   // that covers the CLIs which write no transcript of their own. Read per day,
@@ -160,20 +165,34 @@ export default function UsagePage() {
   useEffect(() => {
     let cancelled = false;
     window.electronAPI?.usage?.byProvider()
-      .then(res => { if (!cancelled) setLedger({ daily: res?.daily ?? [], oldest: res?.oldest ?? null }); })
-      .catch(() => { if (!cancelled) setLedger({ daily: [], oldest: null }); });
+      .then(res => { if (!cancelled) setLedger({ daily: res?.daily ?? [], oldest: res?.oldest ?? null, hourly: res?.hourly ?? [] }); })
+      .catch(() => { if (!cancelled) setLedger({ daily: [], oldest: null, hourly: [] }); });
     return () => { cancelled = true; };
   }, [data]);
 
   const days = data?.stats?.dailyModelTokens;
-  const rows = useMemo(() => usageRows(days, ledger.daily), [days, ledger.daily]);
+  const hours = data?.stats?.hourlyModelTokens;
+  const providerByModel = data?.stats?.providerByModel;
+  const hourly = timeframe === 'hourly';
+  const dayRows = useMemo(() => usageRows(days, ledger.daily, providerByModel), [days, ledger.daily, providerByModel]);
+  // The last 48 hours, of which the window keeps the current one and the 23
+  // before it. Frame: `Usage · last 24 hours`.
+  const hourRows = useMemo(
+    () => (hourly ? usageHourRows(hours, ledger.hourly, providerByModel) : []),
+    [hourly, hours, ledger.hourly, providerByModel],
+  );
+  const rows = hourly ? hourRows : dayRows;
 
-  // Read at every render rather than once, so after midnight the window moves
-  // on at the page's next render: a hover, a click or new figures. Nothing
-  // re-renders it at midnight itself, and until then it keeps showing the day
-  // before under that day's own date.
+  // Read at every render rather than once, so after midnight, or the hour, the
+  // window moves on at the page's next render: a hover, a click or new
+  // figures. Nothing re-renders it at midnight itself, and until then it keeps
+  // showing the day before under that day's own date.
   const todayKey = localDayKey(new Date());
-  const period = useMemo(() => usageWindow(timeframe, dayOf(todayKey)), [timeframe, todayKey]);
+  const hourKey = hourOf(Date.now());
+  const period = useMemo(
+    () => usageWindow(timeframe, hourly ? new Date(hourKey) : dayOf(todayKey)),
+    [timeframe, hourly, hourKey, todayKey],
+  );
   const totals = useMemo(() => windowTotals(rows, period), [rows, period]);
   const firstRecord = useMemo(() => recordsStart(days, ledger.oldest), [days, ledger.oldest]);
 
@@ -181,11 +200,11 @@ export default function UsagePage() {
   // spent is this month's, on the page's one definition of cost: the row says
   // "this month", and used to print everything the ledger had ever recorded.
   const providerSpend = useMemo(() => {
-    const spend = monthToDateByProvider(rows, dayOf(todayKey));
+    const spend = monthToDateByProvider(dayRows, dayOf(todayKey));
     return [...new Set(ledger.daily.map(turn => turn.provider))]
       .map(provider => ({ provider, costUSD: spend.get(provider) ?? 0 }))
       .sort((a, b) => b.costUSD - a.costUSD);
-  }, [rows, ledger.daily, todayKey]);
+  }, [dayRows, ledger.daily, todayKey]);
 
   // The share of the window's spend that token-stats.json marks as past a
   // quota. A part of the total, never added to it: every one of those sessions
@@ -239,7 +258,7 @@ export default function UsagePage() {
   // Claude Code deletes its transcripts after about thirty days, so twelve
   // weeks or twelve months mostly reach back past anything recorded. Said
   // where the timeframe is chosen, rather than left for an empty bar to imply.
-  const recordsLine = firstRecord && firstRecord > bars[0].key
+  const recordsLine = !hourly && firstRecord && firstRecord > bars[0].key
     ? `records start ${dateLabel(dayOf(firstRecord))}`
     : null;
 
@@ -319,7 +338,7 @@ export default function UsagePage() {
           <PanelCaption>{`BY PROVIDER · ${text.length}`}</PanelCaption>
           {totals.providers.length === 0 ? (
             <p className="mt-3 text-xs text-muted-foreground">
-              {rows.length > 0
+              {rows.length > 0 || dayRows.length > 0
                 ? `Nothing recorded in these ${text.control}.`
                 : 'Nothing recorded yet. Claude usage is read from its transcripts, and every other CLI is counted from the turns it reports back: delegate a task and it appears here.'}
             </p>
