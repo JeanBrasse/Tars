@@ -85,7 +85,9 @@ test("an agent's panel header: its session, no history, and fullscreen in one pr
   await expect(h.getByRole('button', { name: 'hide from this board', exact: true })).toBeVisible();
   await expect(h.getByRole('button', { name: /fullscreen/i })).toHaveCount(1);
   await stepShot(page, '02-menu-at-rest');
-  await page.keyboard.press('Escape');
+  // Closed by its own button: Escape would go to the terminal, and type into the agent.
+  await h.getByRole('button', { name: 'Panel actions' }).click();
+  await expect(h.getByRole('button', { name: 'clear', exact: true })).toHaveCount(0);
 
   // One press fills the window; the button turns to take it back.
   await fs1.click();
@@ -99,7 +101,8 @@ test("an agent's panel header: its session, no history, and fullscreen in one pr
   await expect(full.getByRole('button', { name: 'hide from this board', exact: true })).toHaveCount(0);
   await expect(full.getByRole('button', { name: /fullscreen/i })).toHaveCount(1);
   await stepShot(page, '04-menu-in-fullscreen');
-  await page.keyboard.press('Escape');
+  await full.getByRole('button', { name: 'Panel actions' }).click();
+  await expect(full.getByRole('button', { name: 'clear', exact: true })).toHaveCount(0);
 
   await exit.click();
   await expect(page.getByRole('button', { name: 'Exit fullscreen', exact: true })).toHaveCount(0);
