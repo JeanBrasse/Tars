@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events';
  * the real ~/.claude or ~/.dorothy. os.homedir() follows HOME. Electron's home
  * path does not on macOS: measured on 2026-09-16, a bare Electron started with
  * HOME on a temp directory answered os.homedir() with that directory and
- * app.getPath('home') with /Users/noah. spawnAgentSession used the second, so
+ * app.getPath('home') with the account's own home. spawnAgentSession used the second, so
  * a sandboxed agent was started with the real ~/.claude/mcp.json while the
  * sandboxed app registered its servers in its own.
  *

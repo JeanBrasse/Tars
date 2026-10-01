@@ -54,9 +54,9 @@ vi.mock('../../src/components/NewChatModal', () => ({ default: () => null }));
 vi.mock('../../src/components/AgentWorld/AgentTerminalDialog', () => ({ default: () => null }));
 vi.mock('../../src/components/Templates/TemplatesManagerDialog', () => ({ TemplatesManagerDialog: () => null }));
 
-const TARS = '/Users/noah/tars';
-const CAPITAL = '/Users/noah/1212-Capital';
-const SAKARTVELO = '/Users/noah/sakartvelo';
+const TARS = '/Users/you/tars';
+const CAPITAL = '/Users/you/1212-Capital';
+const SAKARTVELO = '/Users/you/sakartvelo';
 
 let created = 0;
 function agent(name: string, projectPath: string, over: Partial<AgentStatus> = {}): AgentStatus {
@@ -122,7 +122,7 @@ describe('projectLabels', () => {
   });
 
   it('gives two projects that share a folder name their paths, and only those two', () => {
-    const work = '/Users/noah/work/tars';
+    const work = '/Users/you/work/tars';
     const labels = projectLabels([TARS, CAPITAL, work]);
     expect(labels.get(TARS)).toBe('~/tars');
     expect(labels.get(work)).toBe('~/work/tars');
@@ -265,7 +265,7 @@ describe('the Agents page', () => {
   });
 
   it('names two projects that share a folder by their paths in the picker', () => {
-    const other = '/Users/noah/work/tars';
+    const other = '/Users/you/work/tars';
     open([...seven(), agent('Twin', other)]);
     expect(pickerRows().filter(r => r[0] === TARS || r[0] === other).map(r => r[1])).toEqual(['~/tars', '~/work/tars']);
   });
