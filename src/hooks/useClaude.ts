@@ -62,7 +62,10 @@ interface ClaudeData {
   history: HistoryEntry[];
   activeSessions: string[];
   rateLimits: RateLimits | null;
-  /** Each Claude account's own 5 h and weekly counters (#277), empty while the accounts option is off. */
+  /**
+   * Each Claude account's own 5 h and weekly counters (#277), empty while the
+   * accounts option is off.
+   */
   accountRateLimits: AccountCounters;
   tokenStats: TokenStats | null;
 }

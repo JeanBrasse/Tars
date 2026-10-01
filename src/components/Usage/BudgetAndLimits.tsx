@@ -30,7 +30,9 @@ export interface BudgetRow {
   percent: number | null;
 }
 
-/** One Claude account's counters, as `claude:getData` hands them (#277). */
+/**
+ * One Claude account's counters, as `claude:getData` hands them (#277).
+ */
 export interface AccountWindows {
   accountId: string;
   label: string;
@@ -58,7 +60,9 @@ function humanReset(resetsAt?: number): string {
 
 export function buildBudgetRows(opts: {
   rateLimits?: { five_hour?: RateWindow; seven_day?: RateWindow } | null;
-  /** Each Claude account in use, in the order of Settings (#277). */
+  /**
+   * Each Claude account in use, in the order of Settings (#277).
+   */
   accounts?: AccountWindows[];
   providerSpend: { provider: string; costUSD: number }[];
   budgets: Record<string, number>;
