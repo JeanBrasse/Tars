@@ -8,8 +8,8 @@
 
 ## Stack
 
-- **Shell**: Electron 44 (Node 24.21, Chromium 152, macOS 13 or later), main process in `electron/` (~39k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
-- **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~39.5k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
+- **Shell**: Electron 44 (Node 24.21, Chromium 152, macOS 13 or later), main process in `electron/` (~47k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
+- **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~44k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
 - **Terminals**: `node-pty` + `xterm` 5 / `xterm-addon-fit`
 - **State**: React hooks over IPC (`src/hooks/`), plus a small `zustand` store (`src/store/`) for sidebar/vault UI state
 - **Local API**: a plain `node:http` server on **31415**, bearer-token authenticated, so the CLIs' hooks and the bundled MCP servers can call back into the app
@@ -30,7 +30,7 @@
 | `electron/core/agent-manager.ts` | The agent `Map`, persistence to `agents.json`, `initAgentPty`, `ensureProjectTrusted` (pre-writes `hasTrustDialogAccepted` in `~/.claude.json`), `killStalePty` |
 | `electron/core/pty-manager.ts` | Four PTY maps (agent / quick / skill / plugin), `killAllPty`, and `writeProgrammaticInput`: the bracket-paste + delayed `\r` dance Claude Code's TUI requires |
 | `electron/core/window-manager.ts` | `BrowserWindow` (1600×1000, `hiddenInset`, `#121212`), window hardening, and the `app://` and `local-file://` protocol handlers |
-| `electron/handlers/ipc-handlers.ts` | 2963 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
+| `electron/handlers/ipc-handlers.ts` | 3007 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
 | `electron/providers/index.ts` | Registry of the 19 providers. Unknown ids (and `local`) fall back to Claude |
 | `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file` and `/api/health` are exempt from auth; `/api/hooks/*` takes the posting agent's own token, for that agent only. `resolveCaller` decides who is calling from the token presented: an agent's own token (`electron/core/agent-tokens.ts`) names that agent, and a different `X-Tars-Caller-Id` alongside it is a 403. The shared token names no agent, no header is read with it, and it drives no agent: the routes that start, stop, message, dispatch to, delete or create one need a caller with an identity. Tars's own pass, minted in memory and written nowhere, is what the super chat presents on the loopback; the Hermes webhook secret (`~/.tars-private/hermes-webhook-secret`) opens its own route and no other, and that route opens to nothing else. `SECURITY.md` says what each of these is and is not |
@@ -89,7 +89,7 @@ CLAUDE_MGR_API_TOKEN  # minted per terminal by spawnAgentPty and per ACP run by 
 ANTHROPIC_BASE_URL    # every alt provider runs the claude binary with these two rewritten
 ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
-CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on; removed for account 1 (~/.claude). Never set otherwise
+CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account a login terminal signs in; removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
 ```
 
