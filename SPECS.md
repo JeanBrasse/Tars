@@ -463,7 +463,7 @@ The two remote backends are *additionally* registered as HTTP MCP servers direct
 needsPromptInjection(providerConfigDir) === (resolve(configDir) !== resolve(~/.claude))
 ```
 
-Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest({ budgetMs: 3000 })` and prepends the result, wrapped:
+Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest`, which waits for Hermes no longer than every session start does (`HERMES_START_BUDGET_MS`, 1.5 s), and prepends the result, wrapped:
 
 ```
 <project-memory>
@@ -489,7 +489,7 @@ Both are concatenated and returned as `hookSpecificOutput.additionalContext`. Th
 
 ### Digest budget
 
-`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against a 4 s (3 s at spawn time) timeout. A gateway that is down must not delay the agent.
+`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against `HERMES_START_BUDGET_MS`, 1.5 s, for the hook's route and the prompt alike, and no caller may wait longer: under the hook's 3 s curl, so a Hermes that accepts the connection and never answers costs its own memory, never the project's. It was 4 s for the hook's route, and the hook gave up first: the agent started with no memory at all.
 
 ---
 

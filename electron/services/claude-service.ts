@@ -156,6 +156,10 @@ async function computeClaudeStats(): Promise<ClaudeStats | null> {
         ...(base || {}),
         modelUsage: usage.modelUsage,
         dailyModelTokens: usage.dailyModelTokens,
+        // The last 48 hours by the hour, for a rolling 24 hours, and the
+        // provider each model ran under, from its sessions.
+        hourlyModelTokens: usage.hourlyModelTokens,
+        providerByModel: usage.providerByModel,
         lastComputedDate: usage.lastComputedDate ?? (base?.lastComputedDate as string | undefined),
         // Carried to all three callers, the page and /stats on either bot,
         // so a figure built from fewer transcripts than exist can say so

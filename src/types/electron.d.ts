@@ -1173,6 +1173,19 @@ export interface ElectronAPI {
       }>;
       /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
       oldest: string | null;
+      /** The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day. */
+      hourly: Array<{
+        /** When the hour starts, in milliseconds since the epoch. */
+        hour: number;
+        provider: string;
+        model: string | null;
+        inputTokens: number;
+        outputTokens: number;
+        cachedReadTokens: number;
+        cachedWriteTokens: number;
+        costUSD: number;
+        turns: number;
+      }>;
     }>;
   };
 

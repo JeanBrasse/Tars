@@ -757,7 +757,6 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           projectPath: agent.projectPath,
           settings: appSettingsForCommand as never,
           hermes: usableHermesConnection(),
-          budgetMs: 3000,
         });
         const wrapped = wrapDigestForPrompt(digest);
         if (wrapped) promptWithMemory = `${wrapped}\n\n${prompt}`;

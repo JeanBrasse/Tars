@@ -48,7 +48,9 @@ export interface ReviewDiff {
  * `status`, never writes; only a diff that has to be computed again can.
  */
 async function git(cwd: string, args: string[], maxBuffer = 8 * 1024 * 1024): Promise<string> {
-  const { stdout } = await run('git', ['--no-optional-locks', ...args], { cwd, maxBuffer, timeout: 30_000 });
+  // core.quotePath=false: a name with accents comes back as it is, where git
+  // quoted and escaped it ("caf\303\251.txt") and that text became the path.
+  const { stdout } = await run('git', ['--no-optional-locks', '-c', 'core.quotePath=false', ...args], { cwd, maxBuffer, timeout: 30_000 });
   return stdout;
 }
 
@@ -178,14 +180,16 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
   if (opts.baseBranch) assertSafeRef(opts.baseBranch);
   // One round of git for what the base choice and the cache key need, then
   // one for the state: a diff answered from the cache costs two, not five.
-  const [inside, head, candidates] = await Promise.all([
+  const [inside, symbolic, head, candidates] = await Promise.all([
     tryGit(repoPath, ['rev-parse', '--is-inside-work-tree']),
+    // A repository with no commit has a branch that rev-parse cannot name.
+    tryGit(repoPath, ['symbolic-ref', '--short', '-q', 'HEAD']),
     tryGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']),
     opts.baseBranch === undefined ? baseCandidates(repoPath) : null,
   ]);
   if (inside.trim() !== 'true') throw new Error('not a git repository');
 
-  const branch = head.trim() || 'HEAD';
+  const branch = symbolic.trim() || head.trim() || 'HEAD';
   const baseBranch = opts.baseBranch ?? chooseBaseBranch(candidates!, branch);
 
   const key = JSON.stringify([path.resolve(repoPath), branch, baseBranch]);
@@ -200,19 +204,86 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
   return diff;
 }
 
+/**
+ * What this working tree is compared against, so that one diff answers what it
+ * changed: the merge base with the base branch, or HEAD with no base, or the
+ * empty tree in a repository with no commit yet.
+ *
+ * It was two passes, committed since the base then uncommitted since HEAD,
+ * merged file by file with the larger count: a file changed in a commit and
+ * again since was counted once, and a repository with no commit, where
+ * `git diff HEAD` fails, lost its staged files. Adding the two counts instead
+ * would double the unstaged changes of a branch with no base, which both
+ * passes see. From the starting point to the working tree, each line counts
+ * once.
+ */
+async function startingPoint(repoPath: string, baseBranch: string | null): Promise<string> {
+  const head = (await tryGit(repoPath, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'])).trim();
+  if (!head) {
+    // The empty tree of this repository's own hash.
+    return (await tryGit(repoPath, ['hash-object', '-t', 'tree', '/dev/null'])).trim();
+  }
+  if (!baseBranch) return head;
+  return (await tryGit(repoPath, ['merge-base', baseBranch, 'HEAD'])).trim() || head;
+}
+
+/** `--name-status -z`: a code, a path, and for a rename or a copy the new path after the old. */
+function namesFrom(out: string): Map<string, { status: ChangedFile['status']; from?: string }> {
+  const names = new Map<string, { status: ChangedFile['status']; from?: string }>();
+  const fields = out.split('\0');
+  for (let i = 0; i + 1 < fields.length; i++) {
+    const code = fields[i];
+    if (!code) continue;
+    if (code.startsWith('R') || code.startsWith('C')) {
+      const from = fields[++i];
+      const to = fields[++i];
+      if (to) names.set(to, { status: statusFromCode(code), from });
+    } else {
+      const file = fields[++i];
+      if (file) names.set(file, { status: statusFromCode(code) });
+    }
+  }
+  return names;
+}
+
+/** `--numstat -z`: "add\tdel\tpath", or for a rename "add\tdel\t" then the old and the new path. */
+function countsFrom(out: string): Array<{ path: string; additions: number; deletions: number }> {
+  const rows: Array<{ path: string; additions: number; deletions: number }> = [];
+  const fields = out.split('\0');
+  for (let i = 0; i < fields.length; i++) {
+    const m = /^(-|\d+)\t(-|\d+)\t([\s\S]*)$/.exec(fields[i]);
+    if (!m) continue;
+    let file = m[3];
+    if (file === '') {
+      i++; // the old path
+      file = fields[++i] ?? '';
+    }
+    if (!file) continue;
+    rows.push({ path: file, additions: m[1] === '-' ? 0 : Number(m[1]), deletions: m[2] === '-' ? 0 : Number(m[2]) });
+  }
+  return rows;
+}
+
+/** git's own test: a NUL in the first 8000 bytes. */
+function isBinary(content: Buffer): boolean {
+  return content.subarray(0, 8000).includes(0);
+}
+
+/** Lines as a reader counts them: the last line ends with a newline, which is not one more. */
+function lineCount(text: string): number {
+  if (!text) return 0;
+  return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+}
+
 async function computeDiff(repoPath: string, branch: string, baseBranch: string | null): Promise<ReviewDiff> {
-  // Numstat covers committed work since the base plus the working tree. Every
-  // read below is independent of the others: they run together.
-  const range = baseBranch ? [`${baseBranch}...HEAD`] : [];
-  const [counts, numstatBase, numstatHead, nameBase, nameHead, untracked, patchBase, patchHead] = await Promise.all([
+  // Every read below is independent of the others: they run together.
+  const from = await startingPoint(repoPath, baseBranch);
+  const [counts, numstat, names, untracked, diffPatch] = await Promise.all([
     baseBranch ? tryGit(repoPath, ['rev-list', '--left-right', '--count', `${baseBranch}...HEAD`]) : Promise.resolve(''),
-    tryGit(repoPath, ['diff', '--numstat', ...range]),
-    tryGit(repoPath, ['diff', '--numstat', 'HEAD']),
-    tryGit(repoPath, ['diff', '--name-status', ...range]),
-    tryGit(repoPath, ['diff', '--name-status', 'HEAD']),
-    tryGit(repoPath, ['ls-files', '--others', '--exclude-standard']),
-    tryGit(repoPath, ['diff', ...range]),
-    tryGit(repoPath, ['diff', 'HEAD']),
+    tryGit(repoPath, ['diff', '-M', '--numstat', '-z', from]),
+    tryGit(repoPath, ['diff', '-M', '--name-status', '-z', from]),
+    tryGit(repoPath, ['ls-files', '--others', '--exclude-standard', '-z']),
+    tryGit(repoPath, ['diff', '-M', from]),
   ]);
 
   let ahead = 0;
@@ -223,47 +294,28 @@ async function computeDiff(repoPath: string, branch: string, baseBranch: string 
     ahead = Number.isFinite(a) ? a : 0;
   }
 
-  const numstat = [numstatBase, numstatHead].join('\n');
-  const nameStatus = [nameBase, nameHead].join('\n');
-
-  const statusByPath = new Map<string, ChangedFile['status']>();
-  for (const line of nameStatus.split('\n')) {
-    const [code, ...rest] = line.trim().split('\t');
-    const file = rest[rest.length - 1];
-    if (code && file) statusByPath.set(file, statusFromCode(code));
-  }
-
+  const statusByPath = namesFrom(names);
   const files = new Map<string, ChangedFile>();
-  for (const line of numstat.split('\n')) {
-    const parts = line.trim().split('\t');
-    if (parts.length < 3) continue;
-    const [add, del, file] = parts;
-    if (!file) continue;
-    const existing = files.get(file);
-    const additions = add === '-' ? 0 : Number(add) || 0;
-    const deletions = del === '-' ? 0 : Number(del) || 0;
-    if (existing) {
-      existing.additions = Math.max(existing.additions, additions);
-      existing.deletions = Math.max(existing.deletions, deletions);
-    } else {
-      files.set(file, { path: file, status: statusByPath.get(file) ?? 'modified', additions, deletions });
-    }
+  for (const { path: file, additions, deletions } of countsFrom(numstat)) {
+    files.set(file, { path: file, status: statusByPath.get(file)?.status ?? 'modified', additions, deletions });
   }
 
   // Untracked files never appear in a diff, and they are usually the point.
-  for (const file of untracked.trim().split('\n').filter(Boolean)) {
+  for (const file of untracked.split('\0').filter(Boolean)) {
     if (files.has(file)) continue;
     let additions = 0;
     try {
       const full = path.join(repoPath, file);
       if (fs.statSync(full).size < 512_000) {
-        additions = fs.readFileSync(full, 'utf-8').split('\n').length;
+        const content = fs.readFileSync(full);
+        // A binary has no lines: its bytes split on newlines are not a count.
+        if (!isBinary(content)) additions = lineCount(content.toString('utf-8'));
       }
-    } catch { /* binary or unreadable: count as 0 */ }
+    } catch { /* unreadable: count as 0 */ }
     files.set(file, { path: file, status: 'untracked', additions, deletions: 0 });
   }
 
-  let patch = [patchBase, patchHead].filter(Boolean).join('\n');
+  let patch = diffPatch;
 
   const truncated = patch.length > MAX_PATCH_BYTES;
   if (truncated) patch = `${patch.slice(0, MAX_PATCH_BYTES)}\n… patch truncated`;
@@ -308,11 +360,13 @@ export async function fileDiff(repoPath: string, file: string, baseBranch?: stri
   const inside = (await tryGit(repoPath, ['rev-parse', '--is-inside-work-tree'])).trim();
   if (inside !== 'true') throw new Error('not a git repository');
 
-  const range = baseBranch ? [`${baseBranch}...HEAD`] : [];
-  const committed = await tryGit(repoPath, ['diff', ...range, '--', file]);
-  const working = await tryGit(repoPath, ['diff', 'HEAD', '--', file]);
-  const both = [committed, working].filter(Boolean).join('\n');
-  if (both) return cap(both);
+  // The same starting point as the list, so a file shows what the list counts.
+  // A rename is listed under its new path, and git shows it as a rename only
+  // when it is given both: the old one comes from the same name-status.
+  const from = await startingPoint(repoPath, baseBranch ?? null);
+  const origin = namesFrom(await tryGit(repoPath, ['diff', '-M', '--name-status', '-z', from])).get(file)?.from;
+  const tracked = await tryGit(repoPath, ['diff', '-M', from, '--', ...(origin ? [origin, file] : [file])]);
+  if (tracked) return cap(tracked);
 
   // Untracked: show it as an addition rather than nothing. A generated
   // bundle can be megabytes, and nobody reviews that in a panel.
@@ -321,8 +375,12 @@ export async function fileDiff(repoPath: string, file: string, baseBranch?: stri
     if (fs.statSync(full).size > MAX_FILE_PATCH_BYTES) {
       return `+++ b/${file}\n… file is too large to show (${Math.round(fs.statSync(full).size / 1024)} KB)`;
     }
-    const content = fs.readFileSync(full, 'utf-8');
-    return cap(`--- /dev/null\n+++ b/${file}\n${content.split('\n').map(l => `+${l}`).join('\n')}`);
+    const content = fs.readFileSync(full);
+    // As git words it, rather than the bytes printed as added lines.
+    if (isBinary(content)) return `Binary files /dev/null and b/${file} differ`;
+    const text = content.toString('utf-8');
+    const lines = text.endsWith('\n') ? text.slice(0, -1) : text;
+    return cap(`--- /dev/null\n+++ b/${file}${lines ? `\n${lines.split('\n').map(l => `+${l}`).join('\n')}` : ''}`);
   } catch {
     return '';
   }
