@@ -207,11 +207,15 @@ test('a panel sends the wheel a full-screen CLI asked for as wheel reports, and 
   }
 });
 
-/** Which `.xterm` on the page is the panel of this agent: the first ancestor holding a panel view switch names it. */
+/**
+ * Which `.xterm` on the page is the panel of this agent: the first ancestor
+ * holding a panel header (its actions menu, one per panel) names it. It
+ * looked for the live/history switch, which #273 took out of the header.
+ */
 async function indexOf(page: Page, agentName: string): Promise<number> {
   return page.locator('.xterm').evaluateAll((terminals, name) => terminals.findIndex(terminal => {
     let panel = terminal.parentElement;
-    while (panel && !panel.querySelector('[role="radiogroup"][aria-label="Panel view"]')) panel = panel.parentElement;
+    while (panel && !panel.querySelector('button[aria-label="Panel actions"]')) panel = panel.parentElement;
     return !!panel && (panel.textContent ?? '').includes(name);
   }), agentName);
 }

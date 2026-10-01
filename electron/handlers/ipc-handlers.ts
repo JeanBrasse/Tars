@@ -19,7 +19,9 @@ import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 
 // Import types
-import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
+import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole, ClaudeAccountCounters } from '../types';
+import { countersForUsagePage } from '../services/claude-accounts/counters';
+import { readAccountsSettings } from '../services/claude-accounts/registry';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { projectFolders } from '../services/project-index';
@@ -30,6 +32,7 @@ import { landsUnderSafeRoot } from '../utils/real-target';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
+import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -181,6 +184,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
 
   // Create a new PTY terminal
   ipcMain.handle('pty:create', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
+    refuseWhileQuitting('terminal');
     const id = uuidv4();
     const shell = defaultShell();
 
@@ -489,10 +493,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     ptyProcess.onExit(({ exitCode }) => {
       const agent = agents.get(id);
+      // Ended by the quit: neither the agent's completion nor its error, and
+      // the closing window is not told it was (the Audit's gate of #235).
+      const newStatus = agentStatusOnExit(exitCode);
       // Skip status update if this PTY was replaced by a newer one
-      if (agent && agent.ptyId === ptyId) {
+      if (newStatus && agent && agent.ptyId === ptyId) {
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
-        const newStatus = exitCode === 0 ? 'completed' : 'error';
         agent.status = newStatus;
         agent.lastActivity = new Date().toISOString();
         handleStatusChangeNotification(agent, newStatus);
@@ -600,6 +606,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // Writing `export ...` to an already-running shell is racy: the shell may not
       // process the export before the claude command runs. Baking vars into pty.spawn()
       // guarantees they're in the process environment from the start.
+      refuseWhileQuitting('agent terminal');
       const oldPty = ptyProcesses.get(agent.ptyId!);
       if (oldPty) {
         oldPty.kill();
@@ -683,15 +690,18 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
       newPty.onExit(({ exitCode }) => {
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
+        ptyProcesses.delete(newPtyId);
+        // Ended by the quit: neither the agent's completion nor its error, and
+        // the closing window is not told it was (the Audit's gate of #235).
+        const newStatus = agentStatusOnExit(exitCode);
+        if (!newStatus) return;
         const agentData = agents.get(id);
         // Guard: only mutate if this PTY is still the active one (prevents race on restart)
         if (agentData && agentData.ptyId === newPtyId) {
-          const newStatus = exitCode === 0 ? 'completed' : 'error';
           agentData.status = newStatus;
           agentData.lastActivity = new Date().toISOString();
           handleStatusChangeNotification(agentData, newStatus);
         }
-        ptyProcesses.delete(newPtyId);
         broadcastToAllWindows('agent:complete', {
           type: 'complete',
           agentId: id,
@@ -1352,6 +1362,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const fullPath = buildFullPath();
+    refuseWhileQuitting('skill install');
     const ptyProcess = pty.spawn('npx', npxArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -1543,6 +1554,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
       ? ['--no-rcs', '-c', finalCommand]
       : ['-c', finalCommand];
 
+    refuseWhileQuitting('plugin install');
     const ptyProcess = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -1634,6 +1646,15 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         // ignore parse errors
       }
 
+      // Every Claude account's counters, for one pair of bars each: account 1's
+      // status lines alone write rate-limits.json.
+      let accountRateLimits: ClaudeAccountCounters[] = [];
+      try {
+        accountRateLimits = countersForUsagePage(readAccountsSettings());
+      } catch {
+        // an unreadable registry: the page keeps account 1's bars
+      }
+
       // Read accumulated token stats from statusline
       let tokenStats = null;
       try {
@@ -1702,6 +1723,7 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         history,
         activeSessions: [],
         rateLimits,
+        accountRateLimits,
         tokenStats,
       };
     } catch (err) {
@@ -1925,7 +1947,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   });
 
   ipcMain.handle('logs:tail', async (_event, { agentId, lines }: { agentId: string; lines?: number }) => {
-    return agentTail(agentId, lines) ?? { lines: [], agentName: '' };
+    return (await agentTail(agentId, lines)) ?? { lines: [], agentName: '' };
   });
 
   ipcMain.handle('logs:fleet', async () => ({ agents: fleetSummary() }));
@@ -2945,6 +2967,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
 
   // Start a new quick terminal PTY
   ipcMain.handle('shell:startPty', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
+    refuseWhileQuitting('terminal');
     const id = uuidv4();
     const shell = defaultShell();
 

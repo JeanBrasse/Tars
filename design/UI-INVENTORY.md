@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 103 root frames.
-`design/chat-design.pen` holds 72 of those, the other thirty-one being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 105 root frames.
+`design/chat-design.pen` holds 72 of those, the other thirty-three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -49,7 +49,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
-| `/review` | Review | Review · dark |
+| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy |
 | `/logs` | Logs | Logs · dark |
 | `/vault` | Vault | Vault · dark |
 | `/projects` | Projects | Projects · dark |
