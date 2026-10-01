@@ -16,7 +16,7 @@ import type { AgentPermissionMode, AgentStatus, AppSettings } from '../types';
 import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
-import { writeProgrammaticInput } from '../core/pty-manager';
+import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
 import { cliRunningIn, shellReady } from '../core/agent-pty';
 import { stopAcpRuns } from './acp/delegate';
 import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
@@ -357,7 +357,13 @@ export async function forwardToOrchestrator(
   from: BotChannel,
   opts: {
     message: string;
+    /** Before the message, when there is something to say about where it came from; '' for nothing. */
     context: string;
+    /**
+     * Who the line before it names: the chat by default. The relay passes the
+     * user, whose own words it carries (hermes-relay-routing.ts).
+     */
+    sender?: MessageSender;
     permissionMode: AgentPermissionMode;
     resume: boolean;
     /** Read only for a launch: Telegram writes a file of its own for it. */
@@ -365,7 +371,7 @@ export async function forwardToOrchestrator(
     reply: Reply<ForwardOutcome>;
   },
 ): Promise<void> {
-  const prompt = `${opts.context} ${opts.message}`;
+  const prompt = opts.context ? `${opts.context} ${opts.message}` : opts.message;
   let launch: object | null = null;
   try {
     launch = await claimLaunch(orchestrator);
@@ -380,7 +386,7 @@ export async function forwardToOrchestrator(
       orchestrator.lastActivity = new Date().toISOString();
       fleet.saveAgents();
       writeProgrammaticInput(ptyProcess, prompt, true, {
-        agentId: orchestrator.id, from, sender: { kind: 'channel', channel: from },
+        agentId: orchestrator.id, from, sender: opts.sender ?? { kind: 'channel', channel: from },
       });
       await opts.reply('typed');
       return;

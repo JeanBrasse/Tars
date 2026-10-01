@@ -677,7 +677,7 @@ work.
 | `~/.dorothy/agents.backup.json` | same | last good copy, taken from content just parsed successfully |
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
-| `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
+| `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
@@ -825,6 +825,9 @@ five wrong tokens from a chat and twenty from all chats in any fifteen minutes, 
 attempts" without comparing, with the time it lifts; both read the settings as they are, so a change
 there counts without a restart (SECURITY §6). A lock-out from the count of all chats keeps your own
 new chat out too: turn Telegram off and on in Settings, which restarts the bot and clears the count.
+
+`ask_user` (the orchestrator MCP server's tool, `POST /api/user/ask`) and the event reports go through the relay
+to your Hermes, not through this bot: see "The relay (Tars's side)" under Hermes gateway below.
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
@@ -1481,6 +1484,47 @@ neither is a place to park.
   is wrong with it, and the old board is not moved. The default port is only a guess, and on this
   machine it is a tunnel to a real gateway.
 - **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
+
+### The relay (Tars's side)
+
+`services/hermes-relay.ts`, off unless `hermesRelayEnabled` is on (Settings, Hermes, or `app-settings.json`). It needs
+the tars-relay plugin on the Hermes server (`hermes-plugins/tars-relay`, its README says how to install it) and a saved
+Hermes connection. On:
+
+- Tars's own Telegram bot is off and its token erased, and mcp-telegram is out of every CLI: Hermes is the only voice.
+- `ask_user` (a project's orchestrator only), the event reports and `send_telegram` (an orchestrator's) go through
+  Hermes, as plain text. Your reply to one of them goes to that project's orchestrator (a question's, to the agent that
+  asked); a message you start with `@<project name>` goes to that project's orchestrator. The plugin keeps `@name`
+  only for the projects Tars registered with it (each round, when they changed): a project whose folder name is not
+  one word cannot be written to that way, and any other `@word` goes to Hermes.
+- The event reports: an agent gone to error (once Tars is sure of it, 5 s), and, read with `gh pr list` every 5
+  minutes in the GitHub repositories of the agents' projects (read-only, needs `gh` signed in), a PR merged and
+  changes requested on an open PR. Events of one project within 2 minutes leave in one message; 40 messages a day at
+  most, and the next day's first says how many were held. A repository's first poll, or one after an hour without
+  polling, reports nothing.
+
+What it keeps, all in `~/.tars-private` (`0600`): `hermes-token` (the dashboard token, moved out of
+`~/.dorothy/hermes-connection.json` at the first read), `relay-sent.json` (what it sent: the list a reply is checked
+against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken),
+`user-questions.json`, `event-reports.json`, `github-watch.json`.
+
+```bash
+jq 'length' ~/.tars-private/relay-outbox.json                   # sends waiting for Hermes
+jq -r '.[] | "\(.at) \(.kind) \(.ref)"' ~/.tars-private/relay-sent.json | tail   # what went out
+test -s ~/.tars-private/hermes-token && echo "token saved"
+```
+
+The state Settings, Hermes shows (`hermes:relay:status`): `ready`; `unreachable` (Hermes did not answer: what you send
+waits); `not-configured` (the plugin has no `user_id` in its settings on the server); `plugin-missing` (not installed,
+or the dashboard not restarted since); `unauthorized` (the dashboard refused the token: save the connection again);
+`no-connection`.
+
+| Symptom | Cause |
+|---|---|
+| Your reply got "Tars did not send the message you replied to" | the message was not on Tars's list: it came from someone else with the dashboard token, or from a Tars whose `~/.tars-private` was wiped |
+| "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
+| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name, the name is not one word, or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
+| An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
 
 ---
 
