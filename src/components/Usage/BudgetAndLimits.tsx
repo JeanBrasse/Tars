@@ -44,10 +44,10 @@ export interface AccountWindows {
 /** Two accounts or more: Claude's rows are theirs. With the option off, or one account, they stay account 1's. */
 const perAccount = (accounts?: AccountWindows[]) => (accounts?.length ?? 0) >= 2;
 
-function humanReset(resetsAt?: number): string {
+/** How long until a window resets, for one that has not yet: a passed one says reset in its row. */
+function humanReset(resetsAt: number | undefined, nowSec: number): string {
   if (!resetsAt) return '';
-  const seconds = resetsAt - Date.now() / 1000;
-  if (seconds <= 0) return 'resetting';
+  const seconds = resetsAt - nowSec;
   // Round to whole minutes first, then carry: rounding the remainder on its
   // own yields "60m" just under the hour, and "1h 60m" just under two.
   const totalMinutes = Math.round(seconds / 60);
@@ -70,22 +70,30 @@ export function buildBudgetRows(opts: {
 }): BudgetRow[] {
   const rows: BudgetRow[] = [];
   const labelFor = (id: string) => PROVIDER_REGISTRY.find(p => p.id === id)?.label ?? id;
+  const nowSec = Date.now() / 1000;
 
   for (const [key, window] of [
     ['5h window', perAccount(opts.accounts) ? undefined : opts.rateLimits?.five_hour],
     ['7d window', perAccount(opts.accounts) ? undefined : opts.rateLimits?.seven_day],
   ] as const) {
     if (!window) continue;
-    const pct = Math.round(window.used_percentage);
+    // Past its reset the window has started again, and the percentage the last
+    // status line recorded is the old window's: it stayed on screen until the
+    // next status line, sometimes for hours with no agent running.
+    // No reset time (absent, or 0) is unknown, as humanReset reads it, not passed.
+    const reset = !!window.resets_at && window.resets_at <= nowSec;
+    const pct = reset ? 0 : Math.round(window.used_percentage);
     rows.push({
       providerId: 'claude',
       label: 'Claude',
       kind: 'subscription',
-      detail: [`${key}`, `${pct}% used`, humanReset(window.resets_at)].filter(Boolean).join(' · '),
+      detail: reset
+        ? `${key} · reset`
+        : [`${key}`, `${pct}% used`, humanReset(window.resets_at, nowSec)].filter(Boolean).join(' · '),
       percent: pct,
     });
   }
-  if (perAccount(opts.accounts)) rows.push(...accountRows(opts.accounts!));
+  if (perAccount(opts.accounts)) rows.push(...accountRows(opts.accounts!, nowSec));
 
   for (const spend of opts.providerSpend) {
     const id = spend.provider;
@@ -122,7 +130,7 @@ export function buildBudgetRows(opts: {
  * account that has reported nothing yet has no rows, as Claude has none
  * before its first status line. Frame: `Usage · limits per account`.
  */
-function accountRows(accounts: AccountWindows[]): BudgetRow[] {
+function accountRows(accounts: AccountWindows[], nowSec: number): BudgetRow[] {
   return accounts.flatMap(account => (account.updatedAt === null ? [] : ([
     ['5h window', account.fiveHour],
     ['7d window', account.sevenDay],
@@ -132,7 +140,7 @@ function accountRows(accounts: AccountWindows[]): BudgetRow[] {
       providerId: 'claude',
       label: `Claude · ${account.label}`,
       kind: 'subscription',
-      detail: window ? [key, `${pct}% used`, humanReset(window.resetsAt)].filter(Boolean).join(' · ') : `${key} · reset`,
+      detail: window ? [key, `${pct}% used`, humanReset(window.resetsAt, nowSec)].filter(Boolean).join(' · ') : `${key} · reset`,
       percent: pct,
     };
   })));
