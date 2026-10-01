@@ -103,14 +103,17 @@ function fromPayload(prev: ClaudeData | null, result: Record<string, unknown>): 
     prev.activeSessions.join('\u0000') === activeSessions.join('\u0000') &&
     // Check if any project changed: its sessions, and their times too. A
     // project continued in a session it already had keeps its count, and only
-    // its lastAccessed and that session's time say so.
+    // its lastAccessed and that session's time say so. Those are a file's
+    // mtimeMs, which on APFS carries a fraction (1790820026452.6458), while a
+    // Date keeps the whole milliseconds: truncated the same way, or every idle
+    // poll would find them changed.
     !rawProjects.some((p, i) => {
       const prevP = prev.projects[i];
       const sessions = p.sessions || [];
       return prevP?.id !== p.id
-        || prevP.lastActivity.getTime() !== p.lastAccessed
+        || prevP.lastActivity.getTime() !== Math.trunc(p.lastAccessed)
         || prevP.sessions.length !== sessions.length
-        || sessions.some((s, j) => prevP.sessions[j].lastActivity.getTime() !== s.timestamp);
+        || sessions.some((s, j) => prevP.sessions[j].lastActivity.getTime() !== Math.trunc(s.timestamp));
     }) &&
     // Check if rateLimits changed
     JSON.stringify(prev.rateLimits) === JSON.stringify(rateLimits) &&
