@@ -27,6 +27,7 @@ export const CHANGELOG: Release[] = [
       'An agent\'s panel on the Dashboard no longer has a history view, the conversation read from its transcript: the panel shows its session, and its header says session where it said live. Fullscreen is one press on the arrows after start or stop, which turn inward while the panel fills the window, where it was an item of the panel\'s ··· menu. A panel whose claude left fullscreen offers restart alone',
       'The Projects page no longer shows Invalid Date on a folder you added that Claude Code has never run in: Tars knows no date for it, so its card shows none and its own view says unknown',
       'The Brain page\'s graph shows the MCP servers of ~/.claude/mcp.json, joined to every agent, which it never did: it read the file through a field the file reader does not return, so the file\'s servers never reached it',
+      'The Review page lists the projects you added in Tars that no agent works in, under their name, and Refresh reads that list again, so a project or an agent added since shows. A file whose patch could not be read says why, where the page said there was no textual change to show, and a patch past 4000 lines says where it stops. A tree or a file picked right after another no longer shows the first one\'s changes when they come back late',
     ],
   },
   {
