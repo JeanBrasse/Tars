@@ -3383,6 +3383,55 @@
                                   "fontWeight": "normal"
                                 }
                               ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "LMJDH",
+                              "name": "proj docs",
+                              "fill": "#9B9B9B",
+                              "content": "DOCS",
+                              "lineHeight": 1.6,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "oxLvK",
+                              "name": "tree docs (no agent)",
+                              "width": "fill_container",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": [
+                                8,
+                                10
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Mhifz",
+                                  "name": "b",
+                                  "fill": "#9B9B9B",
+                                  "content": "docs",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "d314cM",
+                                  "name": "w",
+                                  "fill": "#727272",
+                                  "content": "no agent",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal"
+                                }
+                              ]
                             }
                           ]
                         },
@@ -81751,6 +81800,17 @@
                               "fontWeight": "normal"
                             },
                             {
+                              "type": "text",
+                              "id": "A8Tzy",
+                              "name": "proj tars",
+                              "fill": "$text-secondary",
+                              "content": "TARS",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10,
+                              "fontWeight": "normal"
+                            },
+                            {
                               "type": "frame",
                               "id": "V304Lh",
                               "name": "tree feat/frontend",
@@ -81827,6 +81887,17 @@
                               ]
                             },
                             {
+                              "type": "text",
+                              "id": "Ufl3V",
+                              "name": "proj landing",
+                              "fill": "$text-secondary",
+                              "content": "LANDING",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10,
+                              "fontWeight": "normal"
+                            },
+                            {
                               "type": "frame",
                               "id": "XOPu5",
                               "name": "tree feat/qa",
@@ -81895,6 +81966,55 @@
                                   "name": "w",
                                   "fill": "#6B6B6B",
                                   "content": "Orchestrator",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "S7hji",
+                              "name": "proj docs",
+                              "fill": "$text-secondary",
+                              "content": "DOCS",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "lo2q2",
+                              "name": "tree docs (no agent)",
+                              "width": "fill_container",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": [
+                                8,
+                                10
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "vPsSP",
+                                  "name": "b",
+                                  "fill": "#4A4A4A",
+                                  "content": "docs",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "o6rbBz",
+                                  "name": "w",
+                                  "fill": "#6B6B6B",
+                                  "content": "no agent",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-ui",
                                   "fontSize": 10,
@@ -145525,6 +145645,688 @@
               "fontFamily": "$font-ui",
               "fontSize": 11,
               "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "wCcVY",
+      "x": 7364,
+      "y": 1100,
+      "name": "Review · states",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 14,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "Xl2sq",
+          "name": "t",
+          "fill": "$text-primary",
+          "content": "Review · states: a patch that could not be read, and a patch cut short",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-display",
+          "fontSize": 20,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "fBCsB",
+          "name": "intro",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": 1100,
+          "content": "A file whose patch the main process could not read says why, where the page said there was no textual change to show. A patch past 4000 lines says where it stops, and with no file picked, how to read one file's patch.",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-ui",
+          "fontSize": 12,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "XWi8O",
+          "name": "panels",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "fOBGU",
+              "name": "col error",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "CKCks",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "a file whose patch could not be read",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "AC08i",
+                  "name": "Patch",
+                  "width": "fill_container",
+                  "height": 240,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "pxE4x",
+                      "name": "fp",
+                      "fill": "$text-primary",
+                      "content": "src/app/review/page.tsx",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "D7LICX",
+                      "name": "error",
+                      "fill": "$status-error",
+                      "content": "Could not read this file's patch: not a git repository",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "m2kM6o",
+              "name": "col cut",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "n4llm",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "the whole patch past 4000 lines, no file picked",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "pcbSF",
+                  "name": "Patch",
+                  "width": "fill_container",
+                  "height": 240,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "jfTq4",
+                      "name": "patch",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "SiN0j",
+                          "name": "pl",
+                          "fill": "$accent",
+                          "content": "@@ -3980,6 +3980,9 @@ export const FIXTURES = [",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "jNSX7",
+                          "name": "pl",
+                          "fill": "$text-muted",
+                          "content": "   { id: 3978, name: 'grid-3978' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "O6DLF",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3979, name: 'grid-3979' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "HHXj2",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3980, name: 'grid-3980' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "W7p5yW",
+                          "name": "pl",
+                          "fill": "$status-error",
+                          "content": "-  { id: 3981, name: 'grid-old' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "pqSJG",
+                      "name": "cut",
+                      "fill": "$text-muted",
+                      "content": "4000 of 12480 lines shown. Pick a file to read its own patch.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "evdK7",
+              "name": "col cut file",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QJfdN",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "one file's patch past 4000 lines",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "wsSw6",
+                  "name": "Patch",
+                  "width": "fill_container",
+                  "height": 240,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "k7yFw",
+                      "name": "fp",
+                      "fill": "$text-primary",
+                      "content": "src/fixtures/grid.ts",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ml1OP",
+                      "name": "patch",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "q2MBfM",
+                          "name": "pl",
+                          "fill": "$accent",
+                          "content": "@@ -3980,6 +3980,9 @@ export const FIXTURES = [",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Ndrdg",
+                          "name": "pl",
+                          "fill": "$text-muted",
+                          "content": "   { id: 3978, name: 'grid-3978' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "QcKY5",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3979, name: 'grid-3979' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "zIKao",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3980, name: 'grid-3980' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "oMpRW",
+                          "name": "pl",
+                          "fill": "$status-error",
+                          "content": "-  { id: 3981, name: 'grid-old' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "FbO9h",
+                      "name": "cut",
+                      "fill": "$text-muted",
+                      "content": "4000 of 9310 lines shown.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "bfEBB",
+      "x": 8924,
+      "y": 1100,
+      "name": "Review · states · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 14,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "CUneC",
+          "name": "t",
+          "fill": "$text-primary",
+          "content": "Review · states: a patch that could not be read, and a patch cut short",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-display",
+          "fontSize": 20,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "y9RjX6",
+          "name": "intro",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": 1100,
+          "content": "A file whose patch the main process could not read says why, where the page said there was no textual change to show. A patch past 4000 lines says where it stops, and with no file picked, how to read one file's patch.",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-ui",
+          "fontSize": 12,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "H90MS",
+          "name": "panels",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rfAdP",
+              "name": "col error",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "SXDTf",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "a file whose patch could not be read",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "Dig5C",
+                  "name": "Patch",
+                  "width": "fill_container",
+                  "height": 240,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Jill7",
+                      "name": "fp",
+                      "fill": "$text-primary",
+                      "content": "src/app/review/page.tsx",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "ZMjoc",
+                      "name": "error",
+                      "fill": "$status-error",
+                      "content": "Could not read this file's patch: not a git repository",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "o2eAt8",
+              "name": "col cut",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "dFAha",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "the whole patch past 4000 lines, no file picked",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "TuX4b",
+                  "name": "Patch",
+                  "width": "fill_container",
+                  "height": 240,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "VMOkI",
+                      "name": "patch",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "J8gm9",
+                          "name": "pl",
+                          "fill": "$accent",
+                          "content": "@@ -3980,6 +3980,9 @@ export const FIXTURES = [",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "g4jLb",
+                          "name": "pl",
+                          "fill": "$text-muted",
+                          "content": "   { id: 3978, name: 'grid-3978' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "V5Rzl",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3979, name: 'grid-3979' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "P2Llt",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3980, name: 'grid-3980' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "hY8lu",
+                          "name": "pl",
+                          "fill": "$status-error",
+                          "content": "-  { id: 3981, name: 'grid-old' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "rLAqh",
+                      "name": "cut",
+                      "fill": "$text-muted",
+                      "content": "4000 of 12480 lines shown. Pick a file to read its own patch.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "GNNoy",
+              "name": "col cut file",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "yvWk1",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "one file's patch past 4000 lines",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "kc63L",
+                  "name": "Patch",
+                  "width": "fill_container",
+                  "height": 240,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "lcu04",
+                      "name": "fp",
+                      "fill": "$text-primary",
+                      "content": "src/fixtures/grid.ts",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-mono",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "E5QoSx",
+                      "name": "patch",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "gLNT0",
+                          "name": "pl",
+                          "fill": "$accent",
+                          "content": "@@ -3980,6 +3980,9 @@ export const FIXTURES = [",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Lcrto",
+                          "name": "pl",
+                          "fill": "$text-muted",
+                          "content": "   { id: 3978, name: 'grid-3978' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ykhZ1",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3979, name: 'grid-3979' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "N8W37",
+                          "name": "pl",
+                          "fill": "$status-running",
+                          "content": "+  { id: 3980, name: 'grid-3980' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "mBpjQ",
+                          "name": "pl",
+                          "fill": "$status-error",
+                          "content": "-  { id: 3981, name: 'grid-old' },",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "LMu3S",
+                      "name": "cut",
+                      "fill": "$text-muted",
+                      "content": "4000 of 9310 lines shown.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
