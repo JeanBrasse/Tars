@@ -5,6 +5,8 @@ import { DATA_DIR } from '../constants';
 import { probeMcpEndpoint, callMcpTool, listMcpTools, type McpEndpoint } from './mcp-http-client';
 import {
   fetchHermesMemoryFiles,
+  fetchHermesMemoryFile,
+  HERMES_MEMORY_FILES,
   searchHermesSessions,
   fetchHermesMemoryState,
   appendHermesMemory,
@@ -263,6 +265,19 @@ async function searchBackend(endpoint: McpEndpoint, query: string, source: Memor
 /* ── Public API ────────────────────────────────────────── */
 
 /**
+ * How long a session's start waits for Hermes's memory, whoever starts it: the
+ * SessionStart hook (its curl gives up after 3 s, hooks/session-start.sh) and
+ * the CLIs without it, which get the block in their prompt. It was 4000 ms by
+ * default and 3000 for the prompt, so a Hermes that accepts the connection and
+ * never answers (the ssh tunnel up, the server silent) held the block past the
+ * hook, and the agent started with no memory at all, its own project's
+ * included: 4005 ms, measured by the Audit. One budget, under the hook's, with
+ * no caller allowed a longer one: the project's own memory never waits on
+ * Hermes.
+ */
+export const HERMES_START_BUDGET_MS = 1500;
+
+/**
  * The block injected into a fresh session. Local sources are read
  * synchronously; the gateway is only consulted when a connection exists, and
  * a slow gateway must never hold up an agent starting.
@@ -271,7 +286,6 @@ export async function assembleDigest(opts: {
   projectPath: string;
   settings: MemorySettings;
   hermes?: HermesConnection | null;
-  budgetMs?: number;
 }): Promise<string> {
   const { projectPath, settings, hermes } = opts;
   const sections: string[] = [];
@@ -292,21 +306,22 @@ export async function assembleDigest(opts: {
   }
 
   if (hermes) {
-    try {
-      const res = await Promise.race([
-        fetchHermesMemoryFiles(hermes),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), opts.budgetMs ?? 4000)),
-      ]);
-      if (res && res.success) {
-        for (const file of res.files) {
-          const body = file.content.length > MAX_SECTION_CHARS
-            ? `${file.content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
-            : file.content;
-          sections.push(`## Hermes memory: ${file.name}\n${body.trim()}`);
-        }
-      }
-    } catch {
-      // A gateway that is down must not delay the agent.
+    // Each file on its own, both at once, under one budget. Read one after the
+    // other inside a single race, a Hermes that answered MEMORY.md and never
+    // USER.md kept neither (the Audit's gate of #271). What has come back when
+    // the budget runs out goes in; a gateway that is down delays nobody.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), HERMES_START_BUDGET_MS); });
+    const reads = await Promise.all(HERMES_MEMORY_FILES.map(name =>
+      Promise.race([fetchHermesMemoryFile(hermes, name).catch(() => null), late])));
+    clearTimeout(timer);
+    for (const read of reads) {
+      if (!read || !read.success || !read.file) continue;
+      const { name, content } = read.file;
+      const body = content.length > MAX_SECTION_CHARS
+        ? `${content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
+        : content;
+      sections.push(`## Hermes memory: ${name}\n${body.trim()}`);
     }
   }
 
