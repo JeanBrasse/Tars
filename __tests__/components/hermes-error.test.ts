@@ -24,9 +24,9 @@ describe('describeHermesFailure', () => {
   });
 
   it('separates a timeout from a refusal', () => {
-    const r = describeHermesFailure(`${IPC}timeout`, 'http://100.81.229.49:9119');
+    const r = describeHermesFailure(`${IPC}timeout`, 'http://100.64.0.1:9119');
     expect(r.message).toMatch(/did not answer in time/i);
-    expect(r.message).toContain('http://100.81.229.49:9119');
+    expect(r.message).toContain('http://100.64.0.1:9119');
   });
 
   it('flags an unresolvable host', () => {
