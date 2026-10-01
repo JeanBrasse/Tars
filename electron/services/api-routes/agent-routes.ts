@@ -187,7 +187,6 @@ async function spawnAgentSession(
         projectPath: agent.projectPath,
         settings: appSettings as never,
         hermes: usableHermesConnection(),
-        budgetMs: 3000,
       });
       const wrapped = wrapDigestForPrompt(digest);
       if (wrapped) memoryBlock = `\n\n${wrapped}`;
