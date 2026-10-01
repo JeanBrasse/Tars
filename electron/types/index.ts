@@ -684,6 +684,17 @@ export interface ClaudeAccountWindow {
   resetsAt: number;
 }
 
+/** One account's 5 h and weekly counters, as the Usage page shows them (claude:getData). */
+export interface ClaudeAccountCounters {
+  accountId: ClaudeAccountId;
+  label: string;
+  /** null when no status line has reported it, or its reset has passed. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of the status line's last report on that account. */
+  updatedAt: number | null;
+}
+
 export interface ClaudeAccountState extends ClaudeAccount {
   /** From `claude auth status`. null until it has answered. */
   signedIn: boolean | null;

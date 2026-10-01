@@ -20,6 +20,12 @@
  *   mirrors (oauthAccount is the account's own);
  * - user data destroyed: something real where a link should be is left alone
  *   and reported, never removed;
+ * - an account's usage lost (the Audit's gap 5, AUDIT-USAGE-COMPTES.md): a
+ *   projects/ that is a folder of its own (Claude Code run in that folder
+ *   before Tars) keeps what its agents write out of ~/.claude/projects, where
+ *   Usage, resume and the Chat read. An empty one is made the link (rmdir
+ *   removes only an empty folder, so nothing is listed to find out); one that
+ *   holds something stays, and projectsProblem says why no agent starts there;
  * - a folder that is not Tars's own (the Audit's B2): a link, a folder open to
  *   other users (Linux keeps the credential in it), one owned by somebody
  *   else, or anything that is not ~/.claude-accounts/<id>. Refused before any
@@ -60,7 +66,7 @@ vi.mock('fs', async (importOriginal) => {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { provisionAccountDir, accountDirProblem, claudeCredentialOverrides, SHARED_ENTRIES } from '../../../electron/services/claude-accounts/provision';
+import { provisionAccountDir, accountDirProblem, claudeCredentialOverrides, projectsProblem, SHARED_ENTRIES } from '../../../electron/services/claude-accounts/provision';
 
 let home: string;
 let claudeDir: string;
@@ -215,6 +221,49 @@ describe('what is shared through links', () => {
     fs.symlinkSync('/nowhere', path.join(dir, 'projects'));
     provisionAccountDir(dir, home);
     expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(claudeDir, 'projects'));
+  });
+});
+
+describe("projects/, where an account's usage is read from", () => {
+  function accountWithProjectsFolder(): void {
+    fs.mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.join(dir, 'projects'), { recursive: true, mode: 0o700 });
+    fs.chmodSync(dir, 0o700);
+  }
+
+  it('makes an empty projects/ folder the link, without listing anything in the account folder', () => {
+    accountWithProjectsFolder();
+    watch.touched.length = 0;
+    watch.on = true;
+    let report;
+    try {
+      report = provisionAccountDir(dir, home);
+    } finally {
+      watch.on = false;
+    }
+    expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(claudeDir, 'projects'));
+    expect(report.conflicts).not.toContain('projects');
+    expect(projectsProblem(dir)).toBeNull();
+    expect(watch.touched.filter(t => (t.fn === 'readdirSync' || t.fn === 'opendirSync') && t.p.startsWith(dir))).toEqual([]);
+  });
+
+  it('leaves a projects/ folder that holds something, reports it, and says why no agent starts there', () => {
+    accountWithProjectsFolder();
+    fs.mkdirSync(path.join(dir, 'projects', '-work'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'projects', '-work', 'kept.jsonl'), 'kept');
+
+    const report = provisionAccountDir(dir, home);
+
+    expect(fs.lstatSync(path.join(dir, 'projects')).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(dir, 'projects', '-work', 'kept.jsonl'), 'utf-8')).toBe('kept');
+    expect(report.conflicts).toContain('projects');
+    expect(projectsProblem(dir)).toMatch(/~\/\.claude\/projects/);
+  });
+
+  it('finds nothing wrong with the link, or with an account never provisioned', () => {
+    provisionAccountDir(dir, home);
+    expect(projectsProblem(dir)).toBeNull();
+    expect(projectsProblem(path.join(path.dirname(dir), 'acct-ffffff'))).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
-import { app } from 'electron';
+import { app, ipcMain } from 'electron';
 import { DATA_DIR } from '../../constants';
 import { ReportBudget } from './budget';
 import { errorReportOptions } from './options';
@@ -35,6 +35,7 @@ function facts(budget: ReportBudget): ReportFacts {
     installId: budget.installId,
     release: `tars@${app.getVersion()}`,
     home: os.homedir(),
+    host: os.hostname(),
     os: {
       name: OS_NAMES[process.platform] ?? process.platform,
       version: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : os.release(),
@@ -51,6 +52,54 @@ function facts(budget: ReportBudget): ReportFacts {
 function dsn(): string {
   const override = app.isPackaged ? undefined : process.env.DOROTHY_ERROR_REPORTS_DSN;
   return override || ERROR_REPORTS_DSN;
+}
+
+/** The SDK's IPCMode.Classic channels, which the preload's `__SENTRY_IPC__` sends on. */
+const RENDERER_CHANNELS = 'sentry-ipc.';
+const ENVELOPE_CHANNEL = 'sentry-ipc.envelope';
+/** Far above any error report (report.ts caps one at a few tens of kilobytes). */
+const MAX_ENVELOPE = 1_000_000;
+
+type Listener = (...args: unknown[]) => unknown;
+
+function dropped(channel: string, why: unknown): void {
+  // The name only: the payload, and a parser's message quoting it, may hold anything.
+  const reason = why instanceof Error ? why.name : String(why);
+  console.warn(`[error-reports] dropped what the renderer sent on ${channel}: ${reason}`);
+}
+
+/**
+ * The SDK's listeners for what the renderer sends, behind a guard. Their
+ * input is the renderer's, and the SDK parses it with no try: a malformed
+ * envelope threw out of an ipcMain listener, which is an uncaught exception
+ * in main, a fatal report of its own, then Electron's error box holding the
+ * process until it was killed (QA's gate of #221). An envelope that is not
+ * text or bytes, or is larger than any report, never reaches the SDK; what
+ * throws in its listener is logged and dropped. Other channels are not
+ * touched.
+ */
+function guardRendererBridge(): void {
+  for (const channel of ipcMain.eventNames()) {
+    if (typeof channel !== 'string' || !channel.startsWith(RENDERER_CHANNELS)) continue;
+    const listeners = ipcMain.listeners(channel) as Listener[];
+    ipcMain.removeAllListeners(channel);
+    ipcMain.on(channel, (event, ...args) => {
+      if (channel === ENVELOPE_CHANNEL) {
+        const env = args[0];
+        const fits = (typeof env === 'string' && env.length <= MAX_ENVELOPE)
+          || (env instanceof Uint8Array && env.byteLength <= MAX_ENVELOPE);
+        if (!fits) return dropped(channel, 'not an envelope, or too large');
+      }
+      for (const listener of listeners) {
+        try {
+          const result = listener(event, ...args);
+          if (result instanceof Promise) result.catch(err => dropped(channel, err));
+        } catch (err) {
+          dropped(channel, err);
+        }
+      }
+    });
+  }
 }
 
 export function startErrorReports(isEnabled: () => boolean): { sync(): Promise<void> } {
@@ -84,6 +133,7 @@ export function startErrorReports(isEnabled: () => boolean): { sync(): Promise<v
       } catch (err) {
         console.warn('[error-reports] could not start:', err instanceof Error ? err.message : err);
       }
+      guardRendererBridge();
     })();
     return starting;
   };

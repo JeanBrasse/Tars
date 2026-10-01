@@ -1099,6 +1099,20 @@ export interface ElectronAPI {
         five_hour?: { used_percentage: number; resets_at: number };
         seven_day?: { used_percentage: number; resets_at: number };
       } | null;
+      /**
+       * Every Claude account in use, in the order of Settings, with its own 5 h
+       * and weekly counters: one pair of bars each. Empty while the accounts
+       * option is off, when rateLimits (account 1's) is the only pair. A window
+       * is null when nothing reported it or its reset has passed; resetsAt in
+       * epoch seconds, updatedAt in epoch ms.
+       */
+      accountRateLimits: Array<{
+        accountId: string;
+        label: string;
+        fiveHour: { usedPercentage: number; resetsAt: number } | null;
+        sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        updatedAt: number | null;
+      }>;
       tokenStats: {
         totalInputTokens: number;
         totalOutputTokens: number;
@@ -1180,6 +1194,23 @@ export interface ElectronAPI {
       }>;
       /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
       oldest: string | null;
+      /**
+       * The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day.
+       * Its `claude` rows are Claude's ACP turns, which the transcripts already count: skip them, as `usageRows` does
+       * for the days, or those turns count twice in the last 24 hours.
+       */
+      hourly: Array<{
+        /** When the hour starts, in milliseconds since the epoch. */
+        hour: number;
+        provider: string;
+        model: string | null;
+        inputTokens: number;
+        outputTokens: number;
+        cachedReadTokens: number;
+        cachedWriteTokens: number;
+        costUSD: number;
+        turns: number;
+      }>;
     }>;
   };
 

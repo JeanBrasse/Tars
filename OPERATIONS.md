@@ -282,8 +282,8 @@ Per surface the spec does two things:
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
 The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
-surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms and the
-two panel-history views that their own specs photograph.
+surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms that
+their own spec photographs.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings
@@ -696,8 +696,8 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
-| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on |
-| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session, rewritten at every render; anything that is not one JSON object starts again from `{}` |
+| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
+| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Three files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
 every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
@@ -1572,7 +1572,7 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 | Symptom | Look for |
 |---|---|
 | a panel blank but for the spinner after coming back to the Dashboard | `[terminal-mirror] xterm-headless could not be loaded` at startup: without it the panels replay the kept chunks, as they did before the mirror. `[terminal-mirror] <agent id>: dropped after a parse failure`: that one terminal fell back |
-| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
+| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's notice offers restart, which brings a fullscreen session back on the same conversation |
 | Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
 
 ### Agent stuck in the wrong directory
@@ -1646,8 +1646,16 @@ ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 
 ### Fleet-wide log search
 
-The Logs page reads the retained output buffers in the main process (400 chunks per agent, ANSI
-stripped, capped at 500 result lines). It supports plain substring search or `/regex/flags`;
+The Logs page reads a Claude agent from its transcript first (the last 200 messages of its current
+or last session, `❯` what was typed, `⏺` the answer and each tool call, `⎿` a tool's answer): Tars runs
+Claude Code full screen, on the alternate screen, which keeps no history and is discarded at `/exit`, so
+the terminal alone kept only a stopped agent's launch lines. After those, and for every other CLI, it
+reads each agent as its terminal shows it, never as the raw stream split on line
+breaks (Claude Code draws with cursor moves, and that read as one run of glued words): a running
+agent from its terminal's xterm-headless mirror (history and screen, then the alternate screen
+while it is shown), any other from its retained output (400 chunks per agent) replayed into a
+headless terminal of its panel's size, kept until that output changes. Results are capped at 500
+lines. It supports plain substring search or `/regex/flags`;
 a bad regex falls back to a literal search rather than throwing.
 
 These buffers are **memory only**. Only the last 100 chunks per agent survive to
@@ -1665,8 +1673,8 @@ Two independent sources feed the Usage page:
    Codex, Gemini, Grok and the rest. When the agent does not report a cost, the ledger prices
    the turn itself from the catalogue; cache reads default to 10 % of input and cache writes to
    125 % when the catalogue omits them.
-2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, parsed by
-   `electron/services/transcript-usage.ts`. Claude Code only writes
+2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, and `$CLAUDE_CONFIG_DIR/projects`
+   too when Tars has one in its environment, parsed by `electron/services/transcript-usage.ts`. Claude Code only writes
    `~/.claude/stats-cache.json` for some account types; the per-message `usage` block in the
    transcripts is always there. 1 h cache writes are kept apart from 5 m ones because they
    price at 2× base rather than 1.25×.
@@ -1677,9 +1685,17 @@ through `claude:getData` (`stats.dailyModelTokens[i]`, with the day's `costUSD` 
 `oldest` for the first day it still holds). A ledger row whose provider is `claude` is in the
 transcripts too: the Claude ACP adapter runs the claude binary, which writes one.
 
+The last 48 hours come by the hour as well, for a rolling 24 hours: `stats.hourlyModelTokens`
+(the same shape as a day, `hour` being when it starts, in milliseconds since the epoch) and the
+ledger's `hourly`. A rolling day is the hours past now minus 24 hours.
+
 `~/.dorothy/token-stats.json`, which the status line writes, is not a third source. Every
 session in it ran in the claude binary and is in the transcripts already, so its `extraCost`
-says how much of that spend went over quota; it is never added to it.
+says how much of that spend went over quota; it is never added to it. What it does say is who
+ran each session: its `provider`, and its `account` (`TARS_CLAUDE_ACCOUNT`, empty when none). A
+transcript is named after its session, so the transcripts are filed by it: `stats.providerByModel`
+gives the provider a model ran under, where the page used to guess it from the model's name, and
+each day and hour carries `costByAccount`.
 
 Prices come from **models.dev** (`https://models.dev/api.json`, mirror
 `raw.githubusercontent.com/anomalyco/models.dev/dev/models.json`), USD per million tokens,
@@ -1771,6 +1787,9 @@ and crash the app. Any other stream error still rethrows.
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.
+They are created and removed with `node scripts/worktree.mjs` (`new`, `remove`, `prune`, `status`):
+a floor of 30 GB free, a cap of 20, `node_modules` as an APFS clone, and a cleanup that runs before
+every `new`. CLAUDE.md, Workflow Rule 6, says how and why (the disk filled on 2026-10-01).
 The real reason a naive `find . -name '*.test.ts' -not -path './node_modules/*'` returns 1432
 files while `vitest` collects 46 (~31×) is nested `node_modules` the top-level exclude misses:
 166 under `landing/` and 140 in each of the seven `mcp-*/` dirs; the two worktree trees add

@@ -2,7 +2,7 @@ import * as os from 'os';
 import type { AgentStatus, ClaudeAccountsSettings } from '../../types';
 import type { AccountEnv, AccountEnvPurpose } from '../../core/account-env';
 import { DEFAULT_ACCOUNT_ID, readAccountsSettings } from './registry';
-import { claudeCredentialOverrides, provisionAccountDir } from './provision';
+import { claudeCredentialOverrides, projectsProblem, provisionAccountDir } from './provision';
 import { readAccountUsage } from './counters';
 import { chooseAccount, type AccountUsage, type Choice } from './choose';
 import { blockedUntil, getAuth, noteMove, recentMoves, takeMove } from './state';
@@ -140,6 +140,11 @@ function envFor(agent: AgentStatus, settings: ClaudeAccountsSettings, choice: Ch
     if (ctx.cwd !== agent.projectPath && agent.projectPath) provisionAccountDir(account.configDir, home, { projectPath: agent.projectPath });
   } catch (err) {
     console.warn(`[claude-accounts] ${name}: on account 1, since ${account.label} cannot be used: ${err instanceof Error ? err.message : String(err)}`);
+    return defaultEnv();
+  }
+  const lost = projectsProblem(account.configDir);
+  if (lost) {
+    console.warn(`[claude-accounts] ${name}: on account 1, since ${account.label} cannot be used: ${lost}`);
     return defaultEnv();
   }
   console.log(`[claude-accounts] ${name}: on ${account.label} (${choice.reason})`);

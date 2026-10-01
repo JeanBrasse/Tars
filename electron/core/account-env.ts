@@ -39,9 +39,11 @@ export function accountEnvFor(agentId: string | undefined, cwd: string, purpose:
   try {
     return resolver(agentId, cwd, purpose);
   } catch (err) {
-    // A launch never fails over an account: it starts as it would have.
-    console.warn(`[claude-accounts] no account chosen for ${agentId}, launching as before:`, err);
-    return null;
+    // A launch never fails over an account, and it starts on account 1 rather
+    // than on whatever Tars inherited: an inherited CLAUDE_CONFIG_DIR is
+    // another login (the Audit's LOW, QA's E1, gate of #267).
+    console.warn(`[claude-accounts] no account chosen for ${agentId}, launching on account 1:`, err);
+    return { accountId: 'default', set: { TARS_CLAUDE_ACCOUNT: 'default' }, unset: ['CLAUDE_CONFIG_DIR', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'] };
   }
 }
 

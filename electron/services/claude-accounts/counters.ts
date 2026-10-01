@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { dataPath } from '../../constants';
-import type { ClaudeAccountWindow } from '../../types';
+import type { ClaudeAccountCounters, ClaudeAccountsSettings, ClaudeAccountWindow } from '../../types';
 import type { AccountUsage } from './choose';
 
 /**
@@ -67,4 +67,22 @@ export function readAccountUsage(): Record<string, AccountUsage> {
 export function usageForView(usage: AccountUsage | undefined, now: number = Date.now()): AccountUsage {
   const live = (w: ClaudeAccountWindow | null | undefined) => (w && w.resetsAt * 1000 > now ? w : null);
   return { fiveHour: live(usage?.fiveHour), sevenDay: live(usage?.sevenDay), updatedAt: usage?.updatedAt ?? null };
+}
+
+/**
+ * The Usage page's counters, one pair per account in use, in the order and
+ * under the names of Settings. With the option off, none: the page keeps
+ * rate-limits.json, account 1's. The Audit's gap 6 (AUDIT-USAGE-COMPTES.md,
+ * 2026-10-01): only account 1's status lines write that file, so the page
+ * showed account 1's bars while the agents ran on another account.
+ */
+export function countersForUsagePage(
+  settings: ClaudeAccountsSettings,
+  usage: Record<string, AccountUsage> = readAccountUsage(),
+  now: number = Date.now(),
+): ClaudeAccountCounters[] {
+  if (!settings.enabled) return [];
+  return settings.accounts
+    .filter(account => account.enabled)
+    .map(account => ({ accountId: account.id, label: account.label, ...usageForView(usage[account.id], now) }));
 }

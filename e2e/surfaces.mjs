@@ -254,18 +254,11 @@ export const VOLATILE = {
  */
 export const USAGE_DAY = new Date(2026, 8, 16, 12).getTime();
 
-/**
- * The masks for one surface, and the keys that actually matched something.
- *
- * `skip` is for a spec that masks the same thing more precisely: panel history
- * photographs a view drawn over a terminal, so masking every `.xterm-screen`
- * would paint over the very thing it is there to show.
- */
-export async function volatileMasks(page, surface, skip = []) {
+/** The masks for one surface, and the keys that actually matched something. */
+export async function volatileMasks(page, surface) {
   const masks = [];
   const used = [];
   for (const [key, entry] of Object.entries(VOLATILE)) {
-    if (skip.includes(key)) continue;
     if (entry.surfaces !== 'all' && !entry.surfaces.includes(surface)) continue;
     const locator = page.locator(entry.selector);
     masks.push(locator);
@@ -359,25 +352,13 @@ export function readPageErrorRecords() {
   return fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
-// Panel history: two states of a Dashboard panel, reached through that panel's
-// own live | history switch. The inventory's "Dashboard · panel history" and
-// the no-transcript half of "Panel history · states". The skeleton half is a
-// state that lasts as long as one small IPC read, so it is not photographed.
-//
-// Deliberately not in ALL. e2e/panel-history.spec.ts drives them in a sandbox
-// of its own: the sweep above leaves auto start on, so every agent on the
-// board is a real CLI, and what a claude panel's history shows would depend on
-// how fast that CLI registers its session. There nothing starts, the
-// Orchestrator reads a transcript seeded on disk, and the Backend Engineer
-// runs codex, which writes none.
 // The Chat room in six states of the page rather than overlays, first
 // specified in `design/chat-design.pen` and drawn since #165 from
 // `design/chat-redesign-a.pen`. One room per state, because a room is
 // derived from a project and a journal can only put a given one in a single
 // state at a time.
 //
-// Deliberately not in ALL, for the reason PANEL_HISTORY is not: they need a
-// sandbox whose agents do not start, whose projects are five rather than two,
+// Deliberately not in ALL: they need a sandbox whose agents do not start, whose projects are five rather than two,
 // and whose bus journal is seeded. e2e/chat-rooms.spec.ts drives them.
 //
 // `delivered`, `dropped`, `bounded` and `superseded` are rendered here for the
@@ -419,17 +400,6 @@ export const CHAT_ROOMS = [
   },
 ];
 
-export const PANEL_HISTORY = [
-  {
-    name: 'dashboard-panel-history', route: '/', clickText: 'history', within: 'Orchestrator',
-    shows: 'Ship it, with the test that caught it.',
-  },
-  {
-    name: 'panel-history-no-transcript', route: '/', clickText: 'history', within: 'Backend Engineer',
-    shows: 'Codex CLI does not write a transcript Tars can read.',
-  },
-];
-
 /**
  * Every spec that tolerates KNOWN_PAGE_ERRORS, by the name it records under,
  * with the surfaces it records. e2e/known-errors.spec.ts only judges a run in
@@ -440,10 +410,4 @@ export const PANEL_HISTORY = [
 export const RECORDING_SUITES = {
   surfaces: ALL,
   'chat-rooms': CHAT_ROOMS,
-  // Its two surfaces tolerated nothing and masked nothing until 2026-09-17:
-  // they asserted no page error at all, and the Dashboard they photograph
-  // prints the same hydration mismatch every other page does. Listening to the
-  // console there without this would have failed them on a defect the suite
-  // has declared and reported since 2026-09-16.
-  'panel-history': PANEL_HISTORY,
 };

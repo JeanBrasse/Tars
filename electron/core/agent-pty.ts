@@ -6,6 +6,7 @@ import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
+import { refuseWhileQuitting } from './quit-state';
 
 export { setAccountEnvResolver } from './account-env';
 
@@ -91,6 +92,9 @@ export function spawnAgentPty(opts: {
   // account a caller forgot would be a CLI billed to the wrong subscription.
   const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
 
+  // Once the quit has begun, a terminal spawned here would be in no map the
+  // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused.
+  refuseWhileQuitting('agent terminal');
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
     cols: size.cols,

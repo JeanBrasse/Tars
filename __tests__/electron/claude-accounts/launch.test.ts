@@ -15,6 +15,9 @@
  *   the working directory's projects[] entry;
  * - a folder that fails its checks (B2), or a credential that makes every
  *   folder one account (B3): the agent starts on account 1, it is not stopped;
+ * - an agent started on an account whose projects/ is a folder of its own
+ *   holding something (the Audit's gap 5): what it writes would never reach
+ *   Usage or resume. It starts on account 1; an empty one is made the link;
  * - the choice not remembered: agent.claudeAccountId is what the card shows and
  *   what the next relaunch keeps;
  * - several agents launched at once all counted as nowhere (N5): a choice is
@@ -29,7 +32,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { claudeAccountEnvFor, ACCOUNT_ENV_UNSET } from '../../../electron/services/claude-accounts/launch';
-import { setAuth, resetAccountState, requestMove, pendingMove } from '../../../electron/services/claude-accounts/state';
+import { setAuth, resetAccountState, requestMove, pendingMove, noteMove } from '../../../electron/services/claude-accounts/state';
 import { accountsRoot, normalizeAccountsSettings } from '../../../electron/services/claude-accounts/registry';
 import type { AgentStatus, ClaudeAccountsSettings } from '../../../electron/types';
 
@@ -113,6 +116,35 @@ describe('another account', () => {
     expect(env.accountId).toBe(B);
   });
 
+  it("starts on account 1 when the account's projects/ is a folder holding transcripts, and leaves them", () => {
+    const dir = path.join(accountsRoot(), A);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'projects', '-work'), { recursive: true, mode: 0o700 });
+    fs.chmodSync(path.dirname(dir), 0o700);
+    fs.chmodSync(dir, 0o700);
+    fs.writeFileSync(path.join(dir, 'projects', '-work', 'kept.jsonl'), 'kept');
+
+    const a = agent({ claudeAccountPin: A });
+    const env = claudeAccountEnvFor(a, ctx())!;
+
+    expect(env.accountId).toBe('default');
+    expect(a.claudeAccountId).toBe('default');
+    expect(fs.readFileSync(path.join(dir, 'projects', '-work', 'kept.jsonl'), 'utf-8')).toBe('kept');
+  });
+
+  it('makes an empty projects/ folder the link, and starts the agent on that account', () => {
+    const dir = path.join(accountsRoot(), A);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'projects'), { recursive: true, mode: 0o700 });
+    fs.chmodSync(path.dirname(dir), 0o700);
+    fs.chmodSync(dir, 0o700);
+
+    const env = claudeAccountEnvFor(agent({ claudeAccountPin: A }), ctx())!;
+
+    expect(env.accountId).toBe(A);
+    expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(os.homedir(), '.claude', 'projects'));
+  });
+
   it('falls back to account 1 when the folder fails its checks, and leaves the folder as it is', () => {
     const dir = path.join(accountsRoot(), A);
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
@@ -134,6 +166,30 @@ describe('another account', () => {
   it('falls back to account 1 while a credential would sign every folder in as one', () => {
     const env = claudeAccountEnvFor(agent({ claudeAccountPin: A }), ctx({ overrides: ['ANTHROPIC_API_KEY in the environment Tars was started with'] }))!;
     expect(env.accountId).toBe('default');
+  });
+});
+
+describe('the gaps QA found at the gate of #267', () => {
+  it('does not count the agent being launched in the load (L7)', () => {
+    // Its own launch a moment ago, on A: counted, it would push it off A onto B.
+    const a = agent({ claudeAccountId: 'default' });
+    noteMove(a.id, A, NOW - 1_000);
+    const env = claudeAccountEnvFor(a, ctx({ usage: { default: full, [A]: light(10), [B]: light(10) } }))!;
+    expect(env.accountId).toBe(A);
+  });
+
+  it('provisions the project folder too when the CLI starts in a worktree (L9)', () => {
+    const worktree = fs.mkdtempSync(path.join(home(), 'worktree-'));
+    const claudeJson = JSON.parse(fs.readFileSync(path.join(home(), '.claude.json'), 'utf-8'));
+    claudeJson.projects[worktree] = { hasTrustDialogAccepted: true };
+    fs.writeFileSync(path.join(home(), '.claude.json'), JSON.stringify(claudeJson));
+
+    const env = claudeAccountEnvFor(agent({ claudeAccountPin: A }), ctx({ cwd: worktree }))!;
+
+    const own = JSON.parse(fs.readFileSync(path.join(accountsRoot(), A, '.claude.json'), 'utf-8'));
+    expect(env.accountId).toBe(A);
+    expect(own.projects[worktree]).toEqual({ hasTrustDialogAccepted: true });
+    expect(own.projects[project]).toEqual({ hasTrustDialogAccepted: true, enabledMcpjsonServers: ['s'] });
   });
 });
 
