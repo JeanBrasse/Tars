@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
       'Settings > System says Claude Code is ready only when a claude answers, looked for the way Tars finds it when it starts an agent, Settings > CLI Paths included. With no claude installed it said ready, and now says not installed. Fixed by Nexarion434',
       'An agent\'s vault, SocialData, X and Telegram tools no longer wait about half an hour on a host that has stopped answering: they say there was no answer, and after how long, 30 seconds for Tars and 60 for SocialData, X and a Telegram message. A photo, a video or a document sent to Telegram is given the time a slow link, 10 KB/s, takes to carry it, then the same minute, so a large file on a slow connection still arrives whole',
       'An agent that starts while Hermes does not answer (the tunnel up, the server silent) gets its project\'s memory again: Tars waits a second and a half for Hermes\'s memory, where it waited four and the agent then started with no memory at all. Agents that get their memory in their first prompt, like Codex or Gemini, wait for a silent Hermes a second and a half before they start, where they waited three',
+      'The Review page lists a renamed file once, under its new name, and shows it as a rename; names with accents as they are; an untracked binary as binary rather than as lines of text; and a file changed in a commit and again since with all its lines. A one-line new file counts one line, and a repository with no commit yet shows its staged files on its own branch',
     ],
   },
   {
