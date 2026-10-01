@@ -47,6 +47,16 @@ export function defaultHermesConnection(): HermesConnection {
   return { mode: 'local', localPort: HERMES_DEFAULT_PORT, authMode: 'token' };
 }
 
+/**
+ * The X-Hermes-Session-Token to send, which only token auth has. Switching the
+ * form to OAuth hides the token and keeps it, so under OAuth the gateway gets
+ * the session cookie alone, as Hermes Desktop does: it drops the stored token
+ * when the auth mode is oauth.
+ */
+export function sessionToken(conn: HermesConnection): string | undefined {
+  return conn.authMode === 'oauth' ? undefined : conn.token;
+}
+
 /** The HTTP base URL a given config resolves to. */
 export function resolveHermesBaseUrl(conn: HermesConnection): string {
   switch (conn.mode) {

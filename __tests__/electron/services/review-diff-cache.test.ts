@@ -83,8 +83,10 @@ describe('the review diff, kept while nothing changed', () => {
     const third = await reviewDiff(repo);
 
     expect(first.files.map(f => f.path)).not.toContain('new.txt');
-    expect(second.files.find(f => f.path === 'new.txt')).toMatchObject({ status: 'untracked', additions: 2 });
-    expect(third.files.find(f => f.path === 'new.txt')).toMatchObject({ additions: 4 });
+    // One line, then three: these counted 2 and 4 while the last newline was
+    // taken for one more line (review-what-changed.test.ts, case 5).
+    expect(second.files.find(f => f.path === 'new.txt')).toMatchObject({ status: 'untracked', additions: 1 });
+    expect(third.files.find(f => f.path === 'new.txt')).toMatchObject({ additions: 3 });
   });
 
   it('sees a commit, and the base moving under the branch', async () => {
