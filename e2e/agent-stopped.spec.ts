@@ -226,6 +226,8 @@ test('a stopped agent says stopped, who stopped it, when and why, and still does
   await page.goto(`${DEV_URL}/projects`, { waitUntil: 'domcontentloaded' });
   // The project's card, then its own `open`, which shows its agents.
   await page.getByRole('button', { name: 'open', exact: true }).first().click();
+  // Every agent at rest offers resume: the idle Project Lead and both stopped ones.
+  await expect(page.getByRole('button', { name: 'resume', exact: true })).toHaveCount(3, { timeout: 30_000 });
   const row = page.locator('div')
     .filter({ has: page.getByText('Frontend Engineer', { exact: true }) })
     .filter({ has: page.getByRole('button', { name: 'resume', exact: true }) })
