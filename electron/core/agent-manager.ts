@@ -23,6 +23,7 @@ import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
+import { clearStop } from './agent-stop';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -582,7 +583,9 @@ export function loadAgents() {
         agent.pathMissing = false;
       }
 
-      agent.status = 'idle';
+      // A stopped agent stays stopped across a restart, with who, when and
+      // why, or the Dashboard resumes it at launch like any idle one.
+      if (agent.status !== 'stopped') agent.status = 'idle';
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
       agent.pendingDelivery = undefined;
@@ -1028,6 +1031,8 @@ async function initAgentPtyLocked(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   agent.ptyCwd = cwd;
+  // A terminal again: a stop is over (core/agent-stop.ts).
+  clearStop(agent);
 
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);

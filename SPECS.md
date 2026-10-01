@@ -296,7 +296,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `get_agent` / `get_agent_output` | Detail and `lastCleanOutput` |
 | `create_agent` | Defaults to the caller's project |
 | `start_agent` / `send_message` | Both route to `POST /dispatch`; `send_message` accepts `message` or `prompt` so the LLM doesn't trip on naming |
-| `stop_agent` / `remove_agent` | |
+| `stop_agent` / `remove_agent` | `stop_agent` requires a one-line `reason`; the agent then reads `stopped`, with `stoppedBy` (the caller's name) and the reason (see Stopping an agent) |
 | `wait_for_agent` | Single long-poll against `/wait`, no polling loop |
 | `delegate_task` | The composite. ACP first, terminal dispatch as fallback |
 | `room_post` / `room_read` | The bus: publish into the caller's project room, or catch up on it. Every bound (three rounds, ten agent messages, silence markers, rotation, the session barrier) is applied by the server in `bus-store`, so writing faster buys nothing |
@@ -375,6 +375,10 @@ A restart that waits says so. `agent:restart-pending` is pushed to every window 
 `agent:restart` restarts an agent's CLI when somebody asks, at once and whatever it is doing, through the same restart: the conversation continues under a new session id. It is what the Dashboard's `restart` calls (the notice of a panel whose claude left fullscreen). The window's stop then start it replaces began a new conversation, since a start continues the last one only once per app run. A restart waiting on new settings is done by it and stops waiting. If it cannot launch, it answers the reason and leaves the agent in `error` with it.
 
 A start with no task, which is every Dashboard start and autostart and every restart, leaves the agent `idle`. It used to set `running`, which nothing cleared until a turn the CLI never had came to an end, and agent-watch writes nothing to a `running` agent.
+
+### Stopping an agent: `core/agent-stop.ts`
+
+`POST /api/agents/:id/stop` (and `stop_agent`, which calls it) requires `reason`, one line (`oneLine`: controls and direction marks out, 200 characters at most); without one it answers 400 and touches nothing. The window's stop (`agent:stop`, `stop(id, reason?)`) files it under `you` with the reason it was given, if any. `stopAgent` ends the agent's delegated runs, records the stop (`status: 'stopped'`, `stoppedBy`: the calling agent's name, `Tars` for its own pass or `you`; `stoppedAt`; `stopReason`), tombstones the session, saves and announces, then ends the terminal's whole process tree as the quit does (`endTerminalTree`, `core/pty-manager.ts`: the hangup, 1.5 s, then SIGKILL to what is left of that tree). The API answers once the tree has ended. Measured in `e2e/stop-ends-agent.spec.ts`: a CLI deaf to SIGHUP and SIGTERM and its child gone 1.8 s after the call; before, a stop sent the hangup alone (on 28/09 two frozen CLIs survived `stop_agent`, reparented to launchd). `stopped` survives a restart of Tars (`loadAgents`), so the Dashboard does not resume it, and the kanban automation, which takes `idle` agents, does not hand it work; `/wait` and `wait_for_agent` say who stopped it and why. A new terminal (`initAgentPty`, `spawnAgentSession`) clears it. The window says it where an error gives its reason (frame `Agent stopped · who and why`): the word `stopped` in the idle ink, and one line, `Stopped by Project Lead at 14:02: <reason>` (`src/lib/stop-line.ts`), in place of the task on its card, of the branch in its pane's header and of the path in its window, under its name in an orchestrator's rail, and as the title of the word. The Agents page has a Stopped chip, the Projects page offers resume and start as for an idle agent, and the window offers no second stop, which would file it under you and replace who and why.
 
 ### The orchestrator role: `core/agent-role.ts`
 

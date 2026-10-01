@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { stopAgent } from '../core/agent-stop';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -1147,44 +1148,22 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { success: true, agent };
   });
 
-  // Stop an agent
-  ipcMain.handle('agent:stop', async (_event, id: string) => {
+  // Stop an agent, from the window: filed under "you" (core/agent-stop.ts).
+  ipcMain.handle('agent:stop', async (_event, id: string, reason?: unknown) => {
     const agent = agents.get(id);
-    // A delegated run too, which has no terminal: an agent running only one
-    // was not stopped at all (the Audit's table, #6).
-    if (agent) await stopAcpRuns(agent.id, 'the agent was stopped');
-    if (agent?.ptyId) {
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (ptyProcess) {
-        ptyProcess.kill();
-        ptyProcesses.delete(agent.ptyId);
-      }
-      agent.ptyId = undefined;
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-      // The killed session is a tombstone, exactly as the API's stop makes
-      // it. Its hooks outlive the kill: SessionEnd posts `completed` under the
-      // session id this agent still recorded as its owner, so the post passed
-      // the stale check and put a stopped agent back to done. Only the owner
-      // field moves; the refusal of posts from any other session is untouched.
-      if (agent.currentSessionId) {
-        agent.lastKilledSessionId = agent.currentSessionId;
-      }
-      agent.currentSessionId = undefined;
-      agent.lastActivity = new Date().toISOString();
-      // Mark as manually stopped to prevent status detection from overriding
-      (agent as AgentStatus & { _manuallyStoppedAt?: number })._manuallyStoppedAt = Date.now();
-      saveAgents();
-
-      // Send status change notification to all windows
-      broadcastToAllWindows('agent:status', {
-        type: 'status',
-        agentId: id,
-        status: 'idle',
-        timestamp: new Date().toISOString(),
-      });
-      scheduleTick();
-    }
+    if (!agent) return { success: true };
+    await stopAgent(agent, { by: 'you', reason: typeof reason === 'string' ? reason : undefined }, {
+      save: saveAgents,
+      announce: stopped => {
+        broadcastToAllWindows('agent:status', {
+          type: 'status',
+          agentId: stopped.id,
+          status: stopped.status,
+          timestamp: stopped.lastActivity,
+        });
+        scheduleTick();
+      },
+    });
     return { success: true };
   });
 

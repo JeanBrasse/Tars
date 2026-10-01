@@ -56,7 +56,14 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** Set by a stop (core/agent-stop.ts) until the agent gets a terminal again:
+   *  "you", "Tars", or the name of the agent that asked. */
+  stoppedBy?: string;
+  /** ISO. */
+  stoppedAt?: string;
+  /** One line, as the caller gave it; none from a window that gave none. */
+  stopReason?: string;
   /** ISO: running, yet its transcript has had no write since then (30 minutes
    *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
    *  a write or by any other status. Not saved. */

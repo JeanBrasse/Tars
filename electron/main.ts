@@ -674,6 +674,9 @@ app.whenReady().then(async () => {
         const newStatus = agentStatusOnExit(exitCode);
         if (!newStatus) return;
         const agent = agents.get(id);
+        // Only while this pty is still the agent's: a stop (core/agent-stop.ts)
+        // or a restart has moved on, and its record is not this exit's.
+        if (agent?.ptyId !== ptyId) return;
         if (agent) {
           agent.status = newStatus;
           agent.lastActivity = new Date().toISOString();

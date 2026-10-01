@@ -72,11 +72,42 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
   const trees = agentMaps.flatMap(map => [...map.values()]);
   const shells = [...quickPtyProcesses.values()];
   for (const map of [...agentMaps, quickPtyProcesses]) map.clear();
-  const terminals = [...trees, ...shells];
-  if (terminals.length === 0) return;
+  const count = trees.length + shells.length;
+  if (count === 0) return;
+  await endTerminals(trees, shells, graceMs, { waitForExits: true });
+  console.log(`Ended ${count} terminal(s) on quit`);
+}
 
-  const tree = new ProcessTree(trees.map(t => t.pid));
-  if (trees.length) tree.grow(processTableNow(FIRST_READ_MS));
+/**
+ * Ends one agent terminal and everything its CLI started, the way the quit
+ * does (endAllTerminals): its tree read while it holds together, the hangup,
+ * then SIGKILL to whatever of that tree is left after `graceMs`. For a stop:
+ * on 28/09 two frozen CLIs survived stop_agent, reparented to launchd, and on
+ * 30/09 a stopped QA's bench ignored SIGTERM, when a stop sent the hangup and
+ * nothing more. The caller takes the terminal out of its map first.
+ */
+export async function endTerminalTree(terminal: pty.IPty, graceMs: number = TERMINAL_GRACE_MS): Promise<void> {
+  // The app goes on: node-pty delivers the exit whenever it comes, which only
+  // the quit has to wait for.
+  await endTerminals([terminal], [], graceMs, { waitForExits: false });
+}
+
+/**
+ * The agent terminals' trees end, SIGKILL after the grace; the user's shells
+ * get the hangup only (see endAllTerminals). Synchronous up to the hangups, so
+ * a caller that does something synchronous next has both graces at once.
+ */
+async function endTerminals(trees: pty.IPty[], shells: pty.IPty[], graceMs: number, opts: { waitForExits: boolean }): Promise<void> {
+  const terminals = [...trees, ...shells];
+  // Only a terminal Tars started is a tree to end: its process is a child of
+  // this one (node-pty's shell, or what spawn-helper executes in its place).
+  // A pid that names anything else, a process that took the number since, or
+  // a stand-in a test gave as 4242, gets its hangup and is never SIGKILLed.
+  // Without ps, nothing is: the hangup alone, as before.
+  const first = trees.length ? processTableNow(FIRST_READ_MS) : undefined;
+  const ours = trees.map(t => t.pid).filter(pid => first?.some(row => row.pid === pid && row.ppid === process.pid));
+  const tree = new ProcessTree(ours);
+  if (ours.length) tree.grow(first);
   const ended = new Set<pty.IPty>();
   const exited = terminals.map(t => new Promise<void>(resolve => {
     const done = () => { ended.add(t); resolve(); };
@@ -85,6 +116,8 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
   for (const t of terminals) {
     try { t.kill(); } catch { /* already gone */ }
   }
+  // A stop with no tree of Tars's own to watch: the hangup is all there is to do.
+  if (!opts.waitForExits && ours.length === 0) return;
 
   const deadline = Date.now() + graceMs;
   let exitsIn = false;
@@ -92,10 +125,10 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
   const pause = (ms = QUIT_POLL_MS) => new Promise(resolve => setTimeout(resolve, ms));
   while (Date.now() < deadline) {
     await pause(Math.min(QUIT_POLL_MS, Math.max(1, deadline - Date.now())));
-    if (exitsIn && !tree.anyLeft(await processTable())) break;
+    if ((exitsIn || !opts.waitForExits) && !tree.anyLeft(ours.length ? await processTable() : undefined)) break;
   }
 
-  const table = trees.length ? await processTable() : undefined;
+  const table = ours.length ? await processTable() : undefined;
   const treesLeft = tree.anyLeft(table);
   if (treesLeft) {
     tree.grow(table);
@@ -110,9 +143,8 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
     // loop still runs: half a second at most, SIGKILL is not refused.
     const until = Date.now() + 500;
     while (Date.now() < until && tree.anyLeft(await processTable())) await pause();
-    await Promise.race([allExited, pause(300)]);
+    if (opts.waitForExits) await Promise.race([allExited, pause(300)]);
   }
-  console.log(`Ended ${terminals.length} terminal(s) on quit`);
 }
 
 export function killAllPty(): void {

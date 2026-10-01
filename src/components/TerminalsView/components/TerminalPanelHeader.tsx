@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { GripVertical, ShieldOff, Bot, Shield, Gauge, Maximize2, Minimize2 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import { AgentMark } from '@/components/ui';
-import type { StatusTone } from '@/components/ui';
-import { STATUS_COLORS, errorReason } from '@/app/agents/constants';
+import { STATUS_COLORS, errorReason, statusWord } from '@/app/agents/constants';
+import { stopLine } from '@/lib/stop-line';
 import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 interface TerminalPanelHeaderProps {
@@ -20,11 +20,6 @@ interface TerminalPanelHeaderProps {
   onClear: () => void;
   onRemove: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
-}
-
-/** `completed` is a real runtime status but not part of the design vocabulary. It reads as idle. */
-function statusTone(status: AgentStatus['status']): StatusTone {
-  return status === 'completed' ? 'idle' : status;
 }
 
 export default function TerminalPanelHeader({
@@ -51,6 +46,8 @@ export default function TerminalPanelHeader({
   // running claude. Frame: `Agent error · reason`.
   const isLive = agent.cliRunning === true;
   const reason = errorReason(agent);
+  // Who stopped it, when and why. Frame: `Agent stopped · who and why`.
+  const stop = stopLine(agent);
 
   const showDragHandle = tabType === 'custom';
   // Neither kind of tab deletes anything from here any more. A custom tab
@@ -108,6 +105,14 @@ export default function TerminalPanelHeader({
         <span className="flex-1 min-w-0 text-[11px] text-status-error truncate" title={reason}>
           {reason}
         </span>
+      ) : stop ? (
+        // Stopped, who did it, when and why, in the same place and the same
+        // way, in the secondary ink: a stop is not a failure. In a narrow
+        // panel it gets no room at all, and the word keeps the sentence in
+        // its title. Frame: `Agent stopped · who and why`.
+        <span className="flex-1 min-w-0 text-[11px] text-text-secondary truncate" title={stop}>
+          {stop}
+        </span>
       ) : branch && (
         <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[120px] shrink-[3]">
           {branch}
@@ -121,7 +126,7 @@ export default function TerminalPanelHeader({
         </span>
       )}
 
-      {!reason && (
+      {!reason && !stop && (
         <>
           {/* Permission mode indicator */}
           {(agent.permissionMode === 'auto' || (!agent.permissionMode && agent.skipPermissions)) && (
@@ -156,8 +161,8 @@ export default function TerminalPanelHeader({
           plain words. The provider was only ever implied by the model string,
           so an agent left on its provider default showed nothing at all and
           you could not tell what would launch. */}
-      <span className={`text-[10px] font-mono shrink-0 ${STATUS_COLORS[agent.status].text}`}>
-        {statusTone(agent.status)}
+      <span className={`text-[10px] font-mono shrink-0 ${STATUS_COLORS[agent.status].text}`} title={stop ?? undefined}>
+        {statusWord(agent.status)}
       </span>
       {/* It gives way first, then the branch, so the name keeps its width
           in a narrow panel: the mark and the status word took the room. */}
