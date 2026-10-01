@@ -308,7 +308,7 @@ export default function UsagePage() {
 
       {/* Budget & limits: each provider gets the limit it actually has. Month
           to date and live, whatever the timeframe, and the panel says so. */}
-      <BudgetAndLimits rateLimits={data?.rateLimits} providerSpend={providerSpend} />
+      <BudgetAndLimits rateLimits={data?.rateLimits} accounts={data?.accountRateLimits} providerSpend={providerSpend} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         {/* Usage by Provider, over the timeframe. Two sources, because no

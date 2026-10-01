@@ -579,7 +579,7 @@ For the Usage page the file is a label on part of the transcripts' spend, never 
 - **Cost**: `costByModel` from the transcripts, plus the ledger's `daily` rows of every provider but `claude`. Nothing from `token-stats.json`: its over-quota spend is printed under the total as a part of it (`of which ~$X over quota`), summed over the window's days.
 - **Tokens**: in is input, cache reads and cache writes, out is output, for the tiles, the provider rows, the tokens chart and its card.
 - **Messages**: replies, which only the transcripts count.
-- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so.
+- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so. With two Claude accounts or more on, Claude's rows are each account's 5 h and weekly windows (`accountRateLimits`), in Settings' order, under `Claude · <name>`: a window null on an account that has reported says reset over an empty bar, and an account that has reported nothing yet has no rows. With the option off or a single account, they stay account 1's (`rateLimits`). Frame `Usage · limits per account`.
 - **Where the records start**: the earliest transcript day or the ledger's `oldest`, whichever comes first. When the window starts before it, the header prints `records start <date>` beside the timeframe.
 
 A day of the legacy `stats-cache.json` shape, which the main process returns only when there is no transcript at all, carries no price and no cache, and adds nothing to these figures.
