@@ -11,7 +11,10 @@ import type {
   HistoryEntry,
   ClaudeMessage,
 } from '@/lib/claude-code';
+import type { ElectronAPI } from '@/types/electron';
 import { isElectron } from './useElectron';
+
+type AccountCounters = NonNullable<Awaited<ReturnType<ElectronAPI['claude']['getData']>>>['accountRateLimits'];
 
 interface RateLimits {
   five_hour?: { used_percentage: number; resets_at: number };
@@ -59,6 +62,8 @@ interface ClaudeData {
   history: HistoryEntry[];
   activeSessions: string[];
   rateLimits: RateLimits | null;
+  /** Each Claude account's own 5 h and weekly counters (#277), empty while the accounts option is off. */
+  accountRateLimits: AccountCounters;
   tokenStats: TokenStats | null;
 }
 
@@ -93,6 +98,7 @@ export function useClaude() {
           const rawProjects = (result.projects || []) as ElectronProject[];
           const activeSessions = (result.activeSessions || []) as string[];
           const rateLimits = (result.rateLimits || null) as RateLimits | null;
+          const accountRateLimits = (result.accountRateLimits || []) as AccountCounters;
 
           // Only update if data actually changed to prevent unnecessary re-renders
           setData(prev => {
@@ -111,6 +117,8 @@ export function useClaude() {
               }) &&
               // Check if rateLimits changed
               JSON.stringify(prev.rateLimits) === JSON.stringify(rateLimits) &&
+              // And each account's, which move without anything else moving.
+              JSON.stringify(prev.accountRateLimits) === JSON.stringify(accountRateLimits) &&
               // And the figures themselves. Without this the poll kept the
               // first stats it ever saw for as long as no project or session
               // count moved, so a cost that grew, or a transcript that stopped
@@ -151,6 +159,7 @@ export function useClaude() {
               history: (result.history || []) as HistoryEntry[],
               activeSessions,
               rateLimits,
+              accountRateLimits,
               tokenStats: (result.tokenStats || null) as TokenStats | null,
             };
           });

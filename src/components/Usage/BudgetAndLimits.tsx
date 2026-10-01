@@ -30,6 +30,18 @@ export interface BudgetRow {
   percent: number | null;
 }
 
+/** One Claude account's counters, as `claude:getData` hands them (#277). */
+export interface AccountWindows {
+  accountId: string;
+  label: string;
+  fiveHour: { usedPercentage: number; resetsAt: number } | null;
+  sevenDay: { usedPercentage: number; resetsAt: number } | null;
+  updatedAt: number | null;
+}
+
+/** Two accounts or more: Claude's rows are theirs. With the option off, or one account, they stay account 1's. */
+const perAccount = (accounts?: AccountWindows[]) => (accounts?.length ?? 0) >= 2;
+
 function humanReset(resetsAt?: number): string {
   if (!resetsAt) return '';
   const seconds = resetsAt - Date.now() / 1000;
@@ -46,6 +58,8 @@ function humanReset(resetsAt?: number): string {
 
 export function buildBudgetRows(opts: {
   rateLimits?: { five_hour?: RateWindow; seven_day?: RateWindow } | null;
+  /** Each Claude account in use, in the order of Settings (#277). */
+  accounts?: AccountWindows[];
   providerSpend: { provider: string; costUSD: number }[];
   budgets: Record<string, number>;
   installed: Record<string, boolean>;
@@ -54,8 +68,8 @@ export function buildBudgetRows(opts: {
   const labelFor = (id: string) => PROVIDER_REGISTRY.find(p => p.id === id)?.label ?? id;
 
   for (const [key, window] of [
-    ['5h window', opts.rateLimits?.five_hour],
-    ['7d window', opts.rateLimits?.seven_day],
+    ['5h window', perAccount(opts.accounts) ? undefined : opts.rateLimits?.five_hour],
+    ['7d window', perAccount(opts.accounts) ? undefined : opts.rateLimits?.seven_day],
   ] as const) {
     if (!window) continue;
     const pct = Math.round(window.used_percentage);
@@ -67,6 +81,7 @@ export function buildBudgetRows(opts: {
       percent: pct,
     });
   }
+  if (perAccount(opts.accounts)) rows.push(...accountRows(opts.accounts!));
 
   for (const spend of opts.providerSpend) {
     const id = spend.provider;
@@ -94,6 +109,29 @@ export function buildBudgetRows(opts: {
   }
 
   return rows;
+}
+
+/**
+ * Each account's 5 h and weekly rows, in the order of Settings, under Claude
+ * and the account's name. A window null on an account that has reported is
+ * past its reset (#277 leaves it out): it says reset over an empty bar. An
+ * account that has reported nothing yet has no rows, as Claude has none
+ * before its first status line. Frame: `Usage · limits per account`.
+ */
+function accountRows(accounts: AccountWindows[]): BudgetRow[] {
+  return accounts.flatMap(account => (account.updatedAt === null ? [] : ([
+    ['5h window', account.fiveHour],
+    ['7d window', account.sevenDay],
+  ] as const).map(([key, window]): BudgetRow => {
+    const pct = window ? Math.round(window.usedPercentage) : 0;
+    return {
+      providerId: 'claude',
+      label: `Claude · ${account.label}`,
+      kind: 'subscription',
+      detail: window ? [key, `${pct}% used`, humanReset(window.resetsAt)].filter(Boolean).join(' · ') : `${key} · reset`,
+      percent: pct,
+    };
+  })));
 }
 
 /**
@@ -160,9 +198,11 @@ function BudgetField({
 
 export function BudgetAndLimits({
   rateLimits,
+  accounts,
   providerSpend,
 }: {
   rateLimits?: { five_hour?: RateWindow; seven_day?: RateWindow } | null;
+  accounts?: AccountWindows[];
   providerSpend: { provider: string; costUSD: number }[];
 }) {
   const [budgets, setBudgets] = useState<Record<string, number>>({});
@@ -195,8 +235,8 @@ export function BudgetAndLimits({
   }, []);
 
   const rows = useMemo(
-    () => buildBudgetRows({ rateLimits, providerSpend, budgets, installed }),
-    [rateLimits, providerSpend, budgets, installed],
+    () => buildBudgetRows({ rateLimits, accounts, providerSpend, budgets, installed }),
+    [rateLimits, accounts, providerSpend, budgets, installed],
   );
 
   if (rows.length === 0) {
