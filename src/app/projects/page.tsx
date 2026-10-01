@@ -10,7 +10,7 @@ import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
-import { STATUS_COLORS, statusTone } from '@/app/agents/constants';
+import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
 // browser - same reason Dashboard loads TerminalsView this way.
@@ -661,7 +661,9 @@ export default function ProjectsPage() {
                     <div className="space-y-2">
                       {projectAgents.map((agent) => {
                         const tone = statusTone(agent.status);
-                        const isIdle = agent.status === 'idle' || agent.status === 'completed';
+                        // A stopped agent is at rest too, and is started again from here.
+                        // Frame: `Agent stopped · who and why`.
+                        const atRest = agent.status === 'idle' || agent.status === 'completed' || agent.status === 'stopped';
 
                         return (
                           <div
@@ -675,11 +677,11 @@ export default function ProjectsPage() {
                                   {agent.name || `Agent ${agent.id.slice(0, 6)}`}
                                 </span>
                                 <span className={`text-[11px] font-mono shrink-0 ${STATUS_COLORS[agent.status].text}`}>
-                                  {tone}
+                                  {statusWord(agent.status)}
                                 </span>
                               </div>
 
-                              {isIdle && (
+                              {atRest && (
                                 <div className="flex items-center gap-2 shrink-0">
                                   <Button
                                     size="sm"

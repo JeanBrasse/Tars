@@ -214,7 +214,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
           const agent = await window.electronAPI.agent.get(agentId);
 
           const hasPty = agent?.ptyId;
-          const isInactive = agent?.status === 'idle' || agent?.status === 'completed' || agent?.status === 'error';
+          const isInactive = agent?.status === 'idle' || agent?.status === 'completed' || agent?.status === 'error' || agent?.status === 'stopped';
 
           if (isInactive && !hasPty) {
             // Truly stopped agents (no PTY): show status placeholder.

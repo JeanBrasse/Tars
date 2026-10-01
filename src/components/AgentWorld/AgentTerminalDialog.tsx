@@ -6,6 +6,7 @@ import { BrandSpinner, DialogShell, SegmentedControl } from '@/components/ui';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import { stopLine } from '@/lib/stop-line';
 import 'xterm/css/xterm.css';
 
 import type { AgentTerminalDialogProps, PanelType } from './AgentDialogTypes';
@@ -205,6 +206,10 @@ export default function AgentTerminalDialog({
 
   if (!open || !agent) return null;
 
+  // Who stopped it, when and why, in the path's place on the second row.
+  // Frame: `Agent stopped · who and why`.
+  const stop = stopLine(agent);
+
   return (
     <DialogShell
       onClose={onClose}
@@ -229,7 +234,11 @@ export default function AgentTerminalDialog({
             terminal is scrolling on the right, the rail's tabs above the rail. */}
         <div className="h-9 shrink-0 flex items-stretch border-b border-border bg-card">
           <div className="flex-1 min-w-0 flex items-center justify-between gap-3 px-4">
-            <span className="font-mono text-[11px] text-muted-foreground truncate">{projectPath}</span>
+            {stop ? (
+              <span className="text-[11px] text-text-secondary truncate" title={stop}>{stop}</span>
+            ) : (
+              <span className="font-mono text-[11px] text-muted-foreground truncate">{projectPath}</span>
+            )}
             <span className="font-mono text-[11px] text-muted-foreground shrink-0">
               {isAtBottom ? 'scroll locked' : 'scrolled up'}
             </span>

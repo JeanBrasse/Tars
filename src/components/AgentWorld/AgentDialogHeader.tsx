@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { AgentMark, Button } from '@/components/ui';
-import type { StatusTone } from '@/components/ui';
-import { STATUS_COLORS } from '@/app/agents/constants';
+import { STATUS_COLORS, statusWord } from '@/app/agents/constants';
+import { stopLine } from '@/lib/stop-line';
 
 interface AgentDialogHeaderProps {
   agent: AgentStatus;
@@ -20,15 +20,6 @@ interface AgentDialogHeaderProps {
   onOpenInFinder?: () => void;
   onToggleFullscreen?: () => void;
 }
-
-/** `completed` and `waiting` are agent-side words; the mark only knows four tones. */
-const TONE: Record<AgentStatus['status'], StatusTone> = {
-  running: 'running',
-  waiting: 'waiting',
-  error: 'error',
-  idle: 'idle',
-  completed: 'idle',
-};
 
 export const AgentDialogHeader = memo(function AgentDialogHeader({
   agent,
@@ -48,6 +39,10 @@ export const AgentDialogHeader = memo(function AgentDialogHeader({
     agent.branchName,
     agent.effort,
   ].filter(Boolean).join(' · ');
+  // Who stopped it, when and why, as the word's title. A second stop would be
+  // filed under you and replace them, so there is none to offer. Frame:
+  // `Agent stopped · who and why`.
+  const stop = stopLine(agent);
 
   return (
     <div className="h-12 px-4 border-b border-border bg-card flex items-center justify-between gap-4">
@@ -60,16 +55,16 @@ export const AgentDialogHeader = memo(function AgentDialogHeader({
       <div className="flex items-center gap-1 shrink-0">
         {/* The status as a word, in its colour, where the frame puts it:
             first of the row's actions. */}
-        <span className={`font-mono text-[11px] mr-1.5 ${STATUS_COLORS[agent.status].text}`}>
-          {TONE[agent.status]}
+        <span className={`font-mono text-[11px] mr-1.5 ${STATUS_COLORS[agent.status].text}`} title={stop ?? undefined}>
+          {statusWord(agent.status)}
         </span>
         <Button
           variant="ghost"
           size="sm"
           className="font-mono font-normal"
           onClick={onStop}
-          disabled={!onStop}
-          title={onStop ? undefined : 'Not wired yet'}
+          disabled={!onStop || !!stop}
+          title={!onStop ? 'Not wired yet' : stop ? 'Already stopped' : undefined}
         >
           stop
         </Button>
