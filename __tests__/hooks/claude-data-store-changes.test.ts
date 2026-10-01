@@ -27,6 +27,10 @@ vi.mock('react', async (importOriginal) => ({
  *    the project's lastAccessed nor the sessions' times (the Audit's re-gate
  *    of this PR; on main, reopening the Projects page showed it); and an active
  *    session swapped for another at the same count is missed the same way.
+ * 12. a time with a fraction, as APFS gives one (a file's mtimeMs read
+ *    1790820026452.6458 on this disk), compared raw with the whole
+ *    milliseconds a Date keeps, never matches: every idle poll hands the pages
+ *    a new object again, which is 10 back (the Audit's second re-gate).
  */
 
 type Api = { claude: { getData: ReturnType<typeof vi.fn> } };
@@ -188,5 +192,42 @@ describe('a project continued in a session it already had (11)', () => {
     await settle();
     expect(getData()).toHaveBeenCalledTimes(2);
     expect(p.result.data).toBe(before);
+  });
+});
+
+describe('times with a fraction, as APFS gives them (12)', () => {
+  // Above and below a half, so rounding where a Date truncates shows too.
+  const F1 = T1 + 0.6458;
+  const F2 = T2 + 0.2917;
+
+  it('hands back the same data when an idle poll finds the same fractional times', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1, F2)] }));
+    const p = page();
+    await settle();
+    const before = p.result.data;
+    vi.advanceTimersByTime(10_000);
+    await settle();
+    expect(getData()).toHaveBeenCalledTimes(2);
+    expect(p.result.data).toBe(before);
+  });
+
+  it('still shows a project\'s date that alone moved by a whole millisecond', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1, F1)] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1, F1 + 1)] }));
+    await p.result.refresh();
+    await settle();
+    expect(p.result.data?.projects[0].lastActivity.getTime()).toBe(T1 + 1);
+  });
+
+  it('still shows a session\'s time that alone moved by a whole millisecond', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1, F2)] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => payload('same', { projects: [project(F1 + 1, F2)] }));
+    await p.result.refresh();
+    await settle();
+    expect(p.result.data?.projects[0].sessions[0].lastActivity.getTime()).toBe(T1 + 1);
   });
 });
