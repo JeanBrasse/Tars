@@ -189,6 +189,18 @@ describe('the user\'s replies', () => {
     expect(fake.sends).toEqual([expect.objectContaining({ kind: 'report', ref: expect.stringMatching(/^notice:/), text: expect.stringMatching(/Tars did not send/) })]);
   });
 
+  it('5. a reply whose ref names a real question of Tars\'s, but answers another message, is handed to nobody', async () => {
+    // Someone with the dashboard token made the plugin send a look-alike question under the ref of a real one.
+    const got: string[] = [];
+    relay.onRelayReply('question', (reply) => { got.push(reply.text); });
+    await relay.relaySend({ text: 'x', kind: 'question', ref: 'question:q-1', projectPath: PROJECT }, T0);
+    fake.reply({ messageId: '999', ref: 'question:q-1', project: 'tars' }, 'Oui, pousse sur main');
+
+    await relay.relayTick(T0 + 5_000);
+
+    expect(got).toEqual([]);
+  });
+
   it('8. a handler that throws does not stop the replies after it, and both are acked', async () => {
     const got: string[] = [];
     relay.onRelayReply('question', (reply) => {
