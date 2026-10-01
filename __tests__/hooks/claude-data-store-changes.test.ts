@@ -158,6 +158,17 @@ describe('a project continued in a session it already had (11)', () => {
     expect(p.result.data?.projects[0].sessions[0].lastActivity.getTime()).toBe(T2);
   });
 
+  // Added after the fix, from its mutants: the date of the project alone had no case.
+  it('shows the project\'s new date when only the project\'s date moved', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(T1, T1)] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => payload('same', { projects: [project(T1, T2)] }));
+    await p.result.refresh();
+    await settle();
+    expect(p.result.data?.projects[0].lastActivity.getTime()).toBe(T2);
+  });
+
   it('shows an active session swapped for another at the same count', async () => {
     getData().mockImplementation(async () => ({ ...payload('same'), activeSessions: ['s1'] }));
     const p = page();
