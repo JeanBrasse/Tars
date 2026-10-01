@@ -1947,7 +1947,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   });
 
   ipcMain.handle('logs:tail', async (_event, { agentId, lines }: { agentId: string; lines?: number }) => {
-    return agentTail(agentId, lines) ?? { lines: [], agentName: '' };
+    return (await agentTail(agentId, lines)) ?? { lines: [], agentName: '' };
   });
 
   ipcMain.handle('logs:fleet', async () => ({ agents: fleetSummary() }));
