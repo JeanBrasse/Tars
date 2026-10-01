@@ -22,6 +22,8 @@ import * as fs from 'node:fs';
  * 5. The killed session is not a tombstone: its hooks bring the agent back.
  * 6. The stop is announced before it is recorded, or not at all.
  * 7. An agent with no terminal (a delegated run only) is not stopped.
+ * 8. A pid that is not a child of Tars (a process that took the number
+ *    since, or a stand-in a test gave as 4242) is SIGKILLed with its tree.
  *
  * Each "terminal" here is a real process group where node-pty's shell would
  * be: a bash leader that relays SIGHUP to its job, a job that ignores SIGHUP
@@ -142,6 +144,24 @@ describe('stopping an agent', () => {
     agentStatusEmitter.off('status:a1', heard);
 
     expect(seen).toEqual(['saved:stopped:Tars', 'emitted:stopped', 'announced:stopped']);
+  });
+
+  it('8. never SIGKILLs a process that is not a child of Tars, whatever pid the terminal names', async () => {
+    // A sleep leading a group of its own, whose parent exits at once:
+    // reparented to launchd, nobody's child here, as a process that took a
+    // terminal's old pid would be.
+    const stranger = Number(execFileSync('/bin/bash', ['-c',
+      `perl -e 'setpgrp(0, 0); $SIG{HUP} = "IGNORE"; $SIG{TERM} = "IGNORE"; exec "sleep", "300"' >/dev/null 2>&1 & echo $!`,
+    ]).toString().trim());
+    leftovers.push(stranger);
+    expect(alive(stranger)).toBe(true);
+    const pty = { pid: stranger, kill: () => {}, onExit: () => ({ dispose() {} }) } as unknown as IPty;
+    ptyProcesses.set('pty-x', pty);
+
+    await stopAgent(runningAgent('pty-x'), { by: 'you' }, { save: vi.fn(), announce: vi.fn() });
+    await new Promise(r => setTimeout(r, 2_000));
+
+    expect(alive(stranger), 'a process Tars did not start was killed').toBe(true);
   });
 
   it('7. stops an agent that has no terminal, only a delegated run', async () => {

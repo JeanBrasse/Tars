@@ -139,10 +139,10 @@ describe('POST /api/agents/:id/stop', () => {
     agent('orch', { status: 'idle' });
     const w1 = agent('w1');
 
-    await call('POST', '/api/agents/w1/stop', { body: { reason: `  stuck\nin a loop‮\u0007 ${'x'.repeat(900)}` }, caller: 'orch' });
+    await call('POST', '/api/agents/w1/stop', { body: { reason: `  stuck\nin a loop\u202E\u0007 ${'x'.repeat(900)}` }, caller: 'orch' });
 
     expect(w1.stopReason!.startsWith('stuck in a loop')).toBe(true);
-    expect(w1.stopReason).not.toMatch(/[\u0000-\u001f\u007f‪-‮⁦-⁩]/);
+    expect(w1.stopReason).not.toMatch(/[\u0000-\u001f\u007f\u202A-\u202E\u2066-\u2069]/);
     expect(w1.stopReason!.length).toBeLessThanOrEqual(200);
   });
 });
