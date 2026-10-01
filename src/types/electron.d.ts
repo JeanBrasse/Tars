@@ -356,6 +356,10 @@ export interface AgentStatus {
    *  the fleet's first (getSuperAgent with no project). A project has one at
    *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
+  /** The Claude account this agent's CLI was last launched on. Absent: account 1. */
+  claudeAccountId?: ClaudeAccountId;
+  /** The account the agent is held to. Absent: chosen automatically. */
+  claudeAccountPin?: ClaudeAccountId;
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
   /** Set by agent:list: the model the agent's last session answered on, read
@@ -816,6 +820,81 @@ export interface BusRoomSnapshot {
   deliveries: BusDelivery[];
 }
 
+/**
+ * Several Claude subscriptions. Mirror of the types at the end of
+ * electron/types/index.ts (DESIGN-COMPTES-CLAUDE.md, B6). An account is a
+ * Claude Code configuration directory signed in by Claude Code itself; Tars
+ * never sees a credential.
+ */
+/** 'default' is ~/.claude. Others: 'acct-' and six hex digits. */
+export type ClaudeAccountId = string;
+
+export interface ClaudeAccount {
+  id: ClaudeAccountId;
+  /** 1 to 40 characters. */
+  label: string;
+  /** ~/.claude-accounts/<id>, derived from the id; null for 'default'. */
+  configDir: string | null;
+  enabled: boolean;
+}
+
+export interface ClaudeAccountsSettings {
+  /** The option, off by default. */
+  enabled: boolean;
+  /** In order of preference; 'default' always there; 5 at most. */
+  accounts: ClaudeAccount[];
+  /** Whole percent, 50 to 100. Defaults 90 and 95. */
+  fiveHourThreshold: number;
+  weeklyThreshold: number;
+}
+
+export interface ClaudeAccountWindow {
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
+}
+
+export interface ClaudeAccountState extends ClaudeAccount {
+  /** From `claude auth status`; null until it has answered. */
+  signedIn: boolean | null;
+  email: string | null;
+  subscriptionType: string | null;
+  /** From a status line on this account; null when never seen or reset. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of that report. */
+  updatedAt: number | null;
+  /** Epoch seconds: a limit was hit, skipped until then. */
+  blockedUntil: number | null;
+  /** Agents whose CLI runs on it now. */
+  agentIds: string[];
+  /** Why the last sign-in or check did not work, as a sentence. */
+  error: string | null;
+}
+
+export interface ClaudeAccountsView {
+  settings: ClaudeAccountsSettings;
+  accounts: ClaudeAccountState[];
+  /**
+   * Set when ~/.tars-private/claude-accounts.json is there and does not read:
+   * the view shows account 1 alone, and every change is refused until the
+   * file is fixed or removed, so the other accounts are not written over.
+   */
+  registryError: string | null;
+}
+
+/** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
+export interface ClaudeAccountAgentChange {
+  agentId: string;
+  /** The account its CLI was last launched on; null is account 1. */
+  claudeAccountId: ClaudeAccountId | null;
+  /** The account it is held to; null is automatic. */
+  claudeAccountPin: ClaudeAccountId | null;
+}
+
+/** What the claude-accounts channels answer: the result, or a sentence. */
+export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { success: false; error: string };
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -929,6 +1008,37 @@ export interface ElectronAPI {
     onPtyData: (callback: (event: { id: string; data: string }) => void) => () => void;
     onPtyExit: (callback: (event: { id: string; exitCode: number }) => void) => () => void;
     onInstallOutput: (callback: (event: SkillInstallOutputEvent) => void) => () => void;
+  };
+
+  // Several Claude subscriptions (Settings). See ClaudeAccountsView.
+  claudeAccounts?: {
+    /** Answers at once; accounts never checked are asked about behind it, then onChanged. */
+    list: () => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    setEnabled: (enabled: boolean) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    setThresholds: (params: { fiveHour: number; weekly: number }) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Creates the account's folder, signed out. Sign it in with loginStart. */
+    add: (params: { label: string }) => Promise<ClaudeAccountsResult<{ account: ClaudeAccountState }>>;
+    rename: (params: { id: ClaudeAccountId; label: string }) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    setAccountEnabled: (params: { id: ClaudeAccountId; enabled: boolean }) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Every account id once, 'default' included, in the new order. */
+    reorder: (ids: ClaudeAccountId[]) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Signs out through Claude Code, then trashes the folder. Not 'default'. */
+    remove: (id: ClaudeAccountId) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Asks Claude Code again, about one account or all. */
+    refresh: (id?: ClaudeAccountId) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** A terminal running `claude auth login --claudeai` for that account. */
+    loginStart: (params: { id: ClaudeAccountId; cols?: number; rows?: number }) => Promise<ClaudeAccountsResult<{ ptyId: string }>>;
+    loginWrite: (params: { ptyId: string; data: string }) => Promise<ClaudeAccountsResult>;
+    loginResize: (params: { ptyId: string; cols: number; rows: number }) => Promise<ClaudeAccountsResult>;
+    loginKill: (params: { ptyId: string }) => Promise<ClaudeAccountsResult>;
+    onLoginData: (callback: (event: { ptyId: string; data: string }) => void) => () => void;
+    /** The account is checked again after this; onChanged follows. */
+    onLoginExit: (callback: (event: { ptyId: string; exitCode: number }) => void) => () => void;
+    onChanged: (callback: (view: ClaudeAccountsView) => void) => () => void;
+    /** An agent's account or pin changed, from any window or from main. */
+    onAgentChanged: (callback: (event: ClaudeAccountAgentChange) => void) => () => void;
+    /** Holds an agent to an account, or null for automatic. Pushed to every window by onAgentChanged. */
+    setAgentAccount: (params: { agentId: string; accountId: ClaudeAccountId | null }) => Promise<ClaudeAccountsResult>;
   };
 
   // Plugin management (with in-app terminal)
@@ -1678,7 +1788,8 @@ export interface ElectronAPI {
   hermes?: {
     getConnection: () => Promise<{ connection: HermesConnection; baseUrl: string; desktopConfigAvailable: boolean }>;
     saveConnection: (connection: HermesConnection) => Promise<{ success: boolean; error?: string }>;
-    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string }>;
+    /** `tokenNotImported`: the connection came without the token Hermes Desktop keeps encrypted, which Tars cannot read. */
+    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string; tokenNotImported?: boolean }>;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;

@@ -89,6 +89,7 @@ function ctxFor(home: string, env: Record<string, string> = {}, dirs?: string[])
   return {
     home,
     logFile: path.join(root, 'cli-updates.log'),
+    tmpDir: root,
     env: {
       HOME: home,
       PATH: (dirs ?? [path.join(home, '.local', 'bin'), NODE_DIR, '/usr/bin', '/bin', '/usr/sbin', '/sbin']).join(path.delimiter),

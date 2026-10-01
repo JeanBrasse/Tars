@@ -13,12 +13,14 @@ interface AgentDialogSuperAgentSidebarProps {
 
 const STATUS_COLOR: Record<string, string> = {
   running: 'text-primary',
+  waiting: 'text-status-waiting',
   completed: 'text-accent-green',
   error: 'text-accent-red',
 };
 
 const STATUS_BG_COLOR: Record<string, string> = {
   running: 'bg-primary/20',
+  waiting: 'bg-status-waiting/20',
   completed: 'bg-accent-green/20',
   error: 'bg-accent-red/20',
 };
@@ -33,6 +35,9 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
   // this list owes a row, drawn with the orange mark like everywhere else.
   const otherAgents = agents.filter(a => a.id !== agentId);
   const runningAgents = otherAgents.filter(a => a.status === 'running');
+  // Counted in the head and listed nowhere until #161's gate: orchestrators wait
+  // most of the time. Frame: `Agent window · orchestrator rail`.
+  const waitingAgents = otherAgents.filter(a => a.status === 'waiting');
   const idleAgents = otherAgents.filter(a => a.status === 'idle' || a.status === 'completed');
   const errorAgents = otherAgents.filter(a => a.status === 'error');
 
@@ -64,6 +69,28 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                         {agent.currentTask?.slice(0, 40) || agent.projectPath.split('/').pop()}
                       </p>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {waitingAgents.length > 0 && (
+            <div>
+              <p className="text-[10px] text-status-waiting mb-1.5 uppercase tracking-wide">
+                Waiting ({waitingAgents.length})
+              </p>
+              <div className="space-y-1">
+                {waitingAgents.map((agent) => (
+                  <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 rounded-none hover:bg-bg-tertiary/50">
+                    <AgentMark name={agent.name || agent.id} orchestrator={isSuperAgent(agent)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-text-secondary truncate">{agent.name}</p>
+                      <p className="text-[10px] text-text-muted truncate">{agent.projectPath.split('/').pop()}</p>
+                    </div>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${STATUS_BG_COLOR.waiting} ${STATUS_COLOR.waiting}`}>
+                      waiting
+                    </span>
                   </div>
                 ))}
               </div>
