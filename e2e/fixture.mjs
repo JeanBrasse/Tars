@@ -474,7 +474,7 @@ const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', '
  * says, so a launch with HOME alone opened ~/Library/Application Support/tars.
  * On a case-insensitive disk that is the installed Tars's own profile, the same
  * inode as .../Tars. Measured on 2026-09-16 while Noah's app was running: a
- * probe launched with HOME alone reported every path under /Users/noah, and
+ * probe launched with HOME alone reported every path under the account's own home, and
  * DevToolsActivePort in that profile was rewritten during an e2e run by the
  * debugging port Playwright opens. Every run until then could read and write
  * that app's local storage, cookies and IndexedDB.
