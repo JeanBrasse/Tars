@@ -164,7 +164,7 @@ export function globalMcpServers(result: { content?: string; error?: string } | 
   if (!result?.content) return undefined;
   try {
     const servers = JSON.parse(result.content)?.mcpServers;
-    return servers && typeof servers === 'object' && !Array.isArray(servers) ? servers : undefined;
+    return servers && typeof servers === 'object' ? servers : undefined;
   } catch {
     return undefined;
   }
