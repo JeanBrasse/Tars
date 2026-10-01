@@ -22,6 +22,9 @@ import * as fs from 'node:fs';
  * 5. The killed session is not a tombstone: its hooks bring the agent back.
  * 6. The stop is announced before it is recorded, or not at all.
  * 7. An agent with no terminal (a delegated run only) is not stopped.
+ * 9. A second stop of an agent already stopped replaces the first one's who
+ *    and why (the Frontend, on #281): the record says who stopped it last,
+ *    not who stopped it.
  * 8. A pid that is not a child of Tars (a process that took the number
  *    since, or a stand-in a test gave as 4242) is SIGKILLed with its tree.
  *
@@ -162,6 +165,21 @@ describe('stopping an agent', () => {
     await new Promise(r => setTimeout(r, 2_000));
 
     expect(alive(stranger), 'a process Tars did not start was killed').toBe(true);
+  });
+
+  it('9. keeps the first stop when an agent already stopped is stopped again, and says so', async () => {
+    const agent = runningAgent();
+    await stopAgent(agent, { by: 'Tars-Orchestrator', reason: 'frozen' }, { save: vi.fn(), announce: vi.fn() });
+    const first = { stoppedBy: agent.stoppedBy, stoppedAt: agent.stoppedAt, stopReason: agent.stopReason };
+    const save = vi.fn();
+    const announce = vi.fn();
+
+    const stoppedNow = await stopAgent(agent, { by: 'Other Agent', reason: 'tidying up' }, { save, announce });
+
+    expect(stoppedNow).toBe(false);
+    expect({ stoppedBy: agent.stoppedBy, stoppedAt: agent.stoppedAt, stopReason: agent.stopReason }).toEqual(first);
+    expect(save).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('7. stops an agent that has no terminal, only a delegated run', async () => {

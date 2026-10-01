@@ -147,6 +147,21 @@ describe('POST /api/agents/:id/stop', () => {
   });
 });
 
+describe('a second stop', () => {
+  it('answers that the agent is already stopped, with the first stop kept', async () => {
+    agent('orch', { name: 'Tars-Orchestrator', status: 'idle' });
+    agent('other', { name: 'Other', status: 'idle' });
+    const w1 = agent('w1');
+    await call('POST', '/api/agents/w1/stop', { body: { reason: 'frozen' }, caller: 'orch' });
+
+    const again = await call('POST', '/api/agents/w1/stop', { body: { reason: 'tidying up' }, caller: 'other' });
+
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ success: true, alreadyStopped: true, stoppedBy: 'Tars-Orchestrator', stopReason: 'frozen' });
+    expect(w1).toMatchObject({ status: 'stopped', stoppedBy: 'Tars-Orchestrator', stopReason: 'frozen' });
+  });
+});
+
 describe('after the stop', () => {
   it('4. /wait comes back at once, saying who stopped it and why', async () => {
     agent('orch', { status: 'idle' });

@@ -383,7 +383,11 @@ const AGENT_TOOLS: Tool[] = [
     },
     failure: "stopping agent",
     async run({ id, reason, allowCrossProject }) {
-      await apiRequest(`/api/agents/${id}/stop`, "POST", allowCrossProject ? { reason, allowCrossProject } : { reason });
+      const answer = (await apiRequest(`/api/agents/${id}/stop`, "POST", allowCrossProject ? { reason, allowCrossProject } : { reason })) as
+        { alreadyStopped?: boolean; stoppedBy?: string; stopReason?: string } | undefined;
+      if (answer?.alreadyStopped) {
+        return text(`Agent ${id} was already stopped by ${answer.stoppedBy || "someone"}${answer.stopReason ? `: ${answer.stopReason}` : ""}. Nothing changed.`);
+      }
       return text(`Stopped agent ${id}: ${reason}`);
     },
   }),

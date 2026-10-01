@@ -1210,8 +1210,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     const by = driver.kind === 'tars' ? 'Tars' : (driver.agent.name || driver.agent.id);
-    await stopAgent(agent, { by, reason }, { save: saveAgents, announce: announceAgent });
-    sendJson({ success: true, ...stopOf(agent) });
+    const stoppedNow = await stopAgent(agent, { by, reason }, { save: saveAgents, announce: announceAgent });
+    sendJson({ success: true, ...(stoppedNow ? {} : { alreadyStopped: true }), ...stopOf(agent) });
   });
 
   // POST /api/agents/:id/message

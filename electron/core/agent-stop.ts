@@ -40,7 +40,10 @@ export async function stopAgent(
   agent: AgentStatus,
   request: StopRequest,
   notify: { save(): void; announce(agent: AgentStatus): void },
-): Promise<void> {
+): Promise<boolean> {
+  // Stopped already: the first stop's who and why stand, and false says so.
+  // A second caller used to replace them (the Frontend, on #281).
+  if (agent.status === 'stopped') return false;
   // Its delegated run too, which has no terminal (the Audit's table, #6).
   await stopAcpRuns(agent.id, 'the agent was stopped');
 
@@ -64,6 +67,7 @@ export async function stopAgent(
   notify.announce(agent);
 
   if (terminal) await endTerminalTree(terminal);
+  return true;
 }
 
 /**

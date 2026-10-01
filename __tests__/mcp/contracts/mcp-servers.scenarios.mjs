@@ -89,6 +89,7 @@ const orchestratorAgent = [
 
   { name: "stop_agent", tool: "stop_agent", args: { id: "a1", reason: "frozen on a file read" }, tars: [ok({ success: true })] },
   { name: "stop_agent, no reason", tool: "stop_agent", args: { id: "a1" } },
+  { name: "stop_agent, already stopped", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [ok({ success: true, alreadyStopped: true, stoppedBy: "Tars-Orchestrator", stopReason: "frozen on a file read" })] },
   { name: "stop_agent, cross-project", tool: "stop_agent", args: { id: "b1", reason: "done", allowCrossProject: true }, tars: [ok({ success: true })] },
   { name: "stop_agent, error", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [fail(404, { error: "Agent not found" })] },
 

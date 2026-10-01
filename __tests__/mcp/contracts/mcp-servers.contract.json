@@ -1725,6 +1725,47 @@
           }
         },
         {
+          "scenario": "stop_agent, already stopped",
+          "call": {
+            "tool": "stop_agent",
+            "arguments": {
+              "id": "a1",
+              "reason": "done"
+            }
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "POST",
+              "path": "/api/agents/a1/stop",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate",
+                "content-length: 17"
+              ],
+              "body": "{\"reason\":\"done\"}"
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Agent a1 was already stopped by Tars-Orchestrator: frozen on a file read. Nothing changed."
+              }
+            ]
+          }
+        },
+        {
           "scenario": "stop_agent, cross-project",
           "call": {
             "tool": "stop_agent",
