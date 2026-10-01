@@ -56,6 +56,9 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [signingIn, setSigningIn] = useState(false);
+  // The last import came without the token Hermes Desktop keeps encrypted. Said
+  // until something answers it: a sign-in, a token typed in, another import.
+  const [tokenNotImported, setTokenNotImported] = useState(false);
   const connDirty = JSON.stringify(conn) !== savedConn;
 
   /**
@@ -91,6 +94,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   function patchConn(patch: Partial<HermesConnection>) {
     setConn(prev => ({ ...prev, ...patch }));
+    if (patch.token || (patch.mode && patch.mode !== conn.mode)) setTokenNotImported(false);
     setGatewayResult(null);
   }
   function patchSsh(patch: Partial<NonNullable<HermesConnection['ssh']>>) {
@@ -103,6 +107,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
     if (r?.success && r.connection) {
       setConn(r.connection);
       setSavedConn(JSON.stringify(r.connection));
+      setTokenNotImported(!!r.tokenNotImported);
       setGatewayResult({ success: true, message: `Imported from Hermes Desktop - ${r.baseUrl}` });
     } else {
       setGatewayResult({ success: false, message: r?.error || 'Import failed' });
@@ -116,6 +121,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (r?.success) {
         setNeedsSignIn(false);
         setSignedIn(true);
+        setTokenNotImported(false);
         setPassword('');
         setGatewayResult({ success: true, message: `Signed in - Hermes ${r.version ?? ''} ${r.gatewayState ?? ''}`.trim() });
       } else {
@@ -253,6 +259,17 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
           </div>
         }
       />
+
+      {/* Frame: row Import · token not imported, the notice of the template
+          import review (JezkD) as a row of its own. */}
+      {tokenNotImported && (
+        <div className="px-4 py-[11px]">
+          <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
+            <StatusSquare tone="waiting" className="mt-[5px]" />
+            <p className="text-xs text-foreground">Token not imported: Hermes Desktop keeps it encrypted. Sign in or paste it.</p>
+          </div>
+        </div>
+      )}
 
       {conn.mode === 'local' && (
         <SettingsRow
