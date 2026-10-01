@@ -462,7 +462,7 @@ The two remote backends are *additionally* registered as HTTP MCP servers direct
 needsPromptInjection(providerConfigDir) === (resolve(configDir) !== resolve(~/.claude))
 ```
 
-Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest({ budgetMs: 3000 })` and prepends the result, wrapped:
+Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest`, which waits for Hermes no longer than every session start does (`HERMES_START_BUDGET_MS`, 1.5 s), and prepends the result, wrapped:
 
 ```
 <project-memory>
@@ -488,7 +488,7 @@ Both are concatenated and returned as `hookSpecificOutput.additionalContext`. Th
 
 ### Digest budget
 
-`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against a 4 s (3 s at spawn time) timeout. A gateway that is down must not delay the agent.
+`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against `HERMES_START_BUDGET_MS`, 1.5 s, for the hook's route and the prompt alike, and no caller may wait longer: under the hook's 3 s curl, so a Hermes that accepts the connection and never answers costs its own memory, never the project's. It was 4 s for the hook's route, and the hook gave up first: the agent started with no memory at all.
 
 ---
 
@@ -620,6 +620,7 @@ Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes
 |---|---|---|---|
 | `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
 | `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
+| `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds ids and names, never a credential and never a folder: an account's folder is `~/.claude-accounts/<id>`, derived from its id. A file that does not parse reads as account 1 alone and is never written over: every change is refused, and Settings says why |
 
 Files Tars writes **outside** its own directory:
 

@@ -41,7 +41,7 @@ test('saving the Git toggle carries that key and nothing else', async () => {
     enabledPlugins: { 'vercel@marketplace': true },
     tui: { theme: 'dark' },
     theme: 'dark',
-    statusLine: { type: 'command', command: '/Users/noah/bin/mine.sh' },
+    statusLine: { type: 'command', command: '/Users/you/bin/mine.sh' },
   };
   fs.writeFileSync(settings, JSON.stringify(before, null, 2));
 
