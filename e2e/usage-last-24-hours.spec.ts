@@ -85,9 +85,9 @@ type Api = { electronAPI: {
   usage: { byProvider(): Promise<{ hourly?: LedgerHour[] }> };
 } };
 
-/** A panel by its caption: the smallest block holding the caption. */
+/** A panel by its caption, which is the panel's own first child (a div itself). */
 const panel = (page: Page, caption: string): Locator =>
-  page.locator('div').filter({ has: page.getByText(caption, { exact: true }) }).filter({ hasNot: page.locator('main') }).last();
+  page.getByText(caption, { exact: true }).locator('xpath=..');
 
 test('the Usage page shows the last 24 hours, hour by hour, from both sources, Claude counted once', async () => {
   test.setTimeout(240_000);
@@ -165,6 +165,9 @@ test('the Usage page shows the last 24 hours, hour by hour, from both sources, C
     expect(ticks[23]).toBe(pad(new Date(last).getHours()));
     await expect(cost.getByText('this hour', { exact: true })).toBeVisible();
     await expect(cost.getByText(startClock, { exact: true })).toBeVisible();
+    // The cost bars grow in after the switch: the picture waits for the tallest.
+    const tallest = () => cost.locator('div.w-full.transition-colors').evaluateAll(els => Math.max(...els.map(el => el.getBoundingClientRect().height)));
+    await expect.poll(tallest, { timeout: 10_000 }).toBeGreaterThan(40);
     await stepShot(page, '01-last-24-hours');
 
     // Every hover card inside its panel, on the tokens chart, whose card is the widest.
@@ -184,6 +187,8 @@ test('the Usage page shows the last 24 hours, hour by hour, from both sources, C
     await page.getByRole('radio', { name: '14 days' }).click();
     await expect(page.getByText('BY PROVIDER · 14 DAYS', { exact: true })).toBeVisible();
     await expect(panel(page, 'BY PROVIDER · 14 DAYS').getByText('OpenRouter', { exact: true })).toBeVisible();
+    // And the hourly bars have made way for fourteen days.
+    await expect(panel(page, 'DAILY COST · 14 DAYS').locator('div.relative.flex-1.min-w-0')).toHaveCount(14);
     await stepShot(page, '02-fourteen-days');
 
     recordValues({ window: { first: new Date(first).toISOString(), last: new Date(last).toISOString() }, total, thisHour, byProvider: Object.fromEntries(byProvider), totalTile, hourTile, rows, ticks, pageErrors: errors });

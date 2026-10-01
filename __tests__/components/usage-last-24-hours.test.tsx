@@ -272,9 +272,17 @@ describe('the Usage page over the last 24 hours', () => {
     const p = await render();
     select(p, 'hourly');
     const t = tiles(p.result);
-    expect(t['THIS HOUR']).toEqual({ value: usd(ref.thisHour), sub: '12:00', subClassName: 'text-muted-foreground' });
+    expect([t['THIS HOUR']?.value, t['THIS HOUR']?.sub]).toEqual([usd(ref.thisHour), '12:00']);
     expect(t['TOTAL COST'].sub).toBe('since 13:00 yesterday');
     expect(captions(p.result)).toEqual(expect.arrayContaining(['BY PROVIDER · 24 HOURS', 'HOURLY COST · 24 HOURS', 'HOURLY TOKENS · 24 HOURS', 'HOURLY MESSAGES · 24 HOURS']));
+  });
+
+  it('says since 00:00 today when the window starts today, at 23:30 (6)', async () => {
+    vi.setSystemTime(new Date(2026, 8, 22, 23, 30, 0));
+    const p = await render();
+    select(p, 'hourly');
+    expect(tiles(p.result)['TOTAL COST'].sub).toBe('since 00:00 today');
+    expect(tiles(p.result)['THIS HOUR'].sub).toBe('23:00');
   });
 
   it('leaves the budget\'s month to date, and the words about days, to the days (7)', async () => {
