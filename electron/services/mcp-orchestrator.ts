@@ -8,7 +8,7 @@ import type { AppSettings } from '../types';
 import { getAllProviders } from '../providers';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
-import { mcpNodeCommand } from '../utils/mcp-node';
+import { mcpNodeCommand, isTransientAppPath } from '../utils/mcp-node';
 import { writeAtomicSync } from '../utils/secret-file';
 import { bundledMcpServersFor, retireTelegramMcp } from './hermes-relay-switch';
 import { DATA_DIR } from '../constants';
@@ -88,6 +88,16 @@ export function getMcpMemoryPath(): string {
  */
 export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<void> {
   try {
+    // Registered from a copy run from its disk image, or translocated by
+    // macOS, every server would name a path inside it, in every CLI's config:
+    // gone at unmount, and each session outside that copy would fail to
+    // connect them until the installed Tars started again. Such a start
+    // leaves the registrations as they are (the Orchestrator's brief after #231).
+    if (isTransientAppPath(process.resourcesPath)) {
+      console.warn('[mcp] Tars runs from a disk image or a translocated copy: the MCP servers are not registered from it');
+      await installBundledSkills();
+      return;
+    }
     // Build the list of MCP servers to register: mcp-telegram not while the
     // relay is on (hermes-relay-switch.ts), which also takes it out below.
     const bundled: Record<string, () => string> = {
@@ -422,6 +432,12 @@ export function setupOrchestratorSetupHandler(): void {
   ipcMain.handle('orchestrator:setup', async () => {
     try {
       const orchestratorPath = getMcpOrchestratorPath();
+      if (isTransientAppPath(process.resourcesPath)) {
+        return {
+          success: false,
+          error: 'Tars is running from its disk image or a temporary copy. Move it to Applications, open it from there, then set up the orchestrator.',
+        };
+      }
 
       // Check if orchestrator exists
       if (!fs.existsSync(orchestratorPath)) {
