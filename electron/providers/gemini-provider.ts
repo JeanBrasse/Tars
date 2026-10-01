@@ -12,6 +12,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
+import { shellQuote } from './cli-provider';
 
 export class GeminiProvider implements CLIProvider {
   readonly id = 'gemini' as const;
@@ -52,8 +53,7 @@ export class GeminiProvider implements CLIProvider {
 
     // Secondary project (Gemini uses --include-directories)
     if (params.secondaryProjectPath) {
-      const escaped = params.secondaryProjectPath.replace(/'/g, "'\\''");
-      command += ` --include-directories '${escaped}'`;
+      command += ` --include-directories ${shellQuote(params.secondaryProjectPath)}`;
     }
 
     // The template's folders: added to what the CLI may reach, with whatever
@@ -61,14 +61,13 @@ export class GeminiProvider implements CLIProvider {
     if (params.obsidianVaultPaths) {
       for (const vp of params.obsidianVaultPaths) {
         if (fs.existsSync(vp)) {
-          const escaped = vp.replace(/'/g, "'\\''");
-          command += ` --include-directories '${escaped}'`;
+          command += ` --include-directories ${shellQuote(vp)}`;
         }
       }
     }
 
     // Include Tars directory
-    command += ` --include-directories '${DATA_DIR}'`;
+    command += ` --include-directories ${shellQuote(DATA_DIR)}`;
 
     // Prompt with skills directive
     let finalPrompt = params.prompt;
@@ -86,7 +85,7 @@ export class GeminiProvider implements CLIProvider {
   }
 
   buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
+    let command = shellQuote(params.binaryPath);
 
     // Gemini has no skip-permissions flag
 
@@ -98,7 +97,7 @@ export class GeminiProvider implements CLIProvider {
       command += ' --debug';
     }
 
-    command += ` --include-directories "${DATA_DIR}"`;
+    command += ` --include-directories ${shellQuote(DATA_DIR)}`;
 
     const escaped = params.prompt.replace(/'/g, "'\\''");
     command += ` -p '${escaped}'`;
@@ -369,25 +368,25 @@ export class GeminiProvider implements CLIProvider {
     return `#!/bin/bash
 
 # Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
+export HOME=${shellQuote(params.homeDir)}
 
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
+if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then
+  source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true
 fi
 
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
+if [ -f ${shellQuote(params.homeDir)}/.bashrc ]; then
+  source ${shellQuote(params.homeDir)}/.bashrc 2>/dev/null || true
+elif [ -f ${shellQuote(params.homeDir)}/.bash_profile ]; then
+  source ${shellQuote(params.homeDir)}/.bash_profile 2>/dev/null || true
+elif [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then
+  source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true
 fi
 
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
-"${params.binaryPath}" --output-format stream-json --debug --include-directories "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
+export PATH=${shellQuote(params.binaryDir)}:"$PATH"
+cd ${shellQuote(params.projectPath)}
+echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
+${shellQuote(params.binaryPath)} --output-format stream-json --debug --include-directories ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
+echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;
   }
 }

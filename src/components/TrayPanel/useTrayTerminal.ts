@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { attachShiftEnterHandler, disposeTerminalSafely, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, keySender, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
 interface UseTrayTerminalProps {
@@ -111,16 +111,20 @@ export function useTrayTerminal({ agentId, container }: UseTrayTerminalProps) {
         } catch { /* ignore */ }
       }, 400);
 
-      attachShiftEnterHandler(term, (data) => {
-        window.electronAPI?.agent?.sendInput({ id: agentIdRef.current, input: data });
-      });
+      // Keys that reach no terminal (an idle agent has none since #164) are
+      // said so in the panel rather than dropped. See keySender.
+      const typeKeys = keySender(term, input => window.electronAPI?.agent?.sendInput
+        ? window.electronAPI.agent.sendInput({ id: agentIdRef.current, input })
+        : Promise.resolve(undefined));
+
+      attachShiftEnterHandler(term, typeKeys);
 
       // The terminal's own replies to queries from the CLI arrive here like a
       // keystroke and must never be forwarded. See stripTerminalReplies.
       term.onData((data) => {
         const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
-        window.electronAPI?.agent?.sendInput({ id: agentIdRef.current, input: cleaned });
+        typeKeys(cleaned);
       });
 
       resizeObserver = new ResizeObserver(() => {

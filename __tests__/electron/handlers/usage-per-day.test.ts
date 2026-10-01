@@ -275,6 +275,6 @@ describe('usage:by-provider, per day', () => {
   it('says there is no first day when nothing was ever recorded', async () => {
     const empty = await call<ByProvider>('usage:by-provider', {});
 
-    expect(empty).toEqual({ providers: [], dailyCost: {}, daily: [], oldest: null });
+    expect(empty).toEqual({ providers: [], dailyCost: {}, daily: [], oldest: null, hourly: [] });
   });
 });
