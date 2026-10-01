@@ -17,6 +17,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * 3. A refusal of Tars's (a question already open, the day's limit, no
  *    Telegram) is not said in Tars's words.
  * 4. It takes a call with no question.
+ * 5. (the relay, 2026-10-01) A question that waits for Hermes is answered as if it had been asked: the agent must be
+ *    told it has not reached the user yet, and goes when Hermes takes it.
+ * 6. (Noah's rule of 2026-10-01) Its description lets a worker think it may ask the user: only a project's
+ *    orchestrator does, through the user's Hermes.
  */
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -73,6 +77,23 @@ describe('ask_user', () => {
     const r = await ask.run({ question: 'Again?' });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toBe('Error asking the user: You already have a question open for the user');
+  });
+
+  it('5. a question that waits for Hermes is not said to be asked', async () => {
+    const ask = await loadAskUser();
+    mockApiRequest.mockResolvedValueOnce({ success: true, id: 'q-2', expiresAt: '2026-10-01T12:00:00.000Z', queued: true, reason: 'Hermes did not answer. The message waits, and goes when Hermes takes it.' });
+    const r = await ask.run({ question: 'Staging or prod?' });
+
+    expect(r.content[0].text).toMatch(/not reached the user yet/);
+    expect(r.content[0].text).toContain('Hermes did not answer.');
+    expect(r.content[0].text).not.toMatch(/^Asked the user/);
+  });
+
+  it('6. says it is a project orchestrator\'s, through the user\'s Hermes', async () => {
+    const ask = await loadAskUser();
+    expect(ask.description).toMatch(/orchestrator/);
+    expect(ask.description).toMatch(/Hermes/);
+    expect(ask.description).toMatch(/worker/);
   });
 
   it('4. needs a question', async () => {
