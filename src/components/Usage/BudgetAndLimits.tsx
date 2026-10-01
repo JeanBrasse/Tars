@@ -30,10 +30,10 @@ export interface BudgetRow {
   percent: number | null;
 }
 
-function humanReset(resetsAt?: number): string {
+/** How long until a window resets, for one that has not yet: a passed one says reset in its row. */
+function humanReset(resetsAt: number | undefined, nowSec: number): string {
   if (!resetsAt) return '';
-  const seconds = resetsAt - Date.now() / 1000;
-  if (seconds <= 0) return 'resetting';
+  const seconds = resetsAt - nowSec;
   // Round to whole minutes first, then carry: rounding the remainder on its
   // own yields "60m" just under the hour, and "1h 60m" just under two.
   const totalMinutes = Math.round(seconds / 60);
@@ -52,18 +52,26 @@ export function buildBudgetRows(opts: {
 }): BudgetRow[] {
   const rows: BudgetRow[] = [];
   const labelFor = (id: string) => PROVIDER_REGISTRY.find(p => p.id === id)?.label ?? id;
+  const nowSec = Date.now() / 1000;
 
   for (const [key, window] of [
     ['5h window', opts.rateLimits?.five_hour],
     ['7d window', opts.rateLimits?.seven_day],
   ] as const) {
     if (!window) continue;
-    const pct = Math.round(window.used_percentage);
+    // Past its reset the window has started again, and the percentage the last
+    // status line recorded is the old window's: it stayed on screen until the
+    // next status line, sometimes for hours with no agent running.
+    // No reset time (absent, or 0) is unknown, as humanReset reads it, not passed.
+    const reset = !!window.resets_at && window.resets_at <= nowSec;
+    const pct = reset ? 0 : Math.round(window.used_percentage);
     rows.push({
       providerId: 'claude',
       label: 'Claude',
       kind: 'subscription',
-      detail: [`${key}`, `${pct}% used`, humanReset(window.resets_at)].filter(Boolean).join(' · '),
+      detail: reset
+        ? `${key} · reset`
+        : [`${key}`, `${pct}% used`, humanReset(window.resets_at, nowSec)].filter(Boolean).join(' · '),
       percent: pct,
     });
   }
