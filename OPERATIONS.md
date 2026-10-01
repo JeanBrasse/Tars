@@ -1779,6 +1779,9 @@ and crash the app. Any other stream error still rethrows.
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.
+They are created and removed with `node scripts/worktree.mjs` (`new`, `remove`, `prune`, `status`):
+a floor of 30 GB free, a cap of 20, `node_modules` as an APFS clone, and a cleanup that runs before
+every `new`. CLAUDE.md, Workflow Rule 6, says how and why (the disk filled on 2026-10-01).
 The real reason a naive `find . -name '*.test.ts' -not -path './node_modules/*'` returns 1432
 files while `vitest` collects 46 (~31×) is nested `node_modules` the top-level exclude misses:
 166 under `landing/` and 140 in each of the seven `mcp-*/` dirs; the two worktree trees add
