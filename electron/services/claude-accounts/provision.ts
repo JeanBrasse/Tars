@@ -191,7 +191,20 @@ function linkShared(configDir: string, claudeDir: string, conflicts: string[]): 
       fs.mkdirSync(claudeDir, { recursive: true });
       fs.writeFileSync(target, '', { flag: 'a', mode: 0o600 });
     }
-    const current = lstatOrNull(link);
+    let current = lstatOrNull(link);
+    // An empty folder where a link should be holds nothing to lose: Claude
+    // Code run in this folder before Tars made projects/ that way, and what
+    // the account then writes there never reaches ~/.claude/projects (the
+    // Audit's gap 5). rmdir removes only an empty folder, so nothing in the
+    // account folder is listed to find out.
+    if (current?.isDirectory()) {
+      try {
+        fs.rmdirSync(link);
+        current = null;
+      } catch {
+        // not empty: left as it is, and reported
+      }
+    }
     if (current) {
       if (!current.isSymbolicLink()) {
         conflicts.push(name);
@@ -261,6 +274,22 @@ export function ensureAccountDir(configDir: string, home: string = os.homedir())
   }
   ensureOwnFolder(root, 'The accounts folder ~/.claude-accounts');
   ensureOwnFolder(configDir, 'This account folder');
+}
+
+/**
+ * Why no agent starts on this account, or null: its projects/ is a folder of
+ * its own holding something, so the transcripts and memory its agents write
+ * would stay out of ~/.claude/projects, where Usage, resume and the Chat read
+ * (the Audit's gap 5, measured: a reply written there never reached the
+ * page). Tars never empties it. Shown in Settings, and the launch starts the
+ * agent on account 1 instead.
+ */
+export function projectsProblem(configDir: string): string | null {
+  const projects = lstatOrNull(path.join(configDir, 'projects'));
+  if (!projects || projects.isSymbolicLink()) return null;
+  return `Its projects folder (${path.join(configDir, 'projects')}) is a folder of its own, not the link to ~/.claude/projects, `
+    + 'so its agents start on account 1: what they wrote there would never reach Usage or be resumed. '
+    + 'Move its contents into ~/.claude/projects and delete it, and Tars links it at the next launch.';
 }
 
 export function provisionAccountDir(configDir: string, home: string = os.homedir(), opts: { projectPath?: string } = {}): ProvisionReport {

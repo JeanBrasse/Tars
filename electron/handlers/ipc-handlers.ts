@@ -19,7 +19,9 @@ import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 
 // Import types
-import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
+import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole, ClaudeAccountCounters } from '../types';
+import { countersForUsagePage } from '../services/claude-accounts/counters';
+import { readAccountsSettings } from '../services/claude-accounts/registry';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { projectFolders } from '../services/project-index';
@@ -1644,6 +1646,15 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         // ignore parse errors
       }
 
+      // Every Claude account's counters, for one pair of bars each: account 1's
+      // status lines alone write rate-limits.json.
+      let accountRateLimits: ClaudeAccountCounters[] = [];
+      try {
+        accountRateLimits = countersForUsagePage(readAccountsSettings());
+      } catch {
+        // an unreadable registry: the page keeps account 1's bars
+      }
+
       // Read accumulated token stats from statusline
       let tokenStats = null;
       try {
@@ -1712,6 +1723,7 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         history,
         activeSessions: [],
         rateLimits,
+        accountRateLimits,
         tokenStats,
       };
     } catch (err) {

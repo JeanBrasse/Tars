@@ -191,6 +191,20 @@ describe('adding and signing in', () => {
     expect(lastChanged().accounts.map(x => x.id)).toEqual(['default', a.id]);
   });
 
+  it("says in Settings why an account whose projects/ is a folder of its own gets no agent (the Audit's gap 5)", async () => {
+    const a = await add('Max two');
+    const projects = path.join(a.configDir!, 'projects');
+    fs.unlinkSync(projects);
+    fs.mkdirSync(path.join(projects, '-work'), { recursive: true });
+    fs.writeFileSync(path.join(projects, '-work', 'kept.jsonl'), 'kept');
+
+    const listed = (await view()).accounts.find(x => x.id === a.id)!;
+
+    expect(listed.error).toMatch(/~\/\.claude\/projects/);
+    expect(listed.error).toMatch(/account 1/);
+    expect((await view()).accounts.find(x => x.id === 'default')!.error).toBeNull();
+  });
+
   it('answers a bad label, or a sixth account, with a sentence', async () => {
     expect(await call('claude-accounts:add', { label: '' })).toMatchObject({ success: false, error: expect.stringMatching(/label/i) });
     for (let i = 2; i <= 5; i++) await add(`Max ${i}`);

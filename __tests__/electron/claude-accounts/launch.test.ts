@@ -15,6 +15,9 @@
  *   the working directory's projects[] entry;
  * - a folder that fails its checks (B2), or a credential that makes every
  *   folder one account (B3): the agent starts on account 1, it is not stopped;
+ * - an agent started on an account whose projects/ is a folder of its own
+ *   holding something (the Audit's gap 5): what it writes would never reach
+ *   Usage or resume. It starts on account 1; an empty one is made the link;
  * - the choice not remembered: agent.claudeAccountId is what the card shows and
  *   what the next relaunch keeps;
  * - several agents launched at once all counted as nowhere (N5): a choice is
@@ -111,6 +114,35 @@ describe('another account', () => {
   it('follows the pin', () => {
     const env = claudeAccountEnvFor(agent({ claudeAccountPin: B }), ctx())!;
     expect(env.accountId).toBe(B);
+  });
+
+  it("starts on account 1 when the account's projects/ is a folder holding transcripts, and leaves them", () => {
+    const dir = path.join(accountsRoot(), A);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'projects', '-work'), { recursive: true, mode: 0o700 });
+    fs.chmodSync(path.dirname(dir), 0o700);
+    fs.chmodSync(dir, 0o700);
+    fs.writeFileSync(path.join(dir, 'projects', '-work', 'kept.jsonl'), 'kept');
+
+    const a = agent({ claudeAccountPin: A });
+    const env = claudeAccountEnvFor(a, ctx())!;
+
+    expect(env.accountId).toBe('default');
+    expect(a.claudeAccountId).toBe('default');
+    expect(fs.readFileSync(path.join(dir, 'projects', '-work', 'kept.jsonl'), 'utf-8')).toBe('kept');
+  });
+
+  it('makes an empty projects/ folder the link, and starts the agent on that account', () => {
+    const dir = path.join(accountsRoot(), A);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'projects'), { recursive: true, mode: 0o700 });
+    fs.chmodSync(path.dirname(dir), 0o700);
+    fs.chmodSync(dir, 0o700);
+
+    const env = claudeAccountEnvFor(agent({ claudeAccountPin: A }), ctx())!;
+
+    expect(env.accountId).toBe(A);
+    expect(fs.readlinkSync(path.join(dir, 'projects'))).toBe(path.join(os.homedir(), '.claude', 'projects'));
   });
 
   it('falls back to account 1 when the folder fails its checks, and leaves the folder as it is', () => {

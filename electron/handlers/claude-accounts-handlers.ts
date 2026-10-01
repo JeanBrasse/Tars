@@ -18,7 +18,7 @@ import {
   setThresholds,
   writeAccountsSettings,
 } from '../services/claude-accounts/registry';
-import { accountDirProblem, claudeCredentialOverrides, ensureAccountDir, provisionAccountDir } from '../services/claude-accounts/provision';
+import { accountDirProblem, claudeCredentialOverrides, ensureAccountDir, projectsProblem, provisionAccountDir } from '../services/claude-accounts/provision';
 import { claudeAuthLogout, claudeAuthStatus, loginCommand } from '../services/claude-accounts/auth';
 import { countersDir, readAccountUsage, usageForView } from '../services/claude-accounts/counters';
 import { blockedUntil, deleteAuth, getAuth, hasAuth, setAuth, type AuthState } from '../services/claude-accounts/state';
@@ -125,7 +125,9 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       agentIds: [...agents.values()]
         .filter(agent => agent.ptyId && (agent.claudeAccountId ?? DEFAULT_ACCOUNT_ID) === account.id)
         .map(agent => agent.id),
-      error: a?.error ?? null,
+      // A sign-in problem first; then a projects/ folder that keeps the
+      // account's usage out of the page, why its agents start on account 1.
+      error: a?.error ?? (account.configDir ? projectsProblem(account.configDir) : null),
     };
   }
 
