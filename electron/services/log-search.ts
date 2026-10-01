@@ -1,5 +1,8 @@
 import { agents } from '../core/agent-manager';
+import { ptyProcesses } from '../core/pty-manager';
+import { terminalText, replayText, panelSizeOf } from '../core/terminal-mirror';
 import { stripAnsi } from '../utils/ansi';
+import type { AgentStatus } from '../types';
 
 /**
  * Searching across the whole fleet.
@@ -7,6 +10,12 @@ import { stripAnsi } from '../utils/ansi';
  * Every agent's output lived only in its own terminal, so answering "which
  * agent hit this error" meant opening 29 terminals and scrolling. This reads
  * the retained buffers in one pass.
+ *
+ * Each agent is read as a terminal shows it, never as its raw stream split on
+ * line breaks: Claude Code draws with cursor moves and carriage returns, and
+ * the stream with its codes stripped read as one run of glued words (Noah,
+ * 2026-10-01). A running agent is read from its terminal's mirror, the screen
+ * it shows now; one that is not, from its kept output replayed headless.
  */
 
 export interface LogLine {
@@ -28,15 +37,46 @@ export interface LogSearchResult {
 
 const MAX_RESULTS = 500;
 
+/** The size a replay is made at when no panel has shown the agent: the size its terminal is spawned at. */
+const REPLAY_SIZE = { cols: 120, rows: 40 };
+
+/**
+ * The last replay of each agent's kept output. Kept output only changes at its
+ * ends (a chunk pushed, the oldest dropped), so it is the same output while
+ * its count and the chunks at both ends are the same strings.
+ */
+const replays = new Map<string, { first?: string; last?: string; count: number; cols: number; rows: number; lines: string[] }>();
+
+function replayed(agent: AgentStatus): string[] | undefined {
+  const output = agent.output;
+  const size = panelSizeOf(agent.id) ?? REPLAY_SIZE;
+  const first = output[0];
+  const last = output[output.length - 1];
+  const kept = replays.get(agent.id);
+  if (kept && kept.count === output.length && kept.first === first && kept.last === last
+    && kept.cols === size.cols && kept.rows === size.rows) {
+    return kept.lines;
+  }
+  const lines = replayText(output, size);
+  if (lines) replays.set(agent.id, { first, last, count: output.length, ...size, lines });
+  return lines;
+}
+
+/** Without xterm-headless: the stream with its codes stripped, as before, rather than nothing. */
+function stripped(agent: AgentStatus): string[] {
+  // Chunks split mid-line, so join before splitting.
+  return stripAnsi(agent.output.join(''))
+    .split('\n')
+    .map(line => line.replace(/\r/g, '').trimEnd())
+    .filter(line => line.trim().length > 0);
+}
+
 function agentLines(agentId: string): { line: string; position: number }[] {
   const agent = agents.get(agentId);
   if (!agent) return [];
-  // Chunks split mid-line, so join before splitting.
-  const text = stripAnsi(agent.output.join(''));
-  return text
-    .split('\n')
-    .map((line, position) => ({ line: line.replace(/\r/g, '').trimEnd(), position }))
-    .filter(entry => entry.line.trim().length > 0);
+  const live = agent.ptyId ? terminalText(ptyProcesses.get(agent.ptyId)) : undefined;
+  const lines = live ?? replayed(agent) ?? stripped(agent);
+  return lines.map((line, position) => ({ line, position }));
 }
 
 /**
