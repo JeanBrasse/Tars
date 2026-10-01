@@ -22,6 +22,7 @@ import { updateSharedJsonSync } from '../utils/shared-file';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
+import { agentStatusOnExit } from './quit-state';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -1054,16 +1055,19 @@ async function initAgentPtyLocked(
 
   ptyProcess.onExit(({ exitCode }) => {
     console.log(`Agent ${agent.id} PTY exited with code ${exitCode}`);
+    ptyProcesses.delete(ptyId);
+    // Ended by the quit: neither the agent's completion nor its error, and
+    // the closing window is not told it was (the Audit's gate of #235).
+    const newStatus = agentStatusOnExit(exitCode);
+    if (!newStatus) return;
     const agentData = agents.get(agent.id);
     // Guard: only mutate if this PTY is still the active one (prevents race on restart/stop)
     if (agentData && agentData.ptyId === ptyId) {
-      const newStatus = exitCode === 0 ? 'completed' : 'error';
       agentData.status = newStatus;
       agentData.lastActivity = new Date().toISOString();
       handleStatusChangeNotificationCallback(agentData, newStatus);
       saveAgentsCallback();
     }
-    ptyProcesses.delete(ptyId);
     broadcastToAllWindows('agent:complete', {
       type: 'complete',
       agentId: agent.id,

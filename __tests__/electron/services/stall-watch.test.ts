@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { stallOf, toolAtWork, cliProcess, parseProcesses, signOfLife, STALL_AFTER_MS, type Proc } from '../../../electron/services/stall-watch';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { stallOf, toolAtWork, cliProcess, parseProcesses, signOfLife, startStallWatch, stopStallWatch, STALL_AFTER_MS, type Proc } from '../../../electron/services/stall-watch';
 
 /**
  * Telling a running agent that is doing nothing from one that is busy
@@ -41,6 +41,7 @@ import { stallOf, toolAtWork, cliProcess, parseProcesses, signOfLife, STALL_AFTE
  *    spares a frozen CLI; with no caffeinate at all (Linux has none) nothing
  *    is ever stalled.
  * 9. ps's elapsed time is misread ([[dd-]hh:]mm:ss).
+ * 10. The quit leaves the watch's timer running (main.ts's quit, after #235).
  */
 
 const NOW = Date.UTC(2026, 9, 1, 4, 0, 0);
@@ -160,3 +161,18 @@ describe("a sign of life (the Audit's gate of #283)", () => {
     expect(stallOf({ ...silent, procs: waiting('S+', 120).slice(0, 3) })).toBe(NOW - 45 * MIN);
   });
 });
+
+describe('the watch itself', () => {
+  afterEach(() => { stopStallWatch(); vi.useRealTimers(); });
+
+  it('10. leaves no timer once stopped, and starts once however often it is started', () => {
+    vi.useFakeTimers();
+    const before = vi.getTimerCount();
+    startStallWatch();
+    startStallWatch();
+    expect(vi.getTimerCount()).toBe(before + 1);
+    stopStallWatch();
+    expect(vi.getTimerCount()).toBe(before);
+  });
+});
+

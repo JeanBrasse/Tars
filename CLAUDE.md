@@ -49,8 +49,8 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 99 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
-| `design/chat-design.pen` | The same 74 frames (the first 73 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
+| `design/tars-redesign.pen` | Pencil source of truth, 101 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
+| `design/chat-design.pen` | 72 of the same frames (71 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), the two panel history frames `tars-redesign.pen` dropped with the history view, plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes, the composer and the room head, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/landing.pen` | The site in `landing/`: its page, its 404, its privacy and terms pages, and the picture link previews show. Forked from `tars-redesign.pen` on 2026-09-23, which no longer carries the landing |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
@@ -89,6 +89,8 @@ CLAUDE_MGR_API_TOKEN  # minted per terminal by spawnAgentPty and per ACP run by 
 ANTHROPIC_BASE_URL    # every alt provider runs the claude binary with these two rewritten
 ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
+CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on; removed for account 1 (~/.claude). Never set otherwise
+TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
 ```
 
 ---
@@ -251,6 +253,46 @@ To see a change in a real packaged build without disturbing your live instance: 
 - No temporary fixes, no `// TODO: proper fix later`, no swallowing an error to make a symptom disappear
 - Every change touches the minimum number of files. If a diff is growing sideways, you are solving the wrong problem
 - New behaviour that another feature depends on is not done until an E2E spec drives the whole chain in the real app (Rule 3), not until a unit test shows a mock was called
+
+### 6. Worktrees through `scripts/worktree.mjs`
+
+> **Noah's rule of 2026-10-01**, after the Mac crashed on a full disk (68 MB free):
+> `.worktrees/` held 46 GB across 59 worktrees, most with a full `npm ci` and a `.next`
+> of their own, and nothing ever removed one.
+
+Every agent creates and removes its worktrees with the tool, from any checkout of the
+repository that has it, never with `git worktree add` or `npm ci` by hand:
+
+```bash
+nvm use 22
+node scripts/worktree.mjs new <name> --branch <branch> --agent <you> --task <PR or task>
+node scripts/worktree.mjs remove <name>        # as soon as its PR is opened and gated, merged, or abandoned
+node scripts/worktree.mjs status               # free space, count, owner, idle days, uncommitted, merged, behind
+node scripts/worktree.mjs prune --dry-run      # what the cleanup would remove, and why it keeps the rest
+```
+
+- **`new`** refuses under 30 GB free and past 20 worktrees (`TARS_WORKTREE_MIN_FREE_GB`,
+  `TARS_WORKTREE_MAX`), counting every worktree of the repository, one `new` at a time
+  (`.worktrees/.lock`). It also refuses while the main checkout is off `main` or has uncommitted
+  changes, then fetches and fast-forwards it, and starts the worktree from that fresh `origin/main`:
+  Tars shows each agent the branch of the folder it works in. Its `node_modules` is an APFS
+  clone of an installed one (9.8 s and about 65 MB of real space for 1.2 GB, measured 01/10),
+  reconciled by `npm install` when the lock differs. Never a symlink: `next dev` refuses one
+- **`remove`** refuses a dirty worktree (commit, or `--save` to keep the work on `wip/<name>`), one
+  any process works in (your own shell excepted, for `remove` only), a locked one, one with a
+  rebase, merge, cherry-pick or bisect in progress, the worktree of one of Tars's own agents
+  (`~/.dorothy/agents.json`), and one holding ignored files other than rebuildable caches
+  (`node_modules`, `.next`, `electron/dist`, `mcp-*/dist`...): move an e2e run directory you named in
+  a PR under `~/Documents` first. Git is never told `--force`. The branch stays, and
+  `.worktrees/.removed.log` records its head
+- **`prune`** runs before every `new`, so the cleanup needs no schedule. Under the same rules it
+  removes a worktree whose PR is merged or closed (an hour after its HEAD last moved), one merged
+  into origin/main (a day after), and one idle for 7 days. `git worktree lock --reason <why>`
+  keeps one out of it
+- Delete your benches and your `.next` when you are done. Whatever must survive (briefs, reports,
+  verdicts, benches worth keeping) goes under `~/Documents/Tars-revue-2026-09-24/`: `/private/tmp`
+  is wiped at every reboot
+- Never delete with a variable or a glob in the path, only a literal absolute one
 
 ---
 

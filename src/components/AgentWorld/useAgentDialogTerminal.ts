@@ -62,6 +62,10 @@ export function useAgentDialogTerminal({
 
       const { Terminal } = await import('xterm');
       const { FitAddon } = await import('xterm-addon-fit');
+      // The window may have closed while xterm loaded, which on a first open or
+      // under next dev takes a while: its element is gone, and opening the
+      // terminal on it threw "Terminal requires a parent element".
+      if (cancelled || !terminalRef.current) return;
 
       const term = new Terminal({
         ...createXtermOptions(),

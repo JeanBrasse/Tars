@@ -17,7 +17,10 @@ import { accountsRoot } from './registry';
  * - Shared through links to ~/.claude: projects/ (the transcripts, and every
  *   agent's memory, which lives in projects/<project>/memory; Usage, the Chat,
  *   resume and the Memory page all read ~/.claude/projects, and `--resume`
- *   from another account finds nothing without it), and the user's own
+ *   from another account finds nothing without it), history.jsonl and
+ *   sessions/ (the stats Tars reads, the Audit's N3; measured on 2.1.283, a
+ *   prompt is appended through the link and a session's file written and
+ *   removed through it, the links staying links), and the user's own
  *   CLAUDE.md, skills, agents, commands, plugins and output styles.
  * - settings.json: a copy of ~/.claude/settings.json, which is the source. It
  *   carries Tars's hooks and status line, so every account reports like
@@ -40,7 +43,7 @@ import { accountsRoot } from './registry';
  * .credentials.json on Linux) is Claude Code's alone.
  */
 
-export const SHARED_ENTRIES = ['projects', 'CLAUDE.md', 'skills', 'agents', 'commands', 'plugins', 'output-styles'] as const;
+export const SHARED_ENTRIES = ['projects', 'history.jsonl', 'sessions', 'CLAUDE.md', 'skills', 'agents', 'commands', 'plugins', 'output-styles'] as const;
 
 /** Keys of ~/.claude.json an account mirrors. */
 const MIRRORED_KEYS = ['mcpServers', 'theme', 'bypassPermissionsModeAccepted'] as const;
@@ -180,10 +183,28 @@ function linkShared(configDir: string, claudeDir: string, conflicts: string[]): 
   for (const name of SHARED_ENTRIES) {
     const target = path.join(claudeDir, name);
     const link = path.join(configDir, name);
-    // projects/ must be shared even before account 1 has run anything, or the
-    // account's first session would create a folder of its own there.
+    // These must be shared even before account 1 has run anything, or the
+    // account's first session would create its own there, and then keep it.
     if (name === 'projects') fs.mkdirSync(target, { recursive: true });
-    const current = lstatOrNull(link);
+    if (name === 'sessions') fs.mkdirSync(target, { recursive: true, mode: 0o700 });
+    if (name === 'history.jsonl' && !lstatOrNull(target)) {
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(target, '', { flag: 'a', mode: 0o600 });
+    }
+    let current = lstatOrNull(link);
+    // An empty folder where a link should be holds nothing to lose: Claude
+    // Code run in this folder before Tars made projects/ that way, and what
+    // the account then writes there never reaches ~/.claude/projects (the
+    // Audit's gap 5). rmdir removes only an empty folder, so nothing in the
+    // account folder is listed to find out.
+    if (current?.isDirectory()) {
+      try {
+        fs.rmdirSync(link);
+        current = null;
+      } catch {
+        // not empty: left as it is, and reported
+      }
+    }
     if (current) {
       if (!current.isSymbolicLink()) {
         conflicts.push(name);
@@ -253,6 +274,22 @@ export function ensureAccountDir(configDir: string, home: string = os.homedir())
   }
   ensureOwnFolder(root, 'The accounts folder ~/.claude-accounts');
   ensureOwnFolder(configDir, 'This account folder');
+}
+
+/**
+ * Why no agent starts on this account, or null: its projects/ is a folder of
+ * its own holding something, so the transcripts and memory its agents write
+ * would stay out of ~/.claude/projects, where Usage, resume and the Chat read
+ * (the Audit's gap 5, measured: a reply written there never reached the
+ * page). Tars never empties it. Shown in Settings, and the launch starts the
+ * agent on account 1 instead.
+ */
+export function projectsProblem(configDir: string): string | null {
+  const projects = lstatOrNull(path.join(configDir, 'projects'));
+  if (!projects || projects.isSymbolicLink()) return null;
+  return `Its projects folder (${path.join(configDir, 'projects')}) is a folder of its own, not the link to ~/.claude/projects, `
+    + 'so its agents start on account 1: what they wrote there would never reach Usage or be resumed. '
+    + 'Move its contents into ~/.claude/projects and delete it, and Tars links it at the next launch.';
 }
 
 export function provisionAccountDir(configDir: string, home: string = os.homedir(), opts: { projectPath?: string } = {}): ProvisionReport {

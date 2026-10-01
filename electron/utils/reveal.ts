@@ -79,5 +79,8 @@ export function quoted(value: unknown): string {
     return chars.length > QUOTE_LIMIT ? `${chars.slice(0, QUOTE_LIMIT).join('')}...` : s;
   };
   if (typeof value === 'string') return `"${cut(oneLine(reveal(value).text))}"`;
-  return cut(JSON.stringify(value) ?? String(value));
+  // What is not a string is written out the same way once JSON.stringify has
+  // written it: that escapes the C0 controls and nothing more, and a U+202E
+  // inside an object or an array reached the refusal as it was.
+  return cut(oneLine(reveal(JSON.stringify(value) ?? String(value)).text));
 }
