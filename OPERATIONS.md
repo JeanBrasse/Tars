@@ -696,7 +696,7 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
-| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session, rewritten at every render; anything that is not one JSON object starts again from `{}` |
+| `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Three files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
 every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
@@ -1664,8 +1664,8 @@ Two independent sources feed the Usage page:
    Codex, Gemini, Grok and the rest. When the agent does not report a cost, the ledger prices
    the turn itself from the catalogue; cache reads default to 10 % of input and cache writes to
    125 % when the catalogue omits them.
-2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, parsed by
-   `electron/services/transcript-usage.ts`. Claude Code only writes
+2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, and `$CLAUDE_CONFIG_DIR/projects`
+   too when Tars has one in its environment, parsed by `electron/services/transcript-usage.ts`. Claude Code only writes
    `~/.claude/stats-cache.json` for some account types; the per-message `usage` block in the
    transcripts is always there. 1 h cache writes are kept apart from 5 m ones because they
    price at 2× base rather than 1.25×.
@@ -1676,9 +1676,17 @@ through `claude:getData` (`stats.dailyModelTokens[i]`, with the day's `costUSD` 
 `oldest` for the first day it still holds). A ledger row whose provider is `claude` is in the
 transcripts too: the Claude ACP adapter runs the claude binary, which writes one.
 
+The last 48 hours come by the hour as well, for a rolling 24 hours: `stats.hourlyModelTokens`
+(the same shape as a day, `hour` being when it starts, in milliseconds since the epoch) and the
+ledger's `hourly`. A rolling day is the hours past now minus 24 hours.
+
 `~/.dorothy/token-stats.json`, which the status line writes, is not a third source. Every
 session in it ran in the claude binary and is in the transcripts already, so its `extraCost`
-says how much of that spend went over quota; it is never added to it.
+says how much of that spend went over quota; it is never added to it. What it does say is who
+ran each session: its `provider`, and its `account` (`TARS_CLAUDE_ACCOUNT`, empty when none). A
+transcript is named after its session, so the transcripts are filed by it: `stats.providerByModel`
+gives the provider a model ran under, where the page used to guess it from the model's name, and
+each day and hour carries `costByAccount`.
 
 Prices come from **models.dev** (`https://models.dev/api.json`, mirror
 `raw.githubusercontent.com/anomalyco/models.dev/dev/models.json`), USD per million tokens,

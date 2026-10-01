@@ -23,6 +23,7 @@ export const CHANGELOG: Release[] = [
       'An agent\'s vault, SocialData, X and Telegram tools no longer wait about half an hour on a host that has stopped answering: they say there was no answer, and after how long, 30 seconds for Tars and 60 for SocialData, X and a Telegram message. A photo, a video or a document sent to Telegram is given the time a slow link, 10 KB/s, takes to carry it, then the same minute, so a large file on a slow connection still arrives whole',
       'An agent that starts while Hermes does not answer (the tunnel up, the server silent) gets its project\'s memory again: Tars waits a second and a half for Hermes\'s memory, where it waited four and the agent then started with no memory at all. Agents that get their memory in their first prompt, like Codex or Gemini, wait for a silent Hermes a second and a half before they start, where they waited three',
       'The Review page lists a renamed file once, under its new name, and shows it as a rename; names with accents as they are; an untracked binary as binary rather than as lines of text; and a file changed in a commit and again since with all its lines. A one-line new file counts one line, and a repository with no commit yet shows its staged files on its own branch',
+      'The Usage page also counts the Claude sessions kept in the folder CLAUDE_CONFIG_DIR names, when Tars itself was started with that variable set (from a terminal; a Tars opened from the Dock does not see it)',
     ],
   },
   {
