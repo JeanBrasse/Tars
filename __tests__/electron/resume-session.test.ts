@@ -25,7 +25,7 @@ import {
  */
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-'));
-const PROJECT = '/Users/noah/tars';
+const PROJECT = '/Users/you/tars';
 const SESSION = '4ab31f00-ce51-4676-ab80-4023cf6e3f4e';
 
 function writeTranscript(projectPath: string, sessionId: string) {
@@ -49,7 +49,7 @@ afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
 describe('finding the transcript', () => {
   it('encodes a project path the way Claude Code does', () => {
     // Both slashes and dots become dashes.
-    expect(encodeProjectDirName('/Users/noah/docs.octav.fi')).toBe('-Users-noah-docs-octav-fi');
+    expect(encodeProjectDirName('/Users/you/docs.octav.fi')).toBe('-Users-you-docs-octav-fi');
   });
 
   it('resumes when the transcript is on disk', () => {
@@ -62,7 +62,7 @@ describe('finding the transcript', () => {
   });
 
   it('looks in the worktree, which is where an agent with one actually ran', () => {
-    const worktree = '/Users/noah/tars/.worktrees/feat-x';
+    const worktree = '/Users/you/tars/.worktrees/feat-x';
     writeTranscript(worktree, SESSION);
     expect(
       resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: PROJECT, worktreePath: worktree }, home),
