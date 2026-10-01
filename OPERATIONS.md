@@ -1646,8 +1646,16 @@ ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 
 ### Fleet-wide log search
 
-The Logs page reads the retained output buffers in the main process (400 chunks per agent, ANSI
-stripped, capped at 500 result lines). It supports plain substring search or `/regex/flags`;
+The Logs page reads a Claude agent from its transcript first (the last 200 messages of its current
+or last session, `❯` what was typed, `⏺` the answer and each tool call, `⎿` a tool's answer): Tars runs
+Claude Code full screen, on the alternate screen, which keeps no history and is discarded at `/exit`, so
+the terminal alone kept only a stopped agent's launch lines. After those, and for every other CLI, it
+reads each agent as its terminal shows it, never as the raw stream split on line
+breaks (Claude Code draws with cursor moves, and that read as one run of glued words): a running
+agent from its terminal's xterm-headless mirror (history and screen, then the alternate screen
+while it is shown), any other from its retained output (400 chunks per agent) replayed into a
+headless terminal of its panel's size, kept until that output changes. Results are capped at 500
+lines. It supports plain substring search or `/regex/flags`;
 a bad regex falls back to a literal search rather than throwing.
 
 These buffers are **memory only**. Only the last 100 chunks per agent survive to
@@ -1779,6 +1787,9 @@ and crash the app. Any other stream error still rethrows.
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.
+They are created and removed with `node scripts/worktree.mjs` (`new`, `remove`, `prune`, `status`):
+a floor of 30 GB free, a cap of 20, `node_modules` as an APFS clone, and a cleanup that runs before
+every `new`. CLAUDE.md, Workflow Rule 6, says how and why (the disk filled on 2026-10-01).
 The real reason a naive `find . -name '*.test.ts' -not -path './node_modules/*'` returns 1432
 files while `vitest` collects 46 (~31×) is nested `node_modules` the top-level exclude misses:
 166 under `landing/` and 140 in each of the seven `mcp-*/` dirs; the two worktree trees add

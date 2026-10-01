@@ -14,7 +14,7 @@ import { redactSecrets } from '../../utils/redact-secrets';
  *   event_id, timestamp, platform, level
  *   release              `tars@<version>`
  *   exception.values[]   at most 5 (an error and its causes):
- *     type, value        the message: home folder as ~, secrets masked, 1000 characters at most
+ *     type, value        the message: home folder as ~, machine name as <host>, secrets masked, 1000 characters at most
  *     mechanism          { type, handled }
  *     stacktrace.frames  the 50 nearest the throw: filename (home as ~), function, lineno, colno, in_app
  *   tags.process         main or renderer
@@ -29,6 +29,8 @@ export interface ReportFacts {
   /** `tars@1.9.1` */
   release: string;
   home: string;
+  /** os.hostname(): masked wherever it appears, never sent. */
+  host: string;
   os: { name: string; version: string };
   electron: string;
 }
@@ -77,21 +79,41 @@ const NAME_START = '(?<![A-Za-z0-9._-])';
 
 /**
  * A path or a message, with this machine taken out: the home folder as ~, in
- * any case and URL-encoded too, the user name alone as <user>, a macOS temp
- * folder as <tmp>, secrets masked. The home folder is rewritten wherever the
- * name ends, not only before `/` or a space: `cwd /Users/x, exit 1` and
- * `/Users/x;` left the whole path (the Audit's gate of #221).
+ * any case and URL-encoded once or twice, the machine's name as <host>, the
+ * user name alone as <user>, a macOS temp folder as <tmp>, secrets masked.
+ * The home folder is rewritten wherever the name ends, not only before `/` or
+ * a space: `cwd /Users/x, exit 1` and `/Users/x;` left the whole path (the
+ * Audit's gate of #221).
  */
-function scrub(value: string, home: string): string {
+type Machine = Pick<ReportFacts, 'home' | 'host'>;
+const MIN_SHORT_HOST = 6;
+
+function scrub(value: string, machine: Machine): string {
+  const { home, host } = machine;
   let out = value.replace(/file:\/\//g, '');
   // The home folder first: it may itself be under a temp folder. /var is
   // /private/var on macOS, so a folder there reaches an error by either name.
+  // The longer name goes first, or /private<home> would read /private~.
   if (home && home !== '/') {
-    const homes = new Set([home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`]);
+    const homes = [home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`]
+      .sort((a, b) => b.length - a.length);
     for (const h of homes) {
-      out = out.replace(new RegExp(`${escape(h)}${NAME_END}`, 'gi'), '~');
-      out = out.replace(new RegExp(`${escape(h.replace(/\//g, '%2F'))}${NAME_END}`, 'gi'), '~');
+      for (const slash of ['/', '%2F', '%252F']) {
+        out = out.replace(new RegExp(`${escape(h.replace(/\//g, slash))}${NAME_END}`, 'gi'), '~');
+      }
     }
+  }
+  // The machine's name often carries its owner's ("MacBook-Pro-de-Noah"),
+  // inside a word the user name rule below does not look into. Its first
+  // label alone is masked only when long enough to be a name: "Mac" of
+  // "Mac.lan" would take the word out of every message.
+  if (host) {
+    const short = host.split('.')[0];
+    for (const name of new Set([host, short.length >= MIN_SHORT_HOST ? short : host])) {
+      if (name.length >= 3) out = out.replace(new RegExp(`${NAME_START}${escape(name)}${NAME_END}`, 'gi'), '<host>');
+    }
+  }
+  if (home && home !== '/') {
     const user = home.split('/').filter(Boolean).pop() ?? '';
     if (user.length >= 3) out = out.replace(new RegExp(`${NAME_START}${escape(user)}${NAME_END}`, 'gi'), '<user>');
   }
@@ -123,27 +145,27 @@ function cut(value: string, limit: number): string {
   return chars.length > limit ? `${chars.slice(0, limit - 3).join('')}...` : value;
 }
 
-function toFrame(raw: unknown, home: string): ReportFrame {
+function toFrame(raw: unknown, machine: Machine): ReportFrame {
   const f = record(raw) ?? {};
   const frame: ReportFrame = {};
   const file = text(f.filename) ?? text(f.abs_path);
-  if (file !== undefined) frame.filename = cut(scrub(file, home), 300);
+  if (file !== undefined) frame.filename = cut(scrub(file, machine), 300);
   const fn = text(f.function);
-  if (fn !== undefined) frame.function = cut(scrub(fn, home), 200);
+  if (fn !== undefined) frame.function = cut(scrub(fn, machine), 200);
   if (count(f.lineno) !== undefined) frame.lineno = count(f.lineno);
   if (count(f.colno) !== undefined) frame.colno = count(f.colno);
   if (typeof f.in_app === 'boolean') frame.in_app = f.in_app;
   return frame;
 }
 
-function toException(raw: unknown, home: string): ReportException | undefined {
+function toException(raw: unknown, machine: Machine): ReportException | undefined {
   const e = record(raw);
   if (!e) return undefined;
   const out: ReportException = {};
   const type = text(e.type);
-  if (type !== undefined) out.type = cut(scrub(type, home), 200);
+  if (type !== undefined) out.type = cut(scrub(type, machine), 200);
   const value = text(e.value);
-  if (value !== undefined) out.value = cut(scrub(quotedWords(value), home), MAX_VALUE);
+  if (value !== undefined) out.value = cut(scrub(quotedWords(value), machine), MAX_VALUE);
   const mechanism = record(e.mechanism);
   if (mechanism && typeof mechanism.type === 'string') {
     out.mechanism = { type: cut(mechanism.type, 100) };
@@ -151,7 +173,7 @@ function toException(raw: unknown, home: string): ReportException | undefined {
   }
   const frames = record(e.stacktrace)?.frames;
   if (Array.isArray(frames) && frames.length > 0) {
-    out.stacktrace = { frames: frames.slice(-MAX_FRAMES).map(frame => toFrame(frame, home)) };
+    out.stacktrace = { frames: frames.slice(-MAX_FRAMES).map(frame => toFrame(frame, machine)) };
   }
   return out.type !== undefined || out.value !== undefined ? out : undefined;
 }
@@ -166,7 +188,7 @@ export function toReport(raw: unknown, facts: ReportFacts): ErrorReport | null {
   const values = record(event.exception)?.values;
   if (!Array.isArray(values)) return null;
   // Sentry lists the causes first and the error thrown last: the last five are kept.
-  const exceptions = values.slice(-MAX_EXCEPTIONS).map(v => toException(v, facts.home)).filter((v): v is ReportException => !!v);
+  const exceptions = values.slice(-MAX_EXCEPTIONS).map(v => toException(v, facts)).filter((v): v is ReportException => !!v);
   if (exceptions.length === 0) return null;
 
   const tags = record(event.tags);
