@@ -8,11 +8,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { readAppSettings } from "../../mcp-shared/src/settings.js";
+import { API_WAIT_MS, noAnswerWithin } from "../../mcp-shared/src/http.js";
 import { registerTools, text, tool } from "../../mcp-shared/src/tools.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as https from "https";
+import type { ClientRequest } from "http";
 
 interface AppSettings {
   telegramBotToken?: string;
@@ -110,16 +112,19 @@ function assertSendablePath(filePath: string): string {
 /**
  * Whether `candidate` is another name for a regular file under `dir`, by
  * device and inode. The app's own guard has the same function
- * (electron/utils/path-identity.ts); this server is built on its own.
+ * (electron/utils/path-identity.ts); this server is built on its own. Read as
+ * BigInt: a Number holds an inode exactly only below 2^53, and a 64-bit file id
+ * past it (NTFS, or a share whose client passes the server's ids through, as
+ * Linux's CIFS does by default) can round to its neighbour's.
  */
 function isHardLinkInto(candidate: string, dir: string): boolean {
-  let file: fs.Stats;
+  let file: fs.BigIntStats;
   try {
-    file = fs.statSync(candidate);
+    file = fs.statSync(candidate, { bigint: true });
   } catch {
     return false;
   }
-  if (!file.isFile() || file.nlink < 2) return false;
+  if (!file.isFile() || file.nlink < BigInt(2)) return false;
   const pending = [dir];
   while (pending.length > 0) {
     const current = pending.pop()!;
@@ -135,7 +140,7 @@ function isHardLinkInto(candidate: string, dir: string): boolean {
         pending.push(full);
       } else if (entry.isFile()) {
         try {
-          const here = fs.lstatSync(full);
+          const here = fs.lstatSync(full, { bigint: true });
           if (here.dev === file.dev && here.ino === file.ino) return true;
         } catch {
           // Gone since it was listed.
@@ -182,7 +187,7 @@ async function telegramApiRequest(
       url.searchParams.append(key, String(value));
     });
 
-    https
+    const request: ClientRequest = https
       .get(url, (res) => {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
@@ -199,8 +204,22 @@ async function telegramApiRequest(
           }
         });
       })
-      .on("error", reject);
+      .on("error", reject)
+      // A silent Telegram is said as such, where the call waited for Claude Code to give up on it.
+      .setTimeout(API_WAIT_MS, () => request.destroy(new Error(noAnswerWithin(API_WAIT_MS))));
   });
+}
+
+/**
+ * The slowest link a file still reaches Telegram over: a poor mobile link,
+ * half the 20 KB/s QA measured. Telegram's largest upload, 50 MB, is then
+ * given about an hour and a half.
+ */
+const UPLOAD_FLOOR_BYTES_PER_S = 10_000;
+
+/** How long a request carrying `bytes` to Telegram may take in all: the bytes at the floor rate, then the minute any answer gets. */
+function uploadDeadlineMs(bytes: number): number {
+  return API_WAIT_MS + Math.ceil(bytes / UPLOAD_FLOOR_BYTES_PER_S) * 1000;
 }
 
 // Send file via multipart form data
@@ -271,6 +290,15 @@ async function sendFile(
     });
 
     req.on("error", reject);
+    // No timer of silence on a file: Node hands the body to the kernel's send
+    // buffer (up to 4 MB on macOS) and sees nothing while a slow link drains
+    // it, so a minute of silence ran from the last byte handed over and cut
+    // uploads Telegram was still reading (QA's gate of #227: 3 MB read at
+    // 20 KB/s, cut at 116 s with 2.31 MB received). A deadline for the whole
+    // request instead, which grows with the file.
+    const deadline = uploadDeadlineMs(fullBody.length);
+    const timer = setTimeout(() => req.destroy(new Error(noAnswerWithin(deadline))), deadline);
+    req.on("close", () => clearTimeout(timer));
     req.write(fullBody);
     req.end();
   });

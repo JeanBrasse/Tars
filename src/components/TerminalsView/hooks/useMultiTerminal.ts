@@ -7,7 +7,7 @@ import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
-import { attachShiftEnterHandler, disposeTerminalSafely, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
+import { attachShiftEnterHandler, disposeTerminalSafely, keySender, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 
 interface TerminalEntry {
   terminal: Terminal;
@@ -17,6 +17,8 @@ interface TerminalEntry {
   disposed: boolean;
   lastCols: number;
   lastRows: number;
+  /** Sends typed keys to the agent's terminal, and says so in the panel when there is none. */
+  typeKeys: (input: string) => void;
 }
 
 interface UseMultiTerminalOptions {
@@ -193,6 +195,11 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         disposed: false,
         lastCols: 0,
         lastRows: 0,
+        // An idle agent has no terminal since #164: keys typed into its panel
+        // are said to go nowhere instead of being dropped. See keySender.
+        typeKeys: keySender(term, input => (isElectron()
+          ? window.electronAPI!.agent.sendInput({ id: agentId, input })
+          : Promise.resolve(undefined))),
       };
 
       terminalsRef.current.set(agentId, entry);
@@ -229,13 +236,12 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       const sendOrBroadcast = (input: string) => {
         if (!isElectron()) return;
         if (broadcastModeRef.current) {
-          // Broadcast to all terminals
-          const promises = Array.from(terminalsRef.current.keys()).map(id =>
-            window.electronAPI!.agent.sendInput({ id, input })
-          );
-          Promise.allSettled(promises).catch(() => {});
+          // Broadcast to all terminals, each panel saying so if its agent has none
+          for (const other of terminalsRef.current.values()) {
+            if (!other.disposed) other.typeKeys(input);
+          }
         } else {
-          window.electronAPI!.agent.sendInput({ id: agentId, input }).catch(() => {});
+          entry.typeKeys(input);
         }
       };
 

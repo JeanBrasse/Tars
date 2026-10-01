@@ -175,8 +175,8 @@ class FakeHermes implements KanbanHermes {
   }
 }
 
-const TARS = '/Users/noah/tars';
-const OTHER = '/Users/noah/1212-capital';
+const TARS = '/Users/you/tars';
+const OTHER = '/Users/you/1212-capital';
 const dune: KanbanCaller = { agentId: 'aaaa1111-0000-4000-8000-000000000001', name: 'Dune', projectPath: TARS };
 const dove: KanbanCaller = { agentId: 'bbbb2222-0000-4000-8000-000000000002', name: 'Dove', projectPath: TARS };
 const far: KanbanCaller = { agentId: 'cccc3333-0000-4000-8000-000000000003', name: 'Far', projectPath: OTHER };

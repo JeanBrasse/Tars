@@ -11,7 +11,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { noAnswerWithin } from "./http.js";
+import { noAnswerWithin, TARS_WAIT_MS } from "./http.js";
 
 export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
 const API_TOKEN_FILE = path.join(os.homedir(), ".dorothy", "api-token");
@@ -72,7 +72,7 @@ export async function apiRequest(
   // wait timeout must override this so the client never aborts before the
   // server-side long-poll resolves.
   const isLongPoll = endpoint.includes("/wait");
-  const timeoutMs = timeoutMsOverride ?? (isLongPoll ? 600_000 : 30_000);
+  const timeoutMs = timeoutMsOverride ?? (isLongPoll ? 600_000 : TARS_WAIT_MS);
 
   const controller = new AbortController();
   let timedOut = false;

@@ -11,6 +11,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
+import { shellQuote } from './cli-provider';
 
 export class CodexProvider implements CLIProvider {
   readonly id = 'codex' as const;
@@ -49,8 +50,7 @@ export class CodexProvider implements CLIProvider {
 
     // Secondary project
     if (params.secondaryProjectPath) {
-      const escaped = params.secondaryProjectPath.replace(/'/g, "'\\''");
-      command += ` --add-dir '${escaped}'`;
+      command += ` --add-dir ${shellQuote(params.secondaryProjectPath)}`;
     }
 
     // The template's folders: added to what the CLI may reach, with whatever
@@ -58,8 +58,7 @@ export class CodexProvider implements CLIProvider {
     if (params.obsidianVaultPaths) {
       for (const vp of params.obsidianVaultPaths) {
         if (fs.existsSync(vp)) {
-          const escaped = vp.replace(/'/g, "'\\''");
-          command += ` --add-dir '${escaped}'`;
+          command += ` --add-dir ${shellQuote(vp)}`;
         }
       }
     }

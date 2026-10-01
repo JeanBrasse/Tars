@@ -79,9 +79,12 @@ import {
 } from './services/slack-bot';
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
+import { registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
+  getClaudeStatsNow,
+  prewarmClaudeStats,
   getClaudeProjects,
   getClaudePlugins,
   getClaudeSkills,
@@ -331,9 +334,11 @@ function createIpcDependencies(): IpcHandlerDependencies {
       buffer.forEach(item => getSuperAgentOutputBuffer().push(item));
     },
 
-    // Claude data functions
+    // Claude data functions. The page's stats come at once, as last computed,
+    // and are computed again behind it once a minute old; the bots keep
+    // getClaudeStats, which waits for numbers no older than that.
     getClaudeSettings,
-    getClaudeStats,
+    getClaudeStats: getClaudeStatsNow,
     getClaudeProjects,
     getClaudePlugins,
     getClaudeSkills,
@@ -487,6 +492,12 @@ app.whenReady().then(async () => {
   registerTeamTemplateHandlers();
   registerHermesHandlers();
   registerDiscordHandlers({ getAppSettings: () => appSettings });
+  registerClaudeAccountsHandlers({
+    getAppSettings: () => appSettings,
+    agents,
+    saveAgents,
+    loginPtys: pluginPtyProcesses,
+  });
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
@@ -690,6 +701,12 @@ app.whenReady().then(async () => {
   // Warm the model/price catalogue without blocking the window: a stale disk
   // copy answers immediately, the network refresh lands whenever it lands.
   loadCatalog().catch(() => { /* cached or floor prices carry the app */ });
+  // The transcript scan, started now rather than by the first page to ask for
+  // it: 2.4 to 3 s on Noah's 1826 transcripts, which that page used to wait for.
+  // After loadCatalog, which installs a fresh disk copy as it is called: a scan
+  // started before it priced with another object, and the first minute past it
+  // scanned everything again for the swap.
+  prewarmClaudeStats();
 
   // Registration only has to finish before an agent starts, not before the
   // window paints. It used to hold the main thread through the first render.
