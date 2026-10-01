@@ -42,6 +42,7 @@ const facts: ReportFacts = {
   installId: '3b1f6c2e-5d7a-4e8b-9c0d-1a2b3c4d5e6f',
   release: 'tars@1.9.1',
   home: HOME,
+  host: 'MacBook-Pro-de-Somebody.local',
   os: { name: 'macOS', version: '26.0' },
   electron: '44.4.4',
 };

@@ -28,6 +28,7 @@ import Link from 'next/link';
 import { Brand } from '@/components/Brand';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppPathname, normalisePathname } from '@/hooks/useAppPathname';
+import { hoverEnd, hoverStart } from '@/lib/prefetch-on-hover';
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', shortcut: '1' },
@@ -180,7 +181,13 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
           {navItems.map((item) => {
             const isActive = isNavActive(pathname, item.href);
             return (
-              <Link key={item.href} href={item.href} className={rowClass(isActive)}>
+              <Link
+                key={item.href}
+                href={item.href}
+                className={rowClass(isActive)}
+                onPointerEnter={() => hoverStart(item.href)}
+                onPointerLeave={hoverEnd}
+              >
                 <item.icon className={iconClass(isActive)} />
                 <span className={labelClass(isActive)}>{item.label}</span>
                 {item.href === '/vault' && vaultUnreadCount > 0 && (
@@ -226,7 +233,12 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
             )}
           </Link>
 
-          <Link href="/settings" className={rowClass(isSettingsActive)}>
+          <Link
+            href="/settings"
+            className={rowClass(isSettingsActive)}
+            onPointerEnter={() => hoverStart('/settings')}
+            onPointerLeave={hoverEnd}
+          >
             <Settings className={iconClass(isSettingsActive)} />
             <span className={labelClass(isSettingsActive)}>Settings</span>
           </Link>
