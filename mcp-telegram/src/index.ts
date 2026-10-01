@@ -112,16 +112,19 @@ function assertSendablePath(filePath: string): string {
 /**
  * Whether `candidate` is another name for a regular file under `dir`, by
  * device and inode. The app's own guard has the same function
- * (electron/utils/path-identity.ts); this server is built on its own.
+ * (electron/utils/path-identity.ts); this server is built on its own. Read as
+ * BigInt: a Number holds an inode exactly only below 2^53, and a 64-bit file id
+ * past it (NTFS, or a share whose client passes the server's ids through, as
+ * Linux's CIFS does by default) can round to its neighbour's.
  */
 function isHardLinkInto(candidate: string, dir: string): boolean {
-  let file: fs.Stats;
+  let file: fs.BigIntStats;
   try {
-    file = fs.statSync(candidate);
+    file = fs.statSync(candidate, { bigint: true });
   } catch {
     return false;
   }
-  if (!file.isFile() || file.nlink < 2) return false;
+  if (!file.isFile() || file.nlink < BigInt(2)) return false;
   const pending = [dir];
   while (pending.length > 0) {
     const current = pending.pop()!;
@@ -137,7 +140,7 @@ function isHardLinkInto(candidate: string, dir: string): boolean {
         pending.push(full);
       } else if (entry.isFile()) {
         try {
-          const here = fs.lstatSync(full);
+          const here = fs.lstatSync(full, { bigint: true });
           if (here.dev === file.dev && here.ino === file.ino) return true;
         } catch {
           // Gone since it was listed.
