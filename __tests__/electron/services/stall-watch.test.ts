@@ -1,0 +1,126 @@
+import { describe, it, expect } from 'vitest';
+import { stallOf, toolAtWork, cliProcess, parseProcesses, STALL_AFTER_MS, type Proc } from '../../../electron/services/stall-watch';
+
+/**
+ * Telling a running agent that is doing nothing from one that is busy
+ * (PLAN-1.9.2.md item B).
+ *
+ * Measured on 28/09: a Claude Code 2.1.283 froze mid-turn, its main thread in
+ * openat, 0 % CPU, one child a zombie nobody reaped; Tars showed it running
+ * and the night was lost. Measured on 01/10 over 21 live claude processes:
+ * during a turn each keeps a `caffeinate -i -t 300` child, renewed (all were
+ * under 300 s old); a Bash tool runs as a `zsh -c source ...shell-snapshots...`
+ * child; its MCP servers are children too (Tars's bundles, Pen's server,
+ * `npm exec @sentry/mcp-server`). A frozen event loop renews nothing: the last
+ * caffeinate exits unreaped, which is the zombie of 28/09.
+ *
+ * So: running, no write to its transcript for 30 minutes, and no tool at
+ * work, meaning no live process under its CLI but its MCP servers and
+ * caffeinate. A long Bash command (a build, a test run) writes nothing to the
+ * transcript while it runs and is not a stall.
+ *
+ * How it fails, written before the code (2026-10-01):
+ * 1. A long tool (a build of 40 minutes) is reported as a stall.
+ * 2. A frozen CLI is missed because its MCP servers, its caffeinate or a
+ *    zombie child count as work.
+ * 3. A stall is reported before 30 minutes, or for an agent that is not
+ *    running (waiting on a question, idle, stopped).
+ * 4. An agent whose transcript cannot be found is reported: nothing is known.
+ * 5. The CLI is not found under the terminal: the shell is taken for it in an
+ *    interactive terminal, where claude is the shell's child, or claude is
+ *    missed where the shell exec'd it.
+ * 6. ps's lines are misread: a command with spaces, a zombie, the header.
+ */
+
+const NOW = Date.UTC(2026, 9, 1, 4, 0, 0);
+const MIN = 60_000;
+
+const p = (pid: number, ppid: number, command: string, stat = 'S+'): Proc => ({ pid, ppid, stat, command });
+
+/** An interactive agent terminal: the shell, claude under it, its MCP servers and caffeinate. */
+function terminal(extra: Proc[] = []): Proc[] {
+  return [
+    p(100, 1, '/bin/zsh -l'),
+    p(101, 100, '/Users/x/.local/bin/claude --dangerously-skip-permissions'),
+    p(102, 101, '/Applications/Tars.app/Contents/MacOS/Tars /Applications/Tars.app/Contents/Resources/mcp-orchestrator/dist/bundle.js'),
+    p(103, 101, '/Applications/Pen.app/Contents/Resources/app.asar.unpacked/out/mcp-server-darwin-arm64 --app desktop'),
+    p(104, 101, 'npm exec @sentry/mcp-server'),
+    p(105, 101, 'caffeinate -i -t 300'),
+    ...extra,
+  ];
+}
+
+const running = { status: 'running', provider: 'claude' } as const;
+
+describe('the CLI under a terminal', () => {
+  it('5. is claude under the shell in an interactive terminal, and the terminal itself where the shell exec\'d it', () => {
+    expect(cliProcess(100, terminal())?.pid).toBe(101);
+    expect(cliProcess(200, [p(200, 1, 'claude --resume 1111'), p(201, 200, 'caffeinate -i -t 300')])?.pid).toBe(200);
+    expect(cliProcess(300, [p(300, 1, '/bin/bash -l')])).toBeUndefined();
+    // Installed by npm: node runs the claude script.
+    expect(cliProcess(400, [p(400, 1, '/bin/zsh -l'), p(401, 400, '/usr/local/bin/node /usr/local/bin/claude --resume 2222')])?.pid).toBe(401);
+    expect(cliProcess(500, [p(500, 1, '/bin/zsh -l'), p(501, 500, 'node build.js claude')])).toBeUndefined();
+  });
+});
+
+describe('a tool at work', () => {
+  it('1. is a live process under the CLI that is neither an MCP server nor caffeinate', () => {
+    const procs = terminal([p(106, 101, '/bin/zsh -c source /Users/x/.claude/shell-snapshots/snapshot-zsh-1.sh && npm run build'), p(107, 106, 'node build.js')]);
+    expect(toolAtWork(101, procs)).toContain('shell-snapshots');
+  });
+
+  it('2. is not an MCP server, caffeinate or a zombie', () => {
+    expect(toolAtWork(101, terminal([p(106, 101, 'caffeinate -i -t 300', 'Z')]))).toBeUndefined();
+    // A tool's shell that ended and was never reaped: a zombie is no work.
+    expect(toolAtWork(101, terminal([p(107, 101, '(zsh)', 'Z')]))).toBeUndefined();
+  });
+});
+
+describe('a stall', () => {
+  const silentFor = (ms: number) => NOW - ms;
+
+  it('2. is a running CLI silent for 30 minutes with no tool at work, since its last write', () => {
+    const procs = terminal([p(106, 101, '(caffeinate)', 'Z')]);
+    expect(stallOf({ ...running, transcriptWrittenAt: silentFor(31 * MIN), terminalPid: 100, procs, now: NOW })).toBe(silentFor(31 * MIN));
+  });
+
+  it('1. is not a long tool at work, however long the silence', () => {
+    const procs = terminal([p(106, 101, '/bin/zsh -c source /Users/x/.claude/shell-snapshots/s.sh && sleep 3000')]);
+    expect(stallOf({ ...running, transcriptWrittenAt: silentFor(45 * MIN), terminalPid: 100, procs, now: NOW })).toBeUndefined();
+  });
+
+  it('3. is not 29 minutes of silence, nor an agent that is not running', () => {
+    expect(stallOf({ ...running, transcriptWrittenAt: silentFor(29 * MIN), terminalPid: 100, procs: terminal(), now: NOW })).toBeUndefined();
+    for (const status of ['waiting', 'idle', 'completed', 'error', 'stopped']) {
+      expect(stallOf({ status, provider: 'claude', transcriptWrittenAt: silentFor(60 * MIN), terminalPid: 100, procs: terminal(), now: NOW }), status).toBeUndefined();
+    }
+    expect(STALL_AFTER_MS).toBe(30 * MIN);
+  });
+
+  it('4. is not known without a transcript, a process table or a CLI under the terminal', () => {
+    expect(stallOf({ ...running, transcriptWrittenAt: undefined, terminalPid: 100, procs: terminal(), now: NOW })).toBeUndefined();
+    expect(stallOf({ ...running, transcriptWrittenAt: silentFor(60 * MIN), terminalPid: 100, procs: undefined, now: NOW })).toBeUndefined();
+    expect(stallOf({ ...running, transcriptWrittenAt: silentFor(60 * MIN), terminalPid: 999, procs: terminal(), now: NOW })).toBeUndefined();
+  });
+
+  it('is told only of Claude Code, whose transcript Tars reads', () => {
+    expect(stallOf({ status: 'running', provider: 'codex', transcriptWrittenAt: silentFor(60 * MIN), terminalPid: 100, procs: terminal(), now: NOW })).toBeUndefined();
+    expect(stallOf({ status: 'running', provider: undefined, transcriptWrittenAt: silentFor(60 * MIN), terminalPid: 100, procs: terminal(), now: NOW })).toBe(silentFor(60 * MIN));
+  });
+});
+
+describe("ps's lines", () => {
+  it('6. keep a command with its spaces, mark a zombie, and skip what is not a process', () => {
+    const procs = parseProcesses([
+      '  PID  PPID STAT COMMAND',
+      '  101   100 S+   /Users/x/.local/bin/claude --resume 1111 --model opus',
+      '  105   101 Z+   (caffeinate)',
+      '',
+      'garbage',
+    ].join('\n'));
+    expect(procs).toEqual([
+      { pid: 101, ppid: 100, stat: 'S+', command: '/Users/x/.local/bin/claude --resume 1111 --model opus' },
+      { pid: 105, ppid: 101, stat: 'Z+', command: '(caffeinate)' },
+    ]);
+  });
+});

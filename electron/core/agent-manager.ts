@@ -585,6 +585,8 @@ export function loadAgents() {
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
       agent.pendingDelivery = undefined;
+      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts).
+      agent.stalledSince = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did

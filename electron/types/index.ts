@@ -57,6 +57,10 @@ export interface AgentWaitingOn {
 export interface AgentStatus {
   id: string;
   status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  /** ISO: running, yet its transcript has had no write since then (30 minutes
+   *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
+   *  a write or by any other status. Not saved. */
+  stalledSince?: string;
   projectPath: string;
   secondaryProjectPath?: string;
   worktreePath?: string;

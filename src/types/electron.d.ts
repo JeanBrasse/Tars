@@ -302,6 +302,10 @@ export interface AgentWaitingOn {
 export interface AgentStatus {
   id: string;
   status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  /** ISO: running, yet nothing written to its transcript since then (30 minutes
+   *  at least) and no tool at work: it looks frozen. Cleared by a write or by any
+   *  other status. */
+  stalledSince?: string;
   projectPath: string;
   secondaryProjectPath?: string; // Secondary project added via --add-dir
   worktreePath?: string;
