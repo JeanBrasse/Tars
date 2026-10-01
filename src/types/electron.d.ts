@@ -309,6 +309,10 @@ export interface AgentStatus {
   stoppedAt?: string;
   /** One line, or none when the window's stop gave none. */
   stopReason?: string;
+  /** ISO: running, yet nothing written to its transcript since then (30 minutes
+   *  at least) and no tool at work: it looks frozen. Cleared by a write or by any
+   *  other status. */
+  stalledSince?: string;
   projectPath: string;
   secondaryProjectPath?: string; // Secondary project added via --add-dir
   worktreePath?: string;
@@ -363,6 +367,12 @@ export interface AgentStatus {
    *  the fleet's first (getSuperAgent with no project). A project has one at
    *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
+  /** The Claude account this agent's CLI was last launched on. Absent: account 1. */
+  claudeAccountId?: ClaudeAccountId;
+  /** The account the agent is held to. Absent: chosen automatically. */
+  claudeAccountPin?: ClaudeAccountId;
+  /** The last time Tars moved it to another account on its own, and why. Absent: never. */
+  claudeAccountMove?: ClaudeAccountMove;
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
   /** Set by agent:list: the model the agent's last session answered on, read
@@ -823,6 +833,101 @@ export interface BusRoomSnapshot {
   deliveries: BusDelivery[];
 }
 
+/**
+ * Several Claude subscriptions. Mirror of the types at the end of
+ * electron/types/index.ts (DESIGN-COMPTES-CLAUDE.md, B6). An account is a
+ * Claude Code configuration directory signed in by Claude Code itself; Tars
+ * never sees a credential.
+ */
+/** 'default' is ~/.claude. Others: 'acct-' and six hex digits. */
+export type ClaudeAccountId = string;
+
+export interface ClaudeAccount {
+  id: ClaudeAccountId;
+  /** 1 to 40 characters. */
+  label: string;
+  /** ~/.claude-accounts/<id>, derived from the id; null for 'default'. */
+  configDir: string | null;
+  enabled: boolean;
+}
+
+export interface ClaudeAccountsSettings {
+  /** The option, off by default. */
+  enabled: boolean;
+  /** In order of preference; 'default' always there; 5 at most. */
+  accounts: ClaudeAccount[];
+  /** Whole percent, 50 to 100. Defaults 90 and 95. */
+  fiveHourThreshold: number;
+  weeklyThreshold: number;
+}
+
+export interface ClaudeAccountWindow {
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
+}
+
+export interface ClaudeAccountState extends ClaudeAccount {
+  /** From `claude auth status`; null until it has answered. */
+  signedIn: boolean | null;
+  email: string | null;
+  subscriptionType: string | null;
+  /** From a status line on this account; null when never seen or reset. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of that report. */
+  updatedAt: number | null;
+  /** Epoch seconds: a limit was hit, skipped until then. */
+  blockedUntil: number | null;
+  /** Agents whose CLI runs on it now. */
+  agentIds: string[];
+  /** Why the last sign-in or check did not work, as a sentence. */
+  error: string | null;
+}
+
+export interface ClaudeAccountsView {
+  settings: ClaudeAccountsSettings;
+  accounts: ClaudeAccountState[];
+  /**
+   * Set when ~/.tars-private/claude-accounts.json is there and does not read:
+   * the view shows account 1 alone, and every change is refused until the
+   * file is fixed or removed, so the other accounts are not written over.
+   */
+  registryError: string | null;
+}
+
+/**
+ * Pushed on claude-accounts:agent-moved when Tars has moved an agent to
+ * another account on its own, and kept on the agent as claudeAccountMove.
+ * 'limit': the account hit that window's limit mid-turn; the agent was
+ * restarted on the same conversation and told to continue. 'threshold': the
+ * account was past its threshold for that window when a turn ended; nothing
+ * was cut. Sent when the launch on the new account is made.
+ */
+export interface ClaudeAccountMove {
+  agentId: string;
+  from: ClaudeAccountId;
+  to: ClaudeAccountId;
+  reason: 'limit' | 'threshold';
+  window: 'fiveHour' | 'sevenDay';
+  /** The window's use on `from` when the move was decided; 100 for a limit. null when not measured. */
+  usedPercentage: number | null;
+  /** Epoch ms of the launch on `to`. */
+  at: number;
+}
+
+/** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
+export interface ClaudeAccountAgentChange {
+  agentId: string;
+  /** The account its CLI was last launched on; null is account 1. */
+  claudeAccountId: ClaudeAccountId | null;
+  /** The account it is held to; null is automatic. */
+  claudeAccountPin: ClaudeAccountId | null;
+}
+
+/** What the claude-accounts channels answer: the result, or a sentence. */
+export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { success: false; error: string };
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -939,6 +1044,39 @@ export interface ElectronAPI {
     onInstallOutput: (callback: (event: SkillInstallOutputEvent) => void) => () => void;
   };
 
+  // Several Claude subscriptions (Settings). See ClaudeAccountsView.
+  claudeAccounts?: {
+    /** Answers at once; accounts never checked are asked about behind it, then onChanged. */
+    list: () => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    setEnabled: (enabled: boolean) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    setThresholds: (params: { fiveHour: number; weekly: number }) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Creates the account's folder, signed out. Sign it in with loginStart. */
+    add: (params: { label: string }) => Promise<ClaudeAccountsResult<{ account: ClaudeAccountState }>>;
+    rename: (params: { id: ClaudeAccountId; label: string }) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    setAccountEnabled: (params: { id: ClaudeAccountId; enabled: boolean }) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Every account id once, 'default' included, in the new order. */
+    reorder: (ids: ClaudeAccountId[]) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Signs out through Claude Code, then trashes the folder. Not 'default'. */
+    remove: (id: ClaudeAccountId) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** Asks Claude Code again, about one account or all. */
+    refresh: (id?: ClaudeAccountId) => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;
+    /** A terminal running `claude auth login --claudeai` for that account. */
+    loginStart: (params: { id: ClaudeAccountId; cols?: number; rows?: number }) => Promise<ClaudeAccountsResult<{ ptyId: string }>>;
+    loginWrite: (params: { ptyId: string; data: string }) => Promise<ClaudeAccountsResult>;
+    loginResize: (params: { ptyId: string; cols: number; rows: number }) => Promise<ClaudeAccountsResult>;
+    loginKill: (params: { ptyId: string }) => Promise<ClaudeAccountsResult>;
+    onLoginData: (callback: (event: { ptyId: string; data: string }) => void) => () => void;
+    /** The account is checked again after this; onChanged follows. */
+    onLoginExit: (callback: (event: { ptyId: string; exitCode: number }) => void) => () => void;
+    onChanged: (callback: (view: ClaudeAccountsView) => void) => () => void;
+    /** An agent's account or pin changed, from any window or from main. */
+    onAgentChanged: (callback: (event: ClaudeAccountAgentChange) => void) => () => void;
+    /** Tars moved an agent to another account on its own (onAgentChanged follows with the new account). */
+    onAgentMoved: (callback: (event: ClaudeAccountMove) => void) => () => void;
+    /** Holds an agent to an account, or null for automatic. Pushed to every window by onAgentChanged. */
+    setAgentAccount: (params: { agentId: string; accountId: ClaudeAccountId | null }) => Promise<ClaudeAccountsResult>;
+  };
+
   // Plugin management (with in-app terminal)
   plugin?: {
     installStart: (params: { command: string; cols?: number; rows?: number }) => Promise<{ id: string; command: string }>;
@@ -973,6 +1111,20 @@ export interface ElectronAPI {
         five_hour?: { used_percentage: number; resets_at: number };
         seven_day?: { used_percentage: number; resets_at: number };
       } | null;
+      /**
+       * Every Claude account in use, in the order of Settings, with its own 5 h
+       * and weekly counters: one pair of bars each. Empty while the accounts
+       * option is off, when rateLimits (account 1's) is the only pair. A window
+       * is null when nothing reported it or its reset has passed; resetsAt in
+       * epoch seconds, updatedAt in epoch ms.
+       */
+      accountRateLimits: Array<{
+        accountId: string;
+        label: string;
+        fiveHour: { usedPercentage: number; resetsAt: number } | null;
+        sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        updatedAt: number | null;
+      }>;
       tokenStats: {
         totalInputTokens: number;
         totalOutputTokens: number;
@@ -1054,6 +1206,23 @@ export interface ElectronAPI {
       }>;
       /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
       oldest: string | null;
+      /**
+       * The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day.
+       * Its `claude` rows are Claude's ACP turns, which the transcripts already count: skip them, as `usageRows` does
+       * for the days, or those turns count twice in the last 24 hours.
+       */
+      hourly: Array<{
+        /** When the hour starts, in milliseconds since the epoch. */
+        hour: number;
+        provider: string;
+        model: string | null;
+        inputTokens: number;
+        outputTokens: number;
+        cachedReadTokens: number;
+        cachedWriteTokens: number;
+        costUSD: number;
+        turns: number;
+      }>;
     }>;
   };
 
@@ -1686,7 +1855,8 @@ export interface ElectronAPI {
   hermes?: {
     getConnection: () => Promise<{ connection: HermesConnection; baseUrl: string; desktopConfigAvailable: boolean }>;
     saveConnection: (connection: HermesConnection) => Promise<{ success: boolean; error?: string }>;
-    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string }>;
+    /** `tokenNotImported`: the connection came without the token Hermes Desktop keeps encrypted, which Tars cannot read. */
+    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string; tokenNotImported?: boolean }>;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;

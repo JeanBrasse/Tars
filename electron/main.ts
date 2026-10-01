@@ -80,6 +80,12 @@ import {
 } from './services/slack-bot';
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
+import { announceAgentAccount, registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
+import { setAccountEnvResolver } from './core/account-env';
+import { claudeAccountEnvFor } from './services/claude-accounts/launch';
+import { movedLaunch } from './services/claude-accounts/switching';
+import { readAccountsSettings } from './services/claude-accounts/registry';
+import { restartForSettings } from './core/agent-restart';
 import {
   getClaudeSettings,
   getClaudeStats,
@@ -117,6 +123,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
+import { startStallWatch, stopStallWatch } from './services/stall-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
@@ -492,6 +499,29 @@ app.whenReady().then(async () => {
   registerTeamTemplateHandlers();
   registerHermesHandlers();
   registerDiscordHandlers({ getAppSettings: () => appSettings });
+  const claudeAccounts = registerClaudeAccountsHandlers({
+    getAppSettings: () => appSettings,
+    agents,
+    saveAgents,
+    loginPtys: pluginPtyProcesses,
+    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
+  });
+  // Every agent process asks which Claude account it starts on. With the
+  // option off the answer is null and nothing changes (core/account-env.ts).
+  setAccountEnvResolver((agentId, cwd, purpose) => {
+    const agent = agents.get(agentId);
+    if (!agent) return null;
+    const before = agent.claudeAccountId;
+    const env = claudeAccountEnvFor(agent, { agents: agents.values(), cwd, purpose });
+    // A move Tars asked for (services/claude-accounts/switching.ts), made by this launch.
+    if (env?.move) movedLaunch(agent, env.move);
+    // Every window shows the account an agent runs on.
+    if (agent.claudeAccountId !== before) announceAgentAccount(agent);
+    return env;
+  });
+  // Which accounts are signed in, asked of Claude Code before the first
+  // launches need it; until it answers, only account 1 is used.
+  if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
@@ -685,6 +715,9 @@ app.whenReady().then(async () => {
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
   startAgentWatch();
+  // And an agent that reads running while it does nothing is told to whoever
+  // handed it the work (services/stall-watch.ts).
+  startStallWatch();
   // A message held behind a slash command typed by hand goes in once the
   // command's record says the field emptied (core/pty-manager.ts).
   setFieldProbe(agentId => {
@@ -798,6 +831,7 @@ app.on('before-quit', (event) => {
       ['destroyTray', destroyTray],
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
+      ['stopStallWatch', stopStallWatch],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))

@@ -20,7 +20,9 @@ import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 
 // Import types
-import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
+import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole, ClaudeAccountCounters } from '../types';
+import { countersForUsagePage } from '../services/claude-accounts/counters';
+import { readAccountsSettings } from '../services/claude-accounts/registry';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { projectFolders } from '../services/project-index';
@@ -765,7 +767,6 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           projectPath: agent.projectPath,
           settings: appSettingsForCommand as never,
           hermes: usableHermesConnection(),
-          budgetMs: 3000,
         });
         const wrapped = wrapDigestForPrompt(digest);
         if (wrapped) promptWithMemory = `${wrapped}\n\n${prompt}`;
@@ -1624,6 +1625,15 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         // ignore parse errors
       }
 
+      // Every Claude account's counters, for one pair of bars each: account 1's
+      // status lines alone write rate-limits.json.
+      let accountRateLimits: ClaudeAccountCounters[] = [];
+      try {
+        accountRateLimits = countersForUsagePage(readAccountsSettings());
+      } catch {
+        // an unreadable registry: the page keeps account 1's bars
+      }
+
       // Read accumulated token stats from statusline
       let tokenStats = null;
       try {
@@ -1692,6 +1702,7 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         history,
         activeSessions: [],
         rateLimits,
+        accountRateLimits,
         tokenStats,
       };
     } catch (err) {
@@ -1719,7 +1730,7 @@ function permissionsCarryNothing(value: unknown): boolean {
   return (p.allow?.length ?? 0) === 0 && (p.deny?.length ?? 0) === 0;
 }
 
-function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
+function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
   const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
   // Get Claude settings
@@ -1811,14 +1822,24 @@ function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
   // Get Claude info (version, paths, etc.)
   ipcMain.handle('settings:getInfo', async () => {
     try {
-      const { execSync } = await import('child_process');
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
 
-      // Try to get Claude version
-      let claudeVersion = 'Unknown';
+      // Empty unless claude answers: the System page reads any version as
+      // ready, and started from 'Unknown', so a missing claude read as ready.
+      // Resolved the way an agent launch resolves it: the path set in
+      // Settings > CLI Paths, else 'claude' on the PATH built with those
+      // folders, not on Electron's own.
+      const cliPaths = deps.getAppSettings()?.cliPaths;
+      let claudeVersion = '';
       try {
-        claudeVersion = execSync('claude --version 2>/dev/null', { encoding: 'utf-8' }).trim();
+        const { stdout } = await promisify(execFile)(cliPaths?.claude || 'claude', ['--version'], {
+          timeout: 8000,
+          env: { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) },
+        });
+        claudeVersion = stdout.trim();
       } catch {
-        // Claude not installed or not in PATH
+        // Not installed, not on that PATH, or it failed: not ready.
       }
 
       return {
@@ -1905,7 +1926,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   });
 
   ipcMain.handle('logs:tail', async (_event, { agentId, lines }: { agentId: string; lines?: number }) => {
-    return agentTail(agentId, lines) ?? { lines: [], agentName: '' };
+    return (await agentTail(agentId, lines)) ?? { lines: [], agentName: '' };
   });
 
   ipcMain.handle('logs:fleet', async () => ({ agents: fleetSummary() }));

@@ -9181,6 +9181,201 @@
             ],
             "isError": true
           }
+        },
+        {
+          "scenario": "send_telegram_photo, Telegram never answers",
+          "call": {
+            "tool": "send_telegram_photo",
+            "arguments": {
+              "photo_path": "<home>/work/shot.png"
+            }
+          },
+          "requests": [
+            {
+              "to": "https://api.telegram.org",
+              "method": "POST",
+              "path": "/bot123:tok/sendPhoto",
+              "headers": [
+                "Content-Type: multipart/form-data; boundary=----FormBoundary<time>",
+                "Content-Length: 274",
+                "Host: 127.0.0.1:<port>",
+                "Connection: keep-alive"
+              ],
+              "body": "------FormBoundary<time>\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n111\r\n------FormBoundary<time>\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"shot.png\"\r\nContent-Type: application/octet-stream\r\n\r\nPNGDATA\r\n------FormBoundary<time>--\r\n"
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error sending photo to Telegram: no answer within 61 s"
+              }
+            ],
+            "isError": true
+          }
+        }
+      ]
+    },
+    {
+      "variant": "an agent, Telegram configured, and Telegram never answers a message",
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "serverInfo": {
+          "name": "claude-mgr-telegram",
+          "version": "1.0.0"
+        }
+      },
+      "tools": {
+        "tools": [
+          {
+            "name": "send_telegram",
+            "description": "Send a text message to Telegram. IMPORTANT: When responding to a Telegram message, you MUST include the chat_id from the original request to ensure the response goes to the correct chat.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "description": "The message to send to Telegram"
+                },
+                "chat_id": {
+                  "type": "string",
+                  "description": "The chat ID to send to. REQUIRED when responding to a specific Telegram chat. Use the chat_id from the incoming Telegram message."
+                }
+              },
+              "required": [
+                "message"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "execution": {
+              "taskSupport": "forbidden"
+            }
+          },
+          {
+            "name": "send_telegram_photo",
+            "description": "Send a photo/image to Telegram. Use this to share screenshots, images, or visual content with the user.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "photo_path": {
+                  "type": "string",
+                  "description": "The absolute file path to the photo/image to send (e.g., /Users/name/image.png)"
+                },
+                "caption": {
+                  "type": "string",
+                  "description": "Optional caption text to include with the photo"
+                },
+                "chat_id": {
+                  "type": "string",
+                  "description": "The chat ID to send to. Use the chat_id from the incoming Telegram message."
+                }
+              },
+              "required": [
+                "photo_path"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "execution": {
+              "taskSupport": "forbidden"
+            }
+          },
+          {
+            "name": "send_telegram_video",
+            "description": "Send a video to Telegram. Use this to share video content, screen recordings, or animations with the user.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "video_path": {
+                  "type": "string",
+                  "description": "The absolute file path to the video to send (e.g., /Users/name/video.mp4)"
+                },
+                "caption": {
+                  "type": "string",
+                  "description": "Optional caption text to include with the video"
+                },
+                "chat_id": {
+                  "type": "string",
+                  "description": "The chat ID to send to. Use the chat_id from the incoming Telegram message."
+                }
+              },
+              "required": [
+                "video_path"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "execution": {
+              "taskSupport": "forbidden"
+            }
+          },
+          {
+            "name": "send_telegram_document",
+            "description": "Send a document/file to Telegram. Use this to share PDFs, text files, or any other documents with the user.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "document_path": {
+                  "type": "string",
+                  "description": "The absolute file path to the document to send (e.g., /Users/name/report.pdf)"
+                },
+                "caption": {
+                  "type": "string",
+                  "description": "Optional caption text to include with the document"
+                },
+                "chat_id": {
+                  "type": "string",
+                  "description": "The chat ID to send to. Use the chat_id from the incoming Telegram message."
+                }
+              },
+              "required": [
+                "document_path"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "execution": {
+              "taskSupport": "forbidden"
+            }
+          }
+        ]
+      },
+      "stderr": "MCP Telegram server running on stdio\n",
+      "calls": [
+        {
+          "scenario": "send_telegram, Telegram never answers",
+          "call": {
+            "tool": "send_telegram",
+            "arguments": {
+              "message": "Hi"
+            }
+          },
+          "requests": [
+            {
+              "to": "https://api.telegram.org",
+              "method": "GET",
+              "path": "/bot123:tok/sendMessage?chat_id=111&text=%F0%9F%91%91+Hi&parse_mode=Markdown",
+              "headers": [
+                "Host: 127.0.0.1:<port>",
+                "Connection: keep-alive"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error sending to Telegram: no answer within 60 s"
+              }
+            ],
+            "isError": true
+          }
         }
       ]
     }
@@ -11953,6 +12148,37 @@
             ],
             "isError": true
           }
+        },
+        {
+          "scenario": "vault_get_document, Tars never answers",
+          "call": {
+            "tool": "vault_get_document",
+            "arguments": {
+              "document_id": "d1"
+            }
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/vault/documents/d1",
+              "headers": [
+                "Content-Type: application/json",
+                "Authorization: Bearer agent-token-lead",
+                "Host: 127.0.0.1:<port>",
+                "Connection: keep-alive"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error reading document: API request failed: no answer within 30 s"
+              }
+            ],
+            "isError": true
+          }
         }
       ]
     },
@@ -13958,6 +14184,37 @@
             ],
             "isError": true
           }
+        },
+        {
+          "scenario": "twitter_search, SocialData never answers",
+          "call": {
+            "tool": "twitter_search",
+            "arguments": {
+              "query": "tars"
+            }
+          },
+          "requests": [
+            {
+              "to": "https://api.socialdata.tools",
+              "method": "GET",
+              "path": "/twitter/search?query=tars",
+              "headers": [
+                "Authorization: Bearer sd-key",
+                "Accept: application/json",
+                "Host: 127.0.0.1:<port>",
+                "Connection: keep-alive"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error searching tweets: SocialData API request failed: no answer within 60 s"
+              }
+            ],
+            "isError": true
+          }
         }
       ]
     }
@@ -14773,6 +15030,40 @@
               {
                 "type": "text",
                 "text": "Error deleting tweet: X API error (HTTP 403): Not yours"
+              }
+            ],
+            "isError": true
+          }
+        },
+        {
+          "scenario": "x_post_tweet, X never answers",
+          "call": {
+            "tool": "x_post_tweet",
+            "arguments": {
+              "text": "Hi"
+            }
+          },
+          "requests": [
+            {
+              "to": "https://api.x.com",
+              "method": "POST",
+              "path": "/2/tweets",
+              "headers": [
+                "Authorization: OAuth oauth_consumer_key=\"ck\", oauth_nonce=\"<nonce>\", oauth_signature=\"<valid signature>\", oauth_signature_method=\"HMAC-SHA1\", oauth_timestamp=\"<time>\", oauth_token=\"at\", oauth_version=\"1.0\"",
+                "Content-Type: application/json",
+                "Accept: application/json",
+                "Host: 127.0.0.1:<port>",
+                "Connection: keep-alive",
+                "Transfer-Encoding: chunked"
+              ],
+              "body": "{\"text\":\"Hi\"}"
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Error posting tweet: X API request failed: no answer within 60 s"
               }
             ],
             "isError": true

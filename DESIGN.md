@@ -104,6 +104,12 @@ components:
     border: "1px solid {border}"
     focus-border: "{accent} @ 40%"
     text: 12
+  field-read-only:
+    background: "{surface}"
+    border: "1px solid {border}"
+    focus-border: "{accent} @ 40%"
+    text: "{text-secondary}"
+    cursor: default
   nav-item-active:
     background: "{accent} @ 20%"
     text: "{accent}"
@@ -357,6 +363,15 @@ all, only a heading and a dynamic import of `TerminalsView`.
 tall, `surface-raised` fill, 1px `border`, 12px text, `border` → `accent @ 40%`
 on focus. Pass `error` and the border goes `danger`; pair it with a `FieldError`
 caption (one short 11px line of red text under the field), never a tooltip.
+Disabled is the browser's own state at 40% opacity. Read-only (`readOnly` on
+`Input`, `PasswordInput` or `Textarea`) reads as read-only: the panel's
+`surface` fill instead of `surface-raised`, the value in `text-secondary` and the
+default cursor; the text stays selectable. On focus, by click or by keyboard, it
+takes the standard `accent @ 40%` border like any field, since a field draws no
+focus outline and that border is the only sign it holds the focus. A disabled
+field keeps the disabled look, and `Select` never takes this one, since the
+browser matches `:read-only` on both. The frame is `Settings · Connection`, rows
+`row Gateway URL · Local` and the incoming webhook, and the focus state `RKPfa`.
 
 ### Dropdown: `ui/Dropdown`
 The themed replacement for `<select>`. A native select renders its popup through
@@ -401,9 +416,12 @@ A 32px `surface` header (`TerminalsView/components/TerminalPanelHeader`): the
 agent's mark at 16, its name, its branch (or, in error, the reason in red, and
 stopped, who stopped it, when and why in `text-secondary`), then
 right of the gap the status as a word in its tone and `provider · model` in
-mono, the live and history switch, start or stop, and the `···` menu with
-clear, fullscreen and remove. Frames: `Dashboard · dark`, `Agent error ·
-reason`, `Agent stopped · who and why`. xterm gets its palette
+mono, `session` boxed as a selected segment (`secondary` fill, `border-accent`
+border), start or stop, a 26px fullscreen button (lucide `maximize-2`, and
+`minimize-2` while the pane fills the window), and the `···` menu with clear,
+and remove outside fullscreen. Frames: `Dashboard · dark`, `Agent error ·
+reason`, `Panel header · session and fullscreen`, `Agent stopped · who and
+why`. xterm gets its palette
 as a JS object rather than from CSS variables, and there are two of them:
 `src/components/Terminal.tsx` draws on `#0D0B08`, while `TERMINAL_THEME` in
 `src/components/AgentWorld/constants.ts` (re-exported by `TerminalsView`) draws

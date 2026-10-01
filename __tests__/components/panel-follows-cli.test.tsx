@@ -158,8 +158,6 @@ describe('the pane header button follows the terminal, not the status', () => {
   function button(a: AgentStatus) {
     const header = mount(() => TerminalPanelHeader({
       agent: a,
-      view: 'live',
-      onViewChange: noop,
       isFullscreen: false,
       isBroadcasting: false,
       tabType: 'project',

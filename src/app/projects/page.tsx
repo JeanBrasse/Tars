@@ -11,6 +11,7 @@ import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
+import { lastActiveLabel } from '@/lib/last-active';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
 // browser - same reason Dashboard loads TerminalsView this way.
@@ -382,18 +383,6 @@ export default function ProjectsPage() {
     return [...visible, ...hidden];
   }, [allProjects, hiddenProjects]);
 
-  const formatDate = (date: Date) => {
-    const d = new Date(date);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
   const getMessagePreview = (content: string | unknown[]): string => {
     if (typeof content === 'string') {
       return content.slice(0, 100) + (content.length > 100 ? '...' : '');
@@ -458,6 +447,9 @@ export default function ProjectsPage() {
           const linkedAgents = agents.filter(a => pathsMatch(a.projectPath, project.path));
           const hidden = isHidden(project.path);
           const custom = isCustomProject(project.path);
+          // None for a custom project Claude Code has not run in: no chip
+          // rather than "Invalid Date".
+          const lastActive = lastActiveLabel(project.lastActivity);
 
           return (
             <div
@@ -482,7 +474,7 @@ export default function ProjectsPage() {
 
               <div className="flex flex-wrap items-center gap-1.5">
                 <MetaChip>{project.sessions.length} sessions</MetaChip>
-                <MetaChip>{formatDate(project.lastActivity)}</MetaChip>
+                {lastActive && <MetaChip>{lastActive}</MetaChip>}
                 {isDefaultProject(project.path) && <MetaChip>default</MetaChip>}
                 {custom && <MetaChip>custom</MetaChip>}
               </div>
@@ -648,7 +640,7 @@ export default function ProjectsPage() {
                     <p className="text-[11px] text-muted-foreground mt-1">Agents</p>
                   </Panel>
                   <Panel className="text-center">
-                    <p className="text-sm">{formatDate(selectedProject.lastActivity)}</p>
+                    <p className="text-sm">{lastActiveLabel(selectedProject.lastActivity) ?? 'unknown'}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">Last active</p>
                   </Panel>
                 </div>
@@ -735,7 +727,7 @@ export default function ProjectsPage() {
                               }`} />
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {formatDate(session.lastActivity)}
+                            {lastActiveLabel(session.lastActivity)}
                           </p>
                         </button>
                       ))}

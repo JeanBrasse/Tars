@@ -54,8 +54,10 @@ import { scheduleTick } from '../utils/agents-tick';
  * without a Stop, the idle prompt.
  */
 type News = {
-  /** `stopped`: its terminal went before the background work it left reported. */
-  kind: 'outcome' | 'wait' | 'ended' | 'stopped';
+  /** `stopped`: its terminal went before the background work it left reported.
+   *  `stalled`: running, but nothing written and no tool at work for a long
+   *  while (stall-watch.ts); `reason` holds the minutes of silence. */
+  kind: 'outcome' | 'wait' | 'ended' | 'stopped' | 'stalled';
   status: AgentStatus['status'];
   reason?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
@@ -437,6 +439,20 @@ function queueForRequester(child: AgentStatus, news: News): void {
   handToRequester(link.agentId, child, news);
 }
 
+/**
+ * A running agent that writes nothing and runs no tool (stall-watch.ts): told
+ * to whoever handed it the work, or else to its project's orchestrator, which
+ * is who decides what to do about it. Nobody else: a stall is not the room's.
+ */
+export function reportStall(child: AgentStatus, silentMinutes: number): void {
+  const link = child.requestedBy;
+  const requesterId = link && link.agentId !== child.id && link.ptyId === child.ptyId
+    ? link.agentId
+    : [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === child.projectPath && a.id !== child.id)?.id;
+  if (!requesterId) return;
+  handToRequester(requesterId, child, { kind: 'stalled', status: child.status, reason: String(silentMinutes), handedAt: child.workHandedAt });
+}
+
 /** What a requester is owed about a child: held for it, and typed in when it is free. */
 function handToRequester(requesterId: string, child: AgentStatus, news: News): void {
   const link = { agentId: requesterId };
@@ -510,6 +526,7 @@ function stillNews(childId: string, news: News): boolean {
   if (!child) return true;
   if (child.workHandedAt !== news.handedAt) return false;
   if (news.kind === 'wait') return child.status === 'waiting' && child.waitingReason === news.reason;
+  if (news.kind === 'stalled') return child.status === 'running' && !!child.stalledSince;
   return true;
 }
 
@@ -701,6 +718,10 @@ function describeNews(news: News): string {
   if (news.kind === 'stopped') {
     return `was stopped before its background work reported (${(news.background ?? []).map(envelopeValue).join(', ')}): `
       + 'that work ended with its terminal, and there is nothing more to wait for';
+  }
+  if (news.kind === 'stalled') {
+    return `has written nothing to its transcript for ${news.reason} minutes and runs no tool: it looks frozen. `
+      + 'Read get_agent_output; if nothing moves, stop it and start it again with a brief of what is already done';
   }
   if (news.kind === 'ended') return 'has finished its turn';
   if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';

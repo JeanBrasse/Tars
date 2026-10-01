@@ -16,6 +16,8 @@ type WaitResult = {
   /** Set when the agent was stopped: "you", "Tars", or the agent that asked. */
   stoppedBy?: string;
   stopReason?: string;
+  /** ISO: running, yet nothing written and no tool at work since then (Tars's stall watch). */
+  stalledSince?: string;
 };
 
 type DispatchResult = {
@@ -483,6 +485,10 @@ const AGENT_TOOLS: Tool[] = [
           ? " It is blocked on a PERMISSION dialog: send_message cannot answer it; resolve it in the Tars UI or stop_agent and re-delegate."
           : " Use send_message to respond, or get_agent_output to see what it's asking.";
         return text(`Agent "${agentName}" is waiting for input.${reasonInfo}`);
+      }
+
+      if (data.status === "running" && data.stalledSince) {
+        return problem(`Agent "${agentName}" is running but has written nothing since ${data.stalledSince} and runs no tool: it looks frozen. Read get_agent_output; if nothing moves, stop it and start it again with a brief of what is already done.`);
       }
 
       return text(`Agent "${agentName}" status: ${data.status}`);

@@ -13,6 +13,7 @@ import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { mcpNodeCommand } from '../../utils/mcp-node';
 import { API_PORT } from '../../constants';
 import { isSuperAgent } from '../../utils';
+import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
 
 /**
@@ -171,6 +172,10 @@ export async function delegateOverAcp(opts: {
   // bus, no delegation onward. Its own rather than the terminal's, so that
   // neither can cut the other off, and revoked when the run is over.
   const { token: apiToken, revoke } = mintRunToken(agent.id);
+  // The Claude account this run bills, the one its agent's terminal would
+  // start on. Measured: the adapter's own claude (2.1.232) honours
+  // CLAUDE_CONFIG_DIR, keychain naming included (the Audit's N9).
+  const account = accountEnvFor(agent.id, cwd, 'delegation');
   const session = new AcpSession(launch, {
     cwd,
     env: {
@@ -193,7 +198,9 @@ export async function delegateOverAcp(opts: {
       // Nothing was written, but the port stopped being the boundary it is
       // everywhere else.
       CLAUDE_MGR_API_URL: apiUrl(),
+      ...account?.set,
     },
+    unsetEnv: account?.unset,
     mcpServers: mcpServersFor(agent, apiToken),
     permissionMode: agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : 'normal',

@@ -261,6 +261,66 @@ export function dialogOnScreen(pty: IPty | undefined): boolean {
 }
 
 /**
+ * The text a terminal shows, one entry per row, for reading rather than
+ * drawing: the normal screen's history and screen, then the alternate screen
+ * while it is the one shown. A row wrapped onto the next is joined to it, the
+ * blanks at a row's end are dropped, and so are empty rows.
+ *
+ * Read from the cells, so a space a program drew as a cursor move is there,
+ * and a row it rewrote after a carriage return (a spinner, a countdown) is the
+ * row as it ended. The Logs page split the raw stream on line breaks instead,
+ * and Claude Code, which draws with cursor moves, read as one run of glued
+ * words (Noah, 2026-10-01). Claude Code 2.1.286 draws on the alternate screen
+ * by default, where the normal one stays empty.
+ */
+function textOf(term: Terminal): string[] {
+  const rows: string[] = [];
+  const read = (buffer: Terminal['buffer']['normal']) => {
+    for (let y = 0; y < buffer.length; y++) {
+      const line = buffer.getLine(y);
+      if (!line) continue;
+      const text = line.translateToString(true);
+      if (line.isWrapped && rows.length > 0) rows[rows.length - 1] += text;
+      else rows.push(text);
+    }
+  };
+  read(term.buffer.normal);
+  if (term.buffer.active.type === 'alternate') read(term.buffer.alternate);
+  return rows.map(row => row.trimEnd()).filter(row => row.trim().length > 0);
+}
+
+/** The text of `pty`'s screen and history (see textOf), or undefined when it has no mirror. */
+export function terminalText(pty: IPty | undefined): string[] | undefined {
+  const mirror = pty && mirrors.get(pty);
+  return mirror ? textOf(mirror.term) : undefined;
+}
+
+/**
+ * The text the kept output of a terminal that is gone would show, replayed
+ * into a fresh headless one of that size (see textOf), or undefined when
+ * xterm-headless could not be loaded. 97 ms for the 43 agents of a real fleet,
+ * 4300 chunks, measured on 2026-10-01.
+ */
+export function replayText(chunks: readonly string[], size: { cols: number; rows: number }): string[] | undefined {
+  if (!xterm || !isTerminalSize(size.cols, size.rows)) return undefined;
+  const term = new xterm.Terminal({
+    cols: size.cols,
+    rows: size.rows,
+    scrollback: MIRROR_SCROLLBACK,
+    convertEol: true,
+    allowProposedApi: true,
+    logLevel: 'error',
+  });
+  try {
+    const core = (term as unknown as { _core: XtermInternals })._core;
+    for (const chunk of chunks) core.writeSync(chunk);
+    return textOf(term);
+  } finally {
+    term.dispose();
+  }
+}
+
+/**
  * True when the program in `pty` repaints inline on an alternate screen it
  * never left. See RepaintWatch.
  */

@@ -45,8 +45,25 @@ OUTPUT_TOKENS="$T_OUT"
 RAW_PCT=$(awk -v p="$RAW_PCT_RAW" 'BEGIN {printf "%d", p}')
 
 RATE_LIMITS_FILE="${DATA_DIR_SHELL}/rate-limits.json"
+# Which Claude account this CLI runs on, as Tars launched it: unset means
+# account 1, as before several accounts. Its counters go under its own name,
+# and only account 1's into rate-limits.json, which the Usage page reads. A
+# name that is not an account writes nothing: it becomes a path.
+RATE_LIMITS_ACCOUNT="\${TARS_CLAUDE_ACCOUNT-default}"
+RATE_LIMITS_DIR="${DATA_DIR_SHELL}/rate-limits.d"
 if [ -n "$RATE_LIMITS" ] && [ "$RATE_LIMITS" != "null" ]; then
-  echo "$RATE_LIMITS" > "$RATE_LIMITS_FILE" 2>/dev/null || true
+  case "$RATE_LIMITS_ACCOUNT" in
+    default|acct-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+      if [ "$RATE_LIMITS_ACCOUNT" = "default" ]; then
+        echo "$RATE_LIMITS" > "$RATE_LIMITS_FILE" 2>/dev/null || true
+      fi
+      mkdir -p "$RATE_LIMITS_DIR" 2>/dev/null || true
+      RATE_LIMITS_TMP="$RATE_LIMITS_DIR/.$RATE_LIMITS_ACCOUNT.$$.tmp"
+      printf '{"updatedAt":%s,"rate_limits":%s}\\n' "$(date +%s)" "$RATE_LIMITS" > "$RATE_LIMITS_TMP" 2>/dev/null \\
+        && mv "$RATE_LIMITS_TMP" "$RATE_LIMITS_DIR/$RATE_LIMITS_ACCOUNT.json" 2>/dev/null \\
+        || rm -f "$RATE_LIMITS_TMP"
+      ;;
+  esac
 fi
 
 # --- Accumulate token stats per session for the Usage page ---
@@ -118,6 +135,9 @@ if [ -n "$SESSION_ID" ]; then
     # Update session entry via temp file for atomic write
     T_DATE=$(date +%Y-%m-%d)
     T_PROVIDER="\${CLAUDE_PROVIDER:-claude}"
+    # The account the session runs on (TARS_CLAUDE_ACCOUNT), so the Usage page
+    # can say which one spent what; empty for a session that names none.
+    T_ACCOUNT="\${TARS_CLAUDE_ACCOUNT:-}"
     TMP_FILE="\${TOKEN_STATS_FILE}.tmp.$$"
     printf '%s' "$EXISTING" | jq -c -R -s \
       --arg sid "$SESSION_ID" \
@@ -128,8 +148,9 @@ if [ -n "$SESSION_ID" ]; then
       --argjson extra "$IS_EXTRA" \
       --arg date "$T_DATE" \
       --arg provider "$T_PROVIDER" \
+      --arg account "$T_ACCOUNT" \
       '(try fromjson catch {}) | (if type == "object" then . else {} end)
-       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider}' \
+       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider, "account": $account}' \
       > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$TOKEN_STATS_FILE" 2>/dev/null || rm -f "$TMP_FILE"
 
     # Release lock, once. The trap goes first: the script runs on (git, for

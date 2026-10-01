@@ -204,7 +204,6 @@ async function spawnAgentSession(
         projectPath: agent.projectPath,
         settings: appSettings as never,
         hermes: usableHermesConnection(),
-        budgetMs: 3000,
       });
       const wrapped = wrapDigestForPrompt(digest);
       if (wrapped) memoryBlock = `\n\n${wrapped}`;
@@ -774,6 +773,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         error: agent.error,
         waitingReason: agent.waitingReason,
         ...stopOf(agent),
+        stalledSince: agent.stalledSince,
       });
       return;
     }
@@ -807,6 +807,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         error: a?.error,
         waitingReason: a?.waitingReason,
         ...(a ? stopOf(a) : {}),
+        stalledSince: a?.stalledSince,
       });
     };
 

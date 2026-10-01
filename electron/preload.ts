@@ -248,6 +248,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6)
+  claudeAccounts: {
+    list: () => ipcRenderer.invoke('claude-accounts:list'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('claude-accounts:set-enabled', enabled),
+    setThresholds: (params: { fiveHour: number; weekly: number }) =>
+      ipcRenderer.invoke('claude-accounts:set-thresholds', params),
+    add: (params: { label: string }) => ipcRenderer.invoke('claude-accounts:add', params),
+    rename: (params: { id: string; label: string }) => ipcRenderer.invoke('claude-accounts:rename', params),
+    setAccountEnabled: (params: { id: string; enabled: boolean }) =>
+      ipcRenderer.invoke('claude-accounts:set-account-enabled', params),
+    reorder: (ids: string[]) => ipcRenderer.invoke('claude-accounts:reorder', ids),
+    remove: (id: string) => ipcRenderer.invoke('claude-accounts:remove', id),
+    refresh: (id?: string) => ipcRenderer.invoke('claude-accounts:refresh', id),
+    loginStart: (params: { id: string; cols?: number; rows?: number }) =>
+      ipcRenderer.invoke('claude-accounts:login-start', params),
+    loginWrite: (params: { ptyId: string; data: string }) => ipcRenderer.invoke('claude-accounts:login-write', params),
+    loginResize: (params: { ptyId: string; cols: number; rows: number }) =>
+      ipcRenderer.invoke('claude-accounts:login-resize', params),
+    loginKill: (params: { ptyId: string }) => ipcRenderer.invoke('claude-accounts:login-kill', params),
+    onLoginData: (callback: (event: { ptyId: string; data: string }) => void) => {
+      const listener = (_: unknown, event: { ptyId: string; data: string }) => callback(event);
+      ipcRenderer.on('claude-accounts:login-data', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:login-data', listener);
+    },
+    onLoginExit: (callback: (event: { ptyId: string; exitCode: number }) => void) => {
+      const listener = (_: unknown, event: { ptyId: string; exitCode: number }) => callback(event);
+      ipcRenderer.on('claude-accounts:login-exit', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:login-exit', listener);
+    },
+    onChanged: (callback: (view: unknown) => void) => {
+      const listener = (_: unknown, view: unknown) => callback(view);
+      ipcRenderer.on('claude-accounts:changed', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:changed', listener);
+    },
+    onAgentChanged: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('claude-accounts:agent-changed', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:agent-changed', listener);
+    },
+    onAgentMoved: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('claude-accounts:agent-moved', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:agent-moved', listener);
+    },
+    setAgentAccount: (params: { agentId: string; accountId: string | null }) =>
+      ipcRenderer.invoke('claude-accounts:set-agent-account', params),
+  },
+
   // Plugin management (with in-app terminal)
   plugin: {
     installStart: (params: { command: string; cols?: number; rows?: number }) =>
