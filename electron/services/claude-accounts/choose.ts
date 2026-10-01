@@ -11,9 +11,10 @@ import type { ClaudeAccountWindow } from '../../types';
  * 2. the account the agent last ran on, while it is under both thresholds and
  *    not blocked: a move costs the prompt cache, which is per account;
  * 3. the account with the most room under both thresholds, the margin being
- *    min(5 h threshold - 5 h used, weekly threshold - weekly used). Within 5
- *    points, a measured account before one nobody measured, then the one with
- *    fewer agents running or moving to it, then the order of the list;
+ *    min(5 h threshold - 5 h used, weekly threshold - weekly used). Among the
+ *    accounts within 5 points of the best margin, a measured account before
+ *    one nobody measured, then the one with fewer agents running or moving to
+ *    it, then the order of the list;
  * 4. none has room: the one that comes back first, whose CLI then waits for
  *    that reset by itself;
  * 5. none can run at all: account 1.
@@ -117,8 +118,12 @@ export function chooseAccount(input: ChooseInput): Choice {
 
   if (withRoom.length > 0) {
     const load = (r: Reading) => input.load[r.id] ?? 0;
-    const best = [...withRoom].sort((x, y) => {
-      if (Math.abs(x.margin - y.margin) > TIE_POINTS) return y.margin - x.margin;
+    // The tie is among the accounts within TIE_POINTS of the best margin. Two
+    // by two it was not transitive (QA, gate of #267): with margins 2, 6 and
+    // 10, 2 tied 6 and 6 tied 10, and the account with 2 points of room was
+    // chosen over the one with 10 (88/84/80 % against 90).
+    const top = Math.max(...withRoom.map(r => r.margin));
+    const best = withRoom.filter(r => top - r.margin <= TIE_POINTS).sort((x, y) => {
       if (x.measured !== y.measured) return x.measured ? -1 : 1;
       if (load(x) !== load(y)) return load(x) - load(y);
       return x.index - y.index;

@@ -72,6 +72,17 @@ describe('with a resolver', () => {
     expect(env.TARS_CLAUDE_ACCOUNT).toBe('default');
   });
 
+  it('starts on account 1, with nothing inherited, when the resolver throws (QA and the Audit, gate of #267)', () => {
+    // A launch never fails over an account, and it does not start on whatever
+    // folder Tars inherited either: an inherited CLAUDE_CONFIG_DIR is another login.
+    setAccountEnvResolver(() => { throw new Error('registry unreadable'); });
+    const env = spawnWith({ CLAUDE_AGENT_ID: 'a1', CLAUDE_CONFIG_DIR: '/inherited', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/x', TARS_CLAUDE_ACCOUNT: 'acct-bbbbbb' });
+    expect(spawnCalls).toHaveLength(1);
+    expect('CLAUDE_CONFIG_DIR' in env).toBe(false);
+    expect('CLAUDE_SECURESTORAGE_CONFIG_DIR' in env).toBe(false);
+    expect(env.TARS_CLAUDE_ACCOUNT).toBe('default');
+  });
+
   it('leaves the environment alone when the resolver has nothing for this agent', () => {
     setAccountEnvResolver(() => null);
     const env = spawnWith({ CLAUDE_AGENT_ID: 'a1', CLAUDE_CONFIG_DIR: '/mine' });
