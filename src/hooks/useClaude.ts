@@ -100,11 +100,17 @@ function fromPayload(prev: ClaudeData | null, result: Record<string, unknown>): 
   const unchanged =
     !!prev &&
     prev.projects.length === rawProjects.length &&
-    prev.activeSessions.length === activeSessions.length &&
-    // Check if any project changed
+    prev.activeSessions.join('\u0000') === activeSessions.join('\u0000') &&
+    // Check if any project changed: its sessions, and their times too. A
+    // project continued in a session it already had keeps its count, and only
+    // its lastAccessed and that session's time say so.
     !rawProjects.some((p, i) => {
       const prevP = prev.projects[i];
-      return prevP?.id !== p.id || prevP?.sessions.length !== (p.sessions || []).length;
+      const sessions = p.sessions || [];
+      return prevP?.id !== p.id
+        || prevP.lastActivity.getTime() !== p.lastAccessed
+        || prevP.sessions.length !== sessions.length
+        || sessions.some((s, j) => prevP.sessions[j].lastActivity.getTime() !== s.timestamp);
     }) &&
     // Check if rateLimits changed
     JSON.stringify(prev.rateLimits) === JSON.stringify(rateLimits) &&
