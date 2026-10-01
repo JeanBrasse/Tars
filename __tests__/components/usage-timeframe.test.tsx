@@ -348,14 +348,14 @@ describe('the Usage page, every figure over the timeframe chosen in its header',
     expect(new Date().getDate()).toBe(22);
   });
 
-  it('puts one timeframe control in the header: 14 days, 12 weeks, 12 months', async () => {
+  it('puts one timeframe control in the header: 24 hours, 14 days, 12 weeks, 12 months', async () => {
     const p = await render();
     const inHeader = ofType(headerActions(p.result), SegmentedControl);
     expect(inHeader).toHaveLength(1);
     expect(ofType(p.result, SegmentedControl)).toHaveLength(1);
     const control = inHeader[0].props as { ariaLabel: string; value: string; options: Array<{ value: string; label: string }> };
     expect(control.ariaLabel).toBe('Timeframe');
-    expect(control.options.map(o => [o.value, o.label])).toEqual([['daily', '14 days'], ['weekly', '12 weeks'], ['monthly', '12 months']]);
+    expect(control.options.map(o => [o.value, o.label])).toEqual([['hourly', '24 hours'], ['daily', '14 days'], ['weekly', '12 weeks'], ['monthly', '12 months']]);
     expect(control.value).toBe('daily');
   });
 
