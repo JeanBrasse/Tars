@@ -39,7 +39,10 @@ export function dateLabel(d: Date): string {
 const HOUR = 3_600_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** The start of the hour a time falls in, as both sources file their hours (#275): floored since the epoch. */
+/**
+ * The start of the hour a time falls in, as both sources file their hours
+ * (#275): floored since the epoch.
+ */
 export function hourOf(ms: number): number {
   return Math.floor(ms / HOUR) * HOUR;
 }

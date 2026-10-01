@@ -188,7 +188,7 @@ export default function UsagePage() {
   // figures. Nothing re-renders it at midnight itself, and until then it keeps
   // showing the day before under that day's own date.
   const todayKey = localDayKey(new Date());
-  const hourKey = hourOf(Date.now());
+  const hourKey = hourOf(new Date().getTime());
   const period = useMemo(
     () => usageWindow(timeframe, hourly ? new Date(hourKey) : dayOf(todayKey)),
     [timeframe, hourly, hourKey, todayKey],
