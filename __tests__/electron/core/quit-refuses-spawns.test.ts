@@ -54,6 +54,7 @@ import { beginQuit, isQuitting, agentStatusOnExit } from '../../../electron/core
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
+import { AcpSession } from '../../../electron/services/acp/client';
 import { agents } from '../../../electron/core/agent-manager';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
@@ -109,6 +110,12 @@ describe('once the quit has begun', () => {
     vi.mocked(pty.spawn).mockClear();
     expect(() => spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: '/tmp', cols: 80, rows: 24, env: {} })).toThrow(/quitting/);
     expect(pty.spawn).not.toHaveBeenCalled();
+  });
+
+  it('3. the ACP client itself refuses to spawn its agent, whoever calls it (QA E13, gate of #235)', async () => {
+    const session = new AcpSession({ command: '/bin/sh', args: ['-c', 'sleep 300'] }, { cwd: '/tmp' });
+    await expect(session.start()).rejects.toThrow(/quitting/);
+    expect(session.isRunning).toBe(false);
   });
 
   it('3. a delegated run does not start', async () => {
