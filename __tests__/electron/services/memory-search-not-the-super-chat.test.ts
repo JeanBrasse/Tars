@@ -37,6 +37,24 @@ import * as path from 'node:path';
  *    missing parameter as Number(null), 0, which is finite, and clamped it to
  *    1 instead of taking the default 10.
  *
+ * Added after the Audit's gate of #225 (2026-09-28), written before the fix.
+ * The gateway's search walks a hit's parents to its compression root and
+ * stops at a branch or a delegate edge: those stay searchable on their own.
+ * 9. A session branched or delegated from a compressed segment of the super
+ *    chat is returned: its root is itself, its parent a segment Tars never
+ *    recorded (the super chat was compressed inside a turn), and none of the
+ *    three ids a hit carries is the super chat's.
+ * 10. The same once the branch was compressed too: the tip's parent is the
+ *    branch's own segment, and the super chat is two edges further up.
+ * 11. An ancestor that cannot be read (the gateway fails, the session is
+ *    gone), a chain longer than the bound, or a cycle lets the hit through,
+ *    or never ends.
+ * 12. Over-correction: Noah's own branched sessions are dropped; or a hit
+ *    with no parent costs a call to the gateway; or an ancestor shared by
+ *    several hits is read once per hit; or hits are walked past the limit.
+ * 13. The Brain page, which is Noah's own and filters nothing, walks
+ *    anything.
+ *
  * The overseer and the memory route are the real ones; the live transport
  * and the gateway's search are fakes.
  */
@@ -53,13 +71,25 @@ vi.mock('../../../electron/services/hermes-session', () => ({
   }),
   askLiveSession: async () => ({ ok: true, envelope: '{"say":"Answered live.","action":null}' }),
 }));
-const gateway = vi.hoisted(() => ({ hits: [] as Array<Record<string, unknown>>, runId: '' }));
+const gateway = vi.hoisted(() => ({
+  hits: [] as Array<Record<string, unknown>>,
+  runId: '',
+  /** GET /api/sessions/{id}: each session's parent, null for a root; absent reads as a 404. */
+  parents: {} as Record<string, string | null>,
+  detailCalls: [] as string[],
+}));
 /** A run id as the gateway names them: `cron_<job>_<UTC date>_<UTC time>`. */
 const runIdFor = (jobId: string, at = new Date()) => `cron_${jobId}_${at.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_')}`;
 vi.mock('../../../electron/services/hermes-client', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../electron/services/hermes-client')>()),
   // As the gateway does: at most `limit` hits, in its own order.
   searchHermesSessions: async (_conn: unknown, _q: string, limit = 10) => ({ success: true, hits: gateway.hits.slice(0, limit) }),
+  fetchHermesSessionParent: async (_conn: unknown, id: string) => {
+    gateway.detailCalls.push(id);
+    return id in gateway.parents
+      ? { success: true, parentSessionId: gateway.parents[id] }
+      : { success: false, error: 'HTTP 404' };
+  },
   updateHermesCron: async () => ({ success: true }),
   hermesCronAction: async () => ({ success: true }),
   fetchHermesCronRuns: async () => ({ success: true, runs: gateway.runId ? [{ id: gateway.runId }] : [] }),
@@ -104,6 +134,8 @@ beforeEach(() => {
   overseer.resetLiveSession();
   gateway.hits = [];
   gateway.runId = '';
+  gateway.parents = {};
+  gateway.detailCalls = [];
   live.available = true;
 });
 
@@ -179,6 +211,8 @@ describe('memory_search, as an agent calls it', () => {
 
   it('7. leaves out a compressed session whose lineage root or parent is the super chat\'s', async () => {
     await overseer.askOverseer('Seed the live session.');
+    // Noah's lineage is read up to its root, which the gateway gives with no parent.
+    gateway.parents = { 'noah-root': null };
     gateway.hits = [
       { sessionId: 'tip-after-compression', lineageRoot: 'live-overseer-1', snippet: 'the super chat, compressed' },
       { sessionId: 'tip-2', parentSessionId: 'stored-overseer-1', snippet: 'its child' },
@@ -192,5 +226,64 @@ describe('memory_search, as an agent calls it', () => {
     gateway.hits = Array.from({ length: 15 }, (_, i) => ({ sessionId: `noah-own-${i}`, snippet: 'Noah' }));
 
     expect(await agentSearches('x')).toHaveLength(10);
+  });
+
+  it('9. leaves out a session branched from a segment of the super chat Tars never recorded', async () => {
+    await overseer.askOverseer('Seed the live session.');
+    gateway.parents = { 'segment-7': 'segment-6', 'segment-6': 'stored-overseer-1', 'stored-overseer-1': null };
+    gateway.hits = [
+      { sessionId: 'branch-1', lineageRoot: 'branch-1', parentSessionId: 'segment-7', snippet: 'a delegate of the super chat' },
+      { sessionId: 'noah-own-9', lineageRoot: 'noah-own-9', snippet: 'kept' },
+    ];
+
+    expect((await agentSearches('x')).map(h => h.ref)).toEqual(['noah-own-9']);
+  });
+
+  it('10. leaves it out once the branch was compressed too', async () => {
+    await overseer.askOverseer('Seed the live session.');
+    gateway.parents = { 'branch-mid': 'branch-root', 'branch-root': 'segment-7', 'segment-7': 'live-overseer-1' };
+    gateway.hits = [{ sessionId: 'branch-tip', lineageRoot: 'branch-root', parentSessionId: 'branch-mid', snippet: 'compressed branch' }];
+
+    expect(await agentSearches('x')).toEqual([]);
+  });
+
+  it('11. leaves out a hit whose ancestry cannot be read to its end, and ends on a cycle', async () => {
+    await overseer.askOverseer('Seed the live session.');
+    gateway.parents = {
+      'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a',
+      ...Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`link-${i}`, `link-${i + 1}`])),
+    };
+    gateway.hits = [
+      { sessionId: 'orphan', lineageRoot: 'orphan', parentSessionId: 'deleted-segment', snippet: 'parent gone' },
+      { sessionId: 'looping', lineageRoot: 'looping', parentSessionId: 'cycle-a', snippet: 'a cycle' },
+      { sessionId: 'deep', lineageRoot: 'deep', parentSessionId: 'link-0', snippet: 'longer than the bound' },
+    ];
+
+    expect(await agentSearches('x')).toEqual([]);
+    expect(gateway.detailCalls.length).toBeLessThan(60);
+  });
+
+  it('12. keeps Noah\'s own branches, reads a shared ancestor once, and asks nothing for a hit with no parent or past the limit', async () => {
+    await overseer.askOverseer('Seed the live session.');
+    gateway.parents = { 'noah-chat': 'noah-first', 'noah-first': null };
+    gateway.hits = [
+      { sessionId: 'noah-plain', lineageRoot: 'noah-plain', snippet: 'no parent' },
+      { sessionId: 'noah-branch-1', lineageRoot: 'noah-branch-1', parentSessionId: 'noah-chat', snippet: 'a branch of Noah\'s' },
+      { sessionId: 'noah-branch-2', lineageRoot: 'noah-branch-2', parentSessionId: 'noah-chat', snippet: 'another' },
+      { sessionId: 'noah-branch-3', lineageRoot: 'noah-branch-3', parentSessionId: 'never-read', snippet: 'past the limit' },
+    ];
+
+    expect((await agentSearches('x', 3)).map(h => h.ref)).toEqual(['noah-plain', 'noah-branch-1', 'noah-branch-2']);
+    expect(gateway.detailCalls).toEqual(['noah-chat', 'noah-first']);
+  });
+
+  it('13. walks nothing for the Brain page, which filters nothing', async () => {
+    const { searchMemory } = await import('../../../electron/services/memory-hub');
+    gateway.hits = [{ sessionId: 'branch-1', lineageRoot: 'branch-1', parentSessionId: 'segment-7', snippet: 'Noah\'s own view' }];
+
+    const res = await searchMemory({ query: 'x', settings: {} as never, hermes: {} as never, sources: ['hermes'] });
+
+    expect(res.hits.map(h => h.ref)).toEqual(['branch-1']);
+    expect(gateway.detailCalls).toEqual([]);
   });
 });
