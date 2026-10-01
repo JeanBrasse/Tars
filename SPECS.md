@@ -4,7 +4,7 @@
 
 A desktop app that runs a team of AI coding-agent CLIs on your own machine, in parallel, on your own repositories. Each agent is a real terminal process (`claude`, `codex`, `gemini`, `grok`, `opencode`, `pi`, or the `claude` binary re-pointed at another vendor) running in its own git worktree, with its own model, its own permission mode and its own PTY. Tars owns the process lifecycle, the orchestration path between agents, one shared memory, and the cost accounting.
 
-Nothing runs in the cloud. No account, no server, no analytics. The state lives in `~/.dorothy`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the ACP registry, the update feed, and whatever integration you switch on: error reports to Sentry among them, off unless you turn them on (§11, Error reports).
+Nothing runs in the cloud. No account, no server, no analytics. The state lives in `~/.dorothy`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the ACP registry, the update feed, the update checks of the CLIs it runs, and whatever integration you switch on: error reports to Sentry among them, off unless you turn them on (§11, Error reports).
 
 ---
 
@@ -204,7 +204,7 @@ On the `claude` binary, the fourteen providers that run it get `managedCliEnv()`
 | CLI, installed as | What Tars runs | When it holds back |
 |---|---|---|
 | `claude`, native installer (`~/.local/bin/claude` → `~/.local/share/claude/versions/<version>`) | `claude update` | never for a running session: each version is its own file, a session keeps running the one it started from, and the link is swapped in one step. The verdict is read off the link, since `claude update` exits 0 when an administrator has disabled updates |
-| `amp`, global npm package | `npm view <package> version`, then the new version downloaded into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, all three with a `--cache` in that scratch folder, which is deleted after: `~/.npm` is never pruned and kept 38 MB of every Amp release | while any process has the binary open (`lsof -t`), asked before the download and again before the install, because npm removes the old package before the new one is in place |
+| `amp`, global npm package | `npm view <package> version`, then the new version downloaded into a scratch prefix, then `npm install --global --prefix <prefix> --prefer-offline <package>@<version>`, all three with a `--cache` in that scratch folder, which is deleted after: `~/.npm` is never pruned and kept 38 MB of every Amp release. One that cannot be deleted is named in the log and removed by a later pass once an hour old | while any process has the binary open (`lsof -t`), asked before the download and again before the install, because npm removes the old package before the new one is in place |
 
 `<package>` is the one that owns the binary, read from where the launcher really points: `@sourcegraph/amp` on an install made before Amp's rename to `@ampcode/cli`, which `amp update` itself cannot update (it asks for `@ampcode/cli` and npm refuses with `EEXIST`).
 
@@ -462,7 +462,7 @@ The two remote backends are *additionally* registered as HTTP MCP servers direct
 needsPromptInjection(providerConfigDir) === (resolve(configDir) !== resolve(~/.claude))
 ```
 
-Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest({ budgetMs: 3000 })` and prepends the result, wrapped:
+Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest`, which waits for Hermes no longer than every session start does (`HERMES_START_BUDGET_MS`, 1.5 s), and prepends the result, wrapped:
 
 ```
 <project-memory>
@@ -488,7 +488,7 @@ Both are concatenated and returned as `hookSpecificOutput.additionalContext`. Th
 
 ### Digest budget
 
-`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against a 4 s (3 s at spawn time) timeout. A gateway that is down must not delay the agent.
+`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against `HERMES_START_BUDGET_MS`, 1.5 s, for the hook's route and the prompt alike, and no caller may wait longer: under the hook's 3 s curl, so a Hermes that accepts the connection and never answers costs its own memory, never the project's. It was 4 s for the hook's route, and the hook gave up first: the agent started with no memory at all.
 
 ---
 
@@ -505,7 +505,9 @@ Two independent ledgers, because no single source covers everything.
 - Keeps only `type === 'assistant'` entries with a `message.usage`.
 - **De-duplication.** Resuming a session copies earlier assistant messages into the new transcript: on a real history that is over half the lines, so counting them twice would roughly double every cost on the page. Key: `` `${message.id}:${entry.requestId}` ``, skipped if already seen (the degenerate `":"` key is exempt).
 - `modelUsage` is an `Object.create(null)` map. A transcript's model id is attacker-influenceable and `modelUsage[model] ||= …` on a plain object would let `"__proto__"` write onto `Object.prototype` inside the main process; `__proto__`, `constructor`, `prototype` and `<synthetic>` are rejected outright.
-- 60 s memo.
+- 60 s memo, kept past the minute while no transcript moved (the path, the time and the size of each) and the catalogue is the one that priced it; a pass that could not read a transcript is never kept, since a file made readable again keeps its time and size.
+- A model's price is looked up once per scan. `priceFor` walks the whole catalogue for a dated model id, and with no catalogue in memory it tried to read the missing cache file: at every turn, about 608 thousand on Noah's transcripts, the adding up took 5 to 16 s.
+- The scan starts at launch (`prewarmClaudeStats`, once the IPC handlers are registered). `claude:getData` hands the page the stats as last computed, at once, and computes a memo older than the minute again behind it, one computation whatever the polls (`getClaudeStatsNow`); the page's 10 s poll picks the new numbers up. The bots' `/stats` wait for numbers no older than the minute (`getClaudeStats`).
 
 **Cache-write pricing.** `usage.cache_creation` splits into `ephemeral_1h_input_tokens` and `ephemeral_5m_input_tokens`; when the split is absent, the whole `cache_creation_input_tokens` figure is treated as 5-minute. models.dev publishes `input`, `output`, `cache_read` and the 5-minute `cache_write`. The 1-hour write is **derived**, not guessed: Anthropic prices the 5-minute write at 1.25× base and the 1-hour write at 2× base, so `cache1h = input * 2`. Missing `cache_read` falls back to `input * 0.1`.
 
@@ -529,7 +531,7 @@ cost = input/1e6·p.input + output/1e6·p.output
 
 Two sums hold by construction and are tested (`transcript-usage.test.ts`, `handlers/usage-per-day.test.ts`): over a day's models, `costByModel` adds up to that day's `costUSD`; over the days, `costByModel[m]` adds up to `modelUsage[m].costUSD`, less the turns that carry no timestamp and so belong to no day. Measured on Noah's history on 2026-09-22 (25 days, $10,227.39, no undated turn): the first held to 5e-12 USD on every day, the second to 5e-11 USD on every model. `costByModel` cannot be rebuilt downstream from `breakdownByModel`, which does not say which writes were 1h: pricing them all at the 5m rate came out $656.84 (6.5 %) under on the same history.
 
-`getClaudeStats()` reads `stats-cache.json`, else `statsig_user_metadata.json`, else computes from local files, and then scans the transcripts in every case. When the scan finds usage, its `modelUsage`, `dailyModelTokens` and `lastComputedDate` replace the cache's, and what only the cache counts (`totalSessions`, `totalMessages`, `dailyActivity`, `hourCounts`, `longestSession`, `firstSessionDate`) is kept. A `stats-cache.json` used to be reason enough to skip the scan, which left those machines with each day's input+output tokens and nothing else: no cost, no cache, no replies, and only as recent as the last `/stats`. The scan they pay now is the one every other machine pays: on 1.2 GB of transcripts, 4.3 to 6.3 s the first time, in slices, then 73 to 167 ms a minute. Days the cache holds from before the oldest transcript are no longer shown; they carried tokens only.
+`getClaudeStats()` reads `stats-cache.json`, else `statsig_user_metadata.json`, else computes from local files, and then scans the transcripts in every case. When the scan finds usage, its `modelUsage`, `dailyModelTokens` and `lastComputedDate` replace the cache's, and what only the cache counts (`totalSessions`, `totalMessages`, `dailyActivity`, `hourCounts`, `longestSession`, `firstSessionDate`) is kept. A `stats-cache.json` used to be reason enough to skip the scan, which left those machines with each day's input+output tokens and nothing else: no cost, no cache, no replies, and only as recent as the last `/stats`. The scan they pay now is the one every other machine pays: on 1.2 GB of transcripts, 4.3 to 6.3 s the first time, in slices, which starts at launch rather than when a page asks, then 73 to 167 ms a minute while a transcript moves. Days the cache holds from before the oldest transcript are no longer shown; they carried tokens only.
 
 ### Source B: the usage ledger (every provider)
 
@@ -604,7 +606,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `model-catalog.json` + `.meta.json` | models.dev payload + `{ etag, fetchedAt }` | `writeCache()` | "a cache we cannot write is a slower app, not a broken one" |
 | `acp-registry.json` | `{ fetchedAt, agents }` | `writeCache()` | same |
 | `rate-limits.json` | quota snapshot | `statusline.sh` | deleted when the statusline is disabled |
-| `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock; anything that is not one JSON object starts again from `{}` |
+| `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock that holds its owner's token and is released only by that owner; a lock over 5 s old is taken over by one render at a time, and only while it is still the one judged dead. Anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
 | `skills-marketplace.json` | `{ skills, fetchedAt }`: the last skills.sh listing | `services/skills-marketplace.ts` | served at once to the Extensions page, fetched again behind it once an hour old; a failed fetch keeps it. Agents can write `~/.dorothy`, so every entry is checked on the way back as on the way in (`repo` is `owner/name` or `owner/name/skill`, no segment `.`, `..` or starting with `-`), and a file with no valid entry is fetched afresh |
 | `cli-updates.log` (+ `.1`) | one line per CLI update result: time, CLI, outcome, versions, what it said | `services/cli-updater.ts` | append-only, moved to `.1` past 256 KB. A check that changes nothing is written once, a failure every time |
@@ -618,6 +620,7 @@ Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes
 |---|---|---|---|
 | `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
 | `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
+| `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds ids and names, never a credential and never a folder: an account's folder is `~/.claude-accounts/<id>`, derived from its id. A file that does not parse reads as account 1 alone and is never written over: every change is refused, and Settings says why |
 
 Files Tars writes **outside** its own directory:
 
@@ -654,7 +657,7 @@ Seven servers ship in `extraResources` as `<name>/dist/bundle.js` and are regist
 | `mcp-socialdata` | `dorothy-socialdata` | X/Twitter read |
 | `mcp-x` | `dorothy-x` | X/Twitter post |
 
-What the seven share is in `mcp-shared/`, which is not a server: the client to Tars's API (where it is, the token presented, the caller's identity), the tool table every server but `mcp-memory` registers its tools through, whose one guard words each tool's failures ("Error <what>: <message>"), one HTTP request read whole, and the settings file as it is at the call. Each server's esbuild bundles it in. It imports node's builtins and nothing else, so each server keeps the SDK and zod its own lock pins (SDK 1.25 to 1.30 today). `__tests__/mcp/contracts/` records what the seven answer over stdio, `tools/list` and every tool along each of its answers, against a fake Tars.
+What the seven share is in `mcp-shared/`, which is not a server: the client to Tars's API (where it is, the token presented, the caller's identity), the tool table every server but `mcp-memory` registers its tools through, whose one guard words each tool's failures ("Error <what>: <message>"), one HTTP request read whole, the wait after which a silent host is said to have given "no answer within N s" (30 s for Tars, 60 s for SocialData, X and a Telegram message, 60 s for mcp-kanban's calls through Tars to Hermes; a file sent to Telegram is timed by its size instead, the time it takes at 10 KB/s plus that minute, since once its bytes sit in the kernel's send buffer silence is all a server sees while a slow link carries them), and the settings file as it is at the call. Each server's esbuild bundles it in. It imports node's builtins and nothing else, so each server keeps the SDK and zod its own lock pins (SDK 1.25 to 1.30 today). `__tests__/mcp/contracts/` records what the seven answer over stdio, `tools/list` and every tool along each of its answers, against a fake Tars.
 
 Plus `tasmania` when `tasmaniaEnabled` and the configured path exists. `DOROTHY_MANAGED_MCPS` holds eight names: the six above plus `tasmania` and `google-workspace`; they are hidden from the Custom MCP settings UI. `tars-memory` is not in the set.
 
@@ -678,7 +681,7 @@ Tars deliberately has no scheduler and no server-side task harness. Both live in
 
 Only a connection saved in `~/.dorothy/hermes-connection.json`, readable and naming the address its mode needs, is called (`configuredHermesConnection`, `usableHermesConnection`); a missing or broken file is "not configured", never the default port, and `hermes:connection:get` then gives the pages no base URL to probe.
 
-Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
+Two auth flavours, advertised on the public `GET /api/status`: a static `X-Hermes-Session-Token` header, or a real cookie sign-in via `POST /auth/password-login`. The header goes out only while the connection's auth is `token` (`sessionToken` in `electron/types/hermes.ts`): under `oauth` a token kept from token mode is not sent, as in Hermes Desktop. The cookie jar is a `Map` in the main process and never reaches the renderer; an empty `Set-Cookie` value deletes the entry rather than storing a blank.
 
 Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` in §5), `/api/plugins/kanban` (the board behind `/kanban`), and the cron endpoints behind `/crons`.
 

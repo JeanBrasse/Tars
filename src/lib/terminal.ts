@@ -299,3 +299,43 @@ export function attachShiftEnterHandler(
 export function disposeTerminalSafely(term: Pick<Terminal, 'dispose'>): void {
   setTimeout(() => term.dispose(), 40);
 }
+
+/** What a terminal says when keys typed into it reach no terminal in main. */
+export const NOT_RUNNING_LINE = '\r\n\x1b[90m(Not running: start this agent to type here.)\x1b[0m\r\n';
+
+/**
+ * Sends the keys a person types to an agent's terminal, and says so in `term`
+ * when they reach none. Since #164 an idle agent has no terminal until it is
+ * started, and agent:input answers `{ success: false }` for it; the panels,
+ * the agent dialog and the tray dropped that answer, so an idle panel took
+ * keys and nothing happened. Said once for a run of refused keys, not per key;
+ * a key that lands starts the count again. The wheel does not come through
+ * here: scrolling an idle panel is not typing into it.
+ */
+export function keySender(
+  term: Pick<Terminal, 'write'>,
+  send: (input: string) => Promise<{ success: boolean } | undefined>,
+): (input: string) => void {
+  let said = false;
+  const refused = () => {
+    if (said) return;
+    said = true;
+    term.write(NOT_RUNNING_LINE);
+  };
+  return (input: string) => {
+    send(input).then(
+      result => {
+        if (result?.success) said = false;
+        else refused();
+      },
+      refused,
+    );
+  };
+}
+
+/** The agent dialog's first line: connected only to an agent that has a terminal. */
+export function connectionLine(name: string, live: boolean): string {
+  return live
+    ? `\x1b[36m● Connected to ${name}\x1b[0m`
+    : `\x1b[90m○ ${name} is not running. Start it to type here.\x1b[0m`;
+}

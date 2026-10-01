@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
@@ -9,8 +9,6 @@ import RestartPendingNotice from './RestartPendingNotice';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { useRestartPending } from '@/hooks/useRestartPending';
 import TerminalPanelHeader from './TerminalPanelHeader';
-import type { PanelView } from './TerminalPanelHeader';
-import PanelHistory from './PanelHistory';
 
 interface TerminalPanelProps {
   agent: AgentStatus;
@@ -97,10 +95,6 @@ function TerminalPanel({
     };
   }, [agent.id]);
 
-  // Per panel, and not persisted: the live terminal is what a board is for, so
-  // a panel opens on it every time.
-  const [view, setView] = useState<PanelView>('live');
-
   // A message this terminal is holding because somebody is typing in it. Read
   // here rather than passed down the grid: the store is one subscription for
   // the window, and each panel reading its own agent out of it means a wait on
@@ -115,7 +109,6 @@ function TerminalPanel({
   const handleStart = useCallback(() => onStart(agent.id), [agent.id, onStart]);
   const handleStop = useCallback(() => onStop(agent.id), [agent.id, onStop]);
   const handleRestart = useCallback(() => onRestart(agent.id), [agent.id, onRestart]);
-  const handleReadHistory = useCallback(() => setView('history'), []);
   const handleRemove = useCallback(() => onRemove(agent.id), [agent.id, onRemove]);
   const handleClear = useCallback(() => onClear(agent.id), [agent.id, onClear]);
   const handleFullscreen = useCallback(() => onFullscreen(agent.id), [agent.id, onFullscreen]);
@@ -134,8 +127,6 @@ function TerminalPanel({
       {/* Header */}
       <TerminalPanelHeader
         agent={agent}
-        view={view}
-        onViewChange={setView}
         isFullscreen={isFullscreen}
         isBroadcasting={isBroadcasting}
         tabType={tabType}
@@ -159,27 +150,13 @@ function TerminalPanel({
       {restartPending && <RestartPendingNotice pending={restartPending} />}
 
       {/* This terminal's claude left fullscreen, so the wheel reaches nothing
-          (useMultiTerminal has stopped sending it). The history view is the
-          one way to read back in this session; restarting gives a session that
-          opens fullscreen. Offered from the history view too, minus the
-          action that would open the view already open. */}
-      {agent.leftFullscreen && (
-        <LeftFullscreenNotice
-          onHistory={view === 'history' ? undefined : handleReadHistory}
-          onRestart={handleRestart}
-        />
-      )}
+          (useMultiTerminal has stopped sending it). Restarting gives a session
+          on the same conversation that opens fullscreen. */}
+      {agent.leftFullscreen && <LeftFullscreenNotice onRestart={handleRestart} />}
 
-      {/* Terminal body.
-          History is drawn over the terminal, never instead of it: the xterm
-          stays mounted at full size, so switching views neither disposes it nor
-          resizes the pty. Three attempts at repairing the terminal itself were
-          reverted; this one leaves it alone. */}
+      {/* Terminal body */}
       <div className="flex-1 min-h-0 overflow-hidden relative bg-background">
         <div ref={containerRef} className="absolute inset-0" />
-        {view === 'history' && (
-          <PanelHistory agentId={agent.id} agentName={agent.name || 'This agent'} />
-        )}
       </div>
     </div>
   );
