@@ -26,6 +26,7 @@ export const CHANGELOG: Release[] = [
       'The Usage page also counts the Claude sessions kept in the folder CLAUDE_CONFIG_DIR names, when Tars itself was started with that variable set (from a terminal; a Tars opened from the Dock does not see it)',
       'An agent\'s panel on the Dashboard no longer has a history view, the conversation read from its transcript: the panel shows its session, and its header says session where it said live. Fullscreen is one press on the arrows after start or stop, which turn inward while the panel fills the window, where it was an item of the panel\'s ··· menu. A panel whose claude left fullscreen offers restart alone',
       'The Projects page no longer shows Invalid Date on a folder you added that Claude Code has never run in: Tars knows no date for it, so its card shows none and its own view says unknown',
+      'The Brain page\'s graph shows the MCP servers of ~/.claude/mcp.json, joined to every agent, which it never did: it read the file through a field the file reader does not return, so the file\'s servers never reached it',
     ],
   },
   {
