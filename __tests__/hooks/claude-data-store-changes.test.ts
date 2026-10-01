@@ -21,7 +21,12 @@ vi.mock('react', async (importOriginal) => ({
  *    which may have been answered before the change;
  * 10. over-correction: an idle poll, whose answer is always new objects, hands
  *    the pages a new object anyway; or refreshes asked for during one read
- *    each make a read of their own.
+ *    each make a read of their own;
+ * 11. a project continued in a session it already had never shows its new
+ *    date: the comparison counted each project's sessions and read neither
+ *    the project's lastAccessed nor the sessions' times (the Audit's re-gate
+ *    of this PR; on main, reopening the Projects page showed it); and an active
+ *    session swapped for another at the same count is missed the same way.
  */
 
 type Api = { claude: { getData: ReturnType<typeof vi.fn> } };
@@ -34,6 +39,9 @@ const payload = (skill: string, over: Partial<Record<'plugins' | 'settings' | 'p
   skills: [{ name: skill, source: 'user', path: `/skills/${skill}` }],
   ...over,
 });
+const T1 = new Date(2026, 8, 30, 9, 0, 0).getTime();
+const T2 = new Date(2026, 8, 30, 11, 30, 0).getTime();
+const project = (sessionAt: number, accessedAt: number) => ({ id: 'p1', path: '/p/one', name: 'one', sessions: [{ id: 's1', timestamp: sessionAt }], lastAccessed: accessedAt });
 const plugin = (enabled: boolean) => ({ name: 'review', marketplace: 'tars', fullName: 'review@tars', enabled, installPath: '/p/review', version: '1.0.0', installedAt: '2026-09-28', lastUpdated: '2026-09-28' });
 
 beforeEach(() => {
@@ -125,5 +133,49 @@ describe('no more work than the change needs (10)', () => {
     await p.result.refresh();
     await settle();
     expect(getData()).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('a project continued in a session it already had (11)', () => {
+  it('shows the project\'s new date and the session\'s new time', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(T1, T1)] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => payload('same', { projects: [project(T2, T2)] }));
+    await p.result.refresh();
+    await settle();
+    expect(p.result.data?.projects[0].lastActivity.getTime()).toBe(T2);
+    expect(p.result.data?.projects[0].sessions[0].lastActivity.getTime()).toBe(T2);
+  });
+
+  it('shows a session\'s new time when only the session moved', async () => {
+    getData().mockImplementation(async () => payload('same', { projects: [project(T1, T2)] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => payload('same', { projects: [project(T2, T2)] }));
+    await p.result.refresh();
+    await settle();
+    expect(p.result.data?.projects[0].sessions[0].lastActivity.getTime()).toBe(T2);
+  });
+
+  it('shows an active session swapped for another at the same count', async () => {
+    getData().mockImplementation(async () => ({ ...payload('same'), activeSessions: ['s1'] }));
+    const p = page();
+    await settle();
+    getData().mockImplementation(async () => ({ ...payload('same'), activeSessions: ['s2'] }));
+    await p.result.refresh();
+    await settle();
+    expect(p.result.data?.activeSessions).toEqual(['s2']);
+  });
+
+  it('hands back the same data when an idle poll finds the same projects at the same dates (10)', async () => {
+    getData().mockImplementation(async () => ({ ...payload('same', { projects: [project(T1, T2)] }), activeSessions: ['s1'] }));
+    const p = page();
+    await settle();
+    const before = p.result.data;
+    vi.advanceTimersByTime(10_000);
+    await settle();
+    expect(getData()).toHaveBeenCalledTimes(2);
+    expect(p.result.data).toBe(before);
   });
 });
