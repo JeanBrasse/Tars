@@ -23,8 +23,9 @@ import { scheduleTick } from '../utils/agents-tick';
  * and stays a zombie.
  *
  * So an agent is stalled when it is `running`, its transcript has had no write
- * for STALL_AFTER_MS, and nothing works under its CLI but its MCP servers and
- * caffeinate. A long Bash command writes nothing to the transcript while it
+ * for STALL_AFTER_MS, nothing works under its CLI but its MCP servers and
+ * caffeinate, and no caffeinate there is live and renewed (signOfLife: a long
+ * MCP wait or a subagent shows nothing else, the Audit's gate of #283). A long Bash command writes nothing to the transcript while it
  * runs, and it is a live process under the CLI: not a stall. An MCP server
  * whose command names neither `mcp` nor `bundle.js` reads as a tool at work,
  * which can only hide a stall, never invent one.
@@ -38,21 +39,29 @@ import { scheduleTick } from '../utils/agents-tick';
 export const STALL_AFTER_MS = 30 * 60_000;
 export const CHECK_EVERY_MS = 60_000;
 
-export type Proc = { pid: number; ppid: number; stat: string; command: string };
+/** `age`: seconds since the process started, from ps's etime. */
+export type Proc = { pid: number; ppid: number; stat: string; age?: number; command: string };
 
-/** `ps -A -o pid=,ppid=,stat=,command=`, read: the command keeps its spaces. */
+/** ps's elapsed time, `[[dd-]hh:]mm:ss`, in seconds. */
+function seconds(etime: string): number | undefined {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(etime);
+  return m ? Number(m[1] ?? 0) * 86_400 + Number(m[2] ?? 0) * 3600 + Number(m[3]) * 60 + Number(m[4]) : undefined;
+}
+
+/** `ps -A -o pid=,ppid=,stat=,etime=,command=`, read: the command keeps its spaces. */
 export function parseProcesses(out: string): Proc[] {
   const procs: Proc[] = [];
   for (const line of out.split('\n')) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-    if (m) procs.push({ pid: Number(m[1]), ppid: Number(m[2]), stat: m[3], command: m[4].trim() });
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line);
+    const age = m ? seconds(m[4]) : undefined;
+    if (m && age !== undefined) procs.push({ pid: Number(m[1]), ppid: Number(m[2]), stat: m[3], age, command: m[5].trim() });
   }
   return procs;
 }
 
 function readProcesses(): Promise<Proc[] | undefined> {
   return new Promise(done => {
-    execFile('ps', ['-A', '-o', 'pid=,ppid=,stat=,command='], { maxBuffer: 16 * 1024 * 1024, timeout: 5_000 }, (err, stdout) => {
+    execFile('ps', ['-A', '-o', 'pid=,ppid=,stat=,etime=,command='], { maxBuffer: 16 * 1024 * 1024, timeout: 5_000 }, (err, stdout) => {
       done(err ? undefined : parseProcesses(String(stdout)));
     });
   });
@@ -93,6 +102,25 @@ export function toolAtWork(cliPid: number, procs: Proc[]): string | undefined {
   return undefined;
 }
 
+/**
+ * How long a turn's caffeinate lives: Claude Code starts `caffeinate -i -t 300`
+ * and starts another while its event loop runs.
+ */
+const CAFFEINATE_SECONDS = 300;
+
+/**
+ * A live caffeinate under the CLI, younger than its 300 s: its event loop is
+ * renewing it, so the CLI is alive. That is what an agent inside a long MCP
+ * call (wait_for_agent, delegate_task) or a subagent shows, with nothing else
+ * at work and nothing written to its transcript (the Audit's gate of #283). A
+ * frozen loop renews nothing: the last one exits and stays a zombie (28/09).
+ * Linux has no caffeinate, and the rule is then silence and no tool at work.
+ */
+export function signOfLife(cliPid: number, procs: Proc[]): boolean {
+  return childrenOf(cliPid, procs).some(proc => isCaffeinate(proc.command) && !isZombie(proc)
+    && (proc.age === undefined || proc.age < CAFFEINATE_SECONDS));
+}
+
 /** When the agent's stall began (its last transcript write), or undefined when it is not stalled or nothing is known. */
 export function stallOf(input: {
   status: string;
@@ -109,6 +137,7 @@ export function stallOf(input: {
   const cli = cliProcess(input.terminalPid, input.procs);
   if (!cli) return undefined;
   if (toolAtWork(cli.pid, input.procs)) return undefined;
+  if (signOfLife(cli.pid, input.procs)) return undefined;
   return input.transcriptWrittenAt;
 }
 

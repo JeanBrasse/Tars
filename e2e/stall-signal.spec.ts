@@ -44,6 +44,8 @@ test('a running agent that writes nothing and runs no tool is marked stalled, an
     "const id = process.env.CLAUDE_AGENT_ID;",
     `require('fs').appendFileSync(${JSON.stringify(path.join(home, 'ids.txt'))}, process.pid + ' ' + id + '\\n');`,
     "if (id === 'busy') require('child_process').spawn('/bin/sh', ['-c', 'exec sleep 300'], { stdio: 'ignore' });",
+    // As Claude Code does during a turn, an MCP wait or a subagent among them.
+    "if (id === 'waiting') require('child_process').spawn('caffeinate', ['-i', '-t', '300'], { stdio: 'ignore' });",
     `if (id === 'lead') process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(heard)}, d));`,
     "process.stdout.write('stand-in ready\\n');",
     'process.stdin.resume();',
@@ -56,6 +58,7 @@ test('a running agent that writes nothing and runs no tool is marked stalled, an
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent('lead', 'Project Lead', 'orchestrator'), agent('frozen', 'Frozen Worker'), agent('busy', 'Busy Worker'),
+    agent('waiting', 'Waiting Worker'),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
@@ -70,10 +73,10 @@ test('a running agent that writes nothing and runs no tool is marked stalled, an
     await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
     const list = () => page.evaluate(() => (window as unknown as Api).electronAPI.agent.list());
-    for (const id of ['lead', 'frozen', 'busy']) {
+    for (const id of ['lead', 'frozen', 'busy', 'waiting']) {
       await page.evaluate(i => (window as unknown as Api).electronAPI.agent.start({ id: i, prompt: '' }), id);
     }
-    await expect.poll(async () => (await list()).filter(a => a.cliRunning).length, { timeout: 60_000 }).toBe(3);
+    await expect.poll(async () => (await list()).filter(a => a.cliRunning).length, { timeout: 60_000 }).toBe(4);
 
     const fortyMinutesAgo = Date.now() - 40 * 60_000;
     const transcripts = await app.evaluate((_e, { dist }) => {
@@ -82,10 +85,10 @@ test('a running agent that writes nothing and runs no tool is marked stalled, an
       const { transcriptPath } = req(`${dist}/utils/resume-session.js`);
       req(`${dist}/core/agent-launch.js`).resetLaunches();
       const paths: Record<string, string> = {};
-      for (const id of ['frozen', 'busy']) {
+      for (const id of ['frozen', 'busy', 'waiting']) {
         const a = agents.get(id);
         a.status = 'running';
-        a.currentSessionId = id === 'frozen' ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222';
+        a.currentSessionId = { frozen: '11111111-1111-4111-8111-111111111111', busy: '22222222-2222-4222-8222-222222222222', waiting: '33333333-3333-4333-8333-333333333333' }[id as 'frozen'];
         paths[id] = transcriptPath(a.ptyCwd, a.currentSessionId);
       }
       return paths;
@@ -104,7 +107,9 @@ test('a running agent that writes nothing and runs no tool is marked stalled, an
     await expect.poll(() => {
       const ids = fs.existsSync(idsFile) ? fs.readFileSync(idsFile, 'utf8').trim().split('\n') : [];
       const busyPid = ids.find(l => l.endsWith(' busy'))?.split(' ')[0];
-      return ids.length === 3 && !!busyPid && psNow().some(l => /sleep 300/.test(l) && l.trim().split(/\s+/)[1] === busyPid);
+      const waitingPid = ids.find(l => l.endsWith(' waiting'))?.split(' ')[0];
+      const childOf = (pid: string | undefined, what: RegExp) => !!pid && psNow().some(l => what.test(l) && l.trim().split(/\s+/)[1] === pid);
+      return ids.length === 4 && childOf(busyPid, /sleep 300/) && childOf(waitingPid, /caffeinate -i -t 300/);
     }, { timeout: 30_000, message: 'the stand-ins have started, the busy one with its tool' }).toBe(true);
     const ps = psNow().filter(l => l.includes(home) || /sleep 300/.test(l));
 
@@ -116,15 +121,18 @@ test('a running agent that writes nothing and runs no tool is marked stalled, an
     const fleet = await list();
     const frozen = fleet.find(a => a.id === 'frozen');
     const busy = fleet.find(a => a.id === 'busy');
+    const waiting = fleet.find(a => a.id === 'waiting');
     let told = '';
     for (const until = Date.now() + 20_000; Date.now() < until && !told.includes('Frozen Worker'); await new Promise(r => setTimeout(r, 250))) {
       told = fs.existsSync(heard) ? fs.readFileSync(heard, 'utf8') : '';
     }
-    recordValues({ frozenStalledSince: frozen?.stalledSince, busyStalledSince: busy?.stalledSince ?? null, leadHeard: told, ps });
+    recordValues({ frozenStalledSince: frozen?.stalledSince, busyStalledSince: busy?.stalledSince ?? null, waitingStalledSince: waiting?.stalledSince ?? null, leadHeard: told, ps });
 
     expect(frozen?.stalledSince, 'the frozen worker was not marked').toBeDefined();
     expect(Math.abs(Date.parse(frozen!.stalledSince!) - fortyMinutesAgo)).toBeLessThan(2_000);
     expect(busy?.stalledSince, 'a worker running a tool was marked stalled').toBeUndefined();
+    expect(waiting?.stalledSince, 'a worker in a long MCP wait, its caffeinate renewed, was marked stalled').toBeUndefined();
+    expect(told).not.toContain('Waiting Worker');
     expect(told).toContain('Frozen Worker');
     expect(told).toMatch(/nothing to its transcript for 40 minutes/);
     expect(told).not.toContain('Busy Worker');
