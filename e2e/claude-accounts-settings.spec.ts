@@ -82,6 +82,25 @@ async function moveInMain(app: ElectronApplication, move: Move): Promise<void> {
 }
 const hhmm = (at: number) => { const d = new Date(at); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
+/**
+ * Removes the sandbox HOME, again from a fresh listing while something still
+ * writes into it. Settings > AI & Providers runs `amp --version`, and amp
+ * writes its log into HOME as it starts: a probe still running at the close
+ * wrote it mid-removal (ENOTEMPTY). rmSync's maxRetries cannot wait that out:
+ * Node 22 lists the children once and retries only the last rmdir.
+ */
+async function removeHome(home: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      fs.rmSync(home, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOTEMPTY' || attempt === 20) throw err;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+}
+
 /** Main's sentence for a registry that does not parse (#263, registryProblem). */
 const UNREADABLE = '~/.tars-private/claude-accounts.json does not read as a list of accounts. Nothing is changed until it is fixed or removed.';
 
@@ -258,6 +277,6 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     });
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
