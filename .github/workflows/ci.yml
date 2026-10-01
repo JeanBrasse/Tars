@@ -42,6 +42,11 @@ jobs:
     continue-on-error: true
 
     steps:
+      # Git for Windows checks text out with CRLF line endings; the tests read
+      # fixtures and sources byte for byte, as they are on macOS and Linux.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
       - name: Checkout code
         uses: actions/checkout@v4
 
