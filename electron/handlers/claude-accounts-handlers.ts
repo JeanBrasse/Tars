@@ -22,6 +22,7 @@ import {
 import { accountDirProblem, claudeCredentialOverrides, ensureAccountDir, provisionAccountDir } from '../services/claude-accounts/provision';
 import { claudeAuthLogout, claudeAuthStatus, loginCommand } from '../services/claude-accounts/auth';
 import type { AgentStatus, AppSettings, ClaudeAccount, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView } from '../types';
+import { refuseWhileQuitting } from '../core/quit-state';
 
 /**
  * The Settings contract for several Claude accounts (DESIGN-COMPTES-CLAUDE.md, B6).
@@ -365,6 +366,9 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
 
       const command = loginCommand(binary(), account.configDir);
       const ptyId = uuidv4();
+      // Not once the quit has begun: it would be in no map the quit ends. The
+      // terminal lives in pluginPtyProcesses (main.ts), which the quit does end.
+      refuseWhileQuitting('login terminal');
       const term = pty.spawn(command.file, command.args, {
         name: 'xterm-256color',
         cols: typeof cols === 'number' && cols > 0 ? cols : 100,

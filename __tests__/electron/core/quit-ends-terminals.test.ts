@@ -14,7 +14,7 @@ vi.mock('../../../electron/services/acp/client', async (importOriginal) => {
   return { ...real, processTable: () => { ps.reads++; return real.processTable(); } };
 });
 
-import { endAllTerminals, isQuitting, ptyProcesses, quickPtyProcesses, QUIT_POLL_MS } from '../../../electron/core/pty-manager';
+import { endAllTerminals, isQuitting, ptyProcesses, quickPtyProcesses, skillPtyProcesses, pluginPtyProcesses, QUIT_POLL_MS } from '../../../electron/core/pty-manager';
 import type { IPty } from 'node-pty';
 
 /**
@@ -69,6 +69,8 @@ afterEach(() => {
   for (const c of started.splice(0)) { try { process.kill(-c.pid!, 'SIGKILL'); } catch { /* gone */ } try { c.kill('SIGKILL'); } catch { /* gone */ } }
   ptyProcesses.clear();
   quickPtyProcesses.clear();
+  skillPtyProcesses.clear();
+  pluginPtyProcesses.clear();
 });
 
 /** Running: a zombie waiting to be reaped has ended. */
@@ -191,6 +193,28 @@ describe('the quit, for the agents\' terminals', () => {
     await endAllTerminals(500);
 
     expect(alive(bystander.pid!)).toBe(true);
+  });
+});
+
+describe('the maps the quit empties (QA E9, gate of #235)', () => {
+  it("ends the skill and plugin runners' trees too, a `claude auth login` terminal among them, and leaves every map empty", async () => {
+    // main.ts hands pluginPtyProcesses to the accounts handlers as loginPtys.
+    const skill = terminal('stubborn');
+    const login = terminal('stubborn');
+    skillPtyProcesses.set('skill-1', skill.pty);
+    pluginPtyProcesses.set('login-1', login.pty);
+    const shell = terminal('polite');
+    quickPtyProcesses.set('shell-1', shell.pty);
+    await settle(skill);
+    await settle(login);
+
+    await endAllTerminals(500);
+
+    for (const t of [skill, login]) {
+      expect(alive(t.job()), 'a runner deaf to the hangup outlived the quit').toBe(false);
+      expect(alive(t.grandchild())).toBe(false);
+    }
+    for (const map of [ptyProcesses, quickPtyProcesses, skillPtyProcesses, pluginPtyProcesses]) expect(map.size).toBe(0);
   });
 });
 
