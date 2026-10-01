@@ -112,6 +112,12 @@ describe('the Telegram through Hermes switch', () => {
     expect(settingsRow(r).description).toContain("Turning it on erases the Tars bot's token and switches the bot off.");
   });
 
+  it('says no state once the switch is off, while main\'s last report still says ready (5)', async () => {
+    const r = await open(false, { enabled: true, state: 'ready', waiting: 0 });
+    expect(word(r)).toBe('');
+    expect(settingsRow(r).description).toContain("Turning it on erases the Tars bot's token and switches the bot off.");
+  });
+
   it('says the state main reports, at once and as it changes, and stops listening when it goes (5)', async () => {
     const r = await open(true, { enabled: true, state: 'unreachable', waiting: 2 });
     expect(word(r)).toBe('unreachable');
