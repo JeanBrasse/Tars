@@ -135,6 +135,9 @@ if [ -n "$SESSION_ID" ]; then
     # Update session entry via temp file for atomic write
     T_DATE=$(date +%Y-%m-%d)
     T_PROVIDER="\${CLAUDE_PROVIDER:-claude}"
+    # The account the session runs on (TARS_CLAUDE_ACCOUNT), so the Usage page
+    # can say which one spent what; empty for a session that names none.
+    T_ACCOUNT="\${TARS_CLAUDE_ACCOUNT:-}"
     TMP_FILE="\${TOKEN_STATS_FILE}.tmp.$$"
     printf '%s' "$EXISTING" | jq -c -R -s \
       --arg sid "$SESSION_ID" \
@@ -145,8 +148,9 @@ if [ -n "$SESSION_ID" ]; then
       --argjson extra "$IS_EXTRA" \
       --arg date "$T_DATE" \
       --arg provider "$T_PROVIDER" \
+      --arg account "$T_ACCOUNT" \
       '(try fromjson catch {}) | (if type == "object" then . else {} end)
-       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider}' \
+       | .[$sid] = {"in": $tin, "out": $tout, "cost": $cost, "model": $model, "extra": $extra, "date": $date, "provider": $provider, "account": $account}' \
       > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$TOKEN_STATS_FILE" 2>/dev/null || rm -f "$TMP_FILE"
 
     # Release lock, once. The trap goes first: the script runs on (git, for

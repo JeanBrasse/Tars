@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags } from './cli-provider';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -62,7 +62,7 @@ export class ZhipuProvider implements CLIProvider {
     else if (params.permissionMode === 'bypass') command += ' --permission-mode bypassPermissions';
     command += orchestratorToolFlags(params.orchestratorMode);
     command += effortFlag(params.effort);
-    command += ` --add-dir '${DATA_DIR}'`;
+    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
     let finalPrompt = params.prompt?.trim() ? params.prompt : '';
     if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills: ${params.skills.join(', ')}.] ${params.prompt}`;
@@ -72,12 +72,12 @@ export class ZhipuProvider implements CLIProvider {
   }
 
   buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
+    let command = shellQuote(params.binaryPath);
     if (params.autonomous) command += ' --dangerously-skip-permissions';
     if (params.outputFormat) command += ` --output-format ${params.outputFormat}`;
     if (params.verbose) command += ' --verbose';
-    if (params.mcpConfigPath) command += ` --mcp-config "${params.mcpConfigPath}"`;
-    command += ` --add-dir "${DATA_DIR}"`;
+    if (params.mcpConfigPath) command += ` --mcp-config ${shellQuote(params.mcpConfigPath)}`;
+    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
     command += ` -p '${params.prompt.replace(/'/g, "'\\''")}'`;
     return command;
   }
@@ -156,16 +156,16 @@ export class ZhipuProvider implements CLIProvider {
     const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "${DATA_DIR_SHELL}/app-settings.json")"\n`;
 
     return `#!/bin/bash
-export HOME="${params.homeDir}"
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true; fi
-if [ -f "${params.homeDir}/.zshrc" ]; then source "${params.homeDir}/.zshrc" 2>/dev/null || true; fi
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
+export HOME=${shellQuote(params.homeDir)}
+if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true; fi
+if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true; fi
+export PATH=${shellQuote(params.binaryDir)}:"$PATH"
+cd ${shellQuote(params.projectPath)}
+echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
 unset CLAUDECODE
 export CLAUDE_PROVIDER="zhipu"
-${envExports}"${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
+${envExports}${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
+echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;
   }
 }

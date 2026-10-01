@@ -37,9 +37,9 @@ describe('agent identity reaches the orchestrator MCP', () => {
     ['gemini', new GeminiProvider()],
     ['grok', new GrokProvider()],
   ])('%s exports CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH', (_name, provider) => {
-    const env = provider.getPtyEnvVars('agent-42', '/Users/noah/project', []);
+    const env = provider.getPtyEnvVars('agent-42', '/Users/you/project', []);
     expect(env.CLAUDE_AGENT_ID).toBe('agent-42');
-    expect(env.CLAUDE_PROJECT_PATH).toBe('/Users/noah/project');
+    expect(env.CLAUDE_PROJECT_PATH).toBe('/Users/you/project');
   });
 });
 

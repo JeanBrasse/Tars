@@ -315,7 +315,11 @@ afterAll(() => {
 
 const describeFindings = (s: Scan) => s.findings.map(f => `${f.rule} ${f.at} ${f.what}`).join('\n');
 
-describe('no page or panel waits on grey rows or on a line of text', () => {
+// Each case below parses all of src/ with the TypeScript compiler: measured on
+// 2026-09-28 over 28 runs of the full suite on a loaded machine, 0.4 s to 16 s
+// a case, and past vitest's 5 s default in 15 of 56, which failed a gate half
+// the time with nothing wrong in the tree.
+describe('no page or panel waits on grey rows or on a line of text', { timeout: 60_000 }, () => {
   it('holds on the real tree', () => {
     const scan = scanLoadingWaits(path.join(REPO, 'src'));
     expect(scan.findings, describeFindings(scan)).toEqual([]);

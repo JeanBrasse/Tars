@@ -1156,6 +1156,19 @@ export interface ElectronAPI {
       }>;
       /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
       oldest: string | null;
+      /** The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day. */
+      hourly: Array<{
+        /** When the hour starts, in milliseconds since the epoch. */
+        hour: number;
+        provider: string;
+        model: string | null;
+        inputTokens: number;
+        outputTokens: number;
+        cachedReadTokens: number;
+        cachedWriteTokens: number;
+        costUSD: number;
+        turns: number;
+      }>;
     }>;
   };
 
@@ -1788,7 +1801,8 @@ export interface ElectronAPI {
   hermes?: {
     getConnection: () => Promise<{ connection: HermesConnection; baseUrl: string; desktopConfigAvailable: boolean }>;
     saveConnection: (connection: HermesConnection) => Promise<{ success: boolean; error?: string }>;
-    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string }>;
+    /** `tokenNotImported`: the connection came without the token Hermes Desktop keeps encrypted, which Tars cannot read. */
+    importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string; tokenNotImported?: boolean }>;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;
