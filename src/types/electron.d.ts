@@ -1156,7 +1156,11 @@ export interface ElectronAPI {
       }>;
       /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
       oldest: string | null;
-      /** The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day. */
+      /**
+       * The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day.
+       * Its `claude` rows are Claude's ACP turns, which the transcripts already count: skip them, as `usageRows` does
+       * for the days, or those turns count twice in the last 24 hours.
+       */
       hourly: Array<{
         /** When the hour starts, in milliseconds since the epoch. */
         hour: number;
