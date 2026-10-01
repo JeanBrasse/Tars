@@ -42,8 +42,14 @@ test.afterAll(async () => {
 test("brain: the graph shows the servers of ~/.claude/mcp.json", async () => {
   test.setTimeout(180_000);
   await page.goto(`${DEV_URL}/memory`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('radio', { name: 'Agents' }).click();
+  const agentsTab = page.getByRole('radio', { name: 'Agents' });
+  await agentsTab.click();
+  await expect(agentsTab).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByText(SERVER, { exact: true })).toBeVisible({ timeout: 60_000 });
+  // The graph is rebuilt behind a short overlay (300 ms) when the agents
+  // change: the node counts once nothing covers it.
+  await expect(page.getByText('Switching agent', { exact: true })).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByText(SERVER, { exact: true })).toBeVisible();
   await stepShot(page, '01-graph-with-the-mcp-server');
   expect(errors, errors.join('\n')).toEqual([]);
   recordValues({ server: SERVER, pageErrors: errors });
