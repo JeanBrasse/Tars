@@ -570,9 +570,10 @@ For the Usage page the file is a label on part of the transcripts' spend, never 
 
 ### On the page
 
-`src/app/usage/page.tsx` reads both sources per day and cuts them with one window, `usageWindow()` in `src/lib/usage-window.ts`: the last 14 days, the last 12 Sunday-to-Saturday weeks, or the last 12 calendar months, the last bar being the day, week or month that holds today. Every tile, provider row and bar is a sum over that window, so the total cost is the sum of the cost bars and of the provider rows, and the latest tile is today, this week or this month.
+`src/app/usage/page.tsx` reads both sources per day, or per hour for 24 hours, and cuts them with one window, `usageWindow()` in `src/lib/usage-window.ts`: the current hour and the 23 before it (each source's `hourly` rows, the last 48 hours as #275 sends them, keyed by the hour's start floored since the epoch), the last 14 days, the last 12 Sunday-to-Saturday weeks, or the last 12 calendar months, the last bar being the hour, day, week or month that holds now. Every tile, provider row and bar is a sum over that window, so the total cost is the sum of the cost bars and of the provider rows, and the latest tile is today, this week or this month.
 
-- **Cost**: `costByModel` from the transcripts, plus the ledger's `daily` rows of every provider but `claude`. Nothing from `token-stats.json`: its over-quota spend is printed under the total as a part of it (`of which ~$X over quota`), summed over the window's days.
+- **Cost**: `costByModel` from the transcripts, plus the ledger's `daily` (or `hourly`) rows of every provider but `claude`, which are Claude's ACP turns and already in its transcripts. Nothing from `token-stats.json`: its over-quota spend is printed under the total as a part of it (`of which ~$X over quota`), summed over the window's days, and not for 24 hours, which no day cuts.
+- **Provider**: the one a model's sessions ran under, as the status line wrote it (`stats.providerByModel`), and the model's name only for a model no session speaks for (`providerOf`).
 - **Tokens**: in is input, cache reads and cache writes, out is output, for the tiles, the provider rows, the tokens chart and its card.
 - **Messages**: replies, which only the transcripts count.
 - **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so.
@@ -710,7 +711,7 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/crons` | Schedules | Hermes cron jobs: list, pause, resume, trigger, delete. Tars owns none of this | `Schedules · dark` |
 | `/review` | Review | What the agents actually changed. Per-worktree column, changed-file list with add/delete counts, real patches. Replaced a 20-line `git diff --stat` | `Review · dark` |
 | `/logs` | Logs | One search box for the whole fleet, over the retained output buffers. Plain substring, or `/regex/` when delimited | `Logs · dark` |
-| `/usage` | Usage | Cost and tokens over one timeframe chosen in the header (14 days, 12 weeks, 12 months): four tiles, the provider rows, and cost, token and message charts on the same bars. Budget rows stay month to date and rate windows live. See §6, On the page | `Usage · dark` (14 days) / `· light` (12 months) / `· daily messages` |
+| `/usage` | Usage | Cost and tokens over one timeframe chosen in the header (24 hours, 14 days, 12 weeks, 12 months): four tiles, the provider rows, and cost, token and message charts on the same bars. Budget rows stay month to date and rate windows live. See §6, On the page | `Usage · dark` (14 days) / `· light` (12 months) / `· daily messages` / `· last 24 hours` |
 | `/memory` | Brain | The six sources of §5, in three tabs: Projects (native `~/.claude/projects/*/memory/` files, editable), Agents, Backends (probed status) | `Brain · Projects` / `· Agents` / `· Backends` |
 | `/vault` | Vault | Agent reports and working documents in SQLite. Long-term memory lives in Brain, not here | `Vault · dark` |
 | `/skills` | Extensions | Two tabs: Skills and Plugins, with marketplace fetch and an install terminal | `Extensions · Skills` / `· Plugins` |
