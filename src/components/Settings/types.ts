@@ -49,7 +49,10 @@ export interface AppSettings {
   notifyOnError: boolean;
   telegramEnabled: boolean;
   telegramBotToken: string;
-  /** Telegram through Hermes (#285): on, main erases the bot's token and turns the bot off. */
+  /**
+   * Telegram through Hermes (#285): on, main erases the bot's token and turns
+   * the bot off.
+   */
   hermesRelayEnabled?: boolean;
   telegramChatId: string; // Legacy - kept for backwards compatibility
   telegramAuthToken: string; // Secret token for authentication
