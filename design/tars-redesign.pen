@@ -31918,6 +31918,17 @@
                                       "fontWeight": "normal"
                                     }
                                   ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "kAOvJ",
+                                  "name": "v",
+                                  "fill": "#727272",
+                                  "content": "44.4.4 / 24.21",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             },
