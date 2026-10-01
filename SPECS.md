@@ -580,7 +580,7 @@ For the Usage page the file is a label on part of the transcripts' spend, never 
 - **Provider**: the one a model's sessions ran under, as the status line wrote it (`stats.providerByModel`), and the model's name only for a model no session speaks for (`providerOf`).
 - **Tokens**: in is input, cache reads and cache writes, out is output, for the tiles, the provider rows, the tokens chart and its card.
 - **Messages**: replies, which only the transcripts count.
-- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so.
+- **Budget rows**: spend from the first of the month to today on the same definition of cost, whatever the timeframe; the Claude rate windows stay live. The panel says so. With two Claude accounts or more on, Claude's rows are each account's 5 h and weekly windows (`accountRateLimits`), in Settings' order, under `Claude · <name>`: a window null on an account that has reported says reset over an empty bar, and an account that has reported nothing yet has no rows. With the option off or a single account, they stay account 1's (`rateLimits`). Frame `Usage · limits per account`.
 - **Where the records start**: the earliest transcript day or the ledger's `oldest`, whichever comes first. When the window starts before it, the header prints `records start <date>` beside the timeframe.
 
 A day of the legacy `stats-cache.json` shape, which the main process returns only when there is no transcript at all, carries no price and no cache, and adds nothing to these figures.
@@ -724,9 +724,9 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 | `/whats-new` | What's new | `src/data/changelog.ts`; marks itself seen in `localStorage` and fires a `whats-new-seen` event the sidebar listens for | `What's new · dark` |
 | `/tray-panel` | Tray panel | Rendered inside the menu-bar popover window, fed by the `agents:tick` broadcast. Overrides xterm's viewport scrollbar so it overlays instead of stealing columns | `Tray panel` |
 
-Settings groups: **General** (Preferences, Terminal, Notifications, System) · **AI & Providers** (Providers, CLI Paths, Permissions) · **Hermes** (Connection) · **Integrations** (Telegram, Slack, Discord, X, Google Workspace) · **Extensions** (Skills & Plugins, Custom MCP, Tasmania) · **Workspace** (Git, Memory Backends).
+Settings groups: **General** (Preferences, Terminal, Notifications, System) · **AI & Providers** (Providers, Claude accounts, CLI Paths, Permissions) · **Hermes** (Connection) · **Integrations** (Telegram, Slack, Discord, X, Google Workspace) · **Extensions** (Skills & Plugins, Custom MCP, Tasmania) · **Workspace** (Git, Memory Backends).
 
-14 overlays are inventoried separately: New agent (4 steps), Deploy team, the four template dialogs, three kanban dialogs, Start prompt, Agent terminal, Plugin install, Install terminal.
+15 overlays are inventoried separately: New agent (4 steps), Deploy team, the four template dialogs, three kanban dialogs, Start prompt, Agent terminal, Plugin install, Install terminal, and the Claude account dialogs (add and sign in, remove).
 
 Every data surface must show five states: loading (nothing under 400 ms, then the mark filling over a line naming what loads, then a named slow operation), empty, error, needs-sign-in, permission-denied.
 
