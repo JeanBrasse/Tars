@@ -5,7 +5,8 @@ import type { AddressInfo } from 'node:net';
  * A stand-in for the tars-relay Hermes plugin's dashboard routes (hermes-plugins/tars-relay), over real HTTP on the
  * loopback, for the tests of Tars's side of the relay. Its answers have the plugin's shapes: POST /send gives
  * {message_id}, GET /replies?after=N gives {replies: [...]}, POST /ack {through} gives {deleted}, GET /status gives
- * {configured, ...}. Every route wants the dashboard's session token, as Hermes's dashboard does.
+ * {configured, projects, ...}, POST /projects {projects} gives {projects: n} and refuses, as the plugin does, a list
+ * holding a name that is not one word. Every route wants the dashboard's session token, as Hermes's dashboard does.
  *
  * `mode` makes it misbehave as a real gateway can: 'down' drops every connection, 'missing' answers 404 (no plugin
  * installed), 'unauthorized' 401, 'unconfigured' says so on /status and refuses /send with 503.
@@ -32,6 +33,8 @@ export interface FakeRelay {
   sends: Array<{ text: string; kind: string; ref: string; project: string; messageId: string; token?: string }>;
   replies: FakeRelayReply[];
   acks: number[];
+  /** The project names Tars registered last; what /status lists. */
+  projects: string[];
   /** Every request, in order: method and path. */
   calls: string[];
   /** Noah's reply to a message the relay sent, as the plugin keeps it. */
@@ -55,6 +58,7 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
     sends: [],
     replies: [],
     acks: [],
+    projects: [],
     calls: [],
     reply(to, text) {
       const sent = fake.sends.find((s) => s.messageId === to.messageId);
@@ -95,13 +99,24 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
       let body: Record<string, unknown> = {};
       try { body = raw ? JSON.parse(raw) : {}; } catch { return json(res, 400, { detail: 'not json' }); }
       if (route === 'status' && req.method === 'GET') {
-        return json(res, 200, { plugin: 'tars-relay', version: '1.0.0', configured: fake.mode !== 'unconfigured', sends_last_hour: fake.sends.length, waiting_replies: fake.replies.length });
+        return json(res, 200, { plugin: 'tars-relay', version: '1.0.0', configured: fake.mode !== 'unconfigured', sends_last_hour: fake.sends.length, waiting_replies: fake.replies.length, projects: [...fake.projects].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())) });
       }
       if (route === 'send' && req.method === 'POST') {
         if (fake.mode === 'unconfigured') return json(res, 503, { detail: 'tars-relay has no user_id in its settings' });
         const messageId = String(nextMessage++);
         fake.sends.push({ text: String(body.text), kind: String(body.kind), ref: String(body.ref ?? ''), project: String(body.project ?? ''), messageId, token: String(req.headers['x-hermes-session-token'] ?? '') });
         return json(res, 200, { message_id: messageId });
+      }
+      if (route === 'projects' && req.method === 'POST') {
+        const names = body.projects;
+        // The plugin's own rule (relay_core.check_projects): one word each, no control character, at most 500.
+        // eslint-disable-next-line no-control-regex
+        const word = /^[^\s@:,\x00-\x1f\x7f-\x9f]{1,64}$/u;
+        if (!Array.isArray(names) || names.length > 500 || !names.every((n) => typeof n === 'string' && word.test(n))) {
+          return json(res, 400, { detail: 'a project name is one word of at most 64 characters' });
+        }
+        fake.projects = [...names];
+        return json(res, 200, { projects: names.length });
       }
       if (route === 'replies' && req.method === 'GET') {
         const after = Number(url.searchParams.get('after') ?? 0);

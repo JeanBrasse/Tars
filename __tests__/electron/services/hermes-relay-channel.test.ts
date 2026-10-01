@@ -25,6 +25,11 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  *    status does not say which.
  * 8. A reply whose handler throws stops the ones after it, or is never acked.
  * 9. With the relay on, the event reports do not go through it, or go under no project; with it off, they still go.
+ * 10. The plugin keeps "@name" for Tars only for the projects Tars registered with it (the Audit's Low on #280): the
+ *    fleet's projects are not registered, and every "@project" goes to Hermes's model; a folder name that is not one
+ *    word is sent, the plugin refuses the whole list, and no project can be reached; a project added to the fleet or
+ *    gone from it is not told to the plugin at the next round, nor are the names again once the plugin has lost them;
+ *    or they are posted at every round when nothing changed, in another case included.
  *
  * A real HTTP stand-in for the plugin's routes (fixtures/fake-tars-relay.ts), the real connection file under a
  * throwaway HOME, the real channel module, loaded again to play a restart.
@@ -239,6 +244,52 @@ describe('the status', () => {
     await relay.relaySend({ text: 'x', kind: 'report', ref: 'report:r-1', projectPath: PROJECT, expiresAt: T0 + 3_600_000 }, T0);
 
     expect(relay.relayStatus()).toMatchObject({ enabled: true, waiting: 1 });
+  });
+});
+
+describe('the projects "@name" may address', () => {
+  it('10. are registered at the first round: the fleet\'s names that are one word, each once', async () => {
+    relay.setRelayProjects(() => ['tars', '1212-Capital', 'My Project', 'a@b', 'x:y', 'tars']);
+
+    await relay.relayTick(T0);
+
+    expect(fake.projects).toEqual(['1212-Capital', 'tars']);
+  });
+
+  it('10. are told again when a project comes or goes, or the plugin has lost them, and only then', async () => {
+    let names = ['tars'];
+    relay.setRelayProjects(() => names);
+    const posts = () => fake.calls.filter((c) => c.endsWith('/projects')).length;
+
+    await relay.relayTick(T0);
+    await relay.relayTick(T0 + 5_000);
+    expect(posts()).toBe(1);
+
+    names = ['tars', '1212-Capital'];
+    await relay.relayTick(T0 + 10_000);
+    expect(fake.projects).toEqual(['tars', '1212-Capital']);
+
+    fake.projects = ['TARS', '1212-capital'];
+    await relay.relayTick(T0 + 15_000);
+    expect(posts(), 'the same names in another case are the same projects').toBe(2);
+
+    fake.projects = [];
+    await relay.relayTick(T0 + 20_000);
+    expect(fake.projects).toEqual(['tars', '1212-Capital']);
+
+    names = ['1212-Capital'];
+    await relay.relayTick(T0 + 25_000);
+    expect(fake.projects).toEqual(['1212-Capital']);
+    expect(posts()).toBe(4);
+  });
+
+  it('10. are not registered while the relay is off', async () => {
+    relay.setRelayProjects(() => ['tars']);
+    on = false;
+
+    await relay.relayTick(T0);
+
+    expect(fake.calls).toEqual([]);
   });
 });
 

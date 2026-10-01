@@ -18,6 +18,8 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  * 4. A reply that nothing waits for (a Sentry request with no handler, a notice from Tars) is typed somewhere, or
  *    vanishes without the user being told.
  * 5. Upper or lower case in a project's name sends the message nowhere.
+ * 6. The plugin is not told the fleet's projects, so that it keeps no "@project" message for Tars at all (it keeps
+ *    "@name" only for a project Tars registered).
  *
  * The real channel and routing, the real writer every typed message takes (its sender line included), terminals
  * spawned as Tars spawns an agent's, with node-pty's process replaced by a recorder per agent; the plugin is a real
@@ -103,6 +105,7 @@ beforeEach(async () => {
   fake.sends.length = 0;
   fake.replies.length = 0;
   fake.acks.length = 0;
+  fake.projects = [];
   await load();
 });
 
@@ -133,6 +136,12 @@ describe('"@project text"', () => {
     expect(all('orch-tars')).toContain('fais le point sur #271');
     expect(all('orch-capital')).toBe('');
     expect(all('worker-tars')).toBe('');
+  });
+
+  it('6. the plugin is told the fleet\'s projects, the only names it keeps "@name" for', async () => {
+    await relay.relayTick(T0);
+
+    expect(fake.projects).toEqual(['1212-Capital', 'tars']);
   });
 
   it('5. whatever the case of the name', async () => {
