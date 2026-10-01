@@ -104,6 +104,12 @@ components:
     border: "1px solid {border}"
     focus-border: "{accent} @ 40%"
     text: 12
+  field-read-only:
+    background: "{surface}"
+    border: "1px solid {border}"
+    focus-border: "{accent} @ 40%"
+    text: "{text-secondary}"
+    cursor: default
   nav-item-active:
     background: "{accent} @ 20%"
     text: "{accent}"
@@ -357,6 +363,15 @@ all, only a heading and a dynamic import of `TerminalsView`.
 tall, `surface-raised` fill, 1px `border`, 12px text, `border` → `accent @ 40%`
 on focus. Pass `error` and the border goes `danger`; pair it with a `FieldError`
 caption (one short 11px line of red text under the field), never a tooltip.
+Disabled is the browser's own state at 40% opacity. Read-only (`readOnly` on
+`Input`, `PasswordInput` or `Textarea`) reads as read-only: the panel's
+`surface` fill instead of `surface-raised`, the value in `text-secondary` and the
+default cursor; the text stays selectable. On focus, by click or by keyboard, it
+takes the standard `accent @ 40%` border like any field, since a field draws no
+focus outline and that border is the only sign it holds the focus. A disabled
+field keeps the disabled look, and `Select` never takes this one, since the
+browser matches `:read-only` on both. The frame is `Settings · Connection`, rows
+`row Gateway URL · Local` and the incoming webhook, and the focus state `RKPfa`.
 
 ### Dropdown: `ui/Dropdown`
 The themed replacement for `<select>`. A native select renders its popup through
