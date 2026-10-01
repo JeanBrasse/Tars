@@ -168,6 +168,11 @@ export interface AgentStatus {
    * Set from the agent card through claude-accounts:set-agent-account.
    */
   claudeAccountPin?: ClaudeAccountId;
+  /**
+   * The last time Tars moved this agent to another account on its own, and
+   * why: what its card says ("moved by Tars"). Absent: never moved.
+   */
+  claudeAccountMove?: ClaudeAccountMove;
   /** Session id of the most recently killed PTY's claude session. Its hooks
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */
@@ -679,6 +684,17 @@ export interface ClaudeAccountWindow {
   resetsAt: number;
 }
 
+/** One account's 5 h and weekly counters, as the Usage page shows them (claude:getData). */
+export interface ClaudeAccountCounters {
+  accountId: ClaudeAccountId;
+  label: string;
+  /** null when no status line has reported it, or its reset has passed. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of the status line's last report on that account. */
+  updatedAt: number | null;
+}
+
 export interface ClaudeAccountState extends ClaudeAccount {
   /** From `claude auth status`. null until it has answered. */
   signedIn: boolean | null;
@@ -706,6 +722,26 @@ export interface ClaudeAccountsView {
    * file is fixed or removed, so the other accounts are not written over.
    */
   registryError: string | null;
+}
+
+/**
+ * Pushed on claude-accounts:agent-moved when Tars has moved an agent to
+ * another account on its own, and kept on the agent as claudeAccountMove.
+ * 'limit': the account hit that window's limit mid-turn; the agent was
+ * restarted on the same conversation and told to continue. 'threshold': the
+ * account was past its threshold for that window when a turn ended; nothing
+ * was cut. Sent when the launch on the new account is made.
+ */
+export interface ClaudeAccountMove {
+  agentId: string;
+  from: ClaudeAccountId;
+  to: ClaudeAccountId;
+  reason: 'limit' | 'threshold';
+  window: 'fiveHour' | 'sevenDay';
+  /** The window's use on `from` when the move was decided; 100 for a limit. null when not measured. */
+  usedPercentage: number | null;
+  /** Epoch ms of the launch on `to`. */
+  at: number;
 }
 
 /** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */

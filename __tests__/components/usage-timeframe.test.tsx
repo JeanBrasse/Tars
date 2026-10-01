@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import type { ReactElement } from 'react';
 import { mount, settle, elements, ofType, textOf, type Mount } from './hook-runtime';
 import UsagePage from '../../src/app/usage/page';
+import { forgetClaudeData } from '../../src/hooks/useClaude';
 import { BudgetAndLimits, buildBudgetRows } from '../../src/components/Usage/BudgetAndLimits';
 import { recordsStart } from '../../src/lib/usage-window';
 import { PageHeader, PanelCaption, SegmentedControl } from '../../src/components/ui';
@@ -274,6 +275,8 @@ afterEach(() => {
 });
 
 async function render(seed: Seed = SEED): Promise<Mount<Tree>> {
+  // Claude's data is one store for the window now: each render reads its own seed.
+  forgetClaudeData();
   g.document = { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() };
   g.window = {
     electronAPI: {

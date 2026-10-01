@@ -360,6 +360,8 @@ export interface AgentStatus {
   claudeAccountId?: ClaudeAccountId;
   /** The account the agent is held to. Absent: chosen automatically. */
   claudeAccountPin?: ClaudeAccountId;
+  /** The last time Tars moved it to another account on its own, and why. Absent: never. */
+  claudeAccountMove?: ClaudeAccountMove;
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
   /** Set by agent:list: the model the agent's last session answered on, read
@@ -883,6 +885,26 @@ export interface ClaudeAccountsView {
   registryError: string | null;
 }
 
+/**
+ * Pushed on claude-accounts:agent-moved when Tars has moved an agent to
+ * another account on its own, and kept on the agent as claudeAccountMove.
+ * 'limit': the account hit that window's limit mid-turn; the agent was
+ * restarted on the same conversation and told to continue. 'threshold': the
+ * account was past its threshold for that window when a turn ended; nothing
+ * was cut. Sent when the launch on the new account is made.
+ */
+export interface ClaudeAccountMove {
+  agentId: string;
+  from: ClaudeAccountId;
+  to: ClaudeAccountId;
+  reason: 'limit' | 'threshold';
+  window: 'fiveHour' | 'sevenDay';
+  /** The window's use on `from` when the move was decided; 100 for a limit. null when not measured. */
+  usedPercentage: number | null;
+  /** Epoch ms of the launch on `to`. */
+  at: number;
+}
+
 /** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
 export interface ClaudeAccountAgentChange {
   agentId: string;
@@ -1037,6 +1059,8 @@ export interface ElectronAPI {
     onChanged: (callback: (view: ClaudeAccountsView) => void) => () => void;
     /** An agent's account or pin changed, from any window or from main. */
     onAgentChanged: (callback: (event: ClaudeAccountAgentChange) => void) => () => void;
+    /** Tars moved an agent to another account on its own (onAgentChanged follows with the new account). */
+    onAgentMoved: (callback: (event: ClaudeAccountMove) => void) => () => void;
     /** Holds an agent to an account, or null for automatic. Pushed to every window by onAgentChanged. */
     setAgentAccount: (params: { agentId: string; accountId: ClaudeAccountId | null }) => Promise<ClaudeAccountsResult>;
   };
@@ -1075,6 +1099,20 @@ export interface ElectronAPI {
         five_hour?: { used_percentage: number; resets_at: number };
         seven_day?: { used_percentage: number; resets_at: number };
       } | null;
+      /**
+       * Every Claude account in use, in the order of Settings, with its own 5 h
+       * and weekly counters: one pair of bars each. Empty while the accounts
+       * option is off, when rateLimits (account 1's) is the only pair. A window
+       * is null when nothing reported it or its reset has passed; resetsAt in
+       * epoch seconds, updatedAt in epoch ms.
+       */
+      accountRateLimits: Array<{
+        accountId: string;
+        label: string;
+        fiveHour: { usedPercentage: number; resetsAt: number } | null;
+        sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        updatedAt: number | null;
+      }>;
       tokenStats: {
         totalInputTokens: number;
         totalOutputTokens: number;
