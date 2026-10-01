@@ -20,6 +20,7 @@ export const CHANGELOG: Release[] = [
       'Settings > Hermes says signed out, in the waiting colour, when the gateway answers but wants you to sign in. It said unreachable, in red, for a gateway that had just given its version, and stayed on connected after you signed out. Fixed by Nexarion434',
       'The Chat lists its rooms after a slow start. The list was asked for once and given 10 s: an answer that came later was dropped, and a read that failed was not asked again, so the Chat showed "The bus did not answer" and no room until you clicked retry or a message arrived. An answer is now taken whenever it comes, and a failed read is asked again three more times, after waits of 3, 9 and 18 s, the note staying up meanwhile. Fixed by Nexarion434',
       'Settings > System says Claude Code is ready only when a claude answers, looked for the way Tars finds it when it starts an agent, Settings > CLI Paths included. With no claude installed it said ready, and now says not installed. Fixed by Nexarion434',
+      'An agent\'s vault, SocialData, X and Telegram tools no longer wait about half an hour on a host that has stopped answering: they say there was no answer, and after how long, 30 seconds for Tars and 60 for SocialData, X and a Telegram message. A photo, a video or a document sent to Telegram is given the time a slow link, 10 KB/s, takes to carry it, then the same minute, so a large file on a slow connection still arrives whole',
     ],
   },
   {
