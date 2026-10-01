@@ -13,7 +13,7 @@
 import './core/compile-cache';
 
 import { startGithubWatch } from './services/github-watch';
-import { onRelayStatus, startHermesRelay } from './services/hermes-relay';
+import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, startHermesRelay, tellUser } from './services/hermes-relay';
 import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
@@ -129,6 +129,7 @@ import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgent
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
+import { agentStatusEmitter } from './services/agent-events';
 import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
@@ -392,7 +393,11 @@ function initApiServer() {
   // Sentry's new errors, as parked tasks on the board of the project named in
   // Settings, told to its orchestrator. Does nothing until the token, the
   // project, error reports and Hermes are all there (services/error-triage.ts).
-  startErrorTriage({ settings: () => appSettings, hermes: hermesKanban, tell: tellOrchestratorAsTars });
+  startErrorTriage({
+    settings: () => appSettings, hermes: hermesKanban, tell: tellOrchestratorAsTars,
+    relay: { enabled: relayEnabled, send: relaySend, wasSent: relayWasSent, onReply: onRelayReply, tellUser },
+    onFleetChange: listener => agentStatusEmitter.on('fleet-change', listener),
+  });
 }
 
 /**

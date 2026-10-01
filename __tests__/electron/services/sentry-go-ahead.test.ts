@@ -239,15 +239,19 @@ describe('"oui"', () => {
     expect(told).toHaveLength(1);
     expect(notices()).toEqual([expect.stringMatching(/TARS-1[\s\S]*not running/)]);
 
-    noteGoes = 'held';
+    // Another agent's state changes while the orchestrator still does not run: the note stays owed.
     for (const listener of fleetListeners) listener();
     expect(told).toHaveLength(2);
+
+    noteGoes = 'held';
+    for (const listener of fleetListeners) listener();
+    expect(told).toHaveLength(3);
 
     for (const listener of fleetListeners) listener();
     now += 15 * 60_000;
     await triage.triageOnce(deps());
-    expect(told).toHaveLength(2);
-    expect(told[1].message).toContain(taskOf().id);
+    expect(told).toHaveLength(3);
+    expect(told[2].message).toContain(taskOf().id);
   });
 
   it('4. a note still owed survives a restart of Tars, and goes at the first poll after it', async () => {

@@ -15,6 +15,7 @@ import {
 import { performDispatch } from './agent-routes';
 import { agentStatusEmitter } from '../agent-events';
 import type { MessageSender } from '../../core/pty-manager';
+import type { NoteDelivery } from '../error-triage';
 import type { AgentStatus } from '../../types';
 
 /**
@@ -75,19 +76,19 @@ function stateOf(agent: AgentStatus): { cliRunning: boolean; status?: string; wa
   return { cliRunning: cliRunningIn(pty), status: agent.status, waitingReason: agent.waitingReason };
 }
 
-/** Type it now, start the agent with it, hold it until the agent rests, or say nothing. */
-function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): void {
+/** Type it now, start the agent with it, hold it until the agent rests, or say nothing: what it did. */
+function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): 'typed' | 'held' | 'skipped' {
   const when = whenToType(stateOf(agent), item.purpose);
-  if (when === 'skip') return;
+  if (when === 'skip') return 'skipped';
   if (when === 'at-rest') {
     const list = owed.get(agent.id) ?? [];
     if (list.length >= MAX_OWED) {
       console.warn(`[kanban] ${agent.name || agent.id} already has ${MAX_OWED} kanban notes waiting; not holding ${item.what}`);
-      return;
+      return 'skipped';
     }
     list.push(item);
     owed.set(agent.id, list);
-    return;
+    return 'held';
   }
   let status = 0; let error = '';
   void performDispatch(agent, { message: item.message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender }, ctx, (data, code) => {
@@ -96,6 +97,7 @@ function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): void {
   }).then(() => {
     if (status >= 400) console.warn(`[kanban] ${item.what} did not reach ${agent.name || agent.id}: ${error}`);
   }, err => console.warn(`[kanban] ${item.what} did not reach ${agent.name || agent.id}:`, err));
+  return 'typed';
 }
 
 let routeCtx: RouteContext | null = null;
@@ -127,16 +129,18 @@ function tellOrchestrator(creator: KanbanCaller, task: AgentTask, ctx: RouteCont
 }
 
 /**
- * A note from Tars itself to a project's orchestrator: the Sentry errors the
- * error triage filed on its board (services/error-triage.ts). Typed as Tars,
- * so the note carries Tars's words only, never an error's; and like the
- * landing note, only into a CLI that runs, never mid-turn.
+ * A note from Tars itself to a project's orchestrator: a Sentry error the user
+ * gave the go-ahead on (services/error-triage.ts). Typed as Tars, so the note
+ * carries Tars's words only, never an error's; and like the landing note, only
+ * into a CLI that runs, never mid-turn. It says what became of the note, so
+ * that the triage keeps the one nobody got, and gives it again later.
  */
-export function tellOrchestratorAsTars(projectPath: string, message: string): void {
+export function tellOrchestratorAsTars(projectPath: string, message: string): NoteDelivery {
   const project = projectPath.replace(/\/+$/, '');
   const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath.replace(/\/+$/, '') === project);
-  if (!orchestrator || !routeCtx) return;
-  typeInto(orchestrator, { message, sender: { kind: 'tars' }, purpose: 'note', what: "the error triage's note" }, routeCtx);
+  if (!orchestrator || !routeCtx) return 'no-orchestrator';
+  const done = typeInto(orchestrator, { message, sender: { kind: 'tars' }, purpose: 'note', what: "the error triage's note" }, routeCtx);
+  return done === 'skipped' ? 'not-running' : done;
 }
 
 export function registerKanbanRoutes(app: RouteApp, ctx: RouteContext): void {

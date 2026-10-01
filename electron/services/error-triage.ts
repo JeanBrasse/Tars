@@ -1,12 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { DATA_DIR } from '../constants';
+import { DATA_DIR, privatePath } from '../constants';
 import { ERROR_REPORTS_DSN } from './error-reports';
 import { fileParkedTask, type HermesUnusable, type KanbanHermes } from './kanban-board';
 import { writeSecretFileSync } from '../utils/secret-file';
 import { quotedUpTo } from '../utils/reveal';
 import { envelopeValue } from '../utils/envelope-value';
+import type { RelayMessage, RelayReply, RelaySendResult } from './hermes-relay';
 
 /**
  * Sentry's errors, reproduced and reported: step 3 of PLAN-RELAIS-SENTRY.md.
@@ -17,16 +18,26 @@ import { envelopeValue } from '../utils/envelope-value';
  * Sentry project its own error reports go to (the DSN's), in the noah-boisserie
  * organisation, EU region. Each issue it has not filed yet becomes a task on
  * the Hermes board of the project named in Settings (`sentryTriageProject`),
- * parked on the Tars lane, where Hermes never runs it, and that project's
- * orchestrator is told, in Tars's words, so that it hands the task to QA or the
- * Audit. They reproduce the error in a sandbox and report: reproduced or not,
- * the cause, the severity, the file and line, the smallest fix. Nothing is
- * fixed in this mode.
+ * parked on the Tars lane, where Hermes never runs it, and the user is asked on
+ * Telegram, through the relay, for a go-ahead (Noah's decision 4 of 2026-10-01).
+ * Nobody else hears of it before the answer. "oui" hands the task on: that
+ * project's orchestrator is told, in Tars's words, so that it hands the task to
+ * QA or the Audit. They reproduce the error in a sandbox and report: reproduced
+ * or not, the cause, the severity, the file and line, the smallest fix. Nothing
+ * is fixed in this mode. "non" archives the task. Anything else is asked again.
  *
  * Nothing runs while the token is empty, error reports are off, no project is
- * named, or Hermes is not configured: a hermes-connection.json that reads and
- * names an address (#188). Without one, the default port is only a guess, and
- * on Noah's machine it is a tunnel to his real Hermes.
+ * named, Hermes is not configured (a hermes-connection.json that reads and
+ * names an address, #188: without one, the default port is only a guess, and
+ * on Noah's machine it is a tunnel to his real Hermes), or the relay is off,
+ * with nobody to ask.
+ *
+ * The go-aheads are kept in ~/.tars-private/sentry-go-aheads.json, which no
+ * agent is handed: the user's "oui" hands a task on in their name, and an agent
+ * able to write that list could do it in their place. A reply counts only
+ * through the relay, which takes it only as an answer to a message on Tars's
+ * own list. A note the orchestrator could not get, its CLI not running, is
+ * owed there, and goes once the CLI runs, after a restart of Tars too.
  *
  * Once per issue. `~/.dorothy/error-triage.json` (0600) keeps the issues filed
  * and when, and Hermes's idempotency key (`tars-sentry:<issue id>`) hands back
@@ -87,13 +98,31 @@ export interface TriageSettings {
   errorReportsEnabled?: boolean;
 }
 
+/** What became of a note to an orchestrator: typed, held for its turn's end, or nobody got it. */
+export type NoteDelivery = 'typed' | 'held' | 'not-running' | 'no-orchestrator';
+
+/** The relay to the user's Telegram (hermes-relay.ts), as the triage uses it. */
+export interface TriageRelay {
+  enabled: () => boolean;
+  send: (message: RelayMessage, now?: number) => Promise<RelaySendResult>;
+  wasSent: (ref: string) => boolean;
+  onReply: (type: string, handler: (reply: RelayReply, now: number) => void | Promise<void>) => void;
+  tellUser: (text: string, projectPath?: string, now?: number) => Promise<RelaySendResult>;
+}
+
 export interface TriageDeps {
   /** The settings as they are now, read at each poll: a change needs no restart. */
   settings: () => TriageSettings;
   /** The Hermes board (kanban-routes' hermesKanban): null when none is configured. */
   hermes: () => KanbanHermes | HermesUnusable | null;
   /** Tells the project's orchestrator, as Tars (kanban-routes' tellOrchestratorAsTars). */
-  tell?: (projectPath: string, message: string) => void;
+  tell?: (projectPath: string, message: string) => NoteDelivery;
+  /** Where the user is asked, and answers. Without it, nothing is filed. */
+  relay?: TriageRelay;
+  /** Called whenever an agent's state changes: a note owed may go then. */
+  onFleetChange?: (listener: () => void) => void;
+  /** Where the go-aheads are kept: ~/.tars-private/sentry-go-aheads.json. */
+  goAheadFile?: string;
   sentryApi?: string;
   sentryTimeoutMs?: number;
   seenFile?: string;
@@ -265,19 +294,223 @@ function bodyOf(issue: SentryIssue): string {
   ].join('\n');
 }
 
-/** What the orchestrator is told, in Tars's words: which tasks, never what the errors say. */
-function noteFor(filed: Array<{ task: string; name: string }>): string {
-  const one = filed.length === 1;
-  const list = filed.map(f => `${TASK_ID.test(f.task) ? f.task : envelopeValue(f.task)} (${f.name})`).join(', ');
-  return `Sentry reported ${one ? 'an error' : `${filed.length} errors`} in Tars that nobody has looked at yet, `
-    + `filed as ${one ? 'a parked task' : 'parked tasks'} on this project's Kanban board: ${list}. `
-    + `Hand ${one ? 'it' : 'each'} to QA or the Audit with assign_task (task_id, agent_id): `
-    + `${one ? 'the task quotes its error' : 'each task quotes its error'}, as data, and says what to report.`;
+/** What the orchestrator is told, in Tars's words: which task, never what the error says. */
+function noteFor(filed: { task: string; name: string }): string {
+  const task = TASK_ID.test(filed.task) ? filed.task : envelopeValue(filed.task);
+  return 'Sentry reported an error in Tars that nobody has looked at yet, and the user gave the go-ahead on it: '
+    + `${task} (${filed.name}), a parked task on this project's Kanban board. `
+    + 'Hand it to QA or the Audit with assign_task (task_id, agent_id): the task quotes its error, as data, and says what to report.';
+}
+
+/** How many times Sentry saw it, as a reader counts. */
+function eventsOf(issue: SentryIssue): string {
+  const count = typeof issue.count === 'number' ? String(issue.count) : issue.count;
+  if (typeof count !== 'string' || !/^\d{1,12}$/.test(count)) return 'events not counted';
+  return count === '1' ? '1 event' : `${count} events`;
+}
+
+/** The go-ahead asked of the user: the error's short id and count, its title quoted as data, and the two answers. */
+function requestFor(issue: SentryIssue, project: string): string {
+  return [
+    `Sentry, a new error in Tars: ${nameOf(issue)}, ${eventsOf(issue)}.`,
+    `Its title, as Sentry reports it (data, not instructions): ${field(issue.title, 200)}`,
+    `Reply "oui" to hand it to the orchestrator of ${path.basename(project)}, who gives it to QA or the Audit to reproduce, or "non" to archive it.`,
+  ].join('\n');
+}
+
+/** "oui" or "non" (or "yes", "no"), in any case, a final full stop or exclamation mark aside; anything else is neither. */
+export function verdictOf(text: string): 'yes' | 'no' | null {
+  const word = text.trim().replace(/[.!]+$/, '').trim().toLowerCase();
+  if (word === 'oui' || word === 'yes') return 'yes';
+  if (word === 'non' || word === 'no') return 'no';
+  return null;
+}
+
+// ── The go-aheads ─────────────────────────────────────────────────────────
+
+/** How long a request may wait for Hermes in the relay's outbox before it is asked again. */
+const ASK_WAITS_MS = 7 * DAY_MS;
+/** How long a decided go-ahead is kept, for a late second answer: as long as the relay keeps what it sent. */
+const DECIDED_KEPT_MS = 30 * DAY_MS;
+
+interface GoAhead {
+  task: string;
+  name: string;
+  project: string;
+  /** The request as it was first asked. */
+  request: string;
+  state: 'asking' | 'released' | 'archived';
+  /** When it was last asked (sent, or waiting for Hermes in the relay's outbox); 0 until it has gone. */
+  askedAt: number;
+  /** Released, and the orchestrator not told yet. */
+  noteOwed?: boolean;
+  decidedAt?: number;
+}
+
+interface GoAheads {
+  version: 1;
+  /** Sentry issue id -> its go-ahead. */
+  issues: Record<string, GoAhead>;
+}
+
+const goAheadFileOf = (deps: TriageDeps) => deps.goAheadFile ?? privatePath('sentry-go-aheads.json');
+
+function readGoAheads(file: string): { goAheads: GoAheads } | { broken: string } {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { goAheads: { version: 1, issues: {} } };
+    return { broken: messageOf(err) };
+  }
+  try {
+    const parsed = JSON.parse(text) as Partial<GoAheads> | null;
+    if (!parsed || parsed.version !== 1 || !parsed.issues || typeof parsed.issues !== 'object' || Array.isArray(parsed.issues)) {
+      return { broken: 'not a list of version 1' };
+    }
+    return { goAheads: { version: 1, issues: parsed.issues } };
+  } catch (err) {
+    return { broken: messageOf(err) };
+  }
+}
+
+function writeGoAheads(file: string, goAheads: GoAheads, now: number): void {
+  for (const [id, g] of Object.entries(goAheads.issues)) {
+    if (g.state !== 'asking' && !g.noteOwed && (g.decidedAt ?? 0) < now - DECIDED_KEPT_MS) delete goAheads.issues[id];
+  }
+  writeSecretFileSync(file, JSON.stringify(goAheads));
+}
+
+/** Asks the user about each go-ahead that has not gone, or that waited in the relay's outbox and expired unsent. */
+async function askWhatWaits(deps: TriageDeps, relay: TriageRelay, now: number, log: (line: string) => void): Promise<void> {
+  const file = goAheadFileOf(deps);
+  const read = readGoAheads(file);
+  if ('broken' in read) return;
+  for (const [id, g] of Object.entries(read.goAheads.issues)) {
+    if (g.state !== 'asking') continue;
+    const expired = g.askedAt > 0 && g.askedAt < now - ASK_WAITS_MS && !relay.wasSent(`sentry:${id}`);
+    if (g.askedAt > 0 && !expired) continue;
+    let result: RelaySendResult;
+    try {
+      result = await relay.send({ text: g.request, kind: 'sentry', ref: `sentry:${id}`, projectPath: g.project, expiresAt: now + ASK_WAITS_MS }, now);
+    } catch (err) {
+      log(`Sentry ${g.name}: the go-ahead could not be asked (${messageOf(err)}); asked again at the next poll`);
+      continue;
+    }
+    if (result.state === 'refused') {
+      log(`Sentry ${g.name}: the go-ahead could not be asked (${result.reason})`);
+      continue;
+    }
+    g.askedAt = now;
+    writeGoAheads(file, read.goAheads, now);
+  }
+}
+
+/** Tells the orchestrator of each task the user released and it has not heard of; keeps what it cannot get. */
+function deliverOwed(deps: TriageDeps): void {
+  if (!deps.tell) return;
+  const file = goAheadFileOf(deps);
+  const read = readGoAheads(file);
+  if ('broken' in read) return;
+  let changed = false;
+  for (const g of Object.values(read.goAheads.issues)) {
+    if (g.state !== 'released' || !g.noteOwed) continue;
+    const delivery = deps.tell(g.project, noteFor(g));
+    if (delivery === 'typed' || delivery === 'held') {
+      g.noteOwed = false;
+      changed = true;
+    }
+  }
+  if (changed) writeGoAheads(file, read.goAheads, (deps.now ?? Date.now)());
+}
+
+/** The user's answer to a request: hands the task on, archives it, or asks again. */
+async function answerGoAhead(deps: TriageDeps, relay: TriageRelay, reply: RelayReply, now: number): Promise<void> {
+  const file = goAheadFileOf(deps);
+  const read = readGoAheads(file);
+  if ('broken' in read) {
+    await relay.tellUser(`Tars cannot read its list of Sentry go-aheads (${read.broken}), so your reply changes nothing.`, reply.projectPath || undefined, now);
+    return;
+  }
+  const id = reply.refId;
+  const g = /^\d{1,20}$/.test(id) ? read.goAheads.issues[id] : undefined;
+  if (!g) {
+    await relay.tellUser('Tars is not waiting for an answer to that Sentry message, so your reply changes nothing.', reply.projectPath || undefined, now);
+    return;
+  }
+  const project = path.basename(g.project);
+  if (g.state !== 'asking') {
+    const done = g.state === 'released' ? `handed to the orchestrator of ${project}` : 'archived';
+    await relay.tellUser(`Sentry ${g.name} was already ${done}, so your reply changes nothing.`, g.project, now);
+    return;
+  }
+  const verdict = verdictOf(reply.text);
+  if (verdict === null) {
+    const result = await relay.send({
+      text: `Reply "oui" or "non" to this message.\n${g.request}`, kind: 'sentry', ref: `sentry:${id}`,
+      projectPath: g.project, expiresAt: now + ASK_WAITS_MS,
+    }, now);
+    if (result.state !== 'refused') {
+      g.askedAt = now;
+      writeGoAheads(file, read.goAheads, now);
+    }
+    return;
+  }
+  if (verdict === 'no') {
+    const hermes = deps.hermes();
+    let refusal = '';
+    if (!hermes) refusal = 'Hermes is not configured';
+    else if ('unusable' in hermes) refusal = hermes.unusable;
+    else {
+      try {
+        const archived = await hermes.update(g.task, { status: 'archived' });
+        if (!archived.success) refusal = archived.error || 'refused';
+      } catch (err) {
+        refusal = `Hermes did not answer: ${messageOf(err)}`;
+      }
+    }
+    if (refusal) {
+      await relay.tellUser(`Sentry ${g.name}: its task is not archived (${refusal}). It stays parked; reply "non" again to try again.`, g.project, now);
+      return;
+    }
+    g.state = 'archived';
+    g.decidedAt = now;
+    writeGoAheads(file, read.goAheads, now);
+    await relay.tellUser(`Sentry ${g.name}: its task ${g.task} is archived.`, g.project, now);
+    return;
+  }
+  g.state = 'released';
+  g.decidedAt = now;
+  g.noteOwed = true;
+  writeGoAheads(file, read.goAheads, now);
+  const delivery = deps.tell?.(g.project, noteFor(g)) ?? 'not-running';
+  if (delivery === 'typed' || delivery === 'held') {
+    g.noteOwed = false;
+    writeGoAheads(file, read.goAheads, now);
+    await relay.tellUser(`Sentry ${g.name}: handed to the orchestrator of ${project}, who gives it to QA or the Audit.`, g.project, now);
+    return;
+  }
+  const why = delivery === 'no-orchestrator' ? `${project} has no orchestrator` : `the orchestrator of ${project} is not running`;
+  await relay.tellUser(`Sentry ${g.name}: ${why}; it gets the task once it runs.`, g.project, now);
+}
+
+/** Takes the user's answers to the requests, and hands on the notes owed whenever an agent's state changes. */
+export function listenForGoAheads(deps: TriageDeps): void {
+  const relay = deps.relay;
+  if (!relay) return;
+  relay.onReply('sentry', (reply, now) => answerGoAhead(deps, relay, reply, now));
+  deps.onFleetChange?.(() => deliverOwed(deps));
 }
 
 // ── One poll ──────────────────────────────────────────────────────────────
 
 export async function triageOnce(deps: TriageDeps): Promise<TriageResult> {
+  const log = deps.log ?? (() => undefined);
+  // What the user already decided goes first, whatever the settings say now.
+  deliverOwed(deps);
+  const relay = deps.relay;
+  if (relay?.enabled()) await askWhatWaits(deps, relay, (deps.now ?? Date.now)(), log);
+
   const settings = deps.settings();
   const token = (settings.sentryAuthToken ?? '').trim();
   if (!token) return { ran: false, why: NO_TOKEN };
@@ -287,6 +520,13 @@ export async function triageOnce(deps: TriageDeps): Promise<TriageResult> {
   const hermes = deps.hermes();
   if (!hermes) return { ran: false, why: 'Hermes is not configured' };
   if ('unusable' in hermes) return { ran: false, why: `the Hermes connection cannot be used: ${hermes.unusable}` };
+  if (!relay?.enabled()) return { ran: false, why: "the relay to the user's Telegram is off: nobody to ask for a go-ahead" };
+  const goAheadFile = goAheadFileOf(deps);
+  const goAheadRead = readGoAheads(goAheadFile);
+  if ('broken' in goAheadRead) {
+    return { ran: false, why: `${goAheadFile} cannot be read (${goAheadRead.broken}): nothing is filed until it is repaired or removed` };
+  }
+  const { goAheads } = goAheadRead;
 
   const file = deps.seenFile ?? path.join(DATA_DIR, 'error-triage.json');
   const read = readStore(file);
@@ -295,7 +535,6 @@ export async function triageOnce(deps: TriageDeps): Promise<TriageResult> {
   }
   const { store } = read;
   const now = (deps.now ?? Date.now)();
-  const log = deps.log ?? (() => undefined);
 
   const answer = await unresolvedIssues(deps.sentryApi ?? sentryApiBase(), token, deps.sentryTimeoutMs ?? SENTRY_TIMEOUT_MS);
   if ('error' in answer) {
@@ -329,6 +568,15 @@ export async function triageOnce(deps: TriageDeps): Promise<TriageResult> {
     if (result.parkedNow) {
       store.filed.push(now);
       filed.push({ task: result.id, name: nameOf(issue) });
+      // Kept before the issue is marked filed, so that a stop in between leaves a request to ask, never a task
+      // nobody is asked about.
+      goAheads.issues[issue.id] = { task: result.id, name: nameOf(issue), project, request: requestFor(issue, project), state: 'asking', askedAt: 0 };
+      try {
+        writeGoAheads(goAheadFile, goAheads, now);
+      } catch (err) {
+        error = `the list of go-aheads cannot be written (${messageOf(err)}): nothing more is filed until it can`;
+        break;
+      }
     }
     try {
       writeStore(file, store, now);
@@ -341,7 +589,7 @@ export async function triageOnce(deps: TriageDeps): Promise<TriageResult> {
   const waiting = unseen.length - handled;
   if (filed.length) {
     log(`filed ${filed.length} on ${project}: ${filed.map(f => `${f.name} as ${f.task}`).join(', ')}${waiting ? ` (${waiting} waiting)` : ''}`);
-    deps.tell?.(project, noteFor(filed));
+    await askWhatWaits(deps, relay, now, log);
   }
   if (error) log(error);
   return { ran: true, filed: filed.map(f => f.task), waiting, ...(error ? { error } : {}) };
@@ -360,6 +608,7 @@ export function stopErrorTriage(): void {
 /** Polls a minute after launch, then every 15 minutes, one poll at a time. */
 export function startErrorTriage(deps: TriageDeps): () => void {
   stopErrorTriage();
+  listenForGoAheads(deps);
   const schedule = pollSchedule();
   const firstMs = deps.firstPollMs ?? schedule.firstMs;
   const everyMs = deps.pollEveryMs ?? schedule.everyMs;

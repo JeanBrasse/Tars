@@ -1530,9 +1530,10 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 ### Sentry's errors on the board
 
 `electron/services/error-triage.ts` files the unresolved issues of Tars's Sentry project (the one
-the error reports go to) as parked tasks on the Hermes board of one project, and tells that
-project's orchestrator which tasks to hand to QA or the Audit, who reproduce each error in a
-sandbox and report. SPECS.md, "The error triage", has the whole contract.
+the error reports go to) as parked tasks on the Hermes board of one project, and asks you on
+Telegram, through the relay, for a go-ahead on each. On "oui", that project's orchestrator is told
+which task to hand to QA or the Audit, who reproduce the error in a sandbox and report; on "non",
+the task is archived. SPECS.md, "The error triage", has the whole contract.
 
 To turn it on:
 
@@ -1540,14 +1541,28 @@ To turn it on:
    Issue & Event on Read, or a personal token with that scope alone.
 2. Set `sentryAuthToken` to it and `sentryTriageProject` to the project's path, in Settings once it
    has the section, or in `~/.dorothy/app-settings.json` while Tars is closed. Error reports must be
-   on and Hermes configured.
+   on, Hermes configured and the relay on (`hermesRelayEnabled`): with the relay off, nothing is filed.
 3. A minute after launch, then every 15 minutes, Tars's log says `[error-triage] filed N on
    <project>: TARS-1 as t_...`, or, once each time the reason changes, `[error-triage] not polling
    Sentry: <why>`. Nothing is logged while no token is set.
 
+4. Each task filed is one message on Telegram: `Sentry, a new error in Tars: TARS-1, 3 events.`, its
+   title quoted, and the two answers. Reply to that message: "oui" hands it to the orchestrator,
+   "non" archives it, anything else gets the question again. Tars answers each reply.
+
 At most 10 tasks in any 24 hours, the oldest issue first; the others wait for room. What was filed
 is in `~/.dorothy/error-triage.json`. To have an issue filed again, remove its entry with Tars
 closed: the idempotency key hands back its task still on the board, unless that task was archived.
+Your answers are in `~/.tars-private/sentry-go-aheads.json`:
+
+```bash
+jq -r '.issues | to_entries[] | "\(.key) \(.value.name) \(.value.state) owed=\(.value.noteOwed // false)"' ~/.tars-private/sentry-go-aheads.json
+```
+
+| Symptom | Cause |
+|---|---|
+| "oui", and the orchestrator was told nothing | its CLI does not run (Tars said so): the note is owed, and goes once the orchestrator runs, at its next state change or the next poll |
+| No Telegram message for a task on the board | the request waits for Hermes in `~/.tars-private/relay-outbox.json` (7 days), or the relay is off; it is asked again at the next poll once it can go |
 
 ---
 
