@@ -69,7 +69,7 @@ import { assembleDigest } from '../../../electron/services/memory-hub';
 import { registerMemoryRoutes } from '../../../electron/services/api-routes/memory-routes';
 import { performDispatch } from '../../../electron/services/api-routes/agent-routes';
 import { agents } from '../../../electron/core/agent-manager';
-import type { RouteApp, RouteContext } from '../../../electron/services/api-routes/types';
+import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
 const LOCAL_FACT = 'local fact that must reach the agent';
@@ -149,15 +149,15 @@ describe('the block a session starts with', () => {
   }, 15000);
 });
 
-function routeApp(): RouteApp & { routes: Array<{ method: string; pattern: string | RegExp; handler: Function }> } {
+function routeApp(): RouteApp {
   return {
     routes: [],
-    add(method: string, pattern: string | RegExp, handler: Function) { this.routes.push({ method, pattern, handler }); },
-    get(pattern: string | RegExp, handler: Function) { this.add('GET', pattern, handler); },
-    post(pattern: string | RegExp, handler: Function) { this.add('POST', pattern, handler); },
-    put(pattern: string | RegExp, handler: Function) { this.add('PUT', pattern, handler); },
-    delete(pattern: string | RegExp, handler: Function) { this.add('DELETE', pattern, handler); },
-  } as never;
+    add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
+    get(pattern, handler) { this.add('GET', pattern, handler); },
+    post(pattern, handler) { this.add('POST', pattern, handler); },
+    put(pattern, handler) { this.add('PUT', pattern, handler); },
+    delete(pattern, handler) { this.add('DELETE', pattern, handler); },
+  };
 }
 
 function context(): RouteContext {
@@ -186,7 +186,9 @@ describe('where the block goes out, with a Hermes that accepts and never answers
     const answers: unknown[] = [];
     const url = new URL(`http://127.0.0.1/api/memory/context?project_path=${encodeURIComponent(project)}`);
 
-    const { ms } = await timed(() => route!.handler({ url, method: 'GET', headers: {} }, (body: unknown) => { answers.push(body); }));
+    const req = { method: 'GET', pathname: url.pathname, url, body: {} } as unknown as RouteRequest;
+    const ctx = context();
+    const { ms } = await timed(async () => route!.handler(req, (body: unknown) => { answers.push(body); }, ctx));
 
     expect(ms, 'the route answered after the hook gave up').toBeLessThan(WITHIN_THE_HOOK_MS);
     expect(JSON.stringify(answers[0])).toContain(LOCAL_FACT);
