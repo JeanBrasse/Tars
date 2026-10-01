@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileDiff } from 'lucide-react';
 import { Button, LoadingState, PageHeader, Panel, PanelCaption } from '@/components/ui';
 import type { AgentStatus, ChangedFile, ReviewDiff } from '@/types/electron';
+import { PATCH_LINES, cutNote, patchLines, workspacesFrom, type Workspace } from '@/lib/review';
 
 /**
  * What the agents actually changed.
@@ -13,17 +14,6 @@ import type { AgentStatus, ChangedFile, ReviewDiff } from '@/types/electron';
  * its own worktree is a separate column of work here.
  */
 
-interface Workspace {
-  key: string;
-  label: string;
-  repoPath: string;
-  /** The project the tree belongs to. Several branches of one project sit
-   *  together in the list, which is unreadable without this. */
-  projectPath: string;
-  projectName: string;
-  agents: string[];
-}
-
 function statusTone(status: ChangedFile['status']): string {
   if (status === 'added' || status === 'untracked') return 'text-success';
   if (status === 'deleted') return 'text-danger';
@@ -32,7 +22,7 @@ function statusTone(status: ChangedFile['status']): string {
 }
 
 function PatchView({ patch }: { patch: string }) {
-  const lines = useMemo(() => patch.split('\n').slice(0, 4000), [patch]);
+  const lines = useMemo(() => patchLines(patch).slice(0, PATCH_LINES), [patch]);
 
   return (
     <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto">
@@ -58,47 +48,43 @@ export default function ReviewPage() {
   const [diff, setDiff] = useState<ReviewDiff | null>(null);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [filePatch, setFilePatch] = useState<string>('');
+  const [fileError, setFileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The tree and the file last asked for: an answer for another one came back
+  // late, after the person moved on, and is dropped.
+  const treeAsked = useRef<string | null>(null);
+  const fileAsked = useRef<string | null>(null);
 
-  // One entry per working tree: agents sharing a worktree share their changes.
-  useEffect(() => {
-    window.electronAPI?.agent?.list?.().then((agents: AgentStatus[] | undefined) => {
-      const byPath = new Map<string, Workspace>();
-      for (const agent of agents ?? []) {
-        const repoPath = agent.worktreePath || agent.projectPath;
-        if (!repoPath) continue;
-        const existing = byPath.get(repoPath);
-        if (existing) {
-          existing.agents.push(agent.name || agent.id);
-          continue;
-        }
-        const projectPath = agent.projectPath || repoPath;
-        byPath.set(repoPath, {
-          key: repoPath,
-          label: agent.branchName || repoPath.split('/').pop() || repoPath,
-          repoPath,
-          projectPath,
-          projectName: projectPath.split('/').filter(Boolean).pop() || projectPath,
-          agents: [agent.name || agent.id],
-        });
-      }
-      const list = Array.from(byPath.values()).sort(
-        (a, b) => a.projectName.localeCompare(b.projectName) || a.label.localeCompare(b.label),
-      );
+  // The agents' working trees, and the projects added in Tars that no agent
+  // works in. Read again by Refresh, so a tree added since shows.
+  const loadTrees = useCallback(async () => {
+    try {
+      const [agents, projects] = await Promise.all([
+        window.electronAPI?.agent?.list?.().catch(() => []) ?? [],
+        window.electronAPI?.fs?.listProjects?.().catch(() => []) ?? [],
+      ]);
+      const list = workspacesFrom((agents ?? []) as AgentStatus[], projects ?? []);
       setWorkspaces(list);
-      setSelected(current => current ?? list[0]?.key ?? null);
-    }).catch(() => setWorkspaces([]))
-      .finally(() => setWorkspacesLoaded(true));
+      setSelected(current => (current && list.some(w => w.key === current) ? current : list[0]?.key ?? null));
+    } finally {
+      setWorkspacesLoaded(true);
+    }
   }, []);
 
+  useEffect(() => { void loadTrees(); }, [loadTrees]);
+
   const load = useCallback(async (repoPath: string) => {
+    treeAsked.current = repoPath;
+    fileAsked.current = null;
     setLoading(true);
     setError(null);
     setActiveFile(null);
     setFilePatch('');
+    setFileError(null);
     try {
       const res = await window.electronAPI?.review?.diff(repoPath);
+      if (treeAsked.current !== repoPath) return;
       if (!res?.success || !res.diff) {
         setDiff(null);
         setError(res?.error || 'Could not read this repository');
@@ -106,9 +92,9 @@ export default function ReviewPage() {
       }
       setDiff(res.diff);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (treeAsked.current === repoPath) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (treeAsked.current === repoPath) setLoading(false);
     }
   }, []);
 
@@ -118,11 +104,20 @@ export default function ReviewPage() {
 
   const openFile = useCallback(async (file: string) => {
     if (!diff) return;
+    fileAsked.current = file;
     setActiveFile(file);
     setFilePatch('');
-    const res = await window.electronAPI?.review?.file(diff.repo, file, diff.baseBranch ?? undefined);
-    setFilePatch(res?.patch || '');
+    setFileError(null);
+    const res: { success: boolean; patch?: string; error?: string } | undefined = await window.electronAPI?.review
+      ?.file(diff.repo, file, diff.baseBranch ?? undefined)
+      .catch((err: unknown) => ({ success: false, error: err instanceof Error ? err.message : String(err) }));
+    if (fileAsked.current !== file) return;
+    if (res && !res.success) setFileError(res.error || 'unknown error');
+    else setFilePatch(res?.patch || '');
   }, [diff]);
+
+  const shownPatch = activeFile ? filePatch : diff?.patch ?? '';
+  const cut = cutNote(patchLines(shownPatch).length, !!activeFile);
 
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
@@ -132,8 +127,8 @@ export default function ReviewPage() {
         actions={
           <Button
             size="md"
-            onClick={() => selected && load(selected)}
-            disabled={loading || !selected}
+            onClick={() => { void loadTrees(); if (selected) void load(selected); }}
+            disabled={loading}
           >
             Refresh
           </Button>
@@ -186,7 +181,7 @@ export default function ReviewPage() {
                     {w.label}
                   </span>
                   <span className="block text-[10px] text-muted-foreground truncate mt-0.5">
-                    {w.agents.join(', ')}
+                    {w.agents.length ? w.agents.join(', ') : 'no agent'}
                   </span>
                 </button>
                 </div>
@@ -253,7 +248,9 @@ export default function ReviewPage() {
               {activeFile ? (
                 <>
                   <p className="text-xs font-mono text-foreground mb-2 sticky top-0 bg-card py-1">{activeFile}</p>
-                  {filePatch ? <PatchView patch={filePatch} /> : (
+                  {fileError ? (
+                    <p className="text-xs text-danger">Could not read this file&apos;s patch: {fileError}</p>
+                  ) : filePatch ? <PatchView patch={filePatch} /> : (
                     <p className="text-xs text-muted-foreground">No textual change to show for this file.</p>
                   )}
                 </>
@@ -262,6 +259,7 @@ export default function ReviewPage() {
               ) : (
                 <p className="text-xs text-muted-foreground">Pick a file to read its patch.</p>
               )}
+              {cut && !fileError && <p className="text-[11px] text-muted-foreground mt-2">{cut}</p>}
             </div>
           </Panel>
         </div>

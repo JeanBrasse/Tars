@@ -59,7 +59,10 @@ describe("the app's own before-quit handler", () => {
     const source = ts.createSourceFile(MAIN, fs.readFileSync(MAIN, 'utf-8'), ts.ScriptTarget.ES2022, true);
     let names: string[] | null = null;
 
+    // The first list: the quit's first pass, where the writes are. The second
+    // pass closes what the terminals no longer need.
     const visit = (node: ts.Node): void => {
+      if (names) return;
       if (ts.isCallExpression(node)
           && ts.isIdentifier(node.expression)
           && node.expression.text === 'runShutdownSteps'
@@ -86,7 +89,9 @@ describe("the app's own before-quit handler", () => {
     // do not write are in it too, after the two that do.
     expect(steps.length, JSON.stringify(steps)).toBeGreaterThan(WRITERS.length);
     expect(steps.slice(0, WRITERS.length)).toEqual(WRITERS);
-    expect(steps).toContain('killAllPty');
+    // The terminals are ended after these steps, by endAllTerminals, which
+    // waits for their exits and so is not a step (quit-ends-terminals.test.ts).
+    expect(steps).toContain('endAcpRunsOnQuit');
     expect(steps).not.toContain('<not a literal>');
   });
 
@@ -98,7 +103,7 @@ describe("the app's own before-quit handler", () => {
     expect(body).toContain('runShutdownSteps(');
     // Every step is inside the array, so none of the eight is called on its own
     // line where a throw would skip the rest.
-    for (const step of [...WRITERS, 'killAllPty', 'closeVaultDb', 'destroyTray']) {
+    for (const step of [...WRITERS, 'endAcpRunsOnQuit', 'closeVaultDb', 'destroyTray']) {
       expect(body, `${step}() is called outside runShutdownSteps`).not.toMatch(new RegExp(`^\\s*${step}\\(\\);`, 'm'));
     }
   });

@@ -42,6 +42,31 @@ export async function decodedProjectPath(dirName: string, now = Date.now()): Pro
   return fresh;
 }
 
+/** How many folders' paths are checked on disk at once. */
+const AT_ONCE = 8;
+
+/**
+ * The paths many folder names stand for, in their order, a few at a time.
+ *
+ * One after another, each folder's check on disk (past REDECODE_MS) waited for
+ * a turn of the main loop of its own: on 24 folders, 7 ms on an idle loop and
+ * 200 ms on a loop busy in 8 ms slices, the transcript scan's breathing, which
+ * claude:getData and fs:list-projects then took. Eight at a time, 8 ms. A bound
+ * rather than all at once, for a machine with hundreds of folders.
+ */
+export async function decodedProjectPaths(names: string[]): Promise<string[]> {
+  const paths = new Array<string>(names.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < names.length) {
+      const i = next++;
+      paths[i] = await decodedProjectPath(names[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(AT_ONCE, names.length) }, worker));
+  return paths;
+}
+
 export interface ProjectFolder {
   /** The folder's own name, the encoded path. */
   name: string;
@@ -59,16 +84,17 @@ export async function projectFolders(root: string): Promise<ProjectFolder[]> {
   } catch {
     return [];
   }
-  const folders: ProjectFolder[] = [];
+  const folders: Array<{ name: string; dir: string }> = [];
   for (const entry of entries) {
     const dir = path.join(root, entry.name);
     // A link to a folder counts, as the statSync these callers used did.
     const isDir = entry.isDirectory()
       || (entry.isSymbolicLink() && await fs.promises.stat(dir).then(s => s.isDirectory(), () => false));
     if (!isDir) continue;
-    folders.push({ name: entry.name, dir, projectPath: await decodedProjectPath(entry.name) });
+    folders.push({ name: entry.name, dir });
   }
-  return folders;
+  const paths = await decodedProjectPaths(folders.map(f => f.name));
+  return folders.map((folder, i) => ({ ...folder, projectPath: paths[i] }));
 }
 
 /** Test seam. */
