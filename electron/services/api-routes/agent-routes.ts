@@ -762,6 +762,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         lastCleanOutput: agent.lastCleanOutput,
         error: agent.error,
         waitingReason: agent.waitingReason,
+        stalledSince: agent.stalledSince,
       });
       return;
     }
@@ -794,6 +795,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         lastCleanOutput: a?.lastCleanOutput,
         error: a?.error,
         waitingReason: a?.waitingReason,
+        stalledSince: a?.stalledSince,
       });
     };
 

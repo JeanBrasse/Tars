@@ -123,6 +123,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
+import { startStallWatch, stopStallWatch } from './services/stall-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
@@ -711,6 +712,9 @@ app.whenReady().then(async () => {
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
   startAgentWatch();
+  // And an agent that reads running while it does nothing is told to whoever
+  // handed it the work (services/stall-watch.ts).
+  startStallWatch();
   // A message held behind a slash command typed by hand goes in once the
   // command's record says the field emptied (core/pty-manager.ts).
   setFieldProbe(agentId => {
@@ -824,6 +828,7 @@ app.on('before-quit', (event) => {
       ['destroyTray', destroyTray],
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
+      ['stopStallWatch', stopStallWatch],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))
