@@ -620,6 +620,7 @@ Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes
 |---|---|---|---|
 | `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
 | `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
+| `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds ids and names, never a credential and never a folder: an account's folder is `~/.claude-accounts/<id>`, derived from its id. A file that does not parse reads as account 1 alone and is never written over: every change is refused, and Settings says why |
 
 Files Tars writes **outside** its own directory:
 
