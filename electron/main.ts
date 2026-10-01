@@ -12,6 +12,11 @@
 // First: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
 
+import { startGithubWatch } from './services/github-watch';
+import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, startHermesRelay, tellUser } from './services/hermes-relay';
+import { startRelayRouting } from './services/hermes-relay-routing';
+import { settingsForRelay } from './services/hermes-relay-switch';
+import { reportsOn } from './services/event-reports';
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -122,7 +127,9 @@ import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './service
 import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
-import { hermesKanban } from './services/api-routes/kanban-routes';
+import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
+import { startErrorTriage, stopErrorTriage } from './services/error-triage';
+import { agentStatusEmitter } from './services/agent-events';
 import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
@@ -167,6 +174,7 @@ function loadAppSettings(): AppSettings {
     telegramAuthToken: '',
     telegramAuthorizedChatIds: [],
     telegramRequireMention: false,
+    hermesRelayEnabled: false,
     slackEnabled: false,
     slackBotToken: '',
     slackAppToken: '',
@@ -179,6 +187,8 @@ function loadAppSettings(): AppSettings {
     discordAllowedUserIds: [],
     discordRequireMention: true,
     errorReportsEnabled: false,
+    sentryAuthToken: '',
+    sentryTriageProject: '',
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -380,6 +390,14 @@ function initApiServer() {
   // route, and for the addressing scheme that lets one server serve both.
   startOpenAIBridgeServer();
   moveLocalKanbanToHermes();
+  // Sentry's new errors, as parked tasks on the board of the project named in
+  // Settings, told to its orchestrator. Does nothing until the token, the
+  // project, error reports and Hermes are all there (services/error-triage.ts).
+  startErrorTriage({
+    settings: () => appSettings, hermes: hermesKanban, tell: tellOrchestratorAsTars,
+    relay: { enabled: relayEnabled, send: relaySend, wasSent: relayWasSent, onReply: onRelayReply, tellUser },
+    onFleetChange: listener => agentStatusEmitter.on('fleet-change', listener),
+  });
 }
 
 /**
@@ -674,6 +692,21 @@ app.whenReady().then(async () => {
     saveAgents,
   });
 
+  // The relay to the user's Telegram through their Hermes, following its switch
+  // live (services/hermes-relay.ts). On, it is the only voice there: the Tars
+  // bot's token is gone and the bot stays off (hermes-relay-switch.ts).
+  const forRelay = settingsForRelay(appSettings);
+  if (forRelay !== appSettings) {
+    appSettings = forRelay;
+    saveAppSettingsToFile(forRelay);
+  }
+  startHermesRelay({ enabled: () => appSettings.hermesRelayEnabled === true });
+  startRelayRouting({
+    agents, ptyProcesses, settings: () => appSettings, saveAgents,
+    initAgentPty: (agent: AgentStatus) => initAgentPty(agent, getMainWindow(), handleStatusChangeNotificationWrapper, saveAgents),
+  });
+  onRelayStatus(status => broadcastToAllWindows('hermes:relay:status', status));
+
   // Initialize services
   initTelegramBot();
   initSlackBot(() => appSettings, (settings) => {
@@ -747,6 +780,10 @@ app.whenReady().then(async () => {
   // switch. See services/cli-updater.ts.
   startCliUpdates(() => appSettings, () => [...agents.values()].map(agent => agent.provider));
 
+  // PRs merged and changes requested in the agents' repositories, read with
+  // `gh` while the reports go out (the relay is on), for the user's event reports.
+  startGithubWatch(() => [...agents.values()].map(agent => agent.projectPath).filter(Boolean), reportsOn);
+
   console.log('App initialization complete');
 });
 
@@ -780,6 +817,7 @@ app.on('before-quit', () => {
     ['destroyTray', destroyTray],
     ['stopAgentAutosave', stopAgentAutosave],
     ['stopOverseerWatch', stopOverseerWatch],
+    ['stopErrorTriage', stopErrorTriage],
     ['killAllPty', killAllPty],
     ['closeVaultDb', closeVaultDb],
     ['stopOpenAIBridgeServer', stopOpenAIBridgeServer],

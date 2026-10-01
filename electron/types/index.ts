@@ -274,6 +274,12 @@ export interface AppSettings {
   telegramAuthToken: string; // Secret token for authentication
   telegramAuthorizedChatIds: string[]; // List of authorized chat IDs
   telegramRequireMention: boolean; // Only respond when bot is @mentioned in groups
+  /**
+   * The relay to the user's Telegram through their Hermes (services/hermes-relay.ts): off unless turned on in
+   * Settings, Hermes. On, it is the only voice there: the Tars bot's token is erased and the bot off
+   * (hermes-relay-switch.ts), questions, reports and the orchestrator's send_telegram go through it.
+   */
+  hermesRelayEnabled?: boolean;
   slackEnabled: boolean;
   slackBotToken: string;
   slackAppToken: string;
@@ -303,6 +309,14 @@ export interface AppSettings {
    * (services/error-reports). Off by default; followed live.
    */
   errorReportsEnabled: boolean;
+  /**
+   * The error triage (services/error-triage): a Sentry auth token with the
+   * event:read scope and nothing more, and the project whose Hermes board gets
+   * a parked task for each new error. While either is empty, or error reports
+   * are off, or Hermes is not configured, nothing polls. Read at each poll.
+   */
+  sentryAuthToken: string;
+  sentryTriageProject: string;
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;
