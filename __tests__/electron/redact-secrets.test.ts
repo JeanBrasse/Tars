@@ -27,11 +27,11 @@ const KEY = j('sk-', 'ant-', 'api03-', FILLER);
 
 describe('redactSecrets', () => {
   it('takes the key out of an env dump, which is the reported path', () => {
-    const out = redactSecrets(`ANTHROPIC_API_KEY=${KEY}\nHOME=/Users/noah`);
+    const out = redactSecrets(`ANTHROPIC_API_KEY=${KEY}\nHOME=/Users/you`);
     expect(out).not.toContain(KEY);
     expect(out).toContain('ANTHROPIC_API_KEY=');
     // The path beside it is untouched, so the dump is still readable.
-    expect(out).toContain('HOME=/Users/noah');
+    expect(out).toContain('HOME=/Users/you');
   });
 
   it('leaves enough of the value to tell which key it was', () => {
@@ -97,10 +97,10 @@ describe('redactSecrets', () => {
   });
 
   it('catches a settings file printed into the terminal', () => {
-    const json = '{"deepSeekApiKey":"ds3Kq8ZmR2vX7bTnL4pWyE","defaultProjectPath":"/Users/noah/proj"}';
+    const json = '{"deepSeekApiKey":"ds3Kq8ZmR2vX7bTnL4pWyE","defaultProjectPath":"/Users/you/proj"}';
     const out = redactSecrets(json);
     expect(out).not.toContain('ds3Kq8ZmR2vX7bTnL4pWyE');
-    expect(out).toContain('/Users/noah/proj');
+    expect(out).toContain('/Users/you/proj');
   });
 
   it('catches a telegram bot token, which is itself a credential', () => {
@@ -120,7 +120,7 @@ describe('redactSecrets', () => {
       'The API key is set in Settings, under AI Providers.',
       'export API_KEY=not-set',
       'TOKEN=undefined',
-      'GITHUB_TOKEN=/Users/noah/.config/gh/hosts.yml',
+      'GITHUB_TOKEN=/Users/you/.config/gh/hosts.yml',
       'password: xxxxxxxx',
     ].join('\n');
     expect(redactSecrets(prose)).toBe(prose);

@@ -190,12 +190,12 @@ full:
 ```
 1. hello.txt - written successfully, contains `confined`.
 2. git status --short - succeeded: `?? f.txt` and `?? hello.txt`
-3. ls /Users/noah/Documents - failed: ls: /Users/noah/Documents: Operation not permitted
+3. ls /Users/you/Documents - failed: ls: /Users/you/Documents: Operation not permitted
 4. ps -Eww -p 39401 - failed: (eval):1: operation not permitted: ps
 ```
 
 So: it did its work, and it could not read Noah's home. Separately measured
-under the same profile: `~/.dorothy/api-token` denied, `/Users/noah/tars`
+under the same profile: `~/.dorothy/api-token` denied, `/Users/you/tars`
 denied, the loopback API reachable, `api.anthropic.com` reachable, `git`,
 `node` and `npm` working.
 
@@ -232,19 +232,19 @@ visible.
 ; --- the toolchain, wherever the user installed it -------------------------
 ; On this machine node, npm and claude itself all live under $HOME, so a
 ; profile that allows only /usr and /opt starts nothing.
-(allow file-read* (subpath "/Users/noah/.nvm")
-                  (subpath "/Users/noah/.local/bin")
-                  (subpath "/Users/noah/.local/share/claude")
-                  (subpath "/Users/noah/.config/git")
-                  (literal "/Users/noah/.gitconfig")
-                  (literal "/Users/noah/.gitignore_global")
-                  (literal "/Users/noah/.npmrc"))
+(allow file-read* (subpath "/Users/you/.nvm")
+                  (subpath "/Users/you/.local/bin")
+                  (subpath "/Users/you/.local/share/claude")
+                  (subpath "/Users/you/.config/git")
+                  (literal "/Users/you/.gitconfig")
+                  (literal "/Users/you/.gitignore_global")
+                  (literal "/Users/you/.npmrc"))
 
 ; --- the credential store -------------------------------------------------
 ; Measured: without this the CLI answers "Not logged in · Please run /login".
 ; The OAuth token lives in the login keychain, so a profile that walls off the
 ; user's Library walls off the agent's own account with it.
-(allow file-read* file-write* (subpath "/Users/noah/Library/Keychains"))
+(allow file-read* file-write* (subpath "/Users/you/Library/Keychains"))
 
 ; --- the agent's own world, read and write ---------------------------------
 (allow file-read* file-write* (subpath "PROJECT"))

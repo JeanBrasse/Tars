@@ -1729,7 +1729,7 @@ function permissionsCarryNothing(value: unknown): boolean {
   return (p.allow?.length ?? 0) === 0 && (p.deny?.length ?? 0) === 0;
 }
 
-function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
+function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
   const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
   // Get Claude settings
@@ -1821,14 +1821,24 @@ function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
   // Get Claude info (version, paths, etc.)
   ipcMain.handle('settings:getInfo', async () => {
     try {
-      const { execSync } = await import('child_process');
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
 
-      // Try to get Claude version
-      let claudeVersion = 'Unknown';
+      // Empty unless claude answers: the System page reads any version as
+      // ready, and started from 'Unknown', so a missing claude read as ready.
+      // Resolved the way an agent launch resolves it: the path set in
+      // Settings > CLI Paths, else 'claude' on the PATH built with those
+      // folders, not on Electron's own.
+      const cliPaths = deps.getAppSettings()?.cliPaths;
+      let claudeVersion = '';
       try {
-        claudeVersion = execSync('claude --version 2>/dev/null', { encoding: 'utf-8' }).trim();
+        const { stdout } = await promisify(execFile)(cliPaths?.claude || 'claude', ['--version'], {
+          timeout: 8000,
+          env: { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) },
+        });
+        claudeVersion = stdout.trim();
       } catch {
-        // Claude not installed or not in PATH
+        // Not installed, not on that PATH, or it failed: not ready.
       }
 
       return {

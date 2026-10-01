@@ -158,6 +158,16 @@ export interface AgentStatus {
    * or after an app restart that followed one.
    */
   forkedFromSessionId?: string;
+  /**
+   * The Claude account this agent's CLI was last launched on
+   * (DESIGN-COMPTES-CLAUDE.md, B3). Absent: account 1, as before the option.
+   */
+  claudeAccountId?: ClaudeAccountId;
+  /**
+   * The account the agent is held to, whatever the usage. Absent: automatic.
+   * Set from the agent card through claude-accounts:set-agent-account.
+   */
+  claudeAccountPin?: ClaudeAccountId;
   /** Session id of the most recently killed PTY's claude session. Its hooks
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */
@@ -625,4 +635,84 @@ export interface AgentMessageWaiting {
   waiting: number;
   /** Who they are from, each named once, oldest first. */
   from: string[];
+}
+
+/**
+ * Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6).
+ *
+ * An account is a Claude Code configuration directory, signed in once by
+ * Claude Code itself (`claude auth login`). Tars chooses which directory a
+ * CLI starts with, and never reads, copies or stores a credential.
+ *
+ * 'default' is ~/.claude, launched without CLAUDE_CONFIG_DIR. Others are
+ * 'acct-' and six random hex digits, drawn afresh for each new account.
+ */
+export type ClaudeAccountId = string;
+
+export interface ClaudeAccount {
+  id: ClaudeAccountId;
+  /** Chosen by the user, 1 to 40 characters. */
+  label: string;
+  /**
+   * ~/.claude-accounts/<id>, the home resolved once: derived from the id,
+   * never read from the registry file, and passed exactly as it is, since
+   * Claude Code names the keychain item after this string, not after the
+   * folder it resolves to. null for 'default'.
+   */
+  configDir: string | null;
+  enabled: boolean;
+}
+
+export interface ClaudeAccountsSettings {
+  /** The option. false by default: with it off nothing changes for anyone. */
+  enabled: boolean;
+  /** In order of preference. 'default' is always there. At most 5. */
+  accounts: ClaudeAccount[];
+  /** Percent, whole numbers from 50 to 100. Defaults 90 and 95. */
+  fiveHourThreshold: number;
+  weeklyThreshold: number;
+}
+
+export interface ClaudeAccountWindow {
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
+}
+
+export interface ClaudeAccountState extends ClaudeAccount {
+  /** From `claude auth status`. null until it has answered. */
+  signedIn: boolean | null;
+  email: string | null;
+  subscriptionType: string | null;
+  /** Last reported by a status line on this account; null when never seen or reset. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of that report. */
+  updatedAt: number | null;
+  /** Epoch seconds: a limit was hit, the account is skipped until then. */
+  blockedUntil: number | null;
+  /** Agents whose CLI runs on it now. */
+  agentIds: string[];
+  /** A sentence for the page: why the last sign-in or status check did not work. */
+  error: string | null;
+}
+
+export interface ClaudeAccountsView {
+  settings: ClaudeAccountsSettings;
+  accounts: ClaudeAccountState[];
+  /**
+   * Set when ~/.tars-private/claude-accounts.json is there and does not read:
+   * the view shows account 1 alone, and every change is refused until the
+   * file is fixed or removed, so the other accounts are not written over.
+   */
+  registryError: string | null;
+}
+
+/** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
+export interface ClaudeAccountAgentChange {
+  agentId: string;
+  /** The account its CLI was last launched on; null is account 1. */
+  claudeAccountId: ClaudeAccountId | null;
+  /** The account it is held to; null is automatic. */
+  claudeAccountPin: ClaudeAccountId | null;
 }
