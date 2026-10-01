@@ -15,7 +15,7 @@
 - **Local API**: a plain `node:http` server on **31415**, bearer-token authenticated, so the CLIs' hooks and the bundled MCP servers can call back into the app
 - **MCP**: seven servers in `mcp-*/`, each bundled to `dist/bundle.js` and shipped in `extraResources`: orchestrator, memory, telegram, kanban, vault, socialdata, x
 - **Delegation**: two transports: keystrokes written into the PTY (`/dispatch`), and the Agent Client Protocol (`electron/services/acp/`), which actually returns a result
-- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat and the Hermes webhook secret. `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI
+- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat, the Hermes webhook secret and the Claude accounts' registry (`claude-accounts.json`: ids, names, thresholds, never a credential). `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI. Each Claude account after the first is a Claude Code folder of its own, `~/.claude-accounts/<id>`, which the agents started on it run in
 - **Tests**: E2E first: `@playwright/test` drives the real Electron app (`e2e/`), and every run leaves an artefact. `vitest` (`__tests__/`) is the regression net and the home of units tested in isolation, written failures first. The rules are in Workflow Rule 3
 - **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` declares `>=22.12.0`, Electron's own floor since 43, and CI runs 22
 
@@ -49,12 +49,12 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 107 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
+| `design/tars-redesign.pen` | Pencil source of truth, 113 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
 | `design/chat-design.pen` | 72 of the same frames (71 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), the two panel history frames `tars-redesign.pen` dropped with the history view, plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes, the composer and the room head, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/landing.pen` | The site in `landing/`: its page, its 404, its privacy and terms pages, and the picture link previews show. Forked from `tars-redesign.pen` on 2026-09-23, which no longer carries the landing |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
-| `e2e/surfaces.mjs` | Executable manifest: 18 pages, 17 settings sections, 3 overlays = 38 surfaces |
+| `e2e/surfaces.mjs` | Executable manifest: 18 pages, 18 settings sections, 3 overlays = 39 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
@@ -234,7 +234,7 @@ npm test                                 # vitest, __tests__/**/*.test.ts
 npm run lint                             # eslint
 npm run lint:design                      # radius / shadows / gradients / raw palette / hex
 npm run e2e:guard                        # every inventory page is covered by the manifest
-npm run e2e                              # Playwright drives the real Electron app, 38 surfaces
+npm run e2e                              # Playwright drives the real Electron app, 39 surfaces
 ```
 
 `npm run e2e` boots Electron in a sandbox through `launchSandboxed` (`e2e/fixture.mjs`). `HOME` pointed at a temp dir moves `~/.dorothy` and `~/.claude` and nothing else: Electron finds its profile through macOS, so until 2026-09-16 every run opened `~/Library/Application Support/tars`, the installed Tars's own profile. `--user-data-dir` and `CFFIXED_USER_HOME` move it now, and the launch fails if the app reports any of its folders outside the sandbox. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process. `npm test` runs in a throwaway `HOME` too (`__tests__/setup/home-isolation.ts`), and fails a file that writes into the real one.

@@ -6,6 +6,7 @@ import type { AgentStatus } from '@/types/electron';
 import { AgentMark } from '@/components/ui';
 import { STATUS_COLORS, errorReason, statusWord } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
+import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 interface TerminalPanelHeaderProps {
   agent: AgentStatus;
@@ -170,6 +171,9 @@ export default function TerminalPanelHeader({
           {[agent.provider, model].filter(Boolean).join(' · ')}
         </span>
       )}
+      {/* The Claude account it runs on, after provider and model, when several
+          subscriptions are on. Frame: `Agent · Claude account`. */}
+      <AgentAccountControl agent={agent} stopMouseDown />
 
       {/* What the panel shows: its agent's session, as it runs. It named the
           live view while a history view sat beside it, and is a word now,

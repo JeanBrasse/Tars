@@ -5,6 +5,7 @@ import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
+import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
 import { attachShiftEnterHandler, disposeTerminalSafely, keySender, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
@@ -485,9 +486,13 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       writeToTerminal(event.agentId, `\x1b[31m${event.data}\x1b[0m`);
     });
 
+    // A move by Tars to another Claude account, said in the agent's panel.
+    const unsubMove = onAgentMoveLine(writeToTerminal);
+
     return () => {
       unsubOutput();
       unsubError();
+      unsubMove();
     };
   }, [writeToTerminal, notePty]);
 

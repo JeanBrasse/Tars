@@ -4,6 +4,7 @@ import type { AgentStatus } from '@/types/electron';
 import { AgentMark, Button } from '@/components/ui';
 import { STATUS_COLORS, errorReason, statusWord } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
+import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 // Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
 // button each, sitting inside the card padding - the card has no footer band.
@@ -106,6 +107,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           <Button size="sm" className={ROW_ACTION} onClick={onDelete}>
             delete
           </Button>
+          {/* The Claude account it runs on, at the right of the buttons, when
+              several subscriptions are on. Frame: `Agent · Claude account`. */}
+          <AgentAccountControl agent={agent} className="ml-auto" />
         </div>
       </div>
     </div>
