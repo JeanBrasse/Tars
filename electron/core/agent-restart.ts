@@ -126,6 +126,12 @@ export type RestartOutcome =
 
 interface Pending {
   settings: Set<string>;
+  /**
+   * Restart even though the CLI already runs on the record's settings: a move
+   * to another Claude account (services/claude-accounts/switching.ts), whose
+   * account is chosen by the launch, not saved on the record.
+   */
+  always?: boolean;
   timer?: ReturnType<typeof setTimeout>;
   /** The last thing logged, so a wait is said once and not on every key. */
   said?: string;
@@ -224,9 +230,11 @@ function say(agent: AgentStatus, entry: Pending | undefined, line: string): void
  * An agent's launch settings changed: restart its CLI on them now, when what
  * it is doing ends, or not at all when nothing runs. Settings that change
  * again while a restart waits are simply added to it: the restart launches on
- * whatever the record says when it happens.
+ * whatever the record says when it happens. `always` restarts even when the
+ * CLI already runs on the record's settings (a move to another account), with
+ * every wait above all the same.
  */
-export function restartForSettings(agentId: string, changed: string[]): RestartOutcome {
+export function restartForSettings(agentId: string, changed: string[], opts: { always?: boolean } = {}): RestartOutcome {
   if (changed.length === 0) return { action: 'next-launch', why: 'nothing the CLI reads at launch changed' };
   let entry = pending.get(agentId);
   if (!entry) {
@@ -234,6 +242,7 @@ export function restartForSettings(agentId: string, changed: string[]): RestartO
     pending.set(agentId, entry);
   }
   for (const setting of changed) entry.settings.add(setting);
+  if (opts.always) entry.always = true;
   listen();
   return decide(agentId);
 }
@@ -300,7 +309,7 @@ function decide(agentId: string): RestartOutcome {
     say(agent, undefined, `${settings} changed with no CLI running: the next launch uses the new values`);
     return { action: 'next-launch', why: 'no CLI is running in its terminal' };
   }
-  if (launchedWith.get(ptyProcess)?.settings === JSON.stringify(launchSettings(agent))) {
+  if (!entry.always && launchedWith.get(ptyProcess)?.settings === JSON.stringify(launchSettings(agent))) {
     drop(agentId);
     say(agent, undefined, `${settings} changed, and its CLI was launched on the values it has now: nothing to restart`);
     return { action: 'next-launch', why: 'its CLI already runs on these values' };

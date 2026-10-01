@@ -7,19 +7,26 @@
  * Nothing registered, or the resolver answering null, and the environment is
  * left exactly as the caller built it: that is the option being off.
  *
- * Its own module with no imports, so that both can reach it without pulling
+ * Its own module with no imports but types, so that both can reach it without pulling
  * node-pty or the fleet into the other.
  */
 
+import type { ClaudeAccountMove } from '../types';
+
 export interface AccountEnv {
   accountId: string;
+  /** Set when this launch makes a move Tars asked for (services/claude-accounts/switching.ts). */
+  move?: ClaudeAccountMove;
   /** Put in, over anything inherited. */
   set: Record<string, string>;
   /** Taken out of whatever was inherited. */
   unset: string[];
 }
 
-export type AccountEnvResolver = (agentId: string, cwd: string) => AccountEnv | null;
+/** A terminal, which a move is made by, or a delegated run, which leaves the move to the terminal. */
+export type AccountEnvPurpose = 'terminal' | 'delegation';
+
+export type AccountEnvResolver = (agentId: string, cwd: string, purpose: AccountEnvPurpose) => AccountEnv | null;
 
 let resolver: AccountEnvResolver | undefined;
 
@@ -27,10 +34,10 @@ export function setAccountEnvResolver(fn: AccountEnvResolver | undefined): void 
   resolver = fn;
 }
 
-export function accountEnvFor(agentId: string | undefined, cwd: string): AccountEnv | null {
+export function accountEnvFor(agentId: string | undefined, cwd: string, purpose: AccountEnvPurpose = 'terminal'): AccountEnv | null {
   if (!agentId || !resolver) return null;
   try {
-    return resolver(agentId, cwd);
+    return resolver(agentId, cwd, purpose);
   } catch (err) {
     // A launch never fails over an account, and it starts on account 1 rather
     // than on whatever Tars inherited: an inherited CLAUDE_CONFIG_DIR is

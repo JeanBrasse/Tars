@@ -175,7 +175,7 @@ export async function delegateOverAcp(opts: {
   // The Claude account this run bills, the one its agent's terminal would
   // start on. Measured: the adapter's own claude (2.1.232) honours
   // CLAUDE_CONFIG_DIR, keychain naming included (the Audit's N9).
-  const account = accountEnvFor(agent.id, cwd);
+  const account = accountEnvFor(agent.id, cwd, 'delegation');
   const session = new AcpSession(launch, {
     cwd,
     env: {

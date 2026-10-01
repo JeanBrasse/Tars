@@ -287,6 +287,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('claude-accounts:agent-changed', listener);
       return () => ipcRenderer.removeListener('claude-accounts:agent-changed', listener);
     },
+    onAgentMoved: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('claude-accounts:agent-moved', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:agent-moved', listener);
+    },
     setAgentAccount: (params: { agentId: string; accountId: string | null }) =>
       ipcRenderer.invoke('claude-accounts:set-agent-account', params),
   },
