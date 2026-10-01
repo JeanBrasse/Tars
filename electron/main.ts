@@ -122,7 +122,8 @@ import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './service
 import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
-import { hermesKanban } from './services/api-routes/kanban-routes';
+import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
+import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
@@ -179,6 +180,8 @@ function loadAppSettings(): AppSettings {
     discordAllowedUserIds: [],
     discordRequireMention: true,
     errorReportsEnabled: false,
+    sentryAuthToken: '',
+    sentryTriageProject: '',
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -380,6 +383,10 @@ function initApiServer() {
   // route, and for the addressing scheme that lets one server serve both.
   startOpenAIBridgeServer();
   moveLocalKanbanToHermes();
+  // Sentry's new errors, as parked tasks on the board of the project named in
+  // Settings, told to its orchestrator. Does nothing until the token, the
+  // project, error reports and Hermes are all there (services/error-triage.ts).
+  startErrorTriage({ settings: () => appSettings, hermes: hermesKanban, tell: tellOrchestratorAsTars });
 }
 
 /**
@@ -780,6 +787,7 @@ app.on('before-quit', () => {
     ['destroyTray', destroyTray],
     ['stopAgentAutosave', stopAgentAutosave],
     ['stopOverseerWatch', stopOverseerWatch],
+    ['stopErrorTriage', stopErrorTriage],
     ['killAllPty', killAllPty],
     ['closeVaultDb', closeVaultDb],
     ['stopOpenAIBridgeServer', stopOpenAIBridgeServer],
