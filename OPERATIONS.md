@@ -1645,7 +1645,11 @@ ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 
 ### Fleet-wide log search
 
-The Logs page reads each agent as its terminal shows it, never as the raw stream split on line
+The Logs page reads a Claude agent from its transcript first (the last 200 messages of its current
+or last session, `❯` what was typed, `⏺` the answer and each tool call, `⎿` a tool's answer): Tars runs
+Claude Code full screen, on the alternate screen, which keeps no history and is discarded at `/exit`, so
+the terminal alone kept only a stopped agent's launch lines. After those, and for every other CLI, it
+reads each agent as its terminal shows it, never as the raw stream split on line
 breaks (Claude Code draws with cursor moves, and that read as one run of glued words): a running
 agent from its terminal's xterm-headless mirror (history and screen, then the alternate screen
 while it is shown), any other from its retained output (400 chunks per agent) replayed into a
