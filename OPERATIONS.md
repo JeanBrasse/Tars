@@ -282,8 +282,8 @@ Per surface the spec does two things:
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
 The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
-surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms and the
-two panel-history views that their own specs photograph.
+surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms that
+their own spec photographs.
 
 Settings clicks are scoped to `getByTestId('settings-nav')` because labels collide with the
 main navigation (`Extensions` is both a page and a settings group). If you rename a settings
@@ -1570,7 +1570,7 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 | Symptom | Look for |
 |---|---|
 | a panel blank but for the spinner after coming back to the Dashboard | `[terminal-mirror] xterm-headless could not be loaded` at startup: without it the panels replay the kept chunks, as they did before the mirror. `[terminal-mirror] <agent id>: dropped after a parse failure`: that one terminal fell back |
-| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's history view reads the transcript, and a restart brings a fullscreen session back |
+| the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's notice offers restart, which brings a fullscreen session back on the same conversation |
 | Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
 
 ### Agent stuck in the wrong directory
