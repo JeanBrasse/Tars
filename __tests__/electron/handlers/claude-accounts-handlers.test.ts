@@ -80,12 +80,14 @@ vi.mock('../../../electron/utils/broadcast', () => ({
 
 import { registerClaudeAccountsHandlers, CLAUDE_ACCOUNTS_CHANNELS } from '../../../electron/handlers/claude-accounts-handlers';
 import { accountsFile } from '../../../electron/services/claude-accounts/registry';
+import { resetAccountState } from '../../../electron/services/claude-accounts/state';
 import type { ClaudeAccountsView, ClaudeAccountState } from '../../../electron/types';
 
 let fake: FakeClaude;
 let agents: Map<string, Record<string, unknown>>;
 let saves: number;
 let loginPtys: Map<string, unknown>;
+let accountChanged: string[];
 
 function call<T = Record<string, unknown>>(channel: string, arg?: unknown): Promise<T> {
   const h = handlers.get(channel);
@@ -125,15 +127,19 @@ beforeEach(() => {
   trashed.length = 0;
   trash.fails = false;
   if (fs.existsSync(accountsFile())) fs.unlinkSync(accountsFile());
+  // What Claude Code said about the sign-ins is kept in memory, across registrations.
+  resetAccountState();
   fake = makeFakeClaude();
   agents = new Map();
   saves = 0;
   loginPtys = new Map();
+  accountChanged = [];
   ({ idle } = registerClaudeAccountsHandlers({
     getAppSettings: () => ({ cliPaths: { claude: fake.bin } }) as never,
     agents: agents as never,
     saveAgents: () => { saves++; },
     loginPtys: loginPtys as never,
+    onAgentAccountChanged: (agentId: string) => { accountChanged.push(agentId); },
   }));
 });
 
@@ -395,7 +401,33 @@ describe('what stays in memory', () => {
   });
 });
 
+describe('the counters', () => {
+  it("shows each account's 5 h and weekly counters, as its status line last left them, and drops a window that has reset", async () => {
+    const a = await add('Max two');
+    const now = Math.floor(Date.now() / 1000);
+    const dir = path.join(os.homedir(), '.dorothy', 'rate-limits.d');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${a.id}.json`), JSON.stringify({ updatedAt: now - 30, rate_limits: { five_hour: { used_percentage: 42, resets_at: now + 3600 }, seven_day: { used_percentage: 61, resets_at: now + 86400 } } }));
+    fs.writeFileSync(path.join(dir, 'default.json'), JSON.stringify({ updatedAt: now - 30, rate_limits: { five_hour: { used_percentage: 97, resets_at: now - 5 }, seven_day: { used_percentage: 20, resets_at: now + 86400 } } }));
+    const v = await view();
+    expect(v.accounts.find(x => x.id === a.id)).toMatchObject({ fiveHour: { usedPercentage: 42, resetsAt: now + 3600 }, sevenDay: { usedPercentage: 61, resetsAt: now + 86400 }, updatedAt: (now - 30) * 1000 });
+    expect(v.accounts.find(x => x.id === 'default')).toMatchObject({ fiveHour: null, sevenDay: { usedPercentage: 20 } });
+  });
+});
+
 describe("an agent's account", () => {
+  it('asks for a restart when a pin changes and the option is on, and only then', async () => {
+    const a = await add('Max two');
+    agents.set('ag1', { id: 'ag1' });
+    await call('claude-accounts:set-agent-account', { agentId: 'ag1', accountId: a.id });
+    expect(accountChanged).toEqual([]);
+    await call('claude-accounts:set-enabled', true);
+    await call('claude-accounts:set-agent-account', { agentId: 'ag1', accountId: a.id });
+    expect(accountChanged).toEqual([]);
+    await call('claude-accounts:set-agent-account', { agentId: 'ag1', accountId: null });
+    expect(accountChanged).toEqual(['ag1']);
+  });
+
   it('pins and unpins an agent, and refuses an unknown agent or account', async () => {
     const a = await add('Max two');
     agents.set('ag1', { id: 'ag1' });

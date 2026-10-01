@@ -157,10 +157,30 @@ describe('what is shared through links', () => {
     expect(fs.readFileSync(path.join(claudeDir, rel), 'utf-8')).toBe('{}\n');
   });
 
+  it("links history.jsonl and sessions/, creating them in ~/.claude, so Tars's stats count every account (N3)", () => {
+    for (const p of [path.join(claudeDir, 'history.jsonl'), path.join(claudeDir, 'sessions')]) if (fs.existsSync(p)) fs.rmSync(p, { recursive: true });
+    provisionAccountDir(dir, home);
+    expect(fs.readlinkSync(path.join(dir, 'history.jsonl'))).toBe(path.join(claudeDir, 'history.jsonl'));
+    expect(fs.readlinkSync(path.join(dir, 'sessions'))).toBe(path.join(claudeDir, 'sessions'));
+    expect(fs.statSync(path.join(claudeDir, 'sessions')).isDirectory()).toBe(true);
+    expect(fs.statSync(path.join(claudeDir, 'history.jsonl')).mode & 0o777).toBe(0o600);
+    // Measured on 2.1.283: a prompt is appended through the link, which stays a link.
+    fs.appendFileSync(path.join(dir, 'history.jsonl'), '{"display":"x"}\n');
+    expect(fs.readFileSync(path.join(claudeDir, 'history.jsonl'), 'utf-8')).toContain('"display":"x"');
+  });
+
+  it('does not touch a history.jsonl account 1 already has', () => {
+    fs.mkdirSync(claudeDir, { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'history.jsonl'), '{"display":"kept"}\n', { mode: 0o600 });
+    provisionAccountDir(dir, home);
+    expect(fs.readFileSync(path.join(claudeDir, 'history.jsonl'), 'utf-8')).toBe('{"display":"kept"}\n');
+  });
+
   it('links CLAUDE.md, skills, agents, commands, plugins and output-styles when ~/.claude has them', () => {
     fs.mkdirSync(claudeDir, { recursive: true });
     fs.writeFileSync(path.join(claudeDir, 'CLAUDE.md'), 'mine');
-    for (const d of ['skills', 'agents', 'commands', 'plugins', 'output-styles']) fs.mkdirSync(path.join(claudeDir, d), { recursive: true });
+    for (const d of ['skills', 'agents', 'commands', 'plugins', 'output-styles', 'sessions']) fs.mkdirSync(path.join(claudeDir, d), { recursive: true });
+    fs.writeFileSync(path.join(claudeDir, 'history.jsonl'), '');
     provisionAccountDir(dir, home);
     for (const name of SHARED_ENTRIES) {
       expect(fs.readlinkSync(path.join(dir, name))).toBe(path.join(claudeDir, name));

@@ -696,6 +696,7 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
+| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on |
 | `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Three files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to

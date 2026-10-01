@@ -61,6 +61,8 @@ export interface LaunchSettings {
   obsidianVaultPaths: string[];
   /** The model of the local provider, which is ANTHROPIC_MODEL in its terminal. */
   localModel?: string;
+  /** The Claude account the agent is pinned to, which is CLAUDE_CONFIG_DIR in its terminal. */
+  claudeAccount?: string;
 }
 
 export function launchSettings(agent: AgentStatus): LaunchSettings {
@@ -73,6 +75,7 @@ export function launchSettings(agent: AgentStatus): LaunchSettings {
     secondaryProjectPath: agent.secondaryProjectPath || undefined,
     obsidianVaultPaths: [...(agent.obsidianVaultPaths ?? [])],
     localModel: agent.localModel || undefined,
+    claudeAccount: agent.claudeAccountPin || undefined,
   };
 }
 

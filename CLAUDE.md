@@ -89,6 +89,8 @@ CLAUDE_MGR_API_TOKEN  # minted per terminal by spawnAgentPty and per ACP run by 
 ANTHROPIC_BASE_URL    # every alt provider runs the claude binary with these two rewritten
 ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
+CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on; removed for account 1 (~/.claude). Never set otherwise
+TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
 ```
 
 ---
