@@ -89,7 +89,10 @@ test('review: a project with no agent, a patch cut short, refresh, and a patch t
 
   // A file's own patch, short: no note.
   await page.getByRole('button').filter({ hasText: 'notes.md' }).click();
-  await expect(page.getByText('+a new line', { exact: true })).toBeVisible({ timeout: 30_000 });
+  // The first match: main's patch for this file holds the hunk twice today, a
+  // backend matter (DIAG-REVIEW.md, the two passes), not this page's.
+  await expect(page.getByText('+a new line', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  const fileHunks = await page.getByText('+a new line', { exact: true }).count();
   await expect(page.getByText(/lines shown\./)).toHaveCount(0);
   await stepShot(page, '02-a-file-patch');
 
@@ -112,5 +115,5 @@ test('review: a project with no agent, a patch cut short, refresh, and a patch t
   await stepShot(page, '04-a-patch-that-cannot-be-read');
 
   expect(errors, errors.join('\n')).toEqual([]);
-  recordValues({ wholeNote, failedText, pageErrors: errors });
+  recordValues({ wholeNote, failedText, fileHunks, pageErrors: errors });
 });
