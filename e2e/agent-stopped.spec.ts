@@ -191,6 +191,10 @@ test('a stopped agent says stopped, who stopped it, when and why, and still does
   await expect(win.getByText('stopped', { exact: true })).toBeVisible();
   seen.window = await lineIn(win, byLead);
   await expect(win.getByRole('button', { name: 'stop', exact: true })).toBeDisabled();
+  // Its terminal says it is not running, as for any agent with no terminal.
+  // Waited for before the window closes: closing it while xterm is still
+  // loading makes the window's terminal hook log an error of its own.
+  await expect(win.locator('.xterm-rows')).toContainText('Frontend Engineer is not running', { timeout: 30_000 });
   await stepShot(page, '03-agent-window');
   await win.getByRole('button', { name: 'close', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -201,6 +205,7 @@ test('a stopped agent says stopped, who stopped it, when and why, and still does
   await expect(lead.getByText('Stopped (2)', { exact: true })).toBeVisible();
   seen.railLead = await lineIn(lead, byLead);
   seen.railYou = await lineIn(lead, byYou);
+  await expect(lead.locator('.xterm-rows')).toContainText('Project Lead is not running', { timeout: 30_000 });
   await stepShot(page, '04-orchestrator-rail');
   await lead.getByRole('button', { name: 'close', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -219,7 +224,8 @@ test('a stopped agent says stopped, who stopped it, when and why, and still does
 
   // The Projects page: a stopped agent offers resume and start, as an idle one does.
   await page.goto(`${DEV_URL}/projects`, { waitUntil: 'domcontentloaded' });
-  await page.getByText('demo', { exact: true }).first().click();
+  // The project's card, then its own `open`, which shows its agents.
+  await page.getByRole('button', { name: 'open', exact: true }).first().click();
   const row = page.locator('div')
     .filter({ has: page.getByText('Frontend Engineer', { exact: true }) })
     .filter({ has: page.getByRole('button', { name: 'resume', exact: true }) })
