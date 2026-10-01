@@ -20,6 +20,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => Promise<unknown>>());
 vi.mock('electron', () => ({
   ipcMain: { handle: (channel: string, fn: (...args: unknown[]) => Promise<unknown>) => { handlers.set(channel, fn); } },
+  app: { isPackaged: true },
 }));
 vi.mock('child_process', async importOriginal => ({
   ...(await importOriginal<typeof import('child_process')>()),

@@ -55,7 +55,7 @@ describe('app:// path containment', () => {
   it('refuses the reported vault-note vector', () => {
     const { allowed } = resolveRequest(
       BASE,
-      'app://-/a/..%2f..%2f..%2f..%2f..%2fUsers%2fnoah%2f.dorothy%2fapp-settings.json',
+      'app://-/a/..%2f..%2f..%2f..%2f..%2fUsers%2fyou%2f.dorothy%2fapp-settings.json',
     );
     expect(allowed).toBe(false);
   });

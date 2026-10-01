@@ -13,18 +13,13 @@ const ACTION = 'font-mono lowercase';
  * reports go to a claude that no longer reads them. The main process sees it
  * in the way claude repaints (`leftFullscreen`, from #127), and useMultiTerminal
  * stops forwarding the wheel while it lasts. What is left is to say so, and to
- * offer the two ways back: the conversation read from its transcript, or the
- * same conversation in a new session (`agent.restart`, #138), which opens
- * fullscreen.
+ * offer the way back: the same conversation in a new session (`agent.restart`,
+ * #138), which opens fullscreen.
  *
  * The row of MessageWaitingNotice, 26 high under the header: the sentence is
- * cut first, the two actions stay.
+ * cut first, the action stays.
  */
-export default function LeftFullscreenNotice({ onHistory, onRestart }: {
-  /** Opens the panel's history view; absent while it is already open. */
-  onHistory?: () => void;
-  onRestart: () => void;
-}) {
+export default function LeftFullscreenNotice({ onRestart }: { onRestart: () => void }) {
   const who = 'Claude left fullscreen:';
   const rest = 'the wheel cannot scroll this terminal.';
   return (
@@ -38,11 +33,6 @@ export default function LeftFullscreenNotice({ onHistory, onRestart }: {
         <span className="text-foreground">{who}</span> {rest}
       </p>
       <div className="shrink-0 flex items-center">
-        {onHistory && (
-          <Button variant="ghost" size="sm" className={ACTION} onClick={onHistory} title="The conversation, read from the transcript">
-            read history
-          </Button>
-        )}
         <Button variant="ghost" size="sm" className={ACTION} onClick={onRestart} title="Restart its CLI on the same conversation: it opens fullscreen">
           restart
         </Button>

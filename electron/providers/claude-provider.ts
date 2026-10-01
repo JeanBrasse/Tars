@@ -11,7 +11,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
 import { DATA_DIR } from '../constants';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
@@ -89,8 +89,7 @@ export class ClaudeProvider implements CLIProvider {
 
     // Secondary project
     if (params.secondaryProjectPath) {
-      const escaped = params.secondaryProjectPath.replace(/'/g, "'\\''");
-      command += ` --add-dir '${escaped}'`;
+      command += ` --add-dir ${shellQuote(params.secondaryProjectPath)}`;
     }
 
     // The template's folders: added to what the CLI may reach, with whatever
@@ -98,14 +97,13 @@ export class ClaudeProvider implements CLIProvider {
     if (params.obsidianVaultPaths) {
       for (const vp of params.obsidianVaultPaths) {
         if (fs.existsSync(vp)) {
-          const escaped = vp.replace(/'/g, "'\\''");
-          command += ` --add-dir '${escaped}'`;
+          command += ` --add-dir ${shellQuote(vp)}`;
         }
       }
     }
 
     // Tars's CLAUDE.md via ~/.dorothy
-    command += ` --add-dir '${DATA_DIR}'`;
+    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
 
     // Prompt with skills directive, and no operand at all without a task.
     let finalPrompt = params.prompt?.trim() ? params.prompt : '';
@@ -120,7 +118,7 @@ export class ClaudeProvider implements CLIProvider {
   }
 
   buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
+    let command = shellQuote(params.binaryPath);
 
     if (params.autonomous) {
       command += ' --dangerously-skip-permissions';
@@ -135,10 +133,10 @@ export class ClaudeProvider implements CLIProvider {
     }
 
     if (params.mcpConfigPath) {
-      command += ` --mcp-config "${params.mcpConfigPath}"`;
+      command += ` --mcp-config ${shellQuote(params.mcpConfigPath)}`;
     }
 
-    command += ` --add-dir "${DATA_DIR}"`;
+    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
 
     const escaped = params.prompt.replace(/'/g, "'\\''");
     command += ` -p '${escaped}'`;
@@ -407,26 +405,26 @@ export class ClaudeProvider implements CLIProvider {
     return `#!/bin/bash
 
 # Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
+export HOME=${shellQuote(params.homeDir)}
 
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
+if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then
+  source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true
 fi
 
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
+if [ -f ${shellQuote(params.homeDir)}/.bashrc ]; then
+  source ${shellQuote(params.homeDir)}/.bashrc 2>/dev/null || true
+elif [ -f ${shellQuote(params.homeDir)}/.bash_profile ]; then
+  source ${shellQuote(params.homeDir)}/.bash_profile 2>/dev/null || true
+elif [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then
+  source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true
 fi
 
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
+export PATH=${shellQuote(params.binaryDir)}:"$PATH"
+cd ${shellQuote(params.projectPath)}
+echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
 unset CLAUDECODE
-CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 "${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
+echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;
   }
 }
