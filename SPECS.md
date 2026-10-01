@@ -462,7 +462,7 @@ The two remote backends are *additionally* registered as HTTP MCP servers direct
 needsPromptInjection(providerConfigDir) === (resolve(configDir) !== resolve(~/.claude))
 ```
 
-Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest({ budgetMs: 3000 })` and prepends the result, wrapped:
+Providers whose config dir is `~/.claude` inherit Claude Code's `SessionStart` hook, so the digest already reaches them. `codex`, `gemini`, `grok`, `opencode` and `pi` have no such hook; for them `spawnAgentSession` calls `assembleDigest`, which waits for Hermes no longer than every session start does (`HERMES_START_BUDGET_MS`, 1.5 s), and prepends the result, wrapped:
 
 ```
 <project-memory>
@@ -488,7 +488,7 @@ Both are concatenated and returned as `hookSpecificOutput.additionalContext`. Th
 
 ### Digest budget
 
-`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against a 4 s (3 s at spawn time) timeout. A gateway that is down must not delay the agent.
+`MAX_SECTION_CHARS` 4000 per file, `MAX_OBSERVATIONS` 15, Hermes fetch raced against `HERMES_START_BUDGET_MS`, 1.5 s, for the hook's route and the prompt alike, and no caller may wait longer: under the hook's 3 s curl, so a Hermes that accepts the connection and never answers costs its own memory, never the project's. It was 4 s for the hook's route, and the hook gave up first: the agent started with no memory at all.
 
 ---
 
@@ -620,6 +620,7 @@ Under `~/.tars-private`, which is in no agent's `--add-dir` and which Tars makes
 |---|---|---|---|
 | `overseer.json` | the super chat's conversation, job id and settings | `services/overseer.ts` | **Atomic**, mode `0600`. Moved out of `~/.dorothy` at startup |
 | `hermes-webhook-secret` | 64 hex chars | `provisionWebhookSecret()` in `services/hermes-webhook-secret.ts` | **Atomic**, mode `0600`. The one credential published over the tailnet. Moved out of `~/.dorothy` at startup with its value unchanged |
+| `claude-accounts.json` | `ClaudeAccountsSettings`: the option (off by default), the Claude accounts in order, the 5 h and weekly thresholds | `electron/handlers/claude-accounts-handlers.ts` | **Atomic**, mode `0600`. Its own file, not a key of `app-settings.json`, whose save merges whatever a page sends. Holds ids and names, never a credential and never a folder: an account's folder is `~/.claude-accounts/<id>`, derived from its id. A file that does not parse reads as account 1 alone and is never written over: every change is refused, and Settings says why |
 
 Files Tars writes **outside** its own directory:
 
@@ -656,7 +657,7 @@ Seven servers ship in `extraResources` as `<name>/dist/bundle.js` and are regist
 | `mcp-socialdata` | `dorothy-socialdata` | X/Twitter read |
 | `mcp-x` | `dorothy-x` | X/Twitter post |
 
-What the seven share is in `mcp-shared/`, which is not a server: the client to Tars's API (where it is, the token presented, the caller's identity), the tool table every server but `mcp-memory` registers its tools through, whose one guard words each tool's failures ("Error <what>: <message>"), one HTTP request read whole, and the settings file as it is at the call. Each server's esbuild bundles it in. It imports node's builtins and nothing else, so each server keeps the SDK and zod its own lock pins (SDK 1.25 to 1.30 today). `__tests__/mcp/contracts/` records what the seven answer over stdio, `tools/list` and every tool along each of its answers, against a fake Tars.
+What the seven share is in `mcp-shared/`, which is not a server: the client to Tars's API (where it is, the token presented, the caller's identity), the tool table every server but `mcp-memory` registers its tools through, whose one guard words each tool's failures ("Error <what>: <message>"), one HTTP request read whole, the wait after which a silent host is said to have given "no answer within N s" (30 s for Tars, 60 s for SocialData, X and a Telegram message, 60 s for mcp-kanban's calls through Tars to Hermes; a file sent to Telegram is timed by its size instead, the time it takes at 10 KB/s plus that minute, since once its bytes sit in the kernel's send buffer silence is all a server sees while a slow link carries them), and the settings file as it is at the call. Each server's esbuild bundles it in. It imports node's builtins and nothing else, so each server keeps the SDK and zod its own lock pins (SDK 1.25 to 1.30 today). `__tests__/mcp/contracts/` records what the seven answer over stdio, `tools/list` and every tool along each of its answers, against a fake Tars.
 
 Plus `tasmania` when `tasmaniaEnabled` and the configured path exists. `DOROTHY_MANAGED_MCPS` holds eight names: the six above plus `tasmania` and `google-workspace`; they are hidden from the Custom MCP settings UI. `tars-memory` is not in the set.
 
