@@ -6,8 +6,8 @@ read-only copy of what Tars sent, marked as Tars's (Noah's decisions of 2026-10-
 
 How this can fail, written before the code:
 1. Noah's reply to a message the relay sent, in his private chat, is not kept for Tars, or is left to the model.
-2. A message from anyone else is kept for Tars: another user, a group, Noah's chat but another sender, another
-   platform.
+2. A message from anyone else is kept for Tars: another user, a group, Noah's chat but another sender, Noah in a
+   private chat that is not his own with the bot, another platform.
 3. A reply to a message the relay did not send, such as one of Hermes's own, is kept for Tars.
 4. A reply is matched by its message id alone, so the same id in another chat is taken for Tars's message.
 5. The prefix goes wrong. "@project text" from Noah is not kept for that project; or "@" alone, "@ project", an
@@ -96,6 +96,10 @@ class WhatIsKeptForTars(Base):
         cases = [
             message(reply_to_message_id='501', user_id=OTHER, chat_id=OTHER),
             message(reply_to_message_id='501', user_id=OTHER),
+            # Noah himself, in a private chat that is not his own with the bot (a Telegram Business chat with
+            # someone else): not where Tars wrote to him.
+            message(reply_to_message_id='501', chat_id=OTHER),
+            message(text='@tars go', chat_id=OTHER),
             message(reply_to_message_id='501', chat_type='group', chat_id='-100123'),
             message(reply_to_message_id='501', chat_type='group'),
             message(reply_to_message_id='501', platform='discord'),
@@ -254,10 +258,18 @@ class TheModelsCopy(Base):
         self.assertEqual([l for l in lines if l.startswith('> ')], ['> report %d' % i for i in range(1, 11)])
 
     def test_8_the_text_is_not_kept_once_copied(self):
+        # Several messages to a page: with one, SQLite rewrites the page whole and nothing is left to find.
+        for i in range(5):
+            self.store.record_sent(chat_id=NOAH, message_id=str(600 + i), ref='', kind='report', project='',
+                                   text='private report number %d' % i)
         relay_core.copy_for_turn(noahs_turn(), SETTINGS, self.store)
 
-        with open(os.path.join(self.dir, 'relay.db'), 'rb') as db:
-            self.assertNotIn(b'old migration', db.read())
+        # Every file of the store, a journal or a write-ahead log included: an old page can outlive its row there.
+        for name in os.listdir(self.dir):
+            with self.subTest(file=name), open(os.path.join(self.dir, name), 'rb') as f:
+                data = f.read()
+                self.assertNotIn(b'old migration', data)
+                self.assertNotIn(b'private report', data)
 
 
 class Settings(Base):
@@ -276,6 +288,8 @@ class Settings(Base):
         for settings in [{}, None, {'user_id': ''}, {'user_id': None}, {'user_id': 'noah'}, {'user_id': 0},
                          {'user_id': -5}, {'user_id': True}, {'user_id': '1159000001x'}]:
             with self.subTest(settings=settings):
+                # None, not a value nothing matches: the dashboard's /status says "configured" from it.
+                self.assertIsNone(relay_core.noah_of(settings))
                 self.assertIsNone(relay_core.decide(message(reply_to_message_id='501'), settings, self.store))
                 self.assertIsNone(relay_core.decide(message(text='@tars go'), settings, self.store))
                 self.assertIsNone(relay_core.copy_for_turn(noahs_turn(), settings, self.store))
