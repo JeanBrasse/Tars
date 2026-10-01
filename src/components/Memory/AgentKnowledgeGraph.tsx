@@ -152,7 +152,23 @@ function layoutGraph(graph: GraphData): { nodes: PlacedNode[]; size: number } {
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
-type McpEntry = { command?: string; args?: string[] };
+export type McpEntry = { command?: string; args?: string[] };
+
+/**
+ * The servers of ~/.claude/mcp.json from fs:read-text-file's answer, which is
+ * `{ content }`, or `{ content: '', error }` for a file missing or out of the
+ * allowed roots. None, quietly, for a file that is not there, cannot be read
+ * or names no servers.
+ */
+export function globalMcpServers(result: { content?: string; error?: string } | null | undefined): Record<string, McpEntry> | undefined {
+  if (!result?.content) return undefined;
+  try {
+    const servers = JSON.parse(result.content)?.mcpServers;
+    return servers && typeof servers === 'object' && !Array.isArray(servers) ? servers : undefined;
+  } catch {
+    return undefined;
+  }
+}
 type ClaudeDataType = {
   plugins: Array<{ name?: string; displayName?: string; enabled?: boolean }>;
   skills: Array<{ name: string; source: string; path: string; description?: string }>;
@@ -394,15 +410,7 @@ export default function AgentKnowledgeGraph() {
       const typedClaude = claudeData as ClaudeDataType | null;
       const memories = (memResult as { projects: ProjectMemory[] })?.projects ?? [];
 
-      // Parse MCP servers from mcp.json
-      let mcpServers: Record<string, McpEntry> | undefined;
-      try {
-        const mcpJson = (mcpResult as { output?: string } | null)?.output;
-        if (mcpJson) {
-          const parsed = JSON.parse(mcpJson);
-          mcpServers = parsed?.mcpServers ?? undefined;
-        }
-      } catch { /* ignore parse errors */ }
+      const mcpServers = globalMcpServers(mcpResult);
 
       // enrichedClaude is built later after project MCPs are loaded
       // (placeholder - filled in after CLAUDE.md/MCP discovery below)
