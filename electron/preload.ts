@@ -107,8 +107,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:get', id),
     list: () =>
       ipcRenderer.invoke('agent:list'),
-    stop: (id: string) =>
-      ipcRenderer.invoke('agent:stop', id),
+    stop: (id: string, reason?: string) =>
+      ipcRenderer.invoke('agent:stop', id, reason),
     remove: (id: string) =>
       ipcRenderer.invoke('agent:remove', id),
     sendInput: (params: { id: string; input: string }) =>

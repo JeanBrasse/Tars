@@ -72,9 +72,31 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
   const trees = agentMaps.flatMap(map => [...map.values()]);
   const shells = [...quickPtyProcesses.values()];
   for (const map of [...agentMaps, quickPtyProcesses]) map.clear();
-  const terminals = [...trees, ...shells];
-  if (terminals.length === 0) return;
+  const count = trees.length + shells.length;
+  if (count === 0) return;
+  await endTerminals(trees, shells, graceMs);
+  console.log(`Ended ${count} terminal(s) on quit`);
+}
 
+/**
+ * Ends one agent terminal and everything its CLI started, the way the quit
+ * does (endAllTerminals): its tree read while it holds together, the hangup,
+ * then SIGKILL to whatever of that tree is left after `graceMs`. For a stop:
+ * on 28/09 two frozen CLIs survived stop_agent, reparented to launchd, and on
+ * 30/09 a stopped QA's bench ignored SIGTERM, when a stop sent the hangup and
+ * nothing more. The caller takes the terminal out of its map first.
+ */
+export async function endTerminalTree(terminal: pty.IPty, graceMs: number = TERMINAL_GRACE_MS): Promise<void> {
+  await endTerminals([terminal], [], graceMs);
+}
+
+/**
+ * The agent terminals' trees end, SIGKILL after the grace; the user's shells
+ * get the hangup only (see endAllTerminals). Synchronous up to the hangups, so
+ * a caller that does something synchronous next has both graces at once.
+ */
+async function endTerminals(trees: pty.IPty[], shells: pty.IPty[], graceMs: number): Promise<void> {
+  const terminals = [...trees, ...shells];
   const tree = new ProcessTree(trees.map(t => t.pid));
   if (trees.length) tree.grow(processTableNow(FIRST_READ_MS));
   const ended = new Set<pty.IPty>();
@@ -112,7 +134,6 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
     while (Date.now() < until && tree.anyLeft(await processTable())) await pause();
     await Promise.race([allExited, pause(300)]);
   }
-  console.log(`Ended ${terminals.length} terminal(s) on quit`);
 }
 
 export function killAllPty(): void {

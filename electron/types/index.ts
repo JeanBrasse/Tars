@@ -56,7 +56,14 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** Set by a stop (core/agent-stop.ts) until the agent gets a terminal again:
+   *  "you", "Tars", or the name of the agent that asked. */
+  stoppedBy?: string;
+  /** ISO. */
+  stoppedAt?: string;
+  /** One line, as the caller gave it; none from a window that gave none. */
+  stopReason?: string;
   projectPath: string;
   secondaryProjectPath?: string;
   worktreePath?: string;

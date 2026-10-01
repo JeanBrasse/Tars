@@ -13,6 +13,9 @@ type WaitResult = {
   error?: string;
   timeout?: boolean;
   waitingReason?: string;
+  /** Set when the agent was stopped: "you", "Tars", or the agent that asked. */
+  stoppedBy?: string;
+  stopReason?: string;
 };
 
 type DispatchResult = {
@@ -372,15 +375,16 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "stop_agent",
-    description: "Stop a running agent. The agent will be terminated and return to 'idle' state.",
+    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; Noah reads it in the window.",
     schema: {
       id: z.string().describe("The agent ID"),
+      reason: z.string().min(1).describe("Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
     },
     failure: "stopping agent",
-    async run({ id, allowCrossProject }) {
-      await apiRequest(`/api/agents/${id}/stop`, "POST", allowCrossProject ? { allowCrossProject } : undefined);
-      return text(`Stopped agent ${id}`);
+    async run({ id, reason, allowCrossProject }) {
+      await apiRequest(`/api/agents/${id}/stop`, "POST", allowCrossProject ? { reason, allowCrossProject } : { reason });
+      return text(`Stopped agent ${id}: ${reason}`);
     },
   }),
 
@@ -437,7 +441,7 @@ const AGENT_TOOLS: Tool[] = [
   // Long-poll, no polling loop
   tool({
     name: "wait_for_agent",
-    description: "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+    description: "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error/stopped.",
     schema: {
       id: z.string().describe("The agent ID"),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
@@ -464,6 +468,10 @@ const AGENT_TOOLS: Tool[] = [
 
       if (data.status === "error") {
         return problem(`Agent "${agentName}" encountered an error: ${data.error || "Unknown error"}`);
+      }
+
+      if (data.status === "stopped") {
+        return text(`Agent "${agentName}" was stopped by ${data.stoppedBy || "someone"}${data.stopReason ? `: ${data.stopReason}` : ""}. It does nothing until it is started again.`);
       }
 
       if (data.status === "waiting") {

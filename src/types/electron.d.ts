@@ -90,7 +90,7 @@ export interface AgentTickItem {
   id: string;
   name: string;
   character: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
   displayStatus: DisplayStatus;
   statusLine: string;
   currentTask: string;
@@ -301,7 +301,14 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again. */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** "you", "Tars", or the name of the agent that stopped it. */
+  stoppedBy?: string;
+  /** ISO. */
+  stoppedAt?: string;
+  /** One line, or none when the window's stop gave none. */
+  stopReason?: string;
   projectPath: string;
   secondaryProjectPath?: string; // Secondary project added via --add-dir
   worktreePath?: string;
@@ -873,7 +880,8 @@ export interface ElectronAPI {
     start: (params: { id: string; prompt: string; options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string } }) => Promise<{ success: boolean; cliRunning?: boolean; error?: string }>;
     get: (id: string) => Promise<AgentStatus | null>;
     list: () => Promise<AgentStatus[]>;
-    stop: (id: string) => Promise<{ success: boolean }>;
+    /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
+    stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
     remove: (id: string) => Promise<{ success: boolean }>;
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
