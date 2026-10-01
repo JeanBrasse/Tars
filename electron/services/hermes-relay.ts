@@ -20,9 +20,11 @@ import { projectName } from './orchestrator-routing';
  *   in the wrong hands can make the plugin send, never make Tars take the reply.
  * - Hermes down: the send waits in ~/.tars-private, its caller is told it has not gone, and it goes when Hermes
  *   answers, until its time is up. Nothing falls back to anything else.
- * - While the relay is on, every POLL_MS: the plugin's status, what waits, then the replies, each handed once to the
- *   handler of what it answers (a question, a report, a Sentry request) or to the "@project" handler, and acked.
- *   A reply to a message Tars did not send reaches nobody, and the user is told.
+ * - While the relay is on, every POLL_MS: the plugin's status, the projects, what waits, then the replies, each
+ *   handed once to the handler of what it answers (a question, a report, a Sentry request) or to the "@project"
+ *   handler, and acked. A reply to a message Tars did not send reaches nobody, and the user is told.
+ * - The plugin keeps "@name" for Tars only for the projects Tars registered with it: the fleet's names that are one
+ *   word, told again whenever they are not the ones the plugin lists. Any other "@word" is Hermes's.
  * - Off means off: nothing sent, polled or acked, and the event reports have no channel.
  */
 
@@ -92,6 +94,10 @@ export const POLL_MS = 5_000;
 const SENT_KEPT_MS = 30 * 24 * 3_600_000;
 const WAIT_BY_DEFAULT_MS = 3_600_000;
 const TELEGRAM_MAX_UNITS = 4096;
+/** A project's name as the plugin takes it after "@" (hermes-plugins/tars-relay, relay_core.py): one word, no
+ * control character; at most MAX_PROJECTS of them. */
+const PROJECT_WORD = /^[^\s@:,\x00-\x1f\x7f-\x9f]{1,64}$/u;
+const MAX_PROJECTS = 500;
 const FILES = {
   sent: () => privatePath('relay-sent.json'),
   waiting: () => privatePath('relay-outbox.json'),
@@ -115,6 +121,8 @@ let channelOn = false;
 const status: RelayStatus = { enabled: false, state: 'off', waiting: 0 };
 const replyHandlers = new Map<string, (reply: RelayReply, now: number) => void | Promise<void>>();
 let projectHandler: ((message: RelayProjectMessage, now: number) => void | Promise<void>) | null = null;
+let projectsOf: () => string[] = () => [];
+let registrationRefused = '';
 const statusListeners = new Set<(status: RelayStatus) => void>();
 
 function read<T>(file: string, fallback: T): T {
@@ -165,6 +173,11 @@ export function onRelayReply(type: string, handler: (reply: RelayReply, now: num
 
 export function onRelayProjectMessage(handler: (message: RelayProjectMessage, now: number) => void | Promise<void>): void {
   projectHandler = handler;
+}
+
+/** The names of the projects "@name" may address: the routing's, read at every round. */
+export function setRelayProjects(list: () => string[]): void {
+  projectsOf = list;
 }
 
 /** Whether a message with this ref went out, as far as Tars's own list says. */
@@ -256,6 +269,28 @@ function syncChannels(): void {
   setReportChannel(on ? relayReportChannel : null);
 }
 
+/** The names the plugin may take: one word each, once each, sorted, at most MAX_PROJECTS. */
+function projectWords(): string[] {
+  return [...new Set(projectsOf().filter(name => PROJECT_WORD.test(name)))].sort().slice(0, MAX_PROJECTS);
+}
+
+/** Tells the plugin the projects "@name" may address when those it lists are not them, in any case. */
+async function registerProjects(listed: unknown): Promise<void> {
+  const words = projectWords();
+  const folded = (names: string[]) => [...new Set(names.map(name => name.toLowerCase()))].sort().join('\n');
+  if (Array.isArray(listed) && listed.every(name => typeof name === 'string') && folded(listed) === folded(words)) return;
+  let refused = '';
+  try {
+    const answer = await call('POST', 'projects', { projects: words });
+    if (answer.status !== 200) refused = `HTTP ${answer.status}`;
+  } catch (err) {
+    refused = err instanceof Error ? err.message : String(err);
+  }
+  // Said once, not at every round: the next round tries again.
+  if (refused && refused !== registrationRefused) console.warn(`[relay] the plugin did not take Tars's projects: ${refused}`);
+  registrationRefused = refused;
+}
+
 async function flushWaiting(now: number): Promise<void> {
   let waiting = read<Waiting[]>(FILES.waiting(), []);
   const due = waiting.filter(w => w.expiresAt > now);
@@ -301,7 +336,7 @@ async function handle(reply: PluginReply, now: number): Promise<void> {
   }, now);
 }
 
-/** One round: the plugin's status, what waits, the replies. Driven every POLL_MS; tests drive it themselves. */
+/** One round: the plugin's status, the projects, what waits, the replies. Driven every POLL_MS; tests drive it. */
 export async function relayTick(now: number = Date.now()): Promise<void> {
   syncChannels();
   if (!enabled()) {
@@ -324,6 +359,7 @@ export async function relayTick(now: number = Date.now()): Promise<void> {
     setStatus({ state, lastError: state === 'ready' ? undefined : STATE_WORDS[state], checkedAt: new Date(now).toISOString() });
     if (state !== 'ready') return;
 
+    await registerProjects((answer.body as { projects?: unknown } | null)?.projects);
     await flushWaiting(now);
 
     // Every reply the plugin still holds: one taken before an ack was lost comes back, and is acked, not handed over.

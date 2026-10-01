@@ -110,7 +110,6 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
       if (route === 'projects' && req.method === 'POST') {
         const names = body.projects;
         // The plugin's own rule (relay_core.check_projects): one word each, no control character, at most 500.
-        // eslint-disable-next-line no-control-regex
         const word = /^[^\s@:,\x00-\x1f\x7f-\x9f]{1,64}$/u;
         if (!Array.isArray(names) || names.length > 500 || !names.every((n) => typeof n === 'string' && word.test(n))) {
           return json(res, 400, { detail: 'a project name is one word of at most 64 characters' });

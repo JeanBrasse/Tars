@@ -249,7 +249,7 @@ describe('the status', () => {
 
 describe('the projects "@name" may address', () => {
   it('10. are registered at the first round: the fleet\'s names that are one word, each once', async () => {
-    relay.setRelayProjects(() => ['tars', '1212-Capital', 'My Project', 'a@b', 'x:y', 'tars']);
+    relay.setRelayProjects(() => ['tars', '1212-Capital', 'My Project', 'a@b', 'x:y', 'esc\x1bname', 'tars']);
 
     await relay.relayTick(T0);
 
@@ -267,7 +267,7 @@ describe('the projects "@name" may address', () => {
 
     names = ['tars', '1212-Capital'];
     await relay.relayTick(T0 + 10_000);
-    expect(fake.projects).toEqual(['tars', '1212-Capital']);
+    expect(fake.projects).toEqual(['1212-Capital', 'tars']);
 
     fake.projects = ['TARS', '1212-capital'];
     await relay.relayTick(T0 + 15_000);
@@ -275,7 +275,7 @@ describe('the projects "@name" may address', () => {
 
     fake.projects = [];
     await relay.relayTick(T0 + 20_000);
-    expect(fake.projects).toEqual(['tars', '1212-Capital']);
+    expect(fake.projects).toEqual(['1212-Capital', 'tars']);
 
     names = ['1212-Capital'];
     await relay.relayTick(T0 + 25_000);

@@ -332,7 +332,8 @@ there (no confinement, Noah's decision of 2026-09-23).
 **The relay to the user's Telegram** (`services/hermes-relay.ts`, on with
 `hermesRelayEnabled`). Who can reply: the tars-relay plugin on the Hermes server
 keeps a message for Tars only from the one user its settings name, in their
-private chat, replying to a message the relay sent or starting with "@project";
+private chat, replying to a message the relay sent or starting with "@project"
+for one of the projects Tars registered with it;
 Hermes's own allowlist turns strangers away before that. Tars then takes a reply
 only when it answers a message id on its own list (`relay-sent.json`), which the
 plugin cannot write: whoever holds the dashboard token can make the plugin send,

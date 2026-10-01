@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { forwardToOrchestrator, type BotFleet } from './bot-core';
-import { onRelayProjectMessage, onRelayReply, tellUser } from './hermes-relay';
-import { orchestratorForProject, orchestratorOf, projectName, whereToWrite } from './orchestrator-routing';
+import { onRelayProjectMessage, onRelayReply, setRelayProjects, tellUser } from './hermes-relay';
+import { orchestratorForProject, orchestratorOf, projectName, projectNames, whereToWrite } from './orchestrator-routing';
 import { getSuperAgentInstructionsPath } from '../utils';
 import type { AgentStatus } from '../types';
 
@@ -11,7 +11,8 @@ import type { AgentStatus } from '../types';
  *
  * - A reply to a report, or to a message a project's orchestrator sent the user, goes to that project's orchestrator.
  * - "@project text" goes to that project's orchestrator; a name no project has, one two projects share, or a project
- *   with no orchestrator gets the user the list, or a word, and reaches nobody.
+ *   with no orchestrator gets the user the list, or a word, and reaches nobody. The plugin keeps "@name" only for the
+ *   fleet's projects, which the relay registers with it at every change.
  * - A reply to a word from Tars reaches nobody: the user is told how to reach an orchestrator.
  * - A reply to a question goes to the agent that asked (user-questions.ts registers it); to a Sentry request, to
  *   Tars itself (its handler, when one is registered).
@@ -50,6 +51,7 @@ async function toProject(fleet: BotFleet, projectPath: string, text: string, now
 }
 
 export function startRelayRouting(fleet: BotFleet): void {
+  setRelayProjects(() => projectNames(fleet.agents));
   onRelayReply('report', (reply, now) =>
     toProject(fleet, reply.projectPath, `Reply to Tars's report of ${clock(reply.sentAt)} on this project:\n${reply.text}`, now));
   onRelayReply('message', (reply, now) =>

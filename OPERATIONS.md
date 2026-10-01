@@ -1494,7 +1494,9 @@ Hermes connection. On:
 - Tars's own Telegram bot is off and its token erased, and mcp-telegram is out of every CLI: Hermes is the only voice.
 - `ask_user` (a project's orchestrator only), the event reports and `send_telegram` (an orchestrator's) go through
   Hermes, as plain text. Your reply to one of them goes to that project's orchestrator (a question's, to the agent that
-  asked); a message you start with `@<project name>` goes to that project's orchestrator.
+  asked); a message you start with `@<project name>` goes to that project's orchestrator. The plugin keeps `@name`
+  only for the projects Tars registered with it (each round, when they changed): a project whose folder name is not
+  one word cannot be written to that way, and any other `@word` goes to Hermes.
 - The event reports: an agent gone to error (once Tars is sure of it, 5 s), and, read with `gh pr list` every 5
   minutes in the GitHub repositories of the agents' projects (read-only, needs `gh` signed in), a PR merged and
   changes requested on an open PR. Events of one project within 2 minutes leave in one message; 40 messages a day at
@@ -1521,6 +1523,7 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 |---|---|
 | Your reply got "Tars did not send the message you replied to" | the message was not on Tars's list: it came from someone else with the dashboard token, or from a Tars whose `~/.tars-private` was wiped |
 | "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
+| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name, the name is not one word, or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
 | An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
 
 ---
