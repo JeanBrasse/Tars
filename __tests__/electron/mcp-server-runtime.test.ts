@@ -61,6 +61,21 @@ import { execFileSync } from 'node:child_process';
  *     recorded as moved, and only the failing one tried again.
  * 17. A start that did not write the launcher moves registrations over to
  *     whatever it would name: an unpackaged run must move nothing.
+ *
+ * The Orchestrator's brief after #231 (2026-09-28), written before the fix:
+ * 18. A packaged Tars started from its disk image (/Volumes/<image>/Tars.app)
+ *     or translocated by macOS registers the seven servers with paths inside
+ *     that copy, for every CLI (amp, codex, gemini, opencode, pi, claude's
+ *     ~/.claude/mcp.json): the registration check compares the server's path,
+ *     and this path is new. At unmount they are gone, and every Tars server
+ *     of every session fails to connect until the installed Tars starts again.
+ * 19. Such a start removes the installed Tars's registrations, or records a
+ *     move-over the next start then trusts.
+ * 20. Over-correction: a packaged Tars at a lasting place stops registering
+ *     (test 8 still holds), or a path merely named like a volume is taken for
+ *     one.
+ * 21. The Settings button (`orchestrator:setup`) registers the orchestrator
+ *     from such a copy all the same.
  */
 
 const home = () => os.homedir();
@@ -115,9 +130,11 @@ let acpLaunch: { command: string; args: string[] };
 vi.mock('../../electron/services/acp/registry', () => ({ acpLaunchFor: () => acpLaunch, loadAcpRegistry: async () => undefined }));
 vi.mock('../../electron/services/usage-ledger', () => ({ recordUsage: vi.fn() }));
 
+import * as mcpNode from '../../electron/utils/mcp-node';
 import { mcpNodeCommand } from '../../electron/utils/mcp-node';
 import { delegateOverAcp } from '../../electron/services/acp/delegate';
-import { setupMcpOrchestrator } from '../../electron/services/mcp-orchestrator';
+import { setupMcpOrchestrator, setupOrchestratorSetupHandler } from '../../electron/services/mcp-orchestrator';
+import { ipcMain } from 'electron';
 
 const launcher = () => path.join(home(), '.dorothy', 'bin', 'tars-mcp-node');
 
@@ -358,6 +375,70 @@ describe('the gate of #201', () => {
 
     expect(registry.get('claude-mgr-orchestrator')?.command).toBe('/somewhere/else/node');
     expect(calls.filter(c => c.startsWith('remove'))).toEqual([]);
+  });
+});
+
+describe('a start from a copy that will be gone', () => {
+  const installed = path.join(scratch, 'Applications', 'Tars.app', 'Contents', 'Resources');
+  const translocated = path.join(scratch, 'private', 'var', 'folders', 'xy', 'T', 'AppTranslocation', '0A1B2C', 'd', 'Tars.app', 'Contents', 'Resources');
+  const names = { 'mcp-orchestrator': 'claude-mgr-orchestrator', 'mcp-memory': 'tars-memory', 'mcp-kanban': 'claude-mgr-kanban' } as const;
+  const runtimeFile = () => path.join(home(), '.dorothy', 'mcp-servers-runtime.json');
+  beforeEach(() => {
+    for (const resources of [installed, translocated]) {
+      for (const dir of Object.keys(names)) {
+        fs.mkdirSync(path.join(resources, dir, 'dist'), { recursive: true });
+        fs.writeFileSync(path.join(resources, dir, 'dist', 'bundle.js'), '');
+      }
+    }
+    registry.clear(); calls.length = 0; providerList.value = 'one'; appState.isPackaged = true;
+    fs.rmSync(runtimeFile(), { force: true });
+    fs.rmSync(path.join(home(), '.claude', 'mcp.json'), { force: true });
+  });
+
+  it('18, 19. registers nothing from a translocated copy, and leaves the installed Tars\'s registrations and record alone', async () => {
+    (process as unknown as { resourcesPath: string }).resourcesPath = installed;
+    await setupMcpOrchestrator({} as never);
+    const before = JSON.stringify([...registry]);
+    const record = fs.readFileSync(runtimeFile(), 'utf-8');
+    calls.length = 0;
+
+    (process as unknown as { resourcesPath: string }).resourcesPath = translocated;
+    fs.rmSync(runtimeFile(), { force: true });
+    fs.writeFileSync(runtimeFile(), record);
+    await setupMcpOrchestrator({} as never);
+
+    expect(calls).toEqual([]);
+    expect(JSON.stringify([...registry])).toBe(before);
+    expect(JSON.stringify([...registry])).not.toContain('AppTranslocation');
+    expect(fs.readFileSync(runtimeFile(), 'utf-8')).toBe(record);
+  });
+
+  it('18, 20. takes a disk image or a translocated copy for one, and nothing else', () => {
+    const transient = (mcpNode as unknown as { isTransientAppPath?: (p: string) => boolean }).isTransientAppPath;
+    expect(typeof transient).toBe('function');
+    expect(transient!('/Volumes/Tars 1.9.1/Tars.app/Contents/Resources')).toBe(true);
+    expect(transient!('/private/var/folders/xy/abc/T/AppTranslocation/0A1B/d/Tars.app/Contents/Resources')).toBe(true);
+    expect(transient!('/Applications/Tars.app/Contents/Resources')).toBe(false);
+    expect(transient!('/Users/x/Volumes/Tars.app/Contents/Resources')).toBe(false);
+    expect(transient!('/opt/Tars/resources')).toBe(false);
+  });
+
+  it('21. refuses the Settings button\'s setup from such a copy, and writes no config', async () => {
+    (process as unknown as { resourcesPath: string }).resourcesPath = translocated;
+    const handle = vi.mocked(ipcMain.handle);
+    handle.mockClear();
+    setupOrchestratorSetupHandler();
+    const [, handler] = handle.mock.calls.find(([channel]) => channel === 'orchestrator:setup')!;
+    // No claude on the PATH: without the guard, the setup falls back to writing ~/.claude/mcp.json.
+    vi.stubEnv('PATH', path.join(scratch, 'no-bin'));
+    try {
+      const result = await (handler as () => Promise<{ success: boolean; error?: string }>)();
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Applications/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(fs.existsSync(path.join(home(), '.claude', 'mcp.json'))).toBe(false);
   });
 });
 
