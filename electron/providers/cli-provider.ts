@@ -230,7 +230,22 @@ export function orchestratorToolFlags(orchestratorMode: boolean | undefined): st
  */
 export function promptOperand(prompt: string | undefined): string {
   if (!prompt || !prompt.trim()) return '';
-  return ` -- '${prompt.replace(/'/g, "'\\''")}'`;
+  return ` -- ${shellQuote(prompt)}`;
+}
+
+/**
+ * A value as one POSIX shell word: wrapped in single quotes, each `'` in it
+ * written `'\''`. Inside single quotes nothing is special, so spaces, `$`,
+ * backticks and line breaks reach the program as they are.
+ *
+ * Every folder a command hands its CLI (`--add-dir`, `--include-directories`)
+ * goes through this. They used to be written `'${DATA_DIR}'`, and the scheduled
+ * builders `"${DATA_DIR}"`, and DATA_DIR carries the home folder's own name:
+ * a home such as `/Users/o'neil` closed the quote early and the command did
+ * not run, and a name built to close it could add arguments of its own.
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 /**

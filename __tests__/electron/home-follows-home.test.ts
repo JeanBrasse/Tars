@@ -7,7 +7,7 @@ import * as path from 'node:path';
  * No part of the main process finds the home directory through Electron.
  *
  * On macOS app.getPath('home') ignores HOME: measured on 2026-09-16, with HOME
- * on a temp directory it still answered /Users/noah, where os.homedir()
+ * on a temp directory it still answered the account's own home, where os.homedir()
  * answered the temp directory. Everything that isolates a Tars (the sandbox
  * script, the e2e, a test) does it with HOME, so each such call was a way for
  * an isolated Tars to reach the real account: seven of them, handing agents the

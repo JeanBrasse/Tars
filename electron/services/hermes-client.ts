@@ -2,7 +2,7 @@ import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
-import { HermesConnection, resolveHermesBaseUrl } from '../types/hermes';
+import { HermesConnection, resolveHermesBaseUrl, sessionToken } from '../types/hermes';
 import { DATA_DIR } from '../constants';
 import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-file';
 
@@ -248,13 +248,13 @@ export function hermesRequest(
   });
 }
 
-/** One request to the gateway `conn` points at, carrying its token. */
+/** One request to the gateway `conn` points at, carrying its token in token mode. */
 function gatewayCall(
   conn: HermesConnection,
   pathname: string,
   options: { method?: string; body?: unknown; timeoutMs?: number } = {},
 ): Promise<HermesResponse> {
-  return hermesRequest(resolveHermesBaseUrl(conn), pathname, { ...options, token: conn.token });
+  return hermesRequest(resolveHermesBaseUrl(conn), pathname, { ...options, token: sessionToken(conn) });
 }
 
 /** A call the gateway refused, flagged when signing in is what would fix it. */
@@ -314,7 +314,7 @@ export async function probeHermes(conn: HermesConnection): Promise<HermesStatus 
     return { baseUrl: '', reachable: false, authRequired: false, authFlows: [], authProviders: [], signedIn: false, error: 'No gateway URL for this mode.' };
   }
   try {
-    const { status, body } = await hermesRequest(baseUrl, '/api/status', { token: conn.token });
+    const { status, body } = await hermesRequest(baseUrl, '/api/status', { token: sessionToken(conn) });
     const info = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
     const authRequired = info.auth_required === true;
     return {
@@ -328,7 +328,7 @@ export async function probeHermes(conn: HermesConnection): Promise<HermesStatus 
       authProviders: Array.isArray(info.auth_providers) ? info.auth_providers as string[] : [],
       // Asked of the gateway rather than of the jar: holding a cookie and
       // being accepted are different things, and this is where they parted.
-      signedIn: !authRequired || await verifyHermesSession(baseUrl, conn.token),
+      signedIn: !authRequired || await verifyHermesSession(baseUrl, sessionToken(conn)),
     };
   } catch (err) {
     return { baseUrl, reachable: false, authRequired: false, authFlows: [], authProviders: [], signedIn: false, error: err instanceof Error ? err.message : String(err) };
@@ -988,6 +988,27 @@ export async function searchHermesSessions(
   });
 
   return { success: true, hits };
+}
+
+/**
+ * A session's parent, from GET /api/sessions/{id}: null for a root. The
+ * search walks a hit's parents only up to a branch or a delegate edge, so a
+ * caller that must know a session's whole ancestry reads it further up, one
+ * parent at a time (memory-hub.ts). A session the gateway cannot give, or an
+ * answer that is not a session, is a failure, never a root.
+ */
+export async function fetchHermesSessionParent(
+  conn: HermesConnection,
+  sessionId: string,
+): Promise<{ success: true; parentSessionId: string | null } | { success: false; error: string; needsSignIn?: boolean }> {
+  const { status, body } = await gatewayCall(conn, `/api/sessions/${encodeURIComponent(sessionId)}`);
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes');
+  const session = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : null;
+  const parent = session?.parent_session_id;
+  if (!session || (parent !== undefined && parent !== null && typeof parent !== 'string')) {
+    return { success: false, error: 'Hermes answered something that is not a session' };
+  }
+  return { success: true, parentSessionId: typeof parent === 'string' && parent ? parent : null };
 }
 
 /** Which memory provider the gateway has active, and how big its files are. */

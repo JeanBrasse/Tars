@@ -130,7 +130,7 @@ describe('a connection file the kanban cannot use', () => {
 
   it('answers a kanban tool with the reason, and sends no request anywhere', async () => {
     writeConnection('{"mode": "local", "localPort": 9119');
-    const r = await listTasks(hermesKanban() as never, { agentId: 'aaaa1111-0000-4000-8000-000000000001', name: 'Dune', projectPath: '/Users/noah/tars' }, {});
+    const r = await listTasks(hermesKanban() as never, { agentId: 'aaaa1111-0000-4000-8000-000000000001', name: 'Dune', projectPath: '/Users/you/tars' }, {});
     expect(sent, 'requests the kanban sent').toEqual([]);
     expect(r.ok).toBe(false);
     expect(r.ok ? 0 : r.status).toBe(503);
