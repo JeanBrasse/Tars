@@ -3,6 +3,7 @@ import type { AgentStatus } from '@/types/electron';
 import { AgentMark, Button } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import { STATUS_COLORS } from '@/app/agents/constants';
+import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 interface AgentDialogHeaderProps {
   agent: AgentStatus;
@@ -55,6 +56,8 @@ export const AgentDialogHeader = memo(function AgentDialogHeader({
         <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} size={24} />
         <span className="text-[12.5px] font-semibold truncate">{agent.name || 'Agent'}</span>
         <span className="font-mono text-[11px] text-muted-foreground truncate" title={facts}>{facts}</span>
+        {/* The Claude account it runs on, with the same menu as its card. */}
+        <AgentAccountControl agent={agent} className="shrink-0" />
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
