@@ -327,6 +327,15 @@ only a task it filed that nobody claimed, or one it claimed) is a rule of Tars's
 own tools, not a barrier: an agent that reads `hermes-connection.json` can call
 the gateway with its token and edit or delete any task (the audit's gate of #183).
 
+The same token opens the routes of the tars-relay plugin once that plugin is installed on the Hermes
+server (`hermes-plugins/tars-relay`, installed nowhere yet). Whoever holds it can then write to Noah
+through Hermes's Telegram bot, as Tars, read or delete his replies before Tars takes them, and name
+the projects whose `@name` messages are kept from Hermes. The plugin decides what it can on its own:
+the recipient is the user id in the server's own config, never one the caller names; at most 60
+messages go out in an hour, each counted before it goes out, so sends made at once do not pass it; and
+it keeps only Noah's messages in his private chat. Hence Noah's decision of 2026-10-01 that the token
+moves to `~/.tars-private`: the plugin goes in with that move, not before it.
+
 What an agent waits on (`waitingOn`, the command or question of an open dialog) is kept in memory only: it is not written to `agents.json`. While the dialog is open, another agent can read it through `GET /api/agents/:id?full=true`, as it can read the rest of that agent's record; a command typed with a secret in it is visible there for that long. The hook sends only the fields that name the dialog, each cut at 1000 characters, never a tool's whole input.
 
 `~/.tars-private/overseer.json` used to be `~/.dorothy/overseer.json`: 148,654
