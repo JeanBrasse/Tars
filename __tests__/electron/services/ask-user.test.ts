@@ -38,6 +38,8 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  * 13. With Hermes down, the question is lost, or the agent is told it went; it does not go once Hermes answers; and
  *    if it never could, the agent is not told so at the end.
  * 14. (the gate of #231) The expiry notice types the agent's own question back to it, as Tars's words.
+ * 15. (Noah's answer 24 of 2026-10-05) The user's receipt is long, or says the answer went in while it waits, without
+ *     saying for what.
  */
 
 /** What runs in the terminals spawned next: claude's version, or `bash` at its prompt. */
@@ -196,7 +198,7 @@ describe('the user\'s reply', () => {
     expect(all('a1')).toContain('Message from the user via Telegram: ');
     expect(all('a1')).toContain('Use the staging database.');
     expect(all('a2')).toBe('');
-    expect(notices().at(-1)).toMatch(/Asker/);
+    expect(notices().at(-1), "Noah's answer 24: one short line").toBe('Passed to Asker.');
     // Answered: a second reply to the same message is told the question is closed.
     typed.a1.length = 0;
     await answer('again', T0 + 120_000);
@@ -276,7 +278,7 @@ describe('an answer that waited, and never went in', () => {
 
     await answer('Use the staging database.', T0 + 1000);
     await settle();
-    expect(notices().at(-1)).toMatch(/Held/);
+    expect(notices().at(-1)).toBe('Passed to Asker: it waits for what is typed in its terminal to be sent or cleared.');
     foreground.value = 'bash';
     await new Promise(r => setTimeout(r, pm.TYPING_PAUSE_MS + 1500));
 
