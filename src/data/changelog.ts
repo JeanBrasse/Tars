@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 52,
+    version: '1.9.3',
+    date: '2026-10-04',
+    updates: [
+      'Quitting Tars ends a CLI that Settings was still asking for its version, and what that CLI had started: amp, asked just before a quit, kept writing its log into your home after Tars was gone',
+      'An agent that answers the orchestrator that gave it its work no longer gets that orchestrator\'s next results typed into its own terminal, as if it had handed the orchestrator a task',
+    ],
+  },
+  {
     id: 51,
     version: '1.9.2',
     date: '2026-10-01',
