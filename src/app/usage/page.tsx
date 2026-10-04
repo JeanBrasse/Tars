@@ -165,13 +165,6 @@ export default function UsagePage() {
       .sort((a, b) => b.costUSD - a.costUSD);
   }, [dayRows, ledger.daily, todayKey]);
 
-  // Each Claude account's name by its id, for the account a task ran on.
-  const accountRateLimits = data?.accountRateLimits;
-  const accountLabels = useMemo(
-    () => Object.fromEntries((accountRateLimits ?? []).map(account => [account.accountId, account.label])),
-    [accountRateLimits],
-  );
-
   // The share of the window's spend that token-stats.json marks as past a
   // quota. A part of the total, never added to it: every one of those sessions
   // ran in the claude binary, so its cost is in the transcripts already. It is
@@ -534,13 +527,7 @@ export default function UsagePage() {
 
       {/* What each task cost, over the same window, and the averages under it.
           Frame: `Usage · cost per task`. */}
-      <TaskCosts
-        start={period.start}
-        length={text.length}
-        control={text.control}
-        refreshKey={data}
-        accountLabels={accountLabels}
-      />
+      <TaskCosts start={period.start} length={text.length} control={text.control} />
     </div>
   );
 }

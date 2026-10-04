@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TaskReport } from '@/types/electron';
+import { useClaude } from '@/hooks/useClaude';
 import { Button, Dropdown, Panel, PanelCaption } from '@/components/ui';
 import type { DropdownOption } from '@/components/ui';
 import { fmtTokens, getModelDisplayName } from '@/lib/usage-format';
@@ -64,18 +65,23 @@ function withPicked(all: string, total: number, options: FilterOption[], picked:
  * and per model over the tasks listed. Frame: `Usage · cost per task`, and its
  * light copy.
  */
-export function TaskCosts({ start, length, control, refreshKey, accountLabels }: {
+export function TaskCosts({ start, length, control }: {
   /** The window's first moment: the page's own, not the 24-hour periods usage.tasks counts in. */
   start: Date;
   /** `14 DAYS`, for the captions. */
   length: string;
   /** `14 days`, for the sentences. */
   control: string;
-  /** Read again when it changes: the page's figures, new when the transcripts move. */
-  refreshKey: unknown;
-  /** Each Claude account's name, by its id. */
-  accountLabels: Record<string, string>;
 }) {
+  // The page's own figures, from the one store every view of them shares: new
+  // when the transcripts move, which is when the tasks are read again. And each
+  // Claude account's name by its id, for the account a task ran on.
+  const { data } = useClaude();
+  const accountRateLimits = data?.accountRateLimits;
+  const accountLabels = useMemo(
+    () => Object.fromEntries((accountRateLimits ?? []).map(account => [account.accountId, account.label])),
+    [accountRateLimits],
+  );
   const [report, setReport] = useState<TaskReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskFilter>({ projectPath: null, agentId: null });
@@ -95,7 +101,7 @@ export function TaskCosts({ start, length, control, refreshKey, accountLabels }:
       answer => { if (asked.current === mine) { setReport(answer); setError(null); } },
       (err: unknown) => { if (asked.current === mine) setError(err instanceof Error ? err.message : String(err)); },
     );
-  }, [startMs, refreshKey]);
+  }, [startMs, data]);
 
   const names = useMemo(() => report?.agentNames ?? {}, [report]);
   const inTimeframe = useMemo(() => (report ? inWindow(report.tasks, new Date(startMs)) : []), [report, startMs]);
