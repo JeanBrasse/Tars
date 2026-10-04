@@ -75,6 +75,8 @@ vi.mock('../../../../electron/core/pty-manager', () => ({
   writeProgrammaticInput: vi.fn(),
   rememberTerminalOwner: vi.fn(),
   PROGRAMMATIC_SUBMIT_DELAY_MS: 300,
+  // A stop ends the terminal's tree (core/agent-stop.ts); here, its hangup.
+  endTerminalTree: vi.fn(async (t: { kill?: () => void }) => { t.kill?.(); }),
 }));
 vi.mock('../../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 vi.mock('../../../../electron/services/memory-hub', () => ({
@@ -280,16 +282,17 @@ describe('an agent changed over the API', () => {
     await call('POST', '/api/agents/a1/start', { prompt: 'build it' });
     pushes.length = 0;
 
-    await call('POST', '/api/agents/a1/stop');
+    await call('POST', '/api/agents/a1/stop', { reason: 'not needed' });
 
     expect(agent.ptyId, 'a stopped agent still names its terminal').toBeUndefined();
-    expect(railHeard('a1')).toEqual(['idle']);
+    // stopped, not idle, since PLAN-1.9.2 item A (core/agent-stop.ts).
+    expect(railHeard('a1')).toEqual(['stopped']);
     expect((await cardOf('a1'))?.displayStatus).toBe('stopped');
 
     spawned[0].emitExit(1);
     await vi.advanceTimersByTimeAsync(1600);
 
-    expect(agent.status).toBe('idle');
+    expect(agent.status).toBe('stopped');
     expect(agent.error).toBeUndefined();
   });
 
