@@ -13,6 +13,7 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+      'The Usage page says what each task cost, under its charts and over the same timeframe: each piece of work an agent did, newest first, with who handed it over, the agent, the provider and Claude account, the model, when it started and ended, how long it took, its turns and tokens, its own cost, and its total with the work it handed on to other agents. A task whose CLI writes no transcript, such as Codex or Gemini in a terminal, reads not counted rather than $0.00, and a total that leaves one out says partial. Pick a project or an agent, and the averages per agent and per model under the list follow.',
     ],
   },
   {
