@@ -165,11 +165,17 @@ test('review: a project with no agent, the files without their patches, a patch 
   await stepShot(page, '04-a-patch-that-cannot-be-read');
 
   // An agent's window: its Code panel marks the files the agent changed, read
-  // without their patches.
+  // without their patches. The page read this tree's list on load (it comes
+  // first), so main may answer the panel from what it kept: what shows the
+  // panel asked is review:diff's own check of the tree, `status -z`.
   const code = path.join(home, 'projects', 'code');
   await page.locator('aside').getByRole('link', { name: 'Agents', exact: true }).click();
-  await page.getByText('Code Reader', { exact: true }).first().click();
-  await expect.poll(() => lists(ranIn(code)).length, { timeout: 30_000, message: 'the code panel read the list' }).toBeGreaterThan(0);
+  const card = page.locator('div').filter({ has: page.getByText('Code Reader', { exact: true }) })
+    .filter({ has: page.getByRole('button', { name: 'open', exact: true }) }).last();
+  fs.writeFileSync(gitLog, '');
+  await card.getByRole('button', { name: 'open', exact: true }).click();
+  const asked = () => ranIn(code).filter(l => l.startsWith('status --porcelain=v1 -z')).length;
+  await expect.poll(asked, { timeout: 30_000, message: 'the code panel asked review:diff for the tree' }).toBeGreaterThan(0);
   await page.waitForTimeout(1500);
   const codeRuns = ranIn(code);
   expect(wholePatches(codeRuns), codeRuns.join('\n')).toEqual([]);
