@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { forwardToOrchestrator, type BotFleet } from './bot-core';
-import { onRelayProjectMessage, onRelayReply, setRelayProjects, tellUser } from './hermes-relay';
+import { onRelayProjectMessage, onRelayReply, receiptFor, setRelayProjects, tellUser } from './hermes-relay';
 import { orchestratorForProject, orchestratorOf, projectName, projectNames, whereToWrite } from './orchestrator-routing';
 import { getSuperAgentInstructionsPath } from '../utils';
 import type { AgentStatus } from '../types';
@@ -33,9 +33,12 @@ async function toOrchestrator(fleet: BotFleet, orchestrator: AgentStatus, projec
     permissionMode: orchestrator.permissionMode ?? (orchestrator.skipPermissions ? 'bypass' : 'normal'),
     resume: true,
     systemPromptFile: () => (fs.existsSync(getSuperAgentInstructionsPath()) ? getSuperAgentInstructionsPath() : undefined),
-    reply: async outcome => {
+    // A short receipt, whatever became of it (Noah's answer 24 of 2026-10-05).
+    reply: async (outcome, detail) => {
       if (outcome === 'no-terminal') await tellUser(`Not delivered: the terminal of ${orchestrator.name} could not be opened.`, projectPath, now);
-      else if (outcome === 'started') await tellUser(`${orchestrator.name} was not running: it was started with your message.`, projectPath, now);
+      else if (outcome === 'refused') await tellUser(`Not delivered: ${orchestrator.name}'s terminal is not taking messages.`, projectPath, now);
+      else if (outcome === 'started') await tellUser(`Passed to ${orchestrator.name}, which was not running: it was started with your message.`, projectPath, now);
+      else await tellUser(receiptFor(orchestrator.name || orchestrator.id, detail?.heldBy), projectPath, now);
     },
   });
 }
