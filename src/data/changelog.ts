@@ -13,6 +13,9 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+      'Deleting an agent that works in a worktree keeps what it had not committed: Tars commits it on a branch named wip/ and the agent\'s name (wip/backend-engineer, then wip/backend-engineer-2), without asking and without moving the agent\'s own branch, then removes the worktree. The work was removed with the worktree. When it cannot be saved, the worktree is left where it is.',
+      'Tars starts no agent while the disk has less than 2 GB free, and says so, with the space left, where the agent was started and a full disk could stop the Mac.',
+      'An orchestrator that starts again an agent you stopped is told who stopped it and why, and the restart is kept on the agent: who started it again and when, beside your stop.',
     ],
   },
   {

@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { saveUncommittedWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
@@ -1198,8 +1199,23 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = undefined;
     }
 
+    // Its uncommitted work is saved on wip/<name> first, without asking (Noah,
+    // 05/10): `--force` below removes whatever was not committed. A save that
+    // fails keeps the worktree where it is, and says so.
+    let savedTo: string | undefined;
+    let worktreeKept: string | undefined;
+    if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
+      try {
+        savedTo = (await saveUncommittedWork(agent.worktreePath, agent.name || agent.id))?.branch;
+        if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
+      } catch (err) {
+        worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+    }
+
     // Clean up worktree if it exists
-    if (agent?.worktreePath && agent?.branchName) {
+    if (agent?.worktreePath && agent?.branchName && !worktreeKept) {
       try {
         // argv, not a shell string: an apostrophe in the project path used to
         // make this fail silently and leak a stale worktree behind the deleted
@@ -1220,7 +1236,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Save agents to disk
     saveAgents();
 
-    return { success: true };
+    return { success: true, ...(savedTo ? { savedTo } : {}), ...(worktreeKept ? { worktreeKept } : {}) };
   });
 
   // Update agent's secondary project path

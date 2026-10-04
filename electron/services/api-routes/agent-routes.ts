@@ -8,7 +8,8 @@ import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutp
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
-import { clearStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
+import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
+import { diskRefusal, freeSpace } from '../../core/disk-space';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
@@ -47,6 +48,8 @@ type SpawnOpts = {
   model?: string;
   permissionMode?: 'normal' | 'auto' | 'bypass';
   printMode?: boolean;
+  /** Who starts it: noted when the start undoes a stop (core/agent-stop.ts). */
+  by?: string;
 };
 
 /**
@@ -79,6 +82,17 @@ function stopOf(agent: AgentStatus): { stoppedBy?: string; stoppedAt?: string; s
     : {};
 }
 
+/**
+ * The stop a start just undid, for the one who started it (Noah, 05/10: an
+ * orchestrator may start again an agent Noah stopped, and is told why it was
+ * stopped). Nothing when this start undid none.
+ */
+function restartedAfterStop(agent: AgentStatus, since: string): { restartedAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string } } {
+  const restart = agent.lastRestartAfterStop;
+  if (!restart || restart.restartedAt < since) return {};
+  return { restartedAfterStop: { stoppedBy: restart.stoppedBy, stoppedAt: restart.stoppedAt, stopReason: restart.stopReason } };
+}
+
 function announceAgent(agent: AgentStatus): void {
   broadcastToAllWindows('agent:status', {
     type: 'status',
@@ -100,6 +114,13 @@ async function spawnAgentSession(
   // quit ends: refused before anything here ends the old terminal (the Audit's
   // gate of #235: a /start 200 ms into the quit answered 200 and its CLI
   // outlived Tars). spawnAgentPty refuses too, for the callers that are not here.
+  // A nearly full disk: the reason, rather than the 500 a throw from the
+  // spawn below would come back as (core/disk-space.ts).
+  const full = diskRefusal(freeSpace());
+  if (full) {
+    sendJson({ error: full, diskFull: true }, 507);
+    return false;
+  }
   if (isQuitting()) {
     sendJson({ error: 'Tars is quitting: no new session is started.', quitting: true }, 503);
     return false;
@@ -346,7 +367,9 @@ async function spawnAgentSession(
   // dropped as belonging to a session that no longer exists.
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
-  // A terminal again: a stop is over (core/agent-stop.ts).
+  // A terminal again: a stop is over (core/agent-stop.ts), and if there was
+  // one, who undid it is noted beside who made it.
+  noteRestartAfterStop(agent, opts.by ?? 'Tars');
   clearStop(agent);
   agent.status = 'running';
   agent.workHandedAt = new Date().toISOString();
@@ -747,10 +770,11 @@ async function performDispatchLocked(
   }
 
   // No session: spawn a fresh one with the message as the prompt.
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode }, ctx, sendJson))) {
+  const since = new Date().toISOString();
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from }, ctx, sendJson))) {
     return;
   }
-  sendJson({ success: true, mode: 'start', previousStatus, agent: { id: agent.id, name: agent.name, status: agent.status } });
+  sendJson({ success: true, mode: 'start', previousStatus, ...restartedAfterStop(agent, since), agent: { id: agent.id, name: agent.name, status: agent.status } });
 }
 
 export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
@@ -1070,6 +1094,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
+    const since = new Date().toISOString();
     const { prompt, model, permissionMode: bodyPermissionMode, printMode } = req.body as {
       prompt: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; printMode?: boolean;
     };
@@ -1090,11 +1115,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req) }, ctx, sendJson);
     });
     if (!spawned) return;
 
-    sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
+    sendJson({ success: true, ...restartedAfterStop(agent, since), agent: { id: agent.id, status: agent.status } });
   });
 
   // POST /api/agents/:id/dispatch: atomic "send this task to the agent".
@@ -1262,10 +1287,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // using the message as the prompt, identical to the /start path. This
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
-        if (!(await spawnAgentSession(agent, message, {}, ctx, sendJson))) {
+        const since = new Date().toISOString();
+        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req) }, ctx, sendJson))) {
           return;
         }
-        sendJson({ success: true });
+        sendJson({ success: true, ...restartedAfterStop(agent, since) });
         return;
       }
 

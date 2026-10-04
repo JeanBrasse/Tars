@@ -31,8 +31,17 @@ type DispatchResult = {
    */
   held?: boolean;
   heldReason?: string;
+  /** This start undid a stop: who had stopped the agent, when, and why. Tars notes the restart on the agent. */
+  restartedAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string };
   agent: { id: string; name?: string; status: string };
 };
+
+/** What a caller is told when its start undid somebody's stop, or nothing. */
+function restartNote(data: DispatchResult): string {
+  const stop = data.restartedAfterStop;
+  if (!stop) return "";
+  return `\nIt had been stopped by ${stop.stoppedBy || "someone"}${stop.stopReason ? `: ${stop.stopReason}.` : ", with no reason given."} Your restart is noted on it.`;
+}
 
 /** What a caller is told when its message is queued rather than typed. */
 function heldText(agentName: string, what: string, reason?: string): string {
@@ -371,7 +380,7 @@ const AGENT_TOOLS: Tool[] = [
         return text(`Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"`);
       }
 
-      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}`);
+      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}${restartNote(data)}`);
     },
   }),
 
@@ -419,7 +428,7 @@ const AGENT_TOOLS: Tool[] = [
       }
 
       if (data.mode === "start") {
-        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}`);
+        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}${restartNote(data)}`);
       }
 
       if (previousStatus === "running") {

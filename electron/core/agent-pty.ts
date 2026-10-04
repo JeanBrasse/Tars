@@ -7,6 +7,7 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
+import { refuseOnFullDisk } from './disk-space';
 
 export { setAccountEnvResolver } from './account-env';
 
@@ -95,6 +96,8 @@ export function spawnAgentPty(opts: {
   // Once the quit has begun, a terminal spawned here would be in no map the
   // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused.
   refuseWhileQuitting('agent terminal');
+  // Nor on a nearly full disk (core/disk-space.ts), whoever calls.
+  refuseOnFullDisk();
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
     cols: size.cols,
