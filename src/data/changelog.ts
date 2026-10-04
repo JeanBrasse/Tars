@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 52,
+    version: '1.9.3',
+    date: '2026-10-04',
+    updates: [
+      'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
+      'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+    ],
+  },
+  {
     id: 51,
     version: '1.9.2',
     date: '2026-10-01',
