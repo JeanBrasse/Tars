@@ -1908,9 +1908,12 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   // What an agent actually changed. Shell-free: git runs with an argv array,
   // so a branch or path with a quote in it is data rather than syntax.
-  ipcMain.handle('review:diff', async (_event, { repoPath, baseBranch }: { repoPath: string; baseBranch?: string }) => {
+  ipcMain.handle('review:diff', async (
+    _event,
+    { repoPath, baseBranch, listOnly }: { repoPath: string; baseBranch?: string; listOnly?: boolean },
+  ) => {
     try {
-      return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch }) };
+      return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch, listOnly: listOnly === true }) };
     } catch (err) {
       return { success: false as const, error: err instanceof Error ? err.message : String(err) };
     }
