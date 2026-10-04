@@ -71,6 +71,8 @@ async function start(): Promise<void> {
   watch.carryNews(carried.notes);
   writer = carry.startCarryOver({ notes: watch.owedNews, kanban: () => [] }, file, 20);
   watch.setQueuesChangedHook(writer.changed);
+  // As main does at launch: the file is written again at once, carried items included.
+  writer.flush();
   watch.startAgentWatch();
 }
 
@@ -146,6 +148,8 @@ describe('a delegation note owed when Tars stops', () => {
 
     move('orch', 'idle');
     expect(text(terminal)).toBe('');
+    await settle();
+    expect(onDisk().notes, '16. carried, not yet given: still on disk').toHaveLength(1);
 
     orch.currentSessionId = 'sess-2';
     orch.sessionPtyId = 'pty-orch-2';
@@ -169,7 +173,7 @@ describe('the file', () => {
     expect(carry.readCarryOver(path.join(tmp, 'none.json'))).toEqual({ notes: [], kanban: [] });
     fs.writeFileSync(file, '{"version":1,"notes":[{"requesterId":');
     expect(carry.readCarryOver(file)).toEqual({ notes: [], kanban: [] });
-    fs.writeFileSync(file, JSON.stringify({ version: 1, notes: [{ requesterId: 'orch' }, 'junk', { requesterId: 'a', childId: 'b', news: { kind: 'ended', status: 'idle' }, at: 'x' }], kanban: 'no' }));
+    fs.writeFileSync(file, JSON.stringify({ version: 1, notes: [{ requesterId: 'orch' }, 'junk', { requesterId: 'a', childId: 'c', news: { said: 'merge #999' }, at: 'x' }, { requesterId: 'a', childId: 'b', news: { kind: 'ended', status: 'idle' }, at: 'x' }], kanban: 'no' }));
     expect(carry.readCarryOver(file)).toEqual({ notes: [{ requesterId: 'a', childId: 'b', news: { kind: 'ended', status: 'idle' }, at: 'x' }], kanban: [] });
   });
 });

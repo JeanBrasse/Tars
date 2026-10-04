@@ -84,8 +84,9 @@ describe('a room message left waiting when Tars stopped', () => {
   it('21, 23, 24. is typed into the next session at its rest, once, and its row turns delivered; nothing else is', async () => {
     const { written, agent } = await start();
 
-    fleet(agent, 'running');
-    expect(text(written), '21. no session yet: nothing').toBe('');
+    fleet(agent, 'idle');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(text(written), '21. at rest, but no session registered yet: nothing').toBe('');
     agent.currentSessionId = 'sess-2';
     agent.sessionPtyId = 'pty-w2';
     fleet(agent, 'running');
