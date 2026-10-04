@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { app } from 'electron';
 import { classifyInstall, locate } from './cli-updater';
 import { readAppSettingsFromDisk } from '../providers/cli-provider';
 
@@ -77,9 +78,6 @@ export function launchedClaudeVersion(opts: { settingsPath: string | undefined; 
  * (extraResources), at the repository's root otherwise.
  */
 export function stateModDir(): string {
-  // Required here rather than imported: this module is read by tests with no
-  // Electron, and only a launch asks for the folder.
-  const { app } = require('electron') as typeof import('electron');
   return app.isPackaged
     ? path.join(process.resourcesPath, 'mods', 'tars-state')
     : path.join(app.getAppPath(), 'mods', 'tars-state');

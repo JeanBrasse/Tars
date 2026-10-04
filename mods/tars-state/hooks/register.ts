@@ -22,6 +22,19 @@ const TASK_CAP = 200;
 
 type Tars = { agentId: string; api: string; token: string };
 
+/**
+ * What this module uses of the engine, typed here: the repository's own tsc and
+ * eslint read this file and do not have Claude Code's `claude-code` module.
+ */
+type Engine = {
+  env: { get(name: string): Promise<string | undefined> };
+  http: { fetch(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<{ text: string }> };
+  clock: { every(ms: number, fn: () => void): unknown };
+};
+/** A classic hook's input, as the shell hooks read it on stdin. */
+type Classic = { session_id?: string; source?: string; prompt?: unknown; stop_hook_active?: unknown; last_assistant_message?: unknown; error?: unknown };
+type On = <E>(event: string, hook: ($: Engine, e: E, next: (e: E) => Promise<unknown>) => unknown) => void;
+
 /** undefined: not asked yet; null: not under a Tars that proved itself. */
 let tars: Tars | null | undefined;
 let sessionId: string | null = null;
@@ -34,7 +47,7 @@ function hex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function proven($: any): Promise<Tars | null> {
+async function proven($: Engine): Promise<Tars | null> {
   if (tars !== undefined) return tars;
   const agentId = await $.env.get('CLAUDE_AGENT_ID');
   const api = await $.env.get('CLAUDE_MGR_API_URL');
@@ -56,7 +69,7 @@ async function proven($: any): Promise<Tars | null> {
   return tars;
 }
 
-function report($: any, route: string, body: Record<string, unknown>): void {
+function report($: Engine, route: string, body: Record<string, unknown>): void {
   queue = queue.then(async () => {
     const to = await proven($);
     if (!to) return;
@@ -68,14 +81,14 @@ function report($: any, route: string, body: Record<string, unknown>): void {
   }).catch(() => undefined);
 }
 
-function beat($: any): void {
+function beat($: Engine): void {
   if (!sessionId) return;
   report($, '/api/hooks/mod-beat', { session_id: sessionId, tool: inFlight[inFlight.length - 1] ?? null });
 }
 
-export function register(on: any) {
-  on('classic.SessionStart', ($: any, e: any, next: any) => {
-    sessionId = e.session_id;
+export function register(on: On) {
+  on<Classic>('classic.SessionStart', ($, e, next) => {
+    sessionId = e.session_id ?? null;
     report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle', source: e.source });
     if (!beating) {
       beating = true;
@@ -84,7 +97,7 @@ export function register(on: any) {
     return next(e);
   });
 
-  on('classic.UserPromptSubmit', ($: any, e: any, next: any) => {
+  on<Classic>('classic.UserPromptSubmit', ($, e, next) => {
     report($, '/api/hooks/status', {
       session_id: e.session_id, status: 'running', event: 'UserPromptSubmit',
       current_task: typeof e.prompt === 'string' ? e.prompt.slice(0, TASK_CAP) : '',
@@ -92,7 +105,7 @@ export function register(on: any) {
     return next(e);
   });
 
-  on('classic.Stop', ($: any, e: any, next: any) => {
+  on<Classic>('classic.Stop', ($, e, next) => {
     if (e.stop_hook_active !== true) {
       if (typeof e.last_assistant_message === 'string' && e.last_assistant_message) {
         report($, '/api/hooks/output', { session_id: e.session_id, output: e.last_assistant_message.slice(0, OUTPUT_CAP) });
@@ -103,7 +116,7 @@ export function register(on: any) {
     return next(e);
   });
 
-  on('classic.StopFailure', ($: any, e: any, next: any) => {
+  on<Classic>('classic.StopFailure', ($, e, next) => {
     report($, '/api/hooks/status', {
       session_id: e.session_id, status: 'error', event: 'StopFailure',
       error_kind: typeof e.error === 'string' ? e.error : '',
@@ -113,7 +126,7 @@ export function register(on: any) {
   });
 
   // The tool in flight, for the heartbeat: a long Bash, an MCP wait or a subagent.
-  on('tool.call', async ($: any, e: any, next: any) => {
+  on<{ tool: string }>('tool.call', async (_$, e, next) => {
     inFlight.push(e.tool);
     try {
       return await next(e);
