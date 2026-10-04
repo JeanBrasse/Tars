@@ -32,7 +32,7 @@ vi.mock('../../../../electron/core/pty-manager', () => ({ ptyProcesses: new Map(
 vi.mock('../../../../electron/core/agent-pty', () => ({ cliRunningIn: (pty: unknown) => !!pty }));
 const dispatched = vi.hoisted(() => [] as Array<{ agentId: string; message: string; from: string; sender: unknown }>);
 /** How the dispatch goes: written at once, refused, or held in the terminal's queue and then written or dropped. */
-const dispatch = vi.hoisted(() => ({ mode: 'written' as 'written' | 'refused' | 'held', later: [] as Array<{ written(): void; dropped(): void }> }));
+const dispatch = vi.hoisted(() => ({ mode: 'written' as 'written' | 'refused' | 'held' | 'gone', later: [] as Array<{ written(): void; dropped(): void }> }));
 vi.mock('../../../../electron/services/api-routes/agent-routes', () => ({
   performDispatch: vi.fn(async (
     agent: { id: string },
@@ -45,7 +45,8 @@ vi.mock('../../../../electron/services/api-routes/agent-routes', () => ({
       dispatch.later.push({ written: () => opts.onWritten?.(), dropped: () => opts.onDropped?.() });
       return void sendJson({ success: true, mode: 'message', held: true }, 200);
     }
-    opts.onWritten?.();
+    // A terminal that refuses the write (gone, or its queue full) calls nobody back.
+    if (dispatch.mode !== 'gone') opts.onWritten?.();
     sendJson({ success: true, mode: 'message' }, 200);
   }),
 }));
@@ -136,6 +137,13 @@ describe("the error triage's note", () => {
   it('6. a dispatch refused is "not-now"', async () => {
     put(agent('orch-tars', TARS, { role: 'orchestrator' }));
     dispatch.mode = 'refused';
+
+    expect(await tellOrchestratorAsTars(TARS, NOTE)).toBe('not-now');
+  });
+
+  it('6. a write the terminal refuses, which calls nobody back, is "not-now", not a wait for ever', async () => {
+    put(agent('orch-tars', TARS, { role: 'orchestrator' }));
+    dispatch.mode = 'gone';
 
     expect(await tellOrchestratorAsTars(TARS, NOTE)).toBe('not-now');
   });
