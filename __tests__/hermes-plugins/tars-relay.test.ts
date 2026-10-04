@@ -19,7 +19,7 @@ import * as path from 'path';
  * 6. one of them fails.
  */
 const PLUGIN = path.resolve(__dirname, '../../hermes-plugins/tars-relay');
-const WRITTEN = 30;
+const WRITTEN = 38;
 const CANDIDATES: Array<[string, string[]]> = [['python3', []], ['python', []], ['py', ['-3']]];
 
 /** The first of python3, python and py -3 that is a Python 3.9 or later, or null. */

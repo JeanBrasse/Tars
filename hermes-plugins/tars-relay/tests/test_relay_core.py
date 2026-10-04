@@ -42,6 +42,19 @@ How this can fail, written before the code:
    - the text stays stored once the copy has been given.
 9. The settings go wrong: they are read from the wrong place in Hermes's config; anything is relayed or copied with
    no Noah configured (absent, empty, not a positive number, a boolean); or the numeric id YAML gives is refused.
+10. Noah's messages are seen where Hermes cannot hide them: since the Audit's recheck (GATE-PR280-RECHECK.md), a
+   message sent while Hermes answers, or right after another, never passed Hermes's dispatch hook (a running turn
+   turns it into a correction, the batching window merges it with the next). The plugin's own observer, in its own
+   python-telegram-bot group, sees each update as it comes (the deciding test on Hermes 536802c). It goes wrong when:
+   - an update is read wrong: an edit, a reaction or a callback taken for a new message; a message from a bot (Hermes's
+     own) taken for Noah's; a private chat not named "dm" as Hermes names it; a reply's id lost;
+   - a message seen twice (by the observer, then by the dispatch hook, or redelivered) is kept twice for Tars;
+   - Hermes's model is not spared a message the observer kept, when Hermes admits that very message alone;
+   - or it is spared one Hermes merged with other words of Noah's: the whole event skipped, his other words lost;
+   - what the check needs keeps the text: it keeps its fingerprint only, and only for a week.
+11. The store's numbers restart at 1 whenever the store is created again (reinstalled, moved, cleaned), and Tars,
+   which skips every number at or below the last it took, then loses each new reply (GATE-PR285.md): the store has an
+   id, made once with it, the same across restarts, and another for a store made again.
 """
 import os
 import re
@@ -91,6 +104,92 @@ class Base(unittest.TestCase):
 
     def store_at(self, now):
         return relay_core.Store(self.dir, now=lambda: now)
+
+
+def update(**over):
+    """A Telegram update as python-telegram-bot hands it to a handler, as far as the observer reads it."""
+    from types import SimpleNamespace as NS
+    base = {'update_id': 900001, 'message': NS(message_id=7001, text='Oui', chat=NS(id=int(NOAH), type='private'),
+                                               from_user=NS(id=int(NOAH), is_bot=False), reply_to_message=NS(message_id=501))}
+    base.update(over)
+    return NS(**base)
+
+
+class WhatTheObserverReads(Base):
+    def test_10_a_new_message_as_decide_reads_it(self):
+        self.assertEqual(relay_core.message_of_update(update()), {
+            'platform': 'telegram', 'chat_type': 'dm', 'chat_id': int(NOAH), 'user_id': int(NOAH), 'message_id': 7001,
+            'reply_to_message_id': 501, 'text': 'Oui', 'update_id': 900001})
+
+    def test_10_and_then_kept_for_tars_as_the_dispatch_hook_kept_it(self):
+        kept = relay_core.decide(relay_core.message_of_update(update()), SETTINGS, self.store)
+
+        self.assertEqual((kept['kind'], kept['ref'], kept['text'], kept['message_id']), ('reply', 'question:q-1', 'Oui', '7001'))
+
+    def test_10_anything_but_a_new_message_of_a_person_is_not_one(self):
+        from types import SimpleNamespace as NS
+        bot = NS(message_id=7002, text='Reply from Hermes', chat=NS(id=int(NOAH), type='private'),
+                 from_user=NS(id=999000, is_bot=True), reply_to_message=None)
+        for case in [update(message=None, edited_message=update().message), update(message=None, message_reaction=NS()),
+                     update(message=None, callback_query=NS()), update(message=bot), update(message=None)]:
+            with self.subTest(case=case):
+                self.assertIsNone(relay_core.message_of_update(case))
+
+    def test_10_a_group_keeps_its_own_name_and_a_message_with_no_reply_has_no_id(self):
+        from types import SimpleNamespace as NS
+        group = update(message=NS(message_id=7003, text='@tars go', chat=NS(id=-100123, type='supergroup'),
+                                  from_user=NS(id=int(NOAH), is_bot=False), reply_to_message=None))
+
+        read = relay_core.message_of_update(group)
+
+        self.assertEqual((read['chat_type'], read['reply_to_message_id']), ('supergroup', None))
+        self.assertIsNone(relay_core.decide(read, SETTINGS, self.store))
+
+
+class WhatIsKeptOnce(Base):
+    def test_10_a_message_seen_twice_is_kept_once(self):
+        kept = relay_core.decide(message(reply_to_message_id='501', text='Oui'), SETTINGS, self.store)
+
+        first = self.store.keep(kept, 'Oui')
+        again = self.store_at(NOW + 1).keep(kept, 'Oui')
+
+        self.assertIsInstance(first, int)
+        self.assertIsNone(again)
+        self.assertEqual([r['text'] for r in self.store.replies()], ['Oui'])
+
+    def test_10_the_model_is_spared_that_message_alone_and_never_a_merged_one(self):
+        kept = relay_core.decide(message(text='@tars ship the review fix', message_id='7005'), SETTINGS, self.store)
+        self.store.keep(kept, '@tars ship the review fix')
+
+        self.assertTrue(self.store.was_kept(NOAH, '7005', '@tars ship the review fix'))
+        self.assertTrue(self.store.was_kept(int(NOAH), 7005, '  @tars ship the review fix\n'), 'ids as numbers, ends trimmed')
+        self.assertFalse(self.store.was_kept(NOAH, '7005', 'hello Hermes, how are you?\n@tars ship the review fix'), 'merged')
+        self.assertFalse(self.store.was_kept(NOAH, '7006', '@tars ship the review fix'), 'another message')
+        self.assertFalse(self.store.was_kept(OTHER, '7005', '@tars ship the review fix'), 'another chat')
+        self.assertFalse(self.store.was_kept(NOAH, '7005', None))
+
+    def test_10_the_check_keeps_a_fingerprint_for_a_week_never_the_text(self):
+        kept = relay_core.decide(message(text='@tars a private instruction', message_id='7007'), SETTINGS, self.store)
+        self.store.keep(kept, '@tars a private instruction')
+        self.store.ack(self.store.replies()[-1]['seq'])
+
+        for name in os.listdir(self.dir):
+            with self.subTest(file=name), open(os.path.join(self.dir, name), 'rb') as f:
+                self.assertNotIn(b'private instruction', f.read())
+        self.assertTrue(self.store_at(NOW + 6 * 86400).was_kept(NOAH, '7007', '@tars a private instruction'))
+        later = self.store_at(NOW + 8 * 86400)
+        later.prune()
+        self.assertFalse(later.was_kept(NOAH, '7007', '@tars a private instruction'))
+
+
+class TheStoresId(Base):
+    def test_11_made_once_the_same_across_restarts_and_new_for_a_store_made_again(self):
+        first = self.store.store_id
+        self.assertRegex(first, r'^[0-9a-f]{32}$')
+        self.assertEqual(self.store_at(NOW + 10).store_id, first)
+
+        os.remove(os.path.join(self.dir, 'relay.db'))
+        self.assertNotEqual(self.store_at(NOW + 20).store_id, first)
 
 
 class WhatIsKeptForTars(Base):
