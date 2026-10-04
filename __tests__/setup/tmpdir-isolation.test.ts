@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 /**
  * Every test file writes its temporary folders into a folder of its own, which
@@ -59,18 +60,23 @@ const VITEST = path.join(path.dirname(createRequire(import.meta.url).resolve('vi
  * vitest, run in a child on the fixtures beside FIXTURES' config, with the
  * suite's own setup files and run guard, in a temporary folder of its own,
  * which is read once the child has ended.
+ *
+ * Its output is read as plain text in the default reporter's words. vitest
+ * picks another reporter, and drops its colours, when it finds an AI agent's
+ * variables (CLAUDECODE), and colours its output on CI: these tests passed
+ * under an agent and failed on CI, 2026-10-05.
  */
 function runFixtures(args: string[]): { status: number | null; output: string; left: string[] } {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'child-run-'));
   // The child is a run of its own, not a worker of this one.
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('VITEST')));
-  const child = spawnSync(process.execPath, [VITEST, 'run', '--config', `${FIXTURES}/vitest.config.mts`, ...args], {
+  const child = spawnSync(process.execPath, [VITEST, 'run', '--config', `${FIXTURES}/vitest.config.mts`, '--reporter=default', ...args], {
     cwd: process.cwd(),
     env: { ...env, TMPDIR: tmp, TMP: tmp, TEMP: tmp },
     encoding: 'utf8',
     timeout: 60_000,
   });
-  return { status: child.status, output: `${child.stdout}${child.stderr}`, left: fs.readdirSync(tmp) };
+  return { status: child.status, output: stripVTControlCharacters(`${child.stdout}${child.stderr}`), left: fs.readdirSync(tmp) };
 }
 
 describe('the temporary folder of a test file', () => {
