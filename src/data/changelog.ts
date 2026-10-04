@@ -13,6 +13,7 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+      'A message to an agent idle at its prompt goes in again, where it could wait for hours: the answer its Dashboard panel gives the terminal when the CLI asks for its colours was read as something typed, and Tars waited for someone to send or clear a field that was empty. An agent no longer shows as working because of a message that has not gone in, and an agent whose message to another still waits three minutes on is told again why, and that only someone at that terminal can end the wait.',
     ],
   },
   {
