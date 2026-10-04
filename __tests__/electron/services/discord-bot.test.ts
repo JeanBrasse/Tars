@@ -34,6 +34,16 @@ import * as path from 'node:path';
  * The bot, the core, initAgentPty and the writer are the real ones. Faked:
  * discord.js (a client that records what it is given and sends), node-pty, the
  * window, Discord's REST answer, and Claude's usage stats.
+ *
+ * How the harness itself can fail: discord.js does not wait for a listener,
+ * and the bot's listener voids its work: nothing says when a message is done
+ * with. A fixed 450 ms stood for it, and a cold start takes the fake shell's
+ * prompt (20 ms) plus the quiet shellReady waits for (SHELL_QUIET_MS, 150 ms)
+ * plus the files it writes: on a slow CI runner it answered after the 450 ms,
+ * so its test saw nothing, and its answer landed in the next test's log. So a
+ * message now names the replies it is owed and discord() waits for them (every
+ * reply is the last thing its flow does), and each test keeps its own log,
+ * which a late answer cannot reach.
  */
 
 const { tmpHome } = vi.hoisted(() => ({
@@ -156,13 +166,30 @@ function liveCli(agentId: string): FakePty {
   return terminal;
 }
 
-const settle = () => new Promise(resolve => setTimeout(resolve, 450));
+/**
+ * How long a message is watched, after the replies it is owed, for one it is
+ * not: the 450 ms every message used to wait. Only a reply that should not
+ * come can be missed in it, never one that should: those are waited for, up to
+ * REPLY_WAIT_MS.
+ */
+const QUIET_MS = 450;
+/** Under the test's own 5 s, so a reply that never comes fails with the count. */
+const REPLY_WAIT_MS = 4000;
 const typed = () => spawned.map(t => t.write.mock.calls.map(c => String(c[0])).join('')).join('');
 const said = (channel?: string) => dc.sent.filter(s => !channel || s.channel === channel).map(s => s.content);
 
-/** A message as discord.js hands it to the bot. */
-async function discord(m: { author?: string; bot?: boolean; content: string; channelId?: string; direct?: boolean }): Promise<void> {
+/**
+ * A message as discord.js hands it to the bot, and the `replies` it is owed.
+ * Resolves once the bot has sent exactly that many to it, then been quiet for
+ * QUIET_MS. Each reply is the last thing its flow does, so the flow is over
+ * then, however slowly a cold start reached its shell. A reply goes into the
+ * log of the test that sent the message: one sent after that test has ended
+ * cannot show up in the next one.
+ */
+async function discord(m: { author?: string; bot?: boolean; content: string; channelId?: string; direct?: boolean; replies: number }): Promise<void> {
   const channelId = m.channelId ?? (m.direct ? 'D-NOAH' : 'C-TEAM');
+  const log = dc.sent;
+  const got: string[] = [];
   const message = {
     author: { id: m.author ?? NOAH, bot: !!m.bot },
     content: m.content,
@@ -170,12 +197,17 @@ async function discord(m: { author?: string; bot?: boolean; content: string; cha
     guildId: m.direct ? null : 'G-1',
     channel: {
       send: async (options: { content: string; allowedMentions?: unknown }) => {
-        dc.sent.push({ channel: channelId, content: options.content, allowedMentions: options.allowedMentions });
+        got.push(options.content);
+        log.push({ channel: channelId, content: options.content, allowedMentions: options.allowedMentions });
       },
     },
   };
   for (const handler of dc.handlers.get('messageCreate') ?? []) handler(message);
-  await settle();
+  await vi.waitFor(() => {
+    if (got.length < m.replies) throw new Error(`"${m.content}" got ${got.length} of the ${m.replies} replies it is owed: ${JSON.stringify(got)}`);
+  }, { timeout: REPLY_WAIT_MS, interval: 10 });
+  await new Promise(resolve => setTimeout(resolve, QUIET_MS));
+  expect(got, `the replies to "${m.content}"`).toHaveLength(m.replies);
 }
 const mention = (text: string) => `<@${BOT_ID}> ${text}`;
 
@@ -187,7 +219,7 @@ beforeEach(() => {
   agents.clear();
   ptyProcesses.clear();
   spawned.length = 0;
-  dc.handlers.clear(); dc.sent.length = 0; dc.logins.length = 0; dc.destroyed = 0; dc.loginFails = false; dc.stats = null;
+  dc.handlers.clear(); dc.sent = []; dc.logins.length = 0; dc.destroyed = 0; dc.loginFails = false; dc.stats = null;
   settings = baseSettings();
   saves = 0;
   seedFleet();
@@ -201,15 +233,15 @@ afterEach(() => {
 describe('who the Discord bot answers', () => {
   it('answers an allowed member who mentions it, and signs in with the saved token', async () => {
     expect(dc.logins).toEqual(['dc-bot-token']);
-    await discord({ content: mention('help') });
+    await discord({ content: mention('help'), replies: 1 });
     expect(said('C-TEAM')).toHaveLength(1);
     expect(said('C-TEAM')[0]).toContain('👑 **Tars Bot**');
   });
 
   it('tells a stranger its ID in a direct message and when it mentions the bot, and ignores it otherwise', async () => {
-    await discord({ author: STRANGER, content: 'hello', direct: true });
-    await discord({ author: STRANGER, content: 'just chatting' });
-    await discord({ author: STRANGER, content: mention('status') });
+    await discord({ author: STRANGER, content: 'hello', direct: true, replies: 1 });
+    await discord({ author: STRANGER, content: 'just chatting', replies: 0 });
+    await discord({ author: STRANGER, content: mention('status'), replies: 1 });
     expect(said()).toEqual([
       `⛔ This bot only answers the Discord users allowed in Tars Settings > Discord. Your Discord user ID is ${STRANGER}.`,
       `⛔ This bot only answers the Discord users allowed in Tars Settings > Discord. Your Discord user ID is ${STRANGER}.`,
@@ -219,34 +251,34 @@ describe('who the Discord bot answers', () => {
 
   it('answers nobody while the allowed list is empty', async () => {
     settings.discordAllowedUserIds = [];
-    await discord({ content: mention('status') });
+    await discord({ content: mention('status'), replies: 1 });
     expect(said()[0]).toContain(`Your Discord user ID is ${NOAH}`);
     expect(said()).toHaveLength(1);
   });
 
   it('leaves a member\'s channel message alone unless it mentions the bot, and answers every direct message', async () => {
-    await discord({ content: 'status' });
+    await discord({ content: 'status', replies: 0 });
     expect(said()).toEqual([]);
-    await discord({ content: 'status', direct: true });
+    await discord({ content: 'status', direct: true, replies: 1 });
     expect(said('D-NOAH')[0]).toContain('📊 **Agents Status**');
   });
 
   it('answers every channel message of a member when Require @mention is off, and still ignores a stranger there', async () => {
     settings.discordRequireMention = false;
-    await discord({ content: 'status' });
-    await discord({ author: STRANGER, content: 'status' });
+    await discord({ content: 'status', replies: 1 });
+    await discord({ author: STRANGER, content: 'status', replies: 0 });
     expect(said()).toHaveLength(1);
     expect(said()[0]).toContain('📊 **Agents Status**');
   });
 
   it('never answers a bot, itself included', async () => {
-    await discord({ bot: true, content: mention('status') });
+    await discord({ bot: true, content: mention('status'), replies: 0 });
     expect(said()).toEqual([]);
   });
 
   it('saves the channel it answers from, once', async () => {
-    await discord({ content: mention('help') });
-    await discord({ content: mention('help') });
+    await discord({ content: mention('help'), replies: 1 });
+    await discord({ content: mention('help'), replies: 1 });
     expect(settings.discordChannelId).toBe('C-TEAM');
     expect(saves).toBe(1);
   });
@@ -255,8 +287,8 @@ describe('who the Discord bot answers', () => {
 describe('what the Discord bot says', () => {
   it('reports the fleet in Discord\'s bold, the orchestrator first, a project per line', async () => {
     agents.get('agent-orch')!.status = 'running';
-    await discord({ content: mention('status') });
-    await discord({ content: mention('projects') });
+    await discord({ content: mention('status'), replies: 1 });
+    await discord({ content: mention('projects'), replies: 1 });
     const [status, projects] = said();
     expect(status).toContain('🟢 **Running (2):**');
     expect(status.indexOf('👑 **Lead**')).toBeLessThan(status.indexOf('🤖 **Dune**'));
@@ -267,7 +299,7 @@ describe('what the Discord bot says', () => {
 
   it('prices usage with the table Telegram uses', async () => {
     dc.stats = { modelUsage: { 'claude-opus-4-5-20251101': { inputTokens: 1_000_000, outputTokens: 100_000 } }, totalSessions: 3 };
-    await discord({ content: mention('usage') });
+    await discord({ content: mention('usage'), replies: 1 });
     expect(said()[0]).toContain('💰 **Total Cost:** $7.50');
     expect(said()[0]).toContain('🟣 Opus 4.5: $7.50');
     expect(said()[0]).toContain('📝 3 sessions');
@@ -279,7 +311,7 @@ describe('what the Discord bot says', () => {
     const transcript = transcriptPath(rest.projectPath, rest.resumableSessionId);
     fs.mkdirSync(path.dirname(transcript), { recursive: true });
     fs.writeFileSync(transcript, '{"type":"user"}\n');
-    await discord({ content: mention('start rest Measure the Usage page') });
+    await discord({ content: mention('start rest Measure the Usage page'), replies: 1 });
     expect(said()).toEqual(['🚀 Started **Rest**\n\n🐸 Task: Measure the Usage page']);
     expect(typed()).toContain(`--resume '0b7f3c1e-5d2a-4e8b-9c6f-1a2b3c4d5e6f'`);
     expect(typed()).toContain(`-- 'Measure the Usage page'`);
@@ -288,21 +320,21 @@ describe('what the Discord bot says', () => {
 
   it('stops an agent', async () => {
     liveCli('agent-dune');
-    await discord({ content: mention('stop dune') });
+    await discord({ content: mention('stop dune'), replies: 1 });
     expect(said()).toEqual(['🛑 Stopped **Dune**']);
     expect(agents.get('agent-dune')!.status).toBe('idle');
   });
 
   it('types anything else into the orchestrator, as from Discord, with the channel to answer in', async () => {
     liveCli('agent-orch');
-    await discord({ content: mention('what is everyone doing?') });
+    await discord({ content: mention('what is everyone doing?'), replies: 1 });
     expect(said()).toEqual(['👑 Super Agent is processing...']);
     expect(typed()).toContain('Message from Discord: ');
     expect(typed()).toContain('[FROM DISCORD channel_id=C-TEAM - Use send_discord MCP tool with channel_id="C-TEAM" to respond!] what is everyone doing?');
   });
 
   it('never pings, whatever the text holds', async () => {
-    await discord({ content: mention('start rest @everyone look at this') });
+    await discord({ content: mention('start rest @everyone look at this'), replies: 1 });
     expect(dc.sent.length).toBeGreaterThan(0);
     for (const s of dc.sent) expect(s.allowedMentions).toEqual({ parse: [] });
   });
@@ -311,7 +343,7 @@ describe('what the Discord bot says', () => {
 describe('a thread or a forum post (gate of #200)', () => {
   it('answers a mention in a thread in that thread, and send_discord can post there after (9)', async () => {
     dc.channels.add('T-THREAD');
-    await discord({ content: mention('status'), channelId: 'T-THREAD' });
+    await discord({ content: mention('status'), channelId: 'T-THREAD', replies: 1 });
 
     expect(said('T-THREAD').join('\n')).toMatch(/Lead/);
     expect(said('C-TEAM')).toEqual([]);
@@ -326,7 +358,7 @@ describe('what Tars posts to Discord on its own (send_discord)', () => {
   it('posts to the channel Settings keeps, and to one an allowed member wrote from', async () => {
     settings.discordChannelId = 'C-TEAM';
     expect(await sendDiscordMessage('to the team', settings, 'C-TEAM')).toEqual({ ok: true });
-    await discord({ content: 'hi', direct: true });
+    await discord({ content: 'hi', direct: true, replies: 1 });
     expect(await sendDiscordMessage('to Noah', settings, 'D-NOAH')).toEqual({ ok: true });
     expect(said('C-TEAM')).toContain('to the team');
     expect(said('D-NOAH')).toContain('to Noah');
@@ -504,7 +536,7 @@ describe('QA, gate of #193: the guards the tests above did not hold', () => {
 
   it('leaves no channel behind for a stranger: send_discord refuses it, and still posts where a member wrote', async () => {
     settings.discordChannelId = 'C-TEAM';
-    await discord({ author: STRANGER, content: mention('status'), channelId: 'C-OTHER' });
+    await discord({ author: STRANGER, content: mention('status'), channelId: 'C-OTHER', replies: 1 });
     // Its refusal, where it addressed the bot, and nothing else.
     expect(said('C-OTHER')).toHaveLength(1);
     expect(await sendDiscordMessage('to the stranger', settings, 'C-OTHER')).toMatchObject({ ok: false, status: 403 });
@@ -527,7 +559,7 @@ describe('QA, gate of #193: the guards the tests above did not hold', () => {
 
   it('takes no other mention for its own: another member, @everyone, @here or a role', async () => {
     for (const content of [`<@${STRANGER}> status`, '@everyone status', '@here status', '<@&222222222222222222> status']) {
-      await discord({ content });
+      await discord({ content, replies: 0 });
     }
     expect(said()).toEqual([]);
     expect(typed()).toBe('');
@@ -535,16 +567,16 @@ describe('QA, gate of #193: the guards the tests above did not hold', () => {
 
   it('requires a mention when the setting was never saved, and takes the nickname form of one', async () => {
     delete (settings as Partial<AppSettings>).discordRequireMention;
-    await discord({ content: 'status' });
+    await discord({ content: 'status', replies: 0 });
     expect(said()).toEqual([]);
-    await discord({ content: `<@!${BOT_ID}> status` });
+    await discord({ content: `<@!${BOT_ID}> status`, replies: 1 });
     expect(said()).toHaveLength(1);
     expect(said()[0]).toContain('**Agents Status**');
   });
 
   it('forgets, with a new token, the channels the last one answered in', async () => {
-    await discord({ content: mention('help'), channelId: 'C-OTHER' });
-    await discord({ content: mention('help'), channelId: 'C-TEAM' });
+    await discord({ content: mention('help'), channelId: 'C-OTHER', replies: 1 });
+    await discord({ content: mention('help'), channelId: 'C-TEAM', replies: 1 });
     expect(await sendDiscordMessage('before', settings, 'C-OTHER')).toEqual({ ok: true });
     settings.discordBotToken = 'dc-bot-token-2';
     initDiscordBot(() => settings, () => { saves++; }, null);

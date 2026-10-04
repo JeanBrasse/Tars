@@ -1002,6 +1002,27 @@ export async function searchHermesSessions(
   return { success: true, hits };
 }
 
+/**
+ * A session's parent, from GET /api/sessions/{id}: null for a root. The
+ * search walks a hit's parents only up to a branch or a delegate edge, so a
+ * caller that must know a session's whole ancestry reads it further up, one
+ * parent at a time (memory-hub.ts). A session the gateway cannot give, or an
+ * answer that is not a session, is a failure, never a root.
+ */
+export async function fetchHermesSessionParent(
+  conn: HermesConnection,
+  sessionId: string,
+): Promise<{ success: true; parentSessionId: string | null } | { success: false; error: string; needsSignIn?: boolean }> {
+  const { status, body } = await gatewayCall(conn, `/api/sessions/${encodeURIComponent(sessionId)}`);
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes');
+  const session = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : null;
+  const parent = session?.parent_session_id;
+  if (!session || (parent !== undefined && parent !== null && typeof parent !== 'string')) {
+    return { success: false, error: 'Hermes answered something that is not a session' };
+  }
+  return { success: true, parentSessionId: typeof parent === 'string' && parent ? parent : null };
+}
+
 /** Which memory provider the gateway has active, and how big its files are. */
 export async function fetchHermesMemoryState(conn: HermesConnection) {
   const { status, body } = await gatewayCall(conn, '/api/memory');

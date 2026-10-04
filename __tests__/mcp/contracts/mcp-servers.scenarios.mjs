@@ -7,6 +7,9 @@
  * A scenario: { name, tool, args, meta?, tars?: [answers], settings? }.
  * An answer: { status, json } | { status, raw } | { status } (no body) |
  * { drop: true } (the socket is destroyed) | { hold: true } (never answered).
+ * A call the server may leave unanswered past the harness's 90 s is the last of
+ * its variant: once the held socket closes, its late answer would otherwise be
+ * recorded as a notification of the next call.
  * `settings` is app-settings.json for that call (null: no file); without it,
  * the variant's.
  */
@@ -87,9 +90,11 @@ const orchestratorAgent = [
   { name: "start_agent, held without a reason, no name", tool: "start_agent", args: { id: "a1", prompt: "Run" }, tars: [ok({ success: true, mode: "message", held: true, agent: { id: "a1", status: "running" } })] },
   { name: "start_agent, error", tool: "start_agent", args: { id: "a1", prompt: "Run" }, tars: [fail(409, { error: "Launch in progress" })] },
 
-  { name: "stop_agent", tool: "stop_agent", args: { id: "a1" }, tars: [ok({ success: true })] },
-  { name: "stop_agent, cross-project", tool: "stop_agent", args: { id: "b1", allowCrossProject: true }, tars: [ok({ success: true })] },
-  { name: "stop_agent, error", tool: "stop_agent", args: { id: "a1" }, tars: [fail(404, { error: "Agent not found" })] },
+  { name: "stop_agent", tool: "stop_agent", args: { id: "a1", reason: "frozen on a file read" }, tars: [ok({ success: true })] },
+  { name: "stop_agent, no reason", tool: "stop_agent", args: { id: "a1" } },
+  { name: "stop_agent, already stopped", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [ok({ success: true, alreadyStopped: true, stoppedBy: "Tars-Orchestrator", stopReason: "frozen on a file read" })] },
+  { name: "stop_agent, cross-project", tool: "stop_agent", args: { id: "b1", reason: "done", allowCrossProject: true }, tars: [ok({ success: true })] },
+  { name: "stop_agent, error", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [fail(404, { error: "Agent not found" })] },
 
   { name: "send_message, no text", tool: "send_message", args: { id: "a1" } },
   { name: "send_message, starts an idle agent", tool: "send_message", args: { id: "a1", message: "Hello" }, tars: [started({ previousStatus: "completed" })] },
@@ -111,6 +116,7 @@ const orchestratorAgent = [
   { name: "wait_for_agent, blocked on a permission", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "waiting", waitingReason: "permission" }), ok({ agent: dune })] },
   { name: "wait_for_agent, asking a question", tool: "wait_for_agent", args: { id: "a1" }, tars: [asking, ok({ agent: dune })] },
   { name: "wait_for_agent, another status", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped" }), ok({ agent: dune })] },
+  { name: "wait_for_agent, stopped with a reason", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped", stoppedBy: "Tars-Orchestrator", stopReason: "frozen on a file read" }), ok({ agent: dune })] },
   { name: "wait_for_agent, times out", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [ok({ status: "running", timeout: true }), ok({ agent: dune })] },
   { name: "wait_for_agent, the agent lookup fails", tool: "wait_for_agent", args: { id: "a1" }, tars: [done("x"), fail(404, { error: "Agent not found" })] },
   { name: "wait_for_agent, Tars never answers: its segment's 31 s", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [hold] },
@@ -208,7 +214,7 @@ const orchestratorShared = [
   { name: "list_agents, the shared token", tool: "list_agents", tars: [ok({ agents: [dune, far] })] },
   { name: "list_agents all, no identity", tool: "list_agents", args: { all: true }, tars: [ok({ agents: [dune, far] })] },
   { name: "create_agent, no project anywhere", tool: "create_agent", args: { name: "Worker" } },
-  { name: "stop_agent, the shared token", tool: "stop_agent", args: { id: "a1" }, tars: [ok({ success: true })] },
+  { name: "stop_agent, the shared token", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [ok({ success: true })] },
 ];
 
 const orchestratorProjectOnly = [
@@ -344,6 +350,7 @@ const vaultAgent = [
   { name: "vault, the connection drops", tool: "vault_delete_document", args: { document_id: "d1" }, tars: [drop] },
   { name: "vault, an error whose body is null", tool: "vault_delete_document", args: { document_id: "d1" }, tars: [fail(500, null)] },
   { name: "vault, an empty answer", tool: "vault_delete_document", args: { document_id: "d1" }, tars: [raw(200, "")] },
+  { name: "vault_get_document, Tars never answers", tool: "vault_get_document", args: { document_id: "d1" }, tars: [hold] },
 ];
 
 const vaultNoName = [
@@ -410,6 +417,7 @@ const socialdata = [
   { name: "twitter_get_user_tweets, tweets only", tool: "twitter_get_user_tweets", args: { user_id: "44", include_replies: false }, tars: [ok({ tweets: [tweet()] })] },
   { name: "twitter_get_user_tweets, none", tool: "twitter_get_user_tweets", args: { user_id: "44" }, tars: [ok({ tweets: [] })] },
   { name: "twitter_get_user_tweets, error", tool: "twitter_get_user_tweets", args: { user_id: "44" }, tars: [fail(402, {})] },
+  { name: "twitter_search, SocialData never answers", tool: "twitter_search", args: { query: "tars" }, tars: [hold] },
 ];
 
 // ------------------------------------------------------------------------- x
@@ -442,6 +450,7 @@ const x = [
   { name: "x_delete_tweet, not deleted", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [ok({ data: { deleted: false } })] },
   { name: "x_delete_tweet, posting is off", tool: "x_delete_tweet", args: { tweet_id: "2001" }, settings: { ...X, xPostingEnabled: false } },
   { name: "x_delete_tweet, error", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [fail(403, { detail: "Not yours" })] },
+  { name: "x_post_tweet, X never answers", tool: "x_post_tweet", args: { text: "Hi" }, tars: [hold] },
 ];
 
 // -------------------------------------------------------------------- telegram
@@ -504,6 +513,7 @@ const telegram = [
   { name: "send_telegram_document, a .env.local", tool: "send_telegram_document", args: { document_path: "<home>/work/project/.env.local" } },
   { name: "send_telegram_document, a hard link into .tars-private", tool: "send_telegram_document", args: { document_path: "<home>/work/notes.txt" } },
   { name: "send_telegram_document, no chat anywhere", tool: "send_telegram_document", args: { document_path: "<home>/work/report.pdf" }, settings: { telegramBotToken: "123:tok" } },
+  { name: "send_telegram_photo, Telegram never answers", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [hold] },
 ];
 
 // --------------------------------------------------------------------- servers
@@ -532,7 +542,14 @@ export const SERVERS = [
   },
   {
     id: "telegram", dir: "mcp-telegram",
-    variants: [{ name: "an agent, Telegram configured", env: AGENT_ENV, settings: TG, setup: telegramFiles, scenarios: telegram }],
+    variants: [
+      { name: "an agent, Telegram configured", env: AGENT_ENV, settings: TG, setup: telegramFiles, scenarios: telegram },
+      // A variant of its own: each call Telegram leaves unanswered is the last of its variant.
+      {
+        name: "an agent, Telegram configured, and Telegram never answers a message", env: AGENT_ENV, settings: TG, setup: telegramFiles,
+        scenarios: [{ name: "send_telegram, Telegram never answers", tool: "send_telegram", args: { message: "Hi" }, tars: [hold] }],
+      },
+    ],
   },
   {
     id: "kanban", dir: "mcp-kanban",

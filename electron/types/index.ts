@@ -56,7 +56,18 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** Set by a stop (core/agent-stop.ts) until the agent gets a terminal again:
+   *  "you", "Tars", or the name of the agent that asked. */
+  stoppedBy?: string;
+  /** ISO. */
+  stoppedAt?: string;
+  /** One line, as the caller gave it; none from a window that gave none. */
+  stopReason?: string;
+  /** ISO: running, yet its transcript has had no write since then (30 minutes
+   *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
+   *  a write or by any other status. Not saved. */
+  stalledSince?: string;
   projectPath: string;
   secondaryProjectPath?: string;
   worktreePath?: string;
@@ -158,6 +169,21 @@ export interface AgentStatus {
    * or after an app restart that followed one.
    */
   forkedFromSessionId?: string;
+  /**
+   * The Claude account this agent's CLI was last launched on
+   * (DESIGN-COMPTES-CLAUDE.md, B3). Absent: account 1, as before the option.
+   */
+  claudeAccountId?: ClaudeAccountId;
+  /**
+   * The account the agent is held to, whatever the usage. Absent: automatic.
+   * Set from the agent card through claude-accounts:set-agent-account.
+   */
+  claudeAccountPin?: ClaudeAccountId;
+  /**
+   * The last time Tars moved this agent to another account on its own, and
+   * why: what its card says ("moved by Tars"). Absent: never moved.
+   */
+  claudeAccountMove?: ClaudeAccountMove;
   /** Session id of the most recently killed PTY's claude session. Its hooks
    *  may still be in flight after the kill; any post carrying this id is
    *  stale and must be ignored (tombstone). */
@@ -625,4 +651,115 @@ export interface AgentMessageWaiting {
   waiting: number;
   /** Who they are from, each named once, oldest first. */
   from: string[];
+}
+
+/**
+ * Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6).
+ *
+ * An account is a Claude Code configuration directory, signed in once by
+ * Claude Code itself (`claude auth login`). Tars chooses which directory a
+ * CLI starts with, and never reads, copies or stores a credential.
+ *
+ * 'default' is ~/.claude, launched without CLAUDE_CONFIG_DIR. Others are
+ * 'acct-' and six random hex digits, drawn afresh for each new account.
+ */
+export type ClaudeAccountId = string;
+
+export interface ClaudeAccount {
+  id: ClaudeAccountId;
+  /** Chosen by the user, 1 to 40 characters. */
+  label: string;
+  /**
+   * ~/.claude-accounts/<id>, the home resolved once: derived from the id,
+   * never read from the registry file, and passed exactly as it is, since
+   * Claude Code names the keychain item after this string, not after the
+   * folder it resolves to. null for 'default'.
+   */
+  configDir: string | null;
+  enabled: boolean;
+}
+
+export interface ClaudeAccountsSettings {
+  /** The option. false by default: with it off nothing changes for anyone. */
+  enabled: boolean;
+  /** In order of preference. 'default' is always there. At most 5. */
+  accounts: ClaudeAccount[];
+  /** Percent, whole numbers from 50 to 100. Defaults 90 and 95. */
+  fiveHourThreshold: number;
+  weeklyThreshold: number;
+}
+
+export interface ClaudeAccountWindow {
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
+}
+
+/** One account's 5 h and weekly counters, as the Usage page shows them (claude:getData). */
+export interface ClaudeAccountCounters {
+  accountId: ClaudeAccountId;
+  label: string;
+  /** null when no status line has reported it, or its reset has passed. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of the status line's last report on that account. */
+  updatedAt: number | null;
+}
+
+export interface ClaudeAccountState extends ClaudeAccount {
+  /** From `claude auth status`. null until it has answered. */
+  signedIn: boolean | null;
+  email: string | null;
+  subscriptionType: string | null;
+  /** Last reported by a status line on this account; null when never seen or reset. */
+  fiveHour: ClaudeAccountWindow | null;
+  sevenDay: ClaudeAccountWindow | null;
+  /** Epoch ms of that report. */
+  updatedAt: number | null;
+  /** Epoch seconds: a limit was hit, the account is skipped until then. */
+  blockedUntil: number | null;
+  /** Agents whose CLI runs on it now. */
+  agentIds: string[];
+  /** A sentence for the page: why the last sign-in or status check did not work. */
+  error: string | null;
+}
+
+export interface ClaudeAccountsView {
+  settings: ClaudeAccountsSettings;
+  accounts: ClaudeAccountState[];
+  /**
+   * Set when ~/.tars-private/claude-accounts.json is there and does not read:
+   * the view shows account 1 alone, and every change is refused until the
+   * file is fixed or removed, so the other accounts are not written over.
+   */
+  registryError: string | null;
+}
+
+/**
+ * Pushed on claude-accounts:agent-moved when Tars has moved an agent to
+ * another account on its own, and kept on the agent as claudeAccountMove.
+ * 'limit': the account hit that window's limit mid-turn; the agent was
+ * restarted on the same conversation and told to continue. 'threshold': the
+ * account was past its threshold for that window when a turn ended; nothing
+ * was cut. Sent when the launch on the new account is made.
+ */
+export interface ClaudeAccountMove {
+  agentId: string;
+  from: ClaudeAccountId;
+  to: ClaudeAccountId;
+  reason: 'limit' | 'threshold';
+  window: 'fiveHour' | 'sevenDay';
+  /** The window's use on `from` when the move was decided; 100 for a limit. null when not measured. */
+  usedPercentage: number | null;
+  /** Epoch ms of the launch on `to`. */
+  at: number;
+}
+
+/** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
+export interface ClaudeAccountAgentChange {
+  agentId: string;
+  /** The account its CLI was last launched on; null is account 1. */
+  claudeAccountId: ClaudeAccountId | null;
+  /** The account it is held to; null is automatic. */
+  claudeAccountPin: ClaudeAccountId | null;
 }

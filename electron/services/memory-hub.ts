@@ -8,6 +8,7 @@ import {
   fetchHermesMemoryFile,
   HERMES_MEMORY_FILES,
   searchHermesSessions,
+  fetchHermesSessionParent,
   fetchHermesMemoryState,
   appendHermesMemory,
 } from './hermes-client';
@@ -336,6 +337,40 @@ export async function assembleDigest(opts: {
   return sections.join('\n\n');
 }
 
+/** How far up a hit's ancestry is read: past it, the hit is left out. */
+const MAX_HERMES_ANCESTORS = 20;
+
+/**
+ * Whether a session, or any session above it, is one `hide` names, read from
+ * the gateway one parent at a time up to a root. Unreadable ancestry counts as
+ * hidden: a parent the gateway cannot give, a cycle, or a chain longer than
+ * MAX_HERMES_ANCESTORS. The parents are read once per search, whatever the
+ * number of hits that share them.
+ */
+function hiddenAncestry(hermes: HermesConnection, hide: (sessionId: string) => boolean): (sessionId: string) => Promise<boolean> {
+  const parents = new Map<string, Promise<string | null | undefined>>();
+  const parentOf = (id: string) => {
+    let parent = parents.get(id);
+    if (!parent) {
+      parent = fetchHermesSessionParent(hermes, id).then(r => (r.success ? r.parentSessionId : undefined), () => undefined);
+      parents.set(id, parent);
+    }
+    return parent;
+  };
+  return async start => {
+    const seen = new Set<string>();
+    for (let id: string | null = start; id; ) {
+      if (hide(id)) return true;
+      if (seen.has(id) || seen.size >= MAX_HERMES_ANCESTORS) return true;
+      seen.add(id);
+      const parent = await parentOf(id);
+      if (parent === undefined) return true;
+      id = parent;
+    }
+    return false;
+  };
+}
+
 /** Federated search. Every source is optional and failures are per-source. */
 export async function searchMemory(opts: {
   query: string;
@@ -390,13 +425,23 @@ export async function searchMemory(opts: {
         // most, and keeps `limit` of what is left. A session Hermes compressed
         // is answered under its newest id, which was never recorded: its root
         // and its parent say whose it is.
+        //
+        // The gateway's lineage stops at a branch or a delegate edge, though: a
+        // session branched from a segment of the super chat that was compressed
+        // inside a turn, and so never recorded, has its own root and that
+        // segment as parent (the Audit's gate of #225). So the parents are read
+        // further up, to a root, and a hit whose ancestry reaches the super
+        // chat's, or cannot be read to its end, is left out.
         const hide = opts.hideHermesSession;
         const res = await searchHermesSessions(hermes, query, hide ? 100 : limit);
         if (res.success) {
+          const ancestryHidden = hide ? hiddenAncestry(hermes, hide) : undefined;
           let kept = 0;
           for (const hit of res.hits) {
+            if (kept >= limit) break;
             if (hide && [hit.sessionId, hit.lineageRoot, hit.parentSessionId].some((id, i) => (i === 0 || id) && hide(id))) continue;
-            if (kept++ >= limit) break;
+            if (ancestryHidden && hit.parentSessionId && await ancestryHidden(hit.parentSessionId)) continue;
+            kept++;
             hits.push({
               source: 'hermes',
               title: hit.title || hit.sessionId || 'Hermes session',
