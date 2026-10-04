@@ -23,7 +23,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *   $0.00. A deleted agent's task. Who handed each over; a stopped and an
  *   errored one. The averages per agent and per model over them.
  * - A project picked, then an agent: the rows and the averages follow.
- * - 24 hours: today's three. 12 weeks: an older task too.
+ * - 24 hours: today's three. 12 weeks: two older tasks too, one of them half
+ *   a minute before the 14 days start, which usage.tasks hands over (the page
+ *   asks a minute early) and the page leaves out of its 14 days.
  * - Past twenty: the rest on demand.
  *
  * The artefact: a screenshot per step, the last one in light, and values.json
@@ -101,6 +103,11 @@ test('the usage page lists each task with its own cost and its total, the averag
     task({ id: `task-chore-${i}`, agentId: 'worker', project: tars, source: 'tars', text: `chore ${i}`, startedAt: now - 144 * H + i * 10 * 60_000, minutes: 5, session: 'sess-chores', replies: [[20_000, 0]] });
   }
   task({ id: 'task-old', agentId: 'lead', project: tars, source: 'terminal', text: 'the old migration', startedAt: now - 40 * 24 * H, minutes: 60, session: 'sess-old', replies: [[1_000_000, 0]] });
+  // Half a minute before the 14 days start, at local midnight 13 days back:
+  // usage.tasks is asked a minute early and hands it over, and the page cuts it.
+  const today = new Date(now);
+  const windowStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 13).getTime();
+  task({ id: 'task-edge', agentId: 'lead', project: tars, source: 'terminal', text: 'just before the window', startedAt: windowStart - 30_000, minutes: 5, session: 'sess-edge', replies: [[10_000, 0]] });
   fs.writeFileSync(path.join(dir, 'task-ledger.jsonl'), lines.join('\n') + '\n');
   for (const [file, list] of transcripts) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -175,6 +182,8 @@ test('the usage page lists each task with its own cost and its total, the averag
       { name: 'gpt-5.3-codex', tasks: '1', counted: '0', cost: 'not counted', time: '15 min' },
     ]);
     await shot('01-fourteen-days');
+    await page.locator('[data-task-averages="agent"]').scrollIntoViewIfNeeded();
+    await stepShot(page, '01b-averages');
 
     // The rest on demand.
     await expect(panel).toContainText('20 of 21');
@@ -206,11 +215,11 @@ test('the usage page lists each task with its own cost and its total, the averag
     seen.day = await rows();
     await shot('04-twenty-four-hours');
     await page.getByRole('radio', { name: '12 weeks' }).click();
-    await expect(panel).toContainText('22 tasks', { timeout: 30_000 });
-    await panel.getByRole('button', { name: 'show 2 more' }).click();
-    await expect(panel.locator('[data-task-row]')).toHaveCount(22);
+    await expect(panel).toContainText('23 tasks', { timeout: 30_000 });
+    await panel.getByRole('button', { name: 'show 3 more' }).click();
+    await expect(panel.locator('[data-task-row]')).toHaveCount(23);
     seen.twelveWeeks = await rows();
-    expect((seen.twelveWeeks as Row[])[21].text).toBe('the old migration');
+    expect((seen.twelveWeeks as Row[]).slice(21).map(r => r.text)).toEqual(['just before the window', 'the old migration']);
 
     // Light, as its copy of the frame draws it.
     await page.evaluate(() => localStorage.setItem('tars-theme', 'light'));
