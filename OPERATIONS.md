@@ -688,6 +688,7 @@ work.
 | `~/.dorothy/skills-marketplace.json` | `electron/services/skills-marketplace.ts` | the last skills.sh listing, served first; delete it to fetch afresh |
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
+| `~/.dorothy/task-ledger.jsonl` | `electron/services/task-ledger.ts` | one line per task opened, turn and end; past 20 000 lines, rewritten to the newest 10 000 tasks |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
 | `~/.dorothy/acp-registry.json` | `electron/services/acp/registry.ts` | ACP launch commands, 24 h TTL |
@@ -1715,12 +1716,18 @@ cached to `~/.dorothy/model-catalog.json` with a 6 h TTL and conditional GET. Th
 order: fresh fetch → last-good copy on disk *whatever its age* → the compiled-in floor. A
 network failure must never zero out cost accounting.
 
+What each task cost (`usage:tasks`) is read from the same transcripts, per session, over the
+tasks `~/.dorothy/task-ledger.jsonl` records: who handed each one over, its parent, its sessions,
+when it started and ended. A task whose sessions left no transcript reads `costUSD: null`, not
+counted. SPECS.md, "Tasks and what each cost", has the rules.
+
 ```bash
 jq -s 'length' ~/.dorothy/usage-ledger.jsonl                 # turns recorded
 jq -r '.provider' ~/.dorothy/usage-ledger.jsonl | sort | uniq -c
 jq '.meta // {}' ~/.dorothy/model-catalog.meta.json
 jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the catalogue
 wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # status line sessions
+jq -c 'select(.t == "task") | .task | [.agentId, .source, .outcome, .text]' ~/.dorothy/task-ledger.jsonl | tail  # last tasks opened
 ```
 
 | Symptom | Cause |
@@ -1728,6 +1735,7 @@ wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # st
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
+| a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 
 ---

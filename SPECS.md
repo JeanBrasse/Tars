@@ -568,6 +568,20 @@ Bounded: appended per turn, trimmed to the last 12 000 lines once it passes 20 0
 
 A `claude` row is a turn the transcripts count as well: the Claude ACP adapter runs the claude binary, which persists its session under `~/.claude/projects`, so adding the two double-counts it. Codex, Gemini, Grok and opencode rows exist nowhere else.
 
+### Tasks and what each cost
+
+`electron/services/task-ledger.ts`, `task-cost.ts`, `task-watch.ts`; `~/.dorothy/task-ledger.jsonl`; IPC `usage:tasks`.
+
+A task is one piece of work in one agent: it opens at the first turn after a rest (`UserPromptSubmit`) and ends at the next rest, as `agent-watch.ts` reads one (idle, stopped, or waiting for the next prompt), or at `completed` or `error`. A permission prompt or a question is not a rest, and neither is a rest with background work still running (`pendingBackgroundWork`). The turns in between are counted in it, with every session they ran in.
+
+What started it is the hand-off before that turn, within 15 minutes, noted where Tars hands work over: a message written into a terminal (`writeProgrammaticInput`, its sender naming an agent, Tars or a chat), a session started with a task (`spawnAgentSession`), a chat's launch (`bot-core.ts`). The first turn after a hand-off takes it, whichever task that turn belongs to. A turn nobody handed is `terminal`, named by its prompt. A hand-off from an agent records it as the requester, and the requester's task open at that moment as the parent. A run over ACP (`/run-task`) is a task of its own with the tokens and cost the run reported. With each task: the agent's provider, model, Claude account, project and worktree at its start, and its text, one line of at most 200 characters.
+
+The file is append-only (a line per task opened, turn, end), rewritten to the newest 10 000 tasks once it passes 20 000 lines. A damaged line is skipped. A task still open at the next launch was cut short by a quit, and ends `stopped` at the last moment the ledger heard of it.
+
+Priced when asked, not when written: `readTaskCosts` reads each session's transcript (`<project or worktree, saved or real path>/<session>.jsonl`, through `transcriptRoots`) and its subagents' (`<session>/subagents/*.jsonl`), with the Usage page's own reader (`readUsageLines`) and prices (`pricingFor`, `costOf`). A reply belongs to the latest task of its session that had started when it was written; one written before them all (a resumed session copies its past in, with the old timestamps) belongs to none. The lines of one reply top each other up, as on the page. So over the same replies, the tasks add up to what the page bills (`task-cost.test.ts`, 16). A task none of whose sessions left a transcript (a CLI that writes none, a session never heard of) is not counted: `costUSD: null`, never 0.
+
+`usage:tasks({ sinceDays?, projectPath?, agentId? })` answers `TaskReport` (`src/types/electron.d.ts`): the tasks started in the period, newest first, each with `costUSD`, `tokens`, `byModel`, `durationMs` (null while it runs), `totalCostUSD` (its own and every task handed on from it, down the line, loops cut) and `totalPartial` (a task under it is not counted); `averages.byAgent` and `averages.byModel` (`tasks`, `counted`, mean `costUSD` over the counted, mean `durationMs` over the ended; a task's model is the one its replies spent most on, or the one it was launched on when nothing was counted); `notCounted`; and the agents' names as they are now.
+
 ### The statusline
 
 `electron/utils/statusline.ts` writes `~/.dorothy/statusline.sh` and points `statusLine` in `~/.claude/settings.json` at it. It renders context %, branch, session duration, lines changed and token throughput inside the Claude TUI, and caches quota data in `~/.dorothy/rate-limits.json`. Disabling it removes the script, the settings key and the cached quota so the Usage page stops showing a stale figure.
@@ -611,6 +625,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `bus.json` | `{ version: 1, savedAt, memberOverrides, threads[], messages[], deliveries[] }` | `services/bus-store.ts` | **Atomic**: the shared `writeAtomicSync`. Rooms are not stored: they are a view over the fleet, and the global room reads the overseer's own conversation rather than copying it |
 | `vault.db` + `vault/` | SQLite (WAL, FK on) + `vault/attachments/` | better-sqlite3 | transactional |
 | `usage-ledger.jsonl` | one `UsageEntry` per line | `recordUsage()` | append-only, self-trimming at 20 000 → 12 000 |
+| `task-ledger.jsonl` | one line per task opened (`{ t: 'task', task }`), turn (`{ t: 'turn', id, at, sessionId }`) and end (`{ t: 'end', id, at, outcome }`) | `services/task-ledger.ts` | append-only; past 20 000 lines, rewritten atomically to one `task` line for each of the newest 10 000 |
 | `observations/<encoded>.jsonl` | one `Observation` per line | `/api/memory/remember` | append-only, 1000 → 500 |
 | `model-catalog.json` + `.meta.json` | models.dev payload + `{ etag, fetchedAt }` | `writeCache()` | "a cache we cannot write is a slower app, not a broken one" |
 | `acp-registry.json` | `{ fetchedAt, agents }` | `writeCache()` | same |
