@@ -107,8 +107,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:get', id),
     list: () =>
       ipcRenderer.invoke('agent:list'),
-    stop: (id: string) =>
-      ipcRenderer.invoke('agent:stop', id),
+    stop: (id: string, reason?: string) =>
+      ipcRenderer.invoke('agent:stop', id, reason),
     remove: (id: string) =>
       ipcRenderer.invoke('agent:remove', id),
     sendInput: (params: { id: string; input: string }) =>
@@ -286,6 +286,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_: unknown, event: unknown) => callback(event);
       ipcRenderer.on('claude-accounts:agent-changed', listener);
       return () => ipcRenderer.removeListener('claude-accounts:agent-changed', listener);
+    },
+    onAgentMoved: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('claude-accounts:agent-moved', listener);
+      return () => ipcRenderer.removeListener('claude-accounts:agent-moved', listener);
     },
     setAgentAccount: (params: { agentId: string; accountId: string | null }) =>
       ipcRenderer.invoke('claude-accounts:set-agent-account', params),

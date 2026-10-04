@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import type { ClaudeSettings, ClaudeInfo, Skill, AppSettings } from '@/components/Settings/types';
 import { DEFAULT_APP_SETTINGS } from '@/components/Settings/constants';
+import { readClaudeData } from '@/hooks/useClaude';
 import { followErrorReports } from '@/lib/error-reports';
 
 /** The settings a bot fills in itself, which the page shows as they change. */
@@ -37,10 +38,9 @@ export const useSettings = () => {
 
     try {
       setLoading(true);
-      const [settingsData, infoData, claudeData, appSettingsData] = await Promise.all([
+      const [settingsData, infoData, appSettingsData] = await Promise.all([
         window.electronAPI.settings.get(),
         window.electronAPI.settings.getInfo(),
-        window.electronAPI.claude?.getData(),
         window.electronAPI.appSettings?.get(),
       ]);
 
@@ -52,9 +52,6 @@ export const useSettings = () => {
       if (infoData) {
         setInfo(infoData);
       }
-      if (claudeData?.skills) {
-        setSkills(claudeData.skills);
-      }
       if (appSettingsData) {
         setAppSettings(prev => ({
           ...prev,
@@ -63,6 +60,11 @@ export const useSettings = () => {
         }));
       }
       setError(null);
+      // Claude's data is only read here for the skills list, so the page does
+      // not wait for it, and asks for it only once its own settings are in:
+      // past main's one-minute memo it is a whole transcript scan, and asked
+      // first, it ran ahead of them.
+      void readClaudeData().then(claude => { if (claude?.skills) setSkills(claude.skills); });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {

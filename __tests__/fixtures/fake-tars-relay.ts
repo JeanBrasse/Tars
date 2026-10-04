@@ -5,8 +5,10 @@ import type { AddressInfo } from 'node:net';
  * A stand-in for the tars-relay Hermes plugin's dashboard routes (hermes-plugins/tars-relay), over real HTTP on the
  * loopback, for the tests of Tars's side of the relay. Its answers have the plugin's shapes: POST /send gives
  * {message_id}, GET /replies?after=N gives {replies: [...]}, POST /ack {through} gives {deleted}, GET /status gives
- * {configured, projects, ...}, POST /projects {projects} gives {projects: n} and refuses, as the plugin does, a list
- * holding a name that is not one word. Every route wants the dashboard's session token, as Hermes's dashboard does.
+ * {configured, projects, store_id, ...}, POST /projects {projects} gives {projects: n} and refuses, as the plugin does,
+ * a list holding a name that is not one word; /replies and /status carry the store's id, which recreate() changes as a
+ * store made again would, its numbers starting over at 1. Every route wants the dashboard's session token, as
+ * Hermes's dashboard does.
  *
  * `mode` makes it misbehave as a real gateway can: 'down' drops every connection, 'missing' answers 404 (no plugin
  * installed), 'unauthorized' 401, 'unconfigured' says so on /status and refuses /send with 503.
@@ -35,6 +37,10 @@ export interface FakeRelay {
   acks: number[];
   /** The project names Tars registered last; what /status lists. */
   projects: string[];
+  /** The store's id, in /replies and /status. */
+  storeId: string;
+  /** The plugin's store made again (reinstalled, moved, cleaned): a new id, nothing held, the numbers from 1. */
+  recreate(): void;
   /** Every request, in order: method and path. */
   calls: string[];
   /** Noah's reply to a message the relay sent, as the plugin keeps it. */
@@ -59,6 +65,12 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
     replies: [],
     acks: [],
     projects: [],
+    storeId: 'store-1',
+    recreate() {
+      fake.storeId = `store-${Number(fake.storeId.split('-')[1]) + 1}`;
+      fake.replies = [];
+      nextSeq = 1;
+    },
     calls: [],
     reply(to, text) {
       const sent = fake.sends.find((s) => s.messageId === to.messageId);
@@ -99,7 +111,7 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
       let body: Record<string, unknown> = {};
       try { body = raw ? JSON.parse(raw) : {}; } catch { return json(res, 400, { detail: 'not json' }); }
       if (route === 'status' && req.method === 'GET') {
-        return json(res, 200, { plugin: 'tars-relay', version: '1.0.0', configured: fake.mode !== 'unconfigured', sends_last_hour: fake.sends.length, waiting_replies: fake.replies.length, projects: [...fake.projects].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())) });
+        return json(res, 200, { plugin: 'tars-relay', version: '1.0.0', configured: fake.mode !== 'unconfigured', sends_last_hour: fake.sends.length, waiting_replies: fake.replies.length, projects: [...fake.projects].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())), store_id: fake.storeId });
       }
       if (route === 'send' && req.method === 'POST') {
         if (fake.mode === 'unconfigured') return json(res, 503, { detail: 'tars-relay has no user_id in its settings' });
@@ -119,7 +131,7 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
       }
       if (route === 'replies' && req.method === 'GET') {
         const after = Number(url.searchParams.get('after') ?? 0);
-        return json(res, 200, { replies: fake.replies.filter((r) => r.seq > after) });
+        return json(res, 200, { replies: fake.replies.filter((r) => r.seq > after), store_id: fake.storeId });
       }
       if (route === 'ack' && req.method === 'POST') {
         const through = Number(body.through);

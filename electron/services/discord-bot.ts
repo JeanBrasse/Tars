@@ -168,7 +168,7 @@ async function onMessage(
 
 type Say = (text: string) => Promise<unknown>;
 
-const DOTS: Record<StatusGroup, string> = { running: '🟢', waiting: '🟡', error: '🔴', idle: '⚪' };
+const DOTS: Record<StatusGroup, string> = { running: '🟢', waiting: '🟡', error: '🔴', stopped: '⏹', idle: '⚪' };
 const face = (a: AgentStatus) => TG_CHARACTER_FACES[a.character || ''] || '🤖';
 const faceOrCrown = (a: AgentStatus) => isSuperAgent(a) ? '👑' : face(a);
 

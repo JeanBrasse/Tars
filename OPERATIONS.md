@@ -281,7 +281,7 @@ Per surface the spec does two things:
 - `toHaveScreenshot()` against `e2e/__screenshots__/<name>.png` with
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
-The manifest is `e2e/surfaces.mjs`: **18 pages + 17 settings sections + 3 overlays = 38
+The manifest is `e2e/surfaces.mjs`: **18 pages + 18 settings sections + 3 overlays = 39
 surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms that
 their own spec photographs.
 
@@ -696,9 +696,10 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
+| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
 | `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
-Three files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
+Four files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
 every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
 to a CLI, and Tars makes it `0700` whichever write creates it:
 
@@ -706,7 +707,8 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 |---|---|---|
 | `~/.tars-private/overseer.json` | `electron/services/overseer.ts` | Noah's conversation with the super chat, plus the standing job id and the Chat's settings. Mode `0600`. Moved out of `~/.dorothy/overseer.json` at the first startup that finds it there: the copy is read back before the old file is deleted, an old file that will not parse is left exactly where it is and still read, and when both exist the private one wins and the old one is moved into the private directory rather than deleted |
 | `~/.tars-private/hermes-webhook-secret` | `electron/services/hermes-webhook-secret.ts` (`provisionWebhookSecret`) | the bearer for `POST /api/webhooks/hermes` and the only credential that opens it: 32 random bytes hex, mode `0600`, minted the first time Settings > Hermes asks for it. Moved out of `~/.dorothy/hermes-webhook-secret` at the first startup that finds it there, value unchanged, so Hermes keeps working; read back before the old file is deleted, and while it cannot be moved the webhook opens to nobody. An old file found beside the private one opens nothing and is deleted |
-| `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout` |
+| `~/.tars-private/overseer-hermes-sessions.json` | `electron/services/overseer-store.ts` (`rememberHermesSessions`) | the ids of the Hermes sessions the super chat's turns ran in, the last 5000, mode `0600`: `memory_search` leaves them out, so no agent is handed the super chat through Hermes |
+| `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
 *Hooks*. Memory files it reads live in `~/.claude/projects/<encoded-path>/memory/`, where the
@@ -1022,7 +1024,9 @@ Each provider writes to its own config, CLI-first with a file fallback:
 | `pi` | `~/.pi` | |
 
 Because the paths resolve through `process.resourcesPath`, **MCP registration only works in a
-packaged app**. In `npm run electron:dev` every server logs
+packaged app, installed**: one opened from its disk image or translocated by macOS
+(`isTransientAppPath`, `electron/utils/mcp-node.ts`) registers nothing, since its paths vanish at
+unmount, and its Settings setup says to move Tars to Applications. In `npm run electron:dev` every server logs
 `MCP server <name> not found at …` and is skipped. That is expected, not a bug.
 
 ### Verify and re-register
@@ -1495,8 +1499,9 @@ Hermes connection. On:
 - `ask_user` (a project's orchestrator only), the event reports and `send_telegram` (an orchestrator's) go through
   Hermes, as plain text. Your reply to one of them goes to that project's orchestrator (a question's, to the agent that
   asked); a message you start with `@<project name>` goes to that project's orchestrator. The plugin keeps `@name`
-  only for the projects Tars registered with it (each round, when they changed): a project whose folder name is not
-  one word cannot be written to that way, and any other `@word` goes to Hermes.
+  only for the projects Tars registered with it (each round, when they changed), under their names as you write
+  them: a space, @, colon or comma in a folder's name becomes a dash (`My Project` is `@My-Project`, in any case).
+  Any other `@word` goes to Hermes.
 - The event reports: an agent gone to error (once Tars is sure of it, 5 s), and, read with `gh pr list` every 5
   minutes in the GitHub repositories of the agents' projects (read-only, needs `gh` signed in), a PR merged and
   changes requested on an open PR. Events of one project within 2 minutes leave in one message; 40 messages a day at
@@ -1505,7 +1510,7 @@ Hermes connection. On:
 
 What it keeps, all in `~/.tars-private` (`0600`): `hermes-token` (the dashboard token, moved out of
 `~/.dorothy/hermes-connection.json` at the first read), `relay-sent.json` (what it sent: the list a reply is checked
-against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken),
+against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken, and the id of the plugin's store it came from),
 `user-questions.json`, `event-reports.json`, `github-watch.json`.
 
 ```bash
@@ -1523,7 +1528,7 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 |---|---|
 | Your reply got "Tars did not send the message you replied to" | the message was not on Tars's list: it came from someone else with the dashboard token, or from a Tars whose `~/.tars-private` was wiped |
 | "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
-| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name, the name is not one word, or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
+| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name (a space, @, colon or comma in it is written as a dash: `@my-project`), or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
 | An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
 
 ---
@@ -1618,6 +1623,14 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 | the wheel does nothing in a Claude panel, keys still work | `[terminal-mirror] <agent id>: repaints inline on an alternate screen it never left`. Claude Code left fullscreen without resetting the terminal; the agent carries `leftFullscreen: true`. The panel's notice offers restart, which brings a fullscreen session back on the same conversation |
 | Claude drawn at another width than its panel | the PTY predates the panel's size. `agent:resize` is remembered even with no PTY and a new PTY is spawned at it; a panel only sends its size when it changes |
 
+### An agent marked stalled
+
+`stalledSince` on an agent (and a `[Tars] ... has written nothing to its transcript for N minutes and runs no tool`
+note in its orchestrator) means: `running`, no transcript write for 30 minutes, nothing at work under its CLI. Check
+with `ps -A -o pid,ppid,stat,etime,command | grep -A12 claude` (a frozen claude has no live `caffeinate` under it,
+often an unreaped zombie, and 0 % CPU) and `sample <pid> 1`. If nothing moves: stop it, and start it again with a
+brief of what is already done. A long tool that runs no process (a web fetch, a subagent) is not caught by this rule.
+
 ### Agent stuck in the wrong directory
 
 `killStalePty()` compares the PTY's recorded `ptyCwd` against `worktreePath || projectPath` and
@@ -1628,7 +1641,8 @@ dispatch. To force it:
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:31415/api/agents/<id>?full=true" | jq '{projectPath, worktreePath, ptyCwd, ptyId}'
 # then stop and re-dispatch
-curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:31415/api/agents/<id>/stop
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"reason":"wrong working directory, re-dispatching"}' http://127.0.0.1:31415/api/agents/<id>/stop
 ```
 
 ### An agent restarted by itself after its model or effort changed
@@ -1689,8 +1703,16 @@ ps -Aww -o pid,args | grep -- '--append-system-prompt-file' | grep -v grep
 
 ### Fleet-wide log search
 
-The Logs page reads the retained output buffers in the main process (400 chunks per agent, ANSI
-stripped, capped at 500 result lines). It supports plain substring search or `/regex/flags`;
+The Logs page reads a Claude agent from its transcript first (the last 200 messages of its current
+or last session, `❯` what was typed, `⏺` the answer and each tool call, `⎿` a tool's answer): Tars runs
+Claude Code full screen, on the alternate screen, which keeps no history and is discarded at `/exit`, so
+the terminal alone kept only a stopped agent's launch lines. After those, and for every other CLI, it
+reads each agent as its terminal shows it, never as the raw stream split on line
+breaks (Claude Code draws with cursor moves, and that read as one run of glued words): a running
+agent from its terminal's xterm-headless mirror (history and screen, then the alternate screen
+while it is shown), any other from its retained output (400 chunks per agent) replayed into a
+headless terminal of its panel's size, kept until that output changes. Results are capped at 500
+lines. It supports plain substring search or `/regex/flags`;
 a bad regex falls back to a literal search rather than throwing.
 
 These buffers are **memory only**. Only the last 100 chunks per agent survive to
@@ -1822,6 +1844,9 @@ and crash the app. Any other stream error still rethrows.
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.
+They are created and removed with `node scripts/worktree.mjs` (`new`, `remove`, `prune`, `status`):
+a floor of 30 GB free, a cap of 20, `node_modules` as an APFS clone, and a cleanup that runs before
+every `new`. CLAUDE.md, Workflow Rule 6, says how and why (the disk filled on 2026-10-01).
 The real reason a naive `find . -name '*.test.ts' -not -path './node_modules/*'` returns 1432
 files while `vitest` collects 46 (~31×) is nested `node_modules` the top-level exclude misses:
 166 under `landing/` and 140 in each of the seven `mcp-*/` dirs; the two worktree trees add

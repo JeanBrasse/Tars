@@ -10,8 +10,10 @@ import { isSuperAgent } from '../utils';
  * project with "@project text", the same prefix the relay's plugin reads on Telegram; without one, it goes to the
  * fleet's orchestrator only when there is exactly one. Otherwise nobody gets it, and the sender gets the list.
  *
- * A project's name is its folder's, in any case. Two projects with the same folder name share it, and a message to
- * that name is answered with the list rather than guessed.
+ * A project's name is its folder's, in any case, written as one word: a space, an @, a colon or a comma in it becomes
+ * a dash ("o'neil project" is "@o'neil-project"), the form the relay sends and registers too, since nothing can be
+ * written after "@" past a space. Two projects with the same name share it, and a message to that name is answered
+ * with the list rather than guessed.
  */
 
 export type OrchestratorTarget =
@@ -29,10 +31,15 @@ export function projectName(projectPath: string): string {
   return path.basename(projectPath) || projectPath;
 }
 
-/** The names of the fleet's projects, sorted, once each path. */
+/** A project's name as the user writes it after "@": its folder's, a dash for each space, @, colon or comma. */
+export function projectWord(projectPath: string): string {
+  return projectName(projectPath).replace(/[\s@:,]/g, '-').slice(0, 64);
+}
+
+/** The names of the fleet's projects as the user writes them, sorted, once each path. */
 export function projectNames(agents: Map<string, AgentStatus>): string[] {
   const paths = new Set([...agents.values()].map(a => a.projectPath).filter(Boolean));
-  return [...paths].map(projectName).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return [...paths].map(projectWord).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
 /** The orchestrator of a project, never another project's. */
@@ -44,14 +51,14 @@ export function orchestratorOf(agents: Map<string, AgentStatus>, projectPath: st
 function projectsNamed(agents: Map<string, AgentStatus>, name: string): string[] {
   const wanted = name.toLowerCase();
   const paths = new Set([...agents.values()].map(a => a.projectPath).filter(Boolean));
-  return [...paths].filter(p => projectName(p).toLowerCase() === wanted);
+  return [...paths].filter(p => projectWord(p).toLowerCase() === wanted);
 }
 
 /** The orchestrator a project's name designates, for a message whose project is already parsed (the relay's). */
 export function orchestratorForProject(agents: Map<string, AgentStatus>, name: string, text: string): OrchestratorTarget {
   const named = projectsNamed(agents, name);
   if (named.length === 0) return { kind: 'unknown', name, projects: projectNames(agents) };
-  if (named.length > 1) return { kind: 'ambiguous', name, projects: named.map(projectName).sort() };
+  if (named.length > 1) return { kind: 'ambiguous', name, projects: named.map(projectWord).sort() };
   const orchestrator = orchestratorOf(agents, named[0]);
   return orchestrator
     ? { kind: 'found', orchestrator, projectPath: named[0], text }

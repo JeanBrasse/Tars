@@ -204,7 +204,7 @@ re-exported to Tailwind through `@theme inline`.
 | `status-running` | `#4CC38A` | `#1A7F37` | `--success` | Agent working |
 | `status-waiting` | `#E8C547` | `#9A6700` | `--warning` | Agent asking |
 | `status-error` | `#E5534B` | `#CF222E` | `--danger`, `--destructive` | Agent failed, destructive action |
-| `status-idle` | `#898989` | `#6B6B6B` | `--color-status-idle` → `--text-muted` | Agent spawned, doing nothing |
+| `status-idle` | `#898989` | `#6B6B6B` | `--color-status-idle` → `--text-muted` | Agent spawned, doing nothing, or stopped |
 
 Two colours are deliberately not what the Pencil frames drew:
 
@@ -406,19 +406,22 @@ drawn for it is unused.
 `surface` fill, 1px `border`, 2px radius, no shadow. An agent card
 (`AgentList/AgentManagementCard`) is: the agent's mark at 16, its name, and the
 status as a word in its tone, right-aligned; one line of task text, or the error
-reason in red; provider, model and branch as plain mono words, `claude · opus 5 ·
-main`; then the four word buttons, open, stop or start, edit, delete. Frame:
-`Agents · dark`.
+reason in red, or for a stopped agent who stopped it, when and why in
+`text-secondary`; provider, model and branch as plain mono words, `claude · opus 5 ·
+main`; then the four word buttons, open, stop or start, edit, delete. Frames:
+`Agents · dark`, `Agent stopped · who and why`.
 
 ### Terminal panes
 A 32px `surface` header (`TerminalsView/components/TerminalPanelHeader`): the
-agent's mark at 16, its name, its branch (or, in error, the reason in red), then
+agent's mark at 16, its name, its branch (or, in error, the reason in red, and
+stopped, who stopped it, when and why in `text-secondary`), then
 right of the gap the status as a word in its tone and `provider · model` in
 mono, `session` boxed as a selected segment (`secondary` fill, `border-accent`
 border), start or stop, a 26px fullscreen button (lucide `maximize-2`, and
 `minimize-2` while the pane fills the window), and the `···` menu with clear,
 and remove outside fullscreen. Frames: `Dashboard · dark`, `Agent error ·
-reason`, `Panel header · session and fullscreen`. xterm gets its palette
+reason`, `Panel header · session and fullscreen`, `Agent stopped · who and
+why`. xterm gets its palette
 as a JS object rather than from CSS variables, and there are two of them:
 `src/components/Terminal.tsx` draws on `#0D0B08`, while `TERMINAL_THEME` in
 `src/components/AgentWorld/constants.ts` (re-exported by `TerminalsView`) draws

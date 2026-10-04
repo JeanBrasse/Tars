@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { DndContext } from '@dnd-kit/core';
 import { useElectronAgents, useElectronFS, useElectronSkills } from '@/hooks/useElectron';
+import { panelAgentsKey } from './utils/panelAgentsKey';
 import { useMultiTerminal } from './hooks/useMultiTerminal';
 import { useTerminalGrid } from './hooks/useTerminalGrid';
 import { useTabManager } from './hooks/useTabManager';
@@ -206,18 +207,8 @@ export default function TerminalsView() {
     }
     return [];
   }, [agents, tabManager.isCustomTabActive, tabManager.isProjectTabActive, tabManager.activeCustomTab, tabManager.activeProjectPath]);
-  // NUL-joined, same reasoning as agentProjectPathsKey above: currentTask is
-  // free text (the prompt the agent was launched with), so a visible
-  // delimiter could in principle appear inside a field and fold two
-  // different agent lists into the same key. NUL is the one byte none of
-  // these fields can contain. `error` is in it because the panel header shows
-  // it: a field the panel reads and the key leaves out is a field that can
-  // change without the panel ever hearing of it. `name` and `role` for the
-  // same reason: the header draws the agent's mark from both.
-  const filteredAgentsKey = useMemo(
-    () => computedFilteredAgents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}\u0000${a.leftFullscreen}\u0000${a.ptyId}\u0000${a.name}\u0000${a.role}`).join('\u0000'),
-    [computedFilteredAgents]
-  );
+  // Which fields it reads, and why each: see panelAgentsKey.
+  const filteredAgentsKey = useMemo(() => panelAgentsKey(computedFilteredAgents), [computedFilteredAgents]);
   const filteredAgents = useMemo(
     () => computedFilteredAgents,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on filteredAgentsKey on purpose, see comment above

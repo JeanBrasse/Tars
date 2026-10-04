@@ -6,7 +6,7 @@ import { hermesRequest } from './hermes-client';
 import { usableHermesConnection } from './hermes-config';
 import { resolveHermesBaseUrl, sessionToken } from '../types/hermes';
 import { setReportChannel, type ReportChannel } from './event-reports';
-import { projectName } from './orchestrator-routing';
+import { projectWord as projectWordOf } from './orchestrator-routing';
 
 /**
  * The relay to the user's Telegram through their Hermes (DESIGN-RELAIS-HERMES-V2.md, step 2; Noah's decisions of
@@ -23,6 +23,8 @@ import { projectName } from './orchestrator-routing';
  * - While the relay is on, every POLL_MS: the plugin's status, the projects, what waits, then the replies, each
  *   handed once to the handler of what it answers (a question, a report, a Sentry request) or to the "@project"
  *   handler, and acked. A reply to a message Tars did not send reaches nobody, and the user is told.
+ * - Tars keeps the number of the last reply it took with the id of the plugin's store: a store made again (the plugin
+ *   reinstalled, moved, cleaned) numbers from 1 again, and Tars starts over with it rather than skip its replies.
  * - The plugin keeps "@name" for Tars only for the projects Tars registered with it: the fleet's names that are one
  *   word, told again whenever they are not the ones the plugin lists. Any other "@word" is Hermes's.
  * - Off means off: nothing sent, polled or acked, and the event reports have no channel.
@@ -143,7 +145,7 @@ function write(file: string, value: unknown): void {
 
 /** The project as the one word the plugin takes. */
 function projectWord(projectPath: string | undefined): string {
-  return projectPath ? projectName(projectPath).replace(/[\s@:,]/g, '-').slice(0, 64) : '';
+  return projectPath ? projectWordOf(projectPath) : '';
 }
 
 function setStatus(change: Partial<RelayStatus>): void {
@@ -364,14 +366,18 @@ export async function relayTick(now: number = Date.now()): Promise<void> {
 
     // Every reply the plugin still holds: one taken before an ack was lost comes back, and is acked, not handed over.
     let replies: PluginReply[] = [];
+    let storeId: string | undefined;
     try {
-      const held = await call('GET', 'replies?after=0');
-      replies = ((held.body as { replies?: PluginReply[] } | null)?.replies ?? []).slice().sort((a, b) => a.seq - b.seq);
+      const held = (await call('GET', 'replies?after=0')).body as { replies?: PluginReply[]; store_id?: unknown } | null;
+      replies = (held?.replies ?? []).slice().sort((a, b) => a.seq - b.seq);
+      storeId = typeof held?.store_id === 'string' && held.store_id ? held.store_id : undefined;
     } catch {
       return;
     }
     if (replies.length === 0) return;
-    let cursor = read<{ cursor?: number }>(FILES.cursor(), {}).cursor ?? 0;
+    const position = read<{ cursor?: number; storeId?: string }>(FILES.cursor(), {});
+    // Another store than the one the position was taken in: its numbers are its own, from 1.
+    let cursor = storeId && position.storeId !== storeId ? 0 : position.cursor ?? 0;
     for (const reply of replies) {
       if (reply.seq <= cursor) continue;
       try {
@@ -380,7 +386,7 @@ export async function relayTick(now: number = Date.now()): Promise<void> {
         console.error('[relay] a reply could not be handled:', err instanceof Error ? err.message : err);
       }
       cursor = reply.seq;
-      write(FILES.cursor(), { cursor });
+      write(FILES.cursor(), { cursor, storeId: storeId ?? position.storeId });
       setStatus({ lastReplyAt: new Date(now).toISOString() });
     }
     try {

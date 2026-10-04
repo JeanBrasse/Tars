@@ -41,11 +41,12 @@ export function findAgent(agents: Map<string, AgentStatus>, name: string): Agent
   return Array.from(agents.values()).find(a => a.name?.toLowerCase().includes(name) || a.id === name);
 }
 
-export type StatusGroup = 'running' | 'waiting' | 'error' | 'idle';
+export type StatusGroup = 'running' | 'waiting' | 'error' | 'stopped' | 'idle';
 const GROUPS: Array<[StatusGroup, string, (a: AgentStatus) => boolean]> = [
   ['running', 'Running', a => a.status === 'running'],
   ['waiting', 'Waiting', a => a.status === 'waiting'],
   ['error', 'Error', a => a.status === 'error'],
+  ['stopped', 'Stopped', a => a.status === 'stopped'],
   ['idle', 'Idle', a => a.status === 'idle' || a.status === 'completed'],
 ];
 

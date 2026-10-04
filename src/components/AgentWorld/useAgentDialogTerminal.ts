@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
+import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
 import { attachShiftEnterHandler, connectionLine, disposeTerminalSafely, keySender, passWheelToProgram, stripCursorSequences, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
 import { createXtermOptions, useTerminalTheme } from '@/lib/terminal-theme';
 
@@ -62,6 +63,10 @@ export function useAgentDialogTerminal({
 
       const { Terminal } = await import('xterm');
       const { FitAddon } = await import('xterm-addon-fit');
+      // The window may have closed while xterm loaded, which on a first open or
+      // under next dev takes a while: its element is gone, and opening the
+      // terminal on it threw "Terminal requires a parent element".
+      if (cancelled || !terminalRef.current) return;
 
       const term = new Terminal({
         ...createXtermOptions(),
@@ -202,11 +207,19 @@ export function useAgentDialogTerminal({
   useEffect(() => {
     if (!isElectron() || !window.electronAPI?.agent?.onOutput || !terminalReady || !agent?.id) return;
     agentIdRef.current = agent.id;
-    return window.electronAPI.agent.onOutput((event) => {
+    const unsubOutput = window.electronAPI.agent.onOutput((event) => {
       if (event.agentId === agent.id && xtermRef.current) {
         xtermRef.current.write(event.data);
       }
     });
+    // A move by Tars to another Claude account, said in the agent's window.
+    const unsubMove = onAgentMoveLine((agentId, line) => {
+      if (agentId === agent.id) xtermRef.current?.write(line);
+    });
+    return () => {
+      unsubOutput();
+      unsubMove();
+    };
   }, [terminalReady, agent?.id]);
 
   // Resize observer

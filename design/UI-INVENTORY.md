@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 101 root frames.
-`design/chat-design.pen` holds 72 of those, the other twenty-nine being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 115 root frames.
+`design/chat-design.pen` holds 72 of those, the other forty-three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -44,35 +44,49 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 
 | Route | Name | Frame |
 |---|---|---|
-| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice |
+| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why (and its light copy) |
 | `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states, · Composer · states and · Room head · states (a long path, a long name); each with its `· light`; A · notes and A · every state · notes |
-| `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason |
+| `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why (and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
-| `/review` | Review | Review · dark |
+| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy |
 | `/logs` | Logs | Logs · dark |
 | `/vault` | Vault | Vault · dark |
-| `/projects` | Projects | Projects · dark |
+| `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row) |
 | `/skills` | Extensions (Skills + Plugins) | Extensions · Skills, Extensions · Plugins |
-| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages |
+| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account (each with its light copy) |
 | `/memory` | Brain (Projects / Agents / Backends) | Brain · Projects, Brain · Agents, Brain · Backends |
 | `/whats-new` | What's new | What's new · dark |
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
 
-## Settings (6 groups, 18 sections)
+## Settings (6 groups, 19 sections)
 
 | Group | Sections |
 |---|---|
 | General | Preferences, Terminal, Notifications, System |
-| AI & Providers | Providers, CLI Paths, Permissions |
+| AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules), with its Telegram through Hermes switch: Settings · Connection, and its states in Settings · Connection · Telegram through Hermes (and its light copy) |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
-## Overlays and dialogs (14)
+Claude accounts is off until turned on. On, it lists up to five Claude
+subscriptions, each with its 5 h and weekly use, and the two thresholds that
+move agents between them; the account an agent runs on then shows, with a menu
+that pins it, on its card in Agents, its pane header on the Dashboard and its
+window. A move by Tars is one grey line in the agent's pane and window, and the
+control's title says where the agent came from. Frames: Settings · Claude
+accounts, Settings · Claude accounts · states,
+Agent · Claude account (and their light copies).
 
+## Overlays and dialogs (15)
+
+- Add a Claude account, Sign in <account>, Remove <account>? (Settings >
+  Claude accounts): adding names the account, then a terminal on its new
+  folder runs Claude Code's own sign-in, which Tars never sees; the account
+  reads signed in once Claude Code says so. Remove asks first. Frames:
+  Settings · Claude accounts · states (and its light copy)
 - New agent / New team (`NewChatModal`): one screen, a "One agent | A team"
   switch in the header. One agent: project, provider tiles + model, task
   textarea, one collapsed Options row (skills, effort, permissions, worktree,
@@ -102,7 +116,8 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
   for that review, Overlay · Instantiate template · prompt and Overlay · Import
   template · review, each with its light copy
 - Agent terminal dialog: header, panel header, footer, sidebar, secondary project,
-  super-agent sidebar
+  super-agent sidebar; a stopped agent's header, second row and the rail's
+  stopped group in Agent stopped · who and why
 - Start prompt (`StartPromptModal`)
 - Kanban: new task, card detail, done summary
 - Plugin install, Install terminal (settings)
