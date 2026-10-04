@@ -13,6 +13,7 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+      'An agent\'s scratch files and the output of its background tasks survive a restart of your Mac: each agent keeps its temporary files in its own folder under ~/.dorothy/tmp, rather than in the folder macOS empties at every boot. What nothing has touched for 7 days is deleted, and the oldest first past 20 GB in all (10 GB when the disk has under 30 GB free); nothing of an agent whose CLI is running is ever deleted.',
     ],
   },
   {

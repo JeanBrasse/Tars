@@ -91,6 +91,8 @@ ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
 CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
+TMPDIR                # ~/.dorothy/tmp/<short id>/t, the agent's own temporary folder, which a boot does not empty (services/agent-tmp.ts)
+CLAUDE_CODE_TMPDIR    # ~/.dorothy/tmp/<short id>/c, where Claude Code keeps the agent's scratchpad and background task output
 ```
 
 ---
