@@ -228,7 +228,10 @@ describe('what is kept', () => {
     }
 
     expect(fs.readFileSync(file, 'utf-8').trim().split('\n').length).toBeLessThanOrEqual(50 + 2);
-    expect(createTaskLedger({ file, now: () => clock, maxLines: 50 }).tasks().length).toBeGreaterThan(10);
+    const kept = createTaskLedger({ file, now: () => clock, maxLines: 50 }).tasks();
+    expect(kept.length).toBeGreaterThan(10);
+    // The newest, not the oldest: the last task is the last one kept.
+    expect(kept.at(-1)!.startedAt).toBe(clock - 1_000);
   });
 
   it('8. 200 characters of a task\'s text at most, a character never cut in two', () => {
