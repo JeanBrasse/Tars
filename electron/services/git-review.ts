@@ -63,6 +63,30 @@ async function tryGit(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
+ * A patch, read no further than `limit` bytes, and whether it was cut there.
+ *
+ * Past git()'s 8 MB buffer, execFile failed and tryGit made that '': a patch
+ * above 8 MB came back empty and marked as not cut, in the list and for a
+ * single file (the Audit's gate of #272). Asking git for no more than is shown
+ * keeps the rest of a huge diff out of memory too.
+ */
+async function gitPatch(cwd: string, args: string[], limit: number): Promise<{ text: string; cut: boolean }> {
+  try {
+    return { text: await git(cwd, args, limit), cut: false };
+  } catch (err) {
+    const { code, stdout } = err as { code?: string; stdout?: string };
+    if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return { text: stdout ?? '', cut: true };
+    return { text: '', cut: false };
+  }
+}
+
+/** Whether `inner` is `root` or lies under it. */
+function within(root: string, inner: string): boolean {
+  const rel = path.relative(root, inner);
+  return rel === '' || !(rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel));
+}
+
+/**
  * A ref name that git cannot mistake for an option.
  *
  * Every rev range here is interpolated as `${baseBranch}...HEAD`, which lands
@@ -283,7 +307,7 @@ async function computeDiff(repoPath: string, branch: string, baseBranch: string 
     tryGit(repoPath, ['diff', '-M', '--numstat', '-z', from]),
     tryGit(repoPath, ['diff', '-M', '--name-status', '-z', from]),
     tryGit(repoPath, ['ls-files', '--others', '--exclude-standard', '-z']),
-    tryGit(repoPath, ['diff', '-M', from]),
+    gitPatch(repoPath, ['diff', '-M', from], MAX_PATCH_BYTES),
   ]);
 
   let ahead = 0;
@@ -306,7 +330,11 @@ async function computeDiff(repoPath: string, branch: string, baseBranch: string 
     let additions = 0;
     try {
       const full = path.join(repoPath, file);
-      if (fs.statSync(full).size < 512_000) {
+      const stat = fs.lstatSync(full);
+      // A link is one line, its target path, as git counts it: what it points
+      // to can be outside the repository, and is not what the link adds.
+      if (stat.isSymbolicLink()) additions = 1;
+      else if (stat.size < 512_000) {
         const content = fs.readFileSync(full);
         // A binary has no lines: its bytes split on newlines are not a count.
         if (!isBinary(content)) additions = lineCount(content.toString('utf-8'));
@@ -315,9 +343,9 @@ async function computeDiff(repoPath: string, branch: string, baseBranch: string 
     files.set(file, { path: file, status: 'untracked', additions, deletions: 0 });
   }
 
-  let patch = diffPatch;
+  let patch = diffPatch.text;
 
-  const truncated = patch.length > MAX_PATCH_BYTES;
+  const truncated = diffPatch.cut || patch.length > MAX_PATCH_BYTES;
   if (truncated) patch = `${patch.slice(0, MAX_PATCH_BYTES)}\n… patch truncated`;
 
   const list = Array.from(files.values()).sort((a, b) =>
@@ -351,6 +379,11 @@ export async function fileDiff(repoPath: string, file: string, baseBranch?: stri
   if (file.startsWith('-')) throw new Error('invalid path');
   // Same reason, for the value that is *not* behind the `--` separator.
   if (baseBranch) assertSafeRef(baseBranch);
+  // A path the list gives: relative, and inside the repository. The fallback
+  // for untracked files below reads the disk, and '../../x' showed a file
+  // outside it (the Audit's gate of #272).
+  const full = path.resolve(repoPath, file);
+  if (path.isAbsolute(file) || full === path.resolve(repoPath) || !within(repoPath, full)) throw new Error('invalid path');
 
   // Same guard reviewDiff and repoSummary already have: every git call below
   // goes through tryGit, which swallows failures and returns '' - so on a
@@ -365,13 +398,23 @@ export async function fileDiff(repoPath: string, file: string, baseBranch?: stri
   // when it is given both: the old one comes from the same name-status.
   const from = await startingPoint(repoPath, baseBranch ?? null);
   const origin = namesFrom(await tryGit(repoPath, ['diff', '-M', '--name-status', '-z', from])).get(file)?.from;
-  const tracked = await tryGit(repoPath, ['diff', '-M', from, '--', ...(origin ? [origin, file] : [file])]);
-  if (tracked) return cap(tracked);
+  const tracked = await gitPatch(repoPath, ['diff', '-M', from, '--', ...(origin ? [origin, file] : [file])], MAX_FILE_PATCH_BYTES);
+  if (tracked.text) return tracked.cut ? `${tracked.text}\n… patch truncated` : tracked.text;
 
-  // Untracked: show it as an addition rather than nothing. A generated
-  // bundle can be megabytes, and nobody reviews that in a panel.
+  // Untracked: show it as an addition rather than nothing. The folder it is
+  // in must be the repository's once links are resolved: a linked folder
+  // inside it can point anywhere.
+  let folder: string;
   try {
-    const full = path.join(repoPath, file);
+    folder = fs.realpathSync(path.dirname(full));
+  } catch {
+    return '';
+  }
+  if (!within(fs.realpathSync(repoPath), folder)) throw new Error('invalid path');
+  // A generated bundle can be megabytes, and nobody reviews that in a panel.
+  try {
+    // A link is shown as git shows one, its target path: never what it points to.
+    if (fs.lstatSync(full).isSymbolicLink()) return `--- /dev/null\n+++ b/${file}\n+${fs.readlinkSync(full)}`;
     if (fs.statSync(full).size > MAX_FILE_PATCH_BYTES) {
       return `+++ b/${file}\n… file is too large to show (${Math.round(fs.statSync(full).size / 1024)} KB)`;
     }
