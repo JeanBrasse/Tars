@@ -1544,15 +1544,18 @@ To turn it on:
 
 1. Make a Sentry token with the `event:read` scope and nothing more: an internal integration with
    Issue & Event on Read, or a personal token with that scope alone.
-2. Set `sentryAuthToken` to it and `sentryTriageProject` to the project's path, in Settings once it
-   has the section, or in `~/.dorothy/app-settings.json` while Tars is closed. Error reports must be
+2. Set the token and `sentryTriageProject` to the project's path, in Settings once it has the
+   section, or while Tars is closed: the token alone in `~/.tars-private/sentry-token` (`0600`, never
+   in `~/.dorothy`, which every agent is handed; one left in `app-settings.json` moves there at the
+   next start), the project in `~/.dorothy/app-settings.json`. Error reports must be
    on, Hermes configured and the relay on (`hermesRelayEnabled`): with the relay off, nothing is filed.
 3. A minute after launch, then every 15 minutes, Tars's log says `[error-triage] filed N on
    <project>: TARS-1 as t_...`, or, once each time the reason changes, `[error-triage] not polling
    Sentry: <why>`. Nothing is logged while no token is set.
 
-4. Each task filed is one message on Telegram: `Sentry, a new error in Tars: TARS-1, 3 events.`, its
-   title quoted, and the two answers. Reply to that message: "oui" hands it to the orchestrator,
+4. Each task filed is one message on Telegram: `Sentry, a new error in Tars: TARS-1, 3 events.`, every
+   field the task quotes (issue, title, culprit, level, first and last seen, events, link), each
+   quoted, and the two answers. Reply to that message: "oui" hands it to the orchestrator,
    "non" archives it, anything else gets the question again. Tars answers each reply.
 
 At most 10 tasks in any 24 hours, the oldest issue first; the others wait for room. What was filed
@@ -1566,7 +1569,7 @@ jq -r '.issues | to_entries[] | "\(.key) \(.value.name) \(.value.state) owed=\(.
 
 | Symptom | Cause |
 |---|---|
-| "oui", and the orchestrator was told nothing | its CLI does not run (Tars said so): the note is owed, and goes once the orchestrator runs, at its next state change or the next poll |
+| "oui", and the orchestrator was told nothing | its CLI does not run, or it was at work (Tars said which): the note is owed in `sentry-go-aheads.json` (`owed=true` above), and goes once it is typed into the orchestrator's terminal, at its next state change or the next poll, after a quit of Tars too |
 | No Telegram message for a task on the board | the request waits for Hermes in `~/.tars-private/relay-outbox.json` (7 days), or the relay is off; it is asked again at the next poll once it can go |
 
 ---
