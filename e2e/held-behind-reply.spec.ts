@@ -24,9 +24,17 @@ type Api = { electronAPI: {
   bus: { listRooms(): Promise<Room[] | { rooms: Room[] }>; postMessage(p: { roomId: string; text: string; mentions?: string[] }): Promise<unknown> };
 } };
 
+const HOOKS = path.resolve('hooks');
+
 const STAND_IN = String.raw`
-const fs = require('fs');
+const fs = require('fs'), path = require('path'), crypto = require('crypto');
+const { spawnSync } = require('child_process');
 const log = (o) => fs.appendFileSync(process.env.HOME + '/stand-in.jsonl', JSON.stringify({ at: Date.now(), ...o }) + '\n');
+// Its session registers as Claude Code's does, through Tars's own hook: until then, Tars types nothing into it.
+const sid = crypto.randomUUID();
+spawnSync('/bin/bash', [path.join(HOOKS, 'session-start.sh')], {
+  input: JSON.stringify({ session_id: sid, cwd: process.cwd(), hook_event_name: 'SessionStart', source: 'startup' }), env: process.env, timeout: 20000,
+});
 process.stdin.setRawMode(true);
 process.stdout.write('stand-in ready\r\n> ');
 process.stdin.on('data', (d) => log({ stdin: d.toString() }));
@@ -46,7 +54,7 @@ test("a message to an idle agent goes in after its panel answered the terminal's
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');
-  fs.writeFileSync(cli, `#!${process.execPath}\n${STAND_IN}`, { mode: 0o755 });
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst HOOKS = ${JSON.stringify(HOOKS)};\n${STAND_IN}`, { mode: 0o755 });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([{
     id: 'worker', name: 'Held Worker', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',
@@ -81,6 +89,7 @@ test("a message to an idle agent goes in after its panel answered the terminal's
     await expect.poll(() => start.count(), { timeout: 120_000 }).toBeGreaterThan(0);
     await start.click();
     await expect.poll(async () => (await list()).find((a) => a.id === 'worker')?.cliRunning, { timeout: 60_000 }).toBe(true);
+    await expect.poll(async () => !!(await list()).find((a) => a.id === 'worker' && (a as { currentSessionId?: string }).currentSessionId), { timeout: 60_000 }).toBe(true);
     // The two queries asked, and the panel's answers come back.
     await expect.poll(() => lines(standIn).filter((l) => l.asked).length, { timeout: 30_000 }).toBe(2);
     await new Promise((r) => setTimeout(r, 2_000));
