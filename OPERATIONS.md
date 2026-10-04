@@ -359,7 +359,9 @@ removed after measuring that nothing in the app listens for it.
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,
-Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
+Node 22, `npm ci`, Electron's binary (`npx install-electron`, from a cache keyed on its version,
+three tries when it has to download: GitHub answered that download 500 or 503 twice on 2026-10-01),
+`npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 

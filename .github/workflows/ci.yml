@@ -28,5 +28,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron 44 has no postinstall: its binary was downloaded by the first
+      # test that loaded electron, and GitHub answered that download 500 or 503
+      # twice on 01/10 (#235's merge head, then main after #266), which turned a
+      # green change red. The download is cached under its version, and fetched
+      # in a step of its own that tries three times when it does happen.
+      - name: Electron's version
+        id: electron
+        run: echo "version=$(node -p "require('./node_modules/electron/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron's download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron-download
+          key: electron-${{ runner.os }}-${{ steps.electron.outputs.version }}
+
+      - name: Install Electron's binary
+        run: |
+          export electron_config_cache="$HOME/.cache/electron-download"
+          for try in 1 2 3; do
+            npx install-electron && exit 0
+            echo "Electron's download failed (try $try of 3), trying again in 30 s"
+            sleep 30
+          done
+          exit 1
+
       - name: Run tests
         run: npm test
