@@ -338,6 +338,17 @@ async function handle(reply: PluginReply, now: number): Promise<void> {
   }, now);
 }
 
+/**
+ * The user's receipt for a message of theirs handed on (Noah's answer 24 of
+ * 2026-10-05): one short line, never a reaction; when the message waits,
+ * what for.
+ */
+export function receiptFor(name: string, heldBy?: 'dialog' | 'draft'): string {
+  if (heldBy === 'dialog') return `Passed to ${name}: it waits for the permission or question its CLI shows to be answered.`;
+  if (heldBy === 'draft') return `Passed to ${name}: it waits for what is typed in its terminal to be sent or cleared.`;
+  return `Passed to ${name}.`;
+}
+
 /** One round: the plugin's status, the projects, what waits, the replies. Driven every POLL_MS; tests drive it. */
 export async function relayTick(now: number = Date.now()): Promise<void> {
   syncChannels();
