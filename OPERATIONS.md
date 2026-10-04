@@ -1581,7 +1581,9 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 ### An agent marked stalled
 
 `stalledSince` on an agent (and a `[Tars] ... has written nothing to its transcript for N minutes and runs no tool`
-note in its orchestrator) means: `running`, no transcript write for 30 minutes, nothing at work under its CLI. Check
+note in its orchestrator) means: `running`, and either its state mod's heartbeat silent for 5 minutes (a session that
+runs the mod: its `USER_PROMPT_SUBMIT curl result` lines in `~/.dorothy/logs/hooks.log` say `"ignored":"state-mod"`),
+or, for every other session, no transcript write for 30 minutes and nothing at work under its CLI. Check
 with `ps -A -o pid,ppid,stat,etime,command | grep -A12 claude` (a frozen claude has no live `caffeinate` under it,
 often an unreaped zombie, and 0 % CPU) and `sample <pid> 1`. If nothing moves: stop it, and start it again with a
 brief of what is already done. A long tool that runs no process (a web fetch, a subagent) is not caught by this rule.

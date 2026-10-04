@@ -57,6 +57,7 @@
 | `e2e/surfaces.mjs` | Executable manifest: 18 pages, 18 settings sections, 3 overlays = 39 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
+| `mods/tars-state/` | The state mod: a Claude Code hooks module that reports an agent's sessions, turns, failures and a heartbeat to Tars from inside the CLI (`electron/services/state-mod.ts`). Read and report only; a session without it keeps the shell hooks |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
 
 ## Environment Variables
@@ -91,6 +92,8 @@ ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
 CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
+CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: the state mod's folder (mods/tars-state), after any the user named
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  # set to 1 with it: the mod is a hooks module of Claude Code's early-access function hooks
 ```
 
 ---

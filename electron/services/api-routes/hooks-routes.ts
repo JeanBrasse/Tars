@@ -20,8 +20,8 @@ import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
  */
 const MOD_HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure']);
 
-function setAsideForMod(agentId: string, sessionId: string | undefined, body: { hook?: unknown; via?: unknown }): boolean {
-  return body.via !== 'mod' && typeof body.hook === 'string' && MOD_HOOKS.has(body.hook) && modRunsSession(agentId, sessionId);
+function setAsideForMod(agentId: string, sessionId: string | undefined, body: { hook?: unknown }): boolean {
+  return typeof body.hook === 'string' && MOD_HOOKS.has(body.hook) && modRunsSession(agentId, sessionId);
 }
 
 /**
@@ -207,7 +207,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
-    if (agent && setAsideForMod(agent.id, session_id, req.body as { hook?: unknown; via?: unknown })) {
+    if (agent && setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
       sendJson({ success: true, ignored: 'state-mod' });
       return;
     }
@@ -276,7 +276,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown; via?: unknown })) {
+    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
       sendJson({ success: true, ignored: 'state-mod', agent: { id: agent.id, status: agent.status } });
       return;
     }
@@ -491,8 +491,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/hooks/agent-stopped: Send notification when agent finishes a response (Stop hook)
   // POST /api/hooks/mod-beat: the state mod's heartbeat, every 15 s from the
   // CLI's own event loop, with the tool in flight. A frozen loop stops it
-  // (stall-watch.ts). Taken for the agent's current session, and only once the
-  // mod registered it.
+  // (stall-watch.ts). Kept only for the session the mod registered, and the
+  // stall watch reads it only while that is the agent's current session.
   app.post('/api/hooks/mod-beat', (req, sendJson) => {
     const { agent_id, tool } = req.body as { agent_id?: string; session_id?: string; tool?: unknown };
     const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
@@ -501,8 +501,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
     const agent = agents.get(agent_id);
-    if (!agent || agent.currentSessionId !== session_id) {
-      sendJson({ success: false, stale: true });
+    if (!agent) {
+      sendJson({ success: false, message: 'Agent not found' });
       return;
     }
     const kept = noteModBeat(agent.id, session_id, typeof tool === 'string' && tool ? tool.slice(0, 200) : null);
@@ -526,7 +526,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown; via?: unknown })) {
+    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
       sendJson({ success: true, ignored: 'state-mod' });
       return;
     }
