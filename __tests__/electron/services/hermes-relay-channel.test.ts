@@ -25,6 +25,9 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  *    status does not say which.
  * 8. A reply whose handler throws stops the ones after it, or is never acked.
  * 9. With the relay on, the event reports do not go through it, or go under no project; with it off, they still go.
+ * 11. The plugin's store is made again (reinstalled, moved, cleaned) and numbers its replies from 1 again: Tars skips
+ *    every reply at or below the last number it took, acks it, and the plugin deletes it, Noah told nothing
+ *    (GATE-PR285.md); or Tars, starting over, hands over again a reply of the same store whose ack was lost.
  * 10. The plugin keeps "@name" for Tars only for the projects Tars registered with it (the Audit's Low on #280): the
  *    fleet's projects are not registered, and every "@project" goes to Hermes's model; a folder name that is not one
  *    word is sent, the plugin refuses the whole list, and no project can be reached; a project added to the fleet or
@@ -244,6 +247,38 @@ describe('the status', () => {
     await relay.relaySend({ text: 'x', kind: 'report', ref: 'report:r-1', projectPath: PROJECT, expiresAt: T0 + 3_600_000 }, T0);
 
     expect(relay.relayStatus()).toMatchObject({ enabled: true, waiting: 1 });
+  });
+});
+
+describe('a store made again', () => {
+  it('11. numbering from 1 again: its replies are handed over all the same, once, across a restart too', async () => {
+    const got: string[] = [];
+    relay.onRelayReply('question', (reply) => { got.push(reply.text); });
+    for (let i = 1; i <= 4; i++) {
+      const sent = await relay.relaySend({ text: `q${i}`, kind: 'question', ref: `question:q-${i}`, projectPath: PROJECT }, T0);
+      fake.reply({ messageId: (sent as { messageId: string }).messageId }, `answer ${i}`);
+    }
+    await relay.relayTick(T0 + 5_000);
+    expect(got).toHaveLength(4);
+
+    fake.recreate();
+    const fifth = await relay.relaySend({ text: 'q5', kind: 'question', ref: 'question:q-5', projectPath: PROJECT }, T0 + 6_000);
+    const seq = fake.reply({ messageId: (fifth as { messageId: string }).messageId }, 'answer 5');
+    expect(seq).toBe(1);
+    await relay.relayTick(T0 + 10_000);
+
+    expect(got).toEqual(['answer 1', 'answer 2', 'answer 3', 'answer 4', 'answer 5']);
+    expect(fake.replies).toEqual([]);
+
+    // The new store's position is kept: after a restart, its reply 1 is not handed over again.
+    fake.ignoreAcks = true;
+    fake.reply({ messageId: (fifth as { messageId: string }).messageId }, 'answer 5, held again');
+    await load();
+    relay.onRelayReply('question', (reply) => { got.push(reply.text); });
+    await relay.relayTick(T0 + 15_000);
+    expect(got).toEqual(['answer 1', 'answer 2', 'answer 3', 'answer 4', 'answer 5', 'answer 5, held again']);
+    await relay.relayTick(T0 + 20_000);
+    expect(got).toHaveLength(6);
   });
 });
 

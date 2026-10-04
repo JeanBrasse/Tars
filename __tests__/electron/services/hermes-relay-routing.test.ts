@@ -20,6 +20,8 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  * 5. Upper or lower case in a project's name sends the message nowhere.
  * 6. The plugin is not told the fleet's projects, so that it keeps no "@project" message for Tars at all (it keeps
  *    "@name" only for a project Tars registered).
+ * 7. A project whose folder name holds a space is left out of what the plugin is told, so that the user can never
+ *    write to it (the Audit's Low on #285): it is told, and reached, under its name with a dash in each space.
  *
  * The real channel and routing, the real writer every typed message takes (its sender line included), terminals
  * spawned as Tars spawns an agent's, with node-pty's process replaced by a recorder per agent; the plugin is a real
@@ -64,6 +66,7 @@ async function load() {
   manager.wireDialogProbe();
   ({ ptyProcesses } = await import('../../../electron/core/pty-manager') as never);
   const { spawnAgentPty } = await import('../../../electron/core/agent-pty');
+  spawnAgentPtyNow = spawnAgentPty;
   const config = await import('../../../electron/services/hermes-config');
   config.writeHermesConnection({ mode: 'local', localPort: fake.port, authMode: 'token', token: fake.token });
   relay = await import('../../../electron/services/hermes-relay');
@@ -87,6 +90,8 @@ async function load() {
 }
 
 const all = (id: string) => (typed[id] ?? []).join('');
+let spawnAgentPtyNow: unknown;
+const spawnAgentPtyOf = () => spawnAgentPtyNow as typeof import('../../../electron/core/agent-pty').spawnAgentPty;
 
 beforeAll(async () => {
   fake = await startFakeRelay();
@@ -142,6 +147,23 @@ describe('"@project text"', () => {
     await relay.relayTick(T0);
 
     expect(fake.projects).toEqual(['1212-Capital', 'tars']);
+  });
+
+  it('7. a project whose folder name holds a space is registered, and reached, under its dashed name', async () => {
+    const SPACED = '/Users/someone/projects/My Project';
+    const term = spawnAgentPtyOf()({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: os.tmpdir(), cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: 'orch-spaced' } });
+    ptyProcesses.set('pty-orch-spaced', term as unknown);
+    agents.set('orch-spaced', { id: 'orch-spaced', name: 'Spaced-Orchestrator', status: 'running', provider: 'claude', projectPath: SPACED, role: 'orchestrator', ptyId: 'pty-orch-spaced', ptyCwd: SPACED, skills: [], output: [], lastActivity: '' } as unknown as AgentStatus);
+
+    await relay.relayTick(T0);
+    expect(fake.projects).toEqual(['1212-Capital', 'My-Project', 'tars']);
+
+    fake.projectMessage('My-Project', 'fais le point');
+    await relay.relayTick(T0 + 5_000);
+    await settle();
+
+    expect(all('orch-spaced')).toContain('fais le point');
+    expect(all('orch-tars') + all('orch-capital')).toBe('');
   });
 
   it('5. whatever the case of the name', async () => {
