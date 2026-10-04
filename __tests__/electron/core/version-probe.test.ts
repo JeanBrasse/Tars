@@ -21,6 +21,11 @@ import * as ts from 'typescript';
  *    version, or one that hangs is no longer cut by its timeout.
  * 5. The quit never ends them: main.ts's first pass has no step for it.
  * 6. A `--version` probe in electron/ goes around the module.
+ *
+ * And from the Audit's batch 2 (2026-10-05): a mutant that leaves the group
+ * once the probe answered survived.
+ * 7. A probe that answers at once leaves what it started running, and
+ *    writing, after its answer.
  */
 
 const ELECTRON = path.join(__dirname, '../../../electron');
@@ -89,6 +94,32 @@ describe('a version probe', () => {
       await settle(3000);
       expect(fs.existsSync(`${bin}.self`), 'the probe wrote after the quit').toBe(false);
       expect(fs.existsSync(`${bin}.child`), 'what the probe started wrote after the quit').toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it('7. one that answers at once leaves nothing it started running after its answer', async () => {
+    const { probe } = await fresh();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-probe-'));
+    const bin = path.join(dir, 'stand-in');
+    // Answers its version at once, and leaves a child of its own group that
+    // keeps writing into a file every 50 ms for 5 s. The child lets go of the
+    // probe's output pipe first, as a daemon does: one that kept it would hold
+    // the answer back until it ended, and nothing could write after it.
+    fs.writeFileSync(bin, [
+      '#!/bin/sh',
+      '( exec </dev/null >/dev/null 2>&1; i=0; while [ $i -lt 100 ]; do printf x >> "$0.writes"; sleep 0.05; i=$((i+1)); done ) &',
+      'echo "amp 1.0.0"',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    try {
+      await expect(probe.probeVersion(bin, process.env)).resolves.toMatchObject({ stdout: 'amp 1.0.0\n' });
+      await settle(500);
+      const after = fs.existsSync(`${bin}.writes`) ? fs.statSync(`${bin}.writes`).size : 0;
+      await settle(1500);
+      const later = fs.existsSync(`${bin}.writes`) ? fs.statSync(`${bin}.writes`).size : 0;
+      expect(later, 'what the probe started kept writing after its answer').toBe(after);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
