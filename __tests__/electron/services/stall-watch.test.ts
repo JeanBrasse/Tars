@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { stallOf, toolAtWork, cliProcess, parseProcesses, signOfLife, startStallWatch, stopStallWatch, STALL_AFTER_MS, type Proc } from '../../../electron/services/stall-watch';
+import { stallOf, toolAtWork, cliProcess, parseProcesses, signOfLife, startStallWatch, stopStallWatch, STALL_AFTER_MS, MOD_SILENCE_MS, type Proc } from '../../../electron/services/stall-watch';
 
 /**
  * Telling a running agent that is doing nothing from one that is busy
@@ -42,6 +42,17 @@ import { stallOf, toolAtWork, cliProcess, parseProcesses, signOfLife, startStall
  *    is ever stalled.
  * 9. ps's elapsed time is misread ([[dd-]hh:]mm:ss).
  * 10. The quit leaves the watch's timer running (main.ts's quit, after #235).
+ *
+ * And with the state mod (mods step 1, 2026-10-05): a session that runs it
+ * sends a heartbeat from inside Claude Code's own event loop every 15 s, which
+ * a frozen loop stops sending. The heartbeat replaces the rule above for that
+ * session, and the rule above stays for every other one.
+ * 11. A mod session whose heartbeat stopped five minutes ago, its CLI still
+ *     there, is not marked; or one is marked while its heartbeat comes.
+ * 12. A mod session is still judged by the transcript and caffeinate (a long
+ *     silent turn marked though its heartbeat comes), or a session without
+ *     the mod is judged by a heartbeat it never sends.
+ * 13. A mod session is marked once its CLI is gone (the terminal closed).
  */
 
 const NOW = Date.UTC(2026, 9, 1, 4, 0, 0);
@@ -173,6 +184,36 @@ describe('the watch itself', () => {
     expect(vi.getTimerCount()).toBe(before + 1);
     stopStallWatch();
     expect(vi.getTimerCount()).toBe(before);
+  });
+});
+
+describe('a session that runs the state mod (mods step 1)', () => {
+  const silent = { ...running, transcriptWrittenAt: NOW - 45 * MIN, terminalPid: 100, now: NOW };
+  // Nothing at work under the CLI, and its caffeinate a zombie: the rule above marks this one.
+  const frozenLooking = terminal();
+
+  it('11. is marked when its heartbeat has been silent past MOD_SILENCE_MS, from the last beat', () => {
+    const lastBeat = NOW - MOD_SILENCE_MS - 1000;
+    expect(stallOf({ ...silent, procs: frozenLooking, beatAt: lastBeat })).toBe(lastBeat);
+  });
+
+  it('11, 12. is not marked while its heartbeat comes, however long its transcript has been silent', () => {
+    expect(stallOf({ ...silent, procs: frozenLooking, beatAt: NOW - 20_000 })).toBeUndefined();
+  });
+
+  it('12. a silent heartbeat marks it even when caffeinate would spare it, and the transcript is not asked', () => {
+    const lastBeat = NOW - MOD_SILENCE_MS - 1000;
+    const caffeinated = terminal([p(106, 101, 'caffeinate -i -t 300', 'S+', 60)]);
+    expect(stallOf({ ...silent, transcriptWrittenAt: NOW - MIN, procs: caffeinated, beatAt: lastBeat })).toBe(lastBeat);
+  });
+
+  it('12. a session without the mod keeps the rule above: no beat, no change', () => {
+    expect(stallOf({ ...silent, procs: frozenLooking })).toBe(NOW - 45 * MIN);
+  });
+
+  it('13. is not marked once its CLI is gone', () => {
+    const lastBeat = NOW - MOD_SILENCE_MS - 1000;
+    expect(stallOf({ ...silent, procs: [p(100, 1, '/bin/zsh -l')], beatAt: lastBeat })).toBeUndefined();
   });
 });
 
