@@ -8,14 +8,14 @@
 
 ## Stack
 
-- **Shell**: Electron 44 (Node 24.21, Chromium 152, macOS 13 or later), main process in `electron/` (~39k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
-- **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~39.5k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
+- **Shell**: Electron 44 (Node 24.21, Chromium 152, macOS 13 or later), main process in `electron/` (~47k lines TypeScript, compiled to `electron/dist/` by `tsc -p electron/tsconfig.json`, CommonJS, ES2022)
+- **Renderer**: Next.js 16.3 App Router, React 19, TypeScript, Tailwind CSS 4, `~44k` lines in `src/`. Packaged as a static export (`output: 'export'` when `ELECTRON_BUILD=1`) and served over a custom `app://` protocol
 - **Terminals**: `node-pty` + `xterm` 5 / `xterm-addon-fit`
 - **State**: React hooks over IPC (`src/hooks/`), plus a small `zustand` store (`src/store/`) for sidebar/vault UI state
 - **Local API**: a plain `node:http` server on **31415**, bearer-token authenticated, so the CLIs' hooks and the bundled MCP servers can call back into the app
 - **MCP**: seven servers in `mcp-*/`, each bundled to `dist/bundle.js` and shipped in `extraResources`: orchestrator, memory, telegram, kanban, vault, socialdata, x
 - **Delegation**: two transports: keystrokes written into the PTY (`/dispatch`), and the Agent Client Protocol (`electron/services/acp/`), which actually returns a result
-- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat and the Hermes webhook secret. `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI
+- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is Noah's conversation with the super chat, the Hermes webhook secret and the Claude accounts' registry (`claude-accounts.json`: ids, names, thresholds, never a credential). `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI. Each Claude account after the first is a Claude Code folder of its own, `~/.claude-accounts/<id>`, which the agents started on it run in
 - **Tests**: E2E first: `@playwright/test` drives the real Electron app (`e2e/`), and every run leaves an artefact. `vitest` (`__tests__/`) is the regression net and the home of units tested in isolation, written failures first. The rules are in Workflow Rule 3
 - **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` declares `>=22.12.0`, Electron's own floor since 43, and CI runs 22
 
@@ -30,7 +30,7 @@
 | `electron/core/agent-manager.ts` | The agent `Map`, persistence to `agents.json`, `initAgentPty`, `ensureProjectTrusted` (pre-writes `hasTrustDialogAccepted` in `~/.claude.json`), `killStalePty` |
 | `electron/core/pty-manager.ts` | Four PTY maps (agent / quick / skill / plugin), `killAllPty`, and `writeProgrammaticInput`: the bracket-paste + delayed `\r` dance Claude Code's TUI requires |
 | `electron/core/window-manager.ts` | `BrowserWindow` (1600×1000, `hiddenInset`, `#121212`), window hardening, and the `app://` and `local-file://` protocol handlers |
-| `electron/handlers/ipc-handlers.ts` | 2963 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
+| `electron/handlers/ipc-handlers.ts` | 3007 lines, nearly every `ipcMain.handle`. Start here when a renderer call has no backend |
 | `electron/providers/cli-provider.ts` | The `CLIProvider` contract: interactive / scheduled / one-shot command builders, PTY env, hook config, `readAppSettingsFromDisk()` |
 | `electron/providers/index.ts` | Registry of the 19 providers. Unknown ids (and `local`) fall back to Claude |
 | `electron/services/api-server.ts` | The 31415 server. Token generated into `~/.dorothy/api-token` at `0600`; 4 MB body cap; only `/api/local-file` and `/api/health` are exempt from auth; `/api/hooks/*` takes the posting agent's own token, for that agent only. `resolveCaller` decides who is calling from the token presented: an agent's own token (`electron/core/agent-tokens.ts`) names that agent, and a different `X-Tars-Caller-Id` alongside it is a 403. The shared token names no agent, no header is read with it, and it drives no agent: the routes that start, stop, message, dispatch to, delete or create one need a caller with an identity. Tars's own pass, minted in memory and written nowhere, is what the super chat presents on the loopback; the Hermes webhook secret (`~/.tars-private/hermes-webhook-secret`) opens its own route and no other, and that route opens to nothing else. `SECURITY.md` says what each of these is and is not |
@@ -49,12 +49,12 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 99 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
-| `design/chat-design.pen` | The same 74 frames (the first 73 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
+| `design/tars-redesign.pen` | Pencil source of truth, 113 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
+| `design/chat-design.pen` | 72 of the same frames (71 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), the two panel history frames `tars-redesign.pen` dropped with the history view, plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes, the composer and the room head, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/landing.pen` | The site in `landing/`: its page, its 404, its privacy and terms pages, and the picture link previews show. Forked from `tars-redesign.pen` on 2026-09-23, which no longer carries the landing |
 | `design/UI-INVENTORY.md` | Every surface the app can render. The E2E guard reads it. Its header names both Pencil documents and says which one owns what |
-| `e2e/surfaces.mjs` | Executable manifest: 18 pages, 17 settings sections, 3 overlays = 38 surfaces |
+| `e2e/surfaces.mjs` | Executable manifest: 18 pages, 18 settings sections, 3 overlays = 39 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
@@ -89,6 +89,8 @@ CLAUDE_MGR_API_TOKEN  # minted per terminal by spawnAgentPty and per ACP run by 
 ANTHROPIC_BASE_URL    # every alt provider runs the claude binary with these two rewritten
 ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
+CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
+TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
 ```
 
 ---
@@ -232,7 +234,7 @@ npm test                                 # vitest, __tests__/**/*.test.ts
 npm run lint                             # eslint
 npm run lint:design                      # radius / shadows / gradients / raw palette / hex
 npm run e2e:guard                        # every inventory page is covered by the manifest
-npm run e2e                              # Playwright drives the real Electron app, 38 surfaces
+npm run e2e                              # Playwright drives the real Electron app, 39 surfaces
 ```
 
 `npm run e2e` boots Electron in a sandbox through `launchSandboxed` (`e2e/fixture.mjs`). `HOME` pointed at a temp dir moves `~/.dorothy` and `~/.claude` and nothing else: Electron finds its profile through macOS, so until 2026-09-16 every run opened `~/Library/Application Support/tars`, the installed Tars's own profile. `--user-data-dir` and `CFFIXED_USER_HOME` move it now, and the launch fails if the app reports any of its folders outside the sandbox. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process. `npm test` runs in a throwaway `HOME` too (`__tests__/setup/home-isolation.ts`), and fails a file that writes into the real one.

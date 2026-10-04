@@ -352,11 +352,13 @@ describe('every terminal that forwards input goes through the one filter', () =>
 
   const HANDLERS = forwarders(SRC);
 
-  it('finds nine of them, and a tenth is meant to land here first', () => {
-    // Not a list of which nine: that is the mistake this replaced. A count, so
+  it('finds ten of them, and an eleventh is meant to land here first', () => {
+    // Not a list of which ten: that is the mistake this replaced. A count, so
     // a site added tomorrow stops someone here long enough to confirm it
     // belongs to the class, and the cases below then hold it to the invariant.
-    expect(HANDLERS.length, HANDLERS.map(h => h.file).join('\n')).toBe(9);
+    // The tenth, confirmed on 2026-09-28: the terminal where a Claude
+    // account's own sign-in runs (Settings > Claude accounts).
+    expect(HANDLERS.length, HANDLERS.map(h => h.file).join('\n')).toBe(10);
   });
 
   it.each(HANDLERS)('$file filters what it forwards', ({ param, body }: Forwarder) => {

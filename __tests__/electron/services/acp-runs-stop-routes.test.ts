@@ -116,7 +116,8 @@ async function route(method: 'POST' | 'DELETE', pathname: string, caller: string
   const match = (r.pattern as RegExp).exec(pathname)!;
   let status = 200;
   await r.handler({
-    method, pathname, url: new URL(`http://localhost${pathname}`), body: {}, raw: { headers: {}, on: () => {} }, res: {},
+    // A stop takes a reason since PLAN-1.9.2 item A (core/agent-stop.ts).
+    method, pathname, url: new URL(`http://localhost${pathname}`), body: pathname.endsWith('/stop') ? { reason: 'the test stops it' } : {}, raw: { headers: {}, on: () => {} }, res: {},
     params: { id: match[1] }, callerAgentId: caller,
   } as unknown as RouteRequest, (_json, code = 200) => { status = code; }, {} as RouteContext);
   return status;

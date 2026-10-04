@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { AgentStatus } from '@/types/electron';
-import { isSuperAgentCheck, getStatusPriority, statusTone } from '@/app/agents/constants';
+import { isSuperAgentCheck, getStatusPriority, statusWord } from '@/app/agents/constants';
 import { applyOrder } from '@/components/TerminalsView/hooks/useProjectTabOrder';
 
 interface UseAgentFilteringProps {
@@ -71,7 +71,7 @@ export function useAgentFiltering({ agents, projectFilter, statusFilter, searchQ
     // By the word the card prints: a `completed` agent reads idle there, so
     // it is found under Idle rather than under a filter the page does not offer.
     if (statusFilter) {
-      filtered = filtered.filter(a => statusTone(a.status) === statusFilter);
+      filtered = filtered.filter(a => statusWord(a.status) === statusFilter);
     }
 
     if (searchQuery) {

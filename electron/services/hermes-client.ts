@@ -765,18 +765,30 @@ function decodeDataUrl(dataUrl: unknown): string {
  */
 const HERMES_MEMORY_DIR = '~/.hermes/memories';
 
+/** Hermes's two memory files, in the order they are shown. */
+export const HERMES_MEMORY_FILES = ['MEMORY.md', 'USER.md'] as const;
+
+/** One of them: `file` is null when the gateway has not written it yet, or it is empty. */
+export async function fetchHermesMemoryFile(conn: HermesConnection, name: string): Promise<
+  { success: true; file: HermesMemoryFile | null } | { success: false; error: string; needsSignIn?: boolean }
+> {
+  const { status, body } = await gatewayCall(conn, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`);
+  if (status === 404) return { success: true, file: null }; // the gateway simply has not written it yet
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes to read its memory');
+
+  const content = decodeDataUrl((body as Record<string, unknown> | null)?.data_url);
+  return { success: true, file: content.trim() ? { name, content } : null };
+}
+
 export async function fetchHermesMemoryFiles(conn: HermesConnection): Promise<
   { success: true; files: HermesMemoryFile[] } | { success: false; error: string; needsSignIn?: boolean }
 > {
   const files: HermesMemoryFile[] = [];
 
-  for (const name of ['MEMORY.md', 'USER.md']) {
-    const { status, body } = await gatewayCall(conn, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`);
-    if (status === 404) continue; // the gateway simply has not written it yet
-    if (status >= 300) return failedRead(status, 'Sign in to Hermes to read its memory');
-
-    const content = decodeDataUrl((body as Record<string, unknown> | null)?.data_url);
-    if (content.trim()) files.push({ name, content });
+  for (const name of HERMES_MEMORY_FILES) {
+    const read = await fetchHermesMemoryFile(conn, name);
+    if (!read.success) return read;
+    if (read.file) files.push(read.file);
   }
 
   return { success: true, files };

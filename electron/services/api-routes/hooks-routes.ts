@@ -7,6 +7,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { waitingOnFrom } from '../../utils/waiting-on';
 import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
+import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
 
 /**
  * Session ownership contract:
@@ -384,7 +385,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
     if (oldStatus !== agent.status) {
       console.log(`[hooks] Status changed: ${agent.id} ${oldStatus} → ${agent.status}`);
-      ctx.handleStatusChangeNotificationCallback(agent, agent.status);
+      // A usage limit Tars moves the agent away from (another Claude account,
+      // services/claude-accounts/switching.ts) is not an error to report; the
+      // end of a turn may be the moment to move it before its limit.
+      const moving = status === 'error' && error_kind === 'rate_limit' && onUsageLimit(agent, error_message);
+      if (status === 'idle') onTurnEnded(agent);
+      if (!moving) ctx.handleStatusChangeNotificationCallback(agent, agent.status);
       emitAgentStatus(agent.id);
 
       broadcastToAllWindows('agent:status', {

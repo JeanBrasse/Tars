@@ -2,7 +2,9 @@
 
 import type { AgentStatus } from '@/types/electron';
 import { AgentMark, Button } from '@/components/ui';
-import { STATUS_COLORS, errorReason, statusTone } from '@/app/agents/constants';
+import { STATUS_COLORS, errorReason, statusWord } from '@/app/agents/constants';
+import { stopLine } from '@/lib/stop-line';
+import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 // Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
 // button each, sitting inside the card padding - the card has no footer band.
@@ -26,12 +28,14 @@ interface AgentManagementCardProps {
 
 export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, onDelete }: AgentManagementCardProps) {
   const statusConfig = STATUS_COLORS[agent.status];
-  const tone = statusTone(agent.status);
+  const word = statusWord(agent.status);
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
 
   // Show the user's last prompt, not terminal output
   const lastPrompt = agent.currentTask || null;
   const reason = errorReason(agent);
+  // Who stopped it, when and why. Frame: `Agent stopped · who and why`.
+  const stop = stopLine(agent);
   const provider = agent.provider || 'claude';
   const model = provider === 'local' ? agent.localModel : agent.model;
   // Provider, model and branch as plain words, the way the frame writes them.
@@ -50,21 +54,26 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           <span className="flex-1 min-w-0 truncate text-xs font-semibold text-foreground">
             {agent.name || 'Unnamed Agent'}
           </span>
-          <span className={`text-[11px] font-mono shrink-0 ${statusConfig.text}`}>
-            {tone}
+          <span className={`text-[11px] font-mono shrink-0 ${statusConfig.text}`} title={stop ?? undefined}>
+            {word}
           </span>
         </div>
 
         {/* Row 2: one description line - the last prompt, or why there is none.
             An agent in error shows why instead: the task is still set on an
             agent whose turn failed, and the card said what it had been asked
-            and never what stopped it. One line, cut at the card's edge, the
-            whole sentence in the title. */}
+            and never what stopped it. A stopped agent shows who stopped it,
+            when and why, in the secondary ink. One line, cut at the card's
+            edge, the whole sentence in the title. */}
         {agent.pathMissing ? (
           <p className="text-[11px] text-status-error truncate">Path not found</p>
         ) : reason ? (
           <p className="text-[11px] text-status-error truncate" title={reason}>
             {reason}
+          </p>
+        ) : stop ? (
+          <p className="text-[11px] text-text-secondary truncate" title={stop}>
+            {stop}
           </p>
         ) : lastPrompt ? (
           <p className="text-[11px] text-text-secondary truncate" title={lastPrompt}>
@@ -98,6 +107,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           <Button size="sm" className={ROW_ACTION} onClick={onDelete}>
             delete
           </Button>
+          {/* The Claude account it runs on, at the right of the buttons, when
+              several subscriptions are on. Frame: `Agent · Claude account`. */}
+          <AgentAccountControl agent={agent} className="ml-auto" />
         </div>
       </div>
     </div>
