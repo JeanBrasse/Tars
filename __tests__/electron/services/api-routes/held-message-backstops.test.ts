@@ -201,8 +201,24 @@ describe('a message still held a few minutes on', () => {
     await call('POST', '/api/agents/worker/message', { message: 'run the gate' }, 'orch');
     writeHumanInput(terminal as never, '\x03');
     vi.advanceTimersByTime(TYPING_PAUSE_MS + 1000);
+    // Its turn over, the agent at rest again: still nothing to tell.
+    agents.get('worker')!.status = 'idle';
 
     vi.advanceTimersByTime(HELD_RETELL_MS * 2);
     expect(told()).toBe('');
+  });
+
+  it('9. waits while its target is in a turn (somebody may be typing at it), and tells once the target rests', async () => {
+    orchTerminal();
+    const worker = agents.get('worker')!;
+    worker.status = 'running';
+    anUnfollowableKey();
+    await call('POST', '/api/agents/worker/message', { message: 'run the gate' }, 'orch');
+
+    vi.advanceTimersByTime(HELD_RETELL_MS + 1000);
+    expect(told(), 'in a turn: not yet').toBe('');
+    worker.status = 'idle';
+    vi.advanceTimersByTime(HELD_RETELL_MS + 1000 + PROGRAMMATIC_SUBMIT_DELAY_MS);
+    expect(told()).toMatch(/still not/);
   });
 });
