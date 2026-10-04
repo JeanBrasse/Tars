@@ -791,14 +791,12 @@ const LOOK_ALIKES = new Map<string, string>(
   Object.entries(LOOK_ALIKES_OF).flatMap(([letter, shapes]) => [...shapes].map(shape => [shape, letter] as [string, string])),
 );
 
-/** Letters that draw as nothing: the Hangul fillers, a blank that a letter class keeps. */
-const BLANK_LETTERS = /[\u115f\u1160\u3164\uffa0]/gu;
-
 /**
  * What a line spells, letters only: compatibility forms folded (NFKC: bold,
  * fullwidth), every look-alike of the phrase's letters read as the letter,
- * and then everything that is not a letter dropped (marks of every kind,
- * spaces and blanks, punctuation, digits, format characters), so that
+ * and then everything that is not a to z dropped (marks of every kind,
+ * spaces and blanks, punctuation, digits, format characters, and letters that
+ * draw as one of those), so that
  * "**Message from Tars**", or an M with an enclosing circle, spell what they read as. Read twice:
  * once with a digit that looks like a letter read as it ("fr0m"), once
  * without ("10. Message from"), since either way can be the one a reader sees.
@@ -812,8 +810,12 @@ function skeletons(line: string): string[] {
     })
     .join('')
     .toLowerCase()
-    .replace(BLANK_LETTERS, '')
-    .replace(/\P{L}/gu, '')
+    // a to z only: the phrase is spelt with them once its look-alikes are
+    // read, and every other letter is something else drawn around it, a blank
+    // (the Hangul fillers) or punctuation (a katakana prolonged-sound mark as
+    // a list dash, dental clicks as pipes, modifier commas as quotes: the
+    // Audit's batch 1).
+    .replace(/[^a-z]/g, '')
     // "rn" reads as m, which confusables gives as m's own prototype.
     .replace(/rn/g, 'm'));
 }
