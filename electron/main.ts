@@ -123,6 +123,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
+import { startTaskWatch } from './services/task-watch';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
@@ -715,6 +716,9 @@ app.whenReady().then(async () => {
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
   startAgentWatch();
+  // The tasks the Usage page prices: who handed what, from turn to rest
+  // (services/task-ledger.ts).
+  startTaskWatch();
   // And an agent that reads running while it does nothing is told to whoever
   // handed it the work (services/stall-watch.ts).
   startStallWatch();

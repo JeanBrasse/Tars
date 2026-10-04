@@ -23,6 +23,7 @@ import { killStalePty, armTaskStartWatch } from '../core/agent-manager';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
 import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
+import { handOffFrom, noteHandOff } from './task-ledger';
 
 /** What a bot needs from the rest of Tars. */
 export interface BotFleet {
@@ -229,8 +230,11 @@ async function claimLaunch(agent: AgentStatus): Promise<object | null> {
  */
 async function typeLaunch(
   fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, workingPath: string, command: string, task: string,
+  from: BotChannel, handedOver: string,
 ): Promise<void> {
   await shellReady(ptyProcess);
+  // Work handed over, for the task its first turn opens (task-ledger.ts).
+  noteHandOff(agent.id, { ...handOffFrom({ kind: 'channel', channel: from }), text: handedOver });
   writeProgrammaticInput(ptyProcess, `cd '${workingPath}' && ${command}`);
   noteLaunch(ptyProcess, launchSettings(agent));
   fleet.saveAgents();
@@ -323,7 +327,7 @@ export async function startWithTask(
       orchestratorMode: isSuperAgent(agent),
     });
     markRunning(agent, task);
-    await typeLaunch(fleet, agent, ptyProcess, workingPath, command, task);
+    await typeLaunch(fleet, agent, ptyProcess, workingPath, command, task, from, task);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
@@ -381,7 +385,7 @@ export async function forwardToOrchestrator(
       orchestrator.lastActivity = new Date().toISOString();
       fleet.saveAgents();
       writeProgrammaticInput(ptyProcess, prompt, true, {
-        agentId: orchestrator.id, from, sender: { kind: 'channel', channel: from },
+        agentId: orchestrator.id, from, sender: { kind: 'channel', channel: from }, task: opts.message,
       });
       await opts.reply('typed');
       return;
@@ -409,7 +413,7 @@ export async function forwardToOrchestrator(
       orchestratorMode: true,
     });
     markRunning(orchestrator, opts.message);
-    await typeLaunch(fleet, orchestrator, ptyProcess, workingPath, command, prompt);
+    await typeLaunch(fleet, orchestrator, ptyProcess, workingPath, command, prompt, from, opts.message);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(orchestrator.id, launch);

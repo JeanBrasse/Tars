@@ -23,6 +23,7 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
+import { liveTaskLedger, noteHandOff } from '../task-ledger';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
@@ -350,6 +351,12 @@ async function spawnAgentSession(
   clearStop(agent);
   agent.status = 'running';
   agent.workHandedAt = new Date().toISOString();
+  // Work handed over, for the task its first turn opens (task-ledger.ts).
+  if (prompt.trim()) {
+    noteHandOff(agent.id, agent.requestedBy
+      ? { source: 'agent', requesterAgentId: agent.requestedBy.agentId, text: prompt }
+      : { source: 'tars', text: prompt });
+  }
   agent.currentTask = prompt;
   agent.output = [];
   agent.lastCleanOutput = undefined;  // Clear stale output from previous task
@@ -1183,6 +1190,31 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       saveAgents();
       emitAgentStatus(agent.id);
       announceAgent(agent);
+    }
+
+    // A task of its own, with what the run reported it cost (task-ledger.ts).
+    // A run that never started did no work.
+    if (result.started) {
+      try {
+        const requester = resolveCallerId(req);
+        liveTaskLedger()?.acpRun({
+          agent,
+          requesterAgentId: requester && requester !== agent.id ? requester : undefined,
+          text: task,
+          startedAt: Date.parse(handedAt),
+          endedAt: Date.now(),
+          outcome: result.ok ? 'completed' : result.stopReason === 'turn_limit' ? 'stopped' : 'error',
+          usage: result.usage ? {
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+            cachedReadTokens: result.usage.cachedReadTokens ?? 0,
+            cachedWriteTokens: result.usage.cachedWriteTokens ?? 0,
+          } : null,
+          costUSD: result.costUSD ?? null,
+        });
+      } catch (err) {
+        console.warn('[task-ledger] ACP run not recorded:', (err as Error).message);
+      }
     }
 
     // A run that started is an answer, however it ended: 502 only when none

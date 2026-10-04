@@ -12,6 +12,7 @@ import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke,
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
 import { AgentMessageWaiting } from '../types';
+import { handOffFrom, noteHandOff } from '../services/task-ledger';
 
 export const ptyProcesses: Map<string, pty.IPty> = new Map();
 export const quickPtyProcesses: Map<string, pty.IPty> = new Map();
@@ -362,6 +363,9 @@ export interface WriteOrigin {
    * the same lie whichever queue it is sitting in.
    */
   onWritten?: () => void;
+  /** The work this hands over, as the task ledger should name it, when the
+   *  message carries more than the work (a chat's context before it). */
+  task?: string;
   /**
    * Called once, if the message has to wait for a person: somebody is typing
    * in the field, or left something there Tars cannot put back. Not when it
@@ -745,6 +749,8 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
     } catch (err) {
       console.error('[pty] a message reached its terminal but its caller threw:', err);
     }
+    // Work handed over, for the task the turn it starts opens (task-ledger.ts).
+    if (item.origin) noteHandOff(item.origin.agentId, { ...handOffFrom(item.origin.sender), text: item.origin.task ?? item.data });
   }
   const enter = () => {
     // A dialog that opened after the paste would take this Enter as its answer

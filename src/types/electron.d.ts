@@ -16,6 +16,67 @@ export interface LogLine {
   position: number;
 }
 
+/** One task, as usage.tasks reports it (electron/services/task-ledger.ts and task-cost.ts). */
+export interface TaskEntry {
+  id: string;
+  agentId: string;
+  projectPath: string | null;
+  worktreePath: string | null;
+  /** The agent's provider, model and Claude account when the task started. */
+  provider: string | null;
+  model: string | null;
+  accountId: string | null;
+  /** Who handed it over: typed in its window ('terminal'), another agent, Tars, a chat, or a run over ACP. */
+  source: 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
+  requesterAgentId: string | null;
+  /** The task of the requester it was handed for; null when it was handed for none. */
+  parentTaskId: string | null;
+  /** What it was handed, or the prompt typed: one line, at most 200 characters. */
+  text: string;
+  /** Epoch ms. */
+  startedAt: number;
+  /** Null while it runs. */
+  endedAt: number | null;
+  lastAt: number;
+  /** 'stopped' also covers a task cut short by a quit of Tars. */
+  outcome: 'running' | 'completed' | 'error' | 'stopped';
+  turns: number;
+  sessionIds: string[];
+  acp?: { inputTokens: number; outputTokens: number; cachedReadTokens: number; cachedWriteTokens: number; costUSD: number | null };
+  /** Null: not counted (no transcript: a CLI that writes none). Never shown as 0. */
+  costUSD: number | null;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null;
+  /** Cost per model the replies came from. */
+  byModel: Record<string, number>;
+  /** Its own cost and that of every task handed on from it, down the line. */
+  totalCostUSD: number;
+  /** The total leaves out a task not counted. */
+  totalPartial: boolean;
+  /** Null while it runs. */
+  durationMs: number | null;
+}
+
+export interface TaskAverage {
+  tasks: number;
+  /** Of those, the ones whose cost is known. */
+  counted: number;
+  /** Mean over the counted ones; null when none is. */
+  costUSD: number | null;
+  /** Mean over the ended ones; null when none has. */
+  durationMs: number | null;
+}
+
+export interface TaskReport {
+  /** Newest first. */
+  tasks: TaskEntry[];
+  /** byModel: the model that did most of a task's work, or the one it was launched on when nothing was counted. */
+  averages: { byAgent: Record<string, TaskAverage>; byModel: Record<string, TaskAverage> };
+  /** Tasks in the report whose cost is not known. */
+  notCounted: number;
+  /** The agents' names as they are now; a deleted agent has none. */
+  agentNames: Record<string, string>;
+}
+
 export interface FleetEntry {
   agentId: string;
   agentName: string;
@@ -1224,6 +1285,17 @@ export interface ElectronAPI {
         turns: number;
       }>;
     }>;
+    /**
+     * What each task cost (PLAN-1.9.3.md, item 2). A task runs from the turn that starts it to the rest that ends
+     * it, in one agent; work handed on from it to other agents is a task of their own, under it. Priced from the
+     * transcripts when asked, the way the rest of the page prices them; an ACP run at what it reported.
+     */
+    tasks: (query?: {
+      /** The last `sinceDays` 24-hour periods back from now; all of the file without it. */
+      sinceDays?: number;
+      projectPath?: string;
+      agentId?: string;
+    }) => Promise<TaskReport>;
   };
 
   /** Search across every agent's output at once. */
