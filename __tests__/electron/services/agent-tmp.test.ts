@@ -18,8 +18,8 @@ import { DATA_DIR } from '../../../electron/constants';
  *     path is long enough to break a Unix socket under it.
  *  3. The folder is not there when the CLI starts, is readable by other accounts, or is a link someone planted to send
  *     the agent's files elsewhere, and the link is followed.
- *  4. The retention deletes something younger than 7 days (dated by its newest file, not by its folder), or anything
- *     of an agent whose CLI is running.
+ *  4. The retention deletes something younger than 7 days (dated by the newest change in it, a file or a folder, not
+ *     by its top folder alone), or anything of an agent whose CLI is running.
  *  5. It keeps more than the cap while older things could go, or deletes the newest first.
  *  6. With under 30 GB free on the disk, the cap stays at 20 GB instead of 10 GB.
  *  7. A deleted agent's folder stays for ever.
@@ -36,12 +36,14 @@ let root: string;
 let outside: string;
 let logs: string[];
 
+/** A file of `bytes`, written `ageDays` ago, in folders last changed then too (a folder's own date is activity). */
 function put(rel: string, bytes = 10, ageDays = 0): string {
   const file = path.join(root, rel);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, Buffer.alloc(bytes));
   const at = new Date(NOW - ageDays * DAY);
   fs.utimesSync(file, at, at);
+  age(path.dirname(rel), ageDays);
   return file;
 }
 /** Dates a folder and every folder above it inside the root, as a long-untouched tree would be. */
