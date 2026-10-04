@@ -1,4 +1,4 @@
-import { afterAll } from 'vitest';
+import { afterAll, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -24,15 +24,28 @@ import * as path from 'node:path';
  * home-isolation.ts, whose throwaway HOME is then inside it too.
  *
  * The folder is made inside the run's own folder (tmpdir-run.ts), which the
- * run checks is empty at its end: a file whose folder survives it, or anything
- * written past this one, fails the run.
+ * run checks at its end: a file whose folder survives it, or anything written
+ * past this one, fails the run.
+ *
+ * Except a file skipped whole, by a skipIf or by a -t filter that matches none
+ * of its tests: vitest then runs none of its hooks, this afterAll included, so
+ * its folder stays, with whatever it wrote at import. The run removes it with
+ * its own, and tells it from a leak by the mark below, which only a file whose
+ * hooks ran carries (CI failed on that, 2026-10-05: real-claude-bypass.test.ts
+ * is skipped on a runner without claude).
  */
 
 const VARIABLES = ['TMPDIR', 'TMP', 'TEMP'] as const;
+/** Read by tmpdir-run.ts. */
+const MARK = 'tars-vitest-hooks-ran';
 
 const before = Object.fromEntries(VARIABLES.map(name => [name, process.env[name]]));
 const own = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-file-'));
 for (const name of VARIABLES) process.env[name] = own;
+
+beforeAll(() => {
+  fs.writeFileSync(path.join(own, MARK), '');
+});
 
 afterAll(() => {
   for (const name of VARIABLES) {

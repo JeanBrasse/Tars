@@ -8,17 +8,29 @@ import * as path from 'node:path';
  * vitest runs this once, in its main process, before it starts the workers, so
  * the workers and everything they start inherit the folder through TMPDIR,
  * TMP and TEMP. Each test file then makes its own folder inside it and removes
- * it when it ends (tmpdir-isolation.ts). At the end of the run the folder must
- * be empty: anything still in it is a file's folder that outlived the file, or
- * something written past the file's own folder, and the run fails with its
- * names. It is removed either way, so that a failed run does not leave its
- * leftovers behind as well.
+ * it when it ends (tmpdir-isolation.ts). At the end of the run, anything still
+ * in the folder is a file's folder that outlived the file, or something written
+ * past the file's own folder, and the run fails with its names. It is removed
+ * either way, so that a failed run does not leave its leftovers behind as well.
+ *
+ * One kind of entry is not a leak: the folder of a file skipped whole, which
+ * ran no hooks and so could not remove it. It is the one file folder without
+ * the mark tmpdir-isolation.ts leaves when a file's hooks run, and the run
+ * removes it with its own.
  *
  * Why the run fails rather than warns: 312 entries a run were left on
  * 2026-10-01, a day of that filled a disk, and no one had read a warning.
  */
 
 const VARIABLES = ['TMPDIR', 'TMP', 'TEMP'] as const;
+/** As tmpdir-isolation.ts names a file's folder, and the mark it leaves there. */
+const FILE_PREFIX = 'tars-vitest-file-';
+const MARK = 'tars-vitest-hooks-ran';
+
+/** The folder of a test file whose hooks never ran: skipped whole, or never started. */
+function ranNoHooks(entry: string): boolean {
+  return path.basename(entry).startsWith(FILE_PREFIX) && !fs.existsSync(path.join(entry, MARK));
+}
 
 export default function setup(): () => void {
   const before = Object.fromEntries(VARIABLES.map(name => [name, process.env[name]]));
@@ -32,7 +44,7 @@ export default function setup(): () => void {
     }
     let left: string[] = [];
     try {
-      left = fs.readdirSync(run);
+      left = fs.readdirSync(run).filter(name => !ranNoHooks(path.join(run, name)));
     } finally {
       fs.rmSync(run, { recursive: true, force: true });
     }
