@@ -25,6 +25,12 @@ import { reviewDiff, resetReviewCache } from '../../../electron/services/git-rev
  *    patch.
  * 5. The option does not cross IPC: the preload, the renderer's type or the
  *    handler drops it.
+ *
+ * And from QA's gate of #247 (QA-PR247.md, after #282 cut a patch past
+ * MAX_PATCH_BYTES):
+ * 6. On a change past the cut, the full call loses #282's cut (its patch
+ *    whole, or empty and "not cut"), or the list-only call reads the patch
+ *    anyway and says it was cut.
  */
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -40,12 +46,13 @@ function git(args: string[]): string {
 /** The git commands Tars ran since the last call, as argument lines. */
 function ran(): string[] {
   const lines = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
-  // Tars runs every git with --no-optional-locks first.
-  for (let i = 0; i < lines.length; i++) lines[i] = lines[i].replace(/^--no-optional-locks /, '');
+  // Tars runs every git with --no-optional-locks and -c core.quotePath=false first.
+  for (let i = 0; i < lines.length; i++) lines[i] = lines[i].replace(/^--no-optional-locks /, '').replace(/^-c core\.quotePath=false /, '');
   fs.writeFileSync(log, '');
   return lines;
 }
-const patchRuns = (lines: string[]) => lines.filter(l => /^diff(?! --numstat| --name-status)/.test(l));
+// A diff that is not a list: since #272 the lists are `diff -M --numstat -z` and `diff -M --name-status -z`.
+const patchRuns = (lines: string[]) => lines.filter(l => /^diff\b/.test(l) && !/--(numstat|name-status)\b/.test(l));
 
 beforeEach(() => {
   resetReviewCache();
@@ -131,3 +138,27 @@ describe('the option, across IPC', () => {
     expect(read('electron/handlers/ipc-handlers.ts')).toMatch(/reviewDiff\(repoPath, \{ baseBranch, listOnly: listOnly === true \}\)/);
   });
 });
+
+describe('a change past the patch cut (QA, gate of #247)', () => {
+  it('6. the full call keeps the cut, and the list-only call reads no patch at all', async () => {
+    // Over git()'s 8 MB buffer, as review-stays-in-the-repository.test.ts builds it: a
+    // tracked file grown to 300 000 lines, since an untracked file is in no patch.
+    fs.writeFileSync(path.join(repo, 'big.txt'), 'start\n');
+    git(['add', 'big.txt']);
+    git(['commit', '-qm', 'big']);
+    fs.writeFileSync(path.join(repo, 'big.txt'), 'x'.repeat(30).concat('\n').repeat(300_000));
+    ran();
+
+    const list = await reviewDiff(repo, listOnly);
+    const listRuns = ran();
+    resetReviewCache();
+    const full = await reviewDiff(repo);
+
+    expect(patchRuns(listRuns)).toEqual([]);
+    expect(list).toMatchObject({ patch: '', truncated: false });
+    expect(list.files).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'big.txt', status: 'added', additions: 300_000 })]));
+    expect(full.truncated).toBe(true);
+    expect(full.patch.endsWith('… patch truncated')).toBe(true);
+  });
+});
+
