@@ -183,7 +183,7 @@ function deps(over: Over = {}): TriageDeps {
   return {
     settings: () => ({ sentryAuthToken: TOKEN, sentryTriageProject: PROJECT, errorReportsEnabled: true, ...settings }),
     hermes: () => hermes,
-    tell: (project, message) => { told.push({ project, message }); return 'typed'; },
+    tell: async (project, message) => { told.push({ project, message }); return 'typed'; },
     relay: relay(),
     goAheadFile: path.join(home, '.tars-private', 'sentry-go-aheads.json'),
     sentryApi,
