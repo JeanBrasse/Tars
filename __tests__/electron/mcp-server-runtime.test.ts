@@ -151,7 +151,11 @@ const run = (command: string, args: string[]) =>
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mcp-node-'));
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
-describe('the program Tars runs its MCP servers on', () => {
+// 30 s, not vitest's 5: these cases run the launcher through a real shell, and under a
+// gate's load (load average 100 to 180 on 2026-10-01) case 13 took 6.8 s and case 3
+// 5.2 s, both synchronous, so those are their real run times, and both failed the gate
+// on nothing (27 full-suite reports of 28/09 to 01/10). Quiet, the slowest is 3.9 s.
+describe('the program Tars runs its MCP servers on', { timeout: 30_000 }, () => {
   it('1, 2. is an absolute launcher that runs the app binary as Node, with no PATH at all', () => {
     const app = fakeApp(path.join(scratch, 'one'));
 
@@ -271,7 +275,7 @@ describe('registering the servers', () => {
   });
 });
 
-describe('the gate of #201', () => {
+describe('the gate of #201', { timeout: 30_000 }, () => {
   const resources = path.join(scratch, 'resources');
   const runtimeFile = () => path.join(home(), '.dorothy', 'mcp-servers-runtime.json');
   beforeEach(() => {
