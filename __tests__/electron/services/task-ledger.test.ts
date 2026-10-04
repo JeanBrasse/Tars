@@ -215,8 +215,13 @@ describe('what is kept', () => {
     ledger.stateChanged(agent({ status: 'idle' }));
     fs.appendFileSync(file, '{"t":"open","id":\n');
     fs.appendFileSync(file, 'not json at all\n');
+    clock += 1_000;
+    const after = open();
+    after.turnStarted(agent(), { sessionId: 'sess-1' });
+    after.stateChanged(agent({ status: 'idle' }));
 
-    expect(open().tasks()).toHaveLength(1);
+    // The one written after the damage too, not only the one before it.
+    expect(open().tasks()).toHaveLength(2);
   });
 
   it('8. the file keeps its last lines only', () => {
@@ -230,8 +235,8 @@ describe('what is kept', () => {
     expect(fs.readFileSync(file, 'utf-8').trim().split('\n').length).toBeLessThanOrEqual(50 + 2);
     const kept = createTaskLedger({ file, now: () => clock, maxLines: 50 }).tasks();
     expect(kept.length).toBeGreaterThan(10);
-    // The newest, not the oldest: the last task is the last one kept.
-    expect(kept.at(-1)!.startedAt).toBe(clock - 1_000);
+    // The newest, without a gap: the tasks kept are the last ones started.
+    expect(kept.map((t) => t.startedAt)).toEqual(kept.map((_, i) => clock - (kept.length - i) * 1_000));
   });
 
   it('8. 200 characters of a task\'s text at most, a character never cut in two', () => {
