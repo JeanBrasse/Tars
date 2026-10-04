@@ -13,7 +13,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * The sandbox holds a ledger of tasks (~/.dorothy/task-ledger.jsonl), the
  * transcripts their sessions wrote, and a catalogue pricing claude-opus-5 at
- * $1 a million tokens in and $2 out, marked fresh so no fetch replaces it.
+ * $1 a million tokens in and $2 out, marked fresh so no fetch replaces it,
+ * and two Claude accounts on, Main and Second, which the lead and the worker
+ * ran on.
  * Seeded rather than run: the chain that writes them is #305's own spec
  * (task-cost.spec.ts). This one reads what the page makes of them, through the
  * real IPC and the real pricing.
@@ -62,6 +64,11 @@ test('the usage page lists each task with its own cost and its total, the averag
     anthropic: { models: { 'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5', cost: { input: 1, output: 2, cache_read: 0.1, cache_write: 1.25 } } } },
   }));
   fs.writeFileSync(path.join(dir, 'model-catalog.meta.json'), JSON.stringify({ fetchedAt: Date.now() }));
+  fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), JSON.stringify({
+    enabled: true, fiveHourThreshold: 90, weeklyThreshold: 95,
+    accounts: [{ id: 'default', label: 'Main', enabled: true }, { id: 'acct-0b0b0b', label: 'Second', enabled: true }],
+  }), { mode: 0o600 });
 
   // The ledger and the transcripts, around now.
   const now = Date.now();
@@ -70,13 +77,13 @@ test('the usage page lists each task with its own cost and its total, the averag
   let reply = 0;
   const task = (t: {
     id: string; agentId: string; project: string; source: string; text: string; startedAt: number; minutes: number;
-    outcome?: string; requesterAgentId?: string; parentTaskId?: string; provider?: string; model?: string;
+    outcome?: string; requesterAgentId?: string; parentTaskId?: string; provider?: string; model?: string; accountId?: string;
     session?: string; replies?: Array<[number, number]>;
   }) => {
     const endedAt = t.startedAt + t.minutes * 60_000;
     lines.push(JSON.stringify({ t: 'task', task: {
       id: t.id, agentId: t.agentId, projectPath: t.project, worktreePath: null,
-      provider: t.provider ?? 'claude', model: t.model ?? 'claude-opus-5', accountId: null,
+      provider: t.provider ?? 'claude', model: t.model ?? 'claude-opus-5', accountId: t.accountId ?? null,
       source: t.source, requesterAgentId: t.requesterAgentId ?? null, parentTaskId: t.parentTaskId ?? null,
       text: t.text, startedAt: t.startedAt, endedAt, lastAt: endedAt, outcome: t.outcome ?? 'completed',
       turns: t.replies?.length || 1, sessionIds: t.session ? [t.session] : [],
@@ -93,8 +100,8 @@ test('the usage page lists each task with its own cost and its total, the averag
     });
     transcripts.set(file, list);
   };
-  task({ id: 'task-lead', agentId: 'lead', project: tars, source: 'terminal', text: 'fix the build on main', startedAt: now - 3 * H, minutes: 30, session: 'sess-lead', replies: [[1_000_000, 500_000]] });
-  task({ id: 'task-worker', agentId: 'worker', project: tars, source: 'agent', requesterAgentId: 'lead', parentTaskId: 'task-lead', text: 'review the build', startedAt: now - 3 * H + 5 * 60_000, minutes: 15, session: 'sess-worker', replies: [[3_000_000, 0]] });
+  task({ id: 'task-lead', agentId: 'lead', project: tars, source: 'terminal', text: 'fix the build on main', startedAt: now - 3 * H, minutes: 30, accountId: 'default', session: 'sess-lead', replies: [[1_000_000, 500_000]] });
+  task({ id: 'task-worker', agentId: 'worker', project: tars, source: 'agent', requesterAgentId: 'lead', parentTaskId: 'task-lead', text: 'review the build', startedAt: now - 3 * H + 5 * 60_000, minutes: 15, accountId: 'acct-0b0b0b', session: 'sess-worker', replies: [[3_000_000, 0]] });
   task({ id: 'task-codex', agentId: 'codex', project: tars, source: 'agent', requesterAgentId: 'lead', parentTaskId: 'task-lead', text: 'translate the strings', startedAt: now - 3 * H + 10 * 60_000, minutes: 15, provider: 'codex', model: 'gpt-5.3-codex' });
   task({ id: 'task-writer', agentId: 'writer', project: site, source: 'telegram', outcome: 'stopped', text: 'update the landing copy', startedAt: now - 26 * H, minutes: 30, session: 'sess-writer', replies: [[250_000, 0]] });
   task({ id: 'task-hermes', agentId: 'lead', project: tars, source: 'hermes', outcome: 'error', text: 'the nightly test run', startedAt: now - 72 * H, minutes: 43, session: 'sess-hermes', replies: [[500_000, 250_000]] });
@@ -161,9 +168,9 @@ test('the usage page lists each task with its own cost and its total, the averag
     seen.fourteenDays = first;
     expect(first.slice(0, 3).map(r => r.text)).toEqual(['translate the strings', 'review the build', 'fix the build on main']);
     expect(first[0]).toMatchObject({ source: 'from Project Lead', agent: 'Codex Helper', provider: 'Codex', model: 'gpt-5.3-codex', time: '15 min', tokens: '-', own: 'not counted', total: 'not counted' });
-    expect(first[1]).toMatchObject({ source: 'from Project Lead', agent: 'Build Worker', provider: 'Claude', model: 'Opus 5', time: '15 min', turns: '1', tokens: '3.0M', own: '$3.00', total: '$3.00' });
-    expect(first[2]).toMatchObject({ source: 'typed', agent: 'Project Lead', time: '30 min', tokens: '1.5M', own: '$2.00', total: '$5.00partial' });
-    expect(first[3]).toMatchObject({ text: 'update the landing copy', source: 'from Telegram · stopped', agent: 'Site Writer', own: '$0.25' });
+    expect(first[1]).toMatchObject({ source: 'from Project Lead', agent: 'Build Worker', provider: 'Claude · Second', model: 'Opus 5', time: '15 min', turns: '1', tokens: '3.0M', own: '$3.00', total: '$3.00' });
+    expect(first[2]).toMatchObject({ source: 'typed', agent: 'Project Lead', provider: 'Claude · Main', time: '30 min', tokens: '1.5M', own: '$2.00', total: '$5.00partial' });
+    expect(first[3]).toMatchObject({ text: 'update the landing copy', source: 'from Telegram · stopped', agent: 'Site Writer', provider: 'Claude', own: '$0.25' });
     expect(first[4]).toMatchObject({ text: 'the nightly test run', source: 'from Hermes · error', own: '$1.00', time: '43 min' });
     expect(first[5]).toMatchObject({ text: 'an old task of a deleted agent', agent: 'deleted agent', own: '$0.10' });
     expect(first[6]).toMatchObject({ text: 'chore 15', source: 'from Tars', own: '$0.02' });
