@@ -31911,7 +31911,7 @@
                                       "fill": "#727272",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "44.4.4 · Node 24.21.0 · darwin arm64",
+                                      "content": "44.4.4 · Node v24.21.0 · darwin arm64",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
