@@ -90,9 +90,11 @@ const orchestratorAgent = [
   { name: "start_agent, held without a reason, no name", tool: "start_agent", args: { id: "a1", prompt: "Run" }, tars: [ok({ success: true, mode: "message", held: true, agent: { id: "a1", status: "running" } })] },
   { name: "start_agent, error", tool: "start_agent", args: { id: "a1", prompt: "Run" }, tars: [fail(409, { error: "Launch in progress" })] },
 
-  { name: "stop_agent", tool: "stop_agent", args: { id: "a1" }, tars: [ok({ success: true })] },
-  { name: "stop_agent, cross-project", tool: "stop_agent", args: { id: "b1", allowCrossProject: true }, tars: [ok({ success: true })] },
-  { name: "stop_agent, error", tool: "stop_agent", args: { id: "a1" }, tars: [fail(404, { error: "Agent not found" })] },
+  { name: "stop_agent", tool: "stop_agent", args: { id: "a1", reason: "frozen on a file read" }, tars: [ok({ success: true })] },
+  { name: "stop_agent, no reason", tool: "stop_agent", args: { id: "a1" } },
+  { name: "stop_agent, already stopped", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [ok({ success: true, alreadyStopped: true, stoppedBy: "Tars-Orchestrator", stopReason: "frozen on a file read" })] },
+  { name: "stop_agent, cross-project", tool: "stop_agent", args: { id: "b1", reason: "done", allowCrossProject: true }, tars: [ok({ success: true })] },
+  { name: "stop_agent, error", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [fail(404, { error: "Agent not found" })] },
 
   { name: "send_message, no text", tool: "send_message", args: { id: "a1" } },
   { name: "send_message, starts an idle agent", tool: "send_message", args: { id: "a1", message: "Hello" }, tars: [started({ previousStatus: "completed" })] },
@@ -114,6 +116,7 @@ const orchestratorAgent = [
   { name: "wait_for_agent, blocked on a permission", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "waiting", waitingReason: "permission" }), ok({ agent: dune })] },
   { name: "wait_for_agent, asking a question", tool: "wait_for_agent", args: { id: "a1" }, tars: [asking, ok({ agent: dune })] },
   { name: "wait_for_agent, another status", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped" }), ok({ agent: dune })] },
+  { name: "wait_for_agent, stopped with a reason", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped", stoppedBy: "Tars-Orchestrator", stopReason: "frozen on a file read" }), ok({ agent: dune })] },
   { name: "wait_for_agent, times out", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [ok({ status: "running", timeout: true }), ok({ agent: dune })] },
   { name: "wait_for_agent, the agent lookup fails", tool: "wait_for_agent", args: { id: "a1" }, tars: [done("x"), fail(404, { error: "Agent not found" })] },
   { name: "wait_for_agent, Tars never answers: its segment's 31 s", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [hold] },
@@ -214,7 +217,7 @@ const orchestratorShared = [
   { name: "list_agents, the shared token", tool: "list_agents", tars: [ok({ agents: [dune, far] })] },
   { name: "list_agents all, no identity", tool: "list_agents", args: { all: true }, tars: [ok({ agents: [dune, far] })] },
   { name: "create_agent, no project anywhere", tool: "create_agent", args: { name: "Worker" } },
-  { name: "stop_agent, the shared token", tool: "stop_agent", args: { id: "a1" }, tars: [ok({ success: true })] },
+  { name: "stop_agent, the shared token", tool: "stop_agent", args: { id: "a1", reason: "done" }, tars: [ok({ success: true })] },
 ];
 
 const orchestratorProjectOnly = [

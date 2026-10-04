@@ -16,6 +16,9 @@ import * as os from 'node:os';
  *    anyway, where the sender should get the list (or be told).
  * 4. Upper or lower case in the name sends the message nowhere.
  * 5. The Slack and Discord bots still give a free message to the first orchestrator.
+ * 6. A project whose folder name holds a space (or an @, a colon, a comma) cannot be written after "@" (the Audit's
+ *    Low on #285): it must be offered, and taken back, under its name with a dash in each such place, as the relay
+ *    already sends it; and the list of projects must say that name.
  *
  * The rule is a function of the fleet (orchestrator-routing.ts); the bots are their real handlers, typing through the
  * real writer into terminals whose node-pty process is a recorder per agent.
@@ -71,6 +74,16 @@ describe('the rule', () => {
   it('2, 4. "@project text": that project\'s orchestrator, the text without the prefix, whatever the case', () => {
     expect(routing.orchestratorForMessage(two(), '@tars fais le point')).toMatchObject({ kind: 'found', orchestrator: { id: 'orch-tars' }, text: 'fais le point' });
     expect(routing.orchestratorForMessage(two(), '@1212-capital: go')).toMatchObject({ kind: 'found', orchestrator: { id: 'orch-capital' }, text: 'go' });
+  });
+
+  it("6. a folder name with a space is offered, and reached, with a dash in its place", () => {
+    const ONEIL = "/Users/someone/projects/o'neil project";
+    const spaced = fleet([['orch-oneil', 'Oneil-Orchestrator', ONEIL, 'orchestrator'], ['orch-tars', 'Tars-Orchestrator', TARS, 'orchestrator']]);
+
+    expect(routing.projectNames(spaced)).toEqual(["o'neil-project", 'tars']);
+    expect(routing.orchestratorForMessage(spaced, "@O'Neil-Project ship it")).toMatchObject({ kind: 'found', orchestrator: { id: 'orch-oneil' }, text: 'ship it', projectPath: ONEIL });
+    expect(routing.orchestratorForMessage(spaced, 'hello')).toEqual({ kind: 'ambiguous', name: null, projects: ["o'neil-project", 'tars'] });
+    expect(routing.whereToWrite({ kind: 'unknown', name: 'nope', projects: routing.projectNames(spaced) })).toContain("@o'neil-project");
   });
 
   it('3. a name no project has, a name two share, a project with no orchestrator, no orchestrator at all', () => {

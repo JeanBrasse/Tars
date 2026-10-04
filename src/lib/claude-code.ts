@@ -67,7 +67,25 @@ export interface ClaudeStats {
      *  days. What every cost on the Usage page is summed from. Absent on the
      *  legacy stats-cache.json shape. */
     costByModel?: Record<string, number>;
+    /** The same cost per Claude account, as the status line filed each
+     *  session (TARS_CLAUDE_ACCOUNT); '' holds the sessions that named none. */
+    costByAccount?: Record<string, number>;
   }>;
+  /** The last 48 hours, by the hour, the shape of a day with `hour` (its
+   *  start, ms since the epoch, floored to the hour) for `date` (#275). What
+   *  the Usage page's 24 hours view is summed from. */
+  hourlyModelTokens?: Array<{
+    hour: number;
+    tokensByModel: Record<string, number>;
+    breakdownByModel?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
+    messagesByModel?: Record<string, number>;
+    costUSD?: number;
+    costByModel?: Record<string, number>;
+    costByAccount?: Record<string, number>;
+  }>;
+  /** For each model, the provider its sessions ran under, as the status line
+   *  wrote them in token-stats.json; a model no session speaks for is absent. */
+  providerByModel?: Record<string, string>;
   modelUsage: Record<string, {
     inputTokens: number;
     outputTokens: number;

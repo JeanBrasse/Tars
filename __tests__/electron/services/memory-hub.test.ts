@@ -18,6 +18,8 @@ vi.mock('os', async (importOriginal) => {
 });
 
 const hermesMock = {
+  HERMES_MEMORY_FILES: ['MEMORY.md', 'USER.md'],
+  fetchHermesMemoryFile: vi.fn(),
   fetchHermesMemoryFiles: vi.fn(),
   searchHermesSessions: vi.fn(),
   fetchHermesMemoryState: vi.fn(),
@@ -44,6 +46,9 @@ beforeEach(() => {
   fs.writeFileSync(path.join(memoryDir, 'MEMORY.md'), '# Index\n\nThe deploy key lives in 1Password.\n\nThe API binds 31415.');
 
   hermesMock.fetchHermesMemoryFiles.mockResolvedValue({ success: true, files: [{ name: 'MEMORY.md', content: 'Gateway runs on the VPS.' }] });
+  // The session-start block reads the two files one by one.
+  hermesMock.fetchHermesMemoryFile.mockImplementation(async (_conn: unknown, name: string) =>
+    ({ success: true, file: name === 'MEMORY.md' ? { name, content: 'Gateway runs on the VPS.' } : null }));
   hermesMock.searchHermesSessions.mockResolvedValue({ success: true, hits: [{ sessionId: 's1', title: 'deploy', snippet: 'rotated the deploy key' }] });
   hermesMock.fetchHermesMemoryState.mockResolvedValue({ success: true, state: { active: 'honcho' } });
   mcpMock.probeMcpEndpoint.mockResolvedValue({ reachable: true, tools: ['honcho_search'] });
@@ -71,7 +76,7 @@ describe('assembleDigest', () => {
   });
 
   it('still returns the local memory when the gateway is down', async () => {
-    hermesMock.fetchHermesMemoryFiles.mockRejectedValue(new Error('ECONNREFUSED'));
+    hermesMock.fetchHermesMemoryFile.mockRejectedValue(new Error('ECONNREFUSED'));
 
     const digest = await hub.assembleDigest({ projectPath: PROJECT, settings, hermes: hermesConn });
 

@@ -52,7 +52,13 @@ export function useElectronAgents() {
             // change moves nothing else on the record.
             prevAgent.role !== agent.role ||
             // A rename, which every agent row draws the mark from.
-            prevAgent.name !== agent.name
+            prevAgent.name !== agent.name ||
+            // The Claude account it runs on, and the one it is pinned to,
+            // which its account control names.
+            prevAgent.claudeAccountId !== agent.claudeAccountId ||
+            prevAgent.claudeAccountPin !== agent.claudeAccountPin ||
+            // The last move by Tars, which its control's title tells.
+            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at
           );
         });
         return hasChanged ? list : prev;
@@ -194,6 +200,20 @@ export function useElectronAgents() {
       ));
     });
 
+    // An agent's Claude account or pin, changed from this window's control,
+    // from another window, or by main itself: main says it to every window
+    // with both fields, so the agent is patched where it is.
+    const unsubAccount = window.electronAPI!.claudeAccounts?.onAgentChanged?.((change) => {
+      setAgents(prev => prev.map(a => a.id === change.agentId
+        ? { ...a, claudeAccountId: change.claudeAccountId ?? undefined, claudeAccountPin: change.claudeAccountPin ?? undefined }
+        : a));
+    });
+    // A move by Tars, kept on the agent for its control's title; the new
+    // account follows on onAgentChanged.
+    const unsubMove = window.electronAPI!.claudeAccounts?.onAgentMoved?.((move) => {
+      setAgents(prev => prev.map(a => a.id === move.agentId ? { ...a, claudeAccountMove: move } : a));
+    });
+
     // Also subscribe to agents:tick for reliable live status updates
     // (proven to reach all windows: tray panel uses this successfully)
     const unsubTick = window.electronAPI!.agent.onTick?.((tickAgents) => {
@@ -252,6 +272,8 @@ export function useElectronAgents() {
       unsubComplete();
       unsubStatus?.();
       unsubTick?.();
+      unsubAccount?.();
+      unsubMove?.();
     };
   }, [fetchAgents]);
 

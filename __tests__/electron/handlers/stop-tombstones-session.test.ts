@@ -127,7 +127,8 @@ describe('an agent stopped from the interface', () => {
     const answer = await hookPosts({ agent_id: 'a1', session_id: sid('sess-killed'), status: 'completed' });
 
     expect(answer.stale, JSON.stringify(answer)).toBe(true);
-    expect(agent.status).toBe('idle');
+    // stopped, not idle, since PLAN-1.9.2 item A: a stop says it was one.
+    expect(agent.status).toBe('stopped');
     expect(agent.lastKilledSessionId).toBe(sid('sess-killed'));
   });
 
