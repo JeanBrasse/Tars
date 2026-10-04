@@ -1499,8 +1499,9 @@ Hermes connection. On:
 - `ask_user` (a project's orchestrator only), the event reports and `send_telegram` (an orchestrator's) go through
   Hermes, as plain text. Your reply to one of them goes to that project's orchestrator (a question's, to the agent that
   asked); a message you start with `@<project name>` goes to that project's orchestrator. The plugin keeps `@name`
-  only for the projects Tars registered with it (each round, when they changed): a project whose folder name is not
-  one word cannot be written to that way, and any other `@word` goes to Hermes.
+  only for the projects Tars registered with it (each round, when they changed), under their names as you write
+  them: a space, @, colon or comma in a folder's name becomes a dash (`My Project` is `@My-Project`, in any case).
+  Any other `@word` goes to Hermes.
 - The event reports: an agent gone to error (once Tars is sure of it, 5 s), and, read with `gh pr list` every 5
   minutes in the GitHub repositories of the agents' projects (read-only, needs `gh` signed in), a PR merged and
   changes requested on an open PR. Events of one project within 2 minutes leave in one message; 40 messages a day at
@@ -1509,7 +1510,7 @@ Hermes connection. On:
 
 What it keeps, all in `~/.tars-private` (`0600`): `hermes-token` (the dashboard token, moved out of
 `~/.dorothy/hermes-connection.json` at the first read), `relay-sent.json` (what it sent: the list a reply is checked
-against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken),
+against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken, and the id of the plugin's store it came from),
 `user-questions.json`, `event-reports.json`, `github-watch.json`.
 
 ```bash
@@ -1527,7 +1528,7 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 |---|---|
 | Your reply got "Tars did not send the message you replied to" | the message was not on Tars's list: it came from someone else with the dashboard token, or from a Tars whose `~/.tars-private` was wiped |
 | "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
-| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name, the name is not one word, or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
+| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name (a space, @, colon or comma in it is written as a dash: `@my-project`), or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
 | An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
 
 ---

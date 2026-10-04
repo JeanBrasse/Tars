@@ -13,7 +13,7 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
-      'A message to Tars\'s Telegram, Slack or Discord bot goes to the orchestrator of the project it names, as in "@tars fix the build", or to your only orchestrator when you have one; with several and no name, the bot answers with the list of your projects. It went to whichever orchestrator came first, often one of another project.',
+      'A message to Tars\'s Telegram, Slack or Discord bot goes to the orchestrator of the project it names, as in "@tars fix the build", or to your only orchestrator when you have one; with several and no name, the bot answers with the list of your projects. A project whose folder name holds a space is named with a dash in its place, as in "@my-project". It went to whichever orchestrator came first, often one of another project.',
       'Tars keeps the token of your Hermes dashboard in its private folder, which none of its agents is handed, where it sat beside the settings every agent can read. A saved connection moves it there by itself.',
     ],
   },
