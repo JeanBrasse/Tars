@@ -7,6 +7,7 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
+import { stateModLaunchEnv } from '../services/state-mod';
 
 export { setAccountEnvResolver } from './account-env';
 
@@ -127,6 +128,9 @@ export function spawnAgentPty(opts: {
       // What a hook checks the port with before it sends that token (#11).
       TARS_INSTANCE_ID: tarsInstanceId(),
       ...managedCliEnv(opts.binaryName),
+      // The state mod (services/state-mod.ts), for a claude new enough to load
+      // it: its hooks report this terminal's state from inside the CLI.
+      ...stateModLaunchEnv(opts.binaryName, env),
     } as { [key: string]: string },
   });
   spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.args.includes('-c') });

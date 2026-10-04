@@ -21,13 +21,16 @@
  *    hooks would then be ignored with nothing to replace them.
  * 5. A heartbeat is kept for a session that is not the mod's, or read for
  *    another agent.
+ * 6. A launch reads the version of another claude than the one it runs: the
+ *    one Settings names comes first, then the launch's PATH, and a link is
+ *    followed to the native installer's versions/<x.y.z>.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  MOD_MIN_CLAUDE, stateModEnv, versionAtLeast, noteModSession, modRunsSession, noteModBeat, modBeatFor, resetStateMod,
+  MOD_MIN_CLAUDE, stateModEnv, launchedClaudeVersion, versionAtLeast, noteModSession, modRunsSession, noteModBeat, modBeatFor, resetStateMod,
 } from '../../../electron/services/state-mod';
 
 let dir: string;
@@ -99,3 +102,36 @@ describe('which sessions run the mod', () => {
     expect(modBeatFor('a2')).toBeUndefined();
   });
 });
+
+describe('the claude a launch runs (6)', () => {
+  /** A native install as the installer lays it out: ~/.local/share/claude/versions/<v>, linked from bin/claude. */
+  function nativeInstall(version: string, name = 'claude'): string {
+    const versions = path.join(dir, `share-${version}`, 'claude', 'versions');
+    fs.mkdirSync(versions, { recursive: true });
+    fs.writeFileSync(path.join(versions, version), '#!/bin/sh\n', { mode: 0o755 });
+    const bin = path.join(dir, `bin-${version}`);
+    fs.mkdirSync(bin, { recursive: true });
+    fs.symlinkSync(path.join(versions, version), path.join(bin, name));
+    return bin;
+  }
+
+  it('reads the version of the claude on the launch\'s PATH', () => {
+    const bin = nativeInstall('2.1.300');
+    expect(launchedClaudeVersion({ settingsPath: undefined, envPath: `/nowhere${path.delimiter}${bin}` })).toBe('2.1.300');
+  });
+
+  it('reads the one Settings names before the one on PATH', () => {
+    const old = nativeInstall('2.1.200');
+    const named = path.join(nativeInstall('2.1.301'), 'claude');
+    expect(launchedClaudeVersion({ settingsPath: named, envPath: old })).toBe('2.1.301');
+  });
+
+  it('is null when no claude is found, or when it is not an install whose version can be read', () => {
+    expect(launchedClaudeVersion({ settingsPath: undefined, envPath: '/nowhere' })).toBeNull();
+    const plain = path.join(dir, 'plain');
+    fs.mkdirSync(plain);
+    fs.writeFileSync(path.join(plain, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
+    expect(launchedClaudeVersion({ settingsPath: undefined, envPath: plain })).toBeNull();
+  });
+});
+

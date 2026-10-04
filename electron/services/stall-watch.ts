@@ -9,6 +9,7 @@ import { reportStall } from './agent-watch';
 import { spellingsOf, transcriptPath } from '../utils/resume-session';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
+import { modBeatFor } from './state-mod';
 
 /**
  * A running agent that is doing nothing (PLAN-1.9.2.md item B).
@@ -121,7 +122,20 @@ export function signOfLife(cliPid: number, procs: Proc[]): boolean {
     && (proc.age === undefined || proc.age < CAFFEINATE_SECONDS));
 }
 
-/** When the agent's stall began (its last transcript write), or undefined when it is not stalled or nothing is known. */
+/**
+ * How long the state mod's heartbeat may be silent (it beats every 15 s from
+ * the CLI's own event loop) before a running session is stalled: twenty missed
+ * beats, so a loop busy for a moment is never one.
+ */
+export const MOD_SILENCE_MS = 5 * 60_000;
+
+/**
+ * When the agent's stall began, or undefined when it is not stalled or nothing
+ * is known. A session that runs the state mod (`beatAt`, its last heartbeat)
+ * is judged by that alone: a frozen event loop stops it, a long tool, an MCP
+ * wait or a subagent do not. Every other session by its transcript and what
+ * runs under its CLI.
+ */
 export function stallOf(input: {
   status: string;
   provider?: string;
@@ -129,8 +143,13 @@ export function stallOf(input: {
   terminalPid: number | undefined;
   procs: Proc[] | undefined;
   now: number;
+  beatAt?: number;
 }): number | undefined {
   if (input.status !== 'running') return undefined;
+  if (input.beatAt !== undefined) {
+    if (input.now - input.beatAt < MOD_SILENCE_MS || input.terminalPid === undefined || !input.procs) return undefined;
+    return cliProcess(input.terminalPid, input.procs) ? input.beatAt : undefined;
+  }
   if (input.provider && input.provider !== 'claude') return undefined;
   if (input.transcriptWrittenAt === undefined || input.terminalPid === undefined || !input.procs) return undefined;
   if (input.now - input.transcriptWrittenAt < STALL_AFTER_MS) return undefined;
@@ -165,6 +184,12 @@ function announce(agent: AgentStatus): void {
 }
 
 /** One look at the fleet. `procs` and `writtenAt` for the tests; ps and the transcripts otherwise. */
+/** The state mod's last heartbeat for the agent's current session, when it runs the mod. */
+function beatOf(agent: AgentStatus): number | undefined {
+  const beat = modBeatFor(agent.id);
+  return beat && beat.sessionId === agent.currentSessionId ? beat.at : undefined;
+}
+
 export async function checkStalls(
   now: number = Date.now(),
   read: { procs?: () => Promise<Proc[] | undefined>; writtenAt?: (agent: AgentStatus) => number | undefined } = {},
@@ -180,6 +205,7 @@ export async function checkStalls(
         terminalPid: ptyProcesses.get(agent.ptyId)?.pid,
         procs,
         now,
+        beatAt: beatOf(agent),
       })
       : undefined;
     const sinceIso = since === undefined ? undefined : new Date(since).toISOString();
