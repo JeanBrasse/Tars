@@ -14,11 +14,18 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Review · states. In order:
  * - a project added in Tars that no agent works in is listed under its name,
  *   saying no agent, and its changes can be read;
- * - with no file picked, a patch past 4000 lines says where it stops and how
- *   to read one file whole; a file's own patch shows when picked;
+ * - the page reads a tree's files without their patches (#247's listOnly): with
+ *   no file picked, no git builds the tree's whole patch and the panel asks
+ *   for a file; a picked file's patch past 4000 lines says where it stops, and
+ *   a short one shows whole;
  * - Refresh reads the list again: a project added since shows;
  * - a file whose patch main can no longer read says why, where the page said
- *   there was no textual change.
+ *   there was no textual change;
+ * - an agent's window, whose Code panel marks the files the agent changed,
+ *   reads that list without the patches too.
+ * Every git the app runs goes through a wrapper first on its PATH, which
+ * writes down the folder and the arguments: a whole patch is a `diff` that is
+ * neither a list (`--numstat`, `--name-status`) nor one file's (`--`).
  * A late answer for a tree or a file no longer picked is the page test's
  * (__tests__/components/review-page.test.tsx): its timing is not reproducible
  * here.
@@ -27,7 +34,18 @@ import { DEV_URL, apiPort } from './ports.mjs';
 let app: ElectronApplication;
 let page: Page;
 let home: string;
+let gitLog: string;
 const errors: string[] = [];
+
+/** The git commands the app ran in `dir` since the log was last cleared, as argument lines. */
+function ranIn(dir: string): string[] {
+  const real = fs.realpathSync(dir);
+  return fs.readFileSync(gitLog, 'utf8').split('\n').filter(Boolean)
+    .filter(line => line.startsWith(`${real}|`))
+    .map(line => line.slice(real.length + 1).replace(/^--no-optional-locks /, '').replace(/^-c core\.quotePath=false /, ''));
+}
+const wholePatches = (lines: string[]) => lines.filter(l => /^diff\b/.test(l) && !/--(numstat|name-status)\b/.test(l) && !/ -- /.test(l));
+const lists = (lines: string[]) => lines.filter(l => /^diff\b.*--numstat/.test(l));
 
 /** A git repository with one commit of `files`, then `changes` written over it, uncommitted. */
 function repo(dir: string, files: Record<string, string>, changes: Record<string, string>): void {
@@ -55,8 +73,29 @@ test.beforeAll(async () => {
   const docs = path.join(home, 'projects', 'docs');
   repo(docs, { 'big.txt': lines(5000, 'old'), 'notes.md': 'notes\n' }, { 'big.txt': lines(5000, 'new'), 'notes.md': 'notes\na new line\n' });
   addProject(docs);
+  // An agent at work in a repository of its own, for its window's Code panel.
+  const code = path.join(home, 'projects', 'code');
+  repo(code, { 'main.ts': lines(3000, 'old') }, { 'main.ts': lines(3000, 'new') });
+  const agentsFile = path.join(home, '.dorothy', 'agents.json');
+  const agents = JSON.parse(fs.readFileSync(agentsFile, 'utf8')) as Array<Record<string, unknown>>;
+  agents.push({
+    id: 'coder', name: 'Code Reader', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
+    projectPath: code, skills: [], cliPath: path.join(home, 'bin', 'fake-cli.cjs'),
+    createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',
+  });
+  fs.writeFileSync(agentsFile, JSON.stringify(agents, null, 2));
+  // Every git the app runs, written down with the folder it ran in.
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const wrapper = path.join(home, 'git-wrapper');
+  fs.mkdirSync(wrapper, { recursive: true });
+  gitLog = path.join(home, 'git.log');
+  fs.writeFileSync(gitLog, '');
+  fs.writeFileSync(path.join(wrapper, 'git'), `#!/bin/sh\necho "$(pwd -P)|$*" >> "${gitLog}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
   app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31482), DOROTHY_E2E: '1' },
+    env: {
+      NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31482), DOROTHY_E2E: '1',
+      PATH: `${wrapper}:${process.env.PATH}`,
+    },
   });
   page = await app.firstWindow();
   listenForErrors(page, errors);
@@ -69,7 +108,7 @@ test.afterAll(async () => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-test('review: a project with no agent, a patch cut short, refresh, and a patch that cannot be read', async () => {
+test('review: a project with no agent, the files without their patches, a patch cut short, refresh, a patch that cannot be read, and the code panel', async () => {
   test.setTimeout(180_000);
   await page.goto(`${DEV_URL}/review`, { waitUntil: 'domcontentloaded' });
 
@@ -81,11 +120,22 @@ test('review: a project with no agent, a patch cut short, refresh, and a patch t
   await expect(page.getByRole('button').filter({ hasText: 'big.txt' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button').filter({ hasText: 'notes.md' })).toBeVisible();
 
-  // The whole patch, past 4000 lines, says where it stops.
-  const wholeCut = page.getByText(/^4000 of \d+ lines shown\. Pick a file to read its own patch\.$/);
-  await expect(wholeCut).toBeVisible();
-  const wholeNote = await wholeCut.textContent();
-  await stepShot(page, '01-no-agent-project-patch-cut');
+  // The files without their patches: no git built the tree's whole patch,
+  // and the panel asks for a file.
+  const docs = path.join(home, 'projects', 'docs');
+  await expect(page.getByText('Pick a file to read its patch.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/lines shown\./)).toHaveCount(0);
+  const docsRuns = ranIn(docs);
+  expect(lists(docsRuns).length, docsRuns.join('\n')).toBeGreaterThan(0);
+  expect(wholePatches(docsRuns), docsRuns.join('\n')).toEqual([]);
+  await stepShot(page, '01-no-agent-project-files-alone');
+
+  // A picked file's patch, past 4000 lines, says where it stops.
+  await page.getByRole('button').filter({ hasText: 'big.txt' }).click();
+  const fileCut = page.getByText(/^4000 of \d+ lines shown\.$/);
+  await expect(fileCut).toBeVisible({ timeout: 30_000 });
+  const fileNote = await fileCut.textContent();
+  await stepShot(page, '01b-a-file-patch-cut');
 
   // A file's own patch, short: no note.
   await page.getByRole('button').filter({ hasText: 'notes.md' }).click();
@@ -114,6 +164,17 @@ test('review: a project with no agent, a patch cut short, refresh, and a patch t
   const failedText = await failed.textContent();
   await stepShot(page, '04-a-patch-that-cannot-be-read');
 
+  // An agent's window: its Code panel marks the files the agent changed, read
+  // without their patches.
+  const code = path.join(home, 'projects', 'code');
+  await page.locator('aside').getByRole('link', { name: 'Agents', exact: true }).click();
+  await page.getByText('Code Reader', { exact: true }).first().click();
+  await expect.poll(() => lists(ranIn(code)).length, { timeout: 30_000, message: 'the code panel read the list' }).toBeGreaterThan(0);
+  await page.waitForTimeout(1500);
+  const codeRuns = ranIn(code);
+  expect(wholePatches(codeRuns), codeRuns.join('\n')).toEqual([]);
+  await stepShot(page, '05-agent-window-code-panel');
+
   expect(errors, errors.join('\n')).toEqual([]);
-  recordValues({ wholeNote, failedText, fileHunks, pageErrors: errors });
+  recordValues({ docsRuns, fileNote, failedText, fileHunks, codeRuns, pageErrors: errors });
 });
