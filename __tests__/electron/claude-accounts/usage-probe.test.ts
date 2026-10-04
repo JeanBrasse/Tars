@@ -174,18 +174,26 @@ describe('a probe of the real protocol, against a stand-in claude', () => {
   });
 
   it('6. a CLI that never answers is ended at the timeout, with what it started', async () => {
+    // What the stand-in starts writes every 100 ms for as long as it lives, so
+    // the test reads whether anything still writes after the answer, whenever
+    // the stand-in got the request. With a 3 s timeout and a child that wrote
+    // once, 5 s after it began, a stand-in slowed by load (~45) had not even
+    // read the request when the probe gave up, and the test failed proving
+    // nothing (the Audit's recheck of #303). 10 s leaves room for that.
     const bin = standIn(`function onRequest() {
-      require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => require("fs").writeFileSync(process.argv[1], ""), 5000)', __filename + '.child'], { stdio: 'ignore' });
+      require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => require("fs").appendFileSync(process.argv[1], "."), 100)', __filename + '.child'], { stdio: 'ignore' });
       fs.writeFileSync(__filename + '.started', '');
     }`);
     const began = Date.now();
-    // The child writes 5 s after it starts, so only past the probe's 3 s timeout.
-    await expect(probeUsage(bin, process.env, 3000)).rejects.toThrow(/did not answer/);
-    expect(Date.now() - began).toBeLessThan(6000);
-    await new Promise(r => setTimeout(r, 4000));
-    expect(fs.existsSync(`${bin}.started`)).toBe(true);
-    expect(fs.existsSync(`${bin}.child`), 'what the probe started outlived it').toBe(false);
-  }, 20_000);
+    await expect(probeUsage(bin, process.env, 10_000)).rejects.toThrow(/did not answer/);
+    expect(Date.now() - began).toBeLessThan(13_000);
+    expect(fs.existsSync(`${bin}.started`), 'the stand-in never got the request: this run proves nothing').toBe(true);
+    const size = () => (fs.existsSync(`${bin}.child`) ? fs.statSync(`${bin}.child`).size : 0);
+    await new Promise(r => setTimeout(r, 300));
+    const after = size();
+    await new Promise(r => setTimeout(r, 1000));
+    expect(size(), 'what the probe started still writes after its answer').toBe(after);
+  }, 30_000);
 
   it('6. a CLI that exits without answering is not waited for', async () => {
     const bin = standIn('function onRequest() { process.exit(3); }');
