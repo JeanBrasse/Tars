@@ -575,7 +575,7 @@ opens. `scripts/prune-releases.mjs` finds it through git (the parent of
 `release/` of the current directory; tests name their folder with `--release-dir` or
 `TARS_RELEASE_DIR`.
 
-It keeps the **three newest versions** and deletes an older one **only when GitHub proves it
+It keeps the **two newest versions** (Noah's rule, 2026-10-01) and deletes an older one **only when GitHub proves it
 published**: a release `v<version>` on the repository of `build.publish` carrying its dmg and
 its zip, with the size and, where GitHub gives one, the `sha256` digest of the local files. A
 version that is not published, or published with other files, is kept and named. When the proof
