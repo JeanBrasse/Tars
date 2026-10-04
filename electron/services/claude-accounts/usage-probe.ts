@@ -43,6 +43,8 @@ export interface ProbedUsage {
 
 const NONE: ProbedUsage = { available: false, fiveHour: null, sevenDay: null, models: [] };
 const PROBE_TIMEOUT_MS = 20_000;
+/** How long a claude that answered has to exit by itself once its input is closed. */
+const CLOSE_GRACE_MS = 3000;
 const NAME_MAX = 40;
 
 function percentage(v: unknown): number | null {
@@ -146,10 +148,21 @@ export function probeUsage(binary: string, env: NodeJS.ProcessEnv, timeoutMs = P
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      running.delete(child);
-      end(child);
-      if (err) reject(err);
-      else resolve(usage!);
+      if (err) {
+        running.delete(child);
+        end(child);
+        reject(err);
+        return;
+      }
+      // It answered: its input closed, claude exits by itself and removes what
+      // it registered on start (~/.claude/sessions/<pid>.json, its key and
+      // /tmp/cc-socks/<pid>.sock), which a SIGKILL left behind, 144 a day per
+      // account (QA's gate: out in 0.57 s, all three gone). One still there
+      // after the grace is ended, group and all; the quit ends it meanwhile.
+      const grace = setTimeout(() => { running.delete(child); end(child); }, CLOSE_GRACE_MS);
+      child.once('close', () => { clearTimeout(grace); running.delete(child); });
+      child.stdin?.end();
+      resolve(usage!);
     };
     const timer = setTimeout(() => settle(new Error(`claude did not answer get_usage in ${timeoutMs} ms`)), timeoutMs);
     let buffer = '';

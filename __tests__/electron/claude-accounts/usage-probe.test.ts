@@ -36,6 +36,15 @@
  * 10. A probe loads the account's settings (its hooks) or its MCP servers.
  *     `--setting-sources ""` and `--strict-mcp-config` keep both out, and the
  *     Audit measured the reading intact with them: no hook, no transcript.
+ *
+ * And from QA's gate (2026-10-05): the probe killed claude with SIGKILL the
+ * moment it answered, so claude never removed what it registers on start:
+ * ~/.claude/sessions/<pid>.json, its key, and /tmp/cc-socks/<pid>.sock, 144 a
+ * day per account, in the real ~/.claude for account 1. Closing its input
+ * lets it exit by itself, in 0.57 s, and remove all three (QA's measure).
+ * 11. A claude that answered is killed rather than let to exit and clean up.
+ * 12. A claude that answered and does not exit when its input closes is left
+ *     running, or the quit no longer ends it while it is closing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -194,6 +203,48 @@ describe('a probe of the real protocol, against a stand-in claude', () => {
     await new Promise(r => setTimeout(r, 1000));
     expect(size(), 'what the probe started still writes after its answer').toBe(after);
   }, 30_000);
+
+  const answers = `function onRequest(req) {
+      process.stdout.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: req.request_id, response: ${JSON.stringify(answer())} } }) + '\\n');
+    }`;
+
+  it('11. a claude that answered is let to exit by itself once its input closes', async () => {
+    const bin = standIn(`${answers}
+    process.stdin.on('end', () => { fs.writeFileSync(__filename + '.cleaned', ''); process.exit(0); });`);
+    await expect(probeUsage(bin, process.env)).resolves.toMatchObject({ available: true });
+    for (const until = Date.now() + 3000; Date.now() < until && !fs.existsSync(`${bin}.cleaned`);) await new Promise(r => setTimeout(r, 50));
+    expect(fs.existsSync(`${bin}.cleaned`), 'killed before it could remove its session, key and socket').toBe(true);
+  });
+
+  it('12. one that answered and stays is ended after the grace, with what it started', async () => {
+    const bin = standIn(`${answers}
+    require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => require("fs").appendFileSync(process.argv[1], "."), 100)', __filename + '.child'], { stdio: 'ignore' });
+    process.stdin.on('end', () => {});
+    setInterval(() => {}, 1000);`);
+    await expect(probeUsage(bin, process.env)).resolves.toMatchObject({ available: true });
+    const size = () => (fs.existsSync(`${bin}.child`) ? fs.statSync(`${bin}.child`).size : 0);
+    await new Promise(r => setTimeout(r, 4500));
+    const after = size();
+    await new Promise(r => setTimeout(r, 1000));
+    expect(after, 'the child never ran').toBeGreaterThan(0);
+    expect(size(), 'what the probe started still writes past the grace').toBe(after);
+  }, 20_000);
+
+  it('12. the quit ends one that answered and is still closing', async () => {
+    vi.resetModules();
+    const probe = await import('../../../electron/services/claude-accounts/usage-probe');
+    const bin = standIn(`${answers}
+    require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => require("fs").appendFileSync(process.argv[1], "."), 100)', __filename + '.child'], { stdio: 'ignore' });
+    process.stdin.on('end', () => {});
+    setInterval(() => {}, 1000);`);
+    await expect(probe.probeUsage(bin, process.env)).resolves.toMatchObject({ available: true });
+    probe.endUsageProbes();
+    const size = () => (fs.existsSync(`${bin}.child`) ? fs.statSync(`${bin}.child`).size : 0);
+    await new Promise(r => setTimeout(r, 300));
+    const after = size();
+    await new Promise(r => setTimeout(r, 1000));
+    expect(size(), 'the quit left a closing probe running').toBe(after);
+  }, 20_000);
 
   it('6. a CLI that exits without answering is not waited for', async () => {
     const bin = standIn('function onRequest() { process.exit(3); }');
