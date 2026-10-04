@@ -74,6 +74,8 @@ describe('reading an answer', () => {
   it('3. no reading is no reading: not available, an error, or nothing at all', () => {
     const none = { available: false, fiveHour: null, sevenDay: null, models: [] };
     expect(parseUsageAnswer(answer({ rate_limits_available: false, rate_limits: null }))).toEqual(none);
+    // Windows sent beside "not available" (an answer served from old data) are no reading either.
+    expect(parseUsageAnswer(answer({ rate_limits_available: false }))).toEqual(none);
     expect(parseUsageAnswer(answer({ rate_limits: null }))).toEqual(none);
     expect(parseUsageAnswer(null)).toEqual(none);
     expect(parseUsageAnswer('x')).toEqual(none);

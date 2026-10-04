@@ -124,6 +124,7 @@ import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach }
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
@@ -832,6 +833,8 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
+      // A claude asked for an account's usage (get_usage) just before the quit.
+      ['endUsageProbes', endUsageProbes],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))

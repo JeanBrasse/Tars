@@ -872,9 +872,11 @@ export interface ClaudeAccountState extends ClaudeAccount {
   signedIn: boolean | null;
   email: string | null;
   subscriptionType: string | null;
-  /** From a status line on this account; null when never seen or reset. */
+  /** From a status line or a probe (get_usage) of this account; null when never seen or reset. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
+  /** Per-model weeklies a probe read ("Fable"); empty when none. */
+  models: Array<{ name: string; usedPercentage: number; resetsAt: number }>;
   /** Epoch ms of that report. */
   updatedAt: number | null;
   /** Epoch seconds: a limit was hit, skipped until then. */
@@ -1123,6 +1125,8 @@ export interface ElectronAPI {
         label: string;
         fiveHour: { usedPercentage: number; resetsAt: number } | null;
         sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        /** Per-model weeklies ("Fable"), read through Claude Code's get_usage; absent when none was read. */
+        models?: Array<{ name: string; usedPercentage: number; resetsAt: number }>;
         updatedAt: number | null;
       }>;
       tokenStats: {
