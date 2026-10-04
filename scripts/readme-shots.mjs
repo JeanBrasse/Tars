@@ -13,6 +13,11 @@
  *   npx next dev -p 3100        (or let the e2e webServer be running)
  *   node scripts/readme-shots.mjs                     # writes screenshots/
  *   README_SHOTS_DIR=/some/folder node scripts/readme-shots.mjs
+ *   README_SHOTS_DASHBOARD=1 node scripts/readme-shots.mjs   # the Dashboard too
+ *
+ * The Dashboard is left out unless asked: the README's dashboard.png is a
+ * capture of real agents at work (#301), and the stand-ins' empty terminals
+ * here would cover it (the Audit's batch 1).
  *
  * Everything runs in a sandbox, through launchSandboxed (e2e/fixture.mjs): a
  * temp HOME, and Electron's profile moved with --user-data-dir and
@@ -42,7 +47,7 @@ const OUT = process.env.README_SHOTS_DIR || 'screenshots';
 
 /** Only the ones the README actually embeds, in the order it embeds them. */
 const SHOTS = [
-  { file: 'dashboard.png', route: '/' },
+  ...(process.env.README_SHOTS_DASHBOARD === '1' ? [{ file: 'dashboard.png', route: '/' }] : []),
   { file: 'chat.png', route: '/chat' },
   { file: 'agents.png', route: '/agents' },
   { file: 'kanban.png', route: '/kanban' },
