@@ -130,7 +130,8 @@ import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
-import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
+import { stopAcpRuns, endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
+import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
@@ -158,6 +159,7 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 let appSettings: AppSettings = loadAppSettings();
+let stopTmpRetention: () => void = () => undefined;
 // Off unless the user turned them on; followed live (services/error-reports).
 const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
 
@@ -718,6 +720,26 @@ app.whenReady().then(async () => {
   // And an agent that reads running while it does nothing is told to whoever
   // handed it the work (services/stall-watch.ts).
   startStallWatch();
+  // Each agent's temporary folder, which a boot does not empty, kept to 7 days
+  // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
+  // first pass forward, for the e2e.
+  const firstRetentionMs = !app.isPackaged ? Number(process.env.DOROTHY_TMP_RETENTION_FIRST_MS) || undefined : undefined;
+  stopTmpRetention = startTmpRetention({
+    liveAgentIds: () => [
+      ...[...agents.values()].filter(a => !!a.ptyId && ptyProcesses.has(a.ptyId)).map(a => a.id),
+      ...agentsRunningOverAcp(),
+    ],
+    knownAgentIds: () => [...agents.keys()],
+    freeBytes: () => {
+      try {
+        const st = fs.statfsSync(DATA_DIR);
+        return st.bavail * st.bsize;
+      } catch {
+        return null;
+      }
+    },
+    log: retentionLog,
+  }, { firstMs: firstRetentionMs });
   // A message held behind a slash command typed by hand goes in once the
   // command's record says the field emptied (core/pty-manager.ts).
   setFieldProbe(agentId => {
@@ -832,6 +854,7 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
+      ['stopTmpRetention', () => stopTmpRetention()],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))
