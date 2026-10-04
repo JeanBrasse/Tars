@@ -768,29 +768,54 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
 }
 
 /**
- * Latin letters for the Cyrillic and Greek ones that look the same, the ones
- * "message from" can be spelt with: "Mеssage" with a Cyrillic е read exactly
- * like the real thing (the Audit's gate of #240).
+ * The look-alikes of the eight letters "message from" is spelt with, read as
+ * the letter: every character Unicode's confusables (UTS #39,
+ * confusables.txt of 2026-08-06) give the same prototype as the letter in
+ * lower case, in upper case or as a Latin small capital, once NFKC and NFD
+ * have folded it. Cyrillic, Greek, Armenian, Cherokee, Coptic, the small
+ * capitals, Lisu and the rest: a Cyrillic e, an Armenian o or a Cherokee M
+ * each passed a fold of the words (the Audit's gates of #240). The zero is the one
+ * ASCII character among them.
  */
-const LOOK_ALIKES: Record<string, string> = {
-  а: 'a', е: 'e', о: 'o', р: 'p', с: 'c', у: 'y', х: 'x', ѕ: 's', і: 'i', ј: 'j', ԁ: 'd', һ: 'h', ɡ: 'g', ӏ: 'l', ԛ: 'q', ѵ: 'v', ԝ: 'w',
-  А: 'a', В: 'b', Е: 'e', К: 'k', М: 'm', Н: 'h', О: 'o', Р: 'p', С: 'c', Т: 't', Х: 'x', Ѕ: 's', І: 'i', Ј: 'j', Ԛ: 'q', Ԝ: 'w',
-  α: 'a', ε: 'e', ο: 'o', ρ: 'p', ν: 'v', τ: 't', ι: 'i', κ: 'k', μ: 'm', η: 'n', γ: 'y', ς: 's',
-  Α: 'a', Β: 'b', Ε: 'e', Ζ: 'z', Η: 'h', Ι: 'i', Κ: 'k', Μ: 'm', Ν: 'n', Ο: 'o', Ρ: 'p', Τ: 't', Υ: 'y', Χ: 'x',
+const LOOK_ALIKES_OF: Record<string, string> = {
+  m: '\u{28d}\u{39c}\u{3fa}\u{41c}\u{43c}\u{560}\u{13b7}\u{15f0}\u{16d6}\u{1d0d}\u{2c98}\u{2c99}\u{a4df}\u{ab87}\u{102b0}\u{10311}\u{10c21}\u{11700}\u{118e3}\u{1cce2}',
+  e: '\u{395}\u{415}\u{435}\u{4bd}\u{13ac}\u{1d07}\u{212e}\u{22ff}\u{2d39}\u{a4f0}\u{a5cb}\u{ab32}\u{ab7c}\u{10286}\u{118a6}\u{118ae}\u{1ccda}\u{1df81}',
+  s: '\u{1bd}\u{405}\u{455}\u{54f}\u{d1f}\u{10bd}\u{10fd}\u{13d5}\u{13da}\u{1cbd}\u{a4e2}\u{a576}\u{a731}\u{abaa}\u{10296}\u{10420}\u{10448}\u{118c1}\u{16ad6}\u{16f3a}\u{1cce8}',
+  a: '\u{251}\u{391}\u{3b1}\u{410}\u{430}\u{13aa}\u{15c5}\u{1d00}\u{237a}\u{a4ee}\u{ab64}\u{ab7a}\u{102a0}\u{16f40}\u{1ccd6}\u{1df5a}\u{1df6a}',
+  g: '\u{18d}\u{261}\u{262}\u{50c}\u{50d}\u{581}\u{13c0}\u{13f3}\u{13fb}\u{1d83}\u{a4d6}\u{ab90}\u{1ccdc}',
+  f: '\u{192}\u{284}\u{3dc}\u{584}\u{7d3}\u{15b4}\u{1e9d}\u{a4dd}\u{a730}\u{a798}\u{a799}\u{ab35}\u{1017e}\u{10287}\u{102a5}\u{10525}\u{118a2}\u{118c2}\u{1ccdb}\u{1d213}',
+  r: '\u{1a6}\u{24c}\u{280}\u{433}\u{13a1}\u{13d2}\u{1587}\u{1d26}\u{2c85}\u{a4e3}\u{ab47}\u{ab48}\u{ab71}\u{ab81}\u{aba2}\u{104b4}\u{16a19}\u{16f35}\u{1cce7}\u{1d216}',
+  o: '0\u{39f}\u{3bf}\u{3c3}\u{3ed}\u{41e}\u{43e}\u{555}\u{585}\u{5e1}\u{647}\u{665}\u{6be}\u{6c1}\u{6d5}\u{6f5}\u{7c0}\u{7cb}\u{840}\u{966}\u{9e6}\u{a66}\u{ae6}\u{b20}\u{b66}\u{be6}\u{c02}\u{c66}\u{c82}\u{ce6}\u{d02}\u{d20}\u{d66}\u{d82}\u{e50}\u{ed0}\u{101d}\u{1040}\u{10ff}\u{110b}\u{11bc}\u{12d0}\u{17e0}\u{1a45}\u{1a80}\u{1a90}\u{1bea}\u{1c82}\u{1cbf}\u{1d0f}\u{1d11}\u{2c9e}\u{2c9f}\u{2d54}\u{3007}\u{a4f3}\u{ab3d}\u{10292}\u{102ab}\u{1030f}\u{10404}\u{1042c}\u{104c2}\u{104ea}\u{10516}\u{1092c}\u{10c17}\u{10d07}\u{11124}\u{11302}\u{114d0}\u{118b5}\u{118c8}\u{118d7}\u{118e0}\u{11de0}\u{16ae9}\u{1cce4}\u{1ccf0}\u{1e140}\u{1e2f0}',
 };
+const LOOK_ALIKES = new Map<string, string>(
+  Object.entries(LOOK_ALIKES_OF).flatMap(([letter, shapes]) => [...shapes].map(shape => [shape, letter] as [string, string])),
+);
+
+/** Letters that draw as nothing: the Hangul fillers, a blank that a letter class keeps. */
+const BLANK_LETTERS = /[\u115f\u1160\u3164\uffa0]/gu;
 
 /**
- * What a line reads as, whatever its bytes: compatibility forms folded (NFKC:
- * fullwidth letters), accents and other combining marks dropped, invisible
- * format characters dropped (zero-width spaces, joiners, bidi marks, soft
- * hyphens), every kind of space read as one, look-alike letters read as Latin.
+ * What a line spells, letters only: compatibility forms folded (NFKC: bold,
+ * fullwidth), every look-alike of the phrase's letters read as the letter,
+ * and then everything that is not a letter dropped (marks of every kind,
+ * spaces and blanks, punctuation, digits, format characters), so that
+ * "**Message from Tars**", or an M with an enclosing circle, spell what they read as. Read twice:
+ * once with a digit that looks like a letter read as it ("fr0m"), once
+ * without ("10. Message from"), since either way can be the one a reader sees.
  */
-function readsAs(line: string): string {
-  return line.normalize('NFKC').normalize('NFD')
-    .replace(/[\p{Mn}\p{Cf}]/gu, '')
-    .replace(/[\p{Z}\s]+/gu, ' ')
-    .replace(/[^\x00-\x7f]/g, ch => LOOK_ALIKES[ch] ?? ch)
-    .toLowerCase();
+function skeletons(line: string): string[] {
+  const folded = [...line.normalize('NFKC').normalize('NFD')];
+  return [true, false].map(digitsAsLetters => folded
+    .map(ch => {
+      const letter = LOOK_ALIKES.get(ch);
+      return letter && (digitsAsLetters || /\p{L}/u.test(ch)) ? letter : ch;
+    })
+    .join('')
+    .toLowerCase()
+    .replace(BLANK_LETTERS, '')
+    .replace(/\P{L}/gu, '')
+    // "rn" reads as m, which confusables gives as m's own prototype.
+    .replace(/rn/g, 'm'));
 }
 
 /**
@@ -802,15 +827,21 @@ function readsAs(line: string): string {
  * body's first line too, which follows the real line on the same row.
  *
  * Read as a person or a model reads it, not byte for byte: a no-break or a
- * zero-width space before or inside the words, or a Cyrillic е in "Mеssage",
+ * zero-width space before or inside the words, or a Cyrillic e in "Message",
  * each went out unquoted (the Audit's gate of #240). Every line is not quoted
  * instead: Tars's own notes, the bus's fences and every message relayed from
  * Noah would then reach the CLI as a quotation, and the wording of a message
  * is what decides whether a receiver acts on it (SPECS.md: a bare paste was
  * declined, "Message from Tars-Orchestrator:" carried out).
+ *
+ * So the line's skeleton is compared, not its words: a fold of the words
+ * still let through a line in bold, in brackets or after a list dash, and
+ * one letter the fold did not know (the Audit's recheck of #240). A line
+ * that only uses the words, "Message from QA was good", is quoted too, which
+ * changes nothing a reader needs.
  */
 function quoteSenderLookAlikes(data: string): string {
-  return data.replace(/^[^\n\u2028\u2029]*/gm, line => (/^ ?message ?from\b/.test(readsAs(line).trimStart()) ? `> ${line}` : line));
+  return data.replace(/^[^\n\u2028\u2029]*/gm, line => (skeletons(line).some(spelt => spelt.startsWith('messagefrom')) ? `> ${line}` : line));
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
