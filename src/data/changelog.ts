@@ -13,6 +13,8 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+      'A Dashboard panel keeps the last 5,000 lines of an agent\'s output to scroll back through, where it kept 10,000, which spares memory with many agents at work. The agent\'s transcript still keeps everything.',
+      'The Review page lists a tree\'s changed files without building the patch of every file first, and reads a file\'s patch once you pick it: until then the panel asks for a file, where it showed the whole tree\'s patch. An agent\'s window marks the files it changed without reading their patches either.',
     ],
   },
   {

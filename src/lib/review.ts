@@ -69,8 +69,12 @@ export function patchLines(patch: string): string[] {
   return patch.endsWith('\n') ? lines.slice(0, -1) : lines;
 }
 
-/** Under a patch cut at PATCH_LINES: where it stops, and how to read one file's patch while none is picked. */
-export function cutNote(total: number, filePicked: boolean): string | null {
+/**
+ * Under a picked file's patch cut at PATCH_LINES: where it stops. The page
+ * reads a tree's files without their patches (#247), so a patch shown is
+ * always a picked file's, and the note no longer says to pick one.
+ */
+export function cutNote(total: number): string | null {
   if (total <= PATCH_LINES) return null;
-  return `${PATCH_LINES} of ${total} lines shown.${filePicked ? '' : ' Pick a file to read its own patch.'}`;
+  return `${PATCH_LINES} of ${total} lines shown.`;
 }
