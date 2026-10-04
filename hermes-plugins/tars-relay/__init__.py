@@ -1,12 +1,20 @@
 """tars-relay, gateway half.
 
-Two hooks. pre_gateway_dispatch keeps for Tars, and from the model, a message from Noah in his private chat that
-replies to a message Tars sent through the relay or starts with "@project". pre_llm_call attaches to Noah's next
-turn there a read-only copy of what Tars sent him. The rules are in relay_core.py; this file only reads Hermes's
-event and session and answers its hooks.
+An observer and two hooks.
+- The observer, a python-telegram-bot handler in the plugin's own group (OBSERVER_GROUP), sees each Telegram update
+  as it comes, before Hermes merges messages (its batching window, its grace window) or turns one into a correction
+  of a running turn: both skip pre_gateway_dispatch (the Audit's recheck of #280). It keeps for Tars a message from
+  Noah in his private chat that replies to a message Tars sent through the relay or starts with "@project". It only
+  looks: it never stops an update, never changes one (Hermes's answers of 2026-10-01, the deciding test on 536802c).
+- pre_gateway_dispatch spares Hermes's model a message the observer kept, when Hermes admits that very message alone.
+  An event Hermes merged it into goes on to the model whole: Noah's other words in it are his to Hermes. On a Hermes
+  without plugin handlers it keeps the message itself, as before the observer.
+- pre_llm_call attaches to Noah's next turn there a read-only copy of what Tars sent him.
+The rules are in relay_core.py; this file only reads Hermes's updates, events and session and answers its hooks.
 """
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import logging
 import sys
@@ -29,6 +37,13 @@ def _load_core():
 
 core = _load_core()
 _stores = {}
+# The observer's own python-telegram-bot group. Never 0: one handler runs per group, and a catch-all there would
+# swallow the core's messages. Never 99: Hermes's own catch-all observer (gateway_platform_event, and the counts its
+# stall detector reads) is there, and Hermes puts a plugin's handler ahead of the core's in a group, which would
+# silence it. 100 is a group Hermes does not use.
+OBSERVER_GROUP = 100
+# Whether the observer is wired on this gateway: pre_gateway_dispatch keeps messages itself only when it is not.
+_observer = {'wired': False}
 
 
 def _store():
@@ -59,18 +74,48 @@ def _message_of(event) -> dict:
     }
 
 
+def _keep(message) -> None:
+    store = _store()
+    kept = core.decide(message, _settings(), store)
+    if kept is not None and store.keep(kept, message.get('text') or '') is not None:
+        log.info('tars-relay: kept a %s for Tars (message %s)', kept['kind'], kept['message_id'])
+
+
+def _observer_factory(native, adapter):
+    """Wires the observer on Hermes's python-telegram-bot Application (ctx.register_platform_handler)."""
+    from telegram import Update
+    from telegram.ext import TypeHandler
+
+    async def observe(update, context):
+        try:
+            message = core.message_of_update(update)
+            if message is not None:
+                await asyncio.to_thread(_keep, message)
+        except Exception:
+            # Never into python-telegram-bot: Hermes's handlers have already had the update, and go on as they would.
+            log.exception('tars-relay: could not look at a Telegram update')
+
+    native.add_handler(TypeHandler(Update, observe), group=OBSERVER_GROUP)
+    _observer['wired'] = True
+
+
 def on_gateway_dispatch(event=None, **_):
     try:
-        store = _store()
-        kept = core.decide(_message_of(event), _settings(), store)
-        if kept is None:
-            return None
-        store.record_reply(kept)
+        message = _message_of(event)
+        if _observer['wired']:
+            # The observer kept it already, if it is Tars's: spare the model that message alone, never a merged event.
+            if not _store().was_kept(message.get('chat_id'), message.get('message_id'), message.get('text')):
+                return None
+        else:
+            store = _store()
+            kept = core.decide(message, _settings(), store)
+            if kept is None:
+                return None
+            store.keep(kept, message.get('text') or '')
     except Exception:
         # The message goes on to Hermes rather than nowhere: Hermes answers it, so Noah sees it did not reach Tars.
         log.exception('tars-relay: could not keep a message for Tars; it goes on to Hermes')
         return None
-    log.info('tars-relay: kept a %s for Tars (message %s)', kept['kind'], kept['message_id'])
     return {'action': 'skip', 'reason': 'tars-relay: kept for Tars'}
 
 
@@ -93,5 +138,10 @@ def on_llm_call(**_):
 
 
 def register(ctx):
+    if hasattr(ctx, 'register_platform_handler'):
+        ctx.register_platform_handler('telegram', _observer_factory)
+    else:
+        log.warning('tars-relay: this Hermes has no plugin handlers; a message Hermes merges or takes as a correction '
+                    'does not reach Tars')
     ctx.register_hook('pre_gateway_dispatch', on_gateway_dispatch)
     ctx.register_hook('pre_llm_call', on_llm_call)

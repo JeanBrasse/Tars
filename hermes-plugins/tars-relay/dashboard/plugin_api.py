@@ -1,10 +1,12 @@
 """tars-relay, dashboard half: the routes Tars calls, under /api/plugins/tars-relay/, behind the dashboard's
 session token like every dashboard route.
 
-  GET  /status            configured or not, sends in the last hour, replies waiting, the projects registered
+  GET  /status            configured or not, sends in the last hour, replies waiting, the projects registered, the
+                          store's id
   POST /send              {text, kind, ref?, project?}: sent as written, in plain text, to the user id in the
                           plugin's settings and to nobody else; returns the message id
-  GET  /replies?after=N   the replies and @project messages Tars has not taken, oldest first
+  GET  /replies?after=N   the replies and @project messages Tars has not taken, oldest first, and the store's id:
+                          a store made again numbers from 1, and Tars starts over when the id changes
   POST /ack               {through: N}: Tars has taken them up to N; they are deleted
   POST /projects          {projects: [name, ...]}: the projects "@name" may address, in place of the last ones
 
@@ -80,7 +82,7 @@ def status():
     store = _store()
     return {'plugin': core.PLUGIN_ID, 'version': core.VERSION, 'configured': core.noah_of(_settings()) is not None,
             'sends_last_hour': store.sends_last_hour(), 'waiting_replies': store.waiting_replies(),
-            'projects': store.projects()}
+            'projects': store.projects(), 'store_id': store.store_id}
 
 
 @router.post('/send')
@@ -115,7 +117,8 @@ async def send(request: Request):
 
 @router.get('/replies')
 def replies(after: int = 0):
-    return {'replies': _store().replies(after)}
+    store = _store()
+    return {'replies': store.replies(after), 'store_id': store.store_id}
 
 
 @router.post('/ack')

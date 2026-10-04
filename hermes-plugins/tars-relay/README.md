@@ -5,11 +5,17 @@ runs inside Hermes, on the server where Hermes runs, never in Tars.
 
 - **Out.** Tars calls `POST /send` on the Hermes dashboard. The text goes, as written and in plain text, to the
   one Telegram user named in the plugin's settings on the server. Tars cannot name anybody else.
-- **Back.** A message from that user in his private chat with the bot is kept for Tars, and never reaches
-  Hermes's model, when it replies to a message the relay sent (same chat, same message id) or starts with
-  `@project` for one of the projects Tars registered (`POST /projects`). Tars reads them with `GET /replies` and
-  deletes what it took with `POST /ack`. Every other message goes to Hermes as usual, `@hermes what is the weather`
-  included.
+- **Back.** A message from that user in his private chat with the bot is kept for Tars when it replies to a
+  message the relay sent (same chat, same message id) or starts with `@project` for one of the projects Tars
+  registered (`POST /projects`). Tars reads them with `GET /replies`, with the store's id, and deletes what it took
+  with `POST /ack`. Every other message goes to Hermes as usual, `@hermes what is the weather` included.
+  - The plugin sees each message from its own observer, a python-telegram-bot handler in a group of its own (100),
+    before Hermes merges messages or turns one into a correction of the answer it is giving: each is kept once, on
+    its own, in order. The observer only looks: it never stops or changes an update, and Hermes's own observer
+    (group 99) runs as before.
+  - A message kept for Tars that Hermes admits on its own never reaches Hermes's model. One Hermes merged with other
+    words of his, or took as a correction while it was answering, reaches the model too, as Hermes handed it; it
+    reaches Tars all the same.
 - **The model's copy.** Hermes's model gets a read-only copy of what Tars sent, attached once to the user's next
   turn in that same private chat and marked as Tars's, so that he can ask Hermes about it. Every line of it is
   quoted, cut at any line break and not only the line feed, and a control character in it is shown (`\x1b`) rather
@@ -92,16 +98,22 @@ write-ahead log, so a text once copied or taken is not left in the file.
 - Text only. A photo, a voice note or a sticker sent in reply to Tars goes to Hermes, as any message does.
 - No acknowledgement in Telegram: a reply kept for Tars gets no answer from Hermes. Tars says when it has passed
   it on.
-- Hermes merges the messages of one chat that arrive within a fraction of a second of each other, as Telegram does
-  with a long text it splits in two. The merged message is kept or let through whole, on its first part: a reply
-  to Tars followed at once by another message goes to Tars in full.
+- Sent while Hermes answers, or within a fraction of a second of another message, a reply to Tars also reaches
+  Hermes's model, as a correction or merged with the other message (Hermes's own handling, which a plugin cannot
+  change without replacing Hermes's Telegram adapter). Tars gets it on its own all the same.
+- The observer's group, 100, is the plugin's: another plugin that observes in the same group would silence one of
+  the two (python-telegram-bot runs one handler per group).
+- On a Hermes without plugin handlers (`ctx.register_platform_handler`, older than 0.21.4), the plugin keeps
+  messages from Hermes's dispatch hook alone, and a message Hermes merges or takes as a correction does not reach
+  Tars; the gateway logs it at start.
 
 ## Tests
 
 - `python3 -m unittest discover -s tests`, from this folder: the rules, without Hermes, failure modes first. The
   repo's `npm test` runs them too (`__tests__/hermes-plugins/tars-relay.test.ts`) with the first of `python3`,
   `python` and `py -3` that is a Python 3.9 or later. With none, it says so and skips them; on CI it fails.
-- End to end, Hermes's own gateway and dashboard run the plugin in a sandbox, with a fake Telegram and a fake model:
-  sends, sends made at once, replies, the `@project` prefix and the registered projects, the model's copy and its
-  quoting, a stranger the allowlist lets through, a group, the store.
+- End to end, Hermes's own gateway and dashboard (its deployed commit, 536802c) run the plugin in a sandbox, with a
+  fake Telegram and a fake model: sends, sends made at once, replies, the `@project` prefix and the registered
+  projects, the model's copy and its quoting, a stranger the allowlist lets through, a group, the store, and
+  messages sent while Hermes answers or right after another, in each of Hermes's three busy modes.
   That bench lives outside the repo, beside the design it proves.

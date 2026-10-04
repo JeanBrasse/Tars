@@ -332,8 +332,11 @@ through Hermes's Telegram bot, as Tars, read or delete his replies before Tars t
 the projects whose `@name` messages are kept from Hermes. The plugin decides what it can on its own:
 the recipient is the user id in the server's own config, never one the caller names; at most 60
 messages go out in an hour, each counted before it goes out, so sends made at once do not pass it; and
-it keeps only Noah's messages in his private chat. Hence Noah's decision of 2026-10-01 that the token
-moves to `~/.tars-private`: the plugin goes in with that move, not before it.
+it keeps only Noah's messages in his private chat. What it does not decide: a reply to Tars that Noah
+sends while Hermes answers him, or right after another message, reaches Hermes's model too (Hermes
+takes it as a correction, or merges it), and Tars gets it all the same from the plugin's observer;
+keeping it from the model would mean replacing Hermes's Telegram adapter. Hence Noah's decision of
+2026-10-01 that the token moves to `~/.tars-private`: the plugin goes in with that move, not before it.
 
 What an agent waits on (`waitingOn`, the command or question of an open dialog) is kept in memory only: it is not written to `agents.json`. While the dialog is open, another agent can read it through `GET /api/agents/:id?full=true`, as it can read the rest of that agent's record; a command typed with a secret in it is visible there for that long. The hook sends only the fields that name the dialog, each cut at 1000 characters, never a tool's whole input.
 

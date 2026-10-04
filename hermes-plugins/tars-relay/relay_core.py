@@ -12,6 +12,7 @@ rewritten in place.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import sqlite3
@@ -82,6 +83,32 @@ def _id(value: Any) -> str:
     if value is None or isinstance(value, bool):
         return ''
     return str(value).strip()
+
+
+def message_of_update(update: Any) -> Optional[Dict[str, Any]]:
+    """A Telegram update, as python-telegram-bot hands it to the plugin's observer, as decide() reads a message; None
+    for anything but a new message from a person: an edit, a reaction, a callback, a bot's own message (Hermes's).
+    A private chat is named "dm", as Hermes names it."""
+    message = getattr(update, 'message', None)
+    if message is None:
+        return None
+    sender = getattr(message, 'from_user', None)
+    if sender is None or getattr(sender, 'is_bot', False) is True:
+        return None
+    chat = getattr(message, 'chat', None)
+    chat_type = getattr(chat, 'type', None)
+    reply = getattr(message, 'reply_to_message', None)
+    return {
+        'platform': 'telegram', 'chat_type': 'dm' if chat_type == 'private' else chat_type,
+        'chat_id': getattr(chat, 'id', None), 'user_id': getattr(sender, 'id', None),
+        'message_id': getattr(message, 'message_id', None),
+        'reply_to_message_id': getattr(reply, 'message_id', None) if reply is not None else None,
+        'text': getattr(message, 'text', None), 'update_id': getattr(update, 'update_id', None),
+    }
+
+
+def _fingerprint(text: str) -> str:
+    return hashlib.sha256(text.strip().encode('utf-8')).hexdigest()
 
 
 def decide(message: Mapping[str, Any], settings: Any, store: 'Store') -> Optional[Dict[str, str]]:
@@ -220,6 +247,18 @@ CREATE TABLE IF NOT EXISTS replies (
   text TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS replies_at ON replies (at);
+CREATE TABLE IF NOT EXISTS kept (
+  chat_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  at REAL NOT NULL,
+  fingerprint TEXT NOT NULL,
+  PRIMARY KEY (chat_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS kept_at ON kept (at);
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS projects (
   folded TEXT PRIMARY KEY,
   name TEXT NOT NULL
@@ -260,6 +299,8 @@ class Store:
         self.now = now
         with closing(self._connect()) as db:
             db.executescript(_SCHEMA)
+            db.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('store_id', ?)", (uuid.uuid4().hex,))
+            (self.store_id,) = db.execute("SELECT value FROM meta WHERE key = 'store_id'").fetchone()
         os.chmod(self.path, 0o600)
 
     def _connect(self) -> sqlite3.Connection:
@@ -315,16 +356,36 @@ class Store:
             (count,) = db.execute('SELECT COUNT(*) FROM sent WHERE at > ?', (self.now() - 3600,)).fetchone()
         return count
 
-    def record_reply(self, kept: Mapping[str, str]) -> int:
-        with closing(self._connect()) as db:
-            cursor = db.execute(
+    def keep(self, kept: Mapping[str, str], text: str) -> Optional[int]:
+        """Keeps a message for Tars once, whoever saw it first (the observer, the dispatch hook, a redelivery): its
+        number, or None when it was kept already. `text` is the message as Noah sent it, whose fingerprint lets the
+        dispatch hook tell that message alone from an event Hermes merged it into."""
+        now = self.now()
+        with closing(self._connect()) as db, _immediate(db):
+            new = db.execute('INSERT OR IGNORE INTO kept (chat_id, message_id, at, fingerprint) VALUES (?, ?, ?, ?)',
+                             (_id(kept['chat_id']), _id(kept['message_id']), now, _fingerprint(text or ''))).rowcount
+            if not new:
+                return None
+            seq = db.execute(
                 'INSERT INTO replies (at, kind, ref, project, chat_id, user_id, message_id, reply_to_message_id, text) '
                 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (self.now(), kept['kind'], kept['ref'], kept['project'], kept['chat_id'], kept['user_id'],
-                 kept['message_id'], kept['reply_to_message_id'], kept['text']))
-            seq = cursor.lastrowid
+                (now, kept['kind'], kept['ref'], kept['project'], kept['chat_id'], kept['user_id'],
+                 kept['message_id'], kept['reply_to_message_id'], kept['text'])).lastrowid
         self.prune()
         return seq
+
+    def record_reply(self, kept: Mapping[str, str]) -> Optional[int]:
+        return self.keep(kept, kept['text'])
+
+    def was_kept(self, chat_id: Any, message_id: Any, text: Any) -> bool:
+        """Whether this very message, its text as written, was kept for Tars: never true of an event Hermes merged
+        it into, whose text is longer."""
+        if not isinstance(text, str):
+            return False
+        with closing(self._connect()) as db:
+            row = db.execute('SELECT fingerprint FROM kept WHERE chat_id = ? AND message_id = ? AND at >= ?',
+                             (_id(chat_id), _id(message_id), self.now() - REPLY_DAYS * _DAY)).fetchone()
+        return bool(row) and row['fingerprint'] == _fingerprint(text)
 
     def replies(self, after: int = 0) -> List[Dict[str, Any]]:
         """The replies Tars has not taken, oldest first, from after `after`, within their 7 days."""
@@ -376,9 +437,11 @@ class Store:
             return [row['name'] for row in db.execute('SELECT name FROM projects ORDER BY folded')]
 
     def prune(self) -> None:
-        """Drops what has outlived its time: replies after 7 days, sent records after 30, an unused copy after 7."""
+        """Drops what has outlived its time: replies and the fingerprints of what was kept after 7 days, sent records
+    after 30, an unused copy after 7."""
         now = self.now()
         with closing(self._connect()) as db:
             db.execute('DELETE FROM replies WHERE at < ?', (now - REPLY_DAYS * _DAY,))
+            db.execute('DELETE FROM kept WHERE at < ?', (now - REPLY_DAYS * _DAY,))
             db.execute('DELETE FROM sent WHERE at < ?', (now - SENT_DAYS * _DAY,))
             db.execute('UPDATE sent SET copy_text = NULL WHERE copy_text IS NOT NULL AND at < ?', (now - REPLY_DAYS * _DAY,))
