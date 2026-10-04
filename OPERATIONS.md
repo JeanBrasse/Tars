@@ -688,6 +688,8 @@ work.
 | `~/.dorothy/skills-marketplace.json` | `electron/services/skills-marketplace.ts` | the last skills.sh listing, served first; delete it to fetch afresh |
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
+| `~/.dorothy/run-state.json` | `electron/services/run-state.ts` | this run's record: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note |
+| `~/.dorothy/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), given at their first rest after a restart |
 | `~/.dorothy/tmp/<short id>/` | `electron/services/agent-tmp.ts` | each agent's temporary folder (`t` = `TMPDIR`, `c` = `CLAUDE_CODE_TMPDIR`), kept across reboots; 7 days untouched, then deleted, 20 GB in all (10 GB under 30 GB free), never an agent whose CLI runs. `ls ~/.dorothy/tmp` and `logs/agent-tmp.log` (a line per deletion). An agent's folder name: `printf %s <agent id> \| shasum -a 256 \| cut -c1-10` |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
@@ -1676,6 +1678,23 @@ These buffers are **memory only**. Only the last 100 chunks per agent survive to
 `GET /api/agents/:id/output?lines=N` while the app is up.
 
 ---
+
+## After an abrupt stop
+
+When Tars did not quit (a crash, a kill, a power cut, a reboot without quitting it), the next launch resumes the agents that were working, three at a time, on their own conversation, with a note from Tars as their first prompt; their last request is not sent again. Agents that were at rest stay asleep. SPECS.md, "After an abrupt stop", has the rules.
+
+```bash
+jq '{cleanExit, resumed, working: [.working[] | {agentId, status, waitingReason}]}' ~/.dorothy/run-state.json
+jq '{notes: (.notes | length), kanban: (.kanban | length)}' ~/.dorothy/carry-over.json
+```
+
+Each decision is a `[resume] <agent id>: ...` line in the main process log (resumed with the note, already running and typed into, left alone and why), which goes to the terminal Tars was started from, or the Console app.
+
+| Symptom | Cause |
+|---|---|
+| agents resumed after a quit | the quit did not reach its last step (`cleanExit` stayed false): Tars was killed while quitting |
+| nobody resumed after a crash | the run before also resumed agents and stopped within two minutes (the log says so), or those agents were deleted, stopped, or their folder is gone |
+| To resume nobody at the next launch | quit Tars, or, with Tars closed, set `cleanExit` to `true` in `run-state.json` |
 
 ## Usage and cost accounting
 
