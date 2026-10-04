@@ -128,7 +128,15 @@ export function probeUsage(binary: string, env: NodeJS.ProcessEnv, timeoutMs = P
   }
   return new Promise((resolve, reject) => {
     // detached: a group of its own, which end() signals whole.
-    const child = spawn(binary, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'], {
+    // No settings and no MCP server of the account's: a probe is one control
+    // request, and a whole session ran the account's SessionStart hooks (Tars's
+    // session-start.sh then asked Hermes for memory) and started its MCP
+    // servers, ten for account 1, to kill them a second later (the Audit's
+    // gate). Measured on 2.1.289: the reading is the same with both flags.
+    const child = spawn(binary, [
+      '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+      '--strict-mcp-config', '--setting-sources', '',
+    ], {
       env, detached: true, stdio: ['pipe', 'pipe', 'ignore'],
     });
     running.add(child);

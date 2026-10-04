@@ -28,6 +28,14 @@
  * 8. A probe starts during the quit.
  * 9. Merged with the status line: an older probe hides a newer status line,
  *    or a newer probe loses to an older file.
+ *
+ * And from the Audit's gate (2026-10-05): a probe was a whole `claude -p` for
+ * the account, which ran its SessionStart hooks (Tars's session-start.sh then
+ * asked /api/memory/context, which asks Hermes) and started every MCP server
+ * the account has, ten for account 1, only to kill them a second later.
+ * 10. A probe loads the account's settings (its hooks) or its MCP servers.
+ *     `--setting-sources ""` and `--strict-mcp-config` keep both out, and the
+ *     Audit measured the reading intact with them: no hook, no transcript.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -152,6 +160,9 @@ describe('a probe of the real protocol, against a stand-in claude', () => {
     expect(request).toMatchObject({ type: 'control_request', request: { subtype: 'get_usage', skip_behaviors: true } });
     const seen = JSON.parse(fs.readFileSync(`${bin}.argv`, 'utf8'));
     expect(seen.argv).toEqual(expect.arrayContaining(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json']));
+    // 10. No settings (so no hook) and no MCP server of the account's.
+    expect(seen.argv).toContain('--strict-mcp-config');
+    expect(seen.argv[seen.argv.indexOf('--setting-sources') + 1]).toBe('');
     expect(seen).toMatchObject({ config: '/acct/dir', traffic: null });
   });
 
