@@ -180,6 +180,7 @@ class WhatIsKeptOnce(Base):
         later = self.store_at(NOW + 8 * 86400)
         later.prune()
         self.assertFalse(later.was_kept(NOAH, '7007', '@tars a private instruction'))
+        self.assertFalse(self.store_at(NOW).was_kept(NOAH, '7007', '@tars a private instruction'), 'pruned, not only hidden')
 
 
 class TheStoresId(Base):
