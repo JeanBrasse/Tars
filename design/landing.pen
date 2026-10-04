@@ -420,7 +420,7 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Real terminals in a grid, grouped by project. Watch six agents work at once, jump into any of them, broadcast one instruction to all.",
+                          "content": "Real terminals in a grid, grouped by project. Watch six agents work at once, open any of them fullscreen in one press, broadcast one instruction to all.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,
@@ -663,7 +663,88 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "A diff review of every branch, one search across the whole fleet’s output, and per-provider spend against the budget you set.",
+                          "content": "A diff review of every branch, one search across the fleet’s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, beside each Claude account’s 5 h and weekly limits.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "t2snVW",
+                      "name": "f Several Claude subscriptions",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "HhPBV",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Several Claude subscriptions",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "L9qi1W",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Run your Claude agents on up to five subscriptions. Each starts on the account with the most room left, and one cut short by a limit carries on from another account, in the same conversation.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Of493",
+                  "name": "row4",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "HnCrU",
+                      "name": "f When an agent stops, or stalls",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "TjSNQ",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "When an agent stops, or stalls",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "GUxpp",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Stop one with a reason, and its card, panel and window say who stopped it, when and why. One that reads running but has written nothing for 30 minutes and runs no command is marked stalled, and its orchestrator is told.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,
