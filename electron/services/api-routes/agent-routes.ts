@@ -645,6 +645,9 @@ export interface DispatchOpts {
   sender?: MessageSender;
   /** Run once the agent takes keys, before anything is typed: never for a sender refused 409. */
   onAccepted?: () => void;
+  /** Typed into a live session: once it is written into the terminal, or once the terminal gives it up (WriteOrigin). */
+  onWritten?: () => void;
+  onDropped?: () => void;
 }
 
 export async function performDispatch(
@@ -723,6 +726,8 @@ async function performDispatchLocked(
       agentId: agent.id,
       from: opts.from ?? 'Tars',
       sender: opts.sender ?? { kind: 'tars' },
+      onWritten: opts.onWritten,
+      onDropped: opts.onDropped,
     });
     agent.status = 'running';
     agent.waitingReason = undefined;

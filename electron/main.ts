@@ -136,6 +136,7 @@ import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgent
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
+import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
 import { agentStatusEmitter } from './services/agent-events';
 import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
@@ -246,12 +247,13 @@ function loadAppSettings(): AppSettings {
   try {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
-      return { ...defaults, ...saved };
+      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
+      return { ...defaults, ...sentryTokenOutOf(saved) };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
   }
-  return defaults;
+  return { ...defaults, ...sentryTokenOutOf({}) };
 }
 
 function saveAppSettingsToFile(settings: AppSettings) {
@@ -259,7 +261,8 @@ function saveAppSettingsToFile(settings: AppSettings) {
     ensureDataDir();
     // 0600 and atomic: this file carries every provider API key, the Hermes
     // gateway token and the memory-backend credentials.
-    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    // Everything but the Sentry token, which goes to ~/.tars-private.
+    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settingsToSave(settings), null, 2));
   } catch (err) {
     console.error('Failed to save app settings:', err);
   }
