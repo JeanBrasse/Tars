@@ -54,9 +54,9 @@ vi.mock('../../src/components/NewChatModal', () => ({ default: () => null }));
 vi.mock('../../src/components/AgentWorld/AgentTerminalDialog', () => ({ default: () => null }));
 vi.mock('../../src/components/Templates/TemplatesManagerDialog', () => ({ TemplatesManagerDialog: () => null }));
 
-const TARS = '/Users/noah/tars';
-const CAPITAL = '/Users/noah/1212-Capital';
-const SAKARTVELO = '/Users/noah/sakartvelo';
+const TARS = '/Users/you/tars';
+const CAPITAL = '/Users/you/1212-Capital';
+const SAKARTVELO = '/Users/you/sakartvelo';
 
 let created = 0;
 function agent(name: string, projectPath: string, over: Partial<AgentStatus> = {}): AgentStatus {
@@ -122,7 +122,7 @@ describe('projectLabels', () => {
   });
 
   it('gives two projects that share a folder name their paths, and only those two', () => {
-    const work = '/Users/noah/work/tars';
+    const work = '/Users/you/work/tars';
     const labels = projectLabels([TARS, CAPITAL, work]);
     expect(labels.get(TARS)).toBe('~/tars');
     expect(labels.get(work)).toBe('~/work/tars');
@@ -138,6 +138,7 @@ describe('useAgentFiltering', () => {
     agent('Rester', TARS, { status: 'idle' }),
     agent('Finisher', CAPITAL, { status: 'completed' }),
     agent('Breaker', CAPITAL, { status: 'error', branchName: 'feat/backend' }),
+    agent('Halted', CAPITAL, { status: 'stopped', stoppedBy: 'you' }),
   ];
 
   const filter = (statusFilter: string | null, searchQuery = '', projectFilter: string | null = null) => {
@@ -155,13 +156,18 @@ describe('useAgentFiltering', () => {
     expect(filter('error')).toEqual(['Breaker']);
   });
 
+  it('finds a stopped agent under Stopped, and never under Idle, the word of one never started', () => {
+    expect(filter('stopped')).toEqual(['Halted']);
+    expect(filter('idle')).not.toContain('Halted');
+  });
+
   it('matches the filter field against the branch', () => {
     expect(filter(null, 'feat/backend')).toEqual(['Breaker']);
     expect(filter(null, 'FEAT/FRONTEND')).toEqual(['Runner']);
   });
 
   it('narrows to one project', () => {
-    expect(filter(null, '', CAPITAL)).toEqual(['Breaker', 'Finisher']);
+    expect(filter(null, '', CAPITAL)).toEqual(['Breaker', 'Finisher', 'Halted']);
   });
 });
 
@@ -236,17 +242,24 @@ describe('the Agents page', () => {
     expect(sections()[0].cards).toEqual(['Orchestrator', 'QA Engineer', 'Backend Engineer', 'Frontend Engineer']);
   });
 
-  it('offers four statuses and counts a completed agent under Idle', () => {
+  it('offers five statuses, stopped between idle and error, and counts a completed agent under Idle', () => {
     open(seven());
-    expect(chips()).toEqual(['All (7)', 'running (3)', 'waiting (1)', 'idle (2)', 'error (1)']);
+    expect(chips()).toEqual(['All (7)', 'running (3)', 'waiting (1)', 'idle (2)', 'stopped (0)', 'error (1)']);
     (chip('idle').props.onClick as () => void)();
     expect(sections().flatMap(s => s.cards).sort()).toEqual(['Modeller', 'QA Engineer']);
+  });
+
+  it('counts a stopped agent under Stopped, not Idle, and shows it alone under its chip', () => {
+    open([...seven(), agent('Halted', CAPITAL, { status: 'stopped', stoppedBy: 'Project Lead' })]);
+    expect(chips()).toEqual(['All (8)', 'running (3)', 'waiting (1)', 'idle (2)', 'stopped (1)', 'error (1)']);
+    (chip('stopped').props.onClick as () => void)();
+    expect(sections().flatMap(s => s.cards)).toEqual(['Halted']);
   });
 
   it('counts the chips within the project on screen, so a count is what its chip would show', () => {
     open(seven());
     pick(TARS);
-    expect(chips()).toEqual(['All (4)', 'running (2)', 'waiting (1)', 'idle (1)', 'error (0)']);
+    expect(chips()).toEqual(['All (4)', 'running (2)', 'waiting (1)', 'idle (1)', 'stopped (0)', 'error (0)']);
     expect(sections().map(s => s.path)).toEqual([TARS]);
     (chip('running').props.onClick as () => void)();
     expect(sections()).toEqual([{ path: TARS, heading: ['tars', '~/tars', '2 agents'], cards: ['Orchestrator', 'Frontend Engineer'] }]);
@@ -265,7 +278,7 @@ describe('the Agents page', () => {
   });
 
   it('names two projects that share a folder by their paths in the picker', () => {
-    const other = '/Users/noah/work/tars';
+    const other = '/Users/you/work/tars';
     open([...seven(), agent('Twin', other)]);
     expect(pickerRows().filter(r => r[0] === TARS || r[0] === other).map(r => r[1])).toEqual(['~/tars', '~/work/tars']);
   });

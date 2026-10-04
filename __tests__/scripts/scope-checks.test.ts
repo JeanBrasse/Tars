@@ -299,7 +299,11 @@ async function cloneBehindOrigin(from: 'main' | 'fresh') {
   return { ...upstream, root, dir };
 }
 
-describe.concurrent('the base a branch is compared against', () => {
+// 30 s, not vitest's 5: these cases run git and scope-checks.mjs for real, several at
+// once, and under a gate's load (01/10, load average 140) two were cut off at 5 s while
+// three others passed between 4.9 and 5.0 s (27 full-suite reports of 28/09 to 01/10).
+// Quiet, the slowest is 2.2 s.
+describe.concurrent('the base a branch is compared against', { timeout: 30_000 }, () => {
   it('fetches origin/main before comparing, and names the commit it compared against', async ({ expect }) => {
     const repo = await cloneBehindOrigin('fresh');
     write(repo.dir, '__tests__/feature.test.ts', '// a test, and nothing else\n');
@@ -388,7 +392,7 @@ describe.concurrent('the base a branch is compared against', () => {
   });
 });
 
-describe.concurrent('a reference change, as git reports it', () => {
+describe.concurrent('a reference change, as git reports it', { timeout: 30_000 }, () => {
   it.for([
     ['re-recorded and committed', async (dir: string) => {
       write(dir, 'e2e/__screenshots__/agents.png', PNG_RERECORDED);

@@ -5,6 +5,7 @@ import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
 import type { AgentStatus } from '@/types/electron';
 import { isElectron } from '@/hooks/useElectron';
+import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
 import { TERMINAL_CONFIG } from '../constants';
 import { getTerminalTheme } from '@/components/AgentWorld/constants';
 import { attachShiftEnterHandler, disposeTerminalSafely, keySender, passWheelToProgram, stripTerminalReplies, suppressMouseTracking } from '@/lib/terminal';
@@ -214,7 +215,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
           const agent = await window.electronAPI.agent.get(agentId);
 
           const hasPty = agent?.ptyId;
-          const isInactive = agent?.status === 'idle' || agent?.status === 'completed' || agent?.status === 'error';
+          const isInactive = agent?.status === 'idle' || agent?.status === 'completed' || agent?.status === 'error' || agent?.status === 'stopped';
 
           if (isInactive && !hasPty) {
             // Truly stopped agents (no PTY): show status placeholder.
@@ -485,9 +486,13 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       writeToTerminal(event.agentId, `\x1b[31m${event.data}\x1b[0m`);
     });
 
+    // A move by Tars to another Claude account, said in the agent's panel.
+    const unsubMove = onAgentMoveLine(writeToTerminal);
+
     return () => {
       unsubOutput();
       unsubError();
+      unsubMove();
     };
   }, [writeToTerminal, notePty]);
 

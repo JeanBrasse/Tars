@@ -38,6 +38,8 @@ vi.mock('../../../../electron/core/pty-manager', () => ({
   ptyProcesses: new Map(),
   writeProgrammaticInput: vi.fn(),
   rememberTerminalOwner: vi.fn(),
+  // A stop ends the terminal's tree (core/agent-stop.ts); here, its hangup.
+  endTerminalTree: vi.fn(async (t: { kill?: () => void }) => { t.kill?.(); }),
 }));
 
 vi.mock('../../../../electron/utils/path-builder', () => ({
@@ -278,11 +280,13 @@ describe('agent-routes', () => {
       const handler = findHandler(app, 'POST', 'stop');
 
       const sendJson = vi.fn();
-      await handler(makeReq({ params: { id: 'a1' } }), sendJson, ctx);
+      await handler(makeReq({ params: { id: 'a1' }, body: { reason: 'done for today' } }), sendJson, ctx);
 
       expect(mockPty.kill).toHaveBeenCalled();
-      expect(agent.status).toBe('idle');
-      expect(sendJson).toHaveBeenCalledWith({ success: true });
+      // stopped, with who and why, since PLAN-1.9.2 item A (core/agent-stop.ts).
+      expect(agent.status).toBe('stopped');
+      expect(agent.stopReason).toBe('done for today');
+      expect(sendJson).toHaveBeenCalledWith(expect.objectContaining({ success: true, stopReason: 'done for today' }));
     });
   });
 

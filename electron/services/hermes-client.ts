@@ -765,18 +765,30 @@ function decodeDataUrl(dataUrl: unknown): string {
  */
 const HERMES_MEMORY_DIR = '~/.hermes/memories';
 
+/** Hermes's two memory files, in the order they are shown. */
+export const HERMES_MEMORY_FILES = ['MEMORY.md', 'USER.md'] as const;
+
+/** One of them: `file` is null when the gateway has not written it yet, or it is empty. */
+export async function fetchHermesMemoryFile(conn: HermesConnection, name: string): Promise<
+  { success: true; file: HermesMemoryFile | null } | { success: false; error: string; needsSignIn?: boolean }
+> {
+  const { status, body } = await gatewayCall(conn, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`);
+  if (status === 404) return { success: true, file: null }; // the gateway simply has not written it yet
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes to read its memory');
+
+  const content = decodeDataUrl((body as Record<string, unknown> | null)?.data_url);
+  return { success: true, file: content.trim() ? { name, content } : null };
+}
+
 export async function fetchHermesMemoryFiles(conn: HermesConnection): Promise<
   { success: true; files: HermesMemoryFile[] } | { success: false; error: string; needsSignIn?: boolean }
 > {
   const files: HermesMemoryFile[] = [];
 
-  for (const name of ['MEMORY.md', 'USER.md']) {
-    const { status, body } = await gatewayCall(conn, `/api/files/read?path=${encodeURIComponent(`${HERMES_MEMORY_DIR}/${name}`)}`);
-    if (status === 404) continue; // the gateway simply has not written it yet
-    if (status >= 300) return failedRead(status, 'Sign in to Hermes to read its memory');
-
-    const content = decodeDataUrl((body as Record<string, unknown> | null)?.data_url);
-    if (content.trim()) files.push({ name, content });
+  for (const name of HERMES_MEMORY_FILES) {
+    const read = await fetchHermesMemoryFile(conn, name);
+    if (!read.success) return read;
+    if (read.file) files.push(read.file);
   }
 
   return { success: true, files };
@@ -988,6 +1000,27 @@ export async function searchHermesSessions(
   });
 
   return { success: true, hits };
+}
+
+/**
+ * A session's parent, from GET /api/sessions/{id}: null for a root. The
+ * search walks a hit's parents only up to a branch or a delegate edge, so a
+ * caller that must know a session's whole ancestry reads it further up, one
+ * parent at a time (memory-hub.ts). A session the gateway cannot give, or an
+ * answer that is not a session, is a failure, never a root.
+ */
+export async function fetchHermesSessionParent(
+  conn: HermesConnection,
+  sessionId: string,
+): Promise<{ success: true; parentSessionId: string | null } | { success: false; error: string; needsSignIn?: boolean }> {
+  const { status, body } = await gatewayCall(conn, `/api/sessions/${encodeURIComponent(sessionId)}`);
+  if (status >= 300) return failedRead(status, 'Sign in to Hermes');
+  const session = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : null;
+  const parent = session?.parent_session_id;
+  if (!session || (parent !== undefined && parent !== null && typeof parent !== 'string')) {
+    return { success: false, error: 'Hermes answered something that is not a session' };
+  }
+  return { success: true, parentSessionId: typeof parent === 'string' && parent ? parent : null };
 }
 
 /** Which memory provider the gateway has active, and how big its files are. */

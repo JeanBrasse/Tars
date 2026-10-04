@@ -7,6 +7,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
+import { clearStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
@@ -70,6 +72,13 @@ type SpawnOpts = {
  * Dashboard redraw on `agents:tick`, so either one alone leaves a view wrong.
  * The payload is the one the IPC paths send.
  */
+/** The stop, for the callers that read an agent's state: who, when, why. Nothing once it is not stopped. */
+function stopOf(agent: AgentStatus): { stoppedBy?: string; stoppedAt?: string; stopReason?: string } {
+  return agent.status === 'stopped'
+    ? { stoppedBy: agent.stoppedBy, stoppedAt: agent.stoppedAt, stopReason: agent.stopReason }
+    : {};
+}
+
 function announceAgent(agent: AgentStatus): void {
   broadcastToAllWindows('agent:status', {
     type: 'status',
@@ -87,6 +96,14 @@ async function spawnAgentSession(
   ctx: RouteContext,
   sendJson: SendJson
 ): Promise<boolean> {
+  // A session started while the quit ends the others would be in no map the
+  // quit ends: refused before anything here ends the old terminal (the Audit's
+  // gate of #235: a /start 200 ms into the quit answered 200 and its CLI
+  // outlived Tars). spawnAgentPty refuses too, for the callers that are not here.
+  if (isQuitting()) {
+    sendJson({ error: 'Tars is quitting: no new session is started.', quitting: true }, 503);
+    return false;
+  }
   // Raw cwd for pty.spawn, shell-escaped form for the `cd` command. These
   // must be separate: passing the shell-escaped form to pty.spawn would
   // break when the path legitimately contains a single quote.
@@ -187,7 +204,6 @@ async function spawnAgentSession(
         projectPath: agent.projectPath,
         settings: appSettings as never,
         hermes: usableHermesConnection(),
-        budgetMs: 3000,
       });
       const wrapped = wrapDigestForPrompt(digest);
       if (wrapped) memoryBlock = `\n\n${wrapped}`;
@@ -330,6 +346,8 @@ async function spawnAgentSession(
   // dropped as belonging to a session that no longer exists.
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
+  // A terminal again: a stop is over (core/agent-stop.ts).
+  clearStop(agent);
   agent.status = 'running';
   agent.workHandedAt = new Date().toISOString();
   agent.currentTask = prompt;
@@ -385,8 +403,12 @@ async function spawnAgentSession(
       if (agent.ptyId !== ptyId) {
         return;
       }
+      // Ended by the quit: neither the agent's completion nor its error, and
+      // the closing window is not told it was (the Audit's gate of #235).
+      const outcome = agentStatusOnExit(exitCode);
+      if (!outcome) return;
       if (agent.status === 'running') {
-        agent.status = exitCode === 0 ? 'completed' : 'error';
+        agent.status = outcome;
       } else if (agent.status === 'waiting') {
         // PTY exited while agent was waiting for input: the claude process
         // crashed. Mark as error so /wait is unblocked and the orchestrator
@@ -744,12 +766,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const currentStatus = agent.status;
 
     // Return immediately if already in terminal state
-    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting') {
+    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped') {
       sendJson({
         status: agent.status,
         lastCleanOutput: agent.lastCleanOutput,
         error: agent.error,
         waitingReason: agent.waitingReason,
+        ...stopOf(agent),
+        stalledSince: agent.stalledSince,
       });
       return;
     }
@@ -782,6 +806,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         lastCleanOutput: a?.lastCleanOutput,
         error: a?.error,
         waitingReason: a?.waitingReason,
+        ...(a ? stopOf(a) : {}),
+        stalledSince: a?.stalledSince,
       });
     };
 
@@ -1165,7 +1191,9 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     sendJson(result, result.ok || result.started ? 200 : 502);
   });
 
-  // POST /api/agents/:id/stop
+  // POST /api/agents/:id/stop: with a reason, filed under the caller
+  // (core/agent-stop.ts). stop_agent gave none, and nobody could tell
+  // afterwards why an agent was down.
   app_.post(/^\/api\/agents\/([^/]+)\/stop$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
@@ -1173,36 +1201,18 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    if (!assertMayDriveAgent(req, agent, sendJson)) return;
-    // Its delegated run too (the Audit's table, #6).
-    await stopAcpRuns(agent.id, 'the agent was stopped');
+    const driver = resolveDriver(req, sendJson);
+    if (!driver) return;
+    if (!mayActIn(req, driver, agent.projectPath, `agent "${agent.name || agent.id}" belongs to project ${agent.projectPath}`, sendJson)) return;
+    const reason = stopReasonOf((req.body as { reason?: unknown } | undefined)?.reason);
+    if (!reason) {
+      sendJson({ error: 'A reason is required: say in one line why this agent is stopped. It is kept with the agent and shown in the window.' }, 400);
+      return;
+    }
 
-    if (agent.ptyId) {
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (ptyProcess) {
-        ptyProcess.kill();
-        ptyProcesses.delete(agent.ptyId);
-      }
-    }
-    // No terminal any more, as the interface's own stop already says. Left
-    // set, it named a dead pty for the windows, and the exit handler of that
-    // pty still took it for the live one, so a non-zero exit wrote an error
-    // onto an agent that had just been stopped on purpose.
-    agent.ptyId = undefined;
-    agent.status = 'idle';
-    agent.currentTask = undefined;
-    agent.waitingReason = undefined;
-    // Tombstone the stopped session so its in-flight hooks can't resurrect
-    // status/output after the stop.
-    if (agent.currentSessionId) {
-      agent.lastKilledSessionId = agent.currentSessionId;
-    }
-    agent.currentSessionId = undefined;
-    agent.lastActivity = new Date().toISOString();
-    saveAgents();
-    emitAgentStatus(agent.id);
-    announceAgent(agent);
-    sendJson({ success: true });
+    const by = driver.kind === 'tars' ? 'Tars' : (driver.agent.name || driver.agent.id);
+    const stoppedNow = await stopAgent(agent, { by, reason }, { save: saveAgents, announce: announceAgent });
+    sendJson({ success: true, ...(stoppedNow ? {} : { alreadyStopped: true }), ...stopOf(agent) });
   });
 
   // POST /api/agents/:id/message

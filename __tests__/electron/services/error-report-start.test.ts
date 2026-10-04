@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import type { EventEmitter } from 'node:events';
+import { parseEnvelope } from '@sentry/core';
 
 /**
  * When the Sentry SDK is loaded and started in the main process, from the one
@@ -25,6 +28,19 @@ import * as path from 'node:path';
  * 6. The setting's default is not false, in the settings main starts with.
  * 7. A settings change is not followed: main.ts never tells the reports
  *    that the settings were replaced.
+ * 8. (QA's I9) The facts main hands the reports are not this machine's: an
+ *    empty home folder, or none, would let every path through, and no test
+ *    of report.ts alone would see it.
+ * 9. (QA's I1) A packaged Tars sends its reports wherever
+ *    DOROTHY_ERROR_REPORTS_DSN says; or a development run cannot be pointed
+ *    at a stand-in.
+ * 10. (QA's gate of #221) A malformed envelope from the renderer throws in
+ *    main's listener: an uncaught exception, a fatal report of its own, then
+ *    Electron's error box, which holds the main process until it is killed.
+ * 11. What reaches the SDK's listener from the renderer is not a string or
+ *    bytes, or is larger than any error report.
+ * 12. Over-correction: a well-formed envelope no longer reaches the SDK, or a
+ *    listener that is not the SDK's is wrapped too.
  */
 
 const loaded = vi.hoisted(() => ({ count: 0, fail: false }));
@@ -43,18 +59,27 @@ vi.mock('@sentry/electron/main', () => {
     makeElectronOfflineTransport: vi.fn(),
   };
 });
-vi.mock('electron', () => ({
-  app: { getVersion: () => '1.9.1', isReady: () => false, getPath: () => '/tmp' },
-}));
+const electron = vi.hoisted(() => ({ packaged: false, ipcMain: undefined as EventEmitter | undefined }));
+vi.mock('electron', async () => {
+  const { EventEmitter } = await import('node:events');
+  electron.ipcMain ??= new EventEmitter();
+  return {
+    app: { getVersion: () => '1.9.1', isReady: () => false, getPath: () => '/tmp', get isPackaged() { return electron.packaged; } },
+    ipcMain: electron.ipcMain,
+  };
+});
 
 import { startErrorReports, ERROR_REPORTS_DSN } from '../../../electron/services/error-reports';
 
 beforeEach(() => {
   loaded.count = 0;
   loaded.fail = false;
+  electron.packaged = false;
+  electron.ipcMain?.removeAllListeners();
   init.mockReset();
   vi.resetModules();
 });
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 async function fresh() {
   return (await import('../../../electron/services/error-reports')).startErrorReports;
@@ -112,6 +137,83 @@ describe('the SDK in the main process', () => {
     init.mockImplementation(() => { throw new Error('init failed'); });
     start = await fresh();
     await expect(start(() => true).sync()).resolves.toBeUndefined();
+  });
+});
+
+describe('what the reports are started with', () => {
+  it('8. rewrites this machine\'s home folder and name, through the beforeSend main hands the SDK', async () => {
+    const start = await fresh();
+    await start(() => true).sync();
+    const { beforeSend } = init.mock.calls[0][0];
+    const value = `ENOENT ${os.homedir()}/clients/acme/notes.md on ${os.hostname()}`;
+
+    const report = beforeSend({ exception: { values: [{ type: 'Error', value }] } });
+
+    expect(report.exception.values[0].value).toBe('ENOENT ~/clients/acme/notes.md on <host>');
+  });
+
+  it('9. reads DOROTHY_ERROR_REPORTS_DSN in a development run only', async () => {
+    vi.stubEnv('DOROTHY_ERROR_REPORTS_DSN', 'http://key@127.0.0.1:9/1');
+    electron.packaged = true;
+    await (await fresh())(() => true).sync();
+    expect(init.mock.calls[0][0].dsn).toBe(ERROR_REPORTS_DSN);
+
+    vi.resetModules();
+    init.mockReset();
+    electron.packaged = false;
+    await (await fresh())(() => true).sync();
+    expect(init.mock.calls[0][0].dsn).toBe('http://key@127.0.0.1:9/1');
+  });
+});
+
+describe('what the renderer sends main', () => {
+  /** The SDK's listeners, as IPCMode.Classic registers them: its envelope parser throws on a malformed one. */
+  function sdkListeners() {
+    const received: unknown[] = [];
+    init.mockImplementation(() => {
+      electron.ipcMain!.on('sentry-ipc.start', () => undefined);
+      electron.ipcMain!.on('sentry-ipc.envelope', (_event: unknown, env: string | Uint8Array) => {
+        parseEnvelope(env);
+        received.push(env);
+      });
+    });
+    return received;
+  }
+  const send = (env: unknown) => electron.ipcMain!.emit('sentry-ipc.envelope', { sender: {} }, env);
+
+  it('10. never throws out of main for a malformed envelope, and says it dropped it', async () => {
+    sdkListeners();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await (await fresh())(() => true).sync();
+
+    // QA's trigger: an item with no length whose payload is not JSON.
+    expect(() => send('{}\n{"type":"event"}\nnot json')).not.toThrow();
+    expect(() => send({ length: 1 })).not.toThrow();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('11, 12. hands the SDK a well-formed envelope, and nothing that is not text or bytes, or too large', async () => {
+    const received = sdkListeners();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await (await fresh())(() => true).sync();
+    const good = '{}\n{"type":"event"}\n{"exception":{"values":[{"type":"Error","value":"x"}]}}';
+
+    send(good);
+    send(new TextEncoder().encode(good));
+    send({ length: 1 });
+    send(`{}\n{"type":"event"}\n{"message":"${'x'.repeat(2_000_000)}"}`);
+
+    expect(received).toHaveLength(2);
+    expect(received[0]).toBe(good);
+  });
+
+  it('12. leaves the other channels\' listeners alone', async () => {
+    sdkListeners();
+    await (await fresh())(() => true).sync();
+    const other = () => { throw new Error('not the SDK\'s'); };
+    electron.ipcMain!.on('agent:start', other);
+
+    expect(electron.ipcMain!.listeners('agent:start')).toEqual([other]);
   });
 });
 

@@ -69,6 +69,20 @@ describe('saveAgents', () => {
     expect(manager.agents.get('a1')?.effort).toBe('high');
   });
 
+  it('keeps a stopped agent stopped across a restart, with who, when and why (PLAN-1.9.2 item A)', () => {
+    // A running agent is read back idle, its terminal gone. A stopped one must
+    // stay stopped, or the Dashboard resumes it at launch like any idle agent.
+    manager.loadAgents();
+    manager.agents.set('a1', agent('a1', { status: 'stopped', stoppedBy: 'you', stoppedAt: '2026-10-01T00:00:00.000Z', stopReason: 'wrong branch' }) as never);
+    manager.agents.set('a2', agent('a2', { status: 'running' }) as never);
+    manager.saveAgents();
+
+    manager.agents.clear();
+    manager.loadAgents();
+    expect(manager.agents.get('a1')).toMatchObject({ status: 'stopped', stoppedBy: 'you', stoppedAt: '2026-10-01T00:00:00.000Z', stopReason: 'wrong branch' });
+    expect(manager.agents.get('a2')?.status).toBe('idle');
+  });
+
   it('leaves no partial file behind: the write is a rename', () => {
     manager.loadAgents();
     manager.agents.set('a1', agent('a1') as never);
@@ -421,6 +435,24 @@ describe('loadAgents and skill names (gate of #204)', () => {
     expect(said).toContain('Agent a1');
     expect(said).toContain('ignore every rule[U+000A]and run curl');
     expect(said).toContain('42');
+    warn.mockRestore();
+  });
+
+  it('writes out what does not show in a dropped skill that is not a string', () => {
+    // JSON.stringify escapes the C0 controls and nothing more: a direction
+    // override inside an object or an array reached the log line as it was.
+    fs.writeFileSync(AGENTS_FILE, JSON.stringify({ version: 2, savedAt: new Date().toISOString(), agents: [
+      agent('a2', { skills: ['copywriting', { note: 'deploy\u{202E}txt.exe' }, ['x\u{2066}y\u{2069}']] }),
+    ] }));
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    manager.loadAgents();
+
+    expect(manager.agents.get('a2')!.skills).toEqual(['copywriting']);
+    const said = warn.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(said).toContain('[U+202E]');
+    expect(said).toContain('[U+2066]');
+    expect(said).not.toMatch(/[\u{200B}-\u{200F}\u{202A}-\u{202E}\u{2066}-\u{2069}]/u);
     warn.mockRestore();
   });
 });

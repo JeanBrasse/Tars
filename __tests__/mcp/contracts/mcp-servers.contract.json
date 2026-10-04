@@ -180,7 +180,7 @@
           },
           {
             "name": "stop_agent",
-            "description": "Stop a running agent. The agent will be terminated and return to 'idle' state.",
+            "description": "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; Noah reads it in the window.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -188,13 +188,19 @@
                   "type": "string",
                   "description": "The agent ID"
                 },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"
+                },
                 "allowCrossProject": {
                   "type": "boolean",
                   "description": "Explicitly allow acting on an agent of ANOTHER project (normally rejected)"
                 }
               },
               "required": [
-                "id"
+                "id",
+                "reason"
               ],
               "additionalProperties": false,
               "$schema": "http://json-schema.org/draft-07/schema#"
@@ -263,7 +269,7 @@
           },
           {
             "name": "wait_for_agent",
-            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error/stopped.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1663,7 +1669,8 @@
           "call": {
             "tool": "stop_agent",
             "arguments": {
-              "id": "a1"
+              "id": "a1",
+              "reason": "frozen on a file read"
             }
           },
           "requests": [
@@ -1684,15 +1691,76 @@
                 "sec-fetch-mode: cors",
                 "user-agent: node",
                 "accept-encoding: gzip, deflate",
-                "content-length: 0"
-              ]
+                "content-length: 34"
+              ],
+              "body": "{\"reason\":\"frozen on a file read\"}"
             }
           ],
           "answer": {
             "content": [
               {
                 "type": "text",
-                "text": "Stopped agent a1"
+                "text": "Stopped agent a1: frozen on a file read"
+              }
+            ]
+          }
+        },
+        {
+          "scenario": "stop_agent, no reason",
+          "call": {
+            "tool": "stop_agent",
+            "arguments": {
+              "id": "a1"
+            }
+          },
+          "requests": [],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "MCP error -32602: Input validation error: Invalid arguments for tool stop_agent: [\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"reason\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+              }
+            ],
+            "isError": true
+          }
+        },
+        {
+          "scenario": "stop_agent, already stopped",
+          "call": {
+            "tool": "stop_agent",
+            "arguments": {
+              "id": "a1",
+              "reason": "done"
+            }
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "POST",
+              "path": "/api/agents/a1/stop",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate",
+                "content-length: 17"
+              ],
+              "body": "{\"reason\":\"done\"}"
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Agent a1 was already stopped by Tars-Orchestrator: frozen on a file read. Nothing changed."
               }
             ]
           }
@@ -1703,6 +1771,7 @@
             "tool": "stop_agent",
             "arguments": {
               "id": "b1",
+              "reason": "done",
               "allowCrossProject": true
             }
           },
@@ -1724,16 +1793,16 @@
                 "sec-fetch-mode: cors",
                 "user-agent: node",
                 "accept-encoding: gzip, deflate",
-                "content-length: 26"
+                "content-length: 42"
               ],
-              "body": "{\"allowCrossProject\":true}"
+              "body": "{\"reason\":\"done\",\"allowCrossProject\":true}"
             }
           ],
           "answer": {
             "content": [
               {
                 "type": "text",
-                "text": "Stopped agent b1"
+                "text": "Stopped agent b1: done"
               }
             ]
           }
@@ -1743,7 +1812,8 @@
           "call": {
             "tool": "stop_agent",
             "arguments": {
-              "id": "a1"
+              "id": "a1",
+              "reason": "done"
             }
           },
           "requests": [
@@ -1764,8 +1834,9 @@
                 "sec-fetch-mode: cors",
                 "user-agent: node",
                 "accept-encoding: gzip, deflate",
-                "content-length: 0"
-              ]
+                "content-length: 17"
+              ],
+              "body": "{\"reason\":\"done\"}"
             }
           ],
           "answer": {
@@ -2600,7 +2671,64 @@
             "content": [
               {
                 "type": "text",
-                "text": "Agent \"Dune\" status: stopped"
+                "text": "Agent \"Dune\" was stopped by someone. It does nothing until it is started again."
+              }
+            ]
+          }
+        },
+        {
+          "scenario": "wait_for_agent, stopped with a reason",
+          "call": {
+            "tool": "wait_for_agent",
+            "arguments": {
+              "id": "a1"
+            }
+          },
+          "requests": [
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/agents/a1/wait?timeout=120",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate"
+              ]
+            },
+            {
+              "to": "tars",
+              "method": "GET",
+              "path": "/api/agents/a1",
+              "headers": [
+                "host: 127.0.0.1:<port>",
+                "connection: keep-alive",
+                "Content-Type: application/json",
+                "X-Tars-Client: mcp",
+                "Authorization: Bearer agent-token-lead",
+                "X-Tars-Caller-Id: agent-lead",
+                "X-Tars-Caller-Project: /projects/alpha",
+                "accept: */*",
+                "accept-language: *",
+                "sec-fetch-mode: cors",
+                "user-agent: node",
+                "accept-encoding: gzip, deflate"
+              ]
+            }
+          ],
+          "answer": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Agent \"Dune\" was stopped by Tars-Orchestrator: frozen on a file read. It does nothing until it is started again."
               }
             ]
           }
@@ -5530,7 +5658,7 @@
           },
           {
             "name": "stop_agent",
-            "description": "Stop a running agent. The agent will be terminated and return to 'idle' state.",
+            "description": "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; Noah reads it in the window.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -5538,13 +5666,19 @@
                   "type": "string",
                   "description": "The agent ID"
                 },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"
+                },
                 "allowCrossProject": {
                   "type": "boolean",
                   "description": "Explicitly allow acting on an agent of ANOTHER project (normally rejected)"
                 }
               },
               "required": [
-                "id"
+                "id",
+                "reason"
               ],
               "additionalProperties": false,
               "$schema": "http://json-schema.org/draft-07/schema#"
@@ -5613,7 +5747,7 @@
           },
           {
             "name": "wait_for_agent",
-            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error/stopped.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -5913,7 +6047,8 @@
           "call": {
             "tool": "stop_agent",
             "arguments": {
-              "id": "a1"
+              "id": "a1",
+              "reason": "done"
             }
           },
           "requests": [
@@ -5932,15 +6067,16 @@
                 "sec-fetch-mode: cors",
                 "user-agent: node",
                 "accept-encoding: gzip, deflate",
-                "content-length: 0"
-              ]
+                "content-length: 17"
+              ],
+              "body": "{\"reason\":\"done\"}"
             }
           ],
           "answer": {
             "content": [
               {
                 "type": "text",
-                "text": "Stopped agent a1"
+                "text": "Stopped agent a1: done"
               }
             ]
           }
@@ -6127,7 +6263,7 @@
           },
           {
             "name": "stop_agent",
-            "description": "Stop a running agent. The agent will be terminated and return to 'idle' state.",
+            "description": "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; Noah reads it in the window.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -6135,13 +6271,19 @@
                   "type": "string",
                   "description": "The agent ID"
                 },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"
+                },
                 "allowCrossProject": {
                   "type": "boolean",
                   "description": "Explicitly allow acting on an agent of ANOTHER project (normally rejected)"
                 }
               },
               "required": [
-                "id"
+                "id",
+                "reason"
               ],
               "additionalProperties": false,
               "$schema": "http://json-schema.org/draft-07/schema#"
@@ -6210,7 +6352,7 @@
           },
           {
             "name": "wait_for_agent",
-            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error/stopped.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -6652,7 +6794,7 @@
           },
           {
             "name": "stop_agent",
-            "description": "Stop a running agent. The agent will be terminated and return to 'idle' state.",
+            "description": "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; Noah reads it in the window.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -6660,13 +6802,19 @@
                   "type": "string",
                   "description": "The agent ID"
                 },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"
+                },
                 "allowCrossProject": {
                   "type": "boolean",
                   "description": "Explicitly allow acting on an agent of ANOTHER project (normally rejected)"
                 }
               },
               "required": [
-                "id"
+                "id",
+                "reason"
               ],
               "additionalProperties": false,
               "$schema": "http://json-schema.org/draft-07/schema#"
@@ -6735,7 +6883,7 @@
           },
           {
             "name": "wait_for_agent",
-            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error.",
+            "description": "Wait for an agent to finish its current task. Uses long-polling for efficient waiting: returns as soon as the agent's status changes (no 5-second polling delay). Returns immediately if agent is already idle/waiting/completed/error/stopped.",
             "inputSchema": {
               "type": "object",
               "properties": {

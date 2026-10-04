@@ -90,7 +90,7 @@ export interface AgentTickItem {
   id: string;
   name: string;
   character: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
   displayStatus: DisplayStatus;
   statusLine: string;
   currentTask: string;
@@ -301,7 +301,18 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting';
+  /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again. */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** "you", "Tars", or the name of the agent that stopped it. */
+  stoppedBy?: string;
+  /** ISO. */
+  stoppedAt?: string;
+  /** One line, or none when the window's stop gave none. */
+  stopReason?: string;
+  /** ISO: running, yet nothing written to its transcript since then (30 minutes
+   *  at least) and no tool at work: it looks frozen. Cleared by a write or by any
+   *  other status. */
+  stalledSince?: string;
   projectPath: string;
   secondaryProjectPath?: string; // Secondary project added via --add-dir
   worktreePath?: string;
@@ -360,6 +371,8 @@ export interface AgentStatus {
   claudeAccountId?: ClaudeAccountId;
   /** The account the agent is held to. Absent: chosen automatically. */
   claudeAccountPin?: ClaudeAccountId;
+  /** The last time Tars moved it to another account on its own, and why. Absent: never. */
+  claudeAccountMove?: ClaudeAccountMove;
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
   model?: string;              // Model name (e.g. 'sonnet', 'opus', 'haiku')
   /** Set by agent:list: the model the agent's last session answered on, read
@@ -883,6 +896,26 @@ export interface ClaudeAccountsView {
   registryError: string | null;
 }
 
+/**
+ * Pushed on claude-accounts:agent-moved when Tars has moved an agent to
+ * another account on its own, and kept on the agent as claudeAccountMove.
+ * 'limit': the account hit that window's limit mid-turn; the agent was
+ * restarted on the same conversation and told to continue. 'threshold': the
+ * account was past its threshold for that window when a turn ended; nothing
+ * was cut. Sent when the launch on the new account is made.
+ */
+export interface ClaudeAccountMove {
+  agentId: string;
+  from: ClaudeAccountId;
+  to: ClaudeAccountId;
+  reason: 'limit' | 'threshold';
+  window: 'fiveHour' | 'sevenDay';
+  /** The window's use on `from` when the move was decided; 100 for a limit. null when not measured. */
+  usedPercentage: number | null;
+  /** Epoch ms of the launch on `to`. */
+  at: number;
+}
+
 /** Pushed on claude-accounts:agent-changed when an agent's account or pin changes. */
 export interface ClaudeAccountAgentChange {
   agentId: string;
@@ -952,7 +985,8 @@ export interface ElectronAPI {
     start: (params: { id: string; prompt: string; options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string } }) => Promise<{ success: boolean; cliRunning?: boolean; error?: string }>;
     get: (id: string) => Promise<AgentStatus | null>;
     list: () => Promise<AgentStatus[]>;
-    stop: (id: string) => Promise<{ success: boolean }>;
+    /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
+    stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
     remove: (id: string) => Promise<{ success: boolean }>;
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
@@ -1037,6 +1071,8 @@ export interface ElectronAPI {
     onChanged: (callback: (view: ClaudeAccountsView) => void) => () => void;
     /** An agent's account or pin changed, from any window or from main. */
     onAgentChanged: (callback: (event: ClaudeAccountAgentChange) => void) => () => void;
+    /** Tars moved an agent to another account on its own (onAgentChanged follows with the new account). */
+    onAgentMoved: (callback: (event: ClaudeAccountMove) => void) => () => void;
     /** Holds an agent to an account, or null for automatic. Pushed to every window by onAgentChanged. */
     setAgentAccount: (params: { agentId: string; accountId: ClaudeAccountId | null }) => Promise<ClaudeAccountsResult>;
   };
@@ -1075,6 +1111,20 @@ export interface ElectronAPI {
         five_hour?: { used_percentage: number; resets_at: number };
         seven_day?: { used_percentage: number; resets_at: number };
       } | null;
+      /**
+       * Every Claude account in use, in the order of Settings, with its own 5 h
+       * and weekly counters: one pair of bars each. Empty while the accounts
+       * option is off, when rateLimits (account 1's) is the only pair. A window
+       * is null when nothing reported it or its reset has passed; resetsAt in
+       * epoch seconds, updatedAt in epoch ms.
+       */
+      accountRateLimits: Array<{
+        accountId: string;
+        label: string;
+        fiveHour: { usedPercentage: number; resetsAt: number } | null;
+        sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        updatedAt: number | null;
+      }>;
       tokenStats: {
         totalInputTokens: number;
         totalOutputTokens: number;
@@ -1156,6 +1206,23 @@ export interface ElectronAPI {
       }>;
       /** The first local day still in the file, which is trimmed past 20 000 lines; null when it is empty. */
       oldest: string | null;
+      /**
+       * The turns of the last 48 hours, per hour, provider and model: a rolling 24 hours is the hours past now minus a day.
+       * Its `claude` rows are Claude's ACP turns, which the transcripts already count: skip them, as `usageRows` does
+       * for the days, or those turns count twice in the last 24 hours.
+       */
+      hourly: Array<{
+        /** When the hour starts, in milliseconds since the epoch. */
+        hour: number;
+        provider: string;
+        model: string | null;
+        inputTokens: number;
+        outputTokens: number;
+        cachedReadTokens: number;
+        cachedWriteTokens: number;
+        costUSD: number;
+        turns: number;
+      }>;
     }>;
   };
 

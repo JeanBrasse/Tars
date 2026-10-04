@@ -19,11 +19,12 @@ import {
   AgentManagementCard,
 } from '@/components/AgentList';
 import { Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
-import { statusTone } from './constants';
+import { statusWord } from './constants';
 
-// The frame's four words, in its order. `completed` is not one of them: the
-// card prints it as idle, so the Idle filter is where it is found.
-const STATUS_FILTERS = ['running', 'waiting', 'idle', 'error'] as const;
+// The words the cards print, in the frames' order: stopped sits between idle
+// and error (`Agent stopped · who and why`). `completed` is not one of them:
+// the card prints it as idle, so the Idle filter is where it is found.
+const STATUS_FILTERS = ['running', 'waiting', 'idle', 'stopped', 'error'] as const;
 
 // The picker's "every project" row. Never a project: an agent's projectPath
 // is absolute.
@@ -273,7 +274,7 @@ export default function AgentsPage() {
           All ({inProject.length})
         </Chip>
         {STATUS_FILTERS.map((key) => {
-          const count = inProject.filter(a => statusTone(a.status) === key).length;
+          const count = inProject.filter(a => statusWord(a.status) === key).length;
           return (
             <Chip
               key={key}
