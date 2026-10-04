@@ -196,6 +196,19 @@ describe('the retention', () => {
     expect(result.totalBytes).toBeLessThan(50_000);
   });
 
+  it('8. a young link to a large folder weighs as the link it is, so nothing is deleted for what lies behind it', async () => {
+    fs.writeFileSync(path.join(outside, 'large.bin'), Buffer.alloc(200_000));
+    put(`${W()}/t/keep.txt`, 10, 1);
+    fs.symlinkSync(outside, path.join(root, W(), 't', 'link-to-large'));
+
+    const result = await enforceTmpRetention(deps({ capBytes: 100_000 }));
+
+    expect(result.totalBytes).toBeLessThan(100_000);
+    expect(result.removed).toEqual([]);
+    expect(exists(`${W()}/t/keep.txt`)).toBe(true);
+    expect(fs.existsSync(path.join(outside, 'large.bin'))).toBe(true);
+  });
+
   it('8. a root that is a link is left alone, and the pass says so', async () => {
     const linked = path.join(path.dirname(root), 'linked-tmp');
     fs.symlinkSync(outside, linked);
