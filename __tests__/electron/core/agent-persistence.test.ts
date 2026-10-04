@@ -69,6 +69,20 @@ describe('saveAgents', () => {
     expect(manager.agents.get('a1')?.effort).toBe('high');
   });
 
+  it('keeps a stopped agent stopped across a restart, with who, when and why (PLAN-1.9.2 item A)', () => {
+    // A running agent is read back idle, its terminal gone. A stopped one must
+    // stay stopped, or the Dashboard resumes it at launch like any idle agent.
+    manager.loadAgents();
+    manager.agents.set('a1', agent('a1', { status: 'stopped', stoppedBy: 'you', stoppedAt: '2026-10-01T00:00:00.000Z', stopReason: 'wrong branch' }) as never);
+    manager.agents.set('a2', agent('a2', { status: 'running' }) as never);
+    manager.saveAgents();
+
+    manager.agents.clear();
+    manager.loadAgents();
+    expect(manager.agents.get('a1')).toMatchObject({ status: 'stopped', stoppedBy: 'you', stoppedAt: '2026-10-01T00:00:00.000Z', stopReason: 'wrong branch' });
+    expect(manager.agents.get('a2')?.status).toBe('idle');
+  });
+
   it('leaves no partial file behind: the write is a rename', () => {
     manager.loadAgents();
     manager.agents.set('a1', agent('a1') as never);

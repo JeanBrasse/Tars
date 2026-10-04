@@ -25,6 +25,7 @@ const EVERY: AgentStatus[] = [
   agent('e', 'error', 'Failer'),
   agent('i', 'idle', 'Rester'),
   agent('c', 'completed', 'Finisher'),
+  agent('s', 'stopped', 'Halted'),
 ];
 
 const rail = (agents: AgentStatus[]) => renderToStaticMarkup(<AgentDialogSuperAgentSidebar agentId="me" agents={agents} projects={[]} />);
@@ -33,7 +34,7 @@ const count = (markup: string, text: string) => markup.split(`>${text}<`).length
 describe('the orchestrator rail', () => {
   it('gives every agent the head counts one row, whatever its status, and none to its own (1, 3)', () => {
     const markup = rail(EVERY);
-    for (const name of ['Runner', 'Waiter', 'Failer', 'Rester', 'Finisher']) expect(count(markup, name), name).toBe(1);
+    for (const name of ['Runner', 'Waiter', 'Failer', 'Rester', 'Finisher', 'Halted']) expect(count(markup, name), name).toBe(1);
     expect(count(markup, 'The window')).toBe(0);
     expect(markup).not.toContain('No agents created yet');
   });

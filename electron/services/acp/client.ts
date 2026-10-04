@@ -1,6 +1,7 @@
 import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import { refuseWhileQuitting } from '../../core/quit-state';
 
 /**
  * An Agent Client Protocol session against one agent process.
@@ -76,6 +77,8 @@ export interface SessionOptions {
   permissionMode?: 'normal' | 'auto' | 'bypass';
   /** Tools the agent must not be allowed to use, by name fragment. */
   denyTools?: string[];
+  /** Variables of Tars's own environment the agent must not inherit (its Claude account's). */
+  unsetEnv?: string[];
 }
 
 interface Pending {
@@ -143,14 +146,14 @@ export function parseProcessTable(out: string): ProcessRow[] {
 }
 
 /** Every process, from ps, the same on macOS and Linux. Undefined when ps cannot be run. */
-function processTable(): Promise<ProcessRow[] | undefined> {
+export function processTable(): Promise<ProcessRow[] | undefined> {
   return new Promise(resolve => {
     execFile('ps', PS_ARGS, { timeout: 5_000 }, (err, out) => resolve(err ? undefined : parseProcessTable(String(out))));
   });
 }
 
 /** The same, read while the caller waits, for at most `timeoutMs`: for the quit, which nothing outlives. */
-function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
+export function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
   try {
     return parseProcessTable(String(execFileSync('ps', PS_ARGS, { timeout: timeoutMs })));
   } catch {
@@ -313,7 +316,10 @@ export class AcpSession extends EventEmitter {
 
   /** Spawns the agent, negotiates the protocol and opens a session. */
   async start(): Promise<{ sessionId: string; agentName?: string; capabilities?: unknown }> {
-    const env = { ...process.env, ...this.options.env };
+    refuseWhileQuitting('delegated run');
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of this.options.unsetEnv ?? []) delete env[name];
+    Object.assign(env, this.options.env);
     const child = spawn(this.launch.command, this.launch.args, {
       cwd: this.options.cwd,
       env,

@@ -22,6 +22,8 @@ import { updateSharedJsonSync } from '../utils/shared-file';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
+import { agentStatusOnExit } from './quit-state';
+import { clearStop } from './agent-stop';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -581,10 +583,14 @@ export function loadAgents() {
         agent.pathMissing = false;
       }
 
-      agent.status = 'idle';
+      // A stopped agent stays stopped across a restart, with who, when and
+      // why, or the Dashboard resumes it at launch like any idle one.
+      if (agent.status !== 'stopped') agent.status = 'idle';
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
       agent.pendingDelivery = undefined;
+      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts).
+      agent.stalledSince = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did
@@ -1025,6 +1031,8 @@ async function initAgentPtyLocked(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   agent.ptyCwd = cwd;
+  // A terminal again: a stop is over (core/agent-stop.ts).
+  clearStop(agent);
 
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);
@@ -1052,16 +1060,19 @@ async function initAgentPtyLocked(
 
   ptyProcess.onExit(({ exitCode }) => {
     console.log(`Agent ${agent.id} PTY exited with code ${exitCode}`);
+    ptyProcesses.delete(ptyId);
+    // Ended by the quit: neither the agent's completion nor its error, and
+    // the closing window is not told it was (the Audit's gate of #235).
+    const newStatus = agentStatusOnExit(exitCode);
+    if (!newStatus) return;
     const agentData = agents.get(agent.id);
     // Guard: only mutate if this PTY is still the active one (prevents race on restart/stop)
     if (agentData && agentData.ptyId === ptyId) {
-      const newStatus = exitCode === 0 ? 'completed' : 'error';
       agentData.status = newStatus;
       agentData.lastActivity = new Date().toISOString();
       handleStatusChangeNotificationCallback(agentData, newStatus);
       saveAgentsCallback();
     }
-    ptyProcesses.delete(ptyId);
     broadcastToAllWindows('agent:complete', {
       type: 'complete',
       agentId: agent.id,

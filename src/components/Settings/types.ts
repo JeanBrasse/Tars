@@ -154,4 +154,4 @@ export interface AppSettings {
   providerBudgets?: Record<string, number>;
 }
 
-export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';
+export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';

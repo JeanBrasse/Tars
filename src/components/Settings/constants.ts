@@ -13,6 +13,7 @@ import {
   Plug,
   Zap,
   MessagesSquare,
+  Users,
 } from 'lucide-react';
 import { SlackIcon } from './SlackIcon';
 import { TasmaniaIcon } from './TasmaniaIcon';
@@ -56,6 +57,7 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     icon: Zap,
     children: [
       { id: 'ai-providers', label: 'Providers', description: 'Every CLI and API Tars can run. They are all equal here.', icon: Zap },
+      { id: 'claude-accounts', label: 'Claude accounts', description: 'Several Claude subscriptions, and when your agents move between them.', icon: Users },
       { id: 'cli', label: 'CLI Paths', description: 'Where each command line tool lives on this machine.', icon: Terminal },
       { id: 'permissions', label: 'Permissions', description: 'How far an agent may go before it asks you.', icon: Shield },
     ],

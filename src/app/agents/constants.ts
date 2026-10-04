@@ -9,13 +9,28 @@ export const STATUS_COLORS: Record<AgentStatus['status'], { text: string }> = {
   completed: { text: 'text-status-idle' },
   error: { text: 'text-status-error' },
   waiting: { text: 'text-status-waiting' },
+  // At rest, like idle, and in its ink: the word and its line say the rest.
+  // Frame: `Agent stopped · who and why`.
+  stopped: { text: 'text-status-idle' },
 };
 
 /**
- * Folds the runtime status set onto the design's four-word vocabulary (R6).
- * `completed` is a real runtime state but not a design status: it reads as idle.
+ * Folds the runtime status set onto the design's four inks (R6). `completed`
+ * is a real runtime state but not a design status: it reads as idle. A
+ * stopped agent is at rest too, and takes the idle ink with its own word.
  */
 export const statusTone = (status: AgentStatus['status']): StatusTone =>
+  status === 'completed' || status === 'stopped' ? 'idle' : status;
+
+/** The word an agent's row prints, and the Agents page filters on. */
+export type StatusWord = StatusTone | 'stopped';
+
+/**
+ * The status as a word: the four tones, and `stopped`, which says an agent
+ * was ended on purpose (by you, Tars, or another agent) and is not resumed
+ * at launch, where `idle` is an agent at rest. `completed` reads idle.
+ */
+export const statusWord = (status: AgentStatus['status']): StatusWord =>
   status === 'completed' ? 'idle' : status;
 
 /**
