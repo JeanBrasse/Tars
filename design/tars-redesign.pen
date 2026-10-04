@@ -145955,7 +145955,7 @@
           "id": "Xl2sq",
           "name": "t",
           "fill": "$text-primary",
-          "content": "Review · states: a patch that could not be read, and a patch cut short",
+          "content": "Review · states: a patch that could not be read, no file picked, and a patch cut short",
           "lineHeight": 1.4,
           "fontFamily": "$font-display",
           "fontSize": 20,
@@ -145968,7 +145968,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "A file whose patch the main process could not read says why, where the page said there was no textual change to show. A patch past 4000 lines says where it stops, and with no file picked, how to read one file's patch.",
+          "content": "A file whose patch the main process could not read says why, where the page said there was no textual change to show. With no file picked, the patch panel asks for one: the page reads a tree's files without their patches, and each file's patch once it is picked. A file's patch past 4000 lines says where it stops.",
           "lineHeight": 1.4,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -146052,7 +146052,7 @@
                   "id": "n4llm",
                   "name": "caption",
                   "fill": "$text-muted",
-                  "content": "the whole patch past 4000 lines, no file picked",
+                  "content": "no file picked: the panel asks for one",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -146072,78 +146072,14 @@
                   "padding": 14,
                   "children": [
                     {
-                      "type": "frame",
-                      "id": "jfTq4",
-                      "name": "patch",
-                      "width": "fill_container",
-                      "layout": "vertical",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "SiN0j",
-                          "name": "pl",
-                          "fill": "$accent",
-                          "content": "@@ -3980,6 +3980,9 @@ export const FIXTURES = [",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "jNSX7",
-                          "name": "pl",
-                          "fill": "$text-muted",
-                          "content": "   { id: 3978, name: 'grid-3978' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "O6DLF",
-                          "name": "pl",
-                          "fill": "$status-running",
-                          "content": "+  { id: 3979, name: 'grid-3979' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "HHXj2",
-                          "name": "pl",
-                          "fill": "$status-running",
-                          "content": "+  { id: 3980, name: 'grid-3980' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "W7p5yW",
-                          "name": "pl",
-                          "fill": "$status-error",
-                          "content": "-  { id: 3981, name: 'grid-old' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
                       "type": "text",
-                      "id": "pqSJG",
-                      "name": "cut",
+                      "id": "xfEfz",
+                      "name": "pick",
                       "fill": "$text-muted",
-                      "content": "4000 of 12480 lines shown. Pick a file to read its own patch.",
+                      "content": "Pick a file to read its patch.",
                       "lineHeight": 1.4,
                       "fontFamily": "$font-ui",
-                      "fontSize": 11,
+                      "fontSize": 12,
                       "fontWeight": "normal"
                     }
                   ]
@@ -146296,7 +146232,7 @@
           "id": "CUneC",
           "name": "t",
           "fill": "$text-primary",
-          "content": "Review · states: a patch that could not be read, and a patch cut short",
+          "content": "Review · states: a patch that could not be read, no file picked, and a patch cut short",
           "lineHeight": 1.4,
           "fontFamily": "$font-display",
           "fontSize": 20,
@@ -146309,7 +146245,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "A file whose patch the main process could not read says why, where the page said there was no textual change to show. A patch past 4000 lines says where it stops, and with no file picked, how to read one file's patch.",
+          "content": "A file whose patch the main process could not read says why, where the page said there was no textual change to show. With no file picked, the patch panel asks for one: the page reads a tree's files without their patches, and each file's patch once it is picked. A file's patch past 4000 lines says where it stops.",
           "lineHeight": 1.4,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -146393,7 +146329,7 @@
                   "id": "dFAha",
                   "name": "caption",
                   "fill": "$text-muted",
-                  "content": "the whole patch past 4000 lines, no file picked",
+                  "content": "no file picked: the panel asks for one",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -146413,78 +146349,14 @@
                   "padding": 14,
                   "children": [
                     {
-                      "type": "frame",
-                      "id": "VMOkI",
-                      "name": "patch",
-                      "width": "fill_container",
-                      "layout": "vertical",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "J8gm9",
-                          "name": "pl",
-                          "fill": "$accent",
-                          "content": "@@ -3980,6 +3980,9 @@ export const FIXTURES = [",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "g4jLb",
-                          "name": "pl",
-                          "fill": "$text-muted",
-                          "content": "   { id: 3978, name: 'grid-3978' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "V5Rzl",
-                          "name": "pl",
-                          "fill": "$status-running",
-                          "content": "+  { id: 3979, name: 'grid-3979' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "P2Llt",
-                          "name": "pl",
-                          "fill": "$status-running",
-                          "content": "+  { id: 3980, name: 'grid-3980' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "hY8lu",
-                          "name": "pl",
-                          "fill": "$status-error",
-                          "content": "-  { id: 3981, name: 'grid-old' },",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
                       "type": "text",
-                      "id": "rLAqh",
-                      "name": "cut",
+                      "id": "N0TlYU",
+                      "name": "pick",
                       "fill": "$text-muted",
-                      "content": "4000 of 12480 lines shown. Pick a file to read its own patch.",
+                      "content": "Pick a file to read its patch.",
                       "lineHeight": 1.4,
                       "fontFamily": "$font-ui",
-                      "fontSize": 11,
+                      "fontSize": 12,
                       "fontWeight": "normal"
                     }
                   ]
