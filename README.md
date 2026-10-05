@@ -66,7 +66,15 @@ mode, Tars falls back to the terminal path rather than pretending.
 
 **Your fleet from Telegram, Slack or Discord.** Each bot answers only the people
 you let in, and takes the same commands: the fleet's status, an agent started on a
-task, and messages to the orchestrator, which answers there.
+task, and messages to the orchestrator, which answers there. A message goes to the
+orchestrator of the project it names, as in "@tars fix the build", or to your only
+orchestrator; with several and no name, the bot answers with the list of your
+projects. Or let your own Hermes write to you: turn on Telegram through Hermes in
+Settings, Hermes, Connection, and Hermes becomes the only voice on your Telegram.
+Your orchestrators' questions and the event reports reach you there, and your reply
+reaches the orchestrator it answers, or the project you name with @project. It
+needs the tars-relay plugin on your Hermes, and turning it on switches the Tars bot
+off.
 
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
@@ -75,8 +83,11 @@ database engineer on a project, each on its own git worktree, model and brief.
 runs your Claude agents on up to five subscriptions. Each account signs in
 through Claude Code's own login, in a terminal Tars opens, and Tars keeps none
 of it: account 1 is the `~/.claude` Claude Code already uses, and each other
-one gets a Claude Code folder of its own under `~/.claude-accounts`. An agent
-starts on the account with the most room left in its 5 h and weekly windows.
+one gets a Claude Code folder of its own under `~/.claude-accounts`. Tars asks
+Claude Code itself for each account's 5 h and weekly use, every 10 minutes and
+when you refresh the accounts in Settings, and never sees the sign-in: Claude Code
+answers with percentages. An agent starts on the account with the most room left
+in its 5 h and weekly windows.
 Cut by an account's limit, it is started again on another, in the same
 conversation; past its threshold, 90% of the 5 h window or 95% of the week
 unless you change them, it moves when its turn ends. Its card,
@@ -87,12 +98,26 @@ everything the CLI started. The agent then reads stopped, and its card, panel
 and window say who stopped it and when, and why when an orchestrator stopped
 it, which must give a reason; it stays stopped across a restart,
 so it is not resumed at launch or handed kanban work until it is started again.
-An agent that reads running but has written nothing for 30 minutes and runs no
-command is marked stalled, and the orchestrator that gave it the work, or its
-project's orchestrator, is told. An agent with no turn for 30 minutes is put to
-sleep, which gives its memory back: its pane keeps its last screen, and a
-message, a chat, a key typed there or wake brings it back on its own
-conversation. Orchestrators never sleep.
+A Claude agent on Claude Code 2.1.289 or newer reports its state to Tars from
+inside Claude Code: a turn's start, its end and its failure arrive in the order
+they happened, and one whose Claude Code has frozen is marked stalled after five
+minutes of silence, never for a long command, a wait on another agent or a
+subagent. Any other agent that reads running but has written nothing for 30
+minutes and runs no command is marked stalled. Either way the orchestrator that
+gave it the work, or its project's orchestrator, is told.
+
+**Agents that sleep, and come back.** An agent with no turn for 30 minutes is put
+to sleep, which gives back its memory, a few hundred MB each: its CLI ends, its
+conversation is kept, and its panel keeps its last screen. A message, a dispatch,
+a chat, a Kanban task, wake or a key typed in its panel brings it back on that
+conversation in about a second, and it reads waking, with who woke it, until it
+is up. An orchestrator never sleeps, and neither does an agent with something
+still running, a /loop or a scheduled task of its own, a half-typed line, or a
+message, note or question waiting for it. When Tars stops without being quit (a
+crash, a power cut, a restart of your Mac), the agents that were working start
+again on their own conversation at the next launch, a few at a time, with a note
+from Tars: when it stopped, what was cut, and to check before redoing anything.
+Their last request is not sent again.
 
 **Any CLI, any model.** Nineteen providers, plus local models and any OpenAI-compatible
 endpoint of your own. Model lists and prices come from a
@@ -110,7 +135,10 @@ was cut from, in every project you added. One search across the whole fleet's
 output, read as each terminal showed it, and a Claude agent's conversation from
 its transcript. Spend per provider, hour by hour over the last 24 hours or day by
 day, against a budget you set, beside each Claude account's 5 h and weekly
-limits.
+limits. And, under the Usage page's charts, what each task cost: who handed it
+over, the agent, the model, its turns and tokens, its own cost, and its total with
+the work it handed on to other agents. A task whose CLI writes no transcript reads
+not counted rather than $0.00.
 
 ![Usage: what each provider actually cost, against the budget you set](screenshots/usage.png)
 
@@ -215,9 +243,9 @@ completion hook, it simply has no screen of its own.
 
 | Screen | What it is for |
 |---|---|
-| **Dashboard** | The terminal grid. Every agent, live, grouped by project; each panel shows its session and opens fullscreen in one press |
+| **Dashboard** | The terminal grid. Every agent, live, grouped by project; each panel shows its session and opens fullscreen in one press. An asleep agent's panel keeps its last screen, and a key typed there wakes it |
 | **Chat** | Hermes and a room per project, in one list. Hermes watches every project and asks before it acts; in a room, that project's agents talk to each other and to you, the thread first, the team listed under the rooms, and what needs you above the thread |
-| **Agents** | Create, configure, start and stop, grouped by project or one project at a time. A stopped agent says who stopped it and when, and why when an orchestrator did. Templates and whole teams |
+| **Agents** | Create, configure, start and stop, grouped by project or one project at a time. A stopped agent says who stopped it and when, and why when an orchestrator did; an asleep one says since when, under its own filter, and wakes from its card. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |
 | **Review** | What each agent changed, as a diff against its base branch, in every project you added |
@@ -225,7 +253,7 @@ completion hook, it simply has no screen of its own.
 | **Vault** | Documents your agents can read and write |
 | **Projects** | The folders Tars knows about, and their agents |
 | **Extensions** | Skills and plugins, per provider |
-| **Usage** | Spend per provider and per model, over the last 24 hours or 14 days, 12 weeks or 12 months, against your budgets, and each Claude account's limits |
+| **Usage** | Spend per provider and per model, over the last 24 hours or 14 days, 12 weeks or 12 months, against your budgets, each Claude account's limits, and what each task cost |
 | **Brain** | The five memory sources, and whether each one answers |
 
 ![The vault: documents your agents can read and write](screenshots/vault.png)
