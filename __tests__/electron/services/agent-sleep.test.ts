@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sleepRefusal, SLEEP_AFTER_MS, type SleepFacts } from '../../../electron/services/agent-sleep';
+import { restPendingOf, sleepRefusal, waitsOnItself, SLEEP_AFTER_MS, type SleepFacts } from '../../../electron/services/agent-sleep';
 import type { Proc } from '../../../electron/services/stall-watch';
 
 /**
@@ -29,6 +29,12 @@ import type { Proc } from '../../../electron/services/stall-watch';
  *    put to sleep: the draft is lost.
  * 7. An agent whose conversation cannot be resumed (no transcript, a CLI Tars
  *    cannot resume) is put to sleep: woken, it would start a new conversation.
+ * 16. (QA's gate of #322) An agent waiting on its own timer (a ScheduleWakeup of
+ *    /loop, a CronCreate) or on a background agent its CLI runs in-process is put
+ *    to sleep: no process shows either, and both die with the CLI, silently. What
+ *    its last Stop hook counted decides; a Stop hook that counted nothing (an
+ *    older claude) leaves it to the transcript's background work; a count that
+ *    is not one is not taken.
  */
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z');
@@ -52,6 +58,7 @@ function facts(over: Partial<SleepFacts> = {}, agent: Partial<SleepFacts['agent'
     resumable: true,
     owed: false,
     owes: false,
+    pending: false,
     fieldInUse: false,
     procs: procs(),
     terminalPid: CLI,
@@ -124,5 +131,32 @@ describe('the rule', () => {
 
   it('7. leaves alone an agent whose conversation cannot be resumed', () => {
     expect(sleepRefusal(facts({ resumable: false }))).toBe('not-resumable');
+  });
+});
+
+describe('what its CLI holds in-process', () => {
+  it('16. leaves alone an agent waiting on its own timer or background agent', () => {
+    expect(sleepRefusal(facts({ pending: true }))).toBe('pending');
+  });
+
+  it('16. takes the last Stop hook\'s count, and the transcript only when the hook counted nothing', () => {
+    let asked = 0;
+    const transcript = (pending: string[]) => () => { asked++; return pending; };
+    expect(waitsOnItself({ crons: 1, background: 0 }, transcript([]))).toBe(true);
+    expect(waitsOnItself({ crons: 0, background: 2 }, transcript([]))).toBe(true);
+    expect(waitsOnItself({ crons: 0, background: 0 }, transcript(['task-1']))).toBe(false);
+    expect(asked).toBe(0);
+    expect(waitsOnItself(undefined, transcript(['task-1']))).toBe(true);
+    expect(waitsOnItself(undefined, transcript([]))).toBe(false);
+    expect(asked).toBe(2);
+  });
+
+  it('16. reads a count from the hook only when it is one', () => {
+    expect(restPendingOf({ crons: 1, background: 0 })).toEqual({ crons: 1, background: 0 });
+    for (const bad of [undefined, null, 'x', {}, { crons: -1, background: 0 }, { crons: 1.5, background: 0 }, { crons: '1', background: 0 }, { crons: 1 }]) {
+      expect(restPendingOf(bad), JSON.stringify(bad)).toBeUndefined();
+    }
+    // A count is a count: a forged huge one is still "something waits", not a crash.
+    expect(restPendingOf({ crons: 1e12, background: 0 })).toEqual({ crons: 1e12, background: 0 });
   });
 });
