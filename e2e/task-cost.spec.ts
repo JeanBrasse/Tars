@@ -194,6 +194,11 @@ test('a task handed on is priced under the task it was handed for, from the tran
     // Kept: the ledger on disk holds them, for the next launch.
     const ledger = fs.readFileSync(path.join(dir, 'task-ledger.jsonl'), 'utf8');
     for (const t of [lead, worker, news]) expect(ledger).toContain(t.id);
+    // Their text where no agent is handed it (Noah, 05/10): ~/.tars-private, the owner's alone.
+    expect(ledger).not.toContain('review the build');
+    const texts = path.join(home, '.tars-private', 'task-texts.jsonl');
+    expect(fs.readFileSync(texts, 'utf8')).toContain('review the build');
+    expect(fs.statSync(texts).mode & 0o777).toBe(0o600);
   } finally {
     await app.close();
   }
