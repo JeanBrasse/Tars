@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { DATA_DIR } from '../constants';
+import { DATA_DIR, privatePath } from '../constants';
 import { agents } from '../core/agent-manager';
 import { agentStatusEmitter } from './agent-events';
 import { pendingBackgroundWork } from './agent-truth';
@@ -14,6 +14,8 @@ import { readTaskCosts, selectTasks, taskReport, withDescendants, type TaskQuery
  */
 
 export const TASK_LEDGER_FILE = path.join(DATA_DIR, 'task-ledger.jsonl');
+/** Each task's text, where no agent is handed it (Noah's answer of 2026-10-05). */
+export const TASK_TEXT_FILE = privatePath('task-texts.jsonl');
 
 function onFleetChange(agentId: string): void {
   const ledger = liveTaskLedger();
@@ -32,10 +34,11 @@ function onFleetChange(agentId: string): void {
   ledger.stateChanged(agent, { backgroundLeft });
 }
 
-export function startTaskWatch(file = TASK_LEDGER_FILE): void {
+export function startTaskWatch(file = TASK_LEDGER_FILE, textFile = TASK_TEXT_FILE): void {
   if (liveTaskLedger()) return;
   setLiveTaskLedger(createTaskLedger({
     file,
+    textFile,
     // As recordRequester has it (#302): a sender writing to the agent that
     // handed it its work, or to its project's orchestrator, reports.
     leads: (receiverId, senderId) => {
