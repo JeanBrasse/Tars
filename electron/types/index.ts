@@ -106,6 +106,8 @@ export interface AgentStatus {
     reason?: string;
     rule?: string;
   };
+  /** The last start that undid a stop: the stop, and who started it again and when (core/agent-stop.ts). */
+  lastRestartAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string; restartedBy: string; restartedAt: string };
   /** ISO: running, yet its transcript has had no write since then (30 minutes
    *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
    *  a write or by any other status. Not saved. */
