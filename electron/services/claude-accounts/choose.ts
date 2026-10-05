@@ -30,8 +30,10 @@ const TIE_POINTS = 5;
 export interface AccountUsage {
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
-  /** Epoch ms of the status line's report. */
+  /** Epoch ms of the status line's report, or of the probe's (usage-probe.ts), whichever is newer. */
   updatedAt: number | null;
+  /** The per-model weeklies, which only a probe reads. */
+  models?: { name: string; usedPercentage: number; resetsAt: number }[];
 }
 
 export interface ChooseInput {

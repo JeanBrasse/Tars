@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * Keep the current build and the two before it in the main checkout's release/,
+ * Keep the current build and the one before it in the main checkout's release/,
  * and delete an older version only once GitHub proves it is published.
  *
  * `electron-builder` never cleans up after itself, so every build left another
  * 430MB in release/ and the directory reached 6.3GB across thirteen versions.
- * Three are kept rather than one so a bad release can be compared against, or
- * handed to someone, without a rebuild.
+ * Two are kept rather than one so a bad release can be compared against, or
+ * handed to someone, without a rebuild; two and not three, Noah's rule of
+ * 2026-10-01.
  *
  * Two rules the 1.7.1 release got around, and that this file now enforces
  * instead of assuming:
@@ -36,7 +37,7 @@ import { createReadStream, readdirSync, readFileSync, realpathSync, rmSync, stat
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const KEEP = 3;
+export const KEEP = 2;
 
 /** `Tars-1.6.11-arm64.dmg` → `1.6.11`, and null for anything else. */
 export function versionOf(name) {
