@@ -26,7 +26,7 @@ const HIDDEN_OR_LINE_BREAKING = /[\p{Zl}\p{Zp}\p{Cc}\p{Cf}\p{Default_Ignorable_C
 export const flat = (text: string | undefined) => (text ?? '').replace(HIDDEN_OR_LINE_BREAKING, ' ').replace(/\s+/g, ' ').trim();
 
 /** Cut by code points, so a character beyond the BMP is never split in two. */
-function caller(name: string | undefined): string {
+export function caller(name: string | undefined): string {
   const points = [...flat(name)];
   return points.length > MAX_NAME ? `${points.slice(0, MAX_NAME - 1).join('')}…` : points.join('');
 }

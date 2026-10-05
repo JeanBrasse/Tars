@@ -15,7 +15,9 @@ import type { AgentStatus } from '@/types/electron';
  * last move by Tars, which its account control names and tells. A permission
  * question Tars holds and the call it is about, which the panel's line names
  * and answers: ask in terminal takes the question away and moves nothing else.
+ * Since when it is asleep and who is waking it, which the header's line says
+ * (#322).
  */
 export function panelAgentsKey(agents: AgentStatus[]): string {
-  return agents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}\u0000${a.leftFullscreen}\u0000${a.ptyId}\u0000${a.name}\u0000${a.role}\u0000${a.claudeAccountId}\u0000${a.claudeAccountPin}\u0000${a.claudeAccountMove?.at}\u0000${a.permissionAsk?.askedAt}\u0000${a.waitingOn?.text}`).join('\u0000');
+  return agents.map(a => `${a.id}\u0000${a.status}\u0000${a.currentTask}\u0000${a.lastActivity}\u0000${a.error}\u0000${a.cliRunning}\u0000${a.leftFullscreen}\u0000${a.ptyId}\u0000${a.name}\u0000${a.role}\u0000${a.claudeAccountId}\u0000${a.claudeAccountPin}\u0000${a.claudeAccountMove?.at}\u0000${a.permissionAsk?.askedAt}\u0000${a.waitingOn?.text}\u0000${a.asleepSince}\u0000${a.waking?.by}\u0000${a.waking?.via}\u0000${a.waking?.since}`).join('\u0000');
 }
