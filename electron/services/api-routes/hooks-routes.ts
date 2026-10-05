@@ -10,6 +10,21 @@ import { waitingOnFrom } from '../../utils/waiting-on';
 import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
 import { restPendingOf } from '../../core/agent-asleep';
+import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
+
+/**
+ * The four shell hooks whose posts the state mod makes instead, for a session
+ * it registered (services/state-mod.ts). Each script names itself in `hook`;
+ * the mod's own posts say `via: 'mod'`. One source per session: the shell's
+ * curl landing after the mod's next post put a Stop's idle after the next
+ * turn's running. Every other hook (a permission dialog, a notification) is
+ * still taken from the shell.
+ */
+const MOD_HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure']);
+
+function setAsideForMod(agentId: string, sessionId: string | undefined, body: { hook?: unknown }): boolean {
+  return typeof body.hook === 'string' && MOD_HOOKS.has(body.hook) && modRunsSession(agentId, sessionId);
+}
 
 /**
  * Session ownership contract:
@@ -194,6 +209,10 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
+    if (agent && setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
+      sendJson({ success: true, ignored: 'state-mod' });
+      return;
+    }
     if (agent) {
       if (isStaleSessionPost(agent, session_id)) {
         // Stale session: don't let a killed PTY's Stop hook overwrite the
@@ -261,6 +280,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
+      sendJson({ success: true, ignored: 'state-mod', agent: { id: agent.id, status: agent.status } });
+      return;
+    }
+
     // Tombstone guard: hooks of a killed PTY's session (separate processes
     // that survive the kill) may arrive during the window where the new
     // session hasn't registered yet. Never let them register or flip status.
@@ -287,6 +311,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // Registered is not started: this only puts the task this session was
       // spawned with on the clock.
       noteSessionRegistered(agent);
+      // Registered by the state mod: the shell hooks' four posts for this
+      // session are set aside from now on, and its heartbeat is taken.
+      if ((req.body as { via?: unknown }).via === 'mod') noteModSession(agent.id, session_id);
       saveAgents();
       // Not a status change, and so no `status:` event (a /wait answers
       // those), but the fleet did change: what agent-watch held for this agent
@@ -479,6 +506,26 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/hooks/agent-stopped: Send notification when agent finishes a response (Stop hook)
+  // POST /api/hooks/mod-beat: the state mod's heartbeat, every 15 s from the
+  // CLI's own event loop, with the tool in flight. A frozen loop stops it
+  // (stall-watch.ts). Kept only for the session the mod registered, and the
+  // stall watch reads it only while that is the agent's current session.
+  app.post('/api/hooks/mod-beat', (req, sendJson) => {
+    const { agent_id, tool } = req.body as { agent_id?: string; session_id?: string; tool?: unknown };
+    const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
+    if (!agent_id || !session_id) {
+      sendJson({ error: 'agent_id and session_id are required' }, 400);
+      return;
+    }
+    const agent = agents.get(agent_id);
+    if (!agent) {
+      sendJson({ success: false, message: 'Agent not found' });
+      return;
+    }
+    const kept = noteModBeat(agent.id, session_id, typeof tool === 'string' && tool ? tool.slice(0, 200) : null);
+    sendJson({ success: kept });
+  });
+
   app.post('/api/hooks/agent-stopped', (req, sendJson) => {
     const { agent_id, session_id } = req.body as {
       agent_id: string;
@@ -493,6 +540,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     const agent = findAgentByIdOrSession(agent_id, session_id);
     if (!agent) {
       sendJson({ success: false, message: 'Agent not found' });
+      return;
+    }
+
+    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
+      sendJson({ success: true, ignored: 'state-mod' });
       return;
     }
 
