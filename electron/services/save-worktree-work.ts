@@ -66,3 +66,23 @@ export async function saveUncommittedWork(worktreePath: string, name: string): P
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
+
+/**
+ * What git ignores in the worktree, but the rebuildable caches: a .env, an e2e
+ * run directory under test-results/, a local database. The wip commit cannot
+ * keep them (`add -A` leaves out what .gitignore names), and a forced removal
+ * deleted them with no word (the Audit's gate of #312). The same caches as
+ * scripts/worktree.mjs; a folder git lists once, as it folds it.
+ */
+const CACHES = [
+  /(^|\/)node_modules\/?$/, /^\.next\/?$/, /^out\/?$/, /^electron\/dist\/?$/, /^mcp-[^/]+\/dist\/?$/,
+  /\.tsbuildinfo$/, /(^|\/)next-env\.d\.ts$/, /(^|\/)\.DS_Store$/, /(^|\/)\.vite(-temp)?\/?$/,
+];
+
+export async function ignoredNotCaches(worktreePath: string): Promise<string[]> {
+  const status = await git(worktreePath, ['status', '--porcelain', '--ignored', '--untracked-files=normal']);
+  return status.split('\n')
+    .filter(line => line.startsWith('!! '))
+    .map(line => line.slice(3))
+    .filter(file => !CACHES.some(cache => cache.test(file)));
+}

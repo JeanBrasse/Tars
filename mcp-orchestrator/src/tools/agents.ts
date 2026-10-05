@@ -40,7 +40,10 @@ type DispatchResult = {
 function restartNote(data: DispatchResult): string {
   const stop = data.restartedAfterStop;
   if (!stop) return "";
-  return `\nIt had been stopped by ${stop.stoppedBy || "someone"}${stop.stopReason ? `: ${stop.stopReason}.` : ", with no reason given."} Your restart is noted on it.`;
+  // Another agent's words, or the user's: quoted as data, as the other tool
+  // texts quote what others wrote. The window files its stops as "you".
+  const by = !stop.stoppedBy ? "someone" : stop.stoppedBy === "you" ? "the user" : JSON.stringify(stop.stoppedBy);
+  return `\nIt had been stopped by ${by}${stop.stopReason ? `: ${JSON.stringify(stop.stopReason)}.` : ", with no reason given."} Your restart is noted on it.`;
 }
 
 /** What a caller is told when its message is queued rather than typed. */

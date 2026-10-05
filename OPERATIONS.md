@@ -1623,7 +1623,9 @@ git -C <project> log -1 --stat wip/<name>     # its parent is the agent's last c
 git -C <project> switch -c <branch> wip/<name>
 ```
 
-When the save fails, the log says why and the worktree is left at its path, with the work in it.
+When the save fails, or the worktree holds files git ignores other than rebuildable caches (a `.env`,
+an e2e run under `test-results/`), the log says why and the worktree is left at its path, with the
+work in it.
 
 ### CLI path detection
 

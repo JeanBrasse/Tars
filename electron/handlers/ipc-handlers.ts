@@ -1,6 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
-import { saveUncommittedWork } from '../services/save-worktree-work';
+import { ignoredNotCaches, saveUncommittedWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
@@ -1210,6 +1210,14 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       try {
         savedTo = (await saveUncommittedWork(agent.worktreePath, agent.name || agent.id))?.branch;
         if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
+        // What git ignores, a .env or an e2e run, no commit keeps: the
+        // worktree stays, rebuildable caches aside (the Audit's gate of #312).
+        const ignored = await ignoredNotCaches(agent.worktreePath);
+        if (ignored.length) {
+          const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
+          worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
       } catch (err) {
         worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
         console.warn(`[agent:remove] ${worktreeKept}`);
