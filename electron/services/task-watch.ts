@@ -34,7 +34,18 @@ function onFleetChange(agentId: string): void {
 
 export function startTaskWatch(file = TASK_LEDGER_FILE): void {
   if (liveTaskLedger()) return;
-  setLiveTaskLedger(createTaskLedger({ file }));
+  setLiveTaskLedger(createTaskLedger({
+    file,
+    // As recordRequester has it (#302): a sender writing to the agent that
+    // handed it its work, or to its project's orchestrator, reports.
+    leads: (receiverId, senderId) => {
+      const receiver = agents.get(receiverId);
+      const sender = agents.get(senderId);
+      if (!receiver || !sender) return false;
+      return sender.requestedBy?.agentId === receiverId
+        || (receiver.role === 'orchestrator' && receiver.projectPath === sender.projectPath);
+    },
+  }));
   agentStatusEmitter.on('fleet-change', onFleetChange);
 }
 

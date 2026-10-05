@@ -197,7 +197,18 @@ export interface TaskLedger {
   tasks(): TaskRecord[];
 }
 
-export function createTaskLedger(opts: { file: string; now?: () => number; maxLines?: number }): TaskLedger {
+export function createTaskLedger(opts: {
+  file: string;
+  now?: () => number;
+  maxLines?: number;
+  /**
+   * Whether `receiverId` leads `senderId`: a message from the second to the
+   * first is then a report, not a delegation (#302's rule for the delegation
+   * link: its project's orchestrator). The ledger knows no roles; the app
+   * answers from the fleet (task-watch.ts).
+   */
+  leads?: (receiverId: string, senderId: string) => boolean;
+}): TaskLedger {
   const { file } = opts;
   const now = opts.now ?? Date.now;
   const maxLines = opts.maxLines ?? DEFAULT_MAX_LINES;
@@ -271,9 +282,14 @@ export function createTaskLedger(opts: { file: string; now?: () => number; maxLi
 
   return {
     handedOff(agentId, handOff) {
-      const requester = handOff.requesterAgentId && handOff.requesterAgentId !== agentId
-        ? openTaskOf(handOff.requesterAgentId) : undefined;
-      pending.set(agentId, { ...handOff, text: clip(handOff.text), at: now(), parentTaskId: requester?.id ?? null });
+      const senderId = handOff.requesterAgentId;
+      const requester = senderId && senderId !== agentId ? openTaskOf(senderId) : undefined;
+      // A worker writing to the agent that handed it its task, or to the agent
+      // that leads it, is reporting: the task it starts there is not handed on
+      // from the worker's (QA's gate of #305: the lead's next task and all it
+      // delegated after nested under the worker's, a task of 1 read 21).
+      const reports = !!senderId && ((requester?.requesterAgentId === agentId) || (opts.leads?.(agentId, senderId) ?? false));
+      pending.set(agentId, { ...handOff, text: clip(handOff.text), at: now(), parentTaskId: reports ? null : requester?.id ?? null });
     },
 
     turnStarted(agent, turnIn) {
