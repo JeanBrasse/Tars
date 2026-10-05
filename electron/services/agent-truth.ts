@@ -235,6 +235,39 @@ function latestLocalCommand(lines: string): number | undefined {
  * new session id but with the old timestamps, and a task started by a process
  * that is gone is not running.
  */
+/**
+ * The lines of a transcript that can say something about background work, kept
+ * while the file is unchanged (size and modification time). At a rest two
+ * watches ask (agent-watch, to tell a requester; task-watch, to end a task),
+ * and each read the whole transcript, megabytes, synchronously (the Audit's
+ * Low 3 on #305): the second now reads nothing.
+ */
+const backgroundLines = new Map<string, { size: number; mtimeMs: number; lines: string[] }>();
+const BACKGROUND_LINES_KEPT = 32;
+
+function backgroundLinesOf(file: string): string[] | undefined {
+  let st: fs.Stats;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    return undefined;
+  }
+  const kept = backgroundLines.get(file);
+  if (kept && kept.size === st.size && kept.mtimeMs === st.mtimeMs) return kept.lines;
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  // Most lines are none of these, and a transcript runs to megabytes.
+  const lines = raw.split('\n').filter(line => /backgroundTaskId|isAsync|taskId|task-notification|Monitor|TaskStop|KillShell|KillBash/.test(line));
+  backgroundLines.delete(file);
+  backgroundLines.set(file, { size: st.size, mtimeMs: st.mtimeMs, lines });
+  while (backgroundLines.size > BACKGROUND_LINES_KEPT) backgroundLines.delete(backgroundLines.keys().next().value as string);
+  return lines;
+}
+
 export function pendingBackgroundWork(
   agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string },
   sinceMs: number,
@@ -242,23 +275,17 @@ export function pendingBackgroundWork(
 ): string[] {
   const sessionId = agent.currentSessionId?.trim();
   if (!sessionId) return [];
-  let raw: string | undefined;
+  let lines: string[] | undefined;
   for (const root of transcriptRoots(agent.worktreePath, agent.projectPath)) {
-    try {
-      raw = fs.readFileSync(transcriptPath(root, sessionId, homeDir), 'utf-8');
-      break;
-    } catch {
-      // not in this root
-    }
+    lines = backgroundLinesOf(transcriptPath(root, sessionId, homeDir));
+    if (lines) break;
   }
-  if (!raw) return [];
+  if (!lines) return [];
 
   const started = new Set<string>();
   const finished = new Set<string>();
   const monitorCalls = new Set<string>();
-  for (const line of raw.split('\n')) {
-    // Most lines are none of these, and a transcript runs to megabytes.
-    if (!/backgroundTaskId|isAsync|taskId|task-notification|Monitor|TaskStop|KillShell|KillBash/.test(line)) continue;
+  for (const line of lines) {
     let entry: Record<string, unknown>;
     try {
       entry = JSON.parse(line);
