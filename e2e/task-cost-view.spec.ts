@@ -49,13 +49,16 @@ test('the usage page lists each task with its own cost and its total, the averag
   const site = path.join(home, 'projects', 'site');
   for (const folder of [dir, tars, site]) fs.mkdirSync(folder, { recursive: true });
 
+  // The writer's name and its task's text carry a U+202E and a line break,
+  // as a name or a prompt can: the page reads them flattened, "Site Writer"
+  // and "update the landing copy" (the Audit's Low at this PR's gate).
   const agent = (id: string, name: string, project: string, provider = 'claude') => ({
     id, name, character: 'robot', provider, status: 'idle', role: 'worker', projectPath: project, skills: [],
     createdAt: '2026-10-01T08:00:00.000Z', lastActivity: '2026-10-01T08:00:00.000Z',
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent('lead', 'Project Lead', tars), agent('worker', 'Build Worker', tars),
-    agent('codex', 'Codex Helper', tars, 'codex'), agent('writer', 'Site Writer', site),
+    agent('codex', 'Codex Helper', tars, 'codex'), agent('writer', 'Site\u202EWriter', site),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([tars, site]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
@@ -103,7 +106,7 @@ test('the usage page lists each task with its own cost and its total, the averag
   task({ id: 'task-lead', agentId: 'lead', project: tars, source: 'terminal', text: 'fix the build on main', startedAt: now - 3 * H, minutes: 30, accountId: 'default', session: 'sess-lead', replies: [[1_000_000, 500_000]] });
   task({ id: 'task-worker', agentId: 'worker', project: tars, source: 'agent', requesterAgentId: 'lead', parentTaskId: 'task-lead', text: 'review the build', startedAt: now - 3 * H + 5 * 60_000, minutes: 15, accountId: 'acct-0b0b0b', session: 'sess-worker', replies: [[3_000_000, 0]] });
   task({ id: 'task-codex', agentId: 'codex', project: tars, source: 'agent', requesterAgentId: 'lead', parentTaskId: 'task-lead', text: 'translate the strings', startedAt: now - 3 * H + 10 * 60_000, minutes: 15, provider: 'codex', model: 'gpt-5.3-codex' });
-  task({ id: 'task-writer', agentId: 'writer', project: site, source: 'telegram', outcome: 'stopped', text: 'update the landing copy', startedAt: now - 26 * H, minutes: 30, session: 'sess-writer', replies: [[250_000, 0]] });
+  task({ id: 'task-writer', agentId: 'writer', project: site, source: 'telegram', outcome: 'stopped', text: 'update the\u202E landing\ncopy', startedAt: now - 26 * H, minutes: 30, session: 'sess-writer', replies: [[250_000, 0]] });
   task({ id: 'task-hermes', agentId: 'lead', project: tars, source: 'hermes', outcome: 'error', text: 'the nightly test run', startedAt: now - 72 * H, minutes: 43, session: 'sess-hermes', replies: [[500_000, 250_000]] });
   task({ id: 'task-ghost', agentId: 'ghost', project: tars, source: 'terminal', text: 'an old task of a deleted agent', startedAt: now - 120 * H, minutes: 10, session: 'sess-ghost', replies: [[100_000, 0]] });
   for (let i = 1; i <= 15; i++) {
