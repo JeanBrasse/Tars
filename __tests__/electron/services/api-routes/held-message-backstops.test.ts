@@ -18,6 +18,9 @@ import { EventEmitter } from 'node:events';
  * 10. The sender is told again of a message that has gone in since, or told more than once.
  * 11. (the Audit's gate of #314) The note carries the target's name raw, in Tars's voice: a name holding a line
  *     separator and a forged "[Tars] ..." puts that line on its own in the sender's terminal, as Tars's.
+ * 12. (main into #292) A caller of performDispatch that asks to hear where its message went (the error triage's
+ *     note, #292) is not told: the writer's callbacks are Tars's own (#314) and the caller's are left out, or the
+ *     other way round. Only its own test, which replaces performDispatch, covered the caller's side.
  */
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
@@ -44,11 +47,11 @@ vi.mock('../../../../electron/services/acp/delegate', () => ({
 const broadcasts: Array<{ channel: string; payload: unknown }> = [];
 
 import * as pty from 'node-pty';
-import { HELD_RETELL_MS, registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
+import { HELD_RETELL_MS, performDispatch, registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
 import { agents } from '../../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import {
-  PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, ptyProcesses, resetTerminalInput, writeHumanInput,
+  PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, ptyProcesses, resetTerminalInput, terminalExited, writeHumanInput,
 } from '../../../../electron/core/pty-manager';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -172,6 +175,37 @@ describe('a held message, and the status of the agent it is for', () => {
     const answer = await call('POST', '/api/agents/worker/message', { message: 'run the gate' }, 'orch');
     expect(answer?.data.held).toBeUndefined();
     expect(agents.get('worker')!.status).toBe('running');
+  });
+});
+
+describe('the caller of a dispatch', () => {
+  const dispatchHeard = async (heard: string[]) => {
+    const worker = agents.get('worker')!;
+    await performDispatch(worker, {
+      message: 'the triage note', from: 'Tars', sender: { kind: 'tars' },
+      onWritten: () => heard.push(`written, the agent ${worker.status}`),
+      onDropped: () => heard.push(`dropped, the agent ${worker.status}`),
+    }, ctx, () => undefined);
+  };
+
+  it('12. hears its message went in once it is in, the agent then working', async () => {
+    agents.get('worker')!.status = 'idle';
+    const heard: string[] = [];
+    anUnfollowableKey();
+    await dispatchHeard(heard);
+    expect(heard).toEqual([]);
+    writeHumanInput(terminal as never, '\x03');
+    vi.advanceTimersByTime(TYPING_PAUSE_MS + 1000);
+    expect(heard).toEqual(['written, the agent running']);
+  });
+
+  it('12. hears its message was given up when the terminal ends with it held, and the agent never read working', async () => {
+    agents.get('worker')!.status = 'idle';
+    const heard: string[] = [];
+    anUnfollowableKey();
+    await dispatchHeard(heard);
+    terminalExited(terminal as never);
+    expect(heard).toEqual(['dropped, the agent idle']);
   });
 });
 
