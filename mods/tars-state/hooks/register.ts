@@ -24,6 +24,13 @@
 const BEAT_MS = 15_000;
 const OUTPUT_CAP = 4000;
 const TASK_CAP = 200;
+/**
+ * The waits before a post's second and third tries. For a session the mod
+ * registered Tars sets the shell hook's post aside, so the mod's is the only
+ * one: a Stop's idle lost or refused (Tars busy, a 503) left the agent
+ * `running` until its next turn (the Audit's gate of #308).
+ */
+const RETRY_WAITS_MS = [1_000, 3_000];
 
 type Tars = { agentId: string; api: string; token: string };
 
@@ -33,8 +40,8 @@ type Tars = { agentId: string; api: string; token: string };
  */
 type Engine = {
   env: { get(name: string): Promise<string | undefined> };
-  http: { fetch(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<{ text: string }> };
-  clock: { every(ms: number, fn: () => void): unknown };
+  http: { fetch(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<{ ok: boolean; status: number; text: string }> };
+  clock: { every(ms: number, fn: () => void): unknown; sleep(ms: number): Promise<void> };
 };
 /** tool.check's input, and its verdict: `ask` puts the call to the dialog. */
 type Check = { tool: string; input: unknown; tool_use_id?: string };
@@ -88,11 +95,22 @@ function report($: Engine, route: string, body: Record<string, unknown>): void {
   queue = queue.then(async () => {
     const to = await proven($);
     if (!to) return;
-    await $.http.fetch(`${to.api}${route}`, {
+    const init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${to.token}` },
       body: JSON.stringify({ agent_id: to.agentId, ...body, via: 'mod' }),
-    });
+    };
+    // Tried again, in the queue, so the events keep their order; given up
+    // after the third try, so one that keeps failing holds nothing back.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if ((await $.http.fetch(`${to.api}${route}`, init)).ok) return;
+      } catch {
+        // tried again below
+      }
+      if (attempt >= RETRY_WAITS_MS.length) return;
+      await $.clock.sleep(RETRY_WAITS_MS[attempt]);
+    }
   }).catch(() => undefined);
 }
 
