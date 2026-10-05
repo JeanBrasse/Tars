@@ -24,6 +24,10 @@ import type { TaskRecord } from '../../../electron/services/task-ledger';
  * 16. The figures disagree with the Usage page: the same replies, priced, do not add up to what it bills.
  * 17. The report keeps tasks outside the period, project or agent asked for, averages a running task's
  *     duration, or averages a task not counted (no transcript, or no session heard of yet) as if it cost nothing.
+ * 18. (the Frontend's note on #311) The page cannot ask for its own window: whole 24-hour periods back from now made it
+ *     ask a minute early, cut at its window's start itself, and work its averages out again over what it kept.
+ *     An exact start, `since`, must keep the tasks started from it and no other, and the report's averages must then
+ *     be those of the tasks listed.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -182,5 +186,22 @@ describe('the report', () => {
     expect(report.averages.byModel[MODEL]).toMatchObject({ tasks: 2, counted: 2, costUSD: 2 });
 
     expect(taskReport(tasks, costs, { agentId: 'worker-2' }, T0 + 400_000).tasks.map((t) => t.id)).toEqual(['codex']);
+  });
+});
+
+
+describe('an exact start', () => {
+  it('18. keeps the tasks started from it, with averages over those alone, before any period', async () => {
+    const tasks = [
+      task({ id: 'before', startedAt: T0 - 60_000, endedAt: T0 - 30_000, sessionIds: [] }),
+      task({ id: 'at', startedAt: T0, endedAt: T0 + 60_000, sessionIds: [] }),
+      task({ id: 'after', startedAt: T0 + 120_000, endedAt: T0 + 240_000, sessionIds: [] }),
+    ];
+    const costs = await readTaskCosts(tasks, { homeDir: home });
+
+    const report = taskReport(tasks, costs, { since: T0, sinceDays: 30 }, T0 + 300_000);
+
+    expect(report.tasks.map((t) => t.id)).toEqual(['after', 'at']);
+    expect(report.averages.byAgent['worker-1']).toMatchObject({ tasks: 2, durationMs: (60_000 + 120_000) / 2 });
   });
 });
