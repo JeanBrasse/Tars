@@ -50,8 +50,9 @@ export function lastPlainLines(chunks: string[], count = 50): string {
     .replace(CONTROL_SEQUENCE, (sequence, params: string) => (
       sequence.endsWith('C') ? ' '.repeat(Math.min(Math.max(parseInt(params, 10) || 1, 1), MAX_LINE)) : ''
     ))
-    .replace(ESCAPE, '')
-    .replace(CUT_AT_THE_END, '');
+    // Before the escapes, which would take its first two characters and leave the rest as text.
+    .replace(CUT_AT_THE_END, '')
+    .replace(ESCAPE, '');
   const lines = text.replace(/\r\n/g, '\n').split('\n')
     .map(line => capped(lastDrawing(line).replace(FLATTENED, ' ').trimEnd()));
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
