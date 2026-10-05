@@ -359,7 +359,9 @@ removed after measuring that nothing in the app listens for it.
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,
-Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
+Node 22, `npm ci`, Electron's binary (`npx install-electron`, from a cache keyed on its version,
+three tries when it has to download: GitHub answered that download 500 or 503 twice on 2026-10-01),
+`npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
@@ -575,7 +577,7 @@ opens. `scripts/prune-releases.mjs` finds it through git (the parent of
 `release/` of the current directory; tests name their folder with `--release-dir` or
 `TARS_RELEASE_DIR`.
 
-It keeps the **three newest versions** and deletes an older one **only when GitHub proves it
+It keeps the **two newest versions** (Noah's rule, 2026-10-01) and deletes an older one **only when GitHub proves it
 published**: a release `v<version>` on the repository of `build.publish` carrying its dmg and
 its zip, with the size and, where GitHub gives one, the `sha256` digest of the local files. A
 version that is not published, or published with other files, is kept and named. When the proof
@@ -677,7 +679,7 @@ work.
 | `~/.dorothy/agents.backup.json` | same | last good copy, taken from content just parsed successfully |
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
-| `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/token/ssh |
+| `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
@@ -689,6 +691,7 @@ work.
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/task-ledger.jsonl` | `electron/services/task-ledger.ts` | one line per task opened, turn and end; past 20 000 lines, rewritten to the newest 10 000 tasks |
+| `~/.dorothy/tmp/<short id>/` | `electron/services/agent-tmp.ts` | each agent's temporary folder (`t` = `TMPDIR`, `c` = `CLAUDE_CODE_TMPDIR`), kept across reboots; 7 days untouched, then deleted, 20 GB in all (10 GB under 30 GB free), never an agent whose CLI runs. `ls ~/.dorothy/tmp` and `logs/agent-tmp.log` (a line per deletion). An agent's folder name: `printf %s <agent id> \| shasum -a 256 \| cut -c1-10` |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
 | `~/.dorothy/acp-registry.json` | `electron/services/acp/registry.ts` | ACP launch commands, 24 h TTL |
@@ -697,7 +700,7 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
-| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
+| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). With several accounts on, Tars also asks Claude Code itself every 10 minutes (`get_usage`, `usage-probe.ts`), so an account no agent ran on, or one used on claude.ai, is still read; a failed probe is a `[claude-accounts] the usage of <id> was not read` line in the main process's log, and the account keeps its status line's figures. An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
 | `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Four files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
@@ -828,6 +831,9 @@ five wrong tokens from a chat and twenty from all chats in any fifteen minutes, 
 attempts" without comparing, with the time it lifts; both read the settings as they are, so a change
 there counts without a restart (SECURITY §6). A lock-out from the count of all chats keeps your own
 new chat out too: turn Telegram off and on in Settings, which restarts the bot and clears the count.
+
+`ask_user` (the orchestrator MCP server's tool, `POST /api/user/ask`) and the event reports go through the relay
+to your Hermes, not through this bot: see "The relay (Tars's side)" under Hermes gateway below.
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
@@ -1224,7 +1230,15 @@ grep 'is going out now'
 message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
 `send_message`, `start_agent` and `delegate_task` say it too, in a result that begins `HELD:`;
 `delegate_task` then returns at once rather than wait on a turn that has not begun
-(`wait_for_agent` follows it).
+(`wait_for_agent` follows it). The agent it was for does not read `running` until the message is
+in. If the message is still held three minutes on while that agent rests, the agent that sent it
+is told again by Tars: why it waits, and that only a person at that terminal ends the wait (stop
+and start the agent to drop it, then send it again).
+
+A terminal's replies (a colour report, a cursor or device report) reach the main process with what
+is typed and are passed to the CLI, but never read as keys. Before 1.9.3 xterm's answer to Claude
+Code's background-colour query left Tars unsure of the field, and messages to an idle agent waited
+for a person to clear an empty field.
 
 **Who a message is from.** A message Tars types into a CLI, short or pasted, comes after a line
 saying who sent it, as Tars verified it:
@@ -1487,6 +1501,63 @@ neither is a place to park.
   machine it is a tunnel to a real gateway.
 - **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
 
+### The relay plugin (tars-relay)
+
+`hermes-plugins/tars-relay/` is a Hermes plugin, not part of the app: it is installed by hand on the server where
+Hermes runs, and never shipped in Tars. Through it Tars writes to Noah with Hermes's Telegram bot, and gets back his
+replies to those messages and the messages he starts with `@project` for a project Tars registered with it. It sees
+them from its own Telegram observer, so one sent while Hermes answers, or right after another message, reaches Tars
+too; Hermes's model is spared it when Hermes admits it on its own, and gets it as Hermes handed it otherwise (a
+correction, a merged message). The model gets a read-only copy of what Tars sent, on Noah's next turn in his private
+chat. Its README says how to install, check and remove it, and what it keeps. It needs Hermes 0.21.4 or later for the
+observer (`ctx.register_platform_handler`): the gateway's log says `Wired native handlers from plugin 'tars-relay'`.
+
+```bash
+cd hermes-plugins/tars-relay && python3 -m unittest discover -s tests   # its rules; npm test runs them too
+curl -s -H "X-Hermes-Session-Token: $TOK" http://127.0.0.1:9119/api/plugins/tars-relay/status | jq   # once installed
+```
+
+### The relay (Tars's side)
+
+`services/hermes-relay.ts`, off unless `hermesRelayEnabled` is on (Settings, Hermes, or `app-settings.json`). It needs
+the tars-relay plugin on the Hermes server (`hermes-plugins/tars-relay`, its README says how to install it) and a saved
+Hermes connection. On:
+
+- Tars's own Telegram bot is off and its token erased, and mcp-telegram is out of every CLI: Hermes is the only voice.
+- `ask_user` (a project's orchestrator only), the event reports and `send_telegram` (an orchestrator's) go through
+  Hermes, as plain text. Your reply to one of them goes to that project's orchestrator (a question's, to the agent that
+  asked); a message you start with `@<project name>` goes to that project's orchestrator. The plugin keeps `@name`
+  only for the projects Tars registered with it (each round, when they changed), under their names as you write
+  them: a space, @, colon or comma in a folder's name becomes a dash (`My Project` is `@My-Project`, in any case).
+  Any other `@word` goes to Hermes.
+- The event reports: an agent gone to error (once Tars is sure of it, 5 s), and, read with `gh pr list` every 5
+  minutes in the GitHub repositories of the agents' projects (read-only, needs `gh` signed in), a PR merged and
+  changes requested on an open PR. Events of one project within 2 minutes leave in one message; 40 messages a day at
+  most, and the next day's first says how many were held. A repository's first poll, or one after an hour without
+  polling, reports nothing.
+
+What it keeps, all in `~/.tars-private` (`0600`): `hermes-token` (the dashboard token, moved out of
+`~/.dorothy/hermes-connection.json` at the first read), `relay-sent.json` (what it sent: the list a reply is checked
+against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken, and the id of the plugin's store it came from),
+`user-questions.json`, `event-reports.json`, `github-watch.json`.
+
+```bash
+jq 'length' ~/.tars-private/relay-outbox.json                   # sends waiting for Hermes
+jq -r '.[] | "\(.at) \(.kind) \(.ref)"' ~/.tars-private/relay-sent.json | tail   # what went out
+test -s ~/.tars-private/hermes-token && echo "token saved"
+```
+
+The state Settings, Hermes shows (`hermes:relay:status`): `ready`; `unreachable` (Hermes did not answer: what you send
+waits); `not-configured` (the plugin has no `user_id` in its settings on the server); `plugin-missing` (not installed,
+or the dashboard not restarted since); `unauthorized` (the dashboard refused the token: save the connection again);
+`no-connection`.
+
+| Symptom | Cause |
+|---|---|
+| Your reply got "Tars did not send the message you replied to" | the message was not on Tars's list: it came from someone else with the dashboard token, or from a Tars whose `~/.tars-private` was wiped |
+| "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
+| Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name (a space, @, colon or comma in it is written as a dash: `@my-project`), or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
+| An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
 ---
 
 ## Tasmania (local models)
