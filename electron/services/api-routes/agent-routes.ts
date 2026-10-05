@@ -30,6 +30,7 @@ import { withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
+import { envelopeValue } from '../../utils/envelope-value';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -510,7 +511,10 @@ function retellWhileHeld(target: AgentStatus, sender: MessageSender | undefined,
       const from = agents.get(sender.id);
       const pty = from?.ptyId ? ptyProcesses.get(from.ptyId) : undefined;
       if (!pty) return;
-      const name = target.name || target.id;
+      // Quoted as data, as every value a note of Tars's carries outside a fence
+      // (utils/envelope-value.ts): a name with a line separator in it would
+      // otherwise put a line of its own in Tars's voice (the Audit's gate of #314).
+      const name = envelopeValue(target.name || target.id);
       const minutes = Math.max(1, Math.round((Date.now() - sentAt) / 60_000));
       writeProgrammaticInput(pty,
         `[Tars] Your message to ${name} of ${clockOf(sentAt)} is still not in its terminal, ${minutes} minutes on. `
