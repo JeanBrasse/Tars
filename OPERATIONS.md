@@ -691,6 +691,7 @@ work.
 | `~/.dorothy/skills-marketplace.json` | `electron/services/skills-marketplace.ts` | the last skills.sh listing, served first; delete it to fetch afresh |
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
+| `~/.dorothy/tmp/<short id>/` | `electron/services/agent-tmp.ts` | each agent's temporary folder (`t` = `TMPDIR`, `c` = `CLAUDE_CODE_TMPDIR`), kept across reboots; 7 days untouched, then deleted, 20 GB in all (10 GB under 30 GB free), never an agent whose CLI runs. `ls ~/.dorothy/tmp` and `logs/agent-tmp.log` (a line per deletion). An agent's folder name: `printf %s <agent id> \| shasum -a 256 \| cut -c1-10` |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
 | `~/.dorothy/acp-registry.json` | `electron/services/acp/registry.ts` | ACP launch commands, 24 h TTL |
@@ -1229,7 +1230,15 @@ grep 'is going out now'
 message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
 `send_message`, `start_agent` and `delegate_task` say it too, in a result that begins `HELD:`;
 `delegate_task` then returns at once rather than wait on a turn that has not begun
-(`wait_for_agent` follows it).
+(`wait_for_agent` follows it). The agent it was for does not read `running` until the message is
+in. If the message is still held three minutes on while that agent rests, the agent that sent it
+is told again by Tars: why it waits, and that only a person at that terminal ends the wait (stop
+and start the agent to drop it, then send it again).
+
+A terminal's replies (a colour report, a cursor or device report) reach the main process with what
+is typed and are passed to the CLI, but never read as keys. Before 1.9.3 xterm's answer to Claude
+Code's background-colour query left Tars unsure of the field, and messages to an idle agent waited
+for a person to clear an empty field.
 
 **Who a message is from.** A message Tars types into a CLI, short or pasted, comes after a line
 saying who sent it, as Tars verified it:

@@ -15,6 +15,7 @@ import { API_PORT } from '../../constants';
 import { isSuperAgent } from '../../utils';
 import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
+import { agentTmpEnvOrNone } from '../agent-tmp';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -119,6 +120,11 @@ export async function stopAcpRuns(agentId: string, why: string): Promise<number>
  * answered ended by itself 2.4 s after the quit, and a wedged one was whole
  * 14 s later, reparented to launchd. Returns how many runs were ended.
  */
+/** The agents with a delegated run under way: the temporary folders' retention leaves theirs alone. */
+export function agentsRunningOverAcp(): string[] {
+  return [...runs].filter(([, set]) => set.size > 0).map(([id]) => id);
+}
+
 export function endAcpRunsOnQuit(): number {
   const live = [...runs.values()].flatMap(set => [...set]).filter(run => run.session.isRunning);
   const roots: number[] = [];
@@ -198,6 +204,8 @@ export async function delegateOverAcp(opts: {
       // Nothing was written, but the port stopped being the boundary it is
       // everywhere else.
       CLAUDE_MGR_API_URL: apiUrl(),
+      // Its agent's own temporary folder, as its terminal gets (services/agent-tmp.ts).
+      ...agentTmpEnvOrNone(agent.id),
       ...account?.set,
     },
     unsetEnv: account?.unset,
