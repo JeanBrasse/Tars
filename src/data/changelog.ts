@@ -37,6 +37,7 @@ export const CHANGELOG: Release[] = [
       'Deleting an agent that works in a worktree keeps what it had not committed: Tars commits it on a branch named wip/ and the agent\'s name (wip/backend-engineer, then wip/backend-engineer-2), without asking and without moving the agent\'s own branch, then removes the worktree. The work was removed with the worktree. When it cannot be saved, or the worktree holds files git ignores that cannot be rebuilt, such as a .env, or a git repository the agent cloned into it, the worktree is left where it is, and Tars says why.',
       'Tars starts no agent while the disk has less than 2 GB free, and says so, with the space left, where the agent was started and a full disk could stop the Mac.',
       'An orchestrator that starts again an agent you stopped is told who stopped it and why, and the restart is kept on the agent: who started it again and when, beside your stop.',
+      'An agent stopped while it had no terminal says at once who stopped it, when and why, on its card, its pane and its window, where it read Stopped alone until the page was reloaded.',
     ],
   },
   {
