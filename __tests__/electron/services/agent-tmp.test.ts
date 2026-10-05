@@ -27,6 +27,8 @@ import { DATA_DIR } from '../../../electron/constants';
  *     outside the root, or the root itself when it is a link.
  *  9. A deletion is not logged.
  * 10. Something it cannot read or delete stops the pass.
+ * 11. (the Audit's gate of #306) The root is checked once, then a long pass deletes by path: an agent that swaps
+ *     ~/.dorothy/tmp for a link while the pass runs makes Tars delete an entry of the same name elsewhere.
  */
 
 const DAY = 86_400_000;
@@ -241,5 +243,32 @@ describe('the retention', () => {
     } finally {
       if (fs.existsSync(path.join(root, W(), 't', 'locked'))) fs.chmodSync(path.join(root, W(), 't', 'locked'), 0o700);
     }
+  });
+});
+
+describe('a root swapped for a link while the pass runs', () => {
+  it('11. deletes nothing through it, and says so', async () => {
+    const gone = shortIdOf('gone');
+    put(`${gone}/t/old.txt`, 10, 9);
+    age(gone, 9);
+    // Elsewhere, an entry of the same name, which the swap would point the pass at.
+    fs.mkdirSync(path.join(outside, gone, 't'), { recursive: true });
+    fs.writeFileSync(path.join(outside, gone, 't', 'precious.txt'), 'keep me');
+    const moved = `${root}-moved`;
+
+    const result = await enforceTmpRetention(deps({
+      // Asked for while the pass runs: the moment an agent could swap the folder.
+      liveAgentIds: () => {
+        if (!fs.existsSync(moved)) {
+          fs.renameSync(root, moved);
+          fs.symlinkSync(outside, root);
+        }
+        return [];
+      },
+    }));
+
+    expect(fs.existsSync(path.join(outside, gone, 't', 'precious.txt'))).toBe(true);
+    expect(result.removed).toEqual([]);
+    expect(logs.join('\n')).toMatch(/link|moved|changed/);
   });
 });

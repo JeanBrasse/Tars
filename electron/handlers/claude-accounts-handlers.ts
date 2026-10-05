@@ -21,6 +21,7 @@ import {
 import { accountDirProblem, claudeCredentialOverrides, ensureAccountDir, projectsProblem, provisionAccountDir } from '../services/claude-accounts/provision';
 import { claudeAuthLogout, claudeAuthStatus, loginCommand } from '../services/claude-accounts/auth';
 import { countersDir, readAccountUsage, usageForView } from '../services/claude-accounts/counters';
+import { probeUsage, recordProbe, usageProbeEnv } from '../services/claude-accounts/usage-probe';
 import { blockedUntil, deleteAuth, getAuth, hasAuth, setAuth, type AuthState } from '../services/claude-accounts/state';
 import * as fs from 'fs';
 import type { AgentStatus, AppSettings, ClaudeAccount, ClaudeAccountState, ClaudeAccountsSettings, ClaudeAccountsView } from '../types';
@@ -120,6 +121,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       subscriptionType: a?.subscriptionType ?? null,
       fiveHour: counters.fiveHour,
       sevenDay: counters.sevenDay,
+      models: counters.models ?? [],
       updatedAt: counters.updatedAt,
       blockedUntil: until !== undefined && until * 1000 > now ? until : null,
       agentIds: [...agents.values()]
@@ -170,6 +172,31 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
   }
 
   /**
+   * Each signed-in account's windows from Claude Code itself (usage-probe.ts),
+   * one account at a time, while the option is on: the chooser and the Usage
+   * page then read them with the status lines' (counters.ts). A probe that
+   * fails leaves the account as its status line left it.
+   */
+  let probing: Promise<void> | null = null;
+  function probeAll(): Promise<void> {
+    if (probing) return probing;
+    probing = (async () => {
+      const settings = readAccountsSettings();
+      if (!settings.enabled) return;
+      for (const account of settings.accounts) {
+        if (!account.enabled || getAuth(account.id)?.signedIn !== true) continue;
+        try {
+          recordProbe(account.id, await probeUsage(binary(), usageProbeEnv(account.configDir)));
+        } catch (err) {
+          console.warn(`[claude-accounts] the usage of ${account.id} was not read: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      announce();
+    })().finally(() => { probing = null; });
+    return probing;
+  }
+
+  /**
    * After a login: the same Claude account in two directories is refused
    * (Noah, 28/09). The directory just signed in is signed out again, by Claude
    * Code, and the page is told which account already has it.
@@ -209,6 +236,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
     try {
       if (id !== undefined && id !== null && typeof id !== 'string') throw new Error('An account id is a string.');
       await checkAll(typeof id === 'string' ? [id] : undefined);
+      inBackground(probeAll());
       return { success: true, ...announce() };
     } catch (err) {
       return failure(err);
@@ -471,6 +499,17 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
   } catch {
     /* seen at the next list */
   }
+
+  // Within the chooser's STALE_AFTER_MS (30 min), so an account no agent runs
+  // on, or one used on claude.ai meanwhile, is still read. The first a little
+  // after start, once the sign-ins have been checked.
+  const PROBE_EVERY_MS = 10 * 60_000;
+  const firstProbe = setTimeout(() => {
+    inBackground(checkAll().then(() => probeAll()));
+    const every = setInterval(() => inBackground(probeAll()), PROBE_EVERY_MS);
+    every.unref?.();
+  }, 30_000);
+  firstProbe.unref?.();
 
   return { idle, refreshAll: () => checkAll() };
 
