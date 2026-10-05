@@ -13,6 +13,14 @@
  * 2. Over-correction: the agent's own terminal ending no longer does.
  * 3. A replaced terminal's exit changes the agent's status (the guard that
  *    already held).
+ * And from the e2e of this fix (agent-stopped.spec.ts, red on its first
+ * version): a stop clears the agent's terminal before it ends it, and the
+ * window reads who stopped it and why only by fetching the fleet again,
+ * which this agent:complete made it do (its status event is patched, not
+ * fetched). So:
+ * 4. The terminal a stop ended, the agent having no other, no longer sends
+ *    agent:complete, and the window shows a stop without who or why. Pinned
+ *    until the window fetches on the stop's own status event.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -88,6 +96,19 @@ describe("a terminal's exit", () => {
     expect(completes()).toEqual([]);
     expect(a.status).toBe('running');
     expect(status).not.toHaveBeenCalled();
+  });
+
+  it('4. of the terminal a stop ended, with no other one, still sends agent:complete', async () => {
+    const a = agent();
+    const ptyId = await initAgentPty(a, null, vi.fn(), vi.fn());
+    a.ptyId = undefined;
+    a.status = 'stopped';
+
+    exit(0, 0);
+
+    expect(completes()).toHaveLength(1);
+    expect(completes()[0].payload).toMatchObject({ agentId: 'a1', ptyId });
+    expect(a.status).toBe('stopped');
   });
 
   it("2. of the agent's own terminal, is still its news", async () => {
