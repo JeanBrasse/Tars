@@ -1088,13 +1088,15 @@ async function initAgentPtyLocked(
     const newStatus = agentStatusOnExit(exitCode);
     if (!newStatus) return;
     const agentData = agents.get(agent.id);
-    // Guard: only mutate if this PTY is still the active one (prevents race on restart/stop)
-    if (agentData && agentData.ptyId === ptyId) {
-      agentData.status = newStatus;
-      agentData.lastActivity = new Date().toISOString();
-      handleStatusChangeNotificationCallback(agentData, newStatus);
-      saveAgentsCallback();
-    }
+    // Only the agent's current terminal is its news: one a restart or a stop
+    // replaced ends after the new one has started, and its agent:complete
+    // made the window move the agent's current task to done, with the new
+    // terminal's screen as its summary (the Frontend's finding of 05/10).
+    if (!agentData || agentData.ptyId !== ptyId) return;
+    agentData.status = newStatus;
+    agentData.lastActivity = new Date().toISOString();
+    handleStatusChangeNotificationCallback(agentData, newStatus);
+    saveAgentsCallback();
     broadcastToAllWindows('agent:complete', {
       type: 'complete',
       agentId: agent.id,
