@@ -45,6 +45,11 @@ vi.mock('react', async (importOriginal) => ({
  *     title (the Audit's Low at this PR's gate): the line offers allow only
  *     once the whole call fits it; show all opens it whole in the panel, with
  *     the three answers. The window shows it whole and offers allow.
+ * 11. why Claude Code asks is not shown where the call is read whole (the
+ *     Audit's Low at the recheck of #318 and #320): the window, and a panel's
+ *     call shown whole, show the reason and the rule that asked under the
+ *     call, each only when it was given, and the call stays above them;
+ *     neither shows as an empty row.
  */
 
 type Tick = (items: AgentTickItem[]) => void;
@@ -294,6 +299,39 @@ describe('the line answers the question Tars holds', () => {
       const view = mount(() => PermissionAskNotice({ agent: long(), layout: 'window' }));
       expect(textOf(view.result as never)).toContain(LONG);
       expect(buttons(view.result).map(b => b.text)).toEqual(['allow', 'deny', 'ask in terminal']);
+    });
+  });
+
+  describe('why Claude Code asks, under the call (11)', () => {
+    const REASON = 'Permission rule Bash(rm:*) requires confirmation';
+    const terms = (tree: unknown) => ofType(tree, 'dt').map(d => textOf(d.props.children as never));
+    const said = (tree: unknown) => ofType(tree, 'dd').map(d => textOf(d.props.children as never));
+
+    it('the window shows the reason and the rule that asked, each only when given', () => {
+      const both = mount(() => PermissionAskNotice({ agent: asking({ permissionAsk: { ...ASK, reason: REASON, rule: 'Bash(rm:*)' } }), layout: 'window' }));
+      expect(terms(both.result)).toEqual(['why', 'rule']);
+      expect(said(both.result)).toEqual([REASON, 'Bash(rm:*)']);
+      const text = textOf(both.result as never);
+      expect(text.indexOf(ASK.subject), 'the call first').toBeGreaterThan(-1);
+      expect(text.indexOf(ASK.subject)).toBeLessThan(text.indexOf(REASON));
+
+      const reasonOnly = mount(() => PermissionAskNotice({ agent: asking({ permissionAsk: { ...ASK, reason: REASON } }), layout: 'window' }));
+      expect(terms(reasonOnly.result)).toEqual(['why']);
+      const ruleOnly = mount(() => PermissionAskNotice({ agent: asking({ permissionAsk: { ...ASK, reason: '  ', rule: 'Bash(rm:*)' } }), layout: 'window' }));
+      expect(terms(ruleOnly.result)).toEqual(['rule']);
+      const none = mount(() => PermissionAskNotice({ agent: asking(), layout: 'window' }));
+      expect(ofType(none.result, 'dl')).toHaveLength(0);
+    });
+
+    it('a panel shows them with the call it opened whole', () => {
+      const view = mount(() => PermissionAskNotice({
+        agent: asking({ permissionAsk: { ...ASK, subject: LONG, fields: { command: LONG }, reason: REASON, rule: 'Bash(rm:*)' } }),
+        layout: 'panel',
+      }));
+      measure(view, false);
+      button(view.result, 'show all').props.onClick!();
+      expect(terms(view.result)).toEqual(['why', 'rule']);
+      expect(said(view.result)).toEqual([REASON, 'Bash(rm:*)']);
     });
   });
 });

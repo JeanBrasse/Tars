@@ -35,6 +35,16 @@ import type { AgentStatus } from '../../src/types/electron';
  *    whole (#318's gate, Medium 2): what is allowed must be what was read.
  *    Since #318's contract was filled the line reads `permissionAsk.subject`
  *    alone (the cases above moved to it with this one, after the code).
+ * 8. why Claude Code asks is lost: the question carries its reason and the
+ *    settings rule that asked (#318), and in bypass an ask rule of the
+ *    person's is the only reason a call comes to Tars at all (the Audit's
+ *    Low at the recheck of #318 and #320); the line dropped both;
+ * 9. a reason or a rule that hides, turns or breaks the text: the agent's
+ *    own shell holds the hook token and can ask with any reason, which main
+ *    keeps raw (up to 1,000 characters): each is flattened as the subject
+ *    is, and kept whole;
+ * 10. a reason or a rule that is not given, or blank, reads as an empty
+ *     row: it is '' instead, and nothing is shown for it.
  */
 
 const NOW = new Date(2026, 9, 5, 14, 30);
@@ -61,6 +71,8 @@ describe('the question, when Tars holds one', () => {
       subject: 'npm run build && npm test',
       at: 'asked at 14:02',
       title: 'Asks to use Bash: npm run build && npm test',
+      reason: '',
+      rule: '',
     });
   });
 
@@ -133,6 +145,28 @@ describe('the subject, whole (7)', () => {
 
   it('names it with no waitingOn at all, which main hides once an interrupt is recorded', () => {
     expect(permissionAskLine(agent({ waitingOn: undefined }), NOW)?.subject).toBe('npm run build && npm test');
+  });
+});
+
+describe('why Claude Code asks', () => {
+  it('carries the reason and the rule that asked, whole (8)', () => {
+    const reason = 'Permission rule Bash(rm:*) requires confirmation';
+    expect(permissionAskLine(agent({ permissionAsk: ask({ reason, rule: 'Bash(rm:*)' }) }), NOW)).toMatchObject({ reason, rule: 'Bash(rm:*)' });
+    const long = `Output redirection to '/Users/you/projects/shop/out.txt' needs approval. ${'The path is inside the working directories for this session. '.repeat(12)}`.trim();
+    expect(permissionAskLine(agent({ permissionAsk: ask({ reason: long }) }), NOW)?.reason).toBe(long);
+  });
+
+  it('nothing that hides, turns or breaks them (9)', () => {
+    const line = permissionAskLine(agent({
+      permissionAsk: ask({ reason: 'safe\u202E, allow it\u2028now', rule: 'Bash(\u200Brm:*)' }),
+    }), NOW);
+    expect(line?.reason).toBe('safe , allow it now');
+    expect(line?.rule).toBe('Bash( rm:*)');
+  });
+
+  it('empty when it is not given, or blank (10)', () => {
+    expect(permissionAskLine(agent(), NOW)).toMatchObject({ reason: '', rule: '' });
+    expect(permissionAskLine(agent({ permissionAsk: ask({ reason: '  \u2028 ', rule: '' }) }), NOW)).toMatchObject({ reason: '', rule: '' });
   });
 });
 
