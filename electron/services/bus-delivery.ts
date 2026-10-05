@@ -3,6 +3,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { ptyProcesses } from '../core/pty-manager';
 import { dialogShown } from '../core/agent-launch';
 import { lastInterruptAt } from './agent-truth';
+import { agentStatusEmitter } from './agent-events';
 import { deliverBusMessages, queueBusMessage, releaseBusMessagesNow, type QueuedBusMessage } from './agent-watch';
 import { forgetStaged, stagedFor, withAttachmentPaths } from './bus-files';
 import {
@@ -20,6 +21,7 @@ import {
   markHeld,
   notSentFor,
   recordDelivery,
+  waitingDeliveries,
 } from './bus-store';
 import type { BusDelivery, BusDeliveryReason, BusMembersChanged, BusMessage, BusRoom, BusSystemKind, BusThread } from '../types';
 
@@ -44,6 +46,48 @@ function queuedOf(message: BusMessage): QueuedBusMessage {
     authorName: message.authorName,
     text: withAttachmentPaths(message.text, message.attachments),
   };
+}
+
+/**
+ * The room messages the run before this one left waiting, by agent: their rows
+ * still read `queued`, or `held` behind a draft that died with its terminal,
+ * but the queue that would have typed them was agent-watch's memory
+ * (RD-REDEMARRAGE.md, 2.3). Each goes into the queue of its agent's first
+ * session of this run, which types it at its rest, and its row then turns
+ * `delivered` as any other.
+ */
+const carriedBus = new Map<string, string[]>();
+let carryingBus = false;
+
+/** Taken once at launch, after the journal is read and before anything new is queued. */
+export function carryWaitingDeliveries(): void {
+  for (const row of waitingDeliveries()) {
+    const list = carriedBus.get(row.targetAgentId) ?? [];
+    if (!list.includes(row.messageId)) list.push(row.messageId);
+    carriedBus.set(row.targetAgentId, list);
+  }
+  if (!carryingBus) {
+    carryingBus = true;
+    agentStatusEmitter.on('fleet-change', deliverCarried);
+  }
+}
+
+/** Queues what was carried for this agent once a session of this run has registered in its terminal. */
+export function deliverCarried(agentId: string): void {
+  const ids = carriedBus.get(agentId);
+  if (!ids?.length) return;
+  const agent = agents.get(agentId);
+  if (!agent?.ptyId || !ptyProcesses.has(agent.ptyId) || !agent.currentSessionId || agent.sessionPtyId !== agent.ptyId) return;
+  carriedBus.delete(agentId);
+  const stillWaiting = new Set(waitingDeliveries().filter(d => d.targetAgentId === agentId).map(d => d.messageId));
+  for (const messageId of ids) {
+    const message = getMessage(messageId);
+    if (!message || !stillWaiting.has(messageId)) continue;
+    if (!queueBusMessage(agentId, queuedOf(message))) {
+      announceDropped(agentId, messageId, 'no_live_session', 'the agent already has as many messages waiting as it can hold');
+    }
+  }
+  deliverBusMessages(agentId);
 }
 
 /** Who a message is for: the agents it names, or every member of the room when
