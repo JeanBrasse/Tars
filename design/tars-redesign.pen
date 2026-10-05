@@ -199481,7 +199481,7 @@
                   "name": "pane",
                   "clip": true,
                   "width": "fill_container",
-                  "height": 250,
+                  "height": 291,
                   "fill": "$term-bg",
                   "stroke": "$border",
                   "strokeWidth": 1,
@@ -200067,7 +200067,7 @@
                   "name": "pane",
                   "clip": true,
                   "width": "fill_container",
-                  "height": 250,
+                  "height": 291,
                   "fill": "$term-bg",
                   "stroke": "$border",
                   "strokeWidth": 1,
@@ -200516,6 +200516,86 @@
                         },
                         {
                           "type": "frame",
+                          "id": "kfMVB",
+                          "name": "why",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 3,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "JST6o",
+                              "name": "why",
+                              "width": "fill_container",
+                              "gap": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "p2BUU",
+                                  "name": "k",
+                                  "fill": "$text-muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": 30,
+                                  "content": "why",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "AhmRI",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Permission rule Bash(rm:*) requires confirmation",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "e3321P",
+                              "name": "rule",
+                              "width": "fill_container",
+                              "gap": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "xGCbi",
+                                  "name": "k",
+                                  "fill": "$text-muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": 30,
+                                  "content": "rule",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Xlz8f",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Bash(rm:*)",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
                           "id": "BedHM",
                           "name": "answers",
                           "gap": 6,
@@ -200719,7 +200799,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": 860,
-                  "content": "agent window · the question in full at the top of the terminal column, the time it was asked at the right; stop stays on",
+                  "content": "agent window · the question in full at the top of the terminal column, why Claude Code asks under it; stop stays on",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -201281,7 +201361,7 @@
                       "id": "iTtmB",
                       "name": "body",
                       "width": "fill_container",
-                      "height": 226,
+                      "height": 267,
                       "children": [
                         {
                           "type": "frame",
@@ -201382,6 +201462,86 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 12,
                                       "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "snchl",
+                                  "name": "why",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "CnVq5",
+                                      "name": "why",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "xFb7m",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "why",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "xOX1h",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Permission rule Bash(rm:*) requires confirmation",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-ui",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "C408C8",
+                                      "name": "rule",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "QNIMj",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "rule",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "KEGfu",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Bash(rm:*)",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -202005,6 +202165,30 @@
                       "fontWeight": "normal"
                     }
                   ]
+                },
+                {
+                  "type": "text",
+                  "id": "o87RwQ",
+                  "name": "why caption",
+                  "fill": "$text-muted",
+                  "content": "why it asks",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "lOUMU",
+                  "name": "why note",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Under the call, why Claude Code asks and the settings rule that asked, each whole, when it says: in bypass, an ask rule of yours is the only reason a call comes here. The call above them is what you answer.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
                 }
               ]
             }
@@ -202594,7 +202778,7 @@
                       "id": "GnJSQ",
                       "name": "body",
                       "width": "fill_container",
-                      "height": 226,
+                      "height": 267,
                       "children": [
                         {
                           "type": "frame",
@@ -202695,6 +202879,86 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 12,
                                       "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "TFrns",
+                                  "name": "why",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "T8dYvh",
+                                      "name": "why",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "gKx7e",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "why",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "lUpUm",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Permission rule Bash(rm:*) requires confirmation",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-ui",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "q2lbe",
+                                      "name": "rule",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "M1cCa",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "rule",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "vIqGa",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Bash(rm:*)",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -202972,7 +203236,7 @@
                 {
                   "type": "frame",
                   "id": "wrF0z",
-                  "name": "line Asks to use Edit:",
+                  "name": "line Asks to use Read:",
                   "clip": true,
                   "width": "fill_container",
                   "height": 26,
@@ -203012,7 +203276,7 @@
                           "id": "WGOve",
                           "name": "who",
                           "fill": "$text-primary",
-                          "content": "Asks to use Edit:",
+                          "content": "Asks to use Read:",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 11,
@@ -203023,7 +203287,7 @@
                           "id": "shDki",
                           "name": "rest",
                           "fill": "$text-secondary",
-                          "content": "/Users/you/projects/shop/src/app/page.tsx",
+                          "content": "/Users/you/projects/api/README.md",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
@@ -203157,7 +203421,7 @@
                   "fill": "$text-secondary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "A file is named by its path as Claude Code sent it, and a tool with nothing to name, an MCP server's for one, by its own name. One line, cut where the line runs out, the whole of it in the title.",
+                  "content": "A file is named by its path as Claude Code sent it, and a tool with nothing to name, an MCP server's for one, by its own name. One line, cut where the line runs out, the whole of it in the title. An edit, a write or a notebook cell never comes here: the terminal's dialog shows its content and asks, as before the mod.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 11,
@@ -205703,7 +205967,7 @@
                   "name": "pane",
                   "clip": true,
                   "width": "fill_container",
-                  "height": 250,
+                  "height": 291,
                   "fill": "$term-bg",
                   "stroke": "$border",
                   "strokeWidth": 1,
@@ -206289,7 +206553,7 @@
                   "name": "pane",
                   "clip": true,
                   "width": "fill_container",
-                  "height": 250,
+                  "height": 291,
                   "fill": "$term-bg",
                   "stroke": "$border",
                   "strokeWidth": 1,
@@ -206738,6 +207002,86 @@
                         },
                         {
                           "type": "frame",
+                          "id": "M41K4",
+                          "name": "why",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 3,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "YyqiF",
+                              "name": "why",
+                              "width": "fill_container",
+                              "gap": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "GPtM9",
+                                  "name": "k",
+                                  "fill": "$text-muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": 30,
+                                  "content": "why",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "C8m5Lv",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Permission rule Bash(rm:*) requires confirmation",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "ysxMM",
+                              "name": "rule",
+                              "width": "fill_container",
+                              "gap": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "XqIWi",
+                                  "name": "k",
+                                  "fill": "$text-muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": 30,
+                                  "content": "rule",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "i7SaD",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Bash(rm:*)",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
                           "id": "Ve03Y",
                           "name": "answers",
                           "gap": 6,
@@ -206941,7 +207285,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": 860,
-                  "content": "agent window · the question in full at the top of the terminal column, the time it was asked at the right; stop stays on",
+                  "content": "agent window · the question in full at the top of the terminal column, why Claude Code asks under it; stop stays on",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -207503,7 +207847,7 @@
                       "id": "c2RsiV",
                       "name": "body",
                       "width": "fill_container",
-                      "height": 226,
+                      "height": 267,
                       "children": [
                         {
                           "type": "frame",
@@ -207604,6 +207948,86 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 12,
                                       "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "rWNcK",
+                                  "name": "why",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "eW4LK",
+                                      "name": "why",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "j4q0O",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "why",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "R0r7I2",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Permission rule Bash(rm:*) requires confirmation",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-ui",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "eZqfC",
+                                      "name": "rule",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "q21Pp",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "rule",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "ZnY7f",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Bash(rm:*)",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -208227,6 +208651,30 @@
                       "fontWeight": "normal"
                     }
                   ]
+                },
+                {
+                  "type": "text",
+                  "id": "IknhO",
+                  "name": "why caption",
+                  "fill": "$text-muted",
+                  "content": "why it asks",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "H4ztGE",
+                  "name": "why note",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Under the call, why Claude Code asks and the settings rule that asked, each whole, when it says: in bypass, an ask rule of yours is the only reason a call comes here. The call above them is what you answer.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
                 }
               ]
             }
@@ -208816,7 +209264,7 @@
                       "id": "FLcdB",
                       "name": "body",
                       "width": "fill_container",
-                      "height": 226,
+                      "height": 267,
                       "children": [
                         {
                           "type": "frame",
@@ -208917,6 +209365,86 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 12,
                                       "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "OKaJs",
+                                  "name": "why",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "iSiHO",
+                                      "name": "why",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "MXVrt",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "why",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "ECIjP",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Permission rule Bash(rm:*) requires confirmation",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-ui",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "EYEI9",
+                                      "name": "rule",
+                                      "width": "fill_container",
+                                      "gap": 10,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "LNrnf",
+                                          "name": "k",
+                                          "fill": "$text-muted",
+                                          "textGrowth": "fixed-width",
+                                          "width": 30,
+                                          "content": "rule",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "f8Qhv",
+                                          "name": "v",
+                                          "fill": "$text-secondary",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Bash(rm:*)",
+                                          "lineHeight": 1.4,
+                                          "fontFamily": "$font-mono",
+                                          "fontSize": 11,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
                                     }
                                   ]
                                 },
@@ -209194,7 +209722,7 @@
                 {
                   "type": "frame",
                   "id": "ywGrB",
-                  "name": "line Asks to use Edit:",
+                  "name": "line Asks to use Read:",
                   "clip": true,
                   "width": "fill_container",
                   "height": 26,
@@ -209234,7 +209762,7 @@
                           "id": "T2mQw",
                           "name": "who",
                           "fill": "$text-primary",
-                          "content": "Asks to use Edit:",
+                          "content": "Asks to use Read:",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 11,
@@ -209245,7 +209773,7 @@
                           "id": "pitzO",
                           "name": "rest",
                           "fill": "$text-secondary",
-                          "content": "/Users/you/projects/shop/src/app/page.tsx",
+                          "content": "/Users/you/projects/api/README.md",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
@@ -209379,7 +209907,7 @@
                   "fill": "$text-secondary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "A file is named by its path as Claude Code sent it, and a tool with nothing to name, an MCP server's for one, by its own name. One line, cut where the line runs out, the whole of it in the title.",
+                  "content": "A file is named by its path as Claude Code sent it, and a tool with nothing to name, an MCP server's for one, by its own name. One line, cut where the line runs out, the whole of it in the title. An edit, a write or a notebook cell never comes here: the terminal's dialog shows its content and asks, as before the mod.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 11,
