@@ -8,6 +8,7 @@ import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
 import { stateModLaunchEnv } from '../services/state-mod';
+import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
 export { setAccountEnvResolver } from './account-env';
 
@@ -129,6 +130,9 @@ export function spawnAgentPty(opts: {
       ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
       // What a hook checks the port with before it sends that token (#11).
       TARS_INSTANCE_ID: tarsInstanceId(),
+      // Its own temporary folder, which a boot does not empty (services/agent-tmp.ts):
+      // here because every agent terminal is spawned here.
+      ...(agentId ? agentTmpEnvOrNone(agentId) : {}),
       ...managedCliEnv(opts.binaryName),
       // The state mod (services/state-mod.ts), for a claude new enough to load
       // it: its hooks report this terminal's state from inside the CLI.

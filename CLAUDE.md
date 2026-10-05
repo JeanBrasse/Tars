@@ -94,6 +94,8 @@ CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder o
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
 CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: a read-only copy of the state mod (mods/tars-state) in Tars's userData, after any the user named
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  # set to 1 with it: the mod is a hooks module of Claude Code's early-access function hooks
+TMPDIR                # ~/.dorothy/tmp/<short id>/t, the agent's own temporary folder, which a boot does not empty (services/agent-tmp.ts)
+CLAUDE_CODE_TMPDIR    # ~/.dorothy/tmp/<short id>/c, where Claude Code keeps the agent's scratchpad and background task output
 ```
 
 ---

@@ -210,7 +210,8 @@ export default function CodePanel({ projectPath, className = '' }: CodePanelProp
         setFileTree(buildFileTree(result.files.map(f => `./${f}`), projectPath));
       }
 
-      const diff = await window.electronAPI.review?.diff(projectPath);
+      // Only which files changed: the list alone, without the patches (#247).
+      const diff = await window.electronAPI.review?.diff(projectPath, undefined, { listOnly: true });
 
       if (diff?.success && diff.diff) {
         const modified = diff.diff.files.map(f => f.path);
