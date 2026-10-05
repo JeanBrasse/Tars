@@ -107,7 +107,7 @@ export interface TranscriptUsage {
 /** How far back the hours go: a rolling day, and the day before it to compare. */
 const HOURLY_WINDOW_MS = 48 * 3_600_000;
 
-interface Pricing {
+export interface Pricing {
   input: number;
   output: number;
   cacheRead: number;
@@ -129,7 +129,7 @@ const FALLBACK: Record<string, Pricing> = {
  * 5m cache_write; the 1h write is 2x base where the 5m one is 1.25x, which is
  * how Anthropic prices both, so it is derived rather than guessed.
  */
-function pricingFor(modelId: string): Pricing {
+export function pricingFor(modelId: string): Pricing {
   const live = priceFor(modelId, 'claude');
   if (live && typeof live.input === 'number' && typeof live.output === 'number') {
     const input = live.input;
@@ -149,7 +149,7 @@ function pricingFor(modelId: string): Pricing {
 }
 
 /** The raw counts on one usage block. */
-interface Counts {
+export interface Counts {
   input: number;
   output: number;
   cacheRead: number;
@@ -164,13 +164,13 @@ const COUNT_KEYS: Array<keyof Counts> = [
 ];
 
 /** What `a` adds on top of `b`, never negative. */
-function diff(a: Counts, b: Counts): Counts {
+export function diff(a: Counts, b: Counts): Counts {
   const out = {} as Counts;
   for (const k of COUNT_KEYS) out[k] = Math.max(0, a[k] - b[k]);
   return out;
 }
 
-function add(a: Counts, b: Counts): Counts {
+export function add(a: Counts, b: Counts): Counts {
   const out = {} as Counts;
   for (const k of COUNT_KEYS) out[k] = a[k] + b[k];
   return out;
@@ -180,7 +180,7 @@ function isZero(c: Counts): boolean {
   return COUNT_KEYS.every(k => c[k] === 0);
 }
 
-function costOf(price: Pricing, c: Counts): number {
+export function costOf(price: Pricing, c: Counts): number {
   return (
     (c.input / 1e6) * price.input +
     (c.output / 1e6) * price.output +
@@ -422,14 +422,27 @@ async function readFileInSlices(file: string): Promise<string | null> {
   }
 }
 
-async function readTranscript(file: string): Promise<FileContribution | null> {
-  const turns: FileContribution = [];
+/** One API response's line, as read from a transcript: its identity, model, time and counts. */
+export interface UsageLine {
+  /** `${message.id}:${requestId}`. */
+  key: string;
+  model: string;
+  /** The line's ISO timestamp, or null. */
+  timestamp: string | null;
+  counts: Counts;
+}
 
+/**
+ * Every usage line of a transcript, in order, or null when the file would not
+ * open. Read in slices, with breaths, for the reasons readFileInSlices gives.
+ */
+export async function readUsageLines(file: string): Promise<UsageLine[] | null> {
   // Null, not an empty list. An empty list is a transcript that holds no
   // usage, which is a fact; a file that would not open is not, and returning
   // one as the other is how a failure turns into a smaller bill.
   const content = await readFileInSlices(file);
   if (content === null) return null;
+  const out: UsageLine[] = [];
 
   // Walked rather than split: `split('\n')` on the 65 MB transcript is one
   // more atomic 59 ms, building thirty thousand strings before the loop can
@@ -463,22 +476,33 @@ async function readTranscript(file: string): Promise<FileContribution | null> {
 
     const split = usage.cache_creation as Record<string, unknown> | undefined;
     const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
-    const counts: Counts = {
-      input: Number(usage.input_tokens) || 0,
-      output: Number(usage.output_tokens) || 0,
-      cacheRead: Number(usage.cache_read_input_tokens) || 0,
-      cacheWrite,
-      write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
-      write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
-      searches: Number(
-        (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
-      ) || 0,
-    };
-
-    const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
-    const at = timestamp ? Date.parse(timestamp) : NaN;
-    turns.push({
+    out.push({
       key: `${message.id ?? ''}:${entry.requestId ?? ''}`,
+      model,
+      timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+      counts: {
+        input: Number(usage.input_tokens) || 0,
+        output: Number(usage.output_tokens) || 0,
+        cacheRead: Number(usage.cache_read_input_tokens) || 0,
+        cacheWrite,
+        write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
+        write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
+        searches: Number(
+          (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
+        ) || 0,
+      },
+    });
+  }
+  return out;
+}
+
+async function readTranscript(file: string): Promise<FileContribution | null> {
+  const lines = await readUsageLines(file);
+  if (lines === null) return null;
+  return lines.map(({ key, model, timestamp, counts }) => {
+    const at = timestamp ? Date.parse(timestamp) : NaN;
+    return {
+      key,
       model: shared(model),
       // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
       // the first ten characters gave the UTC date while the chart labelled its
@@ -486,10 +510,8 @@ async function readTranscript(file: string): Promise<FileContribution | null> {
       date: timestamp ? shared(localDateKey(timestamp)) : null,
       minute: Number.isNaN(at) ? null : Math.floor(at / 60_000),
       counts,
-    });
-  }
-
-  return turns;
+    };
+  });
 }
 
 /** The file's contribution, parsed only if it has changed since last time. */
