@@ -25,6 +25,7 @@ import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
+import { wakeFromSleep } from './agent-asleep';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -475,6 +476,8 @@ function persistable(agent: AgentStatus): AgentStatus {
     // Runtime state, and the command a dialog asks about can carry a secret:
     // agents.json is in every agent's --add-dir (the gate of #172).
     waitingOn: undefined,
+    // A wake belongs to its launch, which a restart of Tars does not carry.
+    waking: undefined,
   } as AgentStatus;
 }
 
@@ -606,13 +609,18 @@ export function loadAgents() {
       }
 
       // A stopped agent stays stopped across a restart, with who, when and
-      // why, or the Dashboard resumes it at launch like any idle one.
-      if (agent.status !== 'stopped') agent.status = 'idle';
+      // why, or the Dashboard resumes it at launch like any idle one. An
+      // asleep one stays asleep, with since when: its conversation is kept,
+      // and the first message wakes it on it (core/agent-asleep.ts).
+      if (agent.status !== 'stopped' && agent.status !== 'asleep') agent.status = 'idle';
+      agent.waking = undefined;
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
       agent.pendingDelivery = undefined;
-      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts).
+      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts),
+      // and what a Stop hook counted inside one died with it.
       agent.stalledSince = undefined;
+      agent.restPending = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did
@@ -1053,8 +1061,10 @@ async function initAgentPtyLocked(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   agent.ptyCwd = cwd;
-  // A terminal again: a stop is over (core/agent-stop.ts).
+  // A terminal again: a stop is over (core/agent-stop.ts), and a sleep too,
+  // the agent waking until its CLI is up (core/agent-asleep.ts).
   clearStop(agent);
+  wakeFromSleep(agent);
 
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);

@@ -35,6 +35,16 @@ if [ -n "$LAST_MSG" ]; then
   curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
   echo "  Output sent (${#TRIMMED} chars)" >> "$LOG"
 fi
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\"}" > /dev/null 2>&1
+# What the agent leaves waiting inside its CLI at this rest: its timers (a
+# ScheduleWakeup of /loop, a CronCreate) and the background tasks still running.
+# No process shows either, and an agent put to sleep loses them with its CLI
+# (services/agent-sleep.ts). Claude Code 2.1.289 sends both lists to the Stop
+# hook; a claude that sends neither, as lists, sends no count: nothing is known.
+PENDING=$(echo "$INPUT" | jq -c 'if (.session_crons | type) == "array" and (.background_tasks | type) == "array" then
+  { crons: (.session_crons | length),
+    background: ([.background_tasks[] | (if type == "object" then (.status // "running") else "running" end | tostring)
+      | select(. as $s | ["completed", "failed", "killed", "stopped", "error"] | index($s) | not)] | length) }
+  else empty end' 2>/dev/null)
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\"${PENDING:+, \"pending\": $PENDING}}" > /dev/null 2>&1
 curl -s --max-time 3 -X POST "$API_URL/api/hooks/agent-stopped" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
 echo '{"continue":true,"suppressOutput":true}'
