@@ -7,8 +7,9 @@ import { fakeGh, publishedAssets, sha256, type FakeGh, type FakeGhState } from '
 import { canonicalReleaseDir, main } from '../scripts/prune-releases.mjs';
 
 /**
- * Keeping the last three builds and deleting the rest, and only what GitHub
- * proves published.
+ * Keeping the last two builds and deleting the rest, and only what GitHub
+ * proves published. Two, not three: Noah's rule of 2026-10-01, the 1.9.2
+ * release left three in release/.
  *
  * electron-builder never cleans up, so release/ reached 6.3GB across thirteen
  * versions. The part that has to be right first is the ordering: a string sort
@@ -76,23 +77,23 @@ function run(versions: string[]): string[] {
 }
 
 describe('pruning old builds', () => {
-  it('keeps the three newest', () => {
+  it('keeps the two newest', () => {
     const kept = run(['1.6.5', '1.6.6', '1.6.7', '1.6.8']);
-    expect(kept.sort()).toEqual(['1.6.6', '1.6.7', '1.6.8']);
+    expect(kept.sort()).toEqual(['1.6.7', '1.6.8']);
   });
 
   it('sorts numerically, so 1.6.10 outranks 1.6.9', () => {
     // A string sort would delete the newest build in the directory.
     const kept = run(['1.6.8', '1.6.9', '1.6.10', '1.6.11']);
-    expect(kept.sort()).toEqual(['1.6.10', '1.6.11', '1.6.9']);
+    expect(kept.sort()).toEqual(['1.6.10', '1.6.11']);
   });
 
   it('crosses a minor version correctly', () => {
     const kept = run(['1.5.9', '1.6.0', '1.6.1', '1.7.0']);
-    expect(kept.sort()).toEqual(['1.6.0', '1.6.1', '1.7.0']);
+    expect(kept.sort()).toEqual(['1.6.1', '1.7.0']);
   });
 
-  it('leaves three or fewer alone', () => {
+  it('leaves two or fewer alone', () => {
     expect(run(['1.6.10', '1.6.11']).sort()).toEqual(['1.6.10', '1.6.11']);
   });
 
@@ -117,7 +118,7 @@ describe('pruning old builds', () => {
 
 describe('what the purge may delete', () => {
   const FIVE = ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4'];
-  const NEWEST = ['1.0.2', '1.0.3', '1.0.4'];
+  const NEWEST = ['1.0.3', '1.0.4'];
 
   async function prune(release: string, cwd = path.dirname(release)): Promise<string[]> {
     const lines: string[] = [];
@@ -131,11 +132,11 @@ describe('what the purge may delete', () => {
 
     const lines = await prune(release);
 
-    expect(versionsIn(release)).toEqual(['1.0.1', ...NEWEST]);
+    expect(versionsIn(release)).toEqual(['1.0.1', '1.0.2', ...NEWEST]);
     expect(lines.join('\n')).toContain('kept 1.0.1, not published: there is no release v1.0.1 on acme/tars');
   });
 
-  it('deletes a published version beyond the three newest', async () => {
+  it('deletes a published version beyond the two newest', async () => {
     const { release } = checkoutWith(FIVE);
     gh.setState(allPublished(FIVE));
 

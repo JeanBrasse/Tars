@@ -21,10 +21,20 @@
  * 5. A terminal ended by the quit sets its agent `completed` or `error`, saves
  *    it and tells the window: any exit handler not going through
  *    agentStatusOnExit. Before the quit, an exit still is news.
+ *
+ * And from the review of #267's merge (2026-10-01):
+ * 6. spawnAgentPty refuses only after it has minted a token and worked out an
+ *    account: a refused spawn still does work. The refusal comes first.
+ * 7. Test 4 reads a 1500-character window before each spawn for the guard:
+ *    a guard at the end of the function before it counted for a spawn
+ *    outside any function, and a long function hid its own guard. It reads
+ *    the syntax tree instead: the guard is a call in the spawn's own
+ *    function, before the spawn, not in a function nested inside it.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as ts from 'typescript';
 import { EventEmitter } from 'events';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn(() => ({ onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn(), pid: 1 })) }));
@@ -53,6 +63,7 @@ import * as pty from 'node-pty';
 import { beginQuit, isQuitting, agentStatusOnExit } from '../../../electron/core/quit-state';
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
+import { setAccountEnvResolver } from '../../../electron/core/account-env';
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 import { AcpSession } from '../../../electron/services/acp/client';
 import { agents } from '../../../electron/core/agent-manager';
@@ -112,6 +123,17 @@ describe('once the quit has begun', () => {
     expect(pty.spawn).not.toHaveBeenCalled();
   });
 
+  it('6. spawnAgentPty refuses before it works out an account for the agent', () => {
+    const resolver = vi.fn(() => null);
+    setAccountEnvResolver(resolver);
+    try {
+      expect(() => spawnAgentPty({ binaryName: 'claude', shell: '/bin/bash', args: ['-l'], cwd: '/tmp', cols: 80, rows: 24, env: { CLAUDE_AGENT_ID: 'a1' } })).toThrow(/quitting/);
+      expect(resolver).not.toHaveBeenCalled();
+    } finally {
+      setAccountEnvResolver(undefined);
+    }
+  });
+
   it('3. the ACP client itself refuses to spawn its agent, whoever calls it (QA E13, gate of #235)', async () => {
     const session = new AcpSession({ command: '/bin/sh', args: ['-c', 'sleep 300'] }, { cwd: '/tmp' });
     await expect(session.start()).rejects.toThrow(/quitting/);
@@ -127,24 +149,40 @@ describe('once the quit has begun', () => {
 describe('every spawn site and exit handler in electron/', () => {
   const files = sources(electronDir).map(f => ({ f: path.relative(electronDir, f), text: fs.readFileSync(f, 'utf-8') }));
 
-  it('4. every pty.spawn, and the ACP child, is refused while quitting', () => {
+  it('4, 7. every pty.spawn, and the ACP child, is refused while quitting, by its own function', () => {
     const unguarded: string[] = [];
+    let spawns = 0;
     for (const { f, text } of files) {
-      for (const m of text.matchAll(/\bpty\.spawn\(|\bspawn\(this\.launch\.command/g)) {
-        // A comment that names pty.spawn() starts nothing.
-        const line = text.slice(text.lastIndexOf('\n', m.index!) + 1, m.index!);
-        if (/^\s*(\/\/|\*)/.test(line)) continue;
-        const before = text.slice(Math.max(0, m.index! - 1500), m.index!);
-        // Where the enclosing function starts: a declaration, an arrow, or a
-        // class method (`async start(): Promise<...> {`, the ACP client's).
-        const method = [...before.matchAll(/\n\s*(?:private |public |static )*(?:async )?[A-Za-z_]\w*\([^)]*\)[^{;=\n]*\{\s*\n/g)].pop();
-        const found = Math.max(before.lastIndexOf('function '), before.lastIndexOf('=> {'), before.lastIndexOf('async ('), method?.index ?? -1);
-        // No start in the window: the function began earlier, so the whole window lies inside it.
-        const fnStart = found < 0 ? 0 : found;
-        if (!before.slice(fnStart).includes('refuseWhileQuitting(')) unguarded.push(`${f}:${text.slice(0, m.index!).split('\n').length}`);
-      }
+      const source = ts.createSourceFile(f, text, ts.ScriptTarget.ES2022, true);
+      const isSpawn = (node: ts.CallExpression) => {
+        const callee = node.expression.getText(source);
+        return callee === 'pty.spawn' || (callee === 'spawn' && node.arguments[0]?.getText(source) === 'this.launch.command');
+      };
+      const isGuard = (node: ts.Node) => ts.isCallExpression(node) && node.expression.getText(source) === 'refuseWhileQuitting';
+      // The guards of one function, its nested functions left out: theirs run when they are called.
+      const guardsOf = (fn: ts.Node): number[] => {
+        const at: number[] = [];
+        const visit = (node: ts.Node): void => {
+          if (node !== fn && ts.isFunctionLike(node)) return;
+          if (isGuard(node)) at.push(node.getStart(source));
+          ts.forEachChild(node, visit);
+        };
+        visit(fn);
+        return at;
+      };
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && isSpawn(node)) {
+          spawns += 1;
+          let fn: ts.Node | undefined = node.parent;
+          while (fn && !ts.isFunctionLike(fn)) fn = fn.parent;
+          const guarded = !!fn && guardsOf(fn).some(at => at < node.getStart(source));
+          if (!guarded) unguarded.push(`${f}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
     }
-    expect(files.some(({ text }) => /\bpty\.spawn\(/.test(text)), 'the scan found no spawn at all').toBe(true);
+    expect(spawns, 'the scan found no spawn at all').toBeGreaterThan(5);
     expect(unguarded).toEqual([]);
   });
 
