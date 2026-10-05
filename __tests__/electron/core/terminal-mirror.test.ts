@@ -20,6 +20,20 @@ import { createRequire } from 'node:module';
  * mirror and into the terminal a panel that never left would be, and compare
  * the two at every chunk.
  *
+ * The history a panel comes back to: the last 2,500 lines, Noah's choice of
+ * 05/10 for the main process's mirror (the panel's own xterm keeps 5,000, #313;
+ * the mirror kept 1,000). How it fails: the mirror keeps another number, so a
+ * panel back from another page has lost more of the conversation, or the
+ * main process holds more than was chosen; or the stand-in panel here keeps
+ * another number than the real one, and the comparison proves nothing. *
+ * What a snapshot costs, from the Audit's gate of #319: at 5,000 lines a full
+ * mirror serializes in 100 to 230 ms on the main process, and agent:get asked
+ * for it on every call (the Kanban board, the Kanban sync, the tray, the
+ * Dashboard), ten agents at rest costing 0.5 to 1 s at each return to the
+ * Dashboard. How it fails: a mirror nothing has written to since its last
+ * snapshot is serialized again; or the kept snapshot is handed after a write
+ * or a resize changed what a panel must show.
+ *
  * The second half is the watch for a CLI that left fullscreen without telling
  * its terminal (QA's T1): the orchestrator's Claude Code started fullscreen,
  * then repainted inline on an alternate screen it never left, and the wheel
@@ -95,7 +109,7 @@ const core = (term: Term) => (term as unknown as { _core: Core })._core;
 
 /** A terminal as useMultiTerminal builds a Dashboard panel's (TERMINAL_CONFIG). */
 function panelTerminal(cols: number, rows: number): Term {
-  return new Terminal({ cols, rows, scrollback: 10000, convertEol: true, allowProposedApi: true, logLevel: 'off' });
+  return new Terminal({ cols, rows, scrollback: 5000, convertEol: true, allowProposedApi: true, logLevel: 'off' });
 }
 /** Parsed at once, as the mirror parses: the comparison happens right after. */
 const write = (term: Term, data: string) => core(term).writeSync(data);
@@ -296,6 +310,20 @@ describe('a panel that comes back is handed the screen it left', () => {
     expect(snapshot.every(r => r.same === r.cells && r.cells > 0)).toBe(true);
   });
 
+  it('the history is the last 2,500 lines of what a panel that never left keeps', () => {
+    const pty = fakePty();
+    attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'history' });
+    const live = panelTerminal(40, 6);
+    const stream = Array.from({ length: 6000 }, (_, i) => `line ${i + 1}\r\n`).join('');
+    write(live, stream);
+    pty.emit(stream);
+    const panel = snapshotInto(pty, 40, 6);
+    const text = (term: Term) => Array.from({ length: term.buffer.normal.length }, (_, i) => term.buffer.normal.getLine(i)!.translateToString(true));
+    expect(live.buffer.normal.length, 'the stand-in panel keeps 5,000 lines above its screen').toBe(5000 + 6);
+    expect(text(panel)).toEqual(text(live).slice(-(2500 + 6)));
+    panel.dispose();
+  });
+
   it('opens with RIS, so a chunk a panel received before asking is not drawn twice', () => {
     const pty = fakePty();
     attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'early' });
@@ -383,6 +411,44 @@ describe('a panel that comes back is handed the screen it left', () => {
 });
 
 // ---- the mirror itself ---------------------------------------------------
+
+describe('a snapshot', () => {
+  const { SerializeAddon } = nodeRequire('xterm-addon-serialize') as { SerializeAddon: { prototype: { serialize: () => string } } };
+
+  it('is not serialized again while nothing has been written to the mirror', () => {
+    const pty = fakePty();
+    attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'cache' });
+    pty.emit(Array.from({ length: 200 }, (_, i) => `line ${i}\r\n`).join(''));
+    const serialize = vi.spyOn(SerializeAddon.prototype, 'serialize');
+    const first = terminalSnapshot(pty as never);
+    const second = terminalSnapshot(pty as never);
+    expect(second).toBe(first);
+    expect(serialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('is made again after a write, and shows it', () => {
+    const pty = fakePty();
+    attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'cache-write' });
+    pty.emit('one\r\n');
+    const before = terminalSnapshot(pty as never)!;
+    pty.emit('two\r\n');
+    const after = terminalSnapshot(pty as never)!;
+    const panel = panelTerminal(40, 6);
+    write(panel, after);
+    expect(after).not.toBe(before);
+    expect(visibleText(panel).join('\n')).toContain('two');
+    panel.dispose();
+  });
+
+  it('is made again after a resize', () => {
+    const pty = fakePty();
+    attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'cache-resize' });
+    pty.emit('\x1b[?1049h\x1b[H' + 'x'.repeat(39));
+    const before = terminalSnapshot(pty as never)!;
+    resizeTerminalMirror(pty as never, 20, 6);
+    expect(terminalSnapshot(pty as never)).not.toBe(before);
+  });
+});
 
 describe('the mirror', () => {
   it('has parsed a chunk by the time the listener returns, before any later listener broadcasts it', () => {
