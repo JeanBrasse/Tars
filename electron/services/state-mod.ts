@@ -48,7 +48,7 @@ export function stateModEnv(opts: {
   base: Record<string, string | undefined>;
 }): Record<string, string> {
   if (opts.binaryName !== 'claude' || !opts.version || !versionAtLeast(opts.version, MOD_MIN_CLAUDE)) return {};
-  if (!fs.existsSync(opts.dir)) return {};
+  if (!opts.dir || !fs.existsSync(opts.dir)) return {};
   const theirs = opts.base.CLAUDE_CODE_PLUGIN_DIRS;
   return {
     CLAUDE_CODE_PLUGIN_DIRS: theirs ? `${theirs}${path.delimiter}${opts.dir}` : opts.dir,
@@ -73,14 +73,81 @@ export function launchedClaudeVersion(opts: { settingsPath: string | undefined; 
   }
 }
 
-/**
- * Where the mod is: beside the bundled MCP servers in a packaged app
- * (extraResources), at the repository's root otherwise.
- */
-export function stateModDir(): string {
+/** Where the mod ships: beside the bundled MCP servers in a packaged app (extraResources), the repository's root otherwise. */
+function shippedStateModDir(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'mods', 'tars-state')
     : path.join(app.getAppPath(), 'mods', 'tars-state');
+}
+
+function setTree(dir: string, dirMode: number, fileMode: number): void {
+  fs.chmodSync(dir, dirMode);
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) setTree(p, dirMode, fileMode);
+    else fs.chmodSync(p, fileMode);
+  }
+}
+
+/** What Claude Code writes into a mod's folder at every load (measured on 2.1.289). */
+const CLAUDE_WRITES = [['.claude-plugin', 'types'], ['tsconfig.json']];
+
+/**
+ * Copies the shipped mod to `target`, replacing what an earlier launch left
+ * there. Measured on claude 2.1.289 (the Audit's delta gate of #308): Claude
+ * Code writes `.claude-plugin/types/` and a tsconfig into a mod's folder at
+ * every load, which from `process.resourcesPath` is inside the signed
+ * Tars.app. In the copy the files are read-only and those two paths are empty
+ * read-only folders already, so nothing can be written into the one or in
+ * place of the other; the folders stay writable, so an ordinary recursive
+ * delete still removes the copy (read-only folders made vitest's throwaway
+ * home and every sandbox fail to clean up). Null, and no folder, when the
+ * copy fails: the launch goes on without the mod.
+ */
+export function installStateMod(source: string, target: string): string | null {
+  try {
+    if (fs.existsSync(target)) {
+      setTree(target, 0o755, 0o644);
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+    if (!fs.statSync(source).isDirectory()) return null;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    // What the mod ships, not what claude wrote beside it in a folder it
+    // could write to (the repository's, in a dev run): its declarations and
+    // a tsconfig.
+    const written = new Set(CLAUDE_WRITES.map(parts => path.join(source, ...parts)));
+    fs.cpSync(source, target, { recursive: true, filter: from => !written.has(from) });
+    setTree(target, 0o755, 0o444);
+    for (const parts of CLAUDE_WRITES) {
+      const sentinel = path.join(target, ...parts);
+      fs.mkdirSync(sentinel, { recursive: true });
+      fs.chmodSync(sentinel, 0o555);
+    }
+    return target;
+  } catch (err) {
+    console.warn(`[state-mod] could not install the mod at ${target}: ${err instanceof Error ? err.message : String(err)}`);
+    try {
+      if (fs.existsSync(target)) {
+        setTree(target, 0o755, 0o644);
+        fs.rmSync(target, { recursive: true, force: true });
+      }
+    } catch { /* nothing more to do: the folder is not handed */ }
+    return null;
+  }
+}
+
+let installed: string | null | undefined;
+
+/**
+ * The folder handed to claude: a read-only copy of the shipped mod in Tars's
+ * own userData, made once per run. Not the bundle, which claude would write
+ * into, and not ~/.dorothy, which every agent is handed and could change the
+ * code that runs inside every other agent's claude. Empty when it could not
+ * be made, and stateModEnv then hands nothing.
+ */
+export function stateModDir(): string {
+  if (installed === undefined) installed = installStateMod(shippedStateModDir(), path.join(app.getPath('userData'), 'mods', 'tars-state'));
+  return installed ?? '';
 }
 
 /**

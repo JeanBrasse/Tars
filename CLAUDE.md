@@ -92,7 +92,7 @@ ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
 CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
-CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: the state mod's folder (mods/tars-state), after any the user named
+CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: a read-only copy of the state mod (mods/tars-state) in Tars's userData, after any the user named
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  # set to 1 with it: the mod is a hooks module of Claude Code's early-access function hooks
 ```
 
