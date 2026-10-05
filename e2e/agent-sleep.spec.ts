@@ -16,7 +16,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - the worker is put to sleep: its CLI ends, it reads `asleep` since now, and its pane keeps its last screen;
  * - the lead, the busy worker and the drafter keep their CLI.
  * Then the worker is woken three times, each time on its own conversation (`--resume` and the session it slept in):
- * - a mouse report from its pane wakes nothing, and a key typed there does;
+ * - a mouse report, a lone Esc or Ctrl+C from its pane wakes nothing, and a key typed there does;
  * - a room message wakes it, reading `waking` with who woke it, and the message reaches the session that woke;
  * - the wake call does;
  * - a message the lead sends it wakes it, the message its first prompt, reading woken by the lead.
@@ -224,8 +224,10 @@ test('an agent with no turn for 30 minutes is put to sleep, keeps its screen, an
 
     // ── A mouse report wakes nothing; a key does ──
     await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'worker', input: '\x1b[<0;12;7M\x1b[<0;12;7m\x1b[I' }));
+    // A lone Esc or Ctrl+C asks it to stop, not to work (the Frontend's question on #324).
+    for (const input of ['\x1b', '\x03']) await page.evaluate((i) => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'worker', input: i }), input);
     await new Promise((r) => setTimeout(r, 1_500));
-    expect(wakes(), 'a click in the pane woke it').toHaveLength(0);
+    expect(wakes(), 'a click, an Esc or a Ctrl+C in the pane woke it').toHaveLength(0);
     expect((await get('worker')).status).toBe('asleep');
     await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'worker', input: 'x' }));
     const byKey = await get('worker');

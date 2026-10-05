@@ -26,6 +26,9 @@ import * as path from 'path';
  *    which belongs to a launch, is read back.
  * 15. The wake call starts a CLI for an agent that is not asleep (a running
  *    one, a stopped one), or a second CLI over a wake already on its way.
+ * 16. (the Frontend's question on #324) A lone Esc or Ctrl+C typed into the pane
+ *    of an asleep agent wakes it: both ask it to stop, not to work. Or a mouse,
+ *    focus or terminal report does.
  */
 
 const { tmp, AGENTS_FILE } = vi.hoisted(() => {
@@ -50,7 +53,7 @@ vi.mock('electron', () => ({
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 
 import type { AgentStatus } from '../../../electron/types';
-import { fallAsleep, wakeFromSleep, noteWaker, publishedWaking, screenWhileAsleep, wakeAgent } from '../../../electron/core/agent-asleep';
+import { fallAsleep, wakeFromSleep, noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../../../electron/core/agent-asleep';
 import { consumeResumeSessionId, resetResumeTracking } from '../../../electron/utils/resume-session';
 import { launchBegins, registerAgentLauncher, resetLaunches } from '../../../electron/core/agent-launch';
 
@@ -200,6 +203,13 @@ describe('the wake call', () => {
     fallAsleep(a, undefined, Date.now());
     expect(await wakeAgent(a, 'you', 'wake')).toEqual({ success: false, error: 'its folder is gone' });
     expect(a.status).toBe('asleep');
+  });
+});
+
+describe('a key typed into its pane', () => {
+  it('16. wakes it, unless it is a lone Esc or Ctrl+C, or no key at all', () => {
+    for (const key of ['x', '\r', 'run the gate', '\x1b[A', '\x1b\x1b', 'x\x1b']) expect(wakesOnKey(key), JSON.stringify(key)).toBe(true);
+    for (const key of ['\x1b', '\x03', '\x1b[<0;12;7M', '\x1b[I', '\x1b[O', '\x1b]11;rgb:0f0f/0f0f/0f0f\x1b\\']) expect(wakesOnKey(key), JSON.stringify(key)).toBe(false);
   });
 });
 
