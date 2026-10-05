@@ -1208,11 +1208,17 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     let worktreeKept: string | undefined;
     if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
       try {
-        savedTo = (await saveUncommittedWork(agent.worktreePath, agent.name || agent.id))?.branch;
+        const saved = await saveUncommittedWork(agent.worktreePath, agent.name || agent.id);
+        savedTo = saved?.branch;
         if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
         // What git ignores, a .env or an e2e run, no commit keeps: the
         // worktree stays, rebuildable caches aside (the Audit's gate of #312).
-        const ignored = await ignoredNotCaches(agent.worktreePath);
+        // And a git repository of its own, which the save could only point at.
+        if (saved?.nestedRepos.length) {
+          worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
         if (ignored.length) {
           const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
           worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;

@@ -38,7 +38,7 @@ export function wipBranchName(name: string): string {
  * on a new wip/<name>, the next free one. Null when there is nothing to save.
  * Throws when it could not save: the caller must then keep the worktree.
  */
-export async function saveUncommittedWork(worktreePath: string, name: string): Promise<{ branch: string } | null> {
+export async function saveUncommittedWork(worktreePath: string, name: string): Promise<{ branch: string; nestedRepos: string[] } | null> {
   const status = await git(worktreePath, ['status', '--porcelain', '--untracked-files=all']);
   if (!status) return null;
 
@@ -51,6 +51,15 @@ export async function saveUncommittedWork(worktreePath: string, name: string): P
     const head = await git(worktreePath, ['rev-parse', 'HEAD']);
     const commit = await git(worktreePath, ['commit-tree', tree, '-p', head, '-m', `wip: ${name}'s uncommitted work, saved by Tars when the agent was deleted`]);
 
+    // A git repository inside the worktree (one the agent cloned or made) is
+    // committed as a gitlink only: a pointer to a commit that exists in its own
+    // .git and nowhere else (QA's gate of #312). Named, so that the caller
+    // keeps the worktree.
+    const gitlinks = async (rev: string) => (await git(worktreePath, ['ls-tree', '-r', rev]))
+      .split('\n').filter(line => line.startsWith('160000 ')).map(line => line.slice(line.indexOf('\t') + 1));
+    const before = new Set(await gitlinks(head));
+    const nestedRepos = (await gitlinks(commit)).filter(p => !before.has(p));
+
     const base = wipBranchName(name);
     for (let n = 1; n < 100; n++) {
       const branch = n === 1 ? base : `${base}-${n}`;
@@ -58,7 +67,7 @@ export async function saveUncommittedWork(worktreePath: string, name: string): P
         await git(worktreePath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
       } catch {
         await git(worktreePath, ['branch', branch, commit]);
-        return { branch };
+        return { branch, nestedRepos };
       }
     }
     throw new Error(`no free name for ${base}`);
