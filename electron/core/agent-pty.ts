@@ -77,6 +77,11 @@ export function spawnAgentPty(opts: {
   rows: number;
   env: Record<string, string | undefined>;
 }): pty.IPty {
+  // Once the quit has begun, a terminal spawned here would be in no map the
+  // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused,
+  // before a token is minted or an account worked out for a terminal that
+  // will not exist.
+  refuseWhileQuitting('agent terminal');
   // Whose process this is. Set by the callers through getPtyEnvVars, and read
   // back here rather than taken as a parameter so that a caller cannot spawn
   // an agent pty with one identity in the environment and another in the
@@ -93,9 +98,6 @@ export function spawnAgentPty(opts: {
   // account a caller forgot would be a CLI billed to the wrong subscription.
   const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
 
-  // Once the quit has begun, a terminal spawned here would be in no map the
-  // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused.
-  refuseWhileQuitting('agent terminal');
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: 'xterm-256color',
     cols: size.cols,
@@ -209,6 +211,16 @@ export function spawnAgentPty(opts: {
  * can be read, starting and then running, and an interactive shell never does
  * at its prompt, where a typed line would run as a command.
  */
+/**
+ * Whether this is an agent terminal Tars started whose CLI has stopped, back
+ * at its shell: what the writer asks before it types a held message
+ * (pty-manager.ts, setCliProbe). A terminal it did not start as an agent's is
+ * not known to have stopped, and is left as it was.
+ */
+export function cliStoppedIn(ptyProcess: pty.IPty): boolean {
+  return spawnedAs.has(ptyProcess) && !cliRunningIn(ptyProcess);
+}
+
 export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   if (!ptyProcess) return false;
   const spawned = spawnedAs.get(ptyProcess);

@@ -184,7 +184,7 @@ async function worktreeState(repoPath: string, baseBranch: string | null): Promi
  * The state above costs three, run together; when it is unchanged the diff is
  * too. Kept for the last few repositories only.
  */
-const diffs = new Map<string, { state: string; diff: ReviewDiff }>();
+const diffs = new Map<string, { state: string; diff: ReviewDiff; withPatch: boolean }>();
 const MAX_CACHED_DIFFS = 16;
 
 /** Test seam. */
@@ -196,7 +196,10 @@ export function resetReviewCache(): void {
  * Everything this working tree changed: committed since the base branch, plus
  * whatever is still uncommitted. That is the question a reviewer actually has.
  */
-export async function reviewDiff(repoPath: string, opts: { baseBranch?: string } = {}): Promise<ReviewDiff> {
+export async function reviewDiff(
+  repoPath: string,
+  opts: { baseBranch?: string; listOnly?: boolean } = {},
+): Promise<ReviewDiff> {
   if (!repoPath || !fs.existsSync(repoPath)) {
     throw new Error(`path does not exist: ${repoPath}`);
   }
@@ -218,12 +221,18 @@ export async function reviewDiff(repoPath: string, opts: { baseBranch?: string }
 
   const key = JSON.stringify([path.resolve(repoPath), branch, baseBranch]);
   const state = await worktreeState(repoPath, baseBranch);
+  // A list-only call (the Review page reads each file's patch on its own,
+  // through review:file) runs no git for the patches and carries none over
+  // IPC. It is answered from a full diff kept, never the other way round.
+  const listOnly = opts.listOnly === true;
   const cached = diffs.get(key);
-  if (cached?.state === state) return cached.diff;
+  if (cached?.state === state && (cached.withPatch || listOnly)) {
+    return listOnly && cached.withPatch ? { ...cached.diff, patch: '', truncated: false } : cached.diff;
+  }
 
-  const diff = await computeDiff(repoPath, branch, baseBranch);
+  const diff = await computeDiff(repoPath, branch, baseBranch, !listOnly);
   diffs.delete(key);
-  diffs.set(key, { state, diff });
+  diffs.set(key, { state, diff, withPatch: !listOnly });
   if (diffs.size > MAX_CACHED_DIFFS) diffs.delete(diffs.keys().next().value!);
   return diff;
 }
@@ -299,7 +308,7 @@ function lineCount(text: string): number {
   return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 }
 
-async function computeDiff(repoPath: string, branch: string, baseBranch: string | null): Promise<ReviewDiff> {
+async function computeDiff(repoPath: string, branch: string, baseBranch: string | null, withPatch: boolean): Promise<ReviewDiff> {
   // Every read below is independent of the others: they run together.
   const from = await startingPoint(repoPath, baseBranch);
   const [counts, numstat, names, untracked, diffPatch] = await Promise.all([
@@ -307,7 +316,8 @@ async function computeDiff(repoPath: string, branch: string, baseBranch: string 
     tryGit(repoPath, ['diff', '-M', '--numstat', '-z', from]),
     tryGit(repoPath, ['diff', '-M', '--name-status', '-z', from]),
     tryGit(repoPath, ['ls-files', '--others', '--exclude-standard', '-z']),
-    gitPatch(repoPath, ['diff', '-M', from], MAX_PATCH_BYTES),
+    // A list-only call runs no git for the patch: the page reads each file's on its own.
+    withPatch ? gitPatch(repoPath, ['diff', '-M', from], MAX_PATCH_BYTES) : Promise.resolve({ text: '', cut: false }),
   ]);
 
   let ahead = 0;

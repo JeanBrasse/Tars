@@ -295,6 +295,12 @@ export interface AppSettings {
   telegramAuthToken: string; // Secret token for authentication
   telegramAuthorizedChatIds: string[]; // List of authorized chat IDs
   telegramRequireMention: boolean; // Only respond when bot is @mentioned in groups
+  /**
+   * The relay to the user's Telegram through their Hermes (services/hermes-relay.ts): off unless turned on in
+   * Settings, Hermes. On, it is the only voice there: the Tars bot's token is erased and the bot off
+   * (hermes-relay-switch.ts), questions, reports and the orchestrator's send_telegram go through it.
+   */
+  hermesRelayEnabled?: boolean;
   slackEnabled: boolean;
   slackBotToken: string;
   slackAppToken: string;
@@ -704,11 +710,21 @@ export interface ClaudeAccountWindow {
 export interface ClaudeAccountCounters {
   accountId: ClaudeAccountId;
   label: string;
-  /** null when no status line has reported it, or its reset has passed. */
+  /** null when no status line or probe has reported it, or its reset has passed. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
-  /** Epoch ms of the status line's last report on that account. */
+  /** The per-model weeklies a probe read (get_usage), when it read any. */
+  models?: ClaudeAccountModelWindow[];
+  /** Epoch ms of the last report on that account: a status line's or a probe's. */
   updatedAt: number | null;
+}
+
+/** One per-model weekly window ("Fable"), as Claude Code's get_usage gives it. */
+export interface ClaudeAccountModelWindow {
+  name: string;
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
 }
 
 export interface ClaudeAccountState extends ClaudeAccount {
@@ -716,9 +732,11 @@ export interface ClaudeAccountState extends ClaudeAccount {
   signedIn: boolean | null;
   email: string | null;
   subscriptionType: string | null;
-  /** Last reported by a status line on this account; null when never seen or reset. */
+  /** Last reported by a status line or a probe; null when never seen or reset. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
+  /** The per-model weeklies a probe read; empty when none. */
+  models: ClaudeAccountModelWindow[];
   /** Epoch ms of that report. */
   updatedAt: number | null;
   /** Epoch seconds: a limit was hit, the account is skipped until then. */

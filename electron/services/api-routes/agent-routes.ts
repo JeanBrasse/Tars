@@ -504,6 +504,14 @@ function senderName(agent: AgentStatus, req: RouteRequest): string {
 function recordRequester(agent: AgentStatus, req: RouteRequest): void {
   const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
+  // A worker writing to the agent that leads it (the orchestrator that handed
+  // it the work, or its project's orchestrator) is reporting, not delegating:
+  // as a link, the orchestrator's next outcome was typed into the worker's
+  // terminal as news of work it had never handed over. The orchestrator's own
+  // link, if it has one, stays as it is.
+  const caller = agentId ? agents.get(agentId) : undefined;
+  if (caller && (caller.requestedBy?.agentId === agent.id
+      || (agent.role === 'orchestrator' && agent.projectPath === caller.projectPath))) return;
   // Bound to the session this work is about to run in. When the route ends up
   // spawning a fresh one, spawnAgentSession re-stamps it with the new ptyId
   // below; when the spawn fails, the link keeps a ptyId that is not live and

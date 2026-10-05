@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
+import { EventEmitter } from 'events';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 /**
@@ -34,6 +35,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
  * disk says what that claude prints and how it exits. The model answers the old shell form
  * (`execSync('claude --version 2>/dev/null')`, which searched Electron's PATH)
  * the same way, so this file runs against the code before the fix and turns red.
+ * Since the version probe ends with the quit (core/version-probe.ts), the
+ * probe is a `spawn`, which the model answers too, with a child that has no
+ * pid: the probe's end signals a process group, and a made-up pid could name
+ * a real one.
  */
 
 type Fake = { stdout: string; code: number };
@@ -85,7 +90,19 @@ vi.mock('child_process', async (importOriginal) => {
     return found.stdout;
   }) as unknown as typeof real.execSync;
 
-  return { ...real, execFile, execSync, default: { ...real, execFile, execSync } };
+  const spawn = ((file: string, args: unknown, opts?: { env?: NodeJS.ProcessEnv }) => {
+    if (!isClaudeVersion(file, args)) return (real.spawn as (...a: unknown[]) => unknown)(file, args, opts);
+    const found = lookup(file, (opts?.env ?? process.env).PATH);
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), pid: undefined, kill: () => true });
+    setImmediate(() => {
+      if (found === 'missing') { child.emit('error', failure(found)); return; }
+      if (found.stdout) child.stdout.emit('data', found.stdout);
+      child.emit('close', found.code, null);
+    });
+    return child;
+  }) as unknown as typeof real.spawn;
+
+  return { ...real, execFile, execSync, spawn, default: { ...real, execFile, execSync, spawn } };
 });
 
 // The PATH Tars builds for the CLIs it launches: the folders it is handed

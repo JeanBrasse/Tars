@@ -33,6 +33,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { landsUnderSafeRoot } from '../utils/real-target';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
+import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
 import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
 import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
@@ -58,6 +59,7 @@ import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
+import { probeVersion } from '../core/version-probe';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -1838,8 +1840,6 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
   // Get Claude info (version, paths, etc.)
   ipcMain.handle('settings:getInfo', async () => {
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
 
       // Empty unless claude answers: the System page reads any version as
       // ready, and started from 'Unknown', so a missing claude read as ready.
@@ -1849,10 +1849,7 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
       const cliPaths = deps.getAppSettings()?.cliPaths;
       let claudeVersion = '';
       try {
-        const { stdout } = await promisify(execFile)(cliPaths?.claude || 'claude', ['--version'], {
-          timeout: 8000,
-          env: { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) },
-        });
+        const { stdout } = await probeVersion(cliPaths?.claude || 'claude', { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) });
         claudeVersion = stdout.trim();
       } catch {
         // Not installed, not on that PATH, or it failed: not ready.
@@ -1924,9 +1921,12 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   // What an agent actually changed. Shell-free: git runs with an argv array,
   // so a branch or path with a quote in it is data rather than syntax.
-  ipcMain.handle('review:diff', async (_event, { repoPath, baseBranch }: { repoPath: string; baseBranch?: string }) => {
+  ipcMain.handle('review:diff', async (
+    _event,
+    { repoPath, baseBranch, listOnly }: { repoPath: string; baseBranch?: string; listOnly?: boolean },
+  ) => {
     try {
-      return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch }) };
+      return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch, listOnly: listOnly === true }) };
     } catch (err) {
       return { success: false as const, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2017,13 +2017,21 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
                              newSettings.discordBotToken !== undefined;
 
       const currentSettings = getAppSettings();
-      const updatedSettings = { ...currentSettings, ...newSettings };
+      // With the relay on, Hermes is the only voice on the user's Telegram: the
+      // Tars bot's token is erased and the bot off, whatever else was saved
+      // (hermes-relay-switch.ts).
+      const updatedSettings = settingsForRelay({ ...currentSettings, ...newSettings });
+      const relayTurnedOn = updatedSettings.hermesRelayEnabled === true && currentSettings.hermesRelayEnabled !== true;
       setAppSettings(updatedSettings);
       saveAppSettings(updatedSettings);
 
       // Reinitialize Telegram bot if settings changed
-      if (telegramChanged) {
+      if (telegramChanged || relayTurnedOn) {
         initTelegramBot();
+      }
+      // mcp-telegram sends with the bot's token past the relay: out of every CLI.
+      if (relayTurnedOn) {
+        void retireTelegramMcp(getAllProviders());
       }
 
       // Reinitialize Slack bot if settings changed
@@ -2927,12 +2935,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
       return { success: false, error: 'invalid binary' };
     }
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      const { stdout, stderr } = await promisify(execFile)(binary, ['--version'], {
-        timeout: 8000,
-        env: { ...process.env, PATH: buildFullPath() },
-      });
+      const { stdout, stderr } = await probeVersion(binary, { ...process.env, PATH: buildFullPath() });
       return { success: true, output: (stdout || stderr || '').trim() };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
