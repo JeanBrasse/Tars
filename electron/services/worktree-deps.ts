@@ -26,17 +26,57 @@ export function cloneArgs(platform: NodeJS.Platform, source: string, target: str
   return null;
 }
 
-const cpClone: Copy = (source, target) => new Promise((resolve, reject) => {
-  const args = cloneArgs(process.platform, source, target);
-  if (!args) {
-    reject(new Error('this system has no clone that shares blocks'));
-    return;
+/** The file system of the volume `p` lies on, from `mount`: the longest mount point above it. */
+function fileSystemOf(p: string, mounts: string): string | undefined {
+  let best: { at: string; type: string } | undefined;
+  for (const line of mounts.split('\n')) {
+    const m = line.match(/^.+? on (.+) \(([^,)]+)/);
+    if (!m) continue;
+    const at = m[1];
+    const inside = at === '/' || p === at || p.startsWith(at.endsWith('/') ? at : `${at}/`);
+    if (inside && (!best || at.length > best.at.length)) best = { at, type: m[2] };
   }
-  execFile('cp', args, { maxBuffer: 4 * 1024 * 1024 }, (err, _stdout, stderr) => {
-    if (err) reject(new Error(String(stderr || err.message).trim().slice(0, 300)));
-    else resolve();
+  return best?.type;
+}
+
+/**
+ * Why `cp -c` would not clone from `source` into `targetDir` on macOS, or
+ * null when it will: both ends on one APFS volume. Onto another file system it
+ * copies in full and exits 0 (measured on an HFS+ disk image, QA's gate of
+ * #325), and across volumes there is nothing to share.
+ */
+function noCloneOnMac(source: string, targetDir: string): Promise<string | null> {
+  return new Promise(resolve => {
+    execFile('/sbin/mount', [], { maxBuffer: 1024 * 1024 }, (err, stdout) => {
+      if (err) { resolve(`mount could not be read: ${err.message}`); return; }
+      try {
+        const from = fs.realpathSync(source);
+        const to = fs.realpathSync(targetDir);
+        const types = [fileSystemOf(from, String(stdout)), fileSystemOf(to, String(stdout))];
+        if (types.some(t => t !== 'apfs')) { resolve(`not APFS (${types.map(t => t ?? 'unknown').join(' to ')}): cp -c would copy in full`); return; }
+        if (fs.statSync(from).dev !== fs.statSync(to).dev) { resolve('another volume: there is nothing to share'); return; }
+        resolve(null);
+      } catch (e) {
+        resolve(e instanceof Error ? e.message : String(e));
+      }
+    });
   });
-});
+}
+
+const cpClone: Copy = async (source, target) => {
+  const args = cloneArgs(process.platform, source, target);
+  if (!args) throw new Error('this system has no clone that shares blocks');
+  if (process.platform === 'darwin') {
+    const why = await noCloneOnMac(source, path.dirname(target));
+    if (why) throw new Error(why);
+  }
+  await new Promise<void>((resolve, reject) => {
+    execFile('cp', args, { maxBuffer: 4 * 1024 * 1024 }, (err, _stdout, stderr) => {
+      if (err) reject(new Error(String(stderr || err.message).trim().slice(0, 300)));
+      else resolve();
+    });
+  });
+};
 
 /**
  * Whether the node_modules was installed for this lock: every package it holds
@@ -92,7 +132,10 @@ export async function cloneDependencies(
     const source = path.join(projectPath, dir, 'node_modules');
     const target = path.join(worktreePath, dir, 'node_modules');
     const lock = path.join(worktreePath, dir, 'package-lock.json');
-    if (fs.existsSync(target)) continue;
+    // Anything there is the worktree's own, a link included: one that points
+    // nowhere reads as absent to existsSync, and the failure branch below
+    // then deleted it (the Audit's gate of #325).
+    try { fs.lstatSync(target); continue; } catch { /* nothing there */ }
     if (!isRealDirectory(source)) {
       result.skipped.push({ dir, why: 'the project has no node_modules of its own there' });
       continue;
