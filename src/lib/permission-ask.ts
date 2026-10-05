@@ -44,7 +44,7 @@ export function permissionAskLine(
   if (agent.status !== 'waiting' || !agent.permissionAsk) return null;
   const tool = flat(agent.permissionAsk.tool);
   let subject = flat(agent.permissionAsk.subject);
-  // A file is named "Edit /path", and a tool with nothing to name by itself.
+  // A file is named "Read /path", and a tool with nothing to name by itself.
   if (subject.startsWith(`${tool} `)) subject = subject.slice(tool.length + 1).trim();
   if (subject === tool) subject = '';
   const who = subject ? `Asks to use ${tool}:` : `Asks to use ${tool}`;

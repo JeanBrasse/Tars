@@ -13,11 +13,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * its session, then asks Tars about four calls the way the mod's tool.check
  * does (POST /api/hooks/permission, with the agent's own token, asking again
  * while Tars answers `pending`), and writes each decision it is handed to its
- * file. It asks what the mod asks: the decisive fields, Claude Code's reason
- * and its rule when it gives them, and no Edit, which since #318's fa6d32c2
- * stays with the terminal's dialog, the only one to show its content. After
- * an `ask` it does what claude does: its dialog, and the PermissionRequest
- * hook's post.
+ * file. It asks what the mod asks: since #318's 275d45b4, only a call whose
+ * every field is one Tars shows (a WebFetch's prompt or an edit's content
+ * keeps a call with the terminal's dialog), with Claude Code's reason and its
+ * rule when it gives them. After an `ask` it does what claude does: its
+ * dialog, and the PermissionRequest hook's post.
  *
  * The person answers from where Tars shows the question: the first from the
  * Dashboard panel's line (allow); the second, a command too long for that
@@ -40,6 +40,7 @@ const LONG = `rm -rf build && ${'npm run build && '.repeat(12)}npm test`;
 const RULE_LONG = 'Bash(rm:*)';
 const WHY_LONG = `Permission rule ${RULE_LONG} requires confirmation`;
 const DENY_REASON = 'the README in this project says the same';
+const SEARCH = 'electron 44 release notes';
 
 const elsewhere = (home: string) => path.join(home, 'projects', 'api', 'README.md');
 const whyReadOf = (file: string) => `Read of '${file}' needs approval: the path is outside the working directories for this session.`;
@@ -50,7 +51,7 @@ function standIn(home: string): string {
     { tool_use_id: 'toolu_1', tool: 'Bash', input: { command: 'npm run build && npm test', description: 'Build and test' } },
     { tool_use_id: 'toolu_long', tool: 'Bash', input: { command: LONG, description: 'Build again and again' }, reason: WHY_LONG, rule: RULE_LONG },
     { tool_use_id: 'toolu_2', tool: 'Read', input: { file_path: read }, reason: whyReadOf(read) },
-    { tool_use_id: 'toolu_3', tool: 'WebFetch', input: { url: 'https://docs.example.com/api/limits', prompt: 'the limits' } },
+    { tool_use_id: 'toolu_3', tool: 'WebSearch', input: { query: SEARCH } },
   ];
   const bin = path.join(home, 'stand-in.cjs');
   fs.writeFileSync(bin, [
@@ -177,8 +178,8 @@ test('a permission question Tars holds is answered from the panel and the window
     await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(3);
     await expect(page.getByRole('dialog'), 'Enter in the field leaves the window open').toBeVisible();
 
-    // 4. The WebFetch, in the same window: ask in terminal. No reason given, no row.
-    await expect(line(page)).toContainText('https://docs.example.com/api/limits', { timeout: 30_000 });
+    // 4. The WebSearch, in the same window: ask in terminal. No reason given, no row.
+    await expect(line(page)).toContainText(SEARCH, { timeout: 30_000 });
     await expect(line(page).getByRole('term')).toHaveCount(0);
     await line(page).getByRole('button', { name: 'ask in terminal', exact: true }).click();
     await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(4);
