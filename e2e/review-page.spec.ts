@@ -153,6 +153,11 @@ test('review: a project with no agent, the files without their patches, a patch 
   await expect(page.getByText('MORE', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText('MORE', { exact: true })).toBeVisible({ timeout: 30_000 });
+  // The same click reads the open tree again. Wait for that read too: the
+  // rename below landed in the middle of it at a load average of about 60
+  // (2026-10-05), the read came back empty and big.txt was gone.
+  await expect(page.getByText('Still reading the working tree…')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole('button').filter({ hasText: 'big.txt' })).toBeVisible();
   await stepShot(page, '03-refresh-reads-the-list');
 
   // A file whose patch main can no longer read says why.
