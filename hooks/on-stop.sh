@@ -32,7 +32,7 @@ if [ -z "$LAST_MSG" ]; then
 fi
 if [ -n "$LAST_MSG" ]; then
   TRIMMED=$(printf '%s' "$LAST_MSG" | head -c 4000)
-  curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
+  curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"hook\": \"Stop\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
   echo "  Output sent (${#TRIMMED} chars)" >> "$LOG"
 fi
 # What the agent leaves waiting inside its CLI at this rest: its timers (a
@@ -45,6 +45,6 @@ PENDING=$(echo "$INPUT" | jq -c 'if (.session_crons | type) == "array" and (.bac
     background: ([.background_tasks[] | (if type == "object" then (.status // "running") else "running" end | tostring)
       | select(. as $s | ["completed", "failed", "killed", "stopped", "error"] | index($s) | not)] | length) }
   else empty end' 2>/dev/null)
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\"${PENDING:+, \"pending\": $PENDING}}" > /dev/null 2>&1
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/agent-stopped" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"hook\": \"Stop\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\"${PENDING:+, \"pending\": $PENDING}}" > /dev/null 2>&1
+curl -s --max-time 3 -X POST "$API_URL/api/hooks/agent-stopped" -H @<(tars_auth) -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"hook\": \"Stop\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
 echo '{"continue":true,"suppressOutput":true}'

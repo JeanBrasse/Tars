@@ -39,7 +39,7 @@ AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 # third piece of that mechanism, and it is the only one written in shell.
 # `event` names what happened: the server cannot tell a turn starting from any
 # other "running" post, and a dispatch has already set that status at spawn.
-PAYLOAD="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"event\": \"UserPromptSubmit\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}"
+PAYLOAD="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\", \"event\": \"UserPromptSubmit\", \"hook\": \"UserPromptSubmit\", \"current_task\": $(echo "$PROMPT" | head -c 200 | jq -Rs .)}"
 RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" 2>&1)

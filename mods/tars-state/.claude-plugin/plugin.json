@@ -1,0 +1,6 @@
+{
+  "name": "tars-state",
+  "version": "1.0.0",
+  "description": "Reports this agent's state to the Tars that started it: sessions, turns, failures and a heartbeat. Reads and reports only.",
+  "author": { "name": "Cooper Labs" }
+}
