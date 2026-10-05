@@ -57,7 +57,7 @@
 | `e2e/surfaces.mjs` | Executable manifest: 18 pages, 18 settings sections, 3 overlays = 39 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A grep that could not search fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
-| `mods/tars-state/` | The state mod: a Claude Code hooks module that reports an agent's sessions, turns, failures and a heartbeat to Tars from inside the CLI (`electron/services/state-mod.ts`). Read and report only; a session without it keeps the shell hooks |
+| `mods/tars-state/` | The state mod: a Claude Code hooks module that reports an agent's sessions, turns, failures and a heartbeat to Tars from inside the CLI (`electron/services/state-mod.ts`), and asks Tars instead of showing a permission dialog, the window deciding it (`electron/services/permission-asks.ts`); a session without it keeps the shell hooks and the dialog |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
 
 ## Environment Variables

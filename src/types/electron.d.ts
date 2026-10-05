@@ -309,6 +309,11 @@ export interface AgentStatus {
   stoppedAt?: string;
   /** One line, or none when the window's stop gave none. */
   stopReason?: string;
+  /** A permission question the state mod asked Tars instead of showing its
+   *  dialog (services/permission-asks.ts): the window answers it with
+   *  agent:answerPermission. Without it, a permission wait is the terminal's
+   *  dialog. Not saved. */
+  permissionAsk?: { tool: string; askedAt: string };
   /** ISO: running, yet nothing written to its transcript since then (30 minutes
    *  at least) and no tool at work: it looks frozen. Cleared by a write or by any
    *  other status. */
@@ -988,6 +993,8 @@ export interface ElectronAPI {
     /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
     stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
     remove: (id: string) => Promise<{ success: boolean }>;
+    /** Answers the permission question the state mod asked Tars for this agent (AgentStatus.permissionAsk): allow or deny decide the call, ask shows it in the terminal's dialog. False when there was none. */
+    answerPermission: (id: string, decision: 'allow' | 'deny' | 'ask', reason?: string) => Promise<{ success: boolean }>;
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
     /**

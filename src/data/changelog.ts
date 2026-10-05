@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-04',
     updates: [
       'Claude agents report their state to Tars from inside Claude Code, when it is 2.1.289 or newer: a turn\'s start, its end and its failure arrive in the order they happened, and an agent whose Claude Code has frozen is marked stalled after five minutes of silence, where Tars waited thirty. Its orchestrator is told the same way. A long command, a wait on another agent or a subagent is never taken for a freeze',
+      'A Claude agent on Claude Code 2.1.289 or newer asks Tars, instead of its terminal, before a command or an edit Claude Code would ask you about: it waits on that permission in the window, which can allow it or refuse it with a reason the agent reads, and nothing is typed into its terminal. Left unanswered for ten minutes, the question goes back to the terminal\'s dialog, as before',
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
     ],

@@ -111,6 +111,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:stop', id, reason),
     remove: (id: string) =>
       ipcRenderer.invoke('agent:remove', id),
+    answerPermission: (id: string, decision: 'allow' | 'deny' | 'ask', reason?: string) =>
+      ipcRenderer.invoke('agent:answerPermission', id, decision, reason),
     sendInput: (params: { id: string; input: string }) =>
       ipcRenderer.invoke('agent:input', params),
     resize: (params: { id: string; cols: number; rows: number }) =>

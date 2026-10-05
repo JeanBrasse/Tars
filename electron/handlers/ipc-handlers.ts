@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { stopAgent } from '../core/agent-stop';
+import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -37,6 +38,7 @@ import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
+import { emitAgentStatus } from '../services/agent-events';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory, memoryStatus } from '../services/memory-hub';
 import { usableHermesConnection } from '../services/hermes-config';
@@ -1167,6 +1169,19 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { success: true };
   });
 
+  // The window's answer to a permission question the state mod asked Tars
+  // (services/permission-asks.ts): allow or deny decide the call, ask hands it
+  // back to the terminal's dialog. Given as the user: the model reads it.
+  ipcMain.handle('agent:answerPermission', async (_event, id: string, decision: unknown, reason?: unknown) => {
+    const answered = answerPermission(id, decision as PermissionDecision, 'the user', typeof reason === 'string' ? reason : undefined, changed => {
+      saveAgents();
+      emitAgentStatus(changed.id);
+      broadcastToAllWindows('agent:status', { type: 'status', agentId: changed.id, status: changed.status, timestamp: changed.lastActivity });
+      scheduleTick();
+    });
+    return { success: answered };
+  });
+
   // Remove an agent
   /**
    * Which providers actually enforce orchestrator mode.
@@ -1188,6 +1203,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
     if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
+    dropPermissionAsks(id);
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {

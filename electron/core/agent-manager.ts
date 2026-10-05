@@ -591,6 +591,8 @@ export function loadAgents() {
       agent.pendingDelivery = undefined;
       // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts).
       agent.stalledSince = undefined;
+      // A permission question held for the window died with the CLI that asked.
+      agent.permissionAsk = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did
