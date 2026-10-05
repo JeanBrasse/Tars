@@ -20,12 +20,12 @@ import { createRequire } from 'node:module';
  * mirror and into the terminal a panel that never left would be, and compare
  * the two at every chunk.
  *
- * The history a panel comes back to is the one a panel that never left keeps:
- * 5,000 lines, the Dashboard's own (Noah, 05/10; #313 moved the panel from
- * 10,000). How it fails: the mirror keeps fewer, and a panel back from another
- * page has lost the rest of the conversation; or the stand-in panel here keeps
- * another number than the real one, and the comparison proves nothing.
- *
+ * The history a panel comes back to: the last 2,500 lines, Noah's choice of
+ * 05/10 for the main process's mirror (the panel's own xterm keeps 5,000, #313;
+ * the mirror kept 1,000). How it fails: the mirror keeps another number, so a
+ * panel back from another page has lost more of the conversation, or the
+ * main process holds more than was chosen; or the stand-in panel here keeps
+ * another number than the real one, and the comparison proves nothing. *
  * What a snapshot costs, from the Audit's gate of #319: at 5,000 lines a full
  * mirror serializes in 100 to 230 ms on the main process, and agent:get asked
  * for it on every call (the Kanban board, the Kanban sync, the tray, the
@@ -310,7 +310,7 @@ describe('a panel that comes back is handed the screen it left', () => {
     expect(snapshot.every(r => r.same === r.cells && r.cells > 0)).toBe(true);
   });
 
-  it('the history is the whole of what a panel that never left keeps, 5,000 lines', () => {
+  it('the history is the last 2,500 lines of what a panel that never left keeps', () => {
     const pty = fakePty();
     attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'history' });
     const live = panelTerminal(40, 6);
@@ -320,7 +320,7 @@ describe('a panel that comes back is handed the screen it left', () => {
     const panel = snapshotInto(pty, 40, 6);
     const text = (term: Term) => Array.from({ length: term.buffer.normal.length }, (_, i) => term.buffer.normal.getLine(i)!.translateToString(true));
     expect(live.buffer.normal.length, 'the stand-in panel keeps 5,000 lines above its screen').toBe(5000 + 6);
-    expect(text(panel)).toEqual(text(live));
+    expect(text(panel)).toEqual(text(live).slice(-(2500 + 6)));
     panel.dispose();
   });
 
