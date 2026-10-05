@@ -21,6 +21,19 @@
  *    every other agent's claude.
  * 5. A copy that fails hands a half folder, or throws into the launch: the
  *    launch must go on without the mod, on the shell hooks.
+ * And from the live spec (2026-10-05): in a dev run the shipped folder is the
+ * repository's, where earlier loads had written .claude-plugin/types/ and a
+ * tsconfig (both ignored by git), and the copy carried them.
+ * 6. The copy holds what claude wrote into the shipped folder, not only what
+ *    the mod ships.
+ * And from the first version of this fix: a copy whose folders were read-only
+ * could not be removed by an ordinary recursive delete (vitest's throwaway
+ * home, an e2e sandbox, a user clearing Tars's folder: EACCES).
+ * 7. The copy cannot be removed without first making it writable again. So
+ *    the folders stay writable, the files are read-only, and the two things
+ *    Claude Code writes, `.claude-plugin/types/` and `tsconfig.json`, are
+ *    there already as empty read-only folders: nothing can be written into
+ *    the one or in place of the other, and both can be removed.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -75,16 +88,30 @@ afterEach(() => {
 });
 
 describe('the mod Tars hands to claude', () => {
-  it('1, 2. is a read-only copy of the shipped mod: every file and folder, the same content, no write bit', () => {
+  it('1, 2. is a copy of the shipped mod, its files read-only, where Claude Code\'s two writes cannot land', () => {
     expect(installStateMod(source, target)).toBe(target);
     const rel = (p: string, base: string) => path.relative(base, p);
-    expect(walk(target).map(p => rel(p, target)).sort()).toEqual(walk(source).map(p => rel(p, source)).sort());
+    const shipped = walk(source).map(p => rel(p, source));
+    expect(walk(target).map(p => rel(p, target)).sort()).toEqual(
+      [...shipped, path.join('.claude-plugin', 'types'), 'tsconfig.json'].sort(),
+    );
     expect(fs.readFileSync(path.join(target, 'hooks', 'register.ts'), 'utf8')).toBe('export function register() {}\n');
-    for (const p of [target, ...walk(target)]) expect(writable(p), p).toBe(false);
+    for (const p of walk(target).filter(q => fs.statSync(q).isFile())) expect(writable(p), p).toBe(false);
+    for (const sentinel of [path.join(target, '.claude-plugin', 'types'), path.join(target, 'tsconfig.json')]) {
+      expect(fs.statSync(sentinel).isDirectory()).toBe(true);
+      expect(fs.readdirSync(sentinel)).toEqual([]);
+      expect(writable(sentinel)).toBe(false);
+    }
     if (process.getuid?.() !== 0) {
-      expect(() => fs.mkdirSync(path.join(target, '.claude-plugin', 'types'))).toThrow();
+      expect(() => fs.writeFileSync(path.join(target, '.claude-plugin', 'types', 'index.d.ts'), 'x')).toThrow();
       expect(() => fs.writeFileSync(path.join(target, 'tsconfig.json'), '{}')).toThrow();
     }
+  });
+
+  it('7. an ordinary recursive delete removes the copy', () => {
+    installStateMod(source, target);
+    fs.rmSync(path.join(root, 'own'), { recursive: true, force: true });
+    expect(fs.existsSync(target)).toBe(false);
   });
 
   it('3. replaces the copy an earlier launch left, read-only, with the shipped mod as it is now', () => {
@@ -99,6 +126,7 @@ describe('the mod Tars hands to claude', () => {
     expect(fs.readFileSync(path.join(target, 'hooks', 'register.ts'), 'utf8')).toContain('v2');
     expect(fs.existsSync(path.join(target, 'extra', 'new.ts'))).toBe(true);
     expect(writable(path.join(target, 'extra', 'new.ts'))).toBe(false);
+    expect(writable(path.join(target, 'hooks', 'register.ts'))).toBe(false);
   });
 
   it('3. leaves nothing of an older copy the shipped mod no longer has', () => {
@@ -111,6 +139,16 @@ describe('the mod Tars hands to claude', () => {
     expect(fs.existsSync(path.join(target, 'old'))).toBe(false);
   });
 
+  it('6. leaves out what claude wrote into the shipped folder', () => {
+    fs.mkdirSync(path.join(source, '.claude-plugin', 'types', 'claude-code'), { recursive: true });
+    fs.writeFileSync(path.join(source, '.claude-plugin', 'types', 'claude-code', 'index.d.ts'), 'declare const x: 1;');
+    fs.writeFileSync(path.join(source, 'tsconfig.json'), '{}');
+    installStateMod(source, target);
+    expect(fs.readdirSync(path.join(target, '.claude-plugin', 'types'))).toEqual([]);
+    expect(fs.statSync(path.join(target, 'tsconfig.json')).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(target, '.claude-plugin', 'plugin.json'))).toBe(true);
+  });
+
   it('5. a copy that fails hands nothing and throws nothing', () => {
     expect(installStateMod(path.join(root, 'missing'), target)).toBeNull();
     expect(fs.existsSync(target)).toBe(false);
@@ -121,7 +159,7 @@ describe('the mod Tars hands to claude', () => {
     expect(dir).toBe(path.join(userData, 'mods', 'tars-state'));
     expect(dir.startsWith(path.join(process.cwd(), 'mods'))).toBe(false);
     expect(dir.includes(`${path.sep}.dorothy${path.sep}`)).toBe(false);
-    expect(writable(dir)).toBe(false);
+    expect(writable(path.join(dir, 'hooks', 'register.ts'))).toBe(false);
     expect(fs.existsSync(path.join(dir, 'hooks', 'register.ts'))).toBe(true);
   });
 });

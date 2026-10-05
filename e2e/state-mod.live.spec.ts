@@ -142,7 +142,23 @@ test("the state mod reports a claude agent's turn and heartbeat, and a claude wi
     fact('shell hooks', { promptResults });
     const setAside = id => promptResults.some(l => l.includes('"ignored":"state-mod"') && l.includes(`"id":"${id}"`));
 
-    recordValues({ claude: CLAUDE, mod, hooks, beat, promptResults });
+    // The folder claude was handed: Claude Code writes .claude-plugin/types/
+    // into a mod's folder at every load (the Audit's delta gate of #308), so it
+    // must be Tars's own read-only copy, and hold nothing claude wrote.
+    const handed = await app.evaluate((_e, { dist }) => process.mainModule.require(`${dist}/services/state-mod.js`).stateModDir(), { dist: DIST });
+    const types = path.join(handed, '.claude-plugin', 'types');
+    const tsconfig = path.join(handed, 'tsconfig.json');
+    const handedFacts = {
+      dir: handed,
+      outsideTheRepo: !handed.startsWith(`${WT}/`),
+      registerWritable: (fs.statSync(path.join(handed, 'hooks', 'register.ts')).mode & 0o222) !== 0,
+      typesWritten: fs.readdirSync(types).length > 0,
+      tsconfigWritten: !fs.statSync(tsconfig).isDirectory(),
+    };
+    fact('handed folder', handedFacts);
+
+    recordValues({ claude: CLAUDE, mod, hooks, beat, promptResults, handed: handedFacts });
+    expect(handedFacts).toMatchObject({ outsideTheRepo: true, registerWritable: false, typesWritten: false, tsconfigWritten: false });
 
     expect(mod.beat?.sessionId, 'the mod registered the session Tars runs').toBe(mod.session);
     expect(beat.at).toBeGreaterThan(firstBeat);
