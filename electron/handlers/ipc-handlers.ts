@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { ignoredNotCaches, saveUncommittedWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
@@ -1240,8 +1241,37 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = undefined;
     }
 
+    // Its uncommitted work is saved on wip/<name> first, without asking (Noah,
+    // 05/10): `--force` below removes whatever was not committed. A save that
+    // fails keeps the worktree where it is, and says so.
+    let savedTo: string | undefined;
+    let worktreeKept: string | undefined;
+    if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
+      try {
+        const saved = await saveUncommittedWork(agent.worktreePath, agent.name || agent.id);
+        savedTo = saved?.branch;
+        if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
+        // What git ignores, a .env or an e2e run, no commit keeps: the
+        // worktree stays, rebuildable caches aside (the Audit's gate of #312).
+        // And a git repository of its own, which the save could only point at.
+        if (saved?.nestedRepos.length) {
+          worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
+        if (ignored.length) {
+          const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
+          worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+      } catch (err) {
+        worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+    }
+
     // Clean up worktree if it exists
-    if (agent?.worktreePath && agent?.branchName) {
+    if (agent?.worktreePath && agent?.branchName && !worktreeKept) {
       try {
         // argv, not a shell string: an apostrophe in the project path used to
         // make this fail silently and leak a stale worktree behind the deleted
@@ -1262,7 +1292,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Save agents to disk
     saveAgents();
 
-    return { success: true };
+    return { success: true, ...(savedTo ? { savedTo } : {}), ...(worktreeKept ? { worktreeKept } : {}) };
   });
 
   // Update agent's secondary project path
