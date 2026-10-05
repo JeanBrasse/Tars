@@ -1676,6 +1676,26 @@ The environment is `process.env` plus:
 `ensureProjectTrusted(cwd)` pre-accepts Claude Code's workspace-trust dialog for the cwd, so
 bypass-mode agents never stall on the first-launch prompt.
 
+No agent terminal starts under 2 GB free on the home folder's disk: `/start`, `/dispatch` and
+`/message` answer 507 with `diskFull` and the space left, and the window's start is refused with the same
+reason. Free space, then start it again (`node scripts/worktree.mjs status` lists what the
+worktrees hold).
+
+### A deleted agent's work
+
+The window's Delete commits what the agent's worktree had not committed onto `wip/<name>`
+(`wip/<name>-2` and on), then removes the worktree; the main process log says
+`[agent:remove] <name>'s uncommitted work saved on wip/<name>`. To get it back:
+
+```bash
+git -C <project> log -1 --stat wip/<name>     # its parent is the agent's last commit
+git -C <project> switch -c <branch> wip/<name>
+```
+
+When the save fails, or the worktree holds files git ignores other than rebuildable caches (a `.env`,
+an e2e run under `test-results/`), the log says why and the worktree is left at its path, with the
+work in it.
+
 ### CLI path detection
 
 `detectCLIPaths()` runs `$SHELL -ilc 'echo $PATH'` (5 s timeout) to pick up `.zshrc`/`.bashrc`

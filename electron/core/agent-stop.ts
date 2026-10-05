@@ -74,6 +74,24 @@ export async function stopAgent(
 }
 
 /**
+ * A start that undoes a stop, noted beside the stop it undid (Noah, 05/10: an
+ * orchestrator may start again an agent Noah stopped, whenever it needs to, a
+ * scheduled task too). Kept on the agent until the next one; nothing when the
+ * agent was not stopped. Called just before clearStop.
+ */
+export function noteRestartAfterStop(agent: AgentStatus, by: string): void {
+  if (agent.status !== 'stopped') return;
+  agent.lastRestartAfterStop = {
+    stoppedBy: agent.stoppedBy,
+    stoppedAt: agent.stoppedAt,
+    stopReason: agent.stopReason,
+    restartedBy: by,
+    restartedAt: new Date().toISOString(),
+  };
+  console.log(`[agent-stop] ${agent.name || agent.id}, stopped by ${agent.stoppedBy ?? 'someone'}${agent.stopReason ? ` (${agent.stopReason})` : ''}, started again by ${by}`);
+}
+
+/**
  * A new terminal for a stopped agent: the stop is over. Called where an agent
  * gets a terminal (initAgentPty, spawnAgentSession), which is the only way out
  * of `stopped`; the caller sets the status the terminal starts in.
