@@ -102,6 +102,11 @@ interface Mirror {
   core: XtermInternals;
   serializer: SerializeAddon;
   repaint?: RepaintWatch;
+  /** The last snapshot, until the next write or resize. At 5,000 lines a full
+   *  mirror serializes in 100 to 230 ms on the main process, and agent:get asks
+   *  for it on every call, the Kanban and the tray included (the Audit's gate of
+   *  #319): an agent at rest writes nothing, and its snapshot is not made again. */
+  snapshot?: string;
 }
 
 const mirrors = new WeakMap<IPty, Mirror>();
@@ -145,6 +150,7 @@ export function attachTerminalMirror(
   pty.onData(data => {
     if (mirrors.get(pty) !== mirror) return;
     try {
+      mirror.snapshot = undefined;
       mirror.core.writeSync(data);
       mirror.repaint?.endChunk();
     } catch (err) {
@@ -172,6 +178,7 @@ function forget(pty: IPty, mirror: Mirror): void {
 export function resizeTerminalMirror(pty: IPty | undefined, cols: number, rows: number): void {
   const mirror = pty && mirrors.get(pty);
   if (!mirror || !isTerminalSize(cols, rows)) return;
+  mirror.snapshot = undefined;
   mirror.term.resize(cols, rows);
   // xterm reflows the normal screen into the new width, and leaves each line
   // of the alternate one at its old length, drawn only up to the edge. The
@@ -201,6 +208,7 @@ export function resizeTerminalMirror(pty: IPty | undefined, cols: number, rows: 
 export function terminalSnapshot(pty: IPty | undefined): string | undefined {
   const mirror = pty && mirrors.get(pty);
   if (!mirror) return undefined;
+  if (mirror.snapshot !== undefined) return mirror.snapshot;
   const { term, core, serializer } = mirror;
   let screen = '\x1bc' + serializer.serialize();
   // The addon ends the normal screen on the program's current colours and
@@ -232,6 +240,7 @@ export function terminalSnapshot(pty: IPty | undefined): string | undefined {
   const buffer = term.buffer.active;
   const row = buffer.cursorY - (core.coreService.decPrivateModes.origin ? scrollTop : 0);
   screen += `\x1b[${row + 1};${Math.min(buffer.cursorX, term.cols - 1) + 1}H`;
+  mirror.snapshot = screen;
   return screen;
 }
 

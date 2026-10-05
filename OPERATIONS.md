@@ -1576,7 +1576,9 @@ and its snapshot 127 to 254 KB in 9 to 18 ms; a flood costs about 30 ms of CPU p
 5,000 lines since 05/10, as the Dashboard panel does: measured with 200-column lines, a full
 mirror is 15.3 MB where 1,000 lines were 3.9 MB, and its snapshot 946 KB where 1,000 lines gave
 196 KB, in 5.2 times the time (443 ms against 84 ms at a load average of 100; at the idle
-figures above, about 50 to 95 ms on the main process each time a panel mounts a full one).
+figures above, about 50 to 95 ms on the main process each time a panel mounts a full one). The snapshot is
+kept until the mirror's next write or resize, so a second `agent:get` of an agent at rest costs nothing
+(the Kanban board, the Kanban sync and the tray ask for it too: the Audit's gate of #319).
 
 | Symptom | Look for |
 |---|---|
