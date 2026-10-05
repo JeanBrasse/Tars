@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AgentStatus } from './types';
 
 // Agent event types
 type AgentEventCallback = (event: {
@@ -141,7 +142,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agent:tool_use', listener);
       return () => ipcRenderer.removeListener('agent:tool_use', listener);
     },
-    onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => {
+    onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => {
       const listener = (_: unknown, event: { type: string; agentId: string; status: string; timestamp: string }) => callback(event);
       ipcRenderer.on('agent:status', listener);
       return () => ipcRenderer.removeListener('agent:status', listener);

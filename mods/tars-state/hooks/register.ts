@@ -49,6 +49,13 @@ type Verdict = { decision: 'allow' | 'ask' | 'deny'; reason?: string; rule?: str
 /** The fields of a tool's input a person decides on: never a file's content. */
 const ASKED_ABOUT = ['command', 'description', 'file_path', 'notebook_path', 'path', 'url', 'query', 'pattern'];
 const INPUT_CAP = 2000;
+/**
+ * Tools whose call carries content Tars does not show (an edit, a file, a
+ * notebook cell): an allow from the window would approve what nobody saw. They
+ * stay with the terminal's dialog, which shows it (the Audit's recheck of
+ * #318, agreed by Noah on 05/10).
+ */
+const CARRIES_CONTENT = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
 /** Asks for one call at most: 40 of Tars's 20 s holds outlast its 10 min bound. */
 const MAX_ASKS = 40;
 /** Requests that fail in a row before the call goes back to the engine. */
@@ -239,7 +246,7 @@ export function register(on: On) {
   // question to the person, and a query with no call behind it decides nothing.
   on<Check>('tool.check', async ($, e, next) => {
     const verdict = await next(e) as Verdict;
-    if (verdict?.decision !== 'ask' || !e.tool_use_id || e.tool === 'AskUserQuestion') return verdict;
+    if (verdict?.decision !== 'ask' || !e.tool_use_id || e.tool === 'AskUserQuestion' || CARRIES_CONTENT.has(e.tool)) return verdict;
     return (await askTars($, e, verdict)) ?? verdict;
   });
 

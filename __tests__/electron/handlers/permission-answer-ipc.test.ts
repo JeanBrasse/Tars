@@ -106,6 +106,21 @@ describe("the window's answer", () => {
   });
 });
 
+describe('the status event the window reads', () => {
+  // The question's own event carries permissionAsk (and waitingReason): the
+  // type the renderer reads it with must say so, preload and type together
+  // (the Audit's recheck of #318, the type gap).
+  it('declares permissionAsk and waitingReason, in the preload and in the renderer\'s type', () => {
+    const preload = fs.readFileSync(path.join(ROOT, 'electron/preload.ts'), 'utf8');
+    const types = fs.readFileSync(path.join(ROOT, 'src/types/electron.d.ts'), 'utf8');
+    const onStatus = (text: string) => text.slice(text.indexOf('onStatus'), text.indexOf('=>', text.indexOf('onStatus')));
+    for (const text of [preload, types]) {
+      expect(onStatus(text)).toMatch(/waitingReason\?: string/);
+      expect(onStatus(text)).toMatch(/permissionAsk\?: AgentStatus\['permissionAsk'\] \| null/);
+    }
+  });
+});
+
 describe('a question still held', () => {
   it("3. ends with the window's Stop", async () => {
     const { answer } = held();
