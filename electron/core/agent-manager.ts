@@ -1088,15 +1088,21 @@ async function initAgentPtyLocked(
     const newStatus = agentStatusOnExit(exitCode);
     if (!newStatus) return;
     const agentData = agents.get(agent.id);
-    // Only the agent's current terminal is its news: one a restart or a stop
-    // replaced ends after the new one has started, and its agent:complete
-    // made the window move the agent's current task to done, with the new
-    // terminal's screen as its summary (the Frontend's finding of 05/10).
-    if (!agentData || agentData.ptyId !== ptyId) return;
-    agentData.status = newStatus;
-    agentData.lastActivity = new Date().toISOString();
-    handleStatusChangeNotificationCallback(agentData, newStatus);
-    saveAgentsCallback();
+    // A terminal the agent has already replaced (a restart) ends after the
+    // new one has started: not the agent's news. Its agent:complete made the
+    // window move the agent's current task to done, with the new terminal's
+    // screen as its summary (the Frontend's finding of 05/10).
+    if (agentData?.ptyId && agentData.ptyId !== ptyId) return;
+    // Guard: only mutate if this PTY is still the active one (prevents race on restart/stop)
+    if (agentData && agentData.ptyId === ptyId) {
+      agentData.status = newStatus;
+      agentData.lastActivity = new Date().toISOString();
+      handleStatusChangeNotificationCallback(agentData, newStatus);
+      saveAgentsCallback();
+    }
+    // A stop clears the agent's terminal before it ends it, and still sends
+    // this: the window reads who stopped the agent and why only on the fetch
+    // this event makes (its status event is patched, not fetched).
     broadcastToAllWindows('agent:complete', {
       type: 'complete',
       agentId: agent.id,
