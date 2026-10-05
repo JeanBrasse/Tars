@@ -20,6 +20,10 @@ export interface PermissionAskLine {
   at: string;
   /** The whole sentence, for a title. */
   title: string;
+  /** Why Claude Code asks, whole, as it said it; '' when it did not. */
+  reason: string;
+  /** The settings rule that asked, such as `Bash(rm:*)`; '' when none did. */
+  rule: string;
 }
 
 /**
@@ -29,7 +33,9 @@ export interface PermissionAskLine {
  * terminal's dialog, which only the terminal answers. The subject is the
  * question's own, whole (the gate of PR 318, Medium 2): waitingOn is cut at 200
  * characters and hidden once an interrupt is recorded, and what is allowed
- * must be what was read.
+ * must be what was read. The reason and the rule are Claude Code's, kept
+ * whole: in bypass, an ask rule is the only reason a call comes to Tars. Each
+ * is flattened like the rest, since the agent's own shell can ask with any.
  */
 export function permissionAskLine(
   agent: Pick<AgentStatus, 'status' | 'permissionAsk'>,
@@ -43,5 +49,8 @@ export function permissionAskLine(
   if (subject === tool) subject = '';
   const who = subject ? `Asks to use ${tool}:` : `Asks to use ${tool}`;
   const time = when(agent.permissionAsk.askedAt, now);
-  return { who, subject, at: time && `asked ${time}`, title: subject ? `${who} ${subject}` : who };
+  return {
+    who, subject, at: time && `asked ${time}`, title: subject ? `${who} ${subject}` : who,
+    reason: flat(agent.permissionAsk.reason), rule: flat(agent.permissionAsk.rule),
+  };
 }

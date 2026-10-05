@@ -46,7 +46,9 @@ const holdsWhole = (el: Pick<HTMLElement, 'scrollWidth' | 'clientWidth'>) => el.
  * 320: what is allowed must be what was read); until then, and whenever the
  * call is cut, show all opens it whole under the header, as the window shows
  * it. `window`: the top of the agent window's terminal column, the call whole
- * with when it was asked.
+ * with when it was asked, and under it why Claude Code asks and the settings
+ * rule that asked, each when it said (the Audit's Low at the recheck of PR
+ * 318 and 320): in bypass, an ask rule is the only reason a call comes here.
  *
  * The state belongs to one question: the next call's (another askedAt) starts
  * afresh, whatever the last one left open, its line measured again.
@@ -177,12 +179,28 @@ export default function PermissionAskNotice({ agent, layout }: {
           <StatusSquare tone="waiting" />
           <span className="text-xs text-foreground truncate" title={line.title}>{line.who.replace(/:$/, '')}</span>
         </div>
-        {line.at && <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{line.at}</span>}
+        {line.at && <span className="shrink-0 font-mono text-[11px] text-text-muted">{line.at}</span>}
       </div>
       {line.subject && (
         <p className={`px-2.5 py-[7px] border border-border ${TERMINAL_SURFACE_CLASS} font-mono text-xs leading-[18px] text-foreground break-all select-text`}>
           {line.subject}
         </p>
+      )}
+      {(line.reason || line.rule) && (
+        <dl className="grid grid-cols-[30px_minmax(0,1fr)] gap-x-2.5 gap-y-[3px] text-[11px] leading-[15px] select-text">
+          {line.reason && (
+            <>
+              <dt className="font-mono text-text-muted">why</dt>
+              <dd className="text-muted-foreground break-words">{line.reason}</dd>
+            </>
+          )}
+          {line.rule && (
+            <>
+              <dt className="font-mono text-text-muted">rule</dt>
+              <dd className="font-mono text-muted-foreground break-all">{line.rule}</dd>
+            </>
+          )}
+        </dl>
       )}
       {state.phase === 'reason' ? (
         <div className="flex items-center gap-1.5">

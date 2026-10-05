@@ -191,7 +191,7 @@ export function useElectronAgents() {
       fetchAgents();
     });
 
-    const unsubStatus = window.electronAPI!.agent.onStatus?.((event: { agentId: string; status: string; timestamp: string }) => {
+    const unsubStatus = window.electronAPI!.agent.onStatus?.((event) => {
       // Neither this event nor the tick says why an agent is in error: the
       // reason is only on the full record. Patching the status alone put
       // `error` beside whatever reason this copy last read, which is nothing
@@ -204,12 +204,11 @@ export function useElectronAgents() {
       // at its end (#318): an answer, ask in terminal, its ten minutes, a
       // stop. Ask in terminal leaves the agent waiting, and only the question
       // goes. An event that does not name it leaves it as it was.
-      const named = event as { permissionAsk?: AgentStatus['permissionAsk'] | null };
       setAgents(prev => prev.map(a =>
         a.id === event.agentId
           ? {
             ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString(),
-            ...('permissionAsk' in named ? { permissionAsk: named.permissionAsk ?? undefined } : {}),
+            ...('permissionAsk' in event ? { permissionAsk: event.permissionAsk ?? undefined } : {}),
           }
           : a
       ));
