@@ -127,6 +127,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
+import { startTaskWatch } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
@@ -749,6 +750,9 @@ app.whenReady().then(async () => {
   // (services/restart-recovery.ts). After the launcher and the API are up.
   recovery = startRestartRecovery(previousRun);
   startAgentWatch();
+  // The tasks the Usage page prices: who handed what, from turn to rest
+  // (services/task-ledger.ts).
+  startTaskWatch();
   // And an agent that reads running while it does nothing is told to whoever
   // handed it the work (services/stall-watch.ts).
   startStallWatch();

@@ -44,7 +44,7 @@ export interface DelegationResult {
    * client.ts).
    */
   backgroundStopped?: string[];
-  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
   costUSD?: number;
   error?: string;
 }
