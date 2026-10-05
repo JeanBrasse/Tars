@@ -118,7 +118,6 @@ import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
-import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
@@ -524,7 +523,6 @@ app.whenReady().then(async () => {
   // Which accounts are signed in, asked of Claude Code before the first
   // launches need it; until it answers, only account 1 is used.
   if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
-  registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
 
