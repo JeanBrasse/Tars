@@ -68,7 +68,19 @@ export interface AgentStatus {
    *  dialog (services/permission-asks.ts): the window answers it with
    *  agent:answerPermission. Without it, a permission wait is the terminal's
    *  dialog. Not saved. */
-  permissionAsk?: { tool: string; askedAt: string };
+  permissionAsk?: {
+    tool: string;
+    askedAt: string;
+    /** When Tars hands the question back to the terminal's dialog if nobody answers. */
+    until: string;
+    /** What is asked, whole: the command, the path or the address (the fields' first), the tool when none. */
+    subject: string;
+    /** The fields the person decides on, whole (each at most 2,000 characters). */
+    fields: Record<string, string>;
+    /** Why Claude Code asks, and the settings rule that asked, when it gave them. */
+    reason?: string;
+    rule?: string;
+  };
   /** ISO: running, yet its transcript has had no write since then (30 minutes
    *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
    *  a write or by any other status. Not saved. */
@@ -295,6 +307,12 @@ export interface AppSettings {
   telegramAuthToken: string; // Secret token for authentication
   telegramAuthorizedChatIds: string[]; // List of authorized chat IDs
   telegramRequireMention: boolean; // Only respond when bot is @mentioned in groups
+  /**
+   * The relay to the user's Telegram through their Hermes (services/hermes-relay.ts): off unless turned on in
+   * Settings, Hermes. On, it is the only voice there: the Tars bot's token is erased and the bot off
+   * (hermes-relay-switch.ts), questions, reports and the orchestrator's send_telegram go through it.
+   */
+  hermesRelayEnabled?: boolean;
   slackEnabled: boolean;
   slackBotToken: string;
   slackAppToken: string;
@@ -704,11 +722,21 @@ export interface ClaudeAccountWindow {
 export interface ClaudeAccountCounters {
   accountId: ClaudeAccountId;
   label: string;
-  /** null when no status line has reported it, or its reset has passed. */
+  /** null when no status line or probe has reported it, or its reset has passed. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
-  /** Epoch ms of the status line's last report on that account. */
+  /** The per-model weeklies a probe read (get_usage), when it read any. */
+  models?: ClaudeAccountModelWindow[];
+  /** Epoch ms of the last report on that account: a status line's or a probe's. */
   updatedAt: number | null;
+}
+
+/** One per-model weekly window ("Fable"), as Claude Code's get_usage gives it. */
+export interface ClaudeAccountModelWindow {
+  name: string;
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
 }
 
 export interface ClaudeAccountState extends ClaudeAccount {
@@ -716,9 +744,11 @@ export interface ClaudeAccountState extends ClaudeAccount {
   signedIn: boolean | null;
   email: string | null;
   subscriptionType: string | null;
-  /** Last reported by a status line on this account; null when never seen or reset. */
+  /** Last reported by a status line or a probe; null when never seen or reset. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
+  /** The per-model weeklies a probe read; empty when none. */
+  models: ClaudeAccountModelWindow[];
   /** Epoch ms of that report. */
   updatedAt: number | null;
   /** Epoch seconds: a limit was hit, the account is skipped until then. */

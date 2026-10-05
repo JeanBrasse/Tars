@@ -11,8 +11,9 @@ import type { AgentStatus } from '../../src/types/electron';
  *    list; or it is listed while an agent works in it, or listed without
  *    saying no agent; or a folder Claude Code merely ran in floods the list;
  * 3. a patch past 4000 lines is cut without a word, or a patch that fits
- *    says it was cut, or the count is wrong, or the hint to pick a file shows
- *    while one is picked.
+ *    says it was cut, or the count is wrong. Since the page reads a tree's
+ *    files without their patches (#247), only a picked file's patch is shown,
+ *    and the note carries no hint to pick one.
  * (The numbers follow the page's test, where 2, 4 and 5 live.)
  */
 
@@ -41,12 +42,12 @@ describe('the trees listed (1)', () => {
 
 describe('a patch cut short (3)', () => {
   it(`says nothing for a patch of ${PATCH_LINES} lines or fewer`, () => {
-    expect(cutNote(PATCH_LINES, false)).toBeNull();
-    expect(cutNote(12, true)).toBeNull();
+    expect(cutNote(PATCH_LINES)).toBeNull();
+    expect(cutNote(12)).toBeNull();
   });
-  it('says where a longer one stops, and how to read one file whole when none is picked', () => {
-    expect(cutNote(12480, false)).toBe('4000 of 12480 lines shown. Pick a file to read its own patch.');
-    expect(cutNote(9310, true)).toBe('4000 of 9310 lines shown.');
+  it('says where a longer one stops, with no hint to pick a file: one is picked', () => {
+    expect(cutNote(9310)).toBe('4000 of 9310 lines shown.');
+    expect(cutNote(PATCH_LINES + 1)).toBe(`4000 of ${PATCH_LINES + 1} lines shown.`);
   });
 });
 

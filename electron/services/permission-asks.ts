@@ -1,4 +1,5 @@
 import type { AgentStatus, AgentWaitingOn } from '../types';
+import { createHash } from 'crypto';
 import { agents } from '../core/agent-manager';
 
 /**
@@ -19,7 +20,7 @@ import { agents } from '../core/agent-manager';
  */
 
 export type PermissionDecision = 'allow' | 'deny' | 'ask';
-export type PermissionAnswer = { decision: PermissionDecision; reason?: string };
+export type PermissionAnswer = { decision: PermissionDecision; reason?: string; fingerprint?: string };
 /** Not decided yet: the mod asks again for the same call. */
 export type PermissionPending = { decision: 'pending' };
 
@@ -35,30 +36,67 @@ export const PERMISSION_POLL_MS = 20_000;
 /** How long a decision made between two asks waits for the next one. */
 const ANSWER_KEPT_MS = 60_000;
 
+/** What the call is asked about: its tool and the fields a person decides on, whole. */
+export type PermissionQuestion = {
+  tool: string;
+  toolUseId: string;
+  fields: Record<string, string>;
+  waitingOn: AgentWaitingOn | undefined;
+  reason?: string;
+  rule?: string;
+};
+
+/**
+ * What a question is about, as the mod computes it for the call it holds:
+ * sha256 of the tool and the asked fields, sorted by name. A question and any
+ * answer kept for it are bound to it, not to the call's id alone, and every
+ * decision names it: the agent's own shell holds the hook token and can read
+ * its next call's id from its transcript, so a post for that id with `ls`
+ * made Noah allow a `curl ... | sh` (the gate of #318, Medium 1).
+ */
+export function questionFingerprint(tool: string, fields: Record<string, string>): string {
+  return createHash('sha256').update(JSON.stringify([tool, Object.keys(fields).sort().map(k => [k, fields[k]])])).digest('hex');
+}
+
+/** What the window names as asked: the command, the path or the address, whole; the tool when there is none. */
+function subjectOf(tool: string, fields: Record<string, string>): string {
+  const path = fields.file_path || fields.notebook_path;
+  return fields.command || (path ? `${tool} ${path}` : '') || fields.url || fields.query || fields.pattern || fields.path || tool;
+}
+
 type Held = {
   agentId: string;
   toolUseId: string;
+  fingerprint: string;
   /** The asks waiting on it now: one, or none between two asks. */
   waiters: Set<(answer: PermissionAnswer) => void>;
   timer: ReturnType<typeof setTimeout>;
+  /** Tells the window and the watchers, at the question and at its end. */
+  changed: (agent: AgentStatus) => void;
 };
 
 /** One question per agent: a turn makes one tool call at a time ask. */
 const held = new Map<string, Held>();
-/** A decision no ask was waiting for, kept for the next ask of that call. */
-const kept = new Map<string, { toolUseId: string; answer: PermissionAnswer; timer: ReturnType<typeof setTimeout> }>();
+/** A decision no ask was waiting for, kept for the next ask of that very call. */
+const kept = new Map<string, { toolUseId: string; fingerprint: string; answer: PermissionAnswer; timer: ReturnType<typeof setTimeout> }>();
 
 function close(agent: AgentStatus | undefined, entry: Held, answer: PermissionAnswer): void {
   clearTimeout(entry.timer);
   console.log(`[permission] ${agent?.name || entry.agentId}: ${answer.decision}${answer.reason ? ` (${answer.reason})` : ', back to its dialog'}`);
   if (held.get(entry.agentId) === entry) held.delete(entry.agentId);
-  if (agent) agent.permissionAsk = undefined;
+  const decided: PermissionAnswer = answer.decision === 'ask' ? answer : { ...answer, fingerprint: entry.fingerprint };
   if (entry.waiters.size === 0) {
     const timer = setTimeout(() => kept.delete(entry.agentId), ANSWER_KEPT_MS);
-    kept.set(entry.agentId, { toolUseId: entry.toolUseId, answer, timer });
+    kept.set(entry.agentId, { toolUseId: entry.toolUseId, fingerprint: entry.fingerprint, answer: decided, timer });
   }
-  for (const waiter of entry.waiters) waiter(answer);
+  for (const waiter of entry.waiters) waiter(decided);
   entry.waiters.clear();
+  // Every end is the window's news, the ones that come by themselves too:
+  // the bound, a new session, the turn's end, a dialog shown anyway, the quit.
+  if (agent) {
+    agent.permissionAsk = undefined;
+    entry.changed(agent);
+  }
 }
 
 /** One ask's wait: the decision, or `pending` after the poll. */
@@ -73,44 +111,57 @@ function waitOn(entry: Held, pollMs: number): Promise<PermissionAnswer | Permiss
 /**
  * The mod's question about one call. The first ask holds the agent `waiting`
  * on that permission and tells the window (`changed`, as a hook's status post
- * does); an ask again for the same call joins it. Each ask gets the decision,
- * or `pending` after `pollMs`, and the question goes back to the dialog
- * (`ask`) once `holdMs` has passed since its first ask.
+ * does); an ask again for the same call, the same id and the same fields,
+ * joins it. Each ask gets the decision, or `pending` after `pollMs`, and the
+ * question goes back to the dialog (`ask`) once `holdMs` has passed since its
+ * first ask.
  */
 export function holdPermissionAsk(
   agent: AgentStatus,
-  question: { tool: string; toolUseId: string; waitingOn: AgentWaitingOn | undefined },
+  question: PermissionQuestion,
   changed: (agent: AgentStatus) => void,
   holdMs: number = PERMISSION_HOLD_MS,
   pollMs: number = PERMISSION_POLL_MS,
 ): Promise<PermissionAnswer | PermissionPending> {
+  const fingerprint = questionFingerprint(question.tool, question.fields);
   const decided = kept.get(agent.id);
   if (decided) {
     kept.delete(agent.id);
     clearTimeout(decided.timer);
-    if (decided.toolUseId === question.toolUseId) return Promise.resolve(decided.answer);
+    if (decided.toolUseId === question.toolUseId && decided.fingerprint === fingerprint) return Promise.resolve(decided.answer);
   }
   const current = held.get(agent.id);
-  if (current && current.toolUseId === question.toolUseId) return waitOn(current, pollMs);
-  // A question still held for another call belongs to one its engine gave up
-  // on (an Esc, a subagent's): it goes back to its dialog.
+  if (current && current.toolUseId === question.toolUseId && current.fingerprint === fingerprint) return waitOn(current, pollMs);
+  // A question still held is about another call, or about this call's id
+  // with other fields: one its engine gave up on, or a post that was not the
+  // mod's. It goes back to its dialog, and this one is shown afresh.
   if (current) close(agent, current, { decision: 'ask' });
 
   const entry: Held = {
     agentId: agent.id,
     toolUseId: question.toolUseId,
+    fingerprint,
     waiters: new Set(),
     // Unanswered: the dialog shows, and the agent stays waiting on it.
     timer: setTimeout(() => close(agent, entry, { decision: 'ask' }), holdMs),
+    changed,
   };
   held.set(agent.id, entry);
-  const askedAt = new Date().toISOString();
+  const askedAt = new Date();
   agent.status = 'waiting';
   agent.waitingReason = 'permission';
-  agent.dialogSince = askedAt;
+  agent.dialogSince = askedAt.toISOString();
   agent.waitingOn = question.waitingOn;
-  agent.permissionAsk = { tool: question.tool, askedAt };
-  agent.lastActivity = askedAt;
+  agent.permissionAsk = {
+    tool: question.tool,
+    askedAt: askedAt.toISOString(),
+    until: new Date(askedAt.getTime() + holdMs).toISOString(),
+    subject: subjectOf(question.tool, question.fields),
+    fields: { ...question.fields },
+    ...(question.reason ? { reason: question.reason } : {}),
+    ...(question.rule ? { rule: question.rule } : {}),
+  };
+  agent.lastActivity = askedAt.toISOString();
   console.log(`[permission] ${agent.name || agent.id} asks Tars: ${question.tool}${question.waitingOn ? ` ${question.waitingOn.text}` : ''}`);
   const wait = waitOn(entry, pollMs);
   changed(agent);
@@ -128,15 +179,10 @@ function reasonFor(decision: PermissionDecision, by: string, reason?: string): s
  * The window's answer to the agent's held question: allow or deny decide the
  * call and the agent runs on; ask hands it back to the terminal's dialog.
  * False, and nothing changed, when the agent has no question or the decision
- * is none of the three.
+ * is none of the three. The window is told through the question's own
+ * `changed`.
  */
-export function answerPermission(
-  agentId: string,
-  decision: PermissionDecision,
-  by: string,
-  reason?: string,
-  changed?: (agent: AgentStatus) => void,
-): boolean {
+export function answerPermission(agentId: string, decision: PermissionDecision, by: string, reason?: string): boolean {
   if (decision !== 'allow' && decision !== 'deny' && decision !== 'ask') return false;
   const entry = held.get(agentId);
   if (!entry) return false;
@@ -150,7 +196,6 @@ export function answerPermission(
   }
   const text = reasonFor(decision, by, reason);
   close(agent, entry, text ? { decision, reason: text } : { decision });
-  if (agent) changed?.(agent);
   return true;
 }
 

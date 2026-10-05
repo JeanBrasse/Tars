@@ -75,5 +75,7 @@ design/exports/
 # one can still be added with `git add -f`.
 /*/**/CLAUDE.md
 
+# Python bytecode (the Hermes plugin in hermes-plugins/)
+__pycache__/
 # What `claude plugin validate` writes beside a mod it checks
 mods/*/tsconfig.json

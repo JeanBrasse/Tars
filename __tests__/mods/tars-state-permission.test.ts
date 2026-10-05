@@ -32,6 +32,17 @@
  * 8. One request that fails while Tars holds the question sends the call to
  *    the dialog: the mod asks again, telling Tars why, and gives up after
  *    three failures in a row.
+ * And from the gate of #318 (GATE-PR318-320.md):
+ * 9. (Medium 1) An allow is taken for whatever call it came back to: an
+ *    answer to a question about other fields (a post the agent's own shell
+ *    made for the same call id) allows this one. The mod takes an answer only
+ *    when it names the fingerprint of its own call: sha256 of the tool and
+ *    the asked fields, sorted by name.
+ * 10. (Medium 2) A field is cut to the mod's cap and the cut text is asked
+ *    about while the whole call runs: a field past 2,000 characters is not
+ *    asked of Tars, the terminal's dialog shows it whole.
+ * 11. (Low) Claude Code's rule is not sent: in bypass it is the only reason
+ *    Tars is asked.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -46,6 +57,9 @@ const SESSION = '11111111-1111-4111-8111-111111111111';
 let hooks: Map<string, Hook>;
 let posts: Array<{ url: string; body: Record<string, unknown> }>;
 let answer: () => Promise<{ text: string }>;
+let rawAnswers = false;
+const fingerprint = (tool: string, fields: Record<string, string>) =>
+  createHash('sha256').update(JSON.stringify([tool, Object.keys(fields).sort().map(k => [k, fields[k]])])).digest('hex');
 let proof: 'right' | 'wrong';
 
 const $ = {
@@ -60,7 +74,18 @@ const $ = {
       }
       const body = JSON.parse(init?.body ?? '{}');
       posts.push({ url, body });
-      if (url.endsWith('/api/hooks/permission')) return answer();
+      if (url.endsWith('/api/hooks/permission')) {
+        const reply = await answer();
+        // A Tars that does its part names the question's fingerprint on a
+        // decision; a test that forges or drops it sets `rawAnswers`.
+        if (rawAnswers) return reply;
+        let said: Record<string, unknown>;
+        try { said = JSON.parse(reply.text); } catch { return reply; }
+        if ((said.decision === 'allow' || said.decision === 'deny') && !('fingerprint' in said)) {
+          said.fingerprint = fingerprint(body.tool as string, body.input as Record<string, string>);
+        }
+        return { text: JSON.stringify(said) };
+      }
       return { text: '{}' };
     },
   },
@@ -90,6 +115,7 @@ beforeEach(async () => {
   posts = [];
   proof = 'right';
   answer = async () => ({ text: JSON.stringify({ decision: 'allow', reason: 'you allowed it in Tars' }) });
+  rawAnswers = false;
   await load();
 });
 
@@ -185,6 +211,36 @@ describe("the mod's tool.check", () => {
     answer = async () => { throw new Error('ECONNREFUSED'); };
     expect(await check(bash, ASK)).toEqual(ASK);
     expect(permissionPosts()).toHaveLength(3);
+  });
+
+  it('9. takes an allow only when it names the fingerprint of this call', async () => {
+    await start();
+    rawAnswers = true;
+    answer = async () => ({ text: JSON.stringify({ decision: 'allow', reason: 'you allowed it in Tars', fingerprint: fingerprint('Bash', { command: 'ls' }) }) });
+    expect(await check(bash, ASK)).toEqual(ASK);
+    answer = async () => ({ text: JSON.stringify({ decision: 'allow', reason: 'you allowed it in Tars' }) });
+    expect(await check(bash, ASK)).toEqual(ASK);
+    answer = async () => ({ text: JSON.stringify({
+      decision: 'allow', reason: 'you allowed it in Tars',
+      fingerprint: fingerprint('Bash', { command: 'rm -rf build', description: 'clean' }),
+    }) });
+    expect(await check(bash, ASK)).toEqual({ decision: 'allow', reason: 'you allowed it in Tars' });
+  });
+
+  it('10. sends a field whole up to the cap, and asks nothing about a call whose field is past it', async () => {
+    await start();
+    const whole = `echo ${'x'.repeat(1900)}`;
+    await check({ tool: 'Bash', input: { command: whole }, tool_use_id: 'toolu_w' }, ASK);
+    expect(permissionPosts().at(-1)!.body.input).toEqual({ command: whole });
+    const posts = permissionPosts().length;
+    expect(await check({ tool: 'Bash', input: { command: 'y'.repeat(2001) }, tool_use_id: 'toolu_big' }, ASK)).toEqual(ASK);
+    expect(permissionPosts()).toHaveLength(posts);
+  });
+
+  it('11. sends Claude Code\'s rule with its reason', async () => {
+    await start();
+    await check(bash, { decision: 'ask', reason: 'Permission rule Bash(echo:*) requires confirmation', rule: 'Bash(echo:*)' });
+    expect(permissionPosts().at(-1)!.body).toMatchObject({ reason: 'Permission rule Bash(echo:*) requires confirmation', rule: 'Bash(echo:*)' });
   });
 
   it('3. leaves an AskUserQuestion to the person', async () => {

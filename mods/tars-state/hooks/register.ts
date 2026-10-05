@@ -115,14 +115,30 @@ function report($: Engine, route: string, body: Record<string, unknown>): void {
 }
 
 /** What the call asks about, as Tars shows it: the decisive fields, cut. */
-function askedAbout(input: unknown): Record<string, string> {
+function askedAbout(input: unknown): Record<string, string> | null {
   const out: Record<string, string> = {};
   if (!input || typeof input !== 'object') return out;
   for (const key of ASKED_ABOUT) {
     const value = (input as Record<string, unknown>)[key];
-    if (typeof value === 'string') out[key] = value.slice(0, INPUT_CAP);
+    if (typeof value !== 'string') continue;
+    // Whole or not at all: Tars shows and decides what it was sent, and an
+    // allow runs the whole call (the gate of #318, Medium 2). A longer field
+    // is the terminal's dialog's, which shows it whole.
+    if (value.length > INPUT_CAP) return null;
+    out[key] = value;
   }
   return out;
+}
+
+/**
+ * What the question is about, as Tars computes it: sha256 of the tool and the
+ * asked fields, sorted by name. An answer counts only when it names this
+ * call's: a post the agent's own shell made for the same call id, with `ls`,
+ * would otherwise have its answer allow this call (the gate of #318, Medium 1).
+ */
+async function fingerprint(tool: string, fields: Record<string, string>): Promise<string> {
+  const canonical = JSON.stringify([tool, Object.keys(fields).sort().map(k => [k, fields[k]])]);
+  return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)));
 }
 
 /**
@@ -133,9 +149,12 @@ function askedAbout(input: unknown): Record<string, string> {
 async function askTars($: Engine, e: Check, verdict: Verdict): Promise<Verdict | null> {
   const to = await proven($);
   if (!to || !sessionId) return null;
+  const fields = askedAbout(e.input);
+  if (!fields) return null;
+  const mine = await fingerprint(e.tool, fields);
   const question = {
     agent_id: to.agentId, session_id: sessionId, tool: e.tool, tool_use_id: e.tool_use_id,
-    input: askedAbout(e.input), reason: verdict.reason, via: 'mod',
+    input: fields, reason: verdict.reason, rule: verdict.rule, via: 'mod',
   };
   // Tars says `pending` every 20 s and is asked again for the same call: a
   // request held about 30 s ended under the mod, and the dialog showed while
@@ -161,10 +180,11 @@ async function askTars($: Engine, e: Check, verdict: Verdict): Promise<Verdict |
     }
     failures = 0;
     afterError = undefined;
-    let said: { decision?: unknown; reason?: unknown };
+    let said: { decision?: unknown; reason?: unknown; fingerprint?: unknown };
     try { said = JSON.parse(text || '{}'); } catch { return null; }
     if (said.decision === 'pending') continue;
     if (said.decision !== 'allow' && said.decision !== 'deny') return null;
+    if (said.fingerprint !== mine) return null;
     return { decision: said.decision, ...(typeof said.reason === 'string' ? { reason: said.reason } : {}) };
   }
   return null;
