@@ -145,6 +145,7 @@ import {
 } from './utils';
 import { spawnAgentPty } from './core/agent-pty';
 import { getProvider } from './providers';
+import { endVersionProbes } from './core/version-probe';
 
 // ============== App Settings Management ==============
 
@@ -830,6 +831,9 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
+      // A CLI's --version asked for by Settings just before the quit: amp's
+      // kept writing into the home after Tars was gone (gate of #298).
+      ['endVersionProbes', endVersionProbes],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))

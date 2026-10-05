@@ -56,6 +56,7 @@ import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn } from '../core/agent-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
+import { probeVersion } from '../core/version-probe';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -1822,8 +1823,6 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
   // Get Claude info (version, paths, etc.)
   ipcMain.handle('settings:getInfo', async () => {
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
 
       // Empty unless claude answers: the System page reads any version as
       // ready, and started from 'Unknown', so a missing claude read as ready.
@@ -1833,10 +1832,7 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
       const cliPaths = deps.getAppSettings()?.cliPaths;
       let claudeVersion = '';
       try {
-        const { stdout } = await promisify(execFile)(cliPaths?.claude || 'claude', ['--version'], {
-          timeout: 8000,
-          env: { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) },
-        });
+        const { stdout } = await probeVersion(cliPaths?.claude || 'claude', { ...process.env, PATH: buildFullPath(cliPathDirs(cliPaths)) });
         claudeVersion = stdout.trim();
       } catch {
         // Not installed, not on that PATH, or it failed: not ready.
@@ -2914,12 +2910,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
       return { success: false, error: 'invalid binary' };
     }
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      const { stdout, stderr } = await promisify(execFile)(binary, ['--version'], {
-        timeout: 8000,
-        env: { ...process.env, PATH: buildFullPath() },
-      });
+      const { stdout, stderr } = await probeVersion(binary, { ...process.env, PATH: buildFullPath() });
       return { success: true, output: (stdout || stderr || '').trim() };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
