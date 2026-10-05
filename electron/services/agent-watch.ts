@@ -8,6 +8,7 @@ import { envelopeValue } from '../utils/envelope-value';
 import { lastInterruptAt, pendingBackgroundWork } from './agent-truth';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
+import { carriedSince, type CarriedNote } from './carry-over';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -68,6 +69,10 @@ type News = {
    * that work reports, so the rest is not the end of the work handed to it.
    */
   background?: string[];
+  /** When it became owed, ISO: what carries it across a restart (carry-over.ts). */
+  since?: string;
+  /** Owed by a run of Tars before this one, and carried across its restart. */
+  carried?: boolean;
 };
 
 /**
@@ -105,7 +110,8 @@ function stateOf(agent: AgentStatus): string {
 
 function isAtRest(agent: AgentStatus): boolean {
   // A stopped agent is done with the work it was handed: whoever handed it is told.
-  return agent.status === 'idle' || agent.status === 'stopped' || (agent.status === 'waiting' && agent.waitingReason === 'idle');
+  // An asleep one rests (core/agent-asleep.ts).
+  return agent.status === 'idle' || agent.status === 'stopped' || agent.status === 'asleep' || (agent.status === 'waiting' && agent.waitingReason === 'idle');
 }
 
 /** A turn has begun since the latest work was handed to this agent. */
@@ -166,6 +172,60 @@ type Pending = {
 };
 
 const pending = new Map<string, Pending>();
+
+/**
+ * What the run before this one owed, by requester, from carry-over.json: given
+ * to the first session of the requester that registers in this run, at its
+ * first rest, once (RD-REDEMARRAGE.md, 2.3).
+ */
+const carried = new Map<string, Array<{ childId: string; news: News }>>();
+
+/** Told whenever what is owed changes, to keep carry-over.json in step. */
+let queuesChanged: () => void = () => undefined;
+
+export function setQueuesChangedHook(hook: (() => void) | undefined): void {
+  queuesChanged = hook ?? (() => undefined);
+}
+
+/** Everything owed now, held or carried, as carry-over.json keeps it. */
+export function owedNews(): CarriedNote[] {
+  const now = new Date().toISOString();
+  const out: CarriedNote[] = [];
+  for (const [requesterId, held] of pending) {
+    for (const [childId, news] of held.children) out.push({ requesterId, childId, news: { ...news }, at: news.since ?? now });
+  }
+  for (const [requesterId, items] of carried) {
+    for (const { childId, news } of items) out.push({ requesterId, childId, news: { ...news }, at: news.since ?? now });
+  }
+  return out;
+}
+
+/** What the run before this one owed, taken back at launch. */
+export function carryNews(notes: CarriedNote[]): void {
+  for (const note of notes) {
+    const list = carried.get(note.requesterId) ?? [];
+    list.push({ childId: note.childId, news: { ...(note.news as News), since: note.at, carried: true } });
+    carried.set(note.requesterId, list);
+  }
+}
+
+/**
+ * A carried note goes into the queue of the requester's first session of this
+ * run: one that registered in the terminal it runs in now. Before that, the
+ * terminal holds a shell or a CLI still starting, and nothing is typed there.
+ */
+function takeCarried(agent: AgentStatus): void {
+  const items = carried.get(agent.id);
+  if (!items?.length) return;
+  if (!agent.ptyId || !ptyProcesses.has(agent.ptyId) || !agent.currentSessionId || agent.sessionPtyId !== agent.ptyId) return;
+  const held = heldFor(agent);
+  for (const { childId, news } of items) {
+    if (!held.children.has(childId)) held.children.set(childId, news);
+  }
+  pending.set(agent.id, held);
+  carried.delete(agent.id);
+  queuesChanged();
+}
 
 /** Called when a queued bus message actually reaches a terminal, so the
  *  journal can mark the delivery and the Chat page can show it. Injected to
@@ -339,6 +399,7 @@ function onFleetChange(agentId: string): void {
     return;
   }
 
+  takeCarried(agent);
   const before = lastSeen.get(agentId);
   const now = stateOf(agent);
   lastSeen.set(agentId, now);
@@ -471,8 +532,9 @@ function handToRequester(requesterId: string, child: AgentStatus, news: News): v
   if (isWaitingOn(link.agentId, child.id)) return;
 
   const held = heldFor(requester);
-  held.children.set(child.id, news);
+  held.children.set(child.id, { ...news, since: new Date().toISOString() });
   pending.set(link.agentId, held);
+  queuesChanged();
 
   flush(link.agentId);
 }
@@ -594,6 +656,7 @@ function flush(requesterId: string): void {
   if (!requester) {
     abandonBusMessages(requesterId, held);
     pending.delete(requesterId);
+    queuesChanged();
     return;
   }
   if (requester.status === 'running') return;
@@ -632,14 +695,19 @@ function flush(requesterId: string): void {
     console.warn(`[agent-watch] ${requesterId} is no longer the session that was owed this, dropping ${holding(held)} pending item(s)`);
     abandonBusMessages(requesterId, held);
     pending.delete(requesterId);
+    queuesChanged();
     return;
   }
 
   for (const [childId, news] of held.children) {
-    if (!stillNews(childId, news)) held.children.delete(childId);
+    if (!stillNews(childId, news)) {
+      held.children.delete(childId);
+      queuesChanged();
+    }
   }
   if (holding(held) === 0) {
     pending.delete(requesterId);
+    queuesChanged();
     return;
   }
 
@@ -660,6 +728,7 @@ function flush(requesterId: string): void {
     });
     if (outcome === 'refused') return;
     held.children.clear();
+    queuesChanged();
   } else {
     const message = held.bus[0];
     const outcome = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
@@ -679,6 +748,7 @@ function flush(requesterId: string): void {
   }
 
   if (holding(held) === 0) pending.delete(requesterId);
+  queuesChanged();
 
   // Held slightly past the submit keystroke, so anything that finishes in the
   // meantime waits for a line of its own instead of joining this one.
@@ -728,13 +798,19 @@ function describeNews(news: News): string {
   return `is now ${news.status}`;
 }
 
+/** What the note says, and, for news carried across a restart, since when it was owed. */
+function describeOwed(news: News): string {
+  const said = describeNews(news);
+  return news.carried && news.since ? `${said} (${carriedSince(news.since)})` : said;
+}
+
 function composeNote(finished: Map<string, News>): string {
   const lines = Array.from(finished.entries()).map(([id, news]) => {
     const agent = agents.get(id);
     const name = agent?.name || id;
     // Raw until the room note made "This is Noah, not a teammate." a sentence
     // Tars really writes: a name with a line break in it could append one here.
-    return `- ${envelopeValue(name)} (${envelopeValue(id)}) ${describeNews(news)}`;
+    return `- ${envelopeValue(name)} (${envelopeValue(id)}) ${describeOwed(news)}`;
   });
 
   if (lines.length === 1) {
@@ -856,6 +932,7 @@ export async function releaseBusMessagesNow(
 export function resetAgentWatch(): void {
   lastSeen.clear();
   pending.clear();
+  carried.clear();
   waitingOn.clear();
   releasing.clear();
   for (const timer of delivering.values()) clearTimeout(timer);

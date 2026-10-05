@@ -9,6 +9,8 @@ import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
 import { clearStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
+import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
+import type { AgentWakeVia } from '../../types';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
@@ -23,6 +25,7 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
+import { liveTaskLedger, noteHandOff } from '../task-ledger';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
@@ -30,6 +33,7 @@ import { withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
+import { envelopeValue } from '../../utils/envelope-value';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -47,6 +51,8 @@ type SpawnOpts = {
   model?: string;
   permissionMode?: 'normal' | 'auto' | 'bypass';
   printMode?: boolean;
+  /** Who this session wakes the agent for, and how, should it be asleep (core/agent-asleep.ts). */
+  wokenBy?: { by: string; via: AgentWakeVia };
 };
 
 /**
@@ -346,10 +352,19 @@ async function spawnAgentSession(
   // dropped as belonging to a session that no longer exists.
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
-  // A terminal again: a stop is over (core/agent-stop.ts).
+  // A terminal again: a stop is over (core/agent-stop.ts), and a sleep too,
+  // the agent waking on its conversation, its task the message that woke it.
   clearStop(agent);
+  if (opts.wokenBy) noteWaker(agent.id, opts.wokenBy.by, opts.wokenBy.via);
+  wakeFromSleep(agent);
   agent.status = 'running';
   agent.workHandedAt = new Date().toISOString();
+  // Work handed over, for the task its first turn opens (task-ledger.ts).
+  if (prompt.trim()) {
+    noteHandOff(agent.id, agent.requestedBy
+      ? { source: 'agent', requesterAgentId: agent.requestedBy.agentId, text: prompt }
+      : { source: 'tars', text: prompt });
+  }
   agent.currentTask = prompt;
   agent.output = [];
   agent.lastCleanOutput = undefined;  // Clear stale output from previous task
@@ -483,6 +498,48 @@ const DIALOG_REASON = 'That agent\'s CLI shows a dialog (a permission or a quest
 
 function heldReasonFor(agent: AgentStatus): string {
   return dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined) ? DIALOG_REASON : HELD_REASON;
+}
+
+/**
+ * How long a held message waits before the agent that sent it is told again
+ * (bug-held-forever-05-10.md: three messages answered HELD, "Nothing needs
+ * resending", waited 2 h 20 to 2 h 40, and nobody heard of them again).
+ */
+export const HELD_RETELL_MS = 3 * 60_000;
+
+const clockOf = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+
+/**
+ * Tells the agent that sent a message, once, when it is still held
+ * HELD_RETELL_MS on: why, and that only a person at the terminal ends the
+ * wait. A target in a turn may have somebody typing at it: it is looked at
+ * again later. Returns what cancels it, for when the message goes in or is
+ * dropped.
+ */
+function retellWhileHeld(target: AgentStatus, sender: MessageSender | undefined, sentAt: number): () => void {
+  if (sender?.kind !== 'agent' || sender.id === target.id) return () => undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    timer = setTimeout(() => {
+      if (target.status === 'running') { arm(); return; }
+      const from = agents.get(sender.id);
+      const pty = from?.ptyId ? ptyProcesses.get(from.ptyId) : undefined;
+      if (!pty) return;
+      // Quoted as data, as every value a note of Tars's carries outside a fence
+      // (utils/envelope-value.ts): a name with a line separator in it would
+      // otherwise put a line of its own in Tars's voice (the Audit's gate of #314).
+      const name = envelopeValue(target.name || target.id);
+      const minutes = Math.max(1, Math.round((Date.now() - sentAt) / 60_000));
+      writeProgrammaticInput(pty,
+        `[Tars] Your message to ${name} of ${clockOf(sentAt)} is still not in its terminal, ${minutes} minutes on. `
+        + `${heldReasonFor(target)} Only a person at that terminal can end this wait: if nobody is there, tell the user, `
+        + `or stop ${name} and start it again, which drops the message, and send it again then.`,
+        true, { agentId: sender.id, from: 'Tars', sender: { kind: 'tars' } });
+    }, HELD_RETELL_MS);
+    timer.unref?.();
+  };
+  arm();
+  return () => { if (timer) clearTimeout(timer); };
 }
 
 /** Who a message into an agent's terminal is from, as verified: the agent whose
@@ -653,6 +710,9 @@ export interface DispatchOpts {
   sender?: MessageSender;
   /** Run once the agent takes keys, before anything is typed: never for a sender refused 409. */
   onAccepted?: () => void;
+  /** Typed into a live session: once it is written into the terminal, or once the terminal gives it up (WriteOrigin). */
+  onWritten?: () => void;
+  onDropped?: () => void;
 }
 
 export async function performDispatch(
@@ -727,20 +787,37 @@ async function performDispatchLocked(
   // Elsewhere a session is started with the message as its task.
   if (livePty && cliRunningIn(livePty)) {
     // A live session, mid-task or at its prompt: type the message into it.
+    // Working once the message is in its terminal, not before: an agent read
+    // `running` for hours from the instant a message was held behind its
+    // field, and nothing else reached it (bug-held-forever-05-10.md).
+    // `onWritten` runs at once for a message that goes straight in.
+    let cancelRetell: (() => void) | undefined;
+    let handed = false;
+    const handedOver = () => {
+      if (handed) return;
+      handed = true;
+      cancelRetell?.();
+      agent.status = 'running';
+      agent.waitingReason = undefined;
+      agent.workHandedAt = new Date().toISOString();
+      // This message starts a new piece of work in the same session; the
+      // previous task's captured output must not be mistaken for its result.
+      agent.lastCleanOutput = undefined;
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      announceAgent(agent);
+    };
     const outcome = writeProgrammaticInput(livePty, opts.message, true, {
       agentId: agent.id,
       from: opts.from ?? 'Tars',
       sender: opts.sender ?? { kind: 'tars' },
+      // Both: the agent reads working once the message is in (#314), and the
+      // caller hears it went in or was given up (#292).
+      onWritten: () => { handedOver(); opts.onWritten?.(); },
+      onDropped: () => { cancelRetell?.(); opts.onDropped?.(); },
     });
-    agent.status = 'running';
-    agent.waitingReason = undefined;
-    agent.workHandedAt = new Date().toISOString();
-    // This message starts a new piece of work in the same session; the
-    // previous task's captured output must not be mistaken for its result.
-    agent.lastCleanOutput = undefined;
-    agent.lastActivity = new Date().toISOString();
-    saveAgents();
-    announceAgent(agent);
+    if (outcome !== 'held' && outcome !== 'refused') handedOver();
+    if (outcome === 'held') cancelRetell = retellWhileHeld(agent, opts.sender, Date.now());
     // `held` is not `written`. The message is queued for that terminal and
     // goes in when the field frees, but answering a caller "sent" while
     // nothing has been typed tells it something it cannot check: the QA
@@ -755,7 +832,8 @@ async function performDispatchLocked(
   }
 
   // No session: spawn a fresh one with the message as the prompt.
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode }, ctx, sendJson))) {
+  const wokenBy = { by: opts.from ?? 'Tars', via: 'message' as const };
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, wokenBy }, ctx, sendJson))) {
     return;
   }
   sendJson({ success: true, mode: 'start', previousStatus, agent: { id: agent.id, name: agent.name, status: agent.status } });
@@ -774,9 +852,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const currentStatus = agent.status;
 
     // Return immediately if already in terminal state
-    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped') {
+    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped' || currentStatus === 'asleep') {
       sendJson({
         status: agent.status,
+        // Asleep: a message wakes it on its conversation (core/agent-asleep.ts).
+        asleepSince: agent.asleepSince,
         lastCleanOutput: agent.lastCleanOutput,
         error: agent.error,
         waitingReason: agent.waitingReason,
@@ -1098,7 +1178,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, wokenBy: { by: senderName(agent, req), via: 'start' } }, ctx, sendJson);
     });
     if (!spawned) return;
 
@@ -1193,6 +1273,31 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       announceAgent(agent);
     }
 
+    // A task of its own, with what the run reported it cost (task-ledger.ts).
+    // A run that never started did no work.
+    if (result.started) {
+      try {
+        const requester = resolveCallerId(req);
+        liveTaskLedger()?.acpRun({
+          agent,
+          requesterAgentId: requester && requester !== agent.id ? requester : undefined,
+          text: task,
+          startedAt: Date.parse(handedAt),
+          endedAt: Date.now(),
+          outcome: result.ok ? 'completed' : result.stopReason === 'turn_limit' ? 'stopped' : 'error',
+          usage: result.usage ? {
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+            cachedReadTokens: result.usage.cachedReadTokens ?? 0,
+            cachedWriteTokens: result.usage.cachedWriteTokens ?? 0,
+          } : null,
+          costUSD: result.costUSD ?? null,
+        });
+      } catch (err) {
+        console.warn('[task-ledger] ACP run not recorded:', (err as Error).message);
+      }
+    }
+
     // A run that started is an answer, however it ended: 502 only when none
     // did, which is when delegate_task may type the task into the terminal
     // instead without running it twice.
@@ -1270,7 +1375,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // using the message as the prompt, identical to the /start path. This
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
-        if (!(await spawnAgentSession(agent, message, {}, ctx, sendJson))) {
+        if (!(await spawnAgentSession(agent, message, { wokenBy: { by: senderName(agent, req), via: 'message' } }, ctx, sendJson))) {
           return;
         }
         sendJson({ success: true });
@@ -1279,17 +1384,30 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
       const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
       if (ptyProcess) {
+        // Working once it is in, as /dispatch (bug-held-forever-05-10.md).
+        let cancelRetell: (() => void) | undefined;
+        let handed = false;
+        const handedOver = () => {
+          if (handed) return;
+          handed = true;
+          cancelRetell?.();
+          agent.status = 'running';
+          agent.waitingReason = undefined;
+          agent.workHandedAt = new Date().toISOString();
+          agent.lastActivity = new Date().toISOString();
+          saveAgents();
+          announceAgent(agent);
+        };
+        const sender = senderOf(agent, req);
         const outcome = writeProgrammaticInput(ptyProcess, message, true, {
           agentId: agent.id,
           from: senderName(agent, req),
-          sender: senderOf(agent, req),
+          sender,
+          onWritten: handedOver,
+          onDropped: () => cancelRetell?.(),
         });
-        agent.status = 'running';
-        agent.waitingReason = undefined;
-        agent.workHandedAt = new Date().toISOString();
-        agent.lastActivity = new Date().toISOString();
-        saveAgents();
-        announceAgent(agent);
+        if (outcome !== 'held' && outcome !== 'refused') handedOver();
+        if (outcome === 'held') cancelRetell = retellWhileHeld(agent, sender, Date.now());
         sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}) });
         return;
       }

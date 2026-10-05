@@ -83,7 +83,9 @@ export default function ReviewPage() {
     setFilePatch('');
     setFileError(null);
     try {
-      const res = await window.electronAPI?.review?.diff(repoPath);
+      // The files alone (#247): each file's patch is read once it is picked,
+      // so the tree's whole patch, up to 2 MB, is neither built nor carried.
+      const res = await window.electronAPI?.review?.diff(repoPath, undefined, { listOnly: true });
       if (treeAsked.current !== repoPath) return;
       if (!res?.success || !res.diff) {
         setDiff(null);
@@ -116,8 +118,7 @@ export default function ReviewPage() {
     else setFilePatch(res?.patch || '');
   }, [diff]);
 
-  const shownPatch = activeFile ? filePatch : diff?.patch ?? '';
-  const cut = cutNote(patchLines(shownPatch).length, !!activeFile);
+  const cut = activeFile ? cutNote(patchLines(filePatch).length) : null;
 
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] flex flex-col">
@@ -254,8 +255,6 @@ export default function ReviewPage() {
                     <p className="text-xs text-muted-foreground">No textual change to show for this file.</p>
                   )}
                 </>
-              ) : diff?.patch ? (
-                <PatchView patch={diff.patch} />
               ) : (
                 <p className="text-xs text-muted-foreground">Pick a file to read its patch.</p>
               )}

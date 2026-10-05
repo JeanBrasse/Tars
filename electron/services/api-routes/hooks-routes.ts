@@ -1,4 +1,5 @@
 import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
+import { liveTaskLedger } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
 import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
 import { RouteApp, RouteContext } from './types';
@@ -8,6 +9,7 @@ import { scheduleTick } from '../../utils/agents-tick';
 import { waitingOnFrom } from '../../utils/waiting-on';
 import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
+import { restPendingOf } from '../../core/agent-asleep';
 
 /**
  * Session ownership contract:
@@ -211,7 +213,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
       agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
-      tool_name, tool_input,
+      tool_name, tool_input, pending,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -227,6 +229,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       error_message?: string;
       /** PermissionRequest only: when the dialog opened (ms), taken by the hook script. */
       opened_at?: number;
+      /** Stop only: the timers and background tasks the CLI holds at this rest (hooks/on-stop.sh). */
+      pending?: unknown;
       /** PermissionRequest only: the tool the dialog asks about, and its input. */
       tool_name?: string;
       tool_input?: unknown;
@@ -277,6 +281,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // Remembered separately so a restart can resume it: currentSessionId is
       // ownership and gets cleared on load, this is where the work got to.
       agent.resumableSessionId = session_id;
+      // A new session holds no timer of the last one.
+      agent.restPending = undefined;
       agent.lastActivity = new Date().toISOString();
       // Registered is not started: this only puts the task this session was
       // spawned with on the clock.
@@ -321,6 +327,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // already set that status at spawn, so the hook names the event instead.
     if (event === 'UserPromptSubmit') {
       noteTurnStarted(agent);
+      // The turn opens a task, or is counted in the one open (task-ledger.ts).
+      try {
+        liveTaskLedger()?.turnStarted(agent, { sessionId: session_id, text: current_task });
+      } catch (err) {
+        console.warn('[task-ledger] turn not recorded:', (err as Error).message);
+      }
       // And the one post that proves a field emptied. An Enter on a line
       // beginning with `/` may run a command or open a dialog, and the keys
       // alone cannot tell which, so the draft model hedges until something
@@ -338,6 +350,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       console.log(`[hooks] Ignored an idle prompt for ${agent.id}: it was handed work, or began a turn, less than a minute ago`);
     }
 
+    // What the CLI holds is counted again at the end of each turn.
+    if (status === 'running') agent.restPending = undefined;
     if (status === 'running' && agent.status !== 'running') {
       agent.status = 'running';
       agent.waitingReason = undefined;
@@ -359,6 +373,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     } else if (status === 'idle') {
       agent.status = 'idle';
       agent.waitingReason = undefined;
+      // Its timers and background tasks, as the Stop hook counted them: what
+      // keeps it from being put to sleep (services/agent-sleep.ts).
+      if (pending !== undefined) agent.restPending = restPendingOf(pending);
     } else if (status === 'completed') {
       agent.status = 'completed';
       agent.waitingReason = undefined;

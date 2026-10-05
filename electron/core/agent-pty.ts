@@ -7,6 +7,7 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
+import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
 export { setAccountEnvResolver } from './account-env';
 
@@ -128,6 +129,9 @@ export function spawnAgentPty(opts: {
       ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
       // What a hook checks the port with before it sends that token (#11).
       TARS_INSTANCE_ID: tarsInstanceId(),
+      // Its own temporary folder, which a boot does not empty (services/agent-tmp.ts):
+      // here because every agent terminal is spawned here.
+      ...(agentId ? agentTmpEnvOrNone(agentId) : {}),
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
@@ -207,6 +211,16 @@ export function spawnAgentPty(opts: {
  * can be read, starting and then running, and an interactive shell never does
  * at its prompt, where a typed line would run as a command.
  */
+/**
+ * Whether this is an agent terminal Tars started whose CLI has stopped, back
+ * at its shell: what the writer asks before it types a held message
+ * (pty-manager.ts, setCliProbe). A terminal it did not start as an agent's is
+ * not known to have stopped, and is left as it was.
+ */
+export function cliStoppedIn(ptyProcess: pty.IPty): boolean {
+  return spawnedAs.has(ptyProcess) && !cliRunningIn(ptyProcess);
+}
+
 export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   if (!ptyProcess) return false;
   const spawned = spawnedAs.get(ptyProcess);

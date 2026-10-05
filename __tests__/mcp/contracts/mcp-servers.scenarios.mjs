@@ -117,6 +117,7 @@ const orchestratorAgent = [
   { name: "wait_for_agent, asking a question", tool: "wait_for_agent", args: { id: "a1" }, tars: [asking, ok({ agent: dune })] },
   { name: "wait_for_agent, another status", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped" }), ok({ agent: dune })] },
   { name: "wait_for_agent, stopped with a reason", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "stopped", stoppedBy: "Tars-Orchestrator", stopReason: "frozen on a file read" }), ok({ agent: dune })] },
+  { name: "wait_for_agent, asleep", tool: "wait_for_agent", args: { id: "a1" }, tars: [ok({ status: "asleep", asleepSince: "2026-10-05T12:00:00.000Z" }), ok({ agent: dune })] },
   { name: "wait_for_agent, times out", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [ok({ status: "running", timeout: true }), ok({ agent: dune })] },
   { name: "wait_for_agent, the agent lookup fails", tool: "wait_for_agent", args: { id: "a1" }, tars: [done("x"), fail(404, { error: "Agent not found" })] },
   { name: "wait_for_agent, Tars never answers: its segment's 31 s", tool: "wait_for_agent", args: { id: "a1", timeoutSeconds: 1 }, tars: [hold] },
@@ -180,6 +181,9 @@ const orchestratorAgent = [
   { name: "send_discord, to its channel", tool: "send_discord", args: { message: "Dune is on it.", channel_id: "C-TEAM" }, tars: [ok({ success: true })] },
   { name: "send_discord, no channel, long", tool: "send_discord", args: { message: long }, tars: [ok({ success: true })] },
   { name: "send_discord, refused", tool: "send_discord", args: { message: "Hi", channel_id: "C-OTHER" }, tars: [fail(403, { error: "Tars posts only to the channel Settings > Discord detected" })] },
+  { name: "ask_user, asked", tool: "ask_user", args: { question: "Staging or prod?", context: "The migration touches billing." }, tars: [ok({ success: true, id: "q-1", expiresAt: "2026-09-28T12:00:00.000Z" })] },
+  { name: "ask_user, one already open", tool: "ask_user", args: { question: "Again?" }, tars: [fail(409, { error: "You already have a question open for Noah" })] },
+  { name: "ask_user, no question", tool: "ask_user", args: { context: "nothing asked" }, tars: [] },
 
   { name: "room_post, refused with a message", tool: "room_post", args: { text: "(pass)" }, tars: [ok({ refused: "silence", message: "Nothing was published." })] },
   { name: "room_post, refused without a message", tool: "room_post", args: { text: "Hi" }, tars: [ok({ refused: "bounded" })] },

@@ -657,6 +657,11 @@ export function deliveriesOf(messageId: string): BusDelivery[] {
   return state.deliveries.filter(d => d.messageId === messageId);
 }
 
+/** The deliveries still waiting for their agent: queued for a turn's end, or held behind a draft. */
+export function waitingDeliveries(): BusDelivery[] {
+  return state.deliveries.filter(d => d.state === 'queued' || d.state === 'held').map(d => ({ ...d }));
+}
+
 export function getMessage(messageId: string): BusMessage | undefined {
   return state.messages.find(m => m.id === messageId);
 }

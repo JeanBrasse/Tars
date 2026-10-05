@@ -12,6 +12,7 @@ import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke,
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
 import { AgentMessageWaiting } from '../types';
+import { handOffFrom, noteHandOff } from '../services/task-ledger';
 
 export const ptyProcesses: Map<string, pty.IPty> = new Map();
 export const quickPtyProcesses: Map<string, pty.IPty> = new Map();
@@ -290,6 +291,20 @@ export function setFieldProbe(probe: FieldProbe | null): void {
  * in once the agent runs again (the answer's PostToolUse). Set by
  * agent-manager, which knows the agents; unset, nothing is refused.
  */
+/**
+ * Whether a CLI still runs in a terminal, asked again when a held message is
+ * finally written (the Audit's gate of #231). It was asked when the message
+ * was handed over only: a CLI that stopped while the message waited left the
+ * shell's prompt, where each newline runs a line as a command. Set by
+ * agent-manager.ts (cliRunningIn); unset, as in a test, a CLI is assumed.
+ */
+export type CliProbe = (ptyProcess: pty.IPty) => boolean;
+let cliProbe: CliProbe | null = null;
+
+export function setCliProbe(probe: CliProbe | null): void {
+  cliProbe = probe;
+}
+
 export type DialogProbe = (agentId: string) => boolean;
 let dialogProbe: DialogProbe | null = null;
 
@@ -336,7 +351,14 @@ const MAX_WAITING_MESSAGES = 20;
 export type MessageSender =
   | { kind: 'agent'; id: string; name?: string }
   | { kind: 'tars' }
-  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' };
+  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' }
+  /**
+   * The user: their reply on Telegram to a question an agent asked them
+   * (services/user-questions.ts), taken only from their own private chat. Made
+   * there and nowhere else, so no message an agent sends is ever typed after
+   * this line.
+   */
+  | { kind: 'user'; via: 'Telegram' };
 
 /** The line typed before a pasted message: who sent it, and nothing else. */
 export function senderLine(sender: MessageSender): string {
@@ -344,6 +366,7 @@ export function senderLine(sender: MessageSender): string {
     return `Message from agent ${envelopeValue(sender.name || sender.id)} (${envelopeValue(sender.id)}): `;
   }
   if (sender.kind === 'channel') return `Message from ${sender.channel}: `;
+  if (sender.kind === 'user') return `Message from the user via ${sender.via}: `;
   return 'Message from Tars: ';
 }
 
@@ -362,6 +385,9 @@ export interface WriteOrigin {
    * the same lie whichever queue it is sitting in.
    */
   onWritten?: () => void;
+  /** The work this hands over, as the task ledger should name it, when the
+   *  message carries more than the work (a chat's context before it). */
+  task?: string;
   /**
    * Called once, if the message has to wait for a person: somebody is typing
    * in the field, or left something there Tars cannot put back. Not when it
@@ -702,6 +728,17 @@ function pump(ptyProcess: pty.IPty): void {
     return;
   }
 
+  // Asked again now: the CLI may have stopped while the message waited, and
+  // the shell would run what is typed. Nothing goes; each sender is told.
+  if (cliProbe && !cliProbe(ptyProcess)) {
+    const dropped = state.queue;
+    state.queue = [];
+    console.warn(`[pty] no CLI runs in the terminal any more: ${dropped.length} held message(s) not typed into its shell`);
+    announce(ptyProcess, state);
+    tellDropped(dropped);
+    return;
+  }
+
   const next = state.queue.shift()!;
   if (next.heldSince !== undefined) {
     console.log(`[pty] a message held ${Math.round((Date.now() - next.heldSince) / 1000)}s for a draft is going out now`);
@@ -745,6 +782,8 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
     } catch (err) {
       console.error('[pty] a message reached its terminal but its caller threw:', err);
     }
+    // Work handed over, for the task the turn it starts opens (task-ledger.ts).
+    if (item.origin) noteHandOff(item.origin.agentId, { ...handOffFrom(item.origin.sender), text: item.origin.task ?? item.data });
   }
   const enter = () => {
     // A dialog that opened after the paste would take this Enter as its answer

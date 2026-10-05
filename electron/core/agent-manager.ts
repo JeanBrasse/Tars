@@ -1,3 +1,4 @@
+import { agentRecovered, reportEvent } from '../services/event-reports';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -10,9 +11,9 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { rolesOnLoad } from './agent-role';
-import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-manager';
+import { ptyProcesses, setDialogProbe, setCliProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
-import { spawnAgentPty } from './agent-pty';
+import { cliStoppedIn, spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
@@ -24,6 +25,7 @@ import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
+import { wakeFromSleep } from './agent-asleep';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -77,6 +79,8 @@ export const agents: Map<string, AgentStatus> = new AgentMap();
  * main.ts at startup, beside the field probe.
  */
 export function wireDialogProbe(): void {
+  // And a held message goes into a CLI only, never its shell (setCliProbe).
+  setCliProbe(ptyProcess => !cliStoppedIn(ptyProcess));
   setDialogProbe(agentId => {
     const agent = agents.get(agentId);
     return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
@@ -237,9 +241,16 @@ export function handleStatusChangeNotification(
 ) {
   const prevStatus = previousAgentStatus.get(agent.id);
 
+  // Out of error: its next error is news for Noah's reports again.
+  if (newStatus !== 'error') agentRecovered(agent.id);
+
   if (!prevStatus) {
     previousAgentStatus.set(agent.id, newStatus);
-    return;
+    // Every caller calls on a change, so this one is a change too, with the
+    // status before it unknown: an agent whose first change after Tars
+    // starts is to error was neither notified nor reported (found in the
+    // app proof of the event reports). The other statuses stay as they were.
+    if (newStatus !== 'error') return;
   }
 
   if (prevStatus === newStatus) {
@@ -305,7 +316,19 @@ export function handleStatusChangeNotification(
         sendSuperAgentResponseToTelegram(currentAgent);
         superAgentTelegramTask = false;
       }
-    } else if (newStatus === 'error' && appSettings.notifyOnError) {
+    }
+    // To Noah's Telegram whatever the desktop switch says: that one is the
+    // Mac's, this is his phone's (services/event-reports.ts).
+    if (newStatus === 'error') {
+      reportEvent({
+        kind: 'agent-error',
+        agentId: currentAgent.id,
+        agentName,
+        projectPath: currentAgent.projectPath || '',
+        reason: currentAgent.error,
+      });
+    }
+    if (newStatus === 'error' && appSettings.notifyOnError) {
       if (!isSuper) {
         sendNotification(
           `${agentName} encountered an error`,
@@ -453,6 +476,8 @@ function persistable(agent: AgentStatus): AgentStatus {
     // Runtime state, and the command a dialog asks about can carry a secret:
     // agents.json is in every agent's --add-dir (the gate of #172).
     waitingOn: undefined,
+    // A wake belongs to its launch, which a restart of Tars does not carry.
+    waking: undefined,
   } as AgentStatus;
 }
 
@@ -584,13 +609,18 @@ export function loadAgents() {
       }
 
       // A stopped agent stays stopped across a restart, with who, when and
-      // why, or the Dashboard resumes it at launch like any idle one.
-      if (agent.status !== 'stopped') agent.status = 'idle';
+      // why, or the Dashboard resumes it at launch like any idle one. An
+      // asleep one stays asleep, with since when: its conversation is kept,
+      // and the first message wakes it on it (core/agent-asleep.ts).
+      if (agent.status !== 'stopped' && agent.status !== 'asleep') agent.status = 'idle';
+      agent.waking = undefined;
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
       agent.pendingDelivery = undefined;
-      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts).
+      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts),
+      // and what a Stop hook counted inside one died with it.
       agent.stalledSince = undefined;
+      agent.restPending = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did
@@ -1031,8 +1061,10 @@ async function initAgentPtyLocked(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   agent.ptyCwd = cwd;
-  // A terminal again: a stop is over (core/agent-stop.ts).
+  // A terminal again: a stop is over (core/agent-stop.ts), and a sleep too,
+  // the agent waking until its CLI is up (core/agent-asleep.ts).
   clearStop(agent);
+  wakeFromSleep(agent);
 
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);
@@ -1066,6 +1098,11 @@ async function initAgentPtyLocked(
     const newStatus = agentStatusOnExit(exitCode);
     if (!newStatus) return;
     const agentData = agents.get(agent.id);
+    // A terminal the agent has already replaced (a restart) ends after the
+    // new one has started: not the agent's news. Its agent:complete made the
+    // window move the agent's current task to done, with the new terminal's
+    // screen as its summary (the Frontend's finding of 05/10).
+    if (agentData?.ptyId && agentData.ptyId !== ptyId) return;
     // Guard: only mutate if this PTY is still the active one (prevents race on restart/stop)
     if (agentData && agentData.ptyId === ptyId) {
       agentData.status = newStatus;
@@ -1073,6 +1110,9 @@ async function initAgentPtyLocked(
       handleStatusChangeNotificationCallback(agentData, newStatus);
       saveAgentsCallback();
     }
+    // A stop clears the agent's terminal before it ends it, and still sends
+    // this: the window reads who stopped the agent and why only on the fetch
+    // this event makes (its status event is patched, not fetched).
     broadcastToAllWindows('agent:complete', {
       type: 'complete',
       agentId: agent.id,
