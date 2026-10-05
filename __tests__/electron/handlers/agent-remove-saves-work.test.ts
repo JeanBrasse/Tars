@@ -9,6 +9,13 @@
  * 2. A save that fails still removes the worktree, so the work it could not
  *    save is lost all the same.
  * 3. The window is not told where the work went, or that a worktree was kept.
+ * And from the Audit's gate of #312 (Low): `git add -A` leaves out what
+ * .gitignore names, and the forced removal deleted it with no word.
+ * 4. A worktree holding ignored files that are not rebuildable caches (a .env,
+ *    an e2e run under test-results/) is removed: it must be kept, and the
+ *    answer must name what kept it.
+ * 5. Over-correction: a worktree whose only ignored files are caches
+ *    (node_modules, .next, electron/dist...) is kept.
  *
  * The handler and git are the real ones, on a repository in a throwaway folder.
  */
@@ -103,6 +110,40 @@ describe('the window\'s Delete', () => {
     expect(await handlers.get('agent:remove')!({}, 'w1')).toEqual({ success: true });
     expect(fs.existsSync(wt)).toBe(false);
     expect(git(repo, 'branch', '--list', 'wip/*')).toBe('');
+  });
+
+  it('4. keeps a worktree holding ignored files that are not caches, and names them', async () => {
+    fs.writeFileSync(path.join(wt, '.gitignore'), '.env\ntest-results/\nnode_modules/\n');
+    fs.writeFileSync(path.join(wt, '.env'), 'SECRET=1\n');
+    fs.mkdirSync(path.join(wt, 'test-results', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(wt, 'test-results', 'runs', 'values.json'), '{}');
+    fs.mkdirSync(path.join(wt, 'node_modules', 'x'), { recursive: true });
+    // git lists no empty folder: a cache with nothing in it would prove nothing.
+    fs.writeFileSync(path.join(wt, 'node_modules', 'x', 'index.js'), 'module.exports = 1;\n');
+
+    const result = await handlers.get('agent:remove')!({}, 'w1') as { success: boolean; savedTo?: string; worktreeKept?: string };
+
+    expect(result.success).toBe(true);
+    expect(result.savedTo).toBe('wip/backend-engineer');
+    expect(result.worktreeKept).toContain('.env');
+    expect(result.worktreeKept).toContain('test-results/');
+    expect(result.worktreeKept).not.toContain('node_modules');
+    expect(fs.readFileSync(path.join(wt, '.env'), 'utf8')).toBe('SECRET=1\n');
+    expect(agents.has('w1')).toBe(false);
+  });
+
+  it('5. removes a worktree whose only ignored files are rebuildable caches', async () => {
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.next/\n');
+    git(repo, 'add', '.gitignore');
+    git(repo, 'commit', '-qm', 'ignore');
+    git(wt, 'merge', '-q', 'main');
+    fs.mkdirSync(path.join(wt, 'node_modules', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(wt, 'node_modules', 'x', 'index.js'), 'module.exports = 1;\n');
+    fs.mkdirSync(path.join(wt, '.next'), { recursive: true });
+    fs.writeFileSync(path.join(wt, '.next', 'build-manifest.json'), '{}');
+
+    expect(await handlers.get('agent:remove')!({}, 'w1')).toEqual({ success: true });
+    expect(fs.existsSync(wt)).toBe(false);
   });
 
   it('2, 3. keeps the worktree when the work cannot be saved, and says why', async () => {
