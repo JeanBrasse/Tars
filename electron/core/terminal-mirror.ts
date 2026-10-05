@@ -64,9 +64,10 @@ const xterm = loadAsNode();
  * a mouse request that was never withdrawn, is not part of the new one.
  */
 
-/** Lines of history kept above the screen. The Dashboard keeps 10000, and a
- *  panel could rebuild at most a few hundred from the chunks it was handed. */
-export const MIRROR_SCROLLBACK = 1000;
+/** Lines of history kept above the screen: what a Dashboard panel keeps
+ *  (5,000 since #313, Noah's choice of 05/10), so a panel that comes back has
+ *  the history a panel that never left has. */
+export const MIRROR_SCROLLBACK = 5000;
 
 /**
  * The parts of xterm 5.3 a snapshot needs and the public API does not give.
