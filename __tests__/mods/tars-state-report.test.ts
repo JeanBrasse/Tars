@@ -17,6 +17,14 @@
  * 3. A post Tars took (2xx) is sent again: a second idle, a second
  *    "finished" notice.
  * 4. The tries come back to back, into a Tars that is busy.
+ * And from QA's gate of #322 (05/10): the shell's Stop hook now counts what the
+ * agent leaves waiting inside its CLI (`session_crons`, `background_tasks`)
+ * and posts it as `pending`, which decides whether the sleep pass may end it.
+ * For a session the mod registered that post is set aside.
+ * 5. The mod's Stop does not count them, and an agent at rest with a /loop
+ *    timer or a background task is put to sleep, which loses both.
+ * 6. It counts them otherwise than on-stop.sh: a finished task counted, or a
+ *    count sent when Claude Code sent no lists (nothing is known then).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -107,6 +115,29 @@ describe("the mod's posts", () => {
     await fire('classic.Stop', { session_id: SESSION });
     expect(await drained()).toEqual(['/api/hooks/status idle', '/api/hooks/agent-stopped']);
     expect(slept).toEqual([]);
+  });
+
+  const statusBody = () => sent.find(s => s.route === '/api/hooks/status' && s.body.status === 'idle')?.body;
+
+  it('5, 6. a Stop counts the timers and the background tasks still running, as on-stop.sh', async () => {
+    await fire('classic.Stop', {
+      session_id: SESSION,
+      session_crons: [{ id: 'c1' }],
+      background_tasks: [{ status: 'running' }, { status: 'completed' }, { status: 'failed' }, {}, 'opaque'],
+    });
+    await drained();
+    expect(statusBody()?.pending).toEqual({ crons: 1, background: 3 });
+  });
+
+  it('6. sends no count when Claude Code sent no lists', async () => {
+    await fire('classic.Stop', { session_id: SESSION });
+    await drained();
+    expect(statusBody()).toBeDefined();
+    expect(statusBody()).not.toHaveProperty('pending');
+    sent = [];
+    await fire('classic.Stop', { session_id: SESSION, session_crons: 'x', background_tasks: [] });
+    await drained();
+    expect(statusBody()).not.toHaveProperty('pending');
   });
 
   it('4. waits between tries, longer each time', async () => {
