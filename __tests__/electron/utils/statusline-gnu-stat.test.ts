@@ -59,7 +59,12 @@ function bench(flavour: 'gnu' | 'bsd') {
   return { render, gitCalls };
 }
 
-describe('the git cache of the status line', () => {
+// Each render runs bash, which runs the stand-in `stat`, a node process, and a
+// case renders several times: 1.2 to 3.9 s a case alone (2026-10-05, load
+// average 28 to 87), and both cases were cut at vitest's 5 s in the full suite
+// at 47 to 137, at the gates of batches 1 and 2 that day. 30 s, as #295 gave
+// the cases of its kind.
+describe('the git cache of the status line', { timeout: 30_000 }, () => {
   it('1. is reused within its TTL on GNU stat', () => {
     const b = bench('gnu');
     b.render();
