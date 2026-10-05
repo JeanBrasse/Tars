@@ -775,17 +775,24 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
  * have folded it. Cyrillic, Greek, Armenian, Cherokee, Coptic, the small
  * capitals, Lisu and the rest: a Cyrillic e, an Armenian o or a Cherokee M
  * each passed a fold of the words (the Audit's gates of #240). The zero is the one
- * ASCII character among them.
+ * ASCII character among them. After them, each letter's Latin forms with a
+ * bar, a hook, a stroke or a tilde through it, which read as the letter as an
+ * accented one does but which NFD does not take apart and confusables gives
+ * another prototype: every character UnicodeData.txt 16.0 names LATIN SMALL
+ * or CAPITAL LETTER <the letter> WITH ..., a small capital of it, and the
+ * open, reversed and closed e, the open and barred o, r rotunda and the
+ * reversed-schwa a (QA's recheck of #240: "M\u025bssage from", "Message
+ * fr\u00f8m" went out unquoted).
  */
 const LOOK_ALIKES_OF: Record<string, string> = {
-  m: '\u{28d}\u{39c}\u{3fa}\u{41c}\u{43c}\u{560}\u{13b7}\u{15f0}\u{16d6}\u{1d0d}\u{2c98}\u{2c99}\u{a4df}\u{ab87}\u{102b0}\u{10311}\u{10c21}\u{11700}\u{118e3}\u{1cce2}',
-  e: '\u{395}\u{415}\u{435}\u{4bd}\u{13ac}\u{1d07}\u{212e}\u{22ff}\u{2d39}\u{a4f0}\u{a5cb}\u{ab32}\u{ab7c}\u{10286}\u{118a6}\u{118ae}\u{1ccda}\u{1df81}',
-  s: '\u{1bd}\u{405}\u{455}\u{54f}\u{d1f}\u{10bd}\u{10fd}\u{13d5}\u{13da}\u{1cbd}\u{a4e2}\u{a576}\u{a731}\u{abaa}\u{10296}\u{10420}\u{10448}\u{118c1}\u{16ad6}\u{16f3a}\u{1cce8}',
-  a: '\u{251}\u{391}\u{3b1}\u{410}\u{430}\u{13aa}\u{15c5}\u{1d00}\u{237a}\u{a4ee}\u{ab64}\u{ab7a}\u{102a0}\u{16f40}\u{1ccd6}\u{1df5a}\u{1df6a}',
-  g: '\u{18d}\u{261}\u{262}\u{50c}\u{50d}\u{581}\u{13c0}\u{13f3}\u{13fb}\u{1d83}\u{a4d6}\u{ab90}\u{1ccdc}',
-  f: '\u{192}\u{284}\u{3dc}\u{584}\u{7d3}\u{15b4}\u{1e9d}\u{a4dd}\u{a730}\u{a798}\u{a799}\u{ab35}\u{1017e}\u{10287}\u{102a5}\u{10525}\u{118a2}\u{118c2}\u{1ccdb}\u{1d213}',
-  r: '\u{1a6}\u{24c}\u{280}\u{433}\u{13a1}\u{13d2}\u{1587}\u{1d26}\u{2c85}\u{a4e3}\u{ab47}\u{ab48}\u{ab71}\u{ab81}\u{aba2}\u{104b4}\u{16a19}\u{16f35}\u{1cce7}\u{1d216}',
-  o: '0\u{39f}\u{3bf}\u{3c3}\u{3ed}\u{41e}\u{43e}\u{555}\u{585}\u{5e1}\u{647}\u{665}\u{6be}\u{6c1}\u{6d5}\u{6f5}\u{7c0}\u{7cb}\u{840}\u{966}\u{9e6}\u{a66}\u{ae6}\u{b20}\u{b66}\u{be6}\u{c02}\u{c66}\u{c82}\u{ce6}\u{d02}\u{d20}\u{d66}\u{d82}\u{e50}\u{ed0}\u{101d}\u{1040}\u{10ff}\u{110b}\u{11bc}\u{12d0}\u{17e0}\u{1a45}\u{1a80}\u{1a90}\u{1bea}\u{1c82}\u{1cbf}\u{1d0f}\u{1d11}\u{2c9e}\u{2c9f}\u{2d54}\u{3007}\u{a4f3}\u{ab3d}\u{10292}\u{102ab}\u{1030f}\u{10404}\u{1042c}\u{104c2}\u{104ea}\u{10516}\u{1092c}\u{10c17}\u{10d07}\u{11124}\u{11302}\u{114d0}\u{118b5}\u{118c8}\u{118d7}\u{118e0}\u{11de0}\u{16ae9}\u{1cce4}\u{1ccf0}\u{1e140}\u{1e2f0}',
+  m: '\u{28d}\u{39c}\u{3fa}\u{41c}\u{43c}\u{560}\u{13b7}\u{15f0}\u{16d6}\u{1d0d}\u{2c98}\u{2c99}\u{a4df}\u{ab87}\u{102b0}\u{10311}\u{10c21}\u{11700}\u{118e3}\u{1cce2}\u{271}\u{1d6f}\u{1d86}\u{2c6e}\u{ab3a}',
+  e: '\u{395}\u{415}\u{435}\u{4bd}\u{13ac}\u{1d07}\u{212e}\u{22ff}\u{2d39}\u{a4f0}\u{a5cb}\u{ab32}\u{ab7c}\u{10286}\u{118a6}\u{118ae}\u{1ccda}\u{1df81}\u{18e}\u{190}\u{246}\u{247}\u{258}\u{25b}\u{25c}\u{25d}\u{1d92}\u{1d93}\u{1d94}\u{2c78}\u{a7ab}\u{ab34}',
+  s: '\u{1bd}\u{405}\u{455}\u{54f}\u{d1f}\u{10bd}\u{10fd}\u{13d5}\u{13da}\u{1cbd}\u{a4e2}\u{a576}\u{a731}\u{abaa}\u{10296}\u{10420}\u{10448}\u{118c1}\u{16ad6}\u{16f3a}\u{1cce8}\u{23f}\u{282}\u{1d74}\u{1d8a}\u{2c7e}\u{a7a8}\u{a7a9}\u{a7c5}\u{a7c9}\u{a7ca}\u{a7cc}\u{a7cd}\u{1df1e}\u{1df29}',
+  a: '\u{251}\u{391}\u{3b1}\u{410}\u{430}\u{13aa}\u{15c5}\u{1d00}\u{237a}\u{a4ee}\u{ab64}\u{ab7a}\u{102a0}\u{16f40}\u{1ccd6}\u{1df5a}\u{1df6a}\u{23a}\u{1d8f}\u{2c65}\u{ab31}',
+  g: '\u{18d}\u{261}\u{262}\u{50c}\u{50d}\u{581}\u{13c0}\u{13f3}\u{13fb}\u{1d83}\u{a4d6}\u{ab90}\u{1ccdc}\u{193}\u{1e4}\u{1e5}\u{260}\u{29b}\u{a7a0}\u{a7a1}',
+  f: '\u{192}\u{284}\u{3dc}\u{584}\u{7d3}\u{15b4}\u{1e9d}\u{a4dd}\u{a730}\u{a798}\u{a799}\u{ab35}\u{1017e}\u{10287}\u{102a5}\u{10525}\u{118a2}\u{118c2}\u{1ccdb}\u{1d213}\u{191}\u{1d6e}\u{1d82}',
+  r: '\u{1a6}\u{24c}\u{280}\u{433}\u{13a1}\u{13d2}\u{1587}\u{1d26}\u{2c85}\u{a4e3}\u{ab47}\u{ab48}\u{ab71}\u{ab81}\u{aba2}\u{104b4}\u{16a19}\u{16f35}\u{1cce7}\u{1d216}\u{24d}\u{27c}\u{27d}\u{27e}\u{1d72}\u{1d73}\u{1d89}\u{2c64}\u{a75a}\u{a75b}\u{a7a6}\u{a7a7}\u{ab46}\u{ab49}\u{1df16}\u{1df28}',
+  o: '0\u{39f}\u{3bf}\u{3c3}\u{3ed}\u{41e}\u{43e}\u{555}\u{585}\u{5e1}\u{647}\u{665}\u{6be}\u{6c1}\u{6d5}\u{6f5}\u{7c0}\u{7cb}\u{840}\u{966}\u{9e6}\u{a66}\u{ae6}\u{b20}\u{b66}\u{be6}\u{c02}\u{c66}\u{c82}\u{ce6}\u{d02}\u{d20}\u{d66}\u{d82}\u{e50}\u{ed0}\u{101d}\u{1040}\u{10ff}\u{110b}\u{11bc}\u{12d0}\u{17e0}\u{1a45}\u{1a80}\u{1a90}\u{1bea}\u{1c82}\u{1cbf}\u{1d0f}\u{1d11}\u{2c9e}\u{2c9f}\u{2d54}\u{3007}\u{a4f3}\u{ab3d}\u{10292}\u{102ab}\u{1030f}\u{10404}\u{1042c}\u{104c2}\u{104ea}\u{10516}\u{1092c}\u{10c17}\u{10d07}\u{11124}\u{11302}\u{114d0}\u{118b5}\u{118c8}\u{118d7}\u{118e0}\u{11de0}\u{16ae9}\u{1cce4}\u{1ccf0}\u{1e140}\u{1e2f0}\u{d8}\u{f8}\u{186}\u{19f}\u{254}\u{275}\u{1d97}\u{2c7a}\u{a74a}\u{a74b}\u{a74c}\u{a74d}\u{ab3f}\u{1df1b}',
 };
 const LOOK_ALIKES = new Map<string, string>(
   Object.entries(LOOK_ALIKES_OF).flatMap(([letter, shapes]) => [...shapes].map(shape => [shape, letter] as [string, string])),
