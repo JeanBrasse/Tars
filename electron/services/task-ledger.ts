@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { writeAtomicSync } from '../utils/secret-file';
+import { ensureSecretFileMode, writeAtomicSync, writeSecretFileSync } from '../utils/secret-file';
 import type { MessageSender } from '../core/pty-manager';
 
 /**
@@ -17,8 +17,11 @@ import type { MessageSender } from '../core/pty-manager';
  * cost is not written here: it is read from the transcripts when asked
  * (task-cost.ts), so a price that changes later is the price shown.
  *
- * Kept in ~/.dorothy/task-ledger.jsonl, which every agent can read: a task's
- * text is cut to 200 characters, as `currentTask` is in agents.json.
+ * Kept in ~/.dorothy/task-ledger.jsonl, which every agent can read, without
+ * what each task said: that is its first line of Noah's typed prompts and of
+ * the chat messages handed to orchestrators, kept in ~/.tars-private, which no
+ * agent is handed (`textFile`, 0600; Noah's answer of 2026-10-05), and cut to
+ * 200 characters. Durations, turns, sessions and costs stay in ~/.dorothy.
  */
 
 export type TaskSource = 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
@@ -138,7 +141,8 @@ function taskOf(v: unknown): TaskRecord | null {
     if (!isOptionalString(t[key])) return null;
   }
   if (!SOURCES.includes(t.source as TaskSource) || !OUTCOMES.includes(t.outcome as TaskOutcome)) return null;
-  if (typeof t.text !== 'string') return null;
+  // Written by builds before the text moved out; none since (textFile).
+  if (t.text !== undefined && typeof t.text !== 'string') return null;
   if (!isTime(t.startedAt) || !isTime(t.lastAt) || !(t.endedAt === null || isTime(t.endedAt))) return null;
   if (!isCount(t.turns)) return null;
   if (!Array.isArray(t.sessionIds) || t.sessionIds.length > 1000 || !t.sessionIds.every((s) => typeof s === 'string' && SESSION_ID.test(s))) return null;
@@ -159,7 +163,7 @@ function taskOf(v: unknown): TaskRecord | null {
     projectPath: t.projectPath as string | null, worktreePath: t.worktreePath as string | null,
     provider: t.provider as string | null, model: t.model as string | null, accountId: t.accountId as string | null,
     source: t.source as TaskSource, requesterAgentId: t.requesterAgentId as string | null, parentTaskId: t.parentTaskId as string | null,
-    text: clip(t.text), startedAt: t.startedAt, endedAt: t.endedAt as number | null, lastAt: t.lastAt,
+    text: clip(t.text as string | undefined), startedAt: t.startedAt, endedAt: t.endedAt as number | null, lastAt: t.lastAt,
     outcome: t.outcome as TaskOutcome, turns: t.turns, sessionIds: [...t.sessionIds] as string[],
     ...(acp ? { acp } : {}),
   };
@@ -200,6 +204,8 @@ export interface TaskLedger {
 
 export function createTaskLedger(opts: {
   file: string;
+  /** Where each task's text is kept, apart from the ledger: a file only its owner reads. */
+  textFile: string;
   now?: () => number;
   maxLines?: number;
   /**
@@ -210,7 +216,7 @@ export function createTaskLedger(opts: {
    */
   leads?: (receiverId: string, senderId: string) => boolean;
 }): TaskLedger {
-  const { file } = opts;
+  const { file, textFile } = opts;
   const now = opts.now ?? Date.now;
   const maxLines = opts.maxLines ?? DEFAULT_MAX_LINES;
 
@@ -237,11 +243,25 @@ export function createTaskLedger(opts: {
     }
   };
 
+  /** A line as the shared file holds it: a task without its text. */
+  const shared = (line: Line): object => (line.t === 'task' ? { t: 'task', task: { ...line.task, text: undefined } } : line);
+
+  const writeText = (id: string, text: string): void => {
+    if (!text) return;
+    try {
+      fs.mkdirSync(path.dirname(textFile), { recursive: true, mode: 0o700 });
+      fs.appendFileSync(textFile, JSON.stringify({ id, text }) + '\n', { mode: 0o600 });
+    } catch (err) {
+      console.warn('[task-ledger] could not keep a task\'s text:', (err as Error).message);
+    }
+  };
+
   const write = (line: Line): void => {
     apply(line);
+    if (line.t === 'task') writeText(line.task.id, line.task.text);
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.appendFileSync(file, JSON.stringify(line) + '\n');
+      fs.appendFileSync(file, JSON.stringify(shared(line)) + '\n');
       lines += 1;
       if (lines > maxLines) compact();
     } catch (err) {
@@ -249,14 +269,36 @@ export function createTaskLedger(opts: {
     }
   };
 
+  /** Both files again, one line per task kept: the ledger without texts, the texts apart. */
+  const rewrite = (kept: TaskRecord[]): void => {
+    writeAtomicSync(file, kept.map((task) => JSON.stringify(shared({ t: 'task', task })) + '\n').join(''));
+    fs.mkdirSync(path.dirname(textFile), { recursive: true, mode: 0o700 });
+    writeSecretFileSync(textFile, kept.filter((task) => task.text).map((task) => JSON.stringify({ id: task.id, text: task.text }) + '\n').join(''));
+    lines = kept.length;
+  };
+
   /** The file again, one line per task, the newest half of the bound kept. */
   const compact = (): void => {
     const kept = [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).slice(-Math.floor(maxLines / 2));
     byId.clear();
     for (const task of kept) byId.set(task.id, task);
-    writeAtomicSync(file, kept.map((task) => JSON.stringify({ t: 'task', task }) + '\n').join(''));
-    lines = kept.length;
+    rewrite(kept);
   };
+
+  // The texts first, each checked: a line that is not one is skipped.
+  const texts = new Map<string, string>();
+  let rawTexts = '';
+  try {
+    rawTexts = fs.readFileSync(textFile, 'utf-8');
+    ensureSecretFileMode(textFile);
+  } catch { /* none yet */ }
+  for (const text of rawTexts.split('\n')) {
+    if (!text.trim()) continue;
+    try {
+      const v = JSON.parse(text) as { id?: unknown; text?: unknown };
+      if (isId(v?.id) && typeof v.text === 'string') texts.set(v.id, clip(v.text));
+    } catch { /* damaged: skipped */ }
+  }
 
   // What was written before: a damaged line is skipped, the rest read. A task
   // still open was cut short by a quit, and ends where it was last heard of.
@@ -264,13 +306,27 @@ export function createTaskLedger(opts: {
   try {
     raw = fs.readFileSync(file, 'utf-8');
   } catch { /* none yet */ }
+  // A text found in the shared file was written there by a build before it
+  // moved out: it moves now, and the shared file is written again without it.
+  let inline = false;
   for (const text of raw.split('\n')) {
     if (!text.trim()) continue;
     lines += 1;
     try {
       const line = lineOf(JSON.parse(text));
+      if (line?.t === 'task') {
+        if (line.task.text) inline = true;
+        line.task.text = texts.get(line.task.id) ?? line.task.text;
+      }
       if (line) apply(line);
     } catch { /* damaged: skipped */ }
+  }
+  if (inline) {
+    try {
+      rewrite([...byId.values()].sort((a, b) => a.startedAt - b.startedAt));
+    } catch (err) {
+      console.warn('[task-ledger] could not move the tasks\' texts out of the shared ledger:', (err as Error).message);
+    }
   }
   for (const task of byId.values()) {
     if (task.endedAt === null) write({ t: 'end', id: task.id, at: task.lastAt, outcome: 'stopped' });

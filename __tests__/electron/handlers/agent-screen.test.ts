@@ -126,7 +126,7 @@ const resize = (id: string, cols: number, rows: number) =>
 
 /** The visible text of a fresh panel written what agent:get handed over. */
 function panelFrom(got: AgentStatus, cols: number, rows: number): string[] {
-  const panel = new Terminal({ cols, rows, scrollback: 10000, convertEol: true, allowProposedApi: true, logLevel: 'off' });
+  const panel = new Terminal({ cols, rows, scrollback: 5000, convertEol: true, allowProposedApi: true, logLevel: 'off' });
   (panel as unknown as { _core: { writeSync(d: string): void } })._core.writeSync(got.output.join(''));
   const buffer = panel.buffer.active;
   const text = Array.from({ length: rows }, (_, y) => buffer.getLine(buffer.viewportY + y)!.translateToString(true));
