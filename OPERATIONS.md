@@ -359,7 +359,9 @@ removed after measuring that nothing in the app listens for it.
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,
-Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
+Node 22, `npm ci`, Electron's binary (`npx install-electron`, from a cache keyed on its version,
+three tries when it has to download: GitHub answered that download 500 or 503 twice on 2026-10-01),
+`npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
@@ -575,7 +577,7 @@ opens. `scripts/prune-releases.mjs` finds it through git (the parent of
 `release/` of the current directory; tests name their folder with `--release-dir` or
 `TARS_RELEASE_DIR`.
 
-It keeps the **three newest versions** and deletes an older one **only when GitHub proves it
+It keeps the **two newest versions** (Noah's rule, 2026-10-01) and deletes an older one **only when GitHub proves it
 published**: a release `v<version>` on the repository of `build.publish` carrying its dmg and
 its zip, with the size and, where GitHub gives one, the `sha256` digest of the local files. A
 version that is not published, or published with other files, is kept and named. When the proof
@@ -697,7 +699,7 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
-| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
+| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). With several accounts on, Tars also asks Claude Code itself every 10 minutes (`get_usage`, `usage-probe.ts`), so an account no agent ran on, or one used on claude.ai, is still read; a failed probe is a `[claude-accounts] the usage of <id> was not read` line in the main process's log, and the account keeps its status line's figures. An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
 | `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Four files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to

@@ -10,7 +10,7 @@ import { SiteNav } from '@/components/SiteNav';
 const FEATURES = [
   {
     title: 'Every agent, one screen',
-    body: 'Real terminals in a grid, grouped by project. Watch six agents work at once, jump into any of them, broadcast one instruction to all.',
+    body: 'Real terminals in a grid, grouped by project. Watch six agents work at once, open any of them fullscreen in one press, broadcast one instruction to all.',
   },
   {
     title: 'Someone watching the whole thing',
@@ -34,7 +34,15 @@ const FEATURES = [
   },
   {
     title: 'See what they actually did',
-    body: 'A diff review of every branch, one search across the whole fleet\u2019s output, and per-provider spend against the budget you set.',
+    body: 'A diff review of every branch, one search across the fleet\u2019s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, beside each Claude account\u2019s 5 h and weekly limits.',
+  },
+  {
+    title: 'Several Claude subscriptions',
+    body: 'Run your Claude agents on up to five subscriptions. Each starts on the account with the most room left, and one cut short by a limit carries on from another account, in the same conversation.',
+  },
+  {
+    title: 'When an agent stops, or stalls',
+    body: 'Stop one with a reason, and its card, panel and window say who stopped it, when and why. One that reads running but has written nothing for 30 minutes and runs no command is marked stalled, and its orchestrator is told.',
   },
 ];
 

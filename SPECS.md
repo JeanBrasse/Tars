@@ -16,7 +16,7 @@ Nothing runs in the cloud. No account, no server, no analytics. The state lives 
 Electron 44 main process (Node 24.21, Chromium 152; electron/, ~47k LOC)
 ├── BrowserWindow  → Next.js 16.3 static export (src/, ~44k LOC)
 │                     contextIsolation, nodeIntegration off, app:// protocol
-│                     ↕ 215 IPC channels via contextBridge (electron/preload.ts)
+│                     ↕ 214 IPC channels via contextBridge (electron/preload.ts)
 │
 ├── PTY layer (node-pty)          agent PTYs · quick PTYs · skill PTYs · plugin PTYs
 │     └─ one shell per agent, cwd = worktreePath ?? projectPath
@@ -83,7 +83,7 @@ orchestrator agent's CLI
 | 5 | `loadAgents()` + `startAgentAutosave()` | 30 s dirty-flush timer, `unref`'d |
 | 6 | `setupProtocolHandler()` → `createWindow()` | `app://` and `local-file://` |
 | 7 | `initTray()` | menu-bar popover rendering `/tray-panel` |
-| 8 | IPC registration | 215 channels across 17 files: the 16 handler modules plus `mcp-orchestrator.ts` |
+| 8 | IPC registration | 214 channels across 16 files: the 15 handler modules plus `mcp-orchestrator.ts` |
 | 9 | `initVaultDb()` | better-sqlite3, WAL, foreign keys on |
 | 10 | Telegram + Slack + Discord + `startApiServer()` | |
 | 11 | `loadCatalog()` (not awaited) | stale disk copy answers immediately |
@@ -616,7 +616,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `model-catalog.json` + `.meta.json` | models.dev payload + `{ etag, fetchedAt }` | `writeCache()` | "a cache we cannot write is a slower app, not a broken one" |
 | `acp-registry.json` | `{ fetchedAt, agents }` | `writeCache()` | same |
 | `rate-limits.json` | quota snapshot of account 1 | `statusline.sh` | deleted when the statusline is disabled |
-| `rate-limits.d/<account>.json` | `{ updatedAt, rate_limits }` per Claude account (`default` or `acct-<6 hex>`, from `TARS_CLAUDE_ACCOUNT`) | `statusline.sh` | temp file + `mv`; any other name writes nothing. Read by `services/claude-accounts/counters.ts`: names and numbers only, a counter older than 30 min counts as unknown when choosing. `claude:getData` hands the Usage page one pair per account in use (`accountRateLimits`, Settings' order, a window past its reset as null), since only account 1 writes `rate-limits.json` |
+| `rate-limits.d/<account>.json` | `{ updatedAt, rate_limits }` per Claude account (`default` or `acct-<6 hex>`, from `TARS_CLAUDE_ACCOUNT`) | `statusline.sh` | temp file + `mv`; any other name writes nothing. Read by `services/claude-accounts/counters.ts`: names and numbers only, a counter older than 30 min counts as unknown when choosing. With the option on, each signed-in account is also read from Claude Code itself (`services/claude-accounts/usage-probe.ts`): `claude -p` over stream-json, with `--setting-sources ""` and `--strict-mcp-config` so that it runs none of the account's hooks and starts none of its MCP servers, answers a `get_usage` control request with the plan's 5 h, weekly and per-model weekly windows, 30 s after start, every 10 min and at each Settings refresh, one account at a time, with the account's own folder and without `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` (which empties the answer). Once it has answered, its input is closed and it exits by itself (0.7 s measured on a throwaway folder), removing the session file, key and `/tmp/cc-socks` socket it registers on start, which a SIGKILL left behind, 144 a day per account; one still there 3 s later is ended with its process group, as one that does not answer in 20 s is. Kept in memory; the newer of the probe and the file wins, and a probe with no reading never hides a file. Claude Code reads its own credential: Tars sends one control request and reads percentages back. `claude:getData` hands the Usage page one pair per account in use (`accountRateLimits`, Settings' order, a window past its reset as null), since only account 1 writes `rate-limits.json` |
 | `token-stats.json` | `{ [sessionId]: { in, out, cost, model, extra, date, provider } }` | `statusline.sh` | temp file + `mv` under a `mkdir` lock that holds its owner's token and is released only by that owner; a lock over 5 s old is taken over by one render at a time, and only while it is still the one judged dead. Anything that is not one JSON object starts again from `{}` |
 | `cli-paths.json` | per-binary overrides | CLI-paths handlers | |
 | `skills-marketplace.json` | `{ skills, fetchedAt }`: the last skills.sh listing | `services/skills-marketplace.ts` | served at once to the Extensions page, fetched again behind it once an hour old; a failed fetch keeps it. Agents can write `~/.dorothy`, so every entry is checked on the way back as on the way in (`repo` is `owner/name` or `owner/name/skill`, no segment `.`, `..` or starting with `-`), and a file with no valid entry is fetched afresh |
@@ -768,7 +768,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### The IPC boundary
 
-`electron/preload.ts` (913 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 215 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`. Every event subscription returns its own unsubscribe closure.
+`electron/preload.ts` (905 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 214 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `kanban:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`. Every event subscription returns its own unsubscribe closure.
 
 ### What is validated where
 

@@ -118,12 +118,12 @@ import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
-import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
@@ -147,6 +147,7 @@ import {
 } from './utils';
 import { spawnAgentPty } from './core/agent-pty';
 import { getProvider } from './providers';
+import { endVersionProbes } from './core/version-probe';
 
 // ============== App Settings Management ==============
 
@@ -524,7 +525,6 @@ app.whenReady().then(async () => {
   // Which accounts are signed in, asked of Claude Code before the first
   // launches need it; until it answers, only account 1 is used.
   if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
-  registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
 
@@ -855,6 +855,11 @@ app.on('before-quit', (event) => {
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
       ['stopTmpRetention', () => stopTmpRetention()],
+      // A claude asked for an account's usage (get_usage) just before the quit.
+      ['endUsageProbes', endUsageProbes],
+      // A CLI's --version asked for by Settings just before the quit: amp's
+      // kept writing into the home after Tars was gone (gate of #298).
+      ['endVersionProbes', endVersionProbes],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))
