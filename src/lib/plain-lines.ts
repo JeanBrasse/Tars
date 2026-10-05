@@ -11,14 +11,19 @@
 /** Longest line kept, in code points: a line that never ends would keep the summary as large as the screen. */
 const MAX_LINE = 500;
 
-/** OSC, DCS, SOS, PM and APC strings, ended by BEL or ST: a title, a link's address, a device's answer. */
-const STRING_SEQUENCE = /\x1b[\]P^_X][\s\S]*?(?:\x07|\x1b\\)/g;
+/**
+ * OSC, DCS, SOS, PM and APC strings, ended by BEL or ST: a title, a link's
+ * address, a device's answer. One nothing ends stops at its line, or at the
+ * next escape, so a stray one costs the rest of its line and no more; one the
+ * text ends in goes to the end.
+ */
+const STRING_SEQUENCE = /\x1b[\]P^_X][^\x07\x1b\r\n]*(?:\x07|\x1b\\)?/g;
 /** A control sequence: parameters, intermediates, final byte. */
 const CONTROL_SEQUENCE = /\x1b\[([0-?]*)[ -/]*[@-~]/g;
 /** Any other escape: a charset, a cursor saved or restored, a reset. */
 const ESCAPE = /\x1b[ -/]*[0-~]/g;
-/** A sequence the text ends in the middle of. */
-const CUT_AT_THE_END = /\x1b(?:\[[0-?]*[ -/]*|[\]P^_X][\s\S]*)?$/;
+/** A control sequence the text ends in the middle of, or a lone ESC: strings are cut above. */
+const CUT_AT_THE_END = /\x1b(?:\[[0-?]*[ -/]*)?$/;
 /** Controls but tab (line feed and carriage return are read before), and what hides, turns or breaks text. */
 const FLATTENED = /[\x00-\x08\x0b-\x1f\x7f-\x9f\p{Cf}\p{Zl}\p{Zp}]/gu;
 
