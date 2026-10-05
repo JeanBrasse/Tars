@@ -11,6 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.9.3',
     date: '2026-10-04',
     updates: [
+      'An agent stopped while it had no terminal says at once who stopped it, when and why, on its card, its pane and its window, where it read Stopped alone until the page was reloaded.',
       'Restarting an agent no longer moves its current task to done: the terminal the restart ended said it had finished, and the window took the new terminal\'s screen for the task\'s summary.',
       'With several Claude accounts on, Tars asks Claude Code itself for each account\'s 5 h and weekly use, every 10 minutes and when you refresh the accounts in Settings, so an account no agent has run on lately, or one you used on claude.ai, is no longer counted as empty when Tars picks the account an agent starts on. Tars never sees the account\'s sign-in: Claude Code answers with percentages',
       'Claude agents report their state to Tars from inside Claude Code, when it is 2.1.289 or newer: a turn\'s start, its end and its failure arrive in the order they happened, and an agent whose Claude Code has frozen is marked stalled after five minutes of silence, where Tars waited thirty. Its orchestrator is told the same way. A long command, a wait on another agent or a subagent is never taken for a freeze',
