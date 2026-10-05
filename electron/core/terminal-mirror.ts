@@ -64,10 +64,10 @@ const xterm = loadAsNode();
  * a mouse request that was never withdrawn, is not part of the new one.
  */
 
-/** Lines of history kept above the screen: what a Dashboard panel keeps
- *  (5,000 since #313, Noah's choice of 05/10), so a panel that comes back has
- *  the history a panel that never left has. */
-export const MIRROR_SCROLLBACK = 5000;
+/** Lines of history kept above the screen, which a panel that comes back is
+ *  handed: 2,500, Noah's choice of 05/10 for the main process (the panel's own
+ *  xterm keeps 5,000, #313). It kept 1,000. */
+export const MIRROR_SCROLLBACK = 2500;
 
 /**
  * The parts of xterm 5.3 a snapshot needs and the public API does not give.
@@ -102,10 +102,11 @@ interface Mirror {
   core: XtermInternals;
   serializer: SerializeAddon;
   repaint?: RepaintWatch;
-  /** The last snapshot, until the next write or resize. At 5,000 lines a full
-   *  mirror serializes in 100 to 230 ms on the main process, and agent:get asks
-   *  for it on every call, the Kanban and the tray included (the Audit's gate of
-   *  #319): an agent at rest writes nothing, and its snapshot is not made again. */
+  /** The last snapshot, until the next write or resize. A full mirror
+   *  serializes on the main process in about 24 ms at rest at 2,500 lines (100
+   *  to 230 ms at 5,000 under load, the Audit's gate of #319), and agent:get asks
+   *  for it on every call, the Kanban and the tray included: an agent at rest
+   *  writes nothing, and its snapshot is not made again. */
   snapshot?: string;
 }
 
