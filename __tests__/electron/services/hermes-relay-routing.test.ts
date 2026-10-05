@@ -22,6 +22,9 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  *    "@name" only for a project Tars registered).
  * 7. A project whose folder name holds a space is left out of what the plugin is told, so that the user can never
  *    write to it (the Audit's Low on #285): it is told, and reached, under its name with a dash in each space.
+ * 8. The user is not told what became of a message handed on (Noah's answer 24 of 2026-10-05): no receipt, a long
+ *    one, a reaction instead of a line, a receipt that says passed while the message waits without saying for what
+ *    (what is typed in the terminal, or a dialog), or "passed" for a message the terminal refused.
  *
  * The real channel and routing, the real writer every typed message takes (its sender line included), terminals
  * spawned as Tars spawns an agent's, with node-pty's process replaced by a recorder per agent; the plugin is a real
@@ -207,6 +210,60 @@ describe('"@project text"', () => {
 
     expect(all('orch-tars') + all('orch-capital')).toBe('');
     expect(fake.sends).toEqual([expect.objectContaining({ kind: 'report', text: expect.stringMatching(/more than one/i) })]);
+  });
+});
+
+describe('the receipt', () => {
+  const notices = () => fake.sends.filter((s) => s.ref.startsWith('notice:')).map((s) => s.text);
+
+  it('8. a message typed in: one short line, "Passed to" the orchestrator, and no reaction', async () => {
+    fake.projectMessage('tars', 'fais le point sur #271');
+    const report = await relay.relaySend({ text: 'Report, project tars', kind: 'report', ref: 'report:r-2', projectPath: TARS }, T0);
+    fake.reply({ messageId: (report as { messageId: string }).messageId }, 'Relance-le');
+
+    await relay.relayTick(T0 + 5_000);
+    await settle();
+
+    expect(notices()).toEqual(['Passed to Tars-Orchestrator.', 'Passed to Tars-Orchestrator.']);
+    expect(fake.calls.filter((c) => /react/i.test(c))).toEqual([]);
+  });
+
+  it('8. a message waiting behind what is typed in the terminal: says it waits, and for what', async () => {
+    const pm = await import('../../../electron/core/pty-manager');
+    pm.writeHumanInput(ptyProcesses.get('pty-orch-tars') as never, 'x');
+    fake.projectMessage('tars', 'fais le point');
+
+    await relay.relayTick(T0 + 5_000);
+    await settle();
+
+    expect(notices()).toEqual(['Passed to Tars-Orchestrator: it waits for what is typed in its terminal to be sent or cleared.']);
+  });
+
+  it('8. a message waiting behind a dialog: says it waits for the dialog', async () => {
+    const orch = agents.get('orch-tars')!;
+    orch.status = 'waiting';
+    orch.waitingReason = 'permission';
+    fake.projectMessage('tars', 'fais le point');
+
+    await relay.relayTick(T0 + 5_000);
+    await settle();
+
+    expect(all('orch-tars')).not.toContain('fais le point');
+    expect(notices()).toEqual(['Passed to Tars-Orchestrator: it waits for the permission or question its CLI shows to be answered.']);
+  });
+
+  it('8. a message the terminal refuses is not "passed"', async () => {
+    const pm = await import('../../../electron/core/pty-manager');
+    const term = ptyProcesses.get('pty-orch-tars') as never;
+    pm.writeHumanInput(term, 'x');
+    // The terminal's queue holds 20 (pty-manager.ts): fill it behind the draft.
+    for (let i = 0; i < 20; i++) pm.writeProgrammaticInput(term, `filler ${i}`, true);
+    fake.projectMessage('tars', 'fais le point');
+
+    await relay.relayTick(T0 + 5_000);
+    await settle();
+
+    expect(notices()).toEqual(["Not delivered: Tars-Orchestrator's terminal is not taking messages."]);
   });
 });
 

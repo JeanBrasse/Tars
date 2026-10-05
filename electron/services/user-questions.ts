@@ -8,7 +8,8 @@ import { isSuperAgent } from '../utils';
 import { agents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
-import { onRelayReply, relaySend, relayWasSent, tellUser, type RelayReply } from './hermes-relay';
+import { onRelayReply, receiptFor, relaySend, relayWasSent, tellUser, type RelayReply } from './hermes-relay';
+import { dialogShown } from '../core/agent-launch';
 
 /**
  * ask_user: a project's orchestrator asks the user a question on their Telegram, through their Hermes (the relay,
@@ -184,8 +185,10 @@ async function answerQuestion(reply: RelayReply, now: number): Promise<void> {
   // typed back under the user's sender line it would be the user's words, newlines and a
   // look-alike sender line included (the Audit's gate of #231). The question
   // is named by the time it was asked.
+  let heldForPerson = false;
   const outcome = writeProgrammaticInput(terminal!, `Answer to the question you asked at ${clock(q.askedAt)}:\n${answer}`, true, {
     agentId: agent.id,
+    onHeld: () => { heldForPerson = true; },
     from: 'the user via Telegram',
     sender: { kind: 'user', via: 'Telegram' },
     // Held, then dropped because the CLI stopped meanwhile: the question is
@@ -200,9 +203,9 @@ async function answerQuestion(reply: RelayReply, now: number): Promise<void> {
     return;
   }
   save(list.map(x => (x.id === q.id ? { ...x, state: 'answered' as const } : x)), now);
-  await tell(outcome === 'held'
-    ? `Held for ${q.agentName}'s terminal: it goes in once the field is free.`
-    : `Typed into ${q.agentName}'s terminal.`);
+  const heldBy = outcome !== 'held' ? undefined
+    : dialogShown(agent, terminal) ? 'dialog' as const : heldForPerson ? 'draft' as const : undefined;
+  await tell(receiptFor(q.agentName, heldBy));
 }
 
 /**

@@ -359,7 +359,9 @@ removed after measuring that nothing in the app listens for it.
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,
-Node 22, `npm ci`, `npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
+Node 22, `npm ci`, Electron's binary (`npx install-electron`, from a cache keyed on its version,
+three tries when it has to download: GitHub answered that download 500 or 503 twice on 2026-10-01),
+`npm test`. **That is all CI does**: no lint, no design lint, no E2E, no
 build. Playwright needs a display and a mac build; run it locally before you merge anything
 visual.
 
@@ -575,7 +577,7 @@ opens. `scripts/prune-releases.mjs` finds it through git (the parent of
 `release/` of the current directory; tests name their folder with `--release-dir` or
 `TARS_RELEASE_DIR`.
 
-It keeps the **three newest versions** and deletes an older one **only when GitHub proves it
+It keeps the **two newest versions** (Noah's rule, 2026-10-01) and deletes an older one **only when GitHub proves it
 published**: a release `v<version>` on the repository of `build.publish` carrying its dmg and
 its zip, with the size and, where GitHub gives one, the `sha256` digest of the local files. A
 version that is not published, or published with other files, is kept and named. When the proof
@@ -696,7 +698,7 @@ work.
 | `~/.dorothy/telegram-downloads/` | `electron/services/telegram-bot.ts` | inbound media |
 | `~/.dorothy/CLAUDE.md` | `electron/utils/index.ts` | copied from the repo at every boot, loaded by agents via `--add-dir` |
 | `~/.dorothy/statusline.sh` | `electron/utils/statusline.ts` | installed only when the statusline is enabled |
-| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
+| `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). With several accounts on, Tars also asks Claude Code itself every 10 minutes (`get_usage`, `usage-probe.ts`), so an account no agent ran on, or one used on claude.ai, is still read; a failed probe is a `[claude-accounts] the usage of <id> was not read` line in the main process's log, and the account keeps its status line's figures. An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
 | `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
 Four files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
@@ -1489,6 +1491,22 @@ neither is a place to park.
   machine it is a tunnel to a real gateway.
 - **Hermes down**: the tools answer "Hermes did not answer: ...". There is no local fallback.
 
+### The relay plugin (tars-relay)
+
+`hermes-plugins/tars-relay/` is a Hermes plugin, not part of the app: it is installed by hand on the server where
+Hermes runs, and never shipped in Tars. Through it Tars writes to Noah with Hermes's Telegram bot, and gets back his
+replies to those messages and the messages he starts with `@project` for a project Tars registered with it. It sees
+them from its own Telegram observer, so one sent while Hermes answers, or right after another message, reaches Tars
+too; Hermes's model is spared it when Hermes admits it on its own, and gets it as Hermes handed it otherwise (a
+correction, a merged message). The model gets a read-only copy of what Tars sent, on Noah's next turn in his private
+chat. Its README says how to install, check and remove it, and what it keeps. It needs Hermes 0.21.4 or later for the
+observer (`ctx.register_platform_handler`): the gateway's log says `Wired native handlers from plugin 'tars-relay'`.
+
+```bash
+cd hermes-plugins/tars-relay && python3 -m unittest discover -s tests   # its rules; npm test runs them too
+curl -s -H "X-Hermes-Session-Token: $TOK" http://127.0.0.1:9119/api/plugins/tars-relay/status | jq   # once installed
+```
+
 ### The relay (Tars's side)
 
 `services/hermes-relay.ts`, off unless `hermesRelayEnabled` is on (Settings, Hermes, or `app-settings.json`). It needs
@@ -1530,7 +1548,6 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 | "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
 | Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name (a space, @, colon or comma in it is written as a dash: `@my-project`), or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
 | An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
-
 ---
 
 ## Tasmania (local models)
