@@ -449,6 +449,23 @@ export interface HermesSshConfig {
   localPort?: number;
 }
 
+/**
+ * The relay to the user's Telegram through their Hermes (electron/services/hermes-relay.ts), as Settings, Hermes shows
+ * it. `state`: off (the switch, hermesRelayEnabled, is off); ready; unreachable (Hermes did not answer); not-configured
+ * (the tars-relay plugin has no user id on the server); plugin-missing (not installed on the server); unauthorized
+ * (the dashboard token was refused); no-connection (no Hermes connection saved). `waiting`: sends Hermes has not
+ * taken yet, which go when it does.
+ */
+export interface HermesRelayStatus {
+  enabled: boolean;
+  state: 'off' | 'ready' | 'unreachable' | 'not-configured' | 'plugin-missing' | 'unauthorized' | 'no-connection';
+  waiting: number;
+  lastError?: string;
+  lastSentAt?: string;
+  lastReplyAt?: string;
+  checkedAt?: string;
+}
+
 export interface HermesConnection {
   mode: HermesMode;
   localPort?: number;
@@ -819,9 +836,11 @@ export interface ClaudeAccountState extends ClaudeAccount {
   signedIn: boolean | null;
   email: string | null;
   subscriptionType: string | null;
-  /** From a status line on this account; null when never seen or reset. */
+  /** From a status line or a probe (get_usage) of this account; null when never seen or reset. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
+  /** Per-model weeklies a probe read ("Fable"); empty when none. */
+  models: Array<{ name: string; usedPercentage: number; resetsAt: number }>;
   /** Epoch ms of that report. */
   updatedAt: number | null;
   /** Epoch seconds: a limit was hit, skipped until then. */
@@ -1065,6 +1084,8 @@ export interface ElectronAPI {
         label: string;
         fiveHour: { usedPercentage: number; resetsAt: number } | null;
         sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        /** Per-model weeklies ("Fable"), read through Claude Code's get_usage; absent when none was read. */
+        models?: Array<{ name: string; usedPercentage: number; resetsAt: number }>;
         updatedAt: number | null;
       }>;
       tokenStats: {
@@ -1188,7 +1209,8 @@ export interface ElectronAPI {
 
   /** What an agent changed: per-file stats plus the actual patch. */
   review?: {
-    diff: (repoPath: string, baseBranch?: string) =>
+    /** `listOnly`: the files and counts, with `patch` empty; read each file's patch with `file`. */
+    diff: (repoPath: string, baseBranch?: string, opts?: { listOnly?: boolean }) =>
       Promise<{ success: boolean; diff?: ReviewDiff; error?: string }>;
     file: (repoPath: string, file: string, baseBranch?: string) =>
       Promise<{ success: boolean; patch?: string; error?: string }>;
@@ -1225,6 +1247,8 @@ export interface ElectronAPI {
       telegramAuthToken: string;
       telegramAuthorizedChatIds: string[];
       telegramRequireMention: boolean;
+      /** The relay to the user's Telegram through their Hermes. On, the Tars bot's token is erased and the bot off. */
+      hermesRelayEnabled?: boolean;
       slackEnabled: boolean;
       slackBotToken: string;
       slackAppToken: string;
@@ -1329,6 +1353,7 @@ export interface ElectronAPI {
       telegramAuthToken?: string;
       telegramAuthorizedChatIds?: string[];
       telegramRequireMention?: boolean;
+      hermesRelayEnabled?: boolean;
       slackEnabled?: boolean;
       slackBotToken?: string;
       slackAppToken?: string;
@@ -1799,6 +1824,9 @@ export interface ElectronAPI {
     saveConnection: (connection: HermesConnection) => Promise<{ success: boolean; error?: string }>;
     /** `tokenNotImported`: the connection came without the token Hermes Desktop keeps encrypted, which Tars cannot read. */
     importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string; tokenNotImported?: boolean }>;
+    /** The relay's state now; `onRelayStatus` hears each change of it. */
+    relayStatus: () => Promise<HermesRelayStatus>;
+    onRelayStatus: (callback: (status: HermesRelayStatus) => void) => () => void;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;

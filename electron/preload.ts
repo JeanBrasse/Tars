@@ -367,8 +367,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   review: {
-    diff: (repoPath: string, baseBranch?: string) =>
-      ipcRenderer.invoke('review:diff', { repoPath, baseBranch }),
+    // listOnly: the file list without the patches, which review:file reads one at a time.
+    diff: (repoPath: string, baseBranch?: string, opts?: { listOnly?: boolean }) =>
+      ipcRenderer.invoke('review:diff', { repoPath, baseBranch, listOnly: opts?.listOnly === true }),
     file: (repoPath: string, file: string, baseBranch?: string) =>
       ipcRenderer.invoke('review:file', { repoPath, file, baseBranch }),
     repo: (repoPath: string) =>
@@ -625,6 +626,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('hermes:connection:save', connection),
     importDesktopConnection: () =>
       ipcRenderer.invoke('hermes:connection:import'),
+    // The relay to the user's Telegram through their Hermes: its state now, and each change of it.
+    relayStatus: () =>
+      ipcRenderer.invoke('hermes:relay:status'),
+    onRelayStatus: (callback: (status: unknown) => void) => {
+      const listener = (_: unknown, status: unknown) => callback(status);
+      ipcRenderer.on('hermes:relay:status', listener);
+      return () => ipcRenderer.removeListener('hermes:relay:status', listener);
+    },
     testConnection: (connection: Record<string, unknown>) =>
       ipcRenderer.invoke('hermes:connection:test', connection),
     signIn: (params: { connection: Record<string, unknown>; username: string; password: string; provider?: string }) =>
