@@ -1,0 +1,180 @@
+/**
+ * Tars's state mod: this agent's state, reported to the Tars that started it
+ * from inside Claude Code (electron/services/state-mod.ts says the rest).
+ *
+ * It posts what the four shell hooks post, from the same classic events and
+ * with the same inputs (SessionStart's registration, UserPromptSubmit's
+ * running, Stop's output and idle, StopFailure's error), marked `via: 'mod'`,
+ * and a heartbeat every 15 s from this process's own event loop, naming the
+ * tool in flight. Every hook hands the event on unchanged (`next(e)`): the
+ * agent does exactly what it did without the mod, and the shell hooks still
+ * run, Tars setting their four posts aside for a session the mod registered.
+ *
+ * Its token is sent only to a Tars that proves it is the one that started this
+ * CLI, as the shell hooks do (hooks/tars-hook.sh): sha256 of
+ * "<TARS_INSTANCE_ID>:<challenge>" from /api/health. Without that proof the
+ * mod says nothing, and the shell hooks report as they did.
+ */
+
+const BEAT_MS = 15_000;
+const OUTPUT_CAP = 4000;
+const TASK_CAP = 200;
+/**
+ * The waits before a post's second and third tries. For a session the mod
+ * registered Tars sets the shell hook's post aside, so the mod's is the only
+ * one: a Stop's idle lost or refused (Tars busy, a 503) left the agent
+ * `running` until its next turn (the Audit's gate of #308).
+ */
+const RETRY_WAITS_MS = [1_000, 3_000];
+
+type Tars = { agentId: string; api: string; token: string };
+
+/**
+ * What this module uses of the engine, typed here: the repository's own tsc and
+ * eslint read this file and do not have Claude Code's `claude-code` module.
+ */
+type Engine = {
+  env: { get(name: string): Promise<string | undefined> };
+  http: { fetch(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<{ ok: boolean; status: number; text: string }> };
+  clock: { every(ms: number, fn: () => void): unknown; sleep(ms: number): Promise<void> };
+};
+/** A classic hook's input, as the shell hooks read it on stdin. */
+type Classic = {
+  session_id?: string; source?: string; prompt?: unknown; stop_hook_active?: unknown; last_assistant_message?: unknown; error?: unknown;
+  session_crons?: unknown; background_tasks?: unknown;
+};
+
+/** A background task's status that means it is over, as on-stop.sh reads them. */
+const TASK_OVER = new Set(['completed', 'failed', 'killed', 'stopped', 'error']);
+
+/**
+ * What the agent leaves waiting inside its CLI at this rest, counted as
+ * on-stop.sh counts it: its timers (a /loop wakeup, a CronCreate) and the
+ * background tasks still running. Undefined when Claude Code did not send both
+ * lists: nothing is known then. For a session the mod registered the shell's
+ * Stop post is set aside, so this is the only count that reaches Tars, which
+ * decides from it whether the sleep pass may end the agent (QA's gate of #322).
+ */
+function pendingOf(e: Classic): { crons: number; background: number } | undefined {
+  if (!Array.isArray(e.session_crons) || !Array.isArray(e.background_tasks)) return undefined;
+  const running = e.background_tasks.filter(task => {
+    const status = task && typeof task === 'object' ? (task as { status?: unknown }).status ?? 'running' : 'running';
+    return !TASK_OVER.has(String(status));
+  });
+  return { crons: e.session_crons.length, background: running.length };
+}
+type On = <E>(event: string, hook: ($: Engine, e: E, next: (e: E) => Promise<unknown>) => unknown) => void;
+
+/** undefined: not asked yet; null: not under a Tars that proved itself. */
+let tars: Tars | null | undefined;
+let sessionId: string | null = null;
+let beating = false;
+const inFlight: string[] = [];
+/** One post at a time, in the order the events came: a Stop's idle never lands before its turn's running. */
+let queue: Promise<unknown> = Promise.resolve();
+
+function hex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function proven($: Engine): Promise<Tars | null> {
+  if (tars !== undefined) return tars;
+  const agentId = await $.env.get('CLAUDE_AGENT_ID');
+  const api = await $.env.get('CLAUDE_MGR_API_URL');
+  const token = await $.env.get('CLAUDE_MGR_API_TOKEN');
+  const instance = await $.env.get('TARS_INSTANCE_ID');
+  if (!agentId || !api || !token || !instance) {
+    tars = null;
+    return tars;
+  }
+  const challenge = hex(crypto.getRandomValues(new Uint8Array(16)).buffer);
+  try {
+    const answer = await $.http.fetch(`${api}/api/health?challenge=${challenge}`);
+    const proof = JSON.parse(answer.text || '{}').proof;
+    const expected = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${instance}:${challenge}`)));
+    tars = proof === expected ? { agentId, api, token } : null;
+  } catch {
+    tars = null;
+  }
+  return tars;
+}
+
+function report($: Engine, route: string, body: Record<string, unknown>): void {
+  queue = queue.then(async () => {
+    const to = await proven($);
+    if (!to) return;
+    const init = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${to.token}` },
+      body: JSON.stringify({ agent_id: to.agentId, ...body, via: 'mod' }),
+    };
+    // Tried again, in the queue, so the events keep their order; given up
+    // after the third try, so one that keeps failing holds nothing back.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if ((await $.http.fetch(`${to.api}${route}`, init)).ok) return;
+      } catch {
+        // tried again below
+      }
+      if (attempt >= RETRY_WAITS_MS.length) return;
+      await $.clock.sleep(RETRY_WAITS_MS[attempt]);
+    }
+  }).catch(() => undefined);
+}
+
+function beat($: Engine): void {
+  if (!sessionId) return;
+  report($, '/api/hooks/mod-beat', { session_id: sessionId, tool: inFlight[inFlight.length - 1] ?? null });
+}
+
+export function register(on: On) {
+  on<Classic>('classic.SessionStart', ($, e, next) => {
+    sessionId = e.session_id ?? null;
+    report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle', source: e.source });
+    if (!beating) {
+      beating = true;
+      $.clock.every(BEAT_MS, () => beat($));
+    }
+    return next(e);
+  });
+
+  on<Classic>('classic.UserPromptSubmit', ($, e, next) => {
+    report($, '/api/hooks/status', {
+      session_id: e.session_id, status: 'running', event: 'UserPromptSubmit',
+      current_task: typeof e.prompt === 'string' ? e.prompt.slice(0, TASK_CAP) : '',
+    });
+    return next(e);
+  });
+
+  on<Classic>('classic.Stop', ($, e, next) => {
+    if (e.stop_hook_active !== true) {
+      if (typeof e.last_assistant_message === 'string' && e.last_assistant_message) {
+        report($, '/api/hooks/output', { session_id: e.session_id, output: e.last_assistant_message.slice(0, OUTPUT_CAP) });
+      }
+      const pending = pendingOf(e);
+      report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle', ...(pending ? { pending } : {}) });
+      report($, '/api/hooks/agent-stopped', { session_id: e.session_id });
+    }
+    return next(e);
+  });
+
+  on<Classic>('classic.StopFailure', ($, e, next) => {
+    report($, '/api/hooks/status', {
+      session_id: e.session_id, status: 'error', event: 'StopFailure',
+      error_kind: typeof e.error === 'string' ? e.error : '',
+      error_message: typeof e.last_assistant_message === 'string' ? e.last_assistant_message : '',
+    });
+    return next(e);
+  });
+
+  // The tool in flight, for the heartbeat: a long Bash, an MCP wait or a subagent.
+  on<{ tool: string }>('tool.call', async (_$, e, next) => {
+    inFlight.push(e.tool);
+    try {
+      return await next(e);
+    } finally {
+      const at = inFlight.lastIndexOf(e.tool);
+      if (at >= 0) inFlight.splice(at, 1);
+    }
+  });
+}
