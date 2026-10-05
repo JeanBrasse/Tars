@@ -186,6 +186,8 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
 }
 
 export interface TaskQuery {
+  /** An exact start, ms since the epoch: the tasks started from it. Before `sinceDays` when both are given. */
+  since?: number;
   sinceDays?: number;
   projectPath?: string;
   agentId?: string;
@@ -220,7 +222,8 @@ export interface TaskReport {
 
 /** The tasks a query asks for: the period, the project, the agent. */
 export function selectTasks(tasks: TaskRecord[], query: TaskQuery, now: number): TaskRecord[] {
-  const since = typeof query.sinceDays === 'number' && query.sinceDays > 0 ? now - query.sinceDays * 86_400_000 : -Infinity;
+  const since = typeof query.since === 'number' && Number.isFinite(query.since) ? query.since
+    : typeof query.sinceDays === 'number' && query.sinceDays > 0 ? now - query.sinceDays * 86_400_000 : -Infinity;
   return tasks.filter((t) => t.startedAt >= since
     && (!query.projectPath || t.projectPath === query.projectPath)
     && (!query.agentId || t.agentId === query.agentId));

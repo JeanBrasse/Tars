@@ -45,6 +45,8 @@ matter once there is more than one.
 
 **Every agent on one screen.** Real terminals in a grid, grouped by project.
 Watch six at once, jump into any of them, broadcast one instruction to all.
+Each panel shows its agent's session as it runs, and opens fullscreen in one
+press on the arrows in its header.
 
 **Someone watching the whole thing.** A Hermes agent sees every agent in every
 project and tells you what they are doing, which decisions are in flight, and
@@ -69,6 +71,26 @@ task, and messages to the orchestrator, which answers there.
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
 
+**Several Claude subscriptions.** Turn on Claude accounts in Settings and Tars
+runs your Claude agents on up to five subscriptions. Each account signs in
+through Claude Code's own login, in a terminal Tars opens, and Tars keeps none
+of it: account 1 is the `~/.claude` Claude Code already uses, and each other
+one gets a Claude Code folder of its own under `~/.claude-accounts`. An agent
+starts on the account with the most room left in its 5 h and weekly windows.
+Cut by an account's limit, it is started again on another, in the same
+conversation; past its threshold, 90% of the 5 h window or 95% of the week
+unless you change them, it moves when its turn ends. Its card,
+its panel and its window name the account it runs on.
+
+**A stop says who, and a stall is told.** Stopping an agent ends its CLI and
+everything the CLI started. The agent then reads stopped, and its card, panel
+and window say who stopped it and when, and why when an orchestrator stopped
+it, which must give a reason; it stays stopped across a restart,
+so it is not resumed at launch or handed kanban work until it is started again.
+An agent that reads running but has written nothing for 30 minutes and runs no
+command is marked stalled, and the orchestrator that gave it the work, or its
+project's orchestrator, is told.
+
 **Any CLI, any model.** Nineteen providers, plus local models and any OpenAI-compatible
 endpoint of your own. Model lists and prices come from a
 live catalogue, so a model released this morning is selectable this morning,
@@ -81,8 +103,11 @@ gateway, gbrain and Honcho behind a single interface, reachable by every CLI,
 not only the ones with a session hook.
 
 **See what they actually did.** A diff review of every branch against the one it
-was cut from, one search across the whole fleet's output, and per-provider spend
-against a budget you set.
+was cut from, in every project you added. One search across the whole fleet's
+output, read as each terminal showed it, and a Claude agent's conversation from
+its transcript. Spend per provider, hour by hour over the last 24 hours or day by
+day, against a budget you set, beside each Claude account's 5 h and weekly
+limits.
 
 ![Usage: what each provider actually cost, against the budget you set](screenshots/usage.png)
 
@@ -187,17 +212,17 @@ completion hook, it simply has no screen of its own.
 
 | Screen | What it is for |
 |---|---|
-| **Dashboard** | The terminal grid. Every agent, live, grouped by project |
+| **Dashboard** | The terminal grid. Every agent, live, grouped by project; each panel shows its session and opens fullscreen in one press |
 | **Chat** | Hermes and a room per project, in one list. Hermes watches every project and asks before it acts; in a room, that project's agents talk to each other and to you, the thread first, the team listed under the rooms, and what needs you above the thread |
-| **Agents** | Create, configure, start and stop, grouped by project or one project at a time. Templates and whole teams |
+| **Agents** | Create, configure, start and stop, grouped by project or one project at a time. A stopped agent says who stopped it and when, and why when an orchestrator did. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |
-| **Review** | What each agent changed, as a diff against its base branch |
-| **Logs** | One search across every agent's output, regex included |
+| **Review** | What each agent changed, as a diff against its base branch, in every project you added |
+| **Logs** | One search across every agent's output, as its terminal showed it, regex included |
 | **Vault** | Documents your agents can read and write |
 | **Projects** | The folders Tars knows about, and their agents |
 | **Extensions** | Skills and plugins, per provider |
-| **Usage** | Spend per provider and per model, against your budgets |
+| **Usage** | Spend per provider and per model, over the last 24 hours or 14 days, 12 weeks or 12 months, against your budgets, and each Claude account's limits |
 | **Brain** | The five memory sources, and whether each one answers |
 
 ![The vault: documents your agents can read and write](screenshots/vault.png)

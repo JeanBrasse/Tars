@@ -112,6 +112,77 @@ export function endingOf(agent: TaskAgentView): Exclude<TaskOutcome, 'running'> 
   }
 }
 
+const SOURCES: readonly TaskSource[] = ['terminal', 'agent', 'tars', 'telegram', 'slack', 'discord', 'hermes', 'acp'];
+const OUTCOMES: readonly TaskOutcome[] = ['running', 'completed', 'error', 'stopped'];
+/** A session id as Claude Code writes them: never a path, since it becomes one (task-cost.ts). */
+const SESSION_ID = /^[A-Za-z0-9_-]{1,100}$/;
+
+const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 200;
+const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+const isOptionalString = (v: unknown): v is string | null => v === null || (typeof v === 'string' && v.length <= 4096);
+
+/**
+ * A task as the file holds it, checked field by field, or null. The file is in
+ * ~/.dorothy, which every agent can write: a line that parses is not therefore
+ * a task (the Audit's Low 2 on #305). A line with a field of the wrong type is
+ * dropped whole; the text, the one free field, is cut to 200 characters here
+ * as well as when it is written.
+ */
+function taskOf(v: unknown): TaskRecord | null {
+  if (!v || typeof v !== 'object') return null;
+  const t = v as Record<string, unknown>;
+  if (!isId(t.id) || !isId(t.agentId)) return null;
+  for (const key of ['projectPath', 'worktreePath', 'provider', 'model', 'accountId', 'requesterAgentId', 'parentTaskId'] as const) {
+    if (!isOptionalString(t[key])) return null;
+  }
+  if (!SOURCES.includes(t.source as TaskSource) || !OUTCOMES.includes(t.outcome as TaskOutcome)) return null;
+  if (typeof t.text !== 'string') return null;
+  if (!isTime(t.startedAt) || !isTime(t.lastAt) || !(t.endedAt === null || isTime(t.endedAt))) return null;
+  if (!isCount(t.turns)) return null;
+  if (!Array.isArray(t.sessionIds) || t.sessionIds.length > 1000 || !t.sessionIds.every((s) => typeof s === 'string' && SESSION_ID.test(s))) return null;
+  let acp: AcpUsage | undefined;
+  if (t.acp !== undefined) {
+    const a = t.acp as Record<string, unknown> | null;
+    if (!a || typeof a !== 'object') return null;
+    if (![a.inputTokens, a.outputTokens, a.cachedReadTokens, a.cachedWriteTokens].every(isCount)) return null;
+    if (!(a.costUSD === null || (typeof a.costUSD === 'number' && Number.isFinite(a.costUSD)))) return null;
+    acp = {
+      inputTokens: a.inputTokens as number, outputTokens: a.outputTokens as number,
+      cachedReadTokens: a.cachedReadTokens as number, cachedWriteTokens: a.cachedWriteTokens as number,
+      costUSD: a.costUSD as number | null,
+    };
+  }
+  return {
+    id: t.id, agentId: t.agentId,
+    projectPath: t.projectPath as string | null, worktreePath: t.worktreePath as string | null,
+    provider: t.provider as string | null, model: t.model as string | null, accountId: t.accountId as string | null,
+    source: t.source as TaskSource, requesterAgentId: t.requesterAgentId as string | null, parentTaskId: t.parentTaskId as string | null,
+    text: clip(t.text), startedAt: t.startedAt, endedAt: t.endedAt as number | null, lastAt: t.lastAt,
+    outcome: t.outcome as TaskOutcome, turns: t.turns, sessionIds: [...t.sessionIds] as string[],
+    ...(acp ? { acp } : {}),
+  };
+}
+
+/** A line of the file, checked as taskOf checks a task, or null. */
+function lineOf(v: unknown): Line | null {
+  if (!v || typeof v !== 'object') return null;
+  const l = v as Record<string, unknown>;
+  if (l.t === 'task') {
+    const task = taskOf(l.task);
+    return task ? { t: 'task', task } : null;
+  }
+  if (!isId(l.id) || !isTime(l.at)) return null;
+  if (l.t === 'turn') {
+    if (l.sessionId !== undefined && !(typeof l.sessionId === 'string' && SESSION_ID.test(l.sessionId))) return null;
+    return { t: 'turn', id: l.id, at: l.at, ...(typeof l.sessionId === 'string' ? { sessionId: l.sessionId } : {}) };
+  }
+  if (l.t === 'end' && OUTCOMES.includes(l.outcome as TaskOutcome) && l.outcome !== 'running') {
+    return { t: 'end', id: l.id, at: l.at, outcome: l.outcome as Exclude<TaskOutcome, 'running'> };
+  }
+  return null;
+}
+
 type Line =
   | { t: 'task'; task: TaskRecord }
   | { t: 'turn'; id: string; at: number; sessionId?: string }
@@ -126,7 +197,18 @@ export interface TaskLedger {
   tasks(): TaskRecord[];
 }
 
-export function createTaskLedger(opts: { file: string; now?: () => number; maxLines?: number }): TaskLedger {
+export function createTaskLedger(opts: {
+  file: string;
+  now?: () => number;
+  maxLines?: number;
+  /**
+   * Whether `receiverId` leads `senderId`: a message from the second to the
+   * first is then a report, not a delegation (#302's rule for the delegation
+   * link: its project's orchestrator). The ledger knows no roles; the app
+   * answers from the fleet (task-watch.ts).
+   */
+  leads?: (receiverId: string, senderId: string) => boolean;
+}): TaskLedger {
   const { file } = opts;
   const now = opts.now ?? Date.now;
   const maxLines = opts.maxLines ?? DEFAULT_MAX_LINES;
@@ -185,8 +267,8 @@ export function createTaskLedger(opts: { file: string; now?: () => number; maxLi
     if (!text.trim()) continue;
     lines += 1;
     try {
-      const line = JSON.parse(text) as Line;
-      if (line && (line.t === 'task' ? line.task?.id : typeof line.id === 'string')) apply(line);
+      const line = lineOf(JSON.parse(text));
+      if (line) apply(line);
     } catch { /* damaged: skipped */ }
   }
   for (const task of byId.values()) {
@@ -200,13 +282,20 @@ export function createTaskLedger(opts: { file: string; now?: () => number; maxLi
 
   return {
     handedOff(agentId, handOff) {
-      const requester = handOff.requesterAgentId && handOff.requesterAgentId !== agentId
-        ? openTaskOf(handOff.requesterAgentId) : undefined;
-      pending.set(agentId, { ...handOff, text: clip(handOff.text), at: now(), parentTaskId: requester?.id ?? null });
+      const senderId = handOff.requesterAgentId;
+      const requester = senderId && senderId !== agentId ? openTaskOf(senderId) : undefined;
+      // A worker writing to the agent that handed it its task, or to the agent
+      // that leads it, is reporting: the task it starts there is not handed on
+      // from the worker's (QA's gate of #305: the lead's next task and all it
+      // delegated after nested under the worker's, a task of 1 read 21).
+      const reports = !!senderId && ((requester?.requesterAgentId === agentId) || (opts.leads?.(agentId, senderId) ?? false));
+      pending.set(agentId, { ...handOff, text: clip(handOff.text), at: now(), parentTaskId: reports ? null : requester?.id ?? null });
     },
 
-    turnStarted(agent, turn) {
+    turnStarted(agent, turnIn) {
       const at = now();
+      // Only a session id that reads back (taskOf): anything else is no session to price.
+      const turn = { ...turnIn, sessionId: turnIn.sessionId && SESSION_ID.test(turnIn.sessionId) ? turnIn.sessionId : undefined };
       // A hand-off is taken by the first turn after it, whichever task that
       // turn belongs to: typed in while a task was open, it is that task's.
       const handOff = pending.get(agent.id);

@@ -66,7 +66,20 @@ async function turn(prompt) {
   log('turn: ' + JSON.stringify(prompt));
   hook('user-prompt-submit.sh', { hook_event_name: 'UserPromptSubmit', prompt });
   const at = prompt.indexOf('DELEGATE>>');
-  if (id === 'lead' && at !== -1) {
+  const api = (route, body) => fetch(process.env.CLAUDE_MGR_API_URL + route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.CLAUDE_MGR_API_TOKEN, 'X-Tars-Caller-Id': id },
+    body: JSON.stringify(body),
+  });
+  if (id === 'lead' && prompt.includes('RUNACP>>')) {
+    // As delegate_task does: a run over ACP on an agent with an ACP mode, then work for an agent not running yet.
+    reply(1000000, 0);
+    const run = await api('/api/agents/oc/run-task', { task: 'review the release notes', timeoutSeconds: 60 });
+    log('run-task: ' + run.status + ' ' + (await run.text()).slice(0, 300));
+    const spawn = await api('/api/agents/sleeper/message', { message: 'SPAWN>> tidy the changelog' });
+    log('message to sleeper: ' + spawn.status + ' ' + (await spawn.text()).slice(0, 200));
+    await sleep(3000);
+  } else if (id === 'lead' && at !== -1) {
     reply(1000000, 0);
     const res = await fetch(process.env.CLAUDE_MGR_API_URL + '/api/agents/worker/message', {
       method: 'POST',
@@ -90,10 +103,14 @@ process.stdout.write('stand-in ready\n');
 process.stdin.setRawMode(true);
 let buffer = '';
 let queue = Promise.resolve();
+// A launch with a task hands it after \`--\` (promptOperand), as Claude Code takes it: its first turn.
+const dashes = process.argv.indexOf('--');
+if (dashes !== -1 && process.argv.slice(dashes + 1).join(' ').trim()) queue = queue.then(() => turn(process.argv.slice(dashes + 1).join(' ')));
 process.stdin.on('data', (data) => {
   buffer += data.toString();
   let end;
-  while ((end = buffer.indexOf('\r')) !== -1) {
+  // \r in raw mode; \n for what was typed before raw mode was set, which the line discipline turned into one.
+  while ((end = buffer.search(/[\r\n]/)) !== -1) {
     const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
     buffer = buffer.slice(end + 1);
     if (line.trim()) queue = queue.then(() => turn(line));
@@ -177,6 +194,97 @@ test('a task handed on is priced under the task it was handed for, from the tran
     // Kept: the ledger on disk holds them, for the next launch.
     const ledger = fs.readFileSync(path.join(dir, 'task-ledger.jsonl'), 'utf8');
     for (const t of [lead, worker, news]) expect(ledger).toContain(t.id);
+  } finally {
+    await app.close();
+  }
+});
+
+/** A fake ACP agent, launched as `opencode acp`: one session, one turn, usage and cost reported as the ACP CLIs do. */
+const FAKE_ACP = String.raw`
+let buf = '';
+const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
+process.stdin.on('data', (chunk) => {
+  buf += chunk;
+  let nl;
+  while ((nl = buf.indexOf('\n')) !== -1) {
+    const line = buf.slice(0, nl).trim();
+    buf = buf.slice(nl + 1);
+    if (line) handle(JSON.parse(line));
+  }
+});
+function handle(msg) {
+  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
+  if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'acp-1' } });
+  if (msg.method === 'session/prompt') {
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewed' } } } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'usage_update', inputTokens: 500, outputTokens: 100, used: 600, cost: { amount: 0.75, currency: 'USD' } } } });
+    return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn', usage: { inputTokens: 500, outputTokens: 100 } } });
+  }
+  if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} });
+}
+process.stdin.resume();
+`;
+
+test('a run over ACP and a session started for an agent are tasks under the task that handed them over', async () => {
+  test.setTimeout(240_000);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-task-acp-'));
+  const project = path.join(home, 'projects', 'demo');
+  const dir = path.join(home, '.dorothy');
+  const bin = path.join(home, 'bin');
+  for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
+  const cli = path.join(bin, 'claude');
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst HOOKS = ${JSON.stringify(HOOKS)};\n${STAND_IN}`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'opencode'), `#!${process.execPath}\n${FAKE_ACP}`, { mode: 0o755 });
+  const agent = (id: string, name: string, role = 'worker', provider = 'claude') => ({
+    id, name, character: 'robot', provider, status: 'idle', role, projectPath: project, skills: [], cliPath: cli,
+    createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',
+  });
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
+    agent('lead', 'Project Lead', 'orchestrator'), agent('oc', 'Review Agent', 'worker', 'opencode'), agent('sleeper', 'Sleeper'),
+  ], null, 2));
+  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
+  // The fake `opencode` first on every launch's PATH, and the ACP table fresh, so nothing is fetched or run from npm.
+  fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { additionalPaths: [bin] } }));
+  fs.writeFileSync(path.join(dir, 'acp-registry.json'), JSON.stringify({ fetchedAt: Date.now(), agents: { opencode: { id: 'opencode', name: 'opencode', version: 'local', command: 'opencode', args: ['acp'] } } }));
+  fs.writeFileSync(path.join(dir, 'model-catalog.json'), JSON.stringify({
+    anthropic: { models: { 'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5', cost: { input: 1, output: 2, cache_read: 0.1, cache_write: 1.25 } } } },
+  }));
+  fs.writeFileSync(path.join(dir, 'model-catalog.meta.json'), JSON.stringify({ fetchedAt: Date.now() }));
+
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31465), DOROTHY_E2E: '1' },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.goto(`${DEV_URL}/usage`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
+    const list = () => page.evaluate(() => (window as unknown as Api).electronAPI.agent.list());
+    const tasks = () => page.evaluate(() => (window as unknown as Api).electronAPI.usage.tasks({ sinceDays: 1 }));
+
+    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'lead', prompt: '' }));
+    await expect.poll(async () => !!(await list()).find((a) => a.id === 'lead' && a.cliRunning && a.currentSessionId), { timeout: 60_000 }).toBe(true);
+    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'lead', input: 'RUNACP>> ship the release\r' }));
+
+    // The lead's task, the run over ACP, and the sleeper's session: three tasks, all ended.
+    await expect.poll(async () => {
+      const r = await tasks();
+      return r.tasks.length >= 3 && r.tasks.every((t) => t.outcome !== 'running');
+    }, { timeout: 120_000, intervals: [1000] }).toBe(true);
+    const report = await tasks();
+    const lead = report.tasks.find((t) => t.agentId === 'lead' && t.source === 'terminal')!;
+    const acp = report.tasks.find((t) => t.source === 'acp');
+    const spawned = report.tasks.find((t) => t.agentId === 'sleeper');
+    recordValues({ report, standIn: fs.readFileSync(path.join(home, 'stand-in.log'), 'utf8').split('\n') });
+
+    expect(acp, 'A3: the run over ACP is a task').toMatchObject({
+      agentId: 'oc', provider: 'opencode', requesterAgentId: 'lead', parentTaskId: lead.id, text: 'review the release notes',
+      outcome: 'completed', costUSD: 0.75, tokens: { input: 500, output: 100 },
+    });
+    expect(spawned, 'A2: a session started for it is handed over by the lead, not by Tars').toMatchObject({
+      source: 'agent', requesterAgentId: 'lead', parentTaskId: lead.id, text: 'SPAWN>> tidy the changelog', outcome: 'completed',
+    });
+    expect(lead.totalCostUSD).toBeCloseTo(lead.costUSD! + 0.75 + (spawned!.costUSD ?? 0), 9);
   } finally {
     await app.close();
   }

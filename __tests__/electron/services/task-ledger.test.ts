@@ -27,6 +27,14 @@ import { createTaskLedger, type TaskAgentView } from '../../../electron/services
  * 8. What is kept goes wrong: the tasks do not survive a restart; a task open when Tars stopped stays open for ever;
  *    a damaged line stops the reading; the file grows without bound; more than 200 characters of a task's text are
  *    kept (the file is in ~/.dorothy, which every agent reads).
+ * 9. (the Audit's Low 2 on #305) A line forged in the file, which every agent can write, reaches the report with fields
+ *    of the wrong type: a text that is an object or a megabyte, turns that are not a number, an agent that is null, a
+ *    time that is not one (then written back as the end of a task), a session id that is a path; or a good line is
+ *    lost with it.
+ * 10. (QA's gate of #305) A worker's report to the agent that leads it is taken for a delegation: the lead's next task,
+ *     and all it hands on after, are filed under the worker's task, whose total then holds them (a task that cost 1
+ *     showed a total of 21). A worker writing to the agent that handed it its task, or to its project's orchestrator,
+ *     reports; as #302 has it for the delegation link.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -248,5 +256,97 @@ describe('what is kept', () => {
     expect(Array.from(ledger.tasks()[0].text)).toHaveLength(200);
     expect(ledger.tasks()[0].text.endsWith(String.fromCodePoint(0x1F600))).toBe(true);
     expect(fs.readFileSync(file, 'utf-8')).not.toContain('tail');
+  });
+});
+
+describe('what is read back, from a file any agent can write', () => {
+  const good = (id: string, over: Record<string, unknown> = {}) => JSON.stringify({ t: 'task', task: {
+    id, agentId: 'ag', projectPath: '/p', worktreePath: null, provider: 'claude', model: 'opus', accountId: null,
+    source: 'terminal', requesterAgentId: null, parentTaskId: null, text: 'fine', startedAt: T0 - 1000, endedAt: T0,
+    lastAt: T0, outcome: 'completed', turns: 1, sessionIds: ['0941a7e6-7262-4068-ba83-68b7e0de1773'], ...over,
+  } });
+  const read = (lines: string[]) => {
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    return open().tasks();
+  };
+
+  it.each([
+    ['a text that is an object', { text: { toString: 1 } }],
+    ['turns that are not a number', { turns: 'many' }],
+    ['an agent that is null', { agentId: null }],
+    ['a start that is not a time', { startedAt: 'yesterday' }],
+    ['an end that is not a time', { endedAt: 'soon' }],
+    ['a source that is not one', { source: 'everyone' }],
+    ['an outcome that is not one', { outcome: 'merged' }],
+    ['a session id that is a number', { sessionIds: [42] }],
+    ['a session id that is a path', { sessionIds: ['../../../../etc/hosts-not-jsonl'] }],
+    ['a parent that is an object', { parentTaskId: { id: 'x' } }],
+    ['an ACP cost that is not a number', { source: 'acp', acp: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0, costUSD: 'free' } }],
+  ])('9. a task with %s is dropped, and the good one beside it kept', (_name, over) => {
+    expect(read([good('kept'), good('forged', over)]).map((t) => t.id)).toEqual(['kept']);
+  });
+
+  it('9. a line with only an id is dropped', () => {
+    expect(read([good('kept'), JSON.stringify({ t: 'task', task: { id: 'bare', sessionIds: [] } })]).map((t) => t.id)).toEqual(['kept']);
+  });
+
+  it('9. a text of a megabyte is cut to 200 characters on reading too', () => {
+    const [task] = read([good('big', { text: 'x'.repeat(1_000_000) })]);
+    expect(task.text).toHaveLength(200);
+  });
+
+  it('9. an open task whose last moment is not a time is dropped, not ended at "x"', () => {
+    expect(read([good('kept'), good('open', { endedAt: null, lastAt: 'x', outcome: 'running' })]).map((t) => t.id)).toEqual(['kept']);
+    expect(fs.readFileSync(file, 'utf8')).not.toMatch(/"at":"x"/);
+  });
+
+  it('9. a turn or an end line whose fields are not what they say is skipped', () => {
+    const tasks = read([
+      good('t1', { endedAt: null, outcome: 'running', lastAt: T0 }),
+      JSON.stringify({ t: 'turn', id: 't1', at: 'later', sessionId: 's' }),
+      JSON.stringify({ t: 'turn', id: 't1', at: T0 + 1, sessionId: '../x' }),
+      JSON.stringify({ t: 'end', id: 't1', at: 'x', outcome: 'stopped' }),
+      JSON.stringify({ t: 'end', id: 't1', at: T0 + 5, outcome: 'merged' }),
+    ]);
+    // Read back as a quit cut it short: ended at its last good moment, its turns as they were.
+    expect(tasks).toEqual([expect.objectContaining({ id: 't1', turns: 1, endedAt: T0, outcome: 'stopped' })]);
+  });
+});
+
+describe("a worker's report to the agent that leads it", () => {
+  it('10. is no delegation: the lead\'s next task has no parent, and what it hands on after is under that task', () => {
+    const ledger = open();
+    // Noah gives the lead a task; the lead hands a gate to the worker, then rests.
+    ledger.turnStarted(agent({ id: 'lead' }), { sessionId: 'sess-lead', text: 'gate #305' });
+    ledger.handedOff('worker', { source: 'agent', requesterAgentId: 'lead', text: 'gate #305' });
+    ledger.turnStarted(agent({ id: 'worker' }), { sessionId: 'sess-worker' });
+    ledger.stateChanged(agent({ id: 'lead', status: 'idle' }));
+    // The worker reports with send_message, its task still open.
+    clock += 1_000;
+    ledger.handedOff('lead', { source: 'agent', requesterAgentId: 'worker', text: 'gate done, MERGE' });
+    ledger.turnStarted(agent({ id: 'lead' }), { sessionId: 'sess-lead' });
+    // The lead hands the merge to a third agent.
+    ledger.handedOff('third', { source: 'agent', requesterAgentId: 'lead', text: 'merge #305' });
+    ledger.turnStarted(agent({ id: 'third' }), { sessionId: 'sess-third' });
+
+    const [noahs, gate, report, merge] = ledger.tasks();
+    expect(gate).toMatchObject({ agentId: 'worker', parentTaskId: noahs.id });
+    expect(report).toMatchObject({ agentId: 'lead', requesterAgentId: 'worker', parentTaskId: null, text: 'gate done, MERGE' });
+    expect(merge).toMatchObject({ agentId: 'third', parentTaskId: report.id });
+  });
+
+  it("10. nor to its project's orchestrator, whoever handed it its task", () => {
+    const ledger = createTaskLedger({ file, now: () => clock, leads: (receiverId, senderId) => receiverId === 'orch' && senderId === 'worker' });
+    ledger.handedOff('worker', { source: 'tars', text: 'build it' });
+    ledger.turnStarted(agent({ id: 'worker' }), { sessionId: 'sess-worker' });
+    ledger.handedOff('orch', { source: 'agent', requesterAgentId: 'worker', text: 'built' });
+    ledger.turnStarted(agent({ id: 'orch' }), { sessionId: 'sess-orch' });
+    // An agent the worker does not report to, handed work by it, is a delegation as before.
+    ledger.handedOff('helper', { source: 'agent', requesterAgentId: 'worker', text: 'lint it' });
+    ledger.turnStarted(agent({ id: 'helper' }), { sessionId: 'sess-helper' });
+
+    const byAgent = Object.fromEntries(ledger.tasks().map((t) => [t.agentId, t]));
+    expect(byAgent.orch.parentTaskId).toBeNull();
+    expect(byAgent.helper.parentTaskId).toBe(byAgent.worker.id);
   });
 });
