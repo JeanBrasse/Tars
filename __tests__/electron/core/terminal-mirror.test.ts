@@ -20,6 +20,12 @@ import { createRequire } from 'node:module';
  * mirror and into the terminal a panel that never left would be, and compare
  * the two at every chunk.
  *
+ * The history a panel comes back to is the one a panel that never left keeps:
+ * 5,000 lines, the Dashboard's own (Noah, 05/10; #313 moved the panel from
+ * 10,000). How it fails: the mirror keeps fewer, and a panel back from another
+ * page has lost the rest of the conversation; or the stand-in panel here keeps
+ * another number than the real one, and the comparison proves nothing.
+ *
  * The second half is the watch for a CLI that left fullscreen without telling
  * its terminal (QA's T1): the orchestrator's Claude Code started fullscreen,
  * then repainted inline on an alternate screen it never left, and the wheel
@@ -95,7 +101,7 @@ const core = (term: Term) => (term as unknown as { _core: Core })._core;
 
 /** A terminal as useMultiTerminal builds a Dashboard panel's (TERMINAL_CONFIG). */
 function panelTerminal(cols: number, rows: number): Term {
-  return new Terminal({ cols, rows, scrollback: 10000, convertEol: true, allowProposedApi: true, logLevel: 'off' });
+  return new Terminal({ cols, rows, scrollback: 5000, convertEol: true, allowProposedApi: true, logLevel: 'off' });
 }
 /** Parsed at once, as the mirror parses: the comparison happens right after. */
 const write = (term: Term, data: string) => core(term).writeSync(data);
@@ -294,6 +300,20 @@ describe('a panel that comes back is handed the screen it left', () => {
     expect(worst.same / worst.cells, JSON.stringify(worst)).toBeLessThan(0.1);
     expect(replay.filter(r => r.chunk <= 600).every(r => r.same === r.cells), 'before the first trim the replay was whole').toBe(true);
     expect(snapshot.every(r => r.same === r.cells && r.cells > 0)).toBe(true);
+  });
+
+  it('the history is the whole of what a panel that never left keeps, 5,000 lines', () => {
+    const pty = fakePty();
+    attachTerminalMirror(pty as never, { cols: 40, rows: 6, watchRepaint: false, label: 'history' });
+    const live = panelTerminal(40, 6);
+    const stream = Array.from({ length: 6000 }, (_, i) => `line ${i + 1}\r\n`).join('');
+    write(live, stream);
+    pty.emit(stream);
+    const panel = snapshotInto(pty, 40, 6);
+    const text = (term: Term) => Array.from({ length: term.buffer.normal.length }, (_, i) => term.buffer.normal.getLine(i)!.translateToString(true));
+    expect(live.buffer.normal.length, 'the stand-in panel keeps 5,000 lines above its screen').toBe(5000 + 6);
+    expect(text(panel)).toEqual(text(live));
+    panel.dispose();
   });
 
   it('opens with RIS, so a chunk a panel received before asking is not drawn twice', () => {
