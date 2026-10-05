@@ -128,6 +128,8 @@ import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach }
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { startTaskWatch } from './services/task-watch';
+import { beginRun, type PreviousRun } from './services/run-state';
+import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
@@ -167,6 +169,8 @@ for (const stream of [process.stdout, process.stderr]) {
 
 let appSettings: AppSettings = loadAppSettings();
 let stopTmpRetention: () => void = () => undefined;
+let previousRun: PreviousRun | null = null;
+let recovery: { flush: () => void } | null = null;
 // Off unless the user turned them on; followed live (services/error-reports).
 const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
 
@@ -479,6 +483,9 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // Whether the last run stopped abruptly, and who was working then, read
+  // before this run's record replaces it (services/run-state.ts).
+  previousRun = beginRun();
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
@@ -738,6 +745,10 @@ app.whenReady().then(async () => {
   initApiServer();
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
+  // What the last run owed, its waiting room messages, the run record, and,
+  // after an abrupt stop, the agents that were working resumed with a note
+  // (services/restart-recovery.ts). After the launcher and the API are up.
+  recovery = startRestartRecovery(previousRun);
   startAgentWatch();
   // The tasks the Usage page prices: who handed what, from turn to rest
   // (services/task-ledger.ts).
@@ -889,6 +900,9 @@ app.on('before-quit', (event) => {
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // Last: what is owed on disk, and the run marked as ended cleanly, so
+      // the next launch resumes nobody.
+      ['endRestartRecovery', () => endRestartRecovery(recovery)],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))
