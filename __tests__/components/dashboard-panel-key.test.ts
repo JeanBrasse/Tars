@@ -14,7 +14,12 @@ import type { AgentStatus, ClaudeAccountMove } from '../../src/types/electron';
  *    by Tars (#266, #269) change and the key does not: the panel's account
  *    control keeps its old name and title (seen in the e2e: a move by Tars
  *    wrote its line in the panel, and the control still named the account the
- *    agent had left).
+ *    agent had left);
+ * 3. a permission question Tars holds (#318) comes or goes while nothing else
+ *    the key reads moves: ask in terminal leaves the agent waiting with its
+ *    lastActivity, and only permissionAsk goes; the next call's question
+ *    changes only its askedAt and what it asks (waitingOn). The panel kept
+ *    offering allow and deny for a question gone, or named the call before.
  */
 
 const MOVE: ClaudeAccountMove = { agentId: 'a1', from: 'default', to: 'acct-000002', reason: 'limit', window: 'fiveHour', usedPercentage: 100, at: 1_790_000_000_000 };
@@ -48,6 +53,15 @@ describe("the Dashboard's panel key", () => {
     expect(changes({ claudeAccountPin: 'acct-000002' })).toBe(true);
     expect(changes({ claudeAccountMove: MOVE })).toBe(true);
     expect(changes({ claudeAccountMove: { ...MOVE, at: MOVE.at + 60_000 } }, { claudeAccountMove: MOVE })).toBe(true);
+  });
+
+  it('changes when a permission question Tars holds comes, goes, or is for another call (3)', () => {
+    const ask = { tool: 'Bash', askedAt: '2026-10-05T12:02:00.000Z' };
+    const on = (text: string) => ({ kind: 'permission' as const, text });
+    expect(changes({ permissionAsk: ask })).toBe(true);
+    expect(changes({ permissionAsk: undefined }, { status: 'waiting', permissionAsk: ask })).toBe(true);
+    expect(changes({ permissionAsk: { ...ask, askedAt: '2026-10-05T12:03:00.000Z' } }, { permissionAsk: ask })).toBe(true);
+    expect(changes({ waitingOn: on('npm test') }, { waitingOn: on('npm run build') })).toBe(true);
   });
 
   it('stays the same when nothing the header shows changed', () => {
