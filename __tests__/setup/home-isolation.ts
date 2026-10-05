@@ -40,6 +40,8 @@ type Violation = { op: string; path: string; stack: string };
 type HomeGuard = {
   /** HOME as the run found it, before this file replaced it. */
   originalHome: string | undefined;
+  /** USERPROFILE as the run found it: what os.homedir() reads on Windows. */
+  originalUserProfile: string | undefined;
   /** The account's home directory, which no environment variable can move. */
   accountHome: string;
   throwawayHome: string;
@@ -97,6 +99,7 @@ function accountHome(): string {
 const firstRun = !globals[KEY];
 const guard: HomeGuard = globals[KEY] ?? {
   originalHome: process.env.HOME,
+  originalUserProfile: process.env.USERPROFILE,
   accountHome: accountHome(),
   throwawayHome: '',
   protectedRoots: [],
@@ -117,15 +120,31 @@ if (firstRun) {
 }
 
 guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-'));
-guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome)];
+// The temporary folder too: on Windows it lives inside the account's home
+// (C:\Users\<you>\AppData\Local\Temp), so without it every mkdtemp of the
+// suite read as a write into the real home (the first Windows run, 01/10:
+// about 300 of 340 failing files). Elsewhere it is outside the home anyway.
+guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome), canonical(os.tmpdir())];
 process.env.HOME = guard.throwawayHome;
+// os.homedir() reads USERPROFILE on Windows, not HOME: moved too, or the
+// product's ~/.dorothy and ~/.claude.json stayed the real ones there.
+process.env.USERPROFILE = guard.throwawayHome;
+
+/** The length of the closest of `roots` that holds `target`, or -1. */
+function closest(target: string, roots: string[]): number {
+  return roots.filter(root => inside(target, root)).reduce((longest, root) => Math.max(longest, root.length), -1);
+}
 
 function violationAt(value: unknown): string | undefined {
   const target = pathOf(value);
   if (target === undefined) return undefined;
   const resolved = canonical(target);
-  if (!guard.protectedRoots.some(root => inside(resolved, root))) return undefined;
-  if (guard.allowedRoots.some(root => inside(resolved, root))) return undefined;
+  const guarded = closest(resolved, guard.protectedRoots);
+  if (guarded < 0) return undefined;
+  // The closer root decides: the temporary folder inside the account's home on
+  // Windows stays writable, and a home a test protects inside the temporary
+  // folder stays protected.
+  if (closest(resolved, guard.allowedRoots) >= guarded) return undefined;
   return resolved;
 }
 
@@ -215,6 +234,8 @@ afterAll(() => {
   fs.rmSync(guard.throwawayHome, { recursive: true, force: true });
   if (guard.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = guard.originalHome;
+  if (guard.originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = guard.originalUserProfile;
   if (found.length > 0) {
     const lines = found.map(v => {
       const where = v.stack.split('\n').find(line => line.includes(process.cwd()) && !line.includes('home-isolation.ts'));

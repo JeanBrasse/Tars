@@ -3,10 +3,13 @@ import * as path from 'path';
 import { dataPath } from '../../constants';
 import type { ClaudeAccountCounters, ClaudeAccountsSettings, ClaudeAccountWindow } from '../../types';
 import type { AccountUsage } from './choose';
+import { probedUsage } from './usage-probe';
 
 /**
  * Each account's 5 h and weekly counters, as its status line last left them
- * (DESIGN-COMPTES-CLAUDE.md B4).
+ * (DESIGN-COMPTES-CLAUDE.md B4), or as Claude Code last answered a probe of
+ * the account (usage-probe.ts), whichever is newer. A probe with no reading
+ * never hides a status line's.
  *
  * The status line script (utils/statusline.ts) writes one file per account,
  * named by TARS_CLAUDE_ACCOUNT, which the launch sets: rate-limits.d/<id>.json,
@@ -34,7 +37,7 @@ function readWindow(raw: unknown): ClaudeAccountWindow | null {
   return used === null || resets === null ? null : { usedPercentage: used, resetsAt: Math.round(resets) };
 }
 
-export function readAccountUsage(): Record<string, AccountUsage> {
+function readStatusLines(): Record<string, AccountUsage> {
   let names: string[];
   try {
     names = fs.readdirSync(countersDir());
@@ -63,10 +66,26 @@ export function readAccountUsage(): Record<string, AccountUsage> {
   return out;
 }
 
+export function readAccountUsage(): Record<string, AccountUsage> {
+  const out = readStatusLines();
+  for (const [accountId, { usage, at }] of probedUsage()) {
+    if (!usage.available) continue;
+    const line = out[accountId];
+    if (line && (line.updatedAt ?? 0) > at) continue;
+    out[accountId] = { fiveHour: usage.fiveHour, sevenDay: usage.sevenDay, models: usage.models, updatedAt: at };
+  }
+  return out;
+}
+
 /** What the page shows: a window whose reset has passed is no longer a figure. */
 export function usageForView(usage: AccountUsage | undefined, now: number = Date.now()): AccountUsage {
   const live = (w: ClaudeAccountWindow | null | undefined) => (w && w.resetsAt * 1000 > now ? w : null);
-  return { fiveHour: live(usage?.fiveHour), sevenDay: live(usage?.sevenDay), updatedAt: usage?.updatedAt ?? null };
+  return {
+    fiveHour: live(usage?.fiveHour),
+    sevenDay: live(usage?.sevenDay),
+    ...(usage?.models ? { models: usage.models.filter(m => m.resetsAt * 1000 > now) } : {}),
+    updatedAt: usage?.updatedAt ?? null,
+  };
 }
 
 /**

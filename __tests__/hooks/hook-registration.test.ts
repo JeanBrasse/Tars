@@ -39,6 +39,14 @@ const HOOK_TIMEOUT_MS = 30_000;
 /** Comfortably under it, so a regression shows as a failure and not a hang. */
 const MUST_RETURN_WITHIN_MS = 20_000;
 
+/**
+ * POSIX by nature: the hooks are the shell scripts Tars installs for the CLIs
+ * on macOS and Linux, run here through bash and curl. On the Windows CI job
+ * the file never ended (01/10, run 2, the only file of 306 that did not
+ * report), and Tars does not ship for Windows.
+ */
+const posixDescribe = describe.skipIf(process.platform === 'win32');
+
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-hooks-'));
 
@@ -161,7 +169,7 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-describe('an API that is alive but slow still gets the registration', () => {
+posixDescribe('an API that is alive but slow still gets the registration', () => {
   // The regression the bounded probe introduced. Well past any deadline a
   // probe could reasonably be given, and past the 3s the POST itself allows,
   // so this fails for a probe at 2s and at 5s alike.
@@ -207,7 +215,7 @@ describe('an API that is alive but slow still gets the registration', () => {
   }, 60_000);
 });
 
-describe('an API that accepts and never answers does not swallow the session', () => {
+posixDescribe('an API that accepts and never answers does not swallow the session', () => {
   it('session-start still posts, and returns inside the hook timeout', async () => {
     const api = await startServer('half-open');
     try {
@@ -238,7 +246,7 @@ describe('an API that accepts and never answers does not swallow the session', (
   );
 });
 
-describe('the properties that keep it that way', () => {
+posixDescribe('the properties that keep it that way', () => {
   it('gates no hook behind a check that can skip its work', () => {
     // The shape of both failures, asserted directly: an early `exit` guarded by
     // a curl means whatever that hook exists to send is conditional on a
@@ -324,7 +332,7 @@ describe('the properties that keep it that way', () => {
  */
 const NO_API_BUDGET_MS = 8_000;
 
-describe('an API that is not running', () => {
+posixDescribe('an API that is not running', () => {
   const HOOKS = ['session-start.sh', 'user-prompt-submit.sh', 'notification.sh',
                  'permission-request.sh', 'session-end.sh'];
 
