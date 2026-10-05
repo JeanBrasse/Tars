@@ -43,6 +43,11 @@
  *    asked of Tars, the terminal's dialog shows it whole.
  * 11. (Low) Claude Code's rule is not sent: in bypass it is the only reason
  *    Tars is asked.
+ * And from the Audit's recheck (GATE-PR318-320-RECHECK.md), agreed by Noah
+ * on 05/10:
+ * 12. A tool that carries content (Edit, Write, NotebookEdit) is asked of
+ *    Tars, which shows its path and never its content: an allow there would
+ *    approve what nobody saw. It stays with the terminal's dialog.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -241,6 +246,18 @@ describe("the mod's tool.check", () => {
     await start();
     await check(bash, { decision: 'ask', reason: 'Permission rule Bash(echo:*) requires confirmation', rule: 'Bash(echo:*)' });
     expect(permissionPosts().at(-1)!.body).toMatchObject({ reason: 'Permission rule Bash(echo:*) requires confirmation', rule: 'Bash(echo:*)' });
+  });
+
+  it('12. leaves Edit, Write and NotebookEdit to the terminal\'s dialog, which shows their content', async () => {
+    await start();
+    for (const call of [
+      { tool: 'Edit', input: { file_path: '/p/a.ts', old_string: 'a', new_string: 'b' }, tool_use_id: 'toolu_e' },
+      { tool: 'Write', input: { file_path: '/p/b.ts', content: 'x' }, tool_use_id: 'toolu_w2' },
+      { tool: 'NotebookEdit', input: { notebook_path: '/p/n.ipynb', new_source: 'x' }, tool_use_id: 'toolu_n' },
+    ]) {
+      expect(await check(call, ASK)).toEqual(ASK);
+    }
+    expect(permissionPosts()).toEqual([]);
   });
 
   it('3. leaves an AskUserQuestion to the person', async () => {
