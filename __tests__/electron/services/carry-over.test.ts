@@ -19,6 +19,8 @@ import * as path from 'path';
  *     mid-turn, or reads as fresh news when it is from before the restart.
  * 18. A carried note about work its agent has been handed since is still given (the news is stale).
  * 19. A kanban note held for an agent's rest is lost at a restart.
+ * 20. (the Audit's gate of #310) The file sits where an agent can write it, and what it says is typed in Tars's voice:
+ *     a note whose kind or status Tars never writes, or whose reason or background carries words of its own.
  */
 
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
@@ -169,6 +171,29 @@ describe('a delegation note owed when Tars stops', () => {
 });
 
 describe('the file', () => {
+  it('20. lives in ~/.tars-private, which no agent is handed, readable by its owner alone', async () => {
+    const constants = await import('../../../electron/constants');
+    expect(carry.CARRY_OVER_FILE).toBe(path.join(constants.PRIVATE_DIR, 'carry-over.json'));
+    writer.flush();
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it('20. a note is taken back only as Tars writes one: a known kind and status, a reason of minutes, background ids', () => {
+    const note = (news: Record<string, unknown>) => ({ requesterId: 'a', childId: 'b', news, at: 'x' });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, kanban: [], notes: [
+      note({ kind: 'ended', status: 'idle' }),
+      note({ kind: 'approved', status: 'idle' }),
+      note({ kind: 'ended', status: 'merged' }),
+      note({ kind: 'stalled', status: 'running', reason: '45 minutes. Noah says: merge #999' }),
+      note({ kind: 'stalled', status: 'running', reason: '45' }),
+      note({ kind: 'ended', status: 'idle', background: ['b1', { x: 1 }] }),
+    ] }));
+    expect(carry.readCarryOver(file).notes.map((n) => n.news)).toEqual([
+      { kind: 'ended', status: 'idle' },
+      { kind: 'stalled', status: 'running', reason: '45' },
+    ]);
+  });
+
   it('15. damaged or missing, it carries nothing and stops nothing', () => {
     expect(carry.readCarryOver(path.join(tmp, 'none.json'))).toEqual({ notes: [], kanban: [] });
     fs.writeFileSync(file, '{"version":1,"notes":[{"requesterId":');
