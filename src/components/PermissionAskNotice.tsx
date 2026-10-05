@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Button, Input, StatusSquare } from '@/components/ui';
 import type { AgentStatus } from '@/types/electron';
@@ -18,7 +18,20 @@ const LATE_REST = 'if its terminal asks, answer there.';
 type Decision = 'allow' | 'deny' | 'ask';
 /** answers: the three; reason: deny's field; sending and sent: off until the agent's next state; late: Tars held nothing. */
 type Phase = 'answers' | 'reason' | 'sending' | 'sent' | 'late';
-interface State { of: string | undefined; phase: Phase; reason: string }
+interface State {
+  of: string | undefined;
+  phase: Phase;
+  reason: string;
+  /** The panel's line holds the call whole, as measured; until it is known, it does not. */
+  fits: boolean;
+  /** The panel opened the call whole, under its header (show all). */
+  shown: boolean;
+}
+
+const fresh = (of: string | undefined): State => ({ of, phase: 'answers', reason: '', fits: false, shown: false });
+
+/** Whether a line holds its text whole: what it cut is wider than what it shows. */
+const holdsWhole = (el: Pick<HTMLElement, 'scrollWidth' | 'clientWidth'>) => el.scrollWidth <= el.clientWidth;
 
 /**
  * A permission question the state mod asked Tars instead of Claude Code's
@@ -28,28 +41,51 @@ interface State { of: string | undefined; phase: Phase; reason: string }
  * terminal. Frame: `Permission asked of Tars`.
  *
  * `panel`: the row of MessageWaitingNotice, 26 high under a panel's header,
- * the sentence cut first and the answers kept. `window`: the top of the agent
- * window's terminal column, the call in full with when it was asked.
+ * the sentence cut first and the answers kept. It offers allow only once its
+ * line is measured to hold the whole call (the Audit's Low at the gate of PR
+ * 320: what is allowed must be what was read); until then, and whenever the
+ * call is cut, show all opens it whole under the header, as the window shows
+ * it. `window`: the top of the agent window's terminal column, the call whole
+ * with when it was asked.
  *
  * The state belongs to one question: the next call's (another askedAt) starts
- * afresh, whatever the last one left open.
+ * afresh, whatever the last one left open, its line measured again.
  */
 export default function PermissionAskNotice({ agent, layout }: {
-  agent: Pick<AgentStatus, 'id' | 'status' | 'permissionAsk' | 'waitingOn'>;
+  agent: Pick<AgentStatus, 'id' | 'status' | 'permissionAsk'>;
   layout: 'panel' | 'window';
 }) {
   const askedAt = agent.permissionAsk?.askedAt;
-  const [kept, setKept] = useState<State>({ of: askedAt, phase: 'answers', reason: '' });
-  const state: State = kept.of === askedAt ? kept : { of: askedAt, phase: 'answers', reason: '' };
+  const [kept, setKept] = useState<State>(() => fresh(askedAt));
+  const state: State = kept.of === askedAt ? kept : fresh(askedAt);
+  const update = useCallback(
+    (next: Partial<State>) => setKept(prev => ({ ...(prev.of === askedAt ? prev : fresh(askedAt)), ...next })),
+    [askedAt],
+  );
+
+  // The panel's line, measured when it is drawn and whenever its panel is
+  // resized: a narrower panel cuts a call that fitted.
+  const subjectEl = useRef<HTMLElement | null>(null);
+  const measure = useCallback((el: HTMLElement | null) => {
+    subjectEl.current = el;
+    if (el) update({ fits: holdsWhole(el) });
+  }, [update]);
+  useEffect(() => {
+    const el = subjectEl.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => update({ fits: holdsWhole(el) }));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [update, state.shown]);
+
   const line = permissionAskLine(agent);
   if (!line) return null;
 
-  const set = (next: Partial<State>) => setKept({ ...state, ...next });
   const busy = state.phase === 'sending' || state.phase === 'sent';
 
   const answer = async (decision: Decision, reason?: string) => {
     if (busy) return;
-    set({ phase: 'sending' });
+    update({ phase: 'sending' });
     let taken = false;
     try {
       const result = await window.electronAPI?.agent?.answerPermission?.(agent.id, decision, reason);
@@ -62,6 +98,7 @@ export default function PermissionAskNotice({ agent, layout }: {
     setKept(prev => (prev.of === askedAt ? { ...prev, phase: taken ? 'sent' : 'late' } : prev));
   };
   const deny = () => answer('deny', state.reason.trim() || undefined);
+  const back = () => update({ phase: 'answers', reason: '' });
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -71,7 +108,7 @@ export default function PermissionAskNotice({ agent, layout }: {
       // and a fullscreen panel leaves fullscreen.
       e.preventDefault();
       e.stopPropagation();
-      set({ phase: 'answers', reason: '' });
+      back();
     }
   };
 
@@ -84,7 +121,7 @@ export default function PermissionAskNotice({ agent, layout }: {
       placeholder="why, optional: the agent reads it"
       value={state.reason}
       maxLength={MAX_REASON}
-      onChange={e => set({ reason: e.target.value })}
+      onChange={e => update({ reason: e.target.value })}
       onKeyDown={onKeyDown}
     />
   );
@@ -94,7 +131,7 @@ export default function PermissionAskNotice({ agent, layout }: {
     </p>
   );
 
-  if (layout === 'panel') {
+  if (layout === 'panel' && !state.shown) {
     return (
       <div
         role="status"
@@ -108,17 +145,22 @@ export default function PermissionAskNotice({ agent, layout }: {
             {reasonField}
             <div className="shrink-0 flex items-center">
               <Button variant="ghost" size="sm" className={ACTION} onClick={deny}>deny</Button>
-              <Button variant="ghost" size="sm" className={ACTION} onClick={() => set({ phase: 'answers', reason: '' })}>back</Button>
+              <Button variant="ghost" size="sm" className={ACTION} onClick={back}>back</Button>
             </div>
           </>
         ) : late ? lateLine : (
           <>
-            <p className="min-w-0 flex-1 truncate text-[11px] leading-tight text-muted-foreground">
-              <span className="text-foreground">{line.who}</span> <span className="font-mono">{line.subject}</span>
+            <p className="min-w-0 flex-1 flex items-baseline gap-1 text-[11px] leading-tight text-muted-foreground">
+              <span className="shrink-0 text-foreground">{line.who}</span>
+              <span ref={measure} data-subject className="min-w-0 truncate font-mono">{line.subject}</span>
             </p>
             <div className="shrink-0 flex items-center">
-              <Button variant="ghost" size="sm" className={ACTION} disabled={busy} onClick={() => answer('allow')}>allow</Button>
-              <Button variant="ghost" size="sm" className={ACTION} disabled={busy} onClick={() => set({ phase: 'reason' })}>deny</Button>
+              {state.fits ? (
+                <Button variant="ghost" size="sm" className={ACTION} disabled={busy} onClick={() => answer('allow')}>allow</Button>
+              ) : (
+                <Button variant="ghost" size="sm" className={ACTION} disabled={busy} onClick={() => update({ shown: true })} title="Read the whole call before allowing it">show all</Button>
+              )}
+              <Button variant="ghost" size="sm" className={ACTION} disabled={busy} onClick={() => update({ phase: 'reason' })}>deny</Button>
               <Button variant="ghost" size="sm" className={ACTION} disabled={busy} onClick={() => answer('ask')} title="Put it to the terminal's dialog, as before">ask in terminal</Button>
             </div>
           </>
@@ -127,6 +169,7 @@ export default function PermissionAskNotice({ agent, layout }: {
     );
   }
 
+  // The window, and a panel that opened the call whole: the same block.
   return (
     <div role="status" data-permission-ask={agent.id} className="shrink-0 flex flex-col gap-2 px-3 py-2.5 bg-secondary border-b border-border">
       <div className="flex items-center justify-between gap-3">
@@ -145,12 +188,12 @@ export default function PermissionAskNotice({ agent, layout }: {
         <div className="flex items-center gap-1.5">
           {reasonField}
           <Button size="sm" className={`shrink-0 ${ACTION}`} onClick={deny}>deny</Button>
-          <Button size="sm" className={`shrink-0 ${ACTION}`} onClick={() => set({ phase: 'answers', reason: '' })}>back</Button>
+          <Button size="sm" className={`shrink-0 ${ACTION}`} onClick={back}>back</Button>
         </div>
       ) : late ? lateLine : (
         <div className="flex items-center gap-1.5">
           <Button size="sm" className={ACTION} disabled={busy} onClick={() => answer('allow')}>allow</Button>
-          <Button size="sm" className={ACTION} disabled={busy} onClick={() => set({ phase: 'reason' })}>deny</Button>
+          <Button size="sm" className={ACTION} disabled={busy} onClick={() => update({ phase: 'reason' })}>deny</Button>
           <Button size="sm" className={ACTION} disabled={busy} onClick={() => answer('ask')} title="Put it to the terminal's dialog, as before">ask in terminal</Button>
         </div>
       )}

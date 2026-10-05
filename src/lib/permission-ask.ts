@@ -6,9 +6,9 @@ import { flat, when } from '@/lib/stop-line';
  * line under its header, the top of the agent window's terminal column, the
  * card's task line. Since PR 318 a Claude agent that runs the state mod asks
  * Tars, not its terminal, before a call Claude Code would put to its dialog:
- * it reads `waiting` with `permissionAsk` set, and `waitingOn` names what the
- * call acts on (electron/utils/waiting-on.ts). Frame: `Permission asked of
- * Tars` in design/tars-redesign.pen. Its failures are listed, and pinned, in
+ * it reads `waiting` with `permissionAsk` set, which names what the call
+ * acts on, whole (`subject`, electron/services/permission-asks.ts). Frame:
+ * `Permission asked of Tars` in design/tars-redesign.pen. Its failures are listed, and pinned, in
  * __tests__/lib/permission-ask.test.ts.
  */
 export interface PermissionAskLine {
@@ -24,17 +24,20 @@ export interface PermissionAskLine {
 
 /**
  * The line, or null when Tars holds no question for this agent. Only while it
- * waits: an event patches the status alone, so a copy of an agent allowed and
- * running again still carries the permissionAsk it had. A waiting agent with
- * no permissionAsk is at its terminal's dialog, which only the terminal answers.
+ * waits: a copy of an agent allowed and running again may still carry the
+ * permissionAsk it had. A waiting agent with no permissionAsk is at its
+ * terminal's dialog, which only the terminal answers. The subject is the
+ * question's own, whole (the gate of PR 318, Medium 2): waitingOn is cut at 200
+ * characters and hidden once an interrupt is recorded, and what is allowed
+ * must be what was read.
  */
 export function permissionAskLine(
-  agent: Pick<AgentStatus, 'status' | 'permissionAsk' | 'waitingOn'>,
+  agent: Pick<AgentStatus, 'status' | 'permissionAsk'>,
   now = new Date(),
 ): PermissionAskLine | null {
   if (agent.status !== 'waiting' || !agent.permissionAsk) return null;
   const tool = flat(agent.permissionAsk.tool);
-  let subject = flat(agent.waitingOn?.text);
+  let subject = flat(agent.permissionAsk.subject);
   // A file is named "Edit /path", and a tool with nothing to name by itself.
   if (subject.startsWith(`${tool} `)) subject = subject.slice(tool.length + 1).trim();
   if (subject === tool) subject = '';

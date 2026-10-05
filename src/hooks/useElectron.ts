@@ -8,6 +8,9 @@ export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
 };
 
+/** A permission question as one comparable value: when it was asked, and what it asks. */
+const askKey = (ask: AgentStatus['permissionAsk'] | null | undefined) => (ask ? `${ask.askedAt}\u0000${ask.subject}` : '');
+
 // Hook for agent management via Electron IPC
 export function useElectronAgents() {
   const [agents, setAgents] = useState<AgentStatus[]>([]);
@@ -61,7 +64,7 @@ export function useElectronAgents() {
             prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at ||
             // A permission question Tars holds, and what it asks: ask in
             // terminal takes the question away and moves nothing else.
-            prevAgent.permissionAsk?.askedAt !== agent.permissionAsk?.askedAt ||
+            askKey(prevAgent.permissionAsk) !== askKey(agent.permissionAsk) ||
             prevAgent.waitingOn?.text !== agent.waitingOn?.text
           );
         });
@@ -193,17 +196,21 @@ export function useElectronAgents() {
       // reason is only on the full record. Patching the status alone put
       // `error` beside whatever reason this copy last read, which is nothing
       // for a first failure and the previous failure's sentence for a second.
-      // What a waiting agent waits on is only there too: a permission question
-      // Tars holds (permissionAsk) and the call it is about (waitingOn). Read
-      // again on every waiting, not only on entering it: ask in terminal
-      // leaves the agent waiting, and only the question goes.
-      if (event.status === 'error' || event.status === 'waiting') {
+      if (event.status === 'error') {
         fetchAgents();
         return;
       }
+      // A permission question Tars holds rides every event of its own, null
+      // at its end (#318): an answer, ask in terminal, its ten minutes, a
+      // stop. Ask in terminal leaves the agent waiting, and only the question
+      // goes. An event that does not name it leaves it as it was.
+      const named = event as { permissionAsk?: AgentStatus['permissionAsk'] | null };
       setAgents(prev => prev.map(a =>
         a.id === event.agentId
-          ? { ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString() }
+          ? {
+            ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString(),
+            ...('permissionAsk' in named ? { permissionAsk: named.permissionAsk ?? undefined } : {}),
+          }
           : a
       ));
     });
@@ -238,14 +245,14 @@ export function useElectronAgents() {
         fetchAgents();
         return;
       }
-      // An agent that has just entered error or waiting is read again rather
-      // than patched, for the reasons given on onStatus above. The watches
-      // that mark a task that never started only send this tick, not a status
+      // An agent that has just entered error is read again rather than
+      // patched, for the reason given on onStatus above. The watches that
+      // mark a task that never started only send this tick, not a status
       // event, so the check has to be here as well.
-      const entered = tickAgents.some(t =>
-        (t.status === 'error' || t.status === 'waiting') && known.find(a => a.id === t.id)?.status !== t.status,
+      const enteredError = tickAgents.some(t =>
+        t.status === 'error' && known.find(a => a.id === t.id)?.status !== 'error',
       );
-      if (entered) {
+      if (enteredError) {
         fetchAgents();
         return;
       }
@@ -258,7 +265,9 @@ export function useElectronAgents() {
         // idle): the Chat counts it neither stopped nor idle.
         const changed = (a: AgentStatus, t: (typeof tickAgents)[number]) =>
           a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning ||
-          a.leftFullscreen !== t.leftFullscreen || !!a.launching !== !!t.launching;
+          a.leftFullscreen !== t.leftFullscreen || !!a.launching !== !!t.launching ||
+          // A permission question Tars holds, which the tick carries (#318).
+          askKey(a.permissionAsk) !== askKey(t.permissionAsk);
         const hasChange = tickAgents.some(t => {
           const existing = prev.find(a => a.id === t.id);
           return existing && changed(existing, t);
@@ -267,7 +276,7 @@ export function useElectronAgents() {
         return prev.map(a => {
           const tick = tickAgents.find(t => t.id === a.id);
           if (tick && changed(a, tick)) {
-            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching };
+            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching, permissionAsk: tick.permissionAsk ?? undefined };
           }
           return a;
         });
