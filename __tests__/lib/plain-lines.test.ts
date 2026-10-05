@@ -17,7 +17,9 @@ import { lastPlainLines } from '../../src/lib/plain-lines';
  *    serialize addon writes a run of empty cells as `ESC [ n C`, which is a
  *    space on screen;
  * 3. an OSC or a DCS string leaks its text: a window title, a hyperlink's
- *    address, xterm's version;
+ *    address, xterm's version; or one nothing ends takes every line after it
+ *    (the Audit's Low at this PR's gate: a stray `ESC ]` lost the summary):
+ *    it ends at its line, and only one the text ends in is cut to the end;
  * 4. a control or a format character reaches the <pre>: a BEL, a backspace, a
  *    NUL, DEL, a C1 control, a zero width space, or a U+202E that turns the
  *    lines after it around;
@@ -56,6 +58,13 @@ describe('what is kept is what the screen shows', () => {
       `${ESC}P>|xterm.js(5.3.0)${ESC}\\ok\r\n`,
     ]);
     expect(out).toBe('see the docs\nok');
+  });
+
+  // Added at the Audit's gate: a string nothing ends kept nothing after it.
+  it('a string nothing ends stops at its line, and the lines after it are kept (3)', () => {
+    expect(lastPlainLines([`before${ESC}]0;a title with no end\r\nafter one\r\nafter two`])).toBe('before\nafter one\nafter two');
+    expect(lastPlainLines([`see ${ESC}]8;;https://example.com/x the docs\r\nnext ${ESC}P>|xterm.js(5.3.0)\nlast`])).toBe('see\nnext\nlast');
+    expect(lastPlainLines([`ok${ESC}]0;claude: wor`])).toBe('ok');
   });
 
   it('no control and no character that hides or turns text reaches the summary (4)', () => {
