@@ -49,13 +49,6 @@ type Verdict = { decision: 'allow' | 'ask' | 'deny'; reason?: string; rule?: str
 /** The fields of a tool's input a person decides on: never a file's content. */
 const ASKED_ABOUT = ['command', 'description', 'file_path', 'notebook_path', 'path', 'url', 'query', 'pattern'];
 const INPUT_CAP = 2000;
-/**
- * Tools whose call carries content Tars does not show (an edit, a file, a
- * notebook cell): an allow from the window would approve what nobody saw. They
- * stay with the terminal's dialog, which shows it (the Audit's recheck of
- * #318, agreed by Noah on 05/10).
- */
-const CARRIES_CONTENT = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
 /** Asks for one call at most: 40 of Tars's 20 s holds outlast its 10 min bound. */
 const MAX_ASKS = 40;
 /** Requests that fail in a row before the call goes back to the engine. */
@@ -148,13 +141,13 @@ function report($: Engine, route: string, body: Record<string, unknown>): void {
 function askedAbout(input: unknown): Record<string, string> | null {
   const out: Record<string, string> = {};
   if (!input || typeof input !== 'object') return out;
-  for (const key of ASKED_ABOUT) {
-    const value = (input as Record<string, unknown>)[key];
-    if (typeof value !== 'string') continue;
-    // Whole or not at all: Tars shows and decides what it was sent, and an
-    // allow runs the whole call (the gate of #318, Medium 2). A longer field
-    // is the terminal's dialog's, which shows it whole.
-    if (value.length > INPUT_CAP) return null;
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    // Every field is one Tars shows, whole, or the call is not asked at all:
+    // a tweet's text, a message, a delegated task, a subagent's prompt, an
+    // edit's new content reached Tars as nothing, and an allow approved what
+    // nobody saw (the Audit's rechecks of #318). The terminal's dialog shows
+    // the whole call, and so does a field longer than Tars keeps.
+    if (!ASKED_ABOUT.includes(key) || typeof value !== 'string' || value.length > INPUT_CAP) return null;
     out[key] = value;
   }
   return out;
@@ -270,7 +263,7 @@ export function register(on: On) {
   // question to the person, and a query with no call behind it decides nothing.
   on<Check>('tool.check', async ($, e, next) => {
     const verdict = await next(e) as Verdict;
-    if (verdict?.decision !== 'ask' || !e.tool_use_id || e.tool === 'AskUserQuestion' || CARRIES_CONTENT.has(e.tool)) return verdict;
+    if (verdict?.decision !== 'ask' || !e.tool_use_id || e.tool === 'AskUserQuestion') return verdict;
     return (await askTars($, e, verdict)) ?? verdict;
   });
 
