@@ -39,7 +39,30 @@ type Engine = {
   clock: { every(ms: number, fn: () => void): unknown; sleep(ms: number): Promise<void> };
 };
 /** A classic hook's input, as the shell hooks read it on stdin. */
-type Classic = { session_id?: string; source?: string; prompt?: unknown; stop_hook_active?: unknown; last_assistant_message?: unknown; error?: unknown };
+type Classic = {
+  session_id?: string; source?: string; prompt?: unknown; stop_hook_active?: unknown; last_assistant_message?: unknown; error?: unknown;
+  session_crons?: unknown; background_tasks?: unknown;
+};
+
+/** A background task's status that means it is over, as on-stop.sh reads them. */
+const TASK_OVER = new Set(['completed', 'failed', 'killed', 'stopped', 'error']);
+
+/**
+ * What the agent leaves waiting inside its CLI at this rest, counted as
+ * on-stop.sh counts it: its timers (a /loop wakeup, a CronCreate) and the
+ * background tasks still running. Undefined when Claude Code did not send both
+ * lists: nothing is known then. For a session the mod registered the shell's
+ * Stop post is set aside, so this is the only count that reaches Tars, which
+ * decides from it whether the sleep pass may end the agent (QA's gate of #322).
+ */
+function pendingOf(e: Classic): { crons: number; background: number } | undefined {
+  if (!Array.isArray(e.session_crons) || !Array.isArray(e.background_tasks)) return undefined;
+  const running = e.background_tasks.filter(task => {
+    const status = task && typeof task === 'object' ? (task as { status?: unknown }).status ?? 'running' : 'running';
+    return !TASK_OVER.has(String(status));
+  });
+  return { crons: e.session_crons.length, background: running.length };
+}
 type On = <E>(event: string, hook: ($: Engine, e: E, next: (e: E) => Promise<unknown>) => unknown) => void;
 
 /** undefined: not asked yet; null: not under a Tars that proved itself. */
@@ -128,7 +151,8 @@ export function register(on: On) {
       if (typeof e.last_assistant_message === 'string' && e.last_assistant_message) {
         report($, '/api/hooks/output', { session_id: e.session_id, output: e.last_assistant_message.slice(0, OUTPUT_CAP) });
       }
-      report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle' });
+      const pending = pendingOf(e);
+      report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle', ...(pending ? { pending } : {}) });
       report($, '/api/hooks/agent-stopped', { session_id: e.session_id });
     }
     return next(e);
