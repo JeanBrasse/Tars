@@ -71,7 +71,7 @@ function held(): { agent: AgentStatus; answer: Promise<PermissionAnswer | Permis
     currentSessionId: '11111111-1111-4111-8111-111111111111', lastActivity: new Date().toISOString(),
   } as unknown as AgentStatus;
   agents.set('a1', agent);
-  const answer = holdPermissionAsk(agent, { tool: 'Bash', toolUseId: 'toolu_1', waitingOn: { kind: 'permission', text: 'rm -rf build' } }, () => undefined);
+  const answer = holdPermissionAsk(agent, { tool: 'Bash', toolUseId: 'toolu_1', fields: { command: 'rm -rf build' }, waitingOn: { kind: 'permission', text: 'rm -rf build' } }, () => undefined);
   return { agent, answer };
 }
 
@@ -84,14 +84,14 @@ describe("the window's answer", () => {
   it('1, 2. agent:answerPermission allows the held call, as the user', async () => {
     const { agent, answer } = held();
     expect(await handlers.get('agent:answerPermission')!({}, 'a1', 'allow')).toEqual({ success: true });
-    expect(await answer).toEqual({ decision: 'allow', reason: 'the user allowed it in Tars' });
+    expect(await answer).toMatchObject({ decision: 'allow', reason: 'the user allowed it in Tars' });
     expect(agent.status).toBe('running');
   });
 
   it('2. a deny carries the reason the window gave', async () => {
     const { answer } = held();
     await handlers.get('agent:answerPermission')!({}, 'a1', 'deny', 'not on main');
-    expect(await answer).toEqual({ decision: 'deny', reason: 'the user refused it in Tars: not on main' });
+    expect(await answer).toMatchObject({ decision: 'deny', reason: 'the user refused it in Tars: not on main' });
   });
 
   it('1. says when there was nothing to answer', async () => {

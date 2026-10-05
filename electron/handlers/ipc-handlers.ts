@@ -1175,12 +1175,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // (services/permission-asks.ts): allow or deny decide the call, ask hands it
   // back to the terminal's dialog. Given as the user: the model reads it.
   ipcMain.handle('agent:answerPermission', async (_event, id: string, decision: unknown, reason?: unknown) => {
-    const answered = answerPermission(id, decision as PermissionDecision, 'the user', typeof reason === 'string' ? reason : undefined, changed => {
-      saveAgents();
-      emitAgentStatus(changed.id);
-      broadcastToAllWindows('agent:status', { type: 'status', agentId: changed.id, status: changed.status, timestamp: changed.lastActivity });
-      scheduleTick();
-    });
+    // The window hears of it through the question's own event (hooks-routes).
+    const answered = answerPermission(id, decision as PermissionDecision, 'the user', typeof reason === 'string' ? reason : undefined);
     return { success: answered };
   });
 

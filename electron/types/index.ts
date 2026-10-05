@@ -68,7 +68,19 @@ export interface AgentStatus {
    *  dialog (services/permission-asks.ts): the window answers it with
    *  agent:answerPermission. Without it, a permission wait is the terminal's
    *  dialog. Not saved. */
-  permissionAsk?: { tool: string; askedAt: string };
+  permissionAsk?: {
+    tool: string;
+    askedAt: string;
+    /** When Tars hands the question back to the terminal's dialog if nobody answers. */
+    until: string;
+    /** What is asked, whole: the command, the path or the address (the fields' first), the tool when none. */
+    subject: string;
+    /** The fields the person decides on, whole (each at most 2,000 characters). */
+    fields: Record<string, string>;
+    /** Why Claude Code asks, and the settings rule that asked, when it gave them. */
+    reason?: string;
+    rule?: string;
+  };
   /** ISO: running, yet its transcript has had no write since then (30 minutes
    *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
    *  a write or by any other status. Not saved. */

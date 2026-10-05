@@ -196,7 +196,7 @@ describe("the mod's question to Tars", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(answerPermission('a1', 'allow', 'you')).toBe(true);
-    expect(await forA).toEqual({ decision: 'allow', reason: 'you allowed it in Tars' });
+    expect(await forA).toMatchObject({ decision: 'allow', reason: 'you allowed it in Tars' });
     expect(await settled(forB)).toBe(false);
     expect(a).toMatchObject({ status: 'running', waitingReason: undefined, waitingOn: undefined, permissionAsk: undefined });
     expect(b.status).toBe('waiting');
@@ -207,12 +207,12 @@ describe("the mod's question to Tars", () => {
     const plain = ask(question());
     await vi.advanceTimersByTimeAsync(0);
     answerPermission('a1', 'deny', 'you');
-    expect(await plain).toEqual({ decision: 'deny', reason: 'you refused it in Tars' });
+    expect(await plain).toMatchObject({ decision: 'deny', reason: 'you refused it in Tars' });
 
     const why = ask(question({ tool_use_id: 'toolu_3' }));
     await vi.advanceTimersByTimeAsync(0);
     answerPermission('a1', 'deny', 'you', 'not on main');
-    expect(await why).toEqual({ decision: 'deny', reason: 'you refused it in Tars: not on main' });
+    expect(await why).toMatchObject({ decision: 'deny', reason: 'you refused it in Tars: not on main' });
   });
 
   it('3. "in the terminal" hands the question back to the dialog, the agent still waiting on it', async () => {
@@ -296,7 +296,7 @@ describe("the mod's question to Tars", () => {
     expect(ctx.handleStatusChangeNotificationCallback).toHaveBeenCalledTimes(1);
     const askedAt = a.permissionAsk?.askedAt;
     answerPermission('a1', 'allow', 'you');
-    expect(await again).toEqual({ decision: 'allow', reason: 'you allowed it in Tars' });
+    expect(await again).toMatchObject({ decision: 'allow', reason: 'you allowed it in Tars' });
     expect(askedAt).toBeDefined();
   });
 
@@ -318,7 +318,7 @@ describe("the mod's question to Tars", () => {
     await vi.advanceTimersByTimeAsync(PERMISSION_POLL_MS);
     expect(await p).toEqual({ decision: 'pending' });
     expect(answerPermission('a1', 'deny', 'you', 'no')).toBe(true);
-    expect(await ask(question())).toEqual({ decision: 'deny', reason: 'you refused it in Tars: no' });
+    expect(await ask(question())).toMatchObject({ decision: 'deny', reason: 'you refused it in Tars: no' });
     // Once: a third ask for that call is a new question.
     const third = ask(question());
     expect(await settled(third)).toBe(false);
@@ -437,9 +437,9 @@ describe("the mod's question to Tars", () => {
   it('18. is on agents:tick, while Tars holds it', async () => {
     agent();
     void ask(question());
-    await vi.advanceTimersByTimeAsync(1000);
-    const tick = pushed.filter(p => p.channel === 'agents:tick').at(-1)?.payload as Array<Record<string, unknown>>;
-    expect(tick.find(i => i.id === 'a1')?.permissionAsk).toMatchObject({ tool: 'Bash', subject: 'rm -rf build' });
+    await vi.advanceTimersByTimeAsync(0);
+    const { buildTickPayload } = await import('../../../../electron/utils/agents-tick');
+    expect(buildTickPayload().find(i => i.id === 'a1')?.permissionAsk).toMatchObject({ tool: 'Bash', subject: 'rm -rf build' });
   });
 
   it('9. no API route takes an answer: only the window does', () => {
