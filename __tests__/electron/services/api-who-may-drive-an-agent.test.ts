@@ -628,6 +628,60 @@ describe('a call that is refused changes nothing', () => {
   });
 });
 
+describe('an agent reporting to the agent that leads it', () => {
+  // A worker that answers its orchestrator through send_message (/message)
+  // made itself that orchestrator's requester: the orchestrator's next turn
+  // ended, and its outcome was typed into the worker's terminal as news of
+  // work the worker had never handed it, a delegation link the wrong way
+  // round. How it fails, written before the code (2026-10-04):
+  // 1. a worker messaging the orchestrator that delegated to it becomes its requester;
+  // 2. a worker messaging its project's orchestrator, with no link, does too;
+  // 3. over-correction: a message to a peer, which is delegation, records no link.
+  function team() {
+    const orchestrator = putAgent({ id: 'agent-alpha-lead', projectPath: ALPHA.projectPath });
+    orchestrator.role = 'orchestrator';
+    liveTerminal(orchestrator);
+    const worker = putAgent({ id: 'agent-alpha-worker', projectPath: ALPHA.projectPath });
+    liveTerminal(worker);
+    return { orchestrator, worker, workerToken: tokens.mintAgentToken(worker.id) };
+  }
+
+  it('1. answering the agent that delegated to it makes no link back, orchestrator or not', async () => {
+    const { orchestrator, worker, workerToken } = team();
+    // Any agent that handed it work leads it for that work, role or not.
+    orchestrator.role = undefined;
+    worker.requestedBy = { agentId: orchestrator.id, ptyId: worker.ptyId! };
+    const askedByNoah = { agentId: ALPHA.id, ptyId: orchestrator.ptyId! };
+    orchestrator.requestedBy = { ...askedByNoah };
+
+    const { status, body } = await call('POST', `/api/agents/${orchestrator.id}/message`, bearer(workerToken), { message: 'done, PR #301 is up' });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(orchestrator.requestedBy, 'the worker became its own orchestrator\'s requester').toEqual(askedByNoah);
+  });
+
+  it("2. answering its project's orchestrator, with no link, makes none", async () => {
+    const { orchestrator, workerToken } = team();
+
+    const { status, body } = await call('POST', `/api/agents/${orchestrator.id}/message`, bearer(workerToken), { message: 'done' });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(orchestrator.requestedBy).toBeUndefined();
+  });
+
+  it('3. a message to a peer still records who asked', async () => {
+    const { worker, workerToken } = team();
+    const peer = putAgent({ id: 'agent-alpha-peer', projectPath: ALPHA.projectPath });
+    liveTerminal(peer);
+    void worker;
+
+    const { status, body } = await call('POST', `/api/agents/${peer.id}/message`, bearer(workerToken), { message: 'can you check this' });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(peer.requestedBy).toEqual({ agentId: 'agent-alpha-worker', ptyId: peer.ptyId });
+  });
+});
+
 describe('an agent keeps exactly the rights it had', () => {
   it('drives an agent of its own project', async () => {
     const other = putAgent({ id: 'agent-alpha-2', projectPath: ALPHA.projectPath });
@@ -756,5 +810,55 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
     expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
     expect(stopped.body).toMatchObject({ started: true, stopReason: 'turn_limit', text: 'half' });
     expect(neverStarted.status).toBe(502);
+  });
+});
+
+/**
+ * POST /api/user/ask, what ask_user calls: an agent asks Noah on Telegram, and
+ * his answer is typed into its terminal (step 2 of the relay plan).
+ *
+ * How it fails, written before the code (2026-09-28):
+ * 1. The shared token asks, as nobody: a question Noah would read as an
+ *    agent's, and whose answer would go into no terminal, or into any.
+ * 2. A delegated run's token asks: the run is one turn and has no terminal
+ *    his answer could be typed into.
+ * 3. An empty question, or one longer than a Telegram message can quote,
+ *    is sent.
+ * 4. Over-correction: the agent's own terminal token is refused before the
+ *    question is looked at (here there is no Telegram, so it is a 503).
+ */
+describe('POST /api/user/ask', () => {
+  const ask = (token: string, body: Record<string, unknown>) => call('POST', '/api/user/ask', bearer(token), body);
+
+  it('1. is refused to the shared token', async () => {
+    const { status, body } = await ask(sharedToken, { question: 'Staging or prod?' });
+    expect(status, JSON.stringify(body)).toBe(403);
+  });
+
+  it('2. is refused to a delegated run\'s token', async () => {
+    const run = tokens.mintRunToken(ALPHA.id);
+    const { status, body } = await ask(run.token, { question: 'Staging or prod?' });
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(String(body.error)).toMatch(/terminal/i);
+    run.revoke();
+  });
+
+  it('3. refuses an empty question and one too long', async () => {
+    expect((await ask(alphaToken, { question: '   ' })).status).toBe(400);
+    expect((await ask(alphaToken, { question: 'x'.repeat(2_001) })).status).toBe(400);
+    expect((await ask(alphaToken, { question: 'ok?', context: 'x'.repeat(4_001) })).status).toBe(400);
+  });
+
+  it('4. takes an orchestrator\'s own terminal token, and says when the relay to Hermes cannot carry the question', async () => {
+    agents.get(ALPHA.id)!.role = 'orchestrator';
+    const { status, body } = await ask(alphaToken, { question: 'Staging or prod?' });
+    expect(status, JSON.stringify(body)).toBe(503);
+    expect(String(body.error)).toMatch(/Hermes/);
+  });
+
+  it('5. refuses a worker\'s own terminal token: only a project\'s orchestrator asks the user (Noah, 2026-10-01)', async () => {
+    const { status, body } = await ask(alphaToken, { question: 'Staging or prod?' });
+    expect(status, JSON.stringify(body)).toBe(403);
+    expect(String(body.error)).toMatch(/orchestrator/);
   });
 });
