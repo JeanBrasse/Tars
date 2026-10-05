@@ -78,6 +78,10 @@ export interface AgentStatus {
   /** Set from the moment a wake starts its CLI until that CLI's session is up
    *  or its launch is given up (AgentStatus.launching). Not saved. */
   waking?: AgentWaking;
+  /** What its last Stop hook counted inside its CLI: timers (ScheduleWakeup,
+   *  CronCreate) and background tasks still running. Gone at its next turn or
+   *  session; absent when the hook counted nothing. Not saved. */
+  restPending?: { crons: number; background: number };
   /** Set by a stop (core/agent-stop.ts) until the agent gets a terminal again:
    *  "you", "Tars", or the name of the agent that asked. */
   stoppedBy?: string;

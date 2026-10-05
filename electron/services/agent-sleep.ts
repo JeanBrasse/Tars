@@ -2,8 +2,9 @@ import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, endTerminalTree, fieldInUse } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
-import { sessionStarting } from '../core/agent-launch';
-import { fallAsleep } from '../core/agent-asleep';
+import { cliLaunchedAt, sessionStarting } from '../core/agent-launch';
+import { fallAsleep, waitsOnItself } from '../core/agent-asleep';
+export { restPendingOf, waitsOnItself } from '../core/agent-asleep';
 import { terminalSnapshot } from '../core/terminal-mirror';
 import { getProvider } from '../providers';
 import { isSuperAgent } from '../utils';
@@ -12,6 +13,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { emitAgentStatus } from './agent-events';
 import { holdsFor } from './agent-watch';
+import { pendingBackgroundWork } from './agent-truth';
 import { owedKanban } from './api-routes/kanban-routes';
 import { waitingDeliveries } from './bus-store';
 import { openQuestionOf } from './user-questions';
@@ -39,7 +41,7 @@ export const CHECK_EVERY_MS = 60_000;
 
 export type SleepRefusal =
   | 'orchestrator' | 'not-at-rest' | 'no-cli' | 'starting' | 'recent'
-  | 'not-resumable' | 'owed' | 'owes' | 'field' | 'no-process-table' | 'busy';
+  | 'not-resumable' | 'owed' | 'owes' | 'pending' | 'field' | 'no-process-table' | 'busy';
 
 export interface SleepFacts {
   agent: Pick<AgentStatus, 'status' | 'waitingReason' | 'statusSince' | 'lastTurnStartedAt' | 'workHandedAt'>;
@@ -55,6 +57,8 @@ export interface SleepFacts {
   owed: boolean;
   /** Work it handed out is still open, or its requester is owed a note of it. */
   owes: boolean;
+  /** Its CLI holds a timer or a background task (waitsOnItself): no process shows them. */
+  pending: boolean;
   /** Its field holds a draft, a write or a pause (fieldInUse). */
   fieldInUse: boolean;
   procs: Proc[] | undefined;
@@ -80,6 +84,7 @@ export function sleepRefusal(f: SleepFacts): SleepRefusal | null {
   if (!f.resumable) return 'not-resumable';
   if (f.owed) return 'owed';
   if (f.owes) return 'owes';
+  if (f.pending) return 'pending';
   if (f.fieldInUse) return 'field';
   if (!f.procs || f.terminalPid === undefined) return 'no-process-table';
   const cli = cliProcess(f.terminalPid, f.procs);
@@ -107,6 +112,9 @@ function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: number): Sl
       || !!openQuestionOf(agent.id),
     owes: !!agent.requestedBy?.backgroundLeft?.length
       || fleet.some((other) => other.id !== agent.id && other.requestedBy?.agentId === agent.id),
+    // Its timers and background agents live inside its CLI: what its last Stop
+    // counted, or the transcript's background work since this CLI started.
+    pending: waitsOnItself(agent.restPending, () => pendingBackgroundWork(agent, cliLaunchedAt(terminal) ?? 0)),
     fieldInUse: !!terminal && !!fieldInUse(terminal),
     procs,
     terminalPid: terminal?.pid,

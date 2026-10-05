@@ -85,6 +85,27 @@ export function publishedWaking(agent: AgentStatus, starting: boolean): AgentWak
   return undefined;
 }
 
+/**
+ * What a Stop hook counted the agent leaves waiting inside its CLI (hooks/on-stop.sh),
+ * or undefined when the post carries no count that is one.
+ */
+export function restPendingOf(raw: unknown): { crons: number; background: number } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const { crons, background } = raw as { crons?: unknown; background?: unknown };
+  const count = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+  return count(crons) && count(background) ? { crons, background } : undefined;
+}
+
+/**
+ * Whether the agent waits on something its own CLI holds: what its last Stop
+ * hook counted, or, when it counted nothing (an older claude), the background
+ * work its transcript shows (pendingBackgroundWork).
+ */
+export function waitsOnItself(counted: { crons: number; background: number } | undefined, transcript: () => string[]): boolean {
+  if (counted) return counted.crons + counted.background > 0;
+  return transcript().length > 0;
+}
+
 export type WakeAnswer = { success: true; alreadyWaking?: true } | { success: false; error: string };
 
 /**
