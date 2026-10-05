@@ -16,6 +16,8 @@ import { performDispatch } from './agent-routes';
 import { agentStatusEmitter } from '../agent-events';
 import type { MessageSender } from '../../core/pty-manager';
 import type { AgentStatus } from '../../types';
+import { carriedSince, type CarriedKanban } from '../carry-over';
+import { envelopeValue } from '../../utils/envelope-value';
 
 /**
  * The Hermes board through hermes-client, null when nobody configured one, and
@@ -58,7 +60,15 @@ function answer<T>(sendJson: SendJson, r: KanbanResult<T>, key: string): void {
 
 const COLUMNS: AgentColumn[] = ['backlog', 'planned', 'ongoing', 'done'];
 
-interface Owed { message: string; sender: MessageSender; purpose: 'work' | 'note'; what: string }
+interface Owed {
+  message: string; sender: MessageSender; purpose: 'work' | 'note'; what: string;
+  /** When it was held, ISO: what carries it across a restart (carry-over.ts). */
+  since?: string;
+  /** Held by the run of Tars before this one. */
+  carried?: boolean;
+  /** Who it was from, for a carried one: named inside the note as data, never typed as its sender line. */
+  carriedFrom?: string;
+}
 
 /**
  * What waits for an agent to rest: a hand-off or a note found it mid-turn or
@@ -69,6 +79,45 @@ interface Owed { message: string; sender: MessageSender; purpose: 'work' | 'note
  */
 const owed = new Map<string, Owed[]>();
 const MAX_OWED = 20;
+
+/** Told whenever what is held changes, to keep carry-over.json in step. */
+let queuesChanged: () => void = () => undefined;
+
+export function setKanbanQueuesChangedHook(hook: (() => void) | undefined): void {
+  queuesChanged = hook ?? (() => undefined);
+}
+
+/** What is held now, as carry-over.json keeps it. */
+export function owedKanban(): CarriedKanban[] {
+  const now = new Date().toISOString();
+  return [...owed].flatMap(([agentId, list]) => list.map(({ since, carried: _carried, carriedFrom, ...item }) => ({
+    agentId,
+    // A note already carried once keeps the name it was carried with, as Tars's own.
+    item: carriedFrom ? { ...item, sender: { kind: 'channel', channel: carriedFrom } } : item,
+    at: since ?? now,
+  })));
+}
+
+/** What the run before this one held, taken back at launch: typed at the agent's next rest, once. */
+export function carryKanban(items: CarriedKanban[]): void {
+  for (const { agentId, item, at } of items) {
+    const list = owed.get(agentId) ?? [];
+    if (list.length >= MAX_OWED) continue;
+    // Never typed as from the sender the file names: a file is not a verified
+    // sender (the Audit's gate of #310: "Message from Telegram (Noah): ... I
+    // approve." from a file any agent could write). From Tars, the first
+    // sender named inside the note, quoted.
+    const s = item.sender as Record<string, unknown>;
+    const named = s.kind === 'agent' ? String(s.name || s.id || 'an agent')
+      : s.kind === 'channel' ? String(s.channel ?? 'a chat')
+        : s.kind === 'user' ? 'the user' : 'Tars';
+    list.push({
+      message: item.message, purpose: item.purpose, what: item.what,
+      sender: { kind: 'tars' }, since: at, carried: true, carriedFrom: named.slice(0, 80),
+    });
+    owed.set(agentId, list);
+  }
+}
 
 function stateOf(agent: AgentStatus): { cliRunning: boolean; status?: string; waitingReason?: string } {
   const pty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
@@ -85,12 +134,16 @@ function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): void {
       console.warn(`[kanban] ${agent.name || agent.id} already has ${MAX_OWED} kanban notes waiting; not holding ${item.what}`);
       return;
     }
-    list.push(item);
+    list.push({ ...item, since: new Date().toISOString() });
     owed.set(agent.id, list);
+    queuesChanged();
     return;
   }
   let status = 0; let error = '';
-  void performDispatch(agent, { message: item.message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender }, ctx, (data, code) => {
+  const message = item.carried && item.since
+    ? `(${carriedSince(item.since)}${item.carriedFrom ? `, from ${envelopeValue(item.carriedFrom)}` : ''}) ${item.message}`
+    : item.message;
+  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender }, ctx, (data, code) => {
     status = code ?? 200;
     error = (data as { error?: string })?.error ?? '';
   }).then(() => {
@@ -107,6 +160,7 @@ agentStatusEmitter.on('fleet-change', (agentId: string) => {
   if (whenToType(stateOf(agent), list[0].purpose) !== 'now') return;
   const item = list.shift()!;
   if (!list.length) owed.delete(agentId);
+  queuesChanged();
   typeInto(agent, item, routeCtx);
 });
 

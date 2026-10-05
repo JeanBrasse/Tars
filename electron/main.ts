@@ -127,6 +127,9 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
+import { startTaskWatch } from './services/task-watch';
+import { beginRun, type PreviousRun } from './services/run-state';
+import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
@@ -135,7 +138,8 @@ import { startCliUpdates } from './services/cli-updater';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
-import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
+import { stopAcpRuns, endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
+import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
@@ -164,6 +168,9 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 let appSettings: AppSettings = loadAppSettings();
+let stopTmpRetention: () => void = () => undefined;
+let previousRun: PreviousRun | null = null;
+let recovery: { flush: () => void } | null = null;
 // Off unless the user turned them on; followed live (services/error-reports).
 const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
 
@@ -476,6 +483,9 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // Whether the last run stopped abruptly, and who was working then, read
+  // before this run's record replaces it (services/run-state.ts).
+  previousRun = beginRun();
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
@@ -735,10 +745,37 @@ app.whenReady().then(async () => {
   initApiServer();
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
+  // What the last run owed, its waiting room messages, the run record, and,
+  // after an abrupt stop, the agents that were working resumed with a note
+  // (services/restart-recovery.ts). After the launcher and the API are up.
+  recovery = startRestartRecovery(previousRun);
   startAgentWatch();
+  // The tasks the Usage page prices: who handed what, from turn to rest
+  // (services/task-ledger.ts).
+  startTaskWatch();
   // And an agent that reads running while it does nothing is told to whoever
   // handed it the work (services/stall-watch.ts).
   startStallWatch();
+  // Each agent's temporary folder, which a boot does not empty, kept to 7 days
+  // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
+  // first pass forward, for the e2e.
+  const firstRetentionMs = !app.isPackaged ? Number(process.env.DOROTHY_TMP_RETENTION_FIRST_MS) || undefined : undefined;
+  stopTmpRetention = startTmpRetention({
+    liveAgentIds: () => [
+      ...[...agents.values()].filter(a => !!a.ptyId && ptyProcesses.has(a.ptyId)).map(a => a.id),
+      ...agentsRunningOverAcp(),
+    ],
+    knownAgentIds: () => [...agents.keys()],
+    freeBytes: () => {
+      try {
+        const st = fs.statfsSync(DATA_DIR);
+        return st.bavail * st.bsize;
+      } catch {
+        return null;
+      }
+    },
+    log: retentionLog,
+  }, { firstMs: firstRetentionMs });
   // A message held behind a slash command typed by hand goes in once the
   // command's record says the field emptied (core/pty-manager.ts).
   setFieldProbe(agentId => {
@@ -857,11 +894,15 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
+      ['stopTmpRetention', () => stopTmpRetention()],
       // A claude asked for an account's usage (get_usage) just before the quit.
       ['endUsageProbes', endUsageProbes],
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // Last: what is owed on disk, and the run marked as ended cleanly, so
+      // the next launch resumes nobody.
+      ['endRestartRecovery', () => endRestartRecovery(recovery)],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))
