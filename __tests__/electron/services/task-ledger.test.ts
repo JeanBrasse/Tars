@@ -35,21 +35,30 @@ import { createTaskLedger, type TaskAgentView } from '../../../electron/services
  *     and all it hands on after, are filed under the worker's task, whose total then holds them (a task that cost 1
  *     showed a total of 21). A worker writing to the agent that handed it its task, or to its project's orchestrator,
  *     reports; as #302 has it for the delegation link.
+ * 12. (Noah's answer of 2026-10-05) A task's text, the first line of what was handed over (Noah's own prompts, the
+ *     chat messages handed to orchestrators), is written to ~/.dorothy, which every agent is handed; or to a file
+ *     another account can read. Only the text moves: what a task cost and how long it took stays where it was.
+ * 13. Read back, a task loses its text, or a missing or damaged text file loses the tasks.
+ * 14. A ledger written before, its texts inline in ~/.dorothy, keeps them there after the first start.
+ * 15. Rewritten past its bound, the ledger keeps the texts of the tasks it dropped, or loses those of the tasks it kept.
+ * 16. A text line that is not one (no id, a text that is not text, a megabyte) is taken as it is.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
 let dir: string;
 let file: string;
+let textFile: string;
 let clock: number;
 
 function agent(over: Partial<TaskAgentView> = {}): TaskAgentView {
   return { id: 'worker-1', projectPath: '/work/tars', provider: 'claude', model: 'claude-opus-5-5', claudeAccountId: null, status: 'running', ...over };
 }
-const open = () => createTaskLedger({ file, now: () => clock });
+const open = () => createTaskLedger({ file, textFile, now: () => clock });
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-task-ledger-'));
   file = path.join(dir, 'task-ledger.jsonl');
+  textFile = path.join(dir, 'private', 'task-texts.jsonl');
   clock = T0;
 });
 
@@ -233,7 +242,7 @@ describe('what is kept', () => {
   });
 
   it('8. the file keeps its last lines only', () => {
-    const ledger = createTaskLedger({ file, now: () => clock, maxLines: 50 });
+    const ledger = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 });
     for (let i = 0; i < 40; i++) {
       ledger.turnStarted(agent(), { sessionId: 'sess-1' });
       ledger.stateChanged(agent({ status: 'idle' }));
@@ -241,7 +250,7 @@ describe('what is kept', () => {
     }
 
     expect(fs.readFileSync(file, 'utf-8').trim().split('\n').length).toBeLessThanOrEqual(50 + 2);
-    const kept = createTaskLedger({ file, now: () => clock, maxLines: 50 }).tasks();
+    const kept = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 }).tasks();
     expect(kept.length).toBeGreaterThan(10);
     // The newest, without a gap: the tasks kept are the last ones started.
     expect(kept.map((t) => t.startedAt)).toEqual(kept.map((_, i) => clock - (kept.length - i) * 1_000));
@@ -336,7 +345,7 @@ describe("a worker's report to the agent that leads it", () => {
   });
 
   it("10. nor to its project's orchestrator, whoever handed it its task", () => {
-    const ledger = createTaskLedger({ file, now: () => clock, leads: (receiverId, senderId) => receiverId === 'orch' && senderId === 'worker' });
+    const ledger = createTaskLedger({ file, textFile, now: () => clock, leads: (receiverId, senderId) => receiverId === 'orch' && senderId === 'worker' });
     ledger.handedOff('worker', { source: 'tars', text: 'build it' });
     ledger.turnStarted(agent({ id: 'worker' }), { sessionId: 'sess-worker' });
     ledger.handedOff('orch', { source: 'agent', requesterAgentId: 'worker', text: 'built' });
@@ -369,5 +378,73 @@ describe('an agent put to sleep (#322)', () => {
     ledger.stateChanged(agent({ status: 'idle' }), { backgroundLeft: true });
     ledger.stateChanged(agent({ status: 'asleep' }));
     expect(ledger.tasks()).toMatchObject([{ outcome: 'running', endedAt: null }]);
+  });
+});
+
+describe('where a task\'s text is kept (Noah, 05/10)', () => {
+  const handAndRun = (ledger: ReturnType<typeof open>, text: string) => {
+    ledger.handedOff('worker-1', { source: 'telegram', text });
+    ledger.turnStarted(agent(), { sessionId: 'sess-1' });
+    ledger.stateChanged(agent({ status: 'idle' }));
+  };
+
+  it('12. is never written to the ledger every agent is handed, but to a file only its owner reads', () => {
+    const ledger = open();
+    handAndRun(ledger, 'merge the release branch, the Hermes key is in the vault');
+    const pub = fs.readFileSync(file, 'utf-8');
+    expect(pub).not.toContain('merge the release branch');
+    expect(pub).not.toContain('"text"');
+    // What it cost and how long it took stays there.
+    expect(pub).toContain('"startedAt"');
+    expect(pub).toContain('"sess-1"');
+    expect(fs.readFileSync(textFile, 'utf-8')).toContain('merge the release branch');
+    expect(fs.statSync(textFile).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(textFile)).mode & 0o777).toBe(0o700);
+    expect(ledger.tasks()[0].text).toBe('merge the release branch, the Hermes key is in the vault');
+  });
+
+  it('13. comes back with its task at the next start, and a missing or damaged text file loses no task', () => {
+    handAndRun(open(), 'first');
+    expect(open().tasks().map((t) => t.text)).toEqual(['first']);
+    fs.writeFileSync(textFile, '{"id":');
+    expect(open().tasks().map((t) => [t.text, t.outcome])).toEqual([['', 'completed']]);
+    fs.rmSync(textFile);
+    expect(open().tasks()).toHaveLength(1);
+  });
+
+  it('14. written inline by an earlier build, it moves out of ~/.dorothy at the first start', () => {
+    const task = {
+      id: 't-old', agentId: 'worker-1', projectPath: '/work/tars', worktreePath: null, provider: 'claude', model: null, accountId: null,
+      source: 'telegram', requesterAgentId: null, parentTaskId: null, text: 'the old prompt', startedAt: T0, endedAt: T0 + 1, lastAt: T0 + 1,
+      outcome: 'completed', turns: 1, sessionIds: ['sess-0'],
+    };
+    fs.writeFileSync(file, JSON.stringify({ t: 'task', task }) + '\n');
+    const ledger = open();
+    expect(ledger.tasks().map((t) => t.text)).toEqual(['the old prompt']);
+    expect(fs.readFileSync(file, 'utf-8')).not.toContain('the old prompt');
+    expect(fs.readFileSync(file, 'utf-8')).toContain('t-old');
+    expect(fs.readFileSync(textFile, 'utf-8')).toContain('the old prompt');
+  });
+
+  it('15. rewritten past its bound, it keeps the texts of the tasks kept, and no other', () => {
+    const ledger = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 });
+    for (let i = 0; i < 40; i++) {
+      handAndRun(ledger, `task number ${i}`);
+      clock += 1_000;
+    }
+    const kept = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 }).tasks();
+    expect(kept.length).toBeGreaterThan(10);
+    expect(kept.every((t) => /^task number \d+$/.test(t.text))).toBe(true);
+    expect(fs.readFileSync(textFile, 'utf-8')).not.toContain('"task number 0"');
+    expect(fs.statSync(textFile).mode & 0o777).toBe(0o600);
+  });
+
+  it('16. a text line that is not one is skipped, and a long one cut to 200 characters', () => {
+    handAndRun(open(), 'kept');
+    const id = open().tasks()[0].id;
+    fs.appendFileSync(textFile, [JSON.stringify({ text: 'no id' }), JSON.stringify({ id, text: { evil: 1 } }), 'not json', ''].join('\n'));
+    expect(open().tasks()[0].text).toBe('kept');
+    fs.appendFileSync(textFile, JSON.stringify({ id, text: 'y'.repeat(1_000_000) }) + '\n');
+    expect(Array.from(open().tasks()[0].text)).toHaveLength(200);
   });
 });

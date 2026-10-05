@@ -62,7 +62,8 @@ function fleet(): BotFleet {
 beforeEach(() => {
   resetLaunches();
   ptyProcesses.clear();
-  ledger = createTaskLedger({ file: path.join(fs.mkdtempSync(path.join(dir, 'l-')), 'task-ledger.jsonl') });
+  const ledgerDir = fs.mkdtempSync(path.join(dir, 'l-'));
+  ledger = createTaskLedger({ file: path.join(ledgerDir, 'task-ledger.jsonl'), textFile: path.join(ledgerDir, 'private', 'task-texts.jsonl') });
   setLiveTaskLedger(ledger);
   agents = new Map();
   for (const [id, role] of [['orch', 'orchestrator'], ['worker', 'worker']] as const) {

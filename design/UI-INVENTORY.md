@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 123 root frames.
-`design/chat-design.pen` holds 72 of those, the other fifty-one being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 125 root frames.
+`design/chat-design.pen` holds 72 of those, the other fifty-three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -54,7 +54,7 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/vault` | Vault | Vault · dark |
 | `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row), Agent asleep · and how it wakes (an asleep agent's row) |
 | `/skills` | Extensions (Skills + Plugins) | Extensions · Skills, Extensions · Plugins |
-| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account (each with its light copy) |
+| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account, Usage · cost per task (each with its light copy) |
 | `/memory` | Brain (Projects / Agents / Backends) | Brain · Projects, Brain · Agents, Brain · Backends |
 | `/whats-new` | What's new | What's new · dark |
 | `/settings` | Settings | see below |
