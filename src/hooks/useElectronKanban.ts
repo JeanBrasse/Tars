@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import type { KanbanTask, KanbanColumn, KanbanTaskCreate, KanbanTaskUpdate, KanbanMoveResult } from '@/types/kanban';
 import { isElectron } from './useElectron';
 import { useDesktopApi } from './useDesktopApi';
+import { lastPlainLines } from '@/lib/plain-lines';
 
 /**
  * Hook for Kanban board management via Electron IPC
@@ -221,11 +222,12 @@ export function useKanbanAgentSync(
         let completionSummary = isSuccess ? 'Task completed successfully.' : 'Task completed with errors.';
         try {
           const agent = await window.electronAPI?.agent.get(event.agentId);
-          if (agent?.output && agent.output.length > 0) {
-            // Get last 50 lines of output as summary (or less if not available)
-            const outputLines = agent.output.slice(-50);
-            completionSummary = outputLines.join('');
-          }
+          // The last 50 lines a person can read. agent:get hands the terminal's
+          // screen as one chunk, serialized with its scrollback and its escape
+          // codes (core/terminal-mirror.ts): the last 50 chunks were all of it,
+          // about 170 KB in each completed task.
+          const lines = lastPlainLines(agent?.output ?? [], 50);
+          if (lines) completionSummary = lines;
         } catch (err) {
           console.error('[Kanban Sync] Failed to get agent output:', err);
         }

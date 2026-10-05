@@ -3,7 +3,8 @@
 // the last user turn is answered with n numbered lines, anything else with
 // "ok", streamed the way the real API streams. `RUNBASH <tag>` asks for one Bash
 // call, `echo <tag> > ran-<tag>.txt`, and the turn that brings its result back
-// is answered with that result, which the log keeps (`toolResult`).
+// is answered with that result, which the log keeps (`toolResult`). `RUNBG <tag>`
+// asks for one Bash call left running in the background (`sleep 600`).
 // Every request is logged as one JSON line to FAKE_LOG, which is how a spec
 // knows a turn reached the model. Adapted from the Frontend's #132 proof.
 import http from 'node:http';
@@ -69,6 +70,24 @@ function reply(res, model, text) {
   res.end();
 }
 
+/** `RUNBG <tag>`: one Bash call left running in the background, `sleep 600`. */
+function backgroundBash(res, model, tag) {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+  sse(res, 'message_start', {
+    message: {
+      id: `msg_${Date.now()}`, type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null,
+      usage: { input_tokens: 10, output_tokens: 1 },
+    },
+  });
+  const input = { command: 'sleep 600', description: `Wait in the background (${tag})`, run_in_background: true };
+  sse(res, 'content_block_start', { index: 0, content_block: { type: 'tool_use', id: `toolu_${tag}_${Date.now()}`, name: 'Bash', input: {} } });
+  sse(res, 'content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } });
+  sse(res, 'content_block_stop', { index: 0 });
+  sse(res, 'message_delta', { delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 5 } });
+  sse(res, 'message_stop', {});
+  res.end();
+}
+
 http.createServer((req, res) => {
   let body = '';
   req.on('data', chunk => (body += chunk));
@@ -103,6 +122,8 @@ http.createServer((req, res) => {
     }
     const run = !side && last.match(/RUNBASH (\w+)/);
     if (run) return toolUse(res, model, run[1]);
+    const background = !side && last.match(/RUNBG (\w+)/);
+    if (background) return backgroundBash(res, model, background[1]);
     const lines = !side && last.match(/LINES (\d+) (\w+)/);
     if (lines) {
       return reply(res, model, Array.from({ length: Number(lines[1]) }, (_, i) => `${lines[2]} line ${i + 1} of ${lines[1]}`).join('\n'));

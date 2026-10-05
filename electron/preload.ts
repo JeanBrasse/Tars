@@ -116,6 +116,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:answerPermission', id, decision, reason),
     sendInput: (params: { id: string; input: string }) =>
       ipcRenderer.invoke('agent:input', params),
+    wake: (id: string) =>
+      ipcRenderer.invoke('agent:wake', id),
     resize: (params: { id: string; cols: number; rows: number }) =>
       ipcRenderer.invoke('agent:resize', params),
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) =>
