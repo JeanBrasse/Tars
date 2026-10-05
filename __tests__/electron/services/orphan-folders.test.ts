@@ -91,6 +91,13 @@ describe('listing', () => {
     expect(byName[path.join('feat', 'gone')].reason).toBe('git-forgot');
   });
 
+  it('3. never lists a folder that holds a live worktree two levels down', async () => {
+    const deep = path.join(project, '.worktrees', 'team', 'feat', 'deep');
+    git(project, 'worktree', 'add', '-q', deep, '-b', 'team/feat/deep');
+    const listing = await listOrphanFolders({ projects: [project], owned: [] });
+    expect(listing.folders.map(f => f.name)).toEqual([]);
+  });
+
   it('4. lists nothing outside .worktrees, and follows no link out of it', async () => {
     const outside = path.join(root, 'outside');
     file(path.join(outside, 'precious.txt'), 10);

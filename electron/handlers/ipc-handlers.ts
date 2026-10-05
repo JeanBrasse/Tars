@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { stopAgent } from '../core/agent-stop';
+import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
@@ -1204,6 +1205,26 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       out[provider.id] = enforcesOrchestratorMode(provider.binaryName);
     }
     return out;
+  });
+
+  // The disk and the folders no agent owns (Settings · System; Noah's choice
+  // 16 of 05/10). The projects are Tars's own: those added by hand and those
+  // its agents work in; an agent's worktree is never offered.
+  const orphanScope = () => ({
+    projects: [...new Set([...readCustomProjects(), ...[...agents.values()].map(a => a.projectPath).filter(Boolean)])],
+    owned: [...agents.values()].map(a => a.worktreePath).filter((p): p is string => !!p),
+  });
+  ipcMain.handle('system:disk', async () => diskSpace());
+  ipcMain.handle('system:orphanFolders', async () => listOrphanFolders(orphanScope()));
+  ipcMain.handle('system:removeOrphanFolders', async () => {
+    try {
+      return await removeOrphanFolders({
+        ...orphanScope(),
+        onProgress: progress => broadcastToAllWindows('system:orphanFolders:progress', progress),
+      });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('agent:remove', async (_event, id: string) => {

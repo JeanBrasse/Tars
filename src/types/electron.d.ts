@@ -979,6 +979,30 @@ export interface ClaudeAccountAgentChange {
   claudeAccountPin: ClaudeAccountId | null;
 }
 
+/** The disk Tars runs on: its free and total space, and the floor below which Tars warns (30 GB). */
+export interface DiskSpace { freeBytes: number; totalBytes: number; floorBytes: number }
+
+/** A folder under a project's .worktrees that no git worktree holds and no agent owns. */
+export interface OrphanFolder {
+  project: string;
+  path: string;
+  /** Its path under the project's .worktrees. */
+  name: string;
+  /** git-forgot: its .git points to a gitdir that is gone. no-git: it never had one. */
+  reason: 'git-forgot' | 'no-git';
+  sizeBytes: number;
+  /** The newest change in it (caches and .git aside), or null. */
+  lastChangedAt: string | null;
+}
+export interface OrphanListing { folders: OrphanFolder[]; count: number; totalBytes: number }
+export interface OrphanRemovalProgress { done: number; total: number; freedBytes: number; current: string }
+/** in-use: a process works in it (detail names it). unknown-use: the processes could not be read. failed: detail says why. */
+export interface OrphanRemovalReport {
+  removed: number;
+  freedBytes: number;
+  kept: Array<{ path: string; project: string; reason: 'in-use' | 'unknown-use' | 'failed'; detail?: string }>;
+}
+
 /** What the claude-accounts channels answer: the result, or a sentence. */
 export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { success: false; error: string };
 
@@ -2089,6 +2113,15 @@ export interface ElectronAPI {
     }) => void) => () => void;
     onUpdateDownloaded: (callback: () => void) => () => void;
     onUpdateError: (callback: (error: string) => void) => () => void;
+  };
+
+  // The disk and the folders no agent owns (Settings · System)
+  system: {
+    disk: () => Promise<DiskSpace | null>;
+    orphanFolders: () => Promise<OrphanListing>;
+    /** Removes every folder no agent owns, as it stands now, one at a time; asks nothing itself (the window confirms first). A folder a process works in is kept. */
+    removeOrphanFolders: () => Promise<OrphanRemovalReport | { error: string }>;
+    onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void;
   };
 
   // Obsidian vault browsing & editing

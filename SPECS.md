@@ -699,7 +699,7 @@ Files Tars writes **outside** its own directory:
 | `~/.local/share/claude/versions/`, `~/.local/bin/claude` | through `claude update`, which writes them itself |
 | `<npm prefix>/lib/node_modules/<package>`, `<npm prefix>/bin/amp` | through `npm install --global`, for Amp |
 | per-provider MCP config files | `codex`, `gemini`, `grok`, `opencode`, `pi` |
-| `<project>/.worktrees/<branch>` | git worktrees |
+| `<project>/.worktrees/<branch>` | git worktrees. A folder there that no git worktree holds and no agent owns (git forgot it: its `.git` points to a gitdir that is gone; or it never had a `.git`) is listed in Settings · System with its project, size (`du`) and last change (`system:orphanFolders`, `services/orphan-folders.ts`, Noah's choice 16 of 05/10), walked into when it holds a live worktree at any depth, never through a link, and never removed on its own: `system:removeOrphanFolders`, which the window calls once it has confirmed, reads the list again, keeps a folder a process works in (`lsof -d cwd`, `/proc` on Linux) and every one when the processes cannot be read, removes the rest one at a time with `fs.rm` (git is never asked, so never with `--force`), and tells each step (`system:orphanFolders:progress`); `system:disk` gives the home disk's free and total space and the 30 GB floor |
 
 ### `AgentStatus`: what survives a restart
 
