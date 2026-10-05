@@ -1,7 +1,6 @@
 import * as fs from 'fs';
-import * as path from 'path';
-import { DATA_DIR } from '../constants';
-import { writeAtomicSync } from '../utils/secret-file';
+import { privatePath } from '../constants';
+import { writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * Whether the last run of Tars ended abruptly, and who was working when it did
@@ -13,11 +12,12 @@ import { writeAtomicSync } from '../utils/secret-file';
  * record still open at the next launch is a run that ended abruptly: a crash,
  * a kill, a power cut or a reboot that did not quit Tars.
  *
- * In ~/.dorothy, which every agent reads: it holds only ids, statuses, session
- * ids and a task's first 200 characters, as agents.json already does.
+ * In ~/.tars-private (0600), which no agent is handed: in ~/.dorothy, a record
+ * any agent wrote made Tars start, at the next launch, whatever agents it
+ * named, at-rest ones of any project included (the Audit's gate of #310).
  */
 
-export const RUN_STATE_FILE = path.join(DATA_DIR, 'run-state.json');
+export const RUN_STATE_FILE = privatePath('run-state.json');
 
 export interface WorkingRecord {
   agentId: string;
@@ -70,7 +70,7 @@ function write(opts: Options): void {
   if (!current) return;
   current.lastWriteAt = (opts.now ?? Date.now)();
   try {
-    writeAtomicSync(opts.file ?? RUN_STATE_FILE, JSON.stringify(current));
+    writeSecretFileSync(opts.file ?? RUN_STATE_FILE, JSON.stringify(current));
   } catch (err) {
     console.warn('[run-state] could not write the run record:', (err as Error).message);
   }

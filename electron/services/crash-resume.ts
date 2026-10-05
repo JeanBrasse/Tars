@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import type { PreviousRun } from './run-state';
+import { envelopeValue } from '../utils/envelope-value';
 
 /**
  * After Tars stopped abruptly, the agents that were working are resumed with a
@@ -75,7 +76,7 @@ export function resumeNote(input: {
   delegations: Array<{ name: string; resumed: boolean }>;
 }): string {
   const cut = input.cut.kind === 'tool'
-    ? `Your last turn was cut while ${input.cut.tool} was running: its outcome is unknown.`
+    ? `Your last turn was cut while ${envelopeValue(input.cut.tool)} was running: its outcome is unknown.`
     : input.cut.kind === 'no-reply'
       ? 'Your last turn was cut before its reply was written.'
       : input.cut.kind === 'recorded'
@@ -90,7 +91,7 @@ export function resumeNote(input: {
     'Before you go on, check where things stand (git status, the files, the PRs, the board), and do not redo a step without checking whether it already took effect.',
   ];
   if (input.delegations.length > 0) {
-    const list = input.delegations.map((d) => `${d.name} (${d.resumed ? 'resumed too' : 'at rest'})`).join(', ');
+    const list = input.delegations.map((d) => `${envelopeValue(d.name)} (${d.resumed ? 'resumed too' : 'at rest'})`).join(', ');
     parts.push(`You had handed work to ${list}: ask each with get_agent where it stands before you hand anything again.`);
   }
   return parts.filter(Boolean).join(' ');

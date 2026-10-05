@@ -106,6 +106,7 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-resume-'));
   const project = path.join(home, 'projects', 'demo');
   const dir = path.join(home, '.dorothy');
+  const privateDir = path.join(home, '.tars-private');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');
@@ -154,11 +155,11 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
   // What is owed reaches the disk a moment after it is owed.
   await expect.poll(() => {
     try {
-      return JSON.parse(fs.readFileSync(path.join(dir, 'carry-over.json'), 'utf8')).notes.map((n: { childId: string }) => n.childId);
+      return JSON.parse(fs.readFileSync(path.join(privateDir, 'carry-over.json'), 'utf8')).notes.map((n: { childId: string }) => n.childId);
     } catch { return []; }
   }, { timeout: 15_000 }).toEqual(['helper']);
   await new Promise((r) => setTimeout(r, 1_500));
-  const before = { launches: lines(launchesFile), runState: JSON.parse(fs.readFileSync(path.join(dir, 'run-state.json'), 'utf8')) };
+  const before = { launches: lines(launchesFile), runState: JSON.parse(fs.readFileSync(path.join(privateDir, 'run-state.json'), 'utf8')) };
 
   // ── The crash: Tars and every CLI, by PID ──
   const killed = [app.process().pid!, ...before.launches.map((l) => l.pid as number)];
@@ -185,7 +186,7 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
       killed, before, after,
       prompts: lines(promptsFile),
       statusesAfter: (await list2()).map((a) => [a.id, a.status, a.cliRunning]),
-      carryOverAfter: JSON.parse(fs.readFileSync(path.join(dir, 'carry-over.json'), 'utf8')),
+      carryOverAfter: JSON.parse(fs.readFileSync(path.join(privateDir, 'carry-over.json'), 'utf8')),
     };
     recordValues(values);
 
@@ -193,10 +194,10 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
     const worker = after.find((l) => l.id === 'worker')!;
     expect(lead.resume && worker.resume).toBe(true);
     expect(worker.prompt).toMatch(/^\[Tars\] Tars stopped abruptly at \d\d:\d\d/);
-    expect(worker.prompt).toMatch(/Bash was running: its outcome is unknown/);
+    expect(worker.prompt).toMatch(/"Bash" was running: its outcome is unknown/);
     expect(worker.prompt).toContain(worker.TMPDIR);
     expect(worker.TMPDIR).toBe(before.launches.find((l) => l.id === 'worker').TMPDIR);
-    expect(lead.prompt).toMatch(/Build Worker \(resumed too\)/);
+    expect(lead.prompt).toMatch(/"Build Worker" \(resumed too\)/);
     // The helper's link was spent when its end became news: that news is the note carried across the restart.
     expect(lead.prompt).not.toMatch(/Helper/);
     for (const resumed of [lead, worker]) expect(resumed.prompt).not.toMatch(/DELEGATE>>|LONG>>|ship 1\.9\.3|build the release/);
@@ -207,8 +208,11 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
   } finally {
     await again.close();
   }
-  const ended = JSON.parse(fs.readFileSync(path.join(dir, 'run-state.json'), 'utf8'));
+  const ended = JSON.parse(fs.readFileSync(path.join(privateDir, 'run-state.json'), 'utf8'));
   recordValues({ runStateAfterQuit: ended });
   expect(ended.cleanExit).toBe(true);
   expect(ended.resumed.sort()).toEqual(['lead', 'worker']);
+  // Out of every agent's reach (the Audit's gate of #310): nothing of either in ~/.dorothy, each 0600.
+  expect(['run-state.json', 'carry-over.json'].filter((f) => fs.existsSync(path.join(dir, f)))).toEqual([]);
+  expect(['run-state.json', 'carry-over.json'].map((f) => fs.statSync(path.join(privateDir, f)).mode & 0o777)).toEqual([0o600, 0o600]);
 });

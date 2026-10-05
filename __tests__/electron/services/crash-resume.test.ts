@@ -87,8 +87,8 @@ describe('the note', () => {
   it('8. tells an orchestrator whom it had handed work to, and whether each is resumed too', () => {
     const note = resumeNote({ stoppedAt: STOPPED, cut: { kind: 'no-reply' }, delegations: [{ name: 'Build Worker', resumed: true }, { name: 'Helper', resumed: false }] });
 
-    expect(note).toMatch(/Build Worker \(resumed too\)/);
-    expect(note).toMatch(/Helper \(at rest\)/);
+    expect(note).toMatch(/"Build Worker" \(resumed too\)/);
+    expect(note).toMatch(/"Helper" \(at rest\)/);
     expect(note).toMatch(/get_agent/);
   });
 
@@ -213,7 +213,7 @@ describe('the resume', () => {
 
     expect(fleet.get('w1')!.requestedBy).toEqual({ agentId: 'orch', ptyId: 'pty-new-w1' });
     const orchNote = launched.find((l) => l.startsWith('orch:'))!;
-    expect(orchNote).toMatch(/W1 \(resumed too\)/);
+    expect(orchNote).toMatch(/"W1" \(resumed too\)/);
   });
 
   it("8. the note names the cut tool read from the agent's own transcript, and its temporary folder", async () => {
