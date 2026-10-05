@@ -19,14 +19,17 @@ vi.mock('react', async (importOriginal) => ({
  *    saying no agent; or a folder Claude Code merely ran in floods the list;
  * 2. a file whose patch main could not read says there is no textual change,
  *    or nothing, and never why;
- * 3. a patch past 4000 lines is cut without a word, or a patch that fits
- *    says it was cut, or the count is wrong, or the hint to pick a file shows
- *    while one is picked;
+ * 3. a picked file's patch past 4000 lines is cut without a word, or a patch
+ *    that fits says it was cut, or the count is wrong;
  * 4. the answer for a tree no longer selected replaces the selected tree's
  *    files, and a file's patch that comes back after another file was picked
  *    replaces that file's;
  * 5. Refresh reads the selected tree again but not the list: a project or an
- *    agent added since never shows.
+ *    agent added since never shows;
+ * 6. the page asks review:diff for every patch of the tree, up to 2 MB over
+ *    IPC, where it shows a file's patch only once that file is picked (#247's
+ *    listOnly); or, with no file picked, it shows a patch at all, where the
+ *    panel asks for a file (frame Review · states).
  */
 
 type El = { type: unknown; props: Record<string, unknown> };
@@ -47,7 +50,7 @@ describe('the page', () => {
   let page: Mount<unknown>;
   let agents: AgentStatus[];
   let projects: Array<{ path: string; name: string; custom?: boolean }>;
-  let diffCalls: Array<{ repo: string; answer: ReturnType<typeof deferred<{ success: boolean; diff?: ReviewDiff; error?: string }>> }>;
+  let diffCalls: Array<{ repo: string; opts?: { listOnly?: boolean }; answer: ReturnType<typeof deferred<{ success: boolean; diff?: ReviewDiff; error?: string }>> }>;
   let fileCalls: Array<{ file: string; answer: ReturnType<typeof deferred<{ success: boolean; patch?: string; error?: string }>> }>;
 
   const buttons = () => elements(page.result).filter(e => typeof e.props.onClick === 'function') as unknown as El[];
@@ -73,7 +76,7 @@ describe('the page', () => {
         agent: { list: async () => agents },
         fs: { listProjects: async () => projects },
         review: {
-          diff: (repo: string) => { const answer = deferred<{ success: boolean; diff?: ReviewDiff; error?: string }>(); diffCalls.push({ repo, answer }); return answer.promise; },
+          diff: (repo: string, _base?: string, opts?: { listOnly?: boolean }) => { const answer = deferred<{ success: boolean; diff?: ReviewDiff; error?: string }>(); diffCalls.push({ repo, opts, answer }); return answer.promise; },
           file: (_repo: string, file: string) => { const answer = deferred<{ success: boolean; patch?: string; error?: string }>(); fileCalls.push({ file, answer }); return answer.promise; },
         },
       },
@@ -107,11 +110,27 @@ describe('the page', () => {
     expect(shown()).not.toContain('No textual change');
   });
 
-  it('says where the whole patch stops past 4000 lines (3)', async () => {
-    const patch = Array.from({ length: 4100 }, (_, i) => `+line ${i}`).join('\n') + '\n';
-    diffCalls[0].answer.resolve({ success: true, diff: diffOf('/p/tars/.worktrees/feat/backend', ['a.ts'], patch) });
+  it('asks for the files alone, and with no file picked shows no patch and asks for one (6)', async () => {
+    expect(diffCalls.map(c => c.opts)).toEqual([{ listOnly: true }]);
+    // Even if a main of another version handed a patch back with the list.
+    diffCalls[0].answer.resolve({ success: true, diff: diffOf('/p/tars/.worktrees/feat/backend', ['a.ts'], '+a whole patch\n') });
     await settle();
-    expect(shown()).toContain('4000 of 4100 lines shown. Pick a file to read its own patch.');
+    expect(patchShown()).toEqual([]);
+    expect(shown()).toContain('Pick a file to read its patch.');
+    press('feat/frontend');
+    await settle();
+    expect(diffCalls.map(c => c.opts)).toEqual([{ listOnly: true }, { listOnly: true }]);
+  });
+
+  it("says where a picked file's patch stops past 4000 lines, with no hint to pick one (3)", async () => {
+    diffCalls[0].answer.resolve({ success: true, diff: diffOf('/p/tars/.worktrees/feat/backend', ['a.ts']) });
+    await settle();
+    press('a.ts');
+    await settle();
+    fileCalls[0].answer.resolve({ success: true, patch: Array.from({ length: 4100 }, (_, i) => `+line ${i}`).join('\n') + '\n' });
+    await settle();
+    expect(shown()).toContain('4000 of 4100 lines shown.');
+    expect(shown()).not.toContain('Pick a file');
   });
 
   it("keeps the selected tree's files when an older answer comes back late (4)", async () => {

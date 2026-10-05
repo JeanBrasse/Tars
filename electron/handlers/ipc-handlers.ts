@@ -44,6 +44,7 @@ import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
+import { tasksReport } from '../services/task-watch';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
@@ -1937,6 +1938,16 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   // page can cut the same window from them as from the transcripts' days.
   ipcMain.handle('usage:by-provider', async (_event, { sinceDays }: { sinceDays?: number } = {}) =>
     ledgerUsageByProvider(sinceDays));
+
+  // What each task cost, with who handed it over and the tasks handed on from
+  // it, priced from the transcripts when asked (services/task-watch.ts).
+  ipcMain.handle('usage:tasks', async (_event, query: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string } = {}) =>
+    tasksReport({
+      since: typeof query?.since === 'number' && Number.isFinite(query.since) ? query.since : undefined,
+      sinceDays: typeof query?.sinceDays === 'number' ? query.sinceDays : undefined,
+      projectPath: typeof query?.projectPath === 'string' ? query.projectPath : undefined,
+      agentId: typeof query?.agentId === 'string' ? query.agentId : undefined,
+    }));
 
   ipcMain.handle('review:repo', async (_event, { repoPath }: { repoPath: string }) => {
     try {
