@@ -1,0 +1,213 @@
+/**
+ * The state mod's `tool.check` hook (mods/tars-state/hooks/register.ts, mods
+ * step 2): when Claude Code would put a tool call to its permission dialog,
+ * the mod asks the Tars that started it, and Tars's allow or deny is the
+ * decision. Measured on 2.1.289 (ETUDE-MODS-CLAUDE-CODE.md §2): a hook may
+ * await Tars past the 10 s budget, a `$` call in flight is not counted, and a
+ * deny's reason is what the model reads.
+ *
+ * How it fails, written before the code (2026-10-05):
+ * 1. Tars is asked about calls the engine would allow or deny by itself: every
+ *    Read, every call of a bypass-mode agent, a question for nothing.
+ * 2. The engine's decision is replaced when Tars hands the question back
+ *    (`ask`), does not answer, answers garbage or cannot be reached: the
+ *    dialog must then show, as before the mod.
+ * 3. An AskUserQuestion, which is a question to the person and not a
+ *    permission, is answered by Tars.
+ * 4. The mod asks a Tars that did not prove it started this CLI, or before its
+ *    session is known, so the token goes to whoever answers on the port.
+ * 5. The question does not carry what Tars needs to hold the right agent and
+ *    say what is asked (agent, session, tool, call id, the command or path),
+ *    or carries a whole file's content.
+ * 6. An allow or a deny from Tars is not the decision, or the deny loses the
+ *    reason the model should read.
+ * And from the live measure (2026-10-05): past about 30 s the request ended
+ * and the dialog showed while Tars still held the question. Tars now answers
+ * `pending` within 20 s:
+ * 7. A pending is taken for the decision, or the mod stops asking: it asks
+ *    again for the same call until Tars decides, and gives up to the engine
+ *    after a bounded number of asks.
+ * And from a second live measure at load ~300: the dialog once showed 20 s
+ * in, at Tars's first `pending`, and not in the next run.
+ * 8. One request that fails while Tars holds the question sends the call to
+ *    the dialog: the mod asks again, telling Tars why, and gives up after
+ *    three failures in a row.
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
+
+type Hook = ($: unknown, e: unknown, next: (e: unknown) => Promise<unknown>) => unknown;
+
+const ENV: Record<string, string> = {
+  CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_URL: 'http://127.0.0.1:1', CLAUDE_MGR_API_TOKEN: 'tok', TARS_INSTANCE_ID: 'inst',
+};
+const SESSION = '11111111-1111-4111-8111-111111111111';
+
+let hooks: Map<string, Hook>;
+let posts: Array<{ url: string; body: Record<string, unknown> }>;
+let answer: () => Promise<{ text: string }>;
+let proof: 'right' | 'wrong';
+
+const $ = {
+  env: { get: async (name: string) => ENV[name] },
+  clock: { every: () => undefined },
+  http: {
+    fetch: async (url: string, init?: { body?: string }) => {
+      if (url.includes('/api/health')) {
+        const challenge = new URL(url).searchParams.get('challenge');
+        const right = createHash('sha256').update(`inst:${challenge}`).digest('hex');
+        return { text: JSON.stringify({ proof: proof === 'right' ? right : 'f'.repeat(64) }) };
+      }
+      const body = JSON.parse(init?.body ?? '{}');
+      posts.push({ url, body });
+      if (url.endsWith('/api/hooks/permission')) return answer();
+      return { text: '{}' };
+    },
+  },
+};
+
+async function load(): Promise<void> {
+  vi.resetModules();
+  hooks = new Map();
+  const mod = await import('../../mods/tars-state/hooks/register');
+  mod.register(((event: string, hook: Hook) => { hooks.set(event, hook); }) as never);
+}
+
+async function start(): Promise<void> {
+  await hooks.get('classic.SessionStart')!($, { session_id: SESSION, source: 'startup' }, async e => e);
+}
+
+/** tool.check with the engine's own verdict. */
+function check(e: Record<string, unknown>, engine: Record<string, unknown>): Promise<unknown> {
+  return Promise.resolve(hooks.get('tool.check')!($, e, async () => engine));
+}
+
+const bash = { tool: 'Bash', input: { command: 'rm -rf build', description: 'clean' }, tool_use_id: 'toolu_1' };
+const ASK = { decision: 'ask', reason: 'This command requires approval', hook: 'PreToolUse' };
+const permissionPosts = () => posts.filter(p => p.url.endsWith('/api/hooks/permission'));
+
+beforeEach(async () => {
+  posts = [];
+  proof = 'right';
+  answer = async () => ({ text: JSON.stringify({ decision: 'allow', reason: 'you allowed it in Tars' }) });
+  await load();
+});
+
+describe("the mod's tool.check", () => {
+  it('1. asks Tars nothing about a call the engine allows or denies by itself', async () => {
+    await start();
+    expect(await check(bash, { decision: 'allow', reason: 'bypass' })).toEqual({ decision: 'allow', reason: 'bypass' });
+    expect(await check(bash, { decision: 'deny', reason: 'rule' })).toEqual({ decision: 'deny', reason: 'rule' });
+    expect(permissionPosts()).toEqual([]);
+  });
+
+  it('5, 6. asks Tars when the engine would ask, with what it needs, and takes its allow', async () => {
+    await start();
+    expect(await check(bash, ASK)).toEqual({ decision: 'allow', reason: 'you allowed it in Tars' });
+    expect(permissionPosts()).toHaveLength(1);
+    const { body } = permissionPosts()[0];
+    expect(body).toMatchObject({
+      agent_id: 'a1', session_id: SESSION, tool: 'Bash', tool_use_id: 'toolu_1',
+      input: { command: 'rm -rf build' }, reason: 'This command requires approval', via: 'mod',
+    });
+  });
+
+  it('5. sends the path a file tool asks about, never the file\'s content', async () => {
+    await start();
+    await check({ tool: 'Write', input: { file_path: '/p/a.ts', content: 'x'.repeat(100_000) }, tool_use_id: 'toolu_2' }, ASK);
+    const { body } = permissionPosts()[0];
+    expect(body.input).toEqual({ file_path: '/p/a.ts' });
+  });
+
+  it('6. takes its deny, with the reason the model will read', async () => {
+    await start();
+    answer = async () => ({ text: JSON.stringify({ decision: 'deny', reason: 'you refused it in Tars: not on main' }) });
+    expect(await check(bash, ASK)).toEqual({ decision: 'deny', reason: 'you refused it in Tars: not on main' });
+  });
+
+  it('2. keeps the engine\'s verdict when Tars hands it back, answers garbage, or cannot be reached', async () => {
+    await start();
+    answer = async () => ({ text: JSON.stringify({ decision: 'ask' }) });
+    expect(await check(bash, ASK)).toEqual(ASK);
+    answer = async () => ({ text: '{"decision":"yes"}' });
+    expect(await check(bash, ASK)).toEqual(ASK);
+    answer = async () => ({ text: 'not json' });
+    expect(await check(bash, ASK)).toEqual(ASK);
+    answer = async () => { throw new Error('ECONNREFUSED'); };
+    expect(await check(bash, ASK)).toEqual(ASK);
+  });
+
+  it('7. asks again for the same call while Tars says pending, then takes its answer', async () => {
+    await start();
+    const answers = ['pending', 'pending', 'allow'];
+    answer = async () => ({ text: JSON.stringify({ decision: answers.shift(), reason: 'you allowed it in Tars' }) });
+    expect(await check(bash, ASK)).toEqual({ decision: 'allow', reason: 'you allowed it in Tars' });
+    expect(permissionPosts().map(p => p.body.tool_use_id)).toEqual(['toolu_1', 'toolu_1', 'toolu_1']);
+  });
+
+  it('7. gives up to the engine after a bounded number of asks', async () => {
+    await start();
+    answer = async () => ({ text: JSON.stringify({ decision: 'pending' }) });
+    expect(await check(bash, ASK)).toEqual(ASK);
+    expect(permissionPosts().length).toBeGreaterThan(30);
+    expect(permissionPosts().length).toBeLessThanOrEqual(40);
+  });
+
+  it('8. asks again after a request that failed, saying why, and takes the answer', async () => {
+    await start();
+    let calls = 0;
+    answer = async () => {
+      calls++;
+      if (calls === 2) throw new Error('socket hang up');
+      return { text: JSON.stringify(calls === 1 ? { decision: 'pending' } : { decision: 'allow', reason: 'you allowed it in Tars' }) };
+    };
+    expect(await check(bash, ASK)).toEqual({ decision: 'allow', reason: 'you allowed it in Tars' });
+    const bodies = permissionPosts().map(p => p.body);
+    expect(bodies).toHaveLength(3);
+    expect(bodies[2].after_error).toBe('socket hang up');
+    expect(bodies[1].after_error).toBeUndefined();
+  });
+
+  it('8. says why only on the ask right after the failure', async () => {
+    await start();
+    let calls = 0;
+    answer = async () => {
+      calls++;
+      if (calls === 1) throw new Error('socket hang up');
+      return { text: JSON.stringify(calls === 2 ? { decision: 'pending' } : { decision: 'deny', reason: 'no' }) };
+    };
+    await check(bash, ASK);
+    expect(permissionPosts().map(p => p.body.after_error)).toEqual([undefined, 'socket hang up', undefined]);
+  });
+
+  it('8. gives up to the engine after three failures in a row', async () => {
+    await start();
+    answer = async () => { throw new Error('ECONNREFUSED'); };
+    expect(await check(bash, ASK)).toEqual(ASK);
+    expect(permissionPosts()).toHaveLength(3);
+  });
+
+  it('3. leaves an AskUserQuestion to the person', async () => {
+    await start();
+    expect(await check({ tool: 'AskUserQuestion', input: { questions: [] }, tool_use_id: 'toolu_3' }, ASK)).toEqual(ASK);
+    expect(permissionPosts()).toEqual([]);
+  });
+
+  it('4. asks no Tars before the session is known', async () => {
+    expect(await check(bash, ASK)).toEqual(ASK);
+    expect(permissionPosts()).toEqual([]);
+  });
+
+  it('4. asks no Tars that did not prove itself', async () => {
+    proof = 'wrong';
+    await start();
+    expect(await check(bash, ASK)).toEqual(ASK);
+    expect(permissionPosts()).toEqual([]);
+  });
+
+  it('1. a query with no call behind it (no tool_use_id) is the engine\'s alone', async () => {
+    await start();
+    expect(await check({ tool: 'Bash', input: { command: 'ls' } }, ASK)).toEqual(ASK);
+    expect(permissionPosts()).toEqual([]);
+  });
+});

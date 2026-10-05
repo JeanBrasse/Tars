@@ -1,7 +1,9 @@
 // A Messages API for the live specs: real Claude Code talks to it through
 // ANTHROPIC_BASE_URL, with no credentials and no network. `LINES <n> <tag>` in
 // the last user turn is answered with n numbered lines, anything else with
-// "ok", streamed the way the real API streams; nothing ever asks for a tool.
+// "ok", streamed the way the real API streams. `RUNBASH <tag>` asks for one Bash
+// call, `echo <tag> > ran-<tag>.txt`, and the turn that brings its result back
+// is answered with that result, which the log keeps (`toolResult`).
 // Every request is logged as one JSON line to FAKE_LOG, which is how a spec
 // knows a turn reached the model. Adapted from the Frontend's #132 proof.
 import http from 'node:http';
@@ -18,6 +20,37 @@ function textOf(message) {
   if (!message) return '';
   if (typeof message.content === 'string') return message.content;
   return (message.content || []).map(block => (block.type === 'text' ? block.text : block.type === 'tool_result' ? '[tool_result]' : '')).join('\n');
+}
+
+/** The text of the last tool_result the request carries, or null. */
+function lastToolResult(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const blocks = Array.isArray(messages[i].content) ? messages[i].content : [];
+    const result = blocks.filter(b => b.type === 'tool_result').pop();
+    if (result) {
+      return typeof result.content === 'string' ? result.content
+        : (result.content || []).map(c => c.text || '').join('\n');
+    }
+    if (messages[i].role === 'assistant') return null;
+  }
+  return null;
+}
+
+function toolUse(res, model, tag) {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+  sse(res, 'message_start', {
+    message: {
+      id: `msg_${Date.now()}`, type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null,
+      usage: { input_tokens: 10, output_tokens: 1 },
+    },
+  });
+  const input = { command: `echo ${tag} > ran-${tag}.txt`, description: `Write ran-${tag}.txt` };
+  sse(res, 'content_block_start', { index: 0, content_block: { type: 'tool_use', id: `toolu_${tag}_${Date.now()}`, name: 'Bash', input: {} } });
+  sse(res, 'content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } });
+  sse(res, 'content_block_stop', { index: 0 });
+  sse(res, 'message_delta', { delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 5 } });
+  sse(res, 'message_stop', {});
+  res.end();
 }
 
 function reply(res, model, text) {
@@ -63,6 +96,13 @@ http.createServer((req, res) => {
         stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 1 },
       }));
     }
+    const result = !side ? lastToolResult(messages) : null;
+    if (result !== null) {
+      log({ toolResult: result.slice(0, 500) });
+      return reply(res, model, `tool said: ${result.slice(0, 300)}`);
+    }
+    const run = !side && last.match(/RUNBASH (\w+)/);
+    if (run) return toolUse(res, model, run[1]);
     const lines = !side && last.match(/LINES (\d+) (\w+)/);
     if (lines) {
       return reply(res, model, Array.from({ length: Number(lines[1]) }, (_, i) => `${lines[2]} line ${i + 1} of ${lines[1]}`).join('\n'));
