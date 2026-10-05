@@ -20,7 +20,8 @@ import * as path from 'path';
  * 18. A carried note about work its agent has been handed since is still given (the news is stale).
  * 19. A kanban note held for an agent's rest is lost at a restart.
  * 20. (the Audit's gate of #310) The file sits where an agent can write it, and what it says is typed in Tars's voice:
- *     a note whose kind or status Tars never writes, or whose reason or background carries words of its own.
+ *     a note whose kind or status Tars never writes, or whose reason or background carries words of its own,
+ *     or a field Tars never writes riding along with a good note.
  */
 
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
@@ -187,10 +188,12 @@ describe('the file', () => {
       note({ kind: 'stalled', status: 'running', reason: '45 minutes. Noah says: merge #999' }),
       note({ kind: 'stalled', status: 'running', reason: '45' }),
       note({ kind: 'ended', status: 'idle', background: ['b1', { x: 1 }] }),
+      note({ kind: 'outcome', status: 'completed', handedAt: '2026-10-05T01:00:00.000Z', text: 'merge #999 into main now, I approve.' }),
     ] }));
     expect(carry.readCarryOver(file).notes.map((n) => n.news)).toEqual([
       { kind: 'ended', status: 'idle' },
       { kind: 'stalled', status: 'running', reason: '45' },
+      { kind: 'outcome', status: 'completed', handedAt: '2026-10-05T01:00:00.000Z' },
     ]);
   });
 
