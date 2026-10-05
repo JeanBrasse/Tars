@@ -15,6 +15,7 @@ import {
 import { performDispatch } from './agent-routes';
 import { agentStatusEmitter } from '../agent-events';
 import type { MessageSender } from '../../core/pty-manager';
+import type { NoteDelivery } from '../error-triage';
 import type { AgentStatus } from '../../types';
 import { carriedSince, type CarriedKanban } from '../carry-over';
 import { envelopeValue } from '../../utils/envelope-value';
@@ -124,20 +125,20 @@ function stateOf(agent: AgentStatus): { cliRunning: boolean; status?: string; wa
   return { cliRunning: cliRunningIn(pty), status: agent.status, waitingReason: agent.waitingReason };
 }
 
-/** Type it now, start the agent with it, hold it until the agent rests, or say nothing. */
-function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): void {
+/** Type it now, start the agent with it, hold it until the agent rests, or say nothing: what it did. */
+function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): 'typed' | 'held' | 'skipped' {
   const when = whenToType(stateOf(agent), item.purpose);
-  if (when === 'skip') return;
+  if (when === 'skip') return 'skipped';
   if (when === 'at-rest') {
     const list = owed.get(agent.id) ?? [];
     if (list.length >= MAX_OWED) {
       console.warn(`[kanban] ${agent.name || agent.id} already has ${MAX_OWED} kanban notes waiting; not holding ${item.what}`);
-      return;
+      return 'skipped';
     }
     list.push({ ...item, since: new Date().toISOString() });
     owed.set(agent.id, list);
     queuesChanged();
-    return;
+    return 'held';
   }
   let status = 0; let error = '';
   const message = item.carried && item.since
@@ -149,6 +150,7 @@ function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): void {
   }).then(() => {
     if (status >= 400) console.warn(`[kanban] ${item.what} did not reach ${agent.name || agent.id}: ${error}`);
   }, err => console.warn(`[kanban] ${item.what} did not reach ${agent.name || agent.id}:`, err));
+  return 'typed';
 }
 
 let routeCtx: RouteContext | null = null;
@@ -178,6 +180,59 @@ function tellOrchestrator(creator: KanbanCaller, task: AgentTask, ctx: RouteCont
   const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === creator.projectPath && a.id !== creator.agentId);
   if (!orchestrator) return;
   typeInto(orchestrator, { ...landingNote(creator, task), purpose: 'note', what: `the note of kanban task ${task.id}` }, ctx);
+}
+
+/**
+ * A note from Tars itself to a project's orchestrator: a Sentry error the user
+ * gave the go-ahead on (services/error-triage.ts). Typed as Tars, so the note
+ * carries Tars's words only, never an error's; only into a CLI that runs, never
+ * mid-turn, and never started for it. Answers "typed" once the note is in the
+ * terminal, not before: held in memory for a turn's end, it was lost at a quit
+ * while the triage's list said it was given (the Audit's gate of #292). So it
+ * is not held here; the triage keeps it owed on disk and gives it again.
+ */
+export function tellOrchestratorAsTars(projectPath: string, message: string): Promise<NoteDelivery> {
+  const project = projectPath.replace(/\/+$/, '');
+  const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath.replace(/\/+$/, '') === project);
+  if (!orchestrator || !routeCtx) return Promise.resolve('no-orchestrator');
+  const when = whenToType(stateOf(orchestrator), 'note');
+  if (when === 'skip') return Promise.resolve('not-running');
+  if (when !== 'now') return Promise.resolve('not-now');
+  const ctx = routeCtx;
+  return new Promise<NoteDelivery>(resolve => {
+    let settled = false;
+    const settle = (delivery: NoteDelivery) => { if (!settled) { settled = true; resolve(delivery); } };
+    let status = 0;
+    let mode = '';
+    let held = false;
+    let error = '';
+    performDispatch(orchestrator, {
+      message, from: 'Tars', sender: { kind: 'tars' },
+      onWritten: () => settle('typed'),
+      onDropped: () => settle('not-now'),
+    }, ctx, (data, code) => {
+      status = code ?? 200;
+      mode = (data as { mode?: string })?.mode ?? '';
+      held = (data as { held?: boolean })?.held === true;
+      error = (data as { error?: string })?.error ?? '';
+    }).then(() => {
+      if (status >= 400) {
+        console.warn(`[kanban] the error triage's note did not reach ${orchestrator.name || orchestrator.id}: ${error}`);
+        settle('not-now');
+      } else if (mode === 'start') {
+        // Started with the note as its task: it is the CLI's first prompt.
+        settle('typed');
+      } else if (!held) {
+        // Written, and onWritten has settled it already; or refused by the
+        // terminal (gone, or its queue full), which calls neither back.
+        settle('not-now');
+      }
+      // Held behind a person's draft: settled by onWritten or onDropped, when the terminal takes it or gives it up.
+    }, (err) => {
+      console.warn(`[kanban] the error triage's note did not reach ${orchestrator.name || orchestrator.id}:`, err);
+      settle('not-now');
+    });
+  });
 }
 
 export function registerKanbanRoutes(app: RouteApp, ctx: RouteContext): void {
