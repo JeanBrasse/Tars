@@ -199,18 +199,35 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
     log(`[agent-tmp] under 30 GB free on the disk (${(free / GB).toFixed(1)} GB): the agents' temporary folders are kept to ${(capBytes / GB).toFixed(0)} GB`);
   }
 
+  let rootReal: string;
   try {
     const st = fs.lstatSync(root);
     if (!st.isDirectory()) {
       log(`[agent-tmp] ${root} is a link or not a folder: nothing is measured or deleted under it`);
       return result;
     }
+    rootReal = fs.realpathSync(root);
   } catch {
     return result;
   }
+  /**
+   * Still the folder the pass began in, and the entry still inside it. Checked
+   * before each deletion, not once: a pass awaits a long time between its
+   * start and its deletions, and an agent that swapped ~/.dorothy/tmp for a
+   * link meanwhile would have the same name deleted elsewhere (the Audit's
+   * gate of #306).
+   */
+  const stillInside = (p: string): boolean => {
+    try {
+      if (!fs.lstatSync(root).isDirectory() || fs.realpathSync(root) !== rootReal) return false;
+      const parent = fs.realpathSync(path.dirname(p));
+      return parent === rootReal || parent.startsWith(rootReal + path.sep);
+    } catch {
+      return false;
+    }
+  };
 
   const known = new Map(deps.knownAgentIds().map((id) => [shortIdOf(id), id] as const));
-  const live = new Set(deps.liveAgentIds());
   const units: Unit[] = [];
   for (const { path: p, owner } of await unitsOf(root, known)) {
     const m = await measure(p);
@@ -221,9 +238,18 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
     units.push({ path: p, owner, ...m });
   }
 
+  // Who runs now, read once the measuring is done: an agent started during a
+  // long pass is spared too.
+  const live = new Set(deps.liveAgentIds());
+  let swapped = false;
   const remove = async (unit: Unit, reason: string): Promise<boolean> => {
     const resolved = path.resolve(unit.path);
-    if (!resolved.startsWith(root + path.sep)) return false;
+    if (swapped || !resolved.startsWith(root + path.sep)) return false;
+    if (!stillInside(resolved)) {
+      swapped = true;
+      log(`[agent-tmp] ${root} was moved or changed into a link during the pass: nothing more is deleted until the next one`);
+      return false;
+    }
     try {
       await fs.promises.rm(resolved, { recursive: true, force: true });
     } catch (err) {
