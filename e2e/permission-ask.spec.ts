@@ -18,22 +18,27 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * PermissionRequest hook's post.
  *
  * The person answers from where Tars shows the question: the first from the
- * Dashboard panel's line (allow); the second, seen on the Agents page card,
- * from the agent window (deny, with a reason typed in its field); the third
- * from the window again (ask in terminal), after which the question is gone
- * from the window and the agent still reads waiting, at its terminal's dialog.
+ * Dashboard panel's line (allow); the second, a command too long for that
+ * line, from the panel too, but only once show all has opened it whole (the
+ * Audit's Low at this PR's gate: the line offered allow on a call it cut);
+ * the third, seen on the Agents page card, from the agent window (deny, with
+ * a reason typed in its field); the fourth from the window again (ask in
+ * terminal), after which the question is gone from the window and the agent
+ * still reads waiting, at its terminal's dialog.
  *
  * The artefact: the decisions the stand-in was handed and what the page
  * showed for each question, in values.json, and a screenshot of each step.
  */
 
 const AGENT = { id: 'asker', name: 'Frontend Engineer' };
+const LONG = `rm -rf build && ${'npm run build && '.repeat(12)}npm test`;
 const FILE_CONTENT = 'THE FILE CONTENT TARS MUST NOT SHOW';
 const REASON = 'edit the copy in the CMS instead';
 
 function standIn(home: string, project: string): string {
   const calls = [
     { tool_use_id: 'toolu_1', tool: 'Bash', input: { command: 'npm run build && npm test', description: 'Build and test' } },
+    { tool_use_id: 'toolu_long', tool: 'Bash', input: { command: LONG, description: 'Build again and again' } },
     { tool_use_id: 'toolu_2', tool: 'Edit', input: { file_path: path.join(project, 'src/app/page.tsx'), old_string: FILE_CONTENT, new_string: 'x' } },
     { tool_use_id: 'toolu_3', tool: 'WebFetch', input: { url: 'https://docs.example.com/api/limits', prompt: 'the limits' } },
   ];
@@ -114,6 +119,18 @@ test('a permission question Tars holds is answered from the panel and the window
     await line(page).getByRole('button', { name: 'allow', exact: true }).click();
     await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(1);
 
+    // 1b. A command the line cuts: no allow there until show all opens it whole.
+    await expect(line(page)).toContainText('npm run build && npm run build', { timeout: 30_000 });
+    await expect(line(page).getByRole('button', { name: 'show all', exact: true })).toBeVisible();
+    await expect(line(page).getByRole('button', { name: 'allow', exact: true }), 'allow on a cut command').toHaveCount(0);
+    await stepShot(page, '01b-panel-long-cut');
+    await line(page).getByRole('button', { name: 'show all', exact: true }).click();
+    await expect(line(page)).toContainText(LONG);
+    seen.panelLongShown = (await line(page).innerText()).replace(/\s+/g, ' ');
+    await stepShot(page, '01c-panel-long-shown');
+    await line(page).getByRole('button', { name: 'allow', exact: true }).click();
+    await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(2);
+
     // 2. The Edit: its file by its path on the card, never what it holds.
     await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
     const card = page.locator('div.cursor-pointer', { hasText: AGENT.name }).filter({ has: page.getByRole('button', { name: 'open', exact: true }) }).first();
@@ -134,19 +151,19 @@ test('a permission question Tars holds is answered from the panel and the window
     await line(page).getByRole('textbox').press('Escape');
     await expect(line(page).getByRole('textbox')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toBeVisible();
-    expect(answersOf(home), 'Esc answers nothing').toHaveLength(1);
+    expect(answersOf(home), 'Esc answers nothing').toHaveLength(2);
     await line(page).getByRole('button', { name: 'deny', exact: true }).click();
     const why = line(page).getByRole('textbox');
     await why.fill(REASON);
     await stepShot(page, '04-window-deny-reason');
     await why.press('Enter');
-    await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(2);
+    await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(3);
     await expect(page.getByRole('dialog'), 'Enter in the field leaves the window open').toBeVisible();
 
     // 4. The WebFetch, in the same window: ask in terminal.
     await expect(line(page)).toContainText('https://docs.example.com/api/limits', { timeout: 30_000 });
     await line(page).getByRole('button', { name: 'ask in terminal', exact: true }).click();
-    await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(3);
+    await expect.poll(() => answersOf(home).length, { timeout: 15_000 }).toBe(4);
     await expect(line(page)).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByText('Do you want to proceed?').first()).toBeVisible({ timeout: 15_000 });
     const status = await page.evaluate(async (id) => {
@@ -158,8 +175,9 @@ test('a permission question Tars holds is answered from the panel and the window
 
     const answers = answersOf(home);
     recordValues({ seen, answers, afterAskInTerminal: status });
-    expect(answers).toEqual([
+    expect(answers.map(({ call, decision, reason }) => ({ call, decision, ...(reason ? { reason } : {}) }))).toEqual([
       { call: 'toolu_1', decision: 'allow', reason: 'the user allowed it in Tars' },
+      { call: 'toolu_long', decision: 'allow', reason: 'the user allowed it in Tars' },
       { call: 'toolu_2', decision: 'deny', reason: `the user refused it in Tars: ${REASON}` },
       { call: 'toolu_3', decision: 'ask' },
     ]);

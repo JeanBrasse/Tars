@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mount, settle, deferred, ofType, textOf, type Mount } from './hook-runtime';
+import { mount, settle, deferred, elements, ofType, textOf, type Mount } from './hook-runtime';
 import { useElectronAgents } from '../../src/hooks/useElectron';
 import PermissionAskNotice from '../../src/components/PermissionAskNotice';
 import { Button, Input } from '../../src/components/ui';
@@ -16,15 +16,14 @@ vi.mock('react', async (importOriginal) => ({
  * column (`PermissionAskNotice`), fed by useElectronAgents. Frame:
  * `Permission asked of Tars`. Written before the code. How it can fail:
  *
- * The list the page reads (useElectronAgents):
- * 1. the status event that puts an agent in waiting names the status alone,
- *    and the tick carries no permissionAsk: the page patched the status, and
- *    the question never showed;
- * 2. ask in terminal leaves the agent waiting, its lastActivity unchanged:
- *    the event says waiting again, the list read again compared equal on the
- *    fields it checked, and the question already answered stayed on screen;
- * 3. a tick that moves an agent into waiting, with no status event (one
- *    missed, a window opened late), shows no question either.
+ * The list the page reads (useElectronAgents). Since #318's contract was
+ * filled, every status event of a question carries it (`permissionAsk`, null
+ * at its end) and so does the tick; these three moved to it, after the code:
+ * 1. the event carries the question, and the page patched the status alone,
+ *    so the question never showed, or read the whole fleet again for it;
+ * 2. an event carrying null (an answer, ask in terminal, the ten minutes, a
+ *    stop) leaves the question answered on screen, the agent still waiting;
+ * 3. a tick carrying the question, its event missed, shows none.
  *
  * The line (PermissionAskNotice):
  * 4. allow, deny or ask in terminal sends another decision than its own, or
@@ -41,14 +40,21 @@ vi.mock('react', async (importOriginal) => ({
  *    state: the reason step still open, or too late for a question just
  *    asked;
  * 9. a reason longer than main keeps (200, permission-asks.ts) is cut by main
- *    without a word: the field takes no more.
+ *    without a word: the field takes no more;
+ * 10. a call cut on a panel's line is allowed from there, read only in a
+ *     title (the Audit's Low at this PR's gate): the line offers allow only
+ *     once the whole call fits it; show all opens it whole in the panel, with
+ *     the three answers. The window shows it whole and offers allow.
  */
 
 type Tick = (items: AgentTickItem[]) => void;
-type StatusEvent = (event: { agentId: string; status: string; timestamp: string }) => void;
+type StatusEvent = (event: { agentId: string; status: string; timestamp: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void;
 
-const ASK = { tool: 'Bash', askedAt: '2026-10-05T12:02:00.000Z' };
-const ON = { kind: 'permission' as const, text: 'npm run build && npm test' };
+const ASK = {
+  tool: 'Bash', askedAt: '2026-10-05T12:02:00.000Z', until: '2026-10-05T12:12:00.000Z',
+  subject: 'npm run build && npm test', fields: { command: 'npm run build && npm test' },
+};
+const LONG = `rm -rf build && ${'npm run build && '.repeat(12)}npm test`;
 
 function agent(over: Partial<AgentStatus> = {}): AgentStatus {
   return {
@@ -58,11 +64,11 @@ function agent(over: Partial<AgentStatus> = {}): AgentStatus {
   } as AgentStatus;
 }
 
-function tickItem(a: AgentStatus): AgentTickItem {
+function tickItem(a: AgentStatus, over: Partial<AgentTickItem> = {}): AgentTickItem {
   return {
     id: a.id, name: a.name ?? a.id, character: 'robot', status: a.status, displayStatus: 'working', statusLine: '',
     currentTask: a.currentTask ?? '', projectName: 'p', lastActivity: a.lastActivity, provider: 'claude',
-    cliRunning: a.cliRunning, leftFullscreen: false, launching: false,
+    cliRunning: a.cliRunning, leftFullscreen: false, launching: false, ...over,
   } as AgentTickItem;
 }
 
@@ -96,29 +102,31 @@ describe('useElectronAgents reads what a waiting agent waits on', () => {
     delete g.window;
   });
 
-  it('a status event into waiting reads the record, where the question is (1)', async () => {
-    listed = [agent({ status: 'waiting', permissionAsk: ASK, waitingOn: ON, lastActivity: ASK.askedAt })];
-    status!({ agentId: 'a1', status: 'waiting', timestamp: '' });
+  // The list read again stays the old one throughout: only the event or the
+  // tick can carry the question here.
+  it('a status event carrying the question sets it (1)', async () => {
+    status!({ agentId: 'a1', status: 'waiting', timestamp: ASK.askedAt, permissionAsk: ASK });
     await settle();
-    expect(hook.result.agents[0]).toMatchObject({ status: 'waiting', permissionAsk: ASK, waitingOn: ON });
+    expect(hook.result.agents[0]).toMatchObject({ status: 'waiting', permissionAsk: ASK });
   });
 
-  it('waiting again with the question gone drops it, though nothing else moved (2)', async () => {
-    listed = [agent({ status: 'waiting', permissionAsk: ASK, waitingOn: ON, lastActivity: ASK.askedAt })];
-    status!({ agentId: 'a1', status: 'waiting', timestamp: '' });
+  it('an event carrying null drops it, though the agent still waits (2)', async () => {
+    status!({ agentId: 'a1', status: 'waiting', timestamp: ASK.askedAt, permissionAsk: ASK });
     await settle();
-    listed = [agent({ status: 'waiting', waitingOn: ON, lastActivity: ASK.askedAt })];
-    status!({ agentId: 'a1', status: 'waiting', timestamp: '' });
+    status!({ agentId: 'a1', status: 'waiting', timestamp: ASK.askedAt, permissionAsk: null });
     await settle();
     expect(hook.result.agents[0].status).toBe('waiting');
     expect(hook.result.agents[0].permissionAsk).toBeUndefined();
   });
 
-  it('a tick into waiting reads the record too (3)', async () => {
-    listed = [agent({ status: 'waiting', permissionAsk: ASK, waitingOn: ON, lastActivity: ASK.askedAt })];
-    tick!([tickItem(listed[0])]);
+  it('a tick carrying the question sets it, and one without it drops it (3)', async () => {
+    const [a] = hook.result.agents;
+    tick!([tickItem(a, { status: 'waiting', permissionAsk: ASK })]);
     await settle();
     expect(hook.result.agents[0].permissionAsk).toEqual(ASK);
+    tick!([tickItem(a, { status: 'waiting' })]);
+    await settle();
+    expect(hook.result.agents[0].permissionAsk).toBeUndefined();
   });
 });
 
@@ -133,7 +141,13 @@ describe('the line answers the question Tars holds', () => {
   });
   afterEach(() => { delete g.window; });
 
-  const asking = (over: Partial<AgentStatus> = {}) => agent({ status: 'waiting', permissionAsk: ASK, waitingOn: ON, ...over });
+  const asking = (over: Partial<AgentStatus> = {}) => agent({ status: 'waiting', permissionAsk: ASK, ...over });
+  /** The panel's line measured, as its browser would: the call fits it, or is cut. */
+  const measure = (view: Mount<unknown>, fits: boolean) => {
+    const subject = elements(view.result).find(e => 'data-subject' in (e.props ?? {}));
+    expect(subject, 'the line names the call in an element of its own').toBeDefined();
+    (subject!.props.ref as (el: unknown) => void)({ scrollWidth: fits ? 100 : 400, clientWidth: 200 });
+  };
   const buttons = (tree: unknown) => ofType(tree, Button).map(b => ({ text: textOf(b.props.children as never), props: b.props as { onClick?: () => void; disabled?: boolean } }));
   const button = (tree: unknown, text: string) => {
     const found = buttons(tree).find(b => b.text === text);
@@ -149,26 +163,34 @@ describe('the line answers the question Tars holds', () => {
 
   for (const layout of ['panel', 'window'] as const) {
     describe(`in the ${layout}`, () => {
+      /** Opened on a call the panel's line holds whole, measured as its browser would. */
+      const open = (agentOf: () => AgentStatus) => {
+        const view = mount(() => PermissionAskNotice({ agent: agentOf(), layout }));
+        if (layout === 'panel') measure(view, true);
+        return view;
+      };
+      const fit = (view: Mount<unknown>) => { if (layout === 'panel') measure(view, true); };
+
       it('shows nothing for an agent with no question of Tars\'s', () => {
-        expect(mount(() => PermissionAskNotice({ agent: agent({ status: 'waiting', waitingOn: ON }), layout })).result).toBeNull();
+        expect(mount(() => PermissionAskNotice({ agent: agent({ status: 'waiting', waitingOn: { kind: 'permission', text: 'npm test' } }), layout })).result).toBeNull();
         expect(mount(() => PermissionAskNotice({ agent: agent({ permissionAsk: ASK }), layout })).result).toBeNull();
       });
 
       it('names the call, and each answer sends its own decision for this agent (4)', async () => {
-        const view = mount(() => PermissionAskNotice({ agent: asking(), layout }));
+        const view = open(() => asking());
         expect(textOf(view.result as never)).toContain('npm run build && npm test');
         expect(buttons(view.result).map(b => b.text)).toEqual(['allow', 'deny', 'ask in terminal']);
         button(view.result, 'allow').props.onClick!();
         expect(answer).toHaveBeenCalledWith('a1', 'allow', undefined);
 
-        const other = mount(() => PermissionAskNotice({ agent: asking({ id: 'a2' }), layout }));
+        const other = open(() => asking({ id: 'a2' }));
         button(other.result, 'ask in terminal').props.onClick!();
         expect(answer).toHaveBeenLastCalledWith('a2', 'ask', undefined);
       });
 
       it('deny asks for a reason first: Enter sends it, spaces are none, Esc goes back without answering (5)', () => {
         let a = asking();
-        const view = mount(() => PermissionAskNotice({ agent: a, layout }));
+        const view = open(() => a);
         button(view.result, 'deny').props.onClick!();
         expect(answer).not.toHaveBeenCalled();
         expect(buttons(view.result).map(b => b.text)).toEqual(['deny', 'back']);
@@ -193,13 +215,13 @@ describe('the line answers the question Tars holds', () => {
       });
 
       it('the field takes no more than main keeps (9)', () => {
-        const view = mount(() => PermissionAskNotice({ agent: asking(), layout }));
+        const view = open(() => asking());
         button(view.result, 'deny').props.onClick!();
         expect(field(view.result)!.maxLength).toBe(200);
       });
 
       it('answers once: the three are off while the answer is on its way, and stay off once it landed (6)', async () => {
-        const view = mount(() => PermissionAskNotice({ agent: asking(), layout }));
+        const view = open(() => asking());
         button(view.result, 'allow').props.onClick!();
         expect(buttons(view.result).every(b => b.props.disabled)).toBe(true);
         button(view.result, 'ask in terminal').props.onClick!();
@@ -210,7 +232,7 @@ describe('the line answers the question Tars holds', () => {
       });
 
       it('says so when Tars no longer holds the question, or the call fails, and offers nothing (7)', async () => {
-        const view = mount(() => PermissionAskNotice({ agent: asking(), layout }));
+        const view = open(() => asking());
         button(view.result, 'allow').props.onClick!();
         reply.resolve({ success: false });
         await settle();
@@ -218,7 +240,7 @@ describe('the line answers the question Tars holds', () => {
         expect(buttons(view.result)).toHaveLength(0);
 
         reply = deferred<{ success: boolean }>();
-        const failing = mount(() => PermissionAskNotice({ agent: asking({ id: 'a2' }), layout }));
+        const failing = open(() => asking({ id: 'a2' }));
         button(failing.result, 'allow').props.onClick!();
         reply.reject(new Error('No handler registered'));
         await settle();
@@ -227,20 +249,51 @@ describe('the line answers the question Tars holds', () => {
 
       it('the next call\'s question starts afresh (8)', async () => {
         let a = asking();
-        const view = mount(() => PermissionAskNotice({ agent: a, layout }));
+        const view = open(() => a);
         button(view.result, 'allow').props.onClick!();
         reply.resolve({ success: false });
         await settle();
-        a = asking({ permissionAsk: { ...ASK, askedAt: '2026-10-05T12:05:00.000Z' }, waitingOn: { kind: 'permission', text: 'npm run lint' } });
+        a = asking({ permissionAsk: { ...ASK, askedAt: '2026-10-05T12:05:00.000Z', subject: 'npm run lint', fields: { command: 'npm run lint' } } });
         view.rerender();
+        fit(view);
         expect(textOf(view.result as never)).toContain('npm run lint');
         expect(buttons(view.result).map(b => [b.text, !!b.props.disabled])).toEqual([['allow', false], ['deny', false], ['ask in terminal', false]]);
 
         button(view.result, 'deny').props.onClick!();
         a = asking({ permissionAsk: { ...ASK, askedAt: '2026-10-05T12:06:00.000Z' } });
         view.rerender();
+        fit(view);
         expect(buttons(view.result).map(b => b.text)).toEqual(['allow', 'deny', 'ask in terminal']);
       });
     });
   }
+
+  describe('a call too long for a panel\'s line (10)', () => {
+    const long = () => asking({ permissionAsk: { ...ASK, subject: LONG, fields: { command: LONG } } });
+
+    it('the line offers show all, not allow, until it is known to hold the call whole', () => {
+      const view = mount(() => PermissionAskNotice({ agent: long(), layout: 'panel' }));
+      expect(buttons(view.result).map(b => b.text)).toEqual(['show all', 'deny', 'ask in terminal']);
+      measure(view, false);
+      expect(buttons(view.result).map(b => b.text)).toEqual(['show all', 'deny', 'ask in terminal']);
+      measure(view, true);
+      expect(buttons(view.result).map(b => b.text)).toEqual(['allow', 'deny', 'ask in terminal']);
+    });
+
+    it('show all opens the call whole in the panel, with allow, which allows it', () => {
+      const view = mount(() => PermissionAskNotice({ agent: long(), layout: 'panel' }));
+      measure(view, false);
+      button(view.result, 'show all').props.onClick!();
+      expect(textOf(view.result as never)).toContain(LONG);
+      expect(buttons(view.result).map(b => b.text)).toEqual(['allow', 'deny', 'ask in terminal']);
+      button(view.result, 'allow').props.onClick!();
+      expect(answer).toHaveBeenCalledWith('a1', 'allow', undefined);
+    });
+
+    it('the window shows it whole, and offers allow', () => {
+      const view = mount(() => PermissionAskNotice({ agent: long(), layout: 'window' }));
+      expect(textOf(view.result as never)).toContain(LONG);
+      expect(buttons(view.result).map(b => b.text)).toEqual(['allow', 'deny', 'ask in terminal']);
+    });
+  });
 });

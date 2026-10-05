@@ -29,18 +29,27 @@ import type { AgentStatus } from '../../src/types/electron';
  *    around, a line separator split the row. Main flattens the subject; the
  *    line flattens both again, as stop-line does a name;
  * 6. the time: an askedAt that does not parse printed "Invalid Date" or
- *    "NaN:NaN", and a question asked another day read as today's.
+ *    "NaN:NaN", and a question asked another day read as today's;
+ * 7. the subject cut: waitingOn's text is cut at 200 characters, and hidden
+ *    once an interrupt is recorded, where the question carries its subject
+ *    whole (#318's gate, Medium 2): what is allowed must be what was read.
+ *    Since #318's contract was filled the line reads `permissionAsk.subject`
+ *    alone (the cases above moved to it with this one, after the code).
  */
 
 const NOW = new Date(2026, 9, 5, 14, 30);
 const at = (h: number, m: number, day = 5) => new Date(2026, 9, day, h, m).toISOString();
 
+type Ask = NonNullable<AgentStatus['permissionAsk']>;
+const ask = (over: Partial<Ask> = {}): Ask => ({
+  tool: 'Bash', askedAt: at(14, 2), until: at(14, 12), subject: 'npm run build && npm test',
+  fields: { command: 'npm run build && npm test' }, ...over,
+});
+
 function agent(over: Partial<AgentStatus> = {}): AgentStatus {
   return {
     id: 'a1', name: 'Frontend Engineer', status: 'waiting', projectPath: '/p', skills: [], output: [],
-    lastActivity: at(14, 2), provider: 'claude',
-    permissionAsk: { tool: 'Bash', askedAt: at(14, 2) },
-    waitingOn: { kind: 'permission', text: 'npm run build && npm test' },
+    lastActivity: at(14, 2), provider: 'claude', permissionAsk: ask(),
     ...over,
   } as AgentStatus;
 }
@@ -69,30 +78,28 @@ describe('the question, when Tars holds one', () => {
 describe('what it names', () => {
   it('a file by its path, without the tool a second time (3)', () => {
     const line = permissionAskLine(agent({
-      permissionAsk: { tool: 'Edit', askedAt: at(14, 2) },
-      waitingOn: { kind: 'permission', text: 'Edit /Users/you/projects/shop/src/app/page.tsx' },
+      permissionAsk: ask({ tool: 'Edit', subject: 'Edit /Users/you/projects/shop/src/app/page.tsx', fields: { file_path: '/Users/you/projects/shop/src/app/page.tsx' } }),
     }), NOW);
     expect(line?.who).toBe('Asks to use Edit:');
     expect(line?.subject).toBe('/Users/you/projects/shop/src/app/page.tsx');
   });
 
   it('only a tool that repeats is cut: a command that starts with its own word is kept whole (3)', () => {
-    const line = permissionAskLine(agent({ waitingOn: { kind: 'permission', text: 'Bashful --help' } }), NOW);
+    const line = permissionAskLine(agent({ permissionAsk: ask({ subject: 'Bashful --help' }) }), NOW);
     expect(line?.subject).toBe('Bashful --help');
   });
 
   it('the tool alone, with no colon, when there is nothing else to name (4)', () => {
     const mcp = 'mcp__github__create_pull_request';
-    for (const waitingOn of [undefined, { kind: 'permission' as const, text: mcp }, { kind: 'permission' as const, text: '  ' }]) {
-      const line = permissionAskLine(agent({ permissionAsk: { tool: mcp, askedAt: at(14, 2) }, waitingOn }), NOW);
-      expect(line, JSON.stringify(waitingOn)).toMatchObject({ who: `Asks to use ${mcp}`, subject: '', title: `Asks to use ${mcp}` });
+    for (const subject of [mcp, '  ']) {
+      const line = permissionAskLine(agent({ permissionAsk: ask({ tool: mcp, subject, fields: {} }) }), NOW);
+      expect(line, JSON.stringify(subject)).toMatchObject({ who: `Asks to use ${mcp}`, subject: '', title: `Asks to use ${mcp}` });
     }
   });
 
   it('nothing that hides, turns or breaks the line, in the tool or the subject (5)', () => {
     const line = permissionAskLine(agent({
-      permissionAsk: { tool: 'Ba\u202Esh', askedAt: at(14, 2) },
-      waitingOn: { kind: 'permission', text: 'rm -rf build\u2028&& echo \u202Eok\u200B done' },
+      permissionAsk: ask({ tool: 'Ba\u202Esh', subject: 'rm -rf build\u2028&& echo \u202Eok\u200B done' }),
     }), NOW);
     expect(line?.who).toBe('Asks to use Ba sh:');
     expect(line?.subject).toBe('rm -rf build && echo ok done');
@@ -102,13 +109,30 @@ describe('what it names', () => {
 
 describe('when it was asked (6)', () => {
   it('the date before the time on another day, and the year in another year', () => {
-    expect(permissionAskLine(agent({ permissionAsk: { tool: 'Bash', askedAt: at(23, 58, 4) } }), NOW)?.at).toBe('asked on 4 Oct at 23:58');
-    expect(permissionAskLine(agent({ permissionAsk: { tool: 'Bash', askedAt: new Date(2025, 11, 31, 9, 5).toISOString() } }), NOW)?.at).toBe('asked on 31 Dec 2025 at 09:05');
+    expect(permissionAskLine(agent({ permissionAsk: ask({ askedAt: at(23, 58, 4) }) }), NOW)?.at).toBe('asked on 4 Oct at 23:58');
+    expect(permissionAskLine(agent({ permissionAsk: ask({ askedAt: new Date(2025, 11, 31, 9, 5).toISOString() }) }), NOW)?.at).toBe('asked on 31 Dec 2025 at 09:05');
   });
 
   it('nothing at all for a time that does not parse', () => {
-    const line = permissionAskLine(agent({ permissionAsk: { tool: 'Bash', askedAt: 'not a date' } }), NOW);
+    const line = permissionAskLine(agent({ permissionAsk: ask({ askedAt: 'not a date' }) }), NOW);
     expect(line?.at).toBe('');
     expect(line?.who).toBe('Asks to use Bash:');
   });
 });
+
+describe('the subject, whole (7)', () => {
+  it('names the call as the question carries it, not as waitingOn cut it', () => {
+    const long = `${'npm run build && '.repeat(20)}npm test`;
+    const line = permissionAskLine(agent({
+      permissionAsk: ask({ subject: long, fields: { command: long } }),
+      waitingOn: { kind: 'permission', text: `${long.slice(0, 199)}…` },
+    }), NOW);
+    expect(line?.subject).toBe(long);
+    expect(line?.title).toBe(`Asks to use Bash: ${long}`);
+  });
+
+  it('names it with no waitingOn at all, which main hides once an interrupt is recorded', () => {
+    expect(permissionAskLine(agent({ waitingOn: undefined }), NOW)?.subject).toBe('npm run build && npm test');
+  });
+});
+
