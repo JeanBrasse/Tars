@@ -13,6 +13,8 @@ export const CHANGELOG: Release[] = [
     updates: [
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
+      'Quitting Tars ends a CLI that Settings was still asking for its version, and what that CLI had started: amp, asked just before a quit, kept writing its log into your home after Tars was gone',
+      'An agent that answers the orchestrator that gave it its work no longer gets that orchestrator\'s next results typed into its own terminal, as if it had handed the orchestrator a task',
     ],
   },
   {
