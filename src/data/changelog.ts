@@ -28,6 +28,7 @@ export const CHANGELOG: Release[] = [
       'A Dashboard panel keeps the last 5,000 lines of an agent\'s output to scroll back through, where it kept 10,000, which spares memory with many agents at work. The agent\'s transcript still keeps everything.',
       'The Review page lists a tree\'s changed files without building the patch of every file first, and reads a file\'s patch once you pick it: until then the panel asks for a file, where it showed the whole tree\'s patch. An agent\'s window marks the files it changed without reading their patches either.',
       'A Kanban task an agent completes keeps the last 50 lines of its terminal as you read them, in its done summary, where it kept the whole screen with the codes that colour and place its text, about 170 KB a task.',
+      'The Usage page says what each task cost, under its charts and over the same timeframe: each piece of work an agent did, newest first, with who handed it over, the agent, the provider and Claude account, the model, when it started and ended, how long it took, its turns and tokens, its own cost, and its total with the work it handed on to other agents. A task whose CLI writes no transcript, such as Codex or Gemini in a terminal, reads not counted rather than $0.00, and a total that leaves one out says partial. Pick a project or an agent, and the averages per agent and per model under the list follow.',
     ],
   },
   {
