@@ -4,6 +4,7 @@ import type { AgentStatus } from '@/types/electron';
 import { AgentMark, Button } from '@/components/ui';
 import { STATUS_COLORS, errorReason, statusWord } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
+import { permissionAskLine } from '@/lib/permission-ask';
 import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 // Row actions are words, not glyphs (R7): one 26px bordered lowercase-mono
@@ -36,6 +37,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const reason = errorReason(agent);
   // Who stopped it, when and why. Frame: `Agent stopped · who and why`.
   const stop = stopLine(agent);
+  // A permission question Tars holds for it: what the call would do, which
+  // its window answers. Frame: `Permission asked of Tars`.
+  const ask = permissionAskLine(agent);
   const provider = agent.provider || 'claude';
   const model = provider === 'local' ? agent.localModel : agent.model;
   // Provider, model and branch as plain words, the way the frame writes them.
@@ -63,8 +67,9 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
             An agent in error shows why instead: the task is still set on an
             agent whose turn failed, and the card said what it had been asked
             and never what stopped it. A stopped agent shows who stopped it,
-            when and why, in the secondary ink. One line, cut at the card's
-            edge, the whole sentence in the title. */}
+            when and why, in the secondary ink. One waiting on a permission
+            question Tars holds says what it asks, in the waiting ink. One
+            line, cut at the card's edge, the whole sentence in the title. */}
         {agent.pathMissing ? (
           <p className="text-[11px] text-status-error truncate">Path not found</p>
         ) : reason ? (
@@ -74,6 +79,10 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
         ) : stop ? (
           <p className="text-[11px] text-text-secondary truncate" title={stop}>
             {stop}
+          </p>
+        ) : ask ? (
+          <p className="text-[11px] text-status-waiting truncate" title={ask.title}>
+            {ask.title}
           </p>
         ) : lastPrompt ? (
           <p className="text-[11px] text-text-secondary truncate" title={lastPrompt}>

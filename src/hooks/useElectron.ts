@@ -58,7 +58,11 @@ export function useElectronAgents() {
             prevAgent.claudeAccountId !== agent.claudeAccountId ||
             prevAgent.claudeAccountPin !== agent.claudeAccountPin ||
             // The last move by Tars, which its control's title tells.
-            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at
+            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at ||
+            // A permission question Tars holds, and what it asks: ask in
+            // terminal takes the question away and moves nothing else.
+            prevAgent.permissionAsk?.askedAt !== agent.permissionAsk?.askedAt ||
+            prevAgent.waitingOn?.text !== agent.waitingOn?.text
           );
         });
         return hasChanged ? list : prev;
@@ -189,7 +193,11 @@ export function useElectronAgents() {
       // reason is only on the full record. Patching the status alone put
       // `error` beside whatever reason this copy last read, which is nothing
       // for a first failure and the previous failure's sentence for a second.
-      if (event.status === 'error') {
+      // What a waiting agent waits on is only there too: a permission question
+      // Tars holds (permissionAsk) and the call it is about (waitingOn). Read
+      // again on every waiting, not only on entering it: ask in terminal
+      // leaves the agent waiting, and only the question goes.
+      if (event.status === 'error' || event.status === 'waiting') {
         fetchAgents();
         return;
       }
@@ -230,14 +238,14 @@ export function useElectronAgents() {
         fetchAgents();
         return;
       }
-      // An agent that has just entered error is read again rather than
-      // patched, for the reason given on onStatus above. The watches that
-      // mark a task that never started only send this tick, not a status
+      // An agent that has just entered error or waiting is read again rather
+      // than patched, for the reasons given on onStatus above. The watches
+      // that mark a task that never started only send this tick, not a status
       // event, so the check has to be here as well.
-      const enteredError = tickAgents.some(t =>
-        t.status === 'error' && known.find(a => a.id === t.id)?.status !== 'error',
+      const entered = tickAgents.some(t =>
+        (t.status === 'error' || t.status === 'waiting') && known.find(a => a.id === t.id)?.status !== t.status,
       );
-      if (enteredError) {
+      if (entered) {
         fetchAgents();
         return;
       }

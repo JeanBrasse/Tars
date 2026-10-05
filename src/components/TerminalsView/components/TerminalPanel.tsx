@@ -4,6 +4,7 @@ import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { AgentStatus } from '@/types/electron';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
+import PermissionAskNotice from '@/components/PermissionAskNotice';
 import LeftFullscreenNotice from './LeftFullscreenNotice';
 import RestartPendingNotice from './RestartPendingNotice';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
@@ -138,6 +139,11 @@ function TerminalPanel({
         onRemove={handleRemove}
         onContextMenu={handleContextMenu}
       />
+
+      {/* A permission question this agent's CLI asked Tars instead of its
+          dialog (the state mod): the terminal shows nothing, so the question and its
+          three answers are here. Frame: `Permission asked of Tars`. */}
+      <PermissionAskNotice agent={agent} layout="panel" />
 
       {/* A message is waiting for this terminal's input field, and only the
           person at that keyboard can let it in. Under the header rather than
