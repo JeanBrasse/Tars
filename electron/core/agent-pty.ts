@@ -7,6 +7,7 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
+import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
 export { setAccountEnvResolver } from './account-env';
 
@@ -128,6 +129,9 @@ export function spawnAgentPty(opts: {
       ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
       // What a hook checks the port with before it sends that token (#11).
       TARS_INSTANCE_ID: tarsInstanceId(),
+      // Its own temporary folder, which a boot does not empty (services/agent-tmp.ts):
+      // here because every agent terminal is spawned here.
+      ...(agentId ? agentTmpEnvOrNone(agentId) : {}),
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
