@@ -56,6 +56,10 @@
     ],
     "extraResources": [
       {
+        "from": "mods/tars-state",
+        "to": "mods/tars-state"
+      },
+      {
         "from": "mcp-memory",
         "to": "mcp-memory",
         "filter": [

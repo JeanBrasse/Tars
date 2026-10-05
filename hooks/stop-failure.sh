@@ -44,7 +44,7 @@ PAYLOAD=$(jq -n \
   --arg session_id "$SESSION_ID" \
   --arg error_kind "$ERROR_KIND" \
   --arg error_message "$MESSAGE" \
-  '{agent_id: $agent_id, session_id: $session_id, status: "error", event: "StopFailure",
+  '{agent_id: $agent_id, session_id: $session_id, status: "error", event: "StopFailure", hook: "StopFailure",
     error_kind: $error_kind, error_message: $error_message}')
 
 # Retried once, like the other posts that decide what Tars believes about a

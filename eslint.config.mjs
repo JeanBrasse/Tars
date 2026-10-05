@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     "build/**",
     "**/next-env.d.ts",
 
+    // What `claude plugin validate` writes beside a mod it checks: Claude
+    // Code's own declarations and a tsconfig that extends them.
+    "mods/*/.claude-plugin/types/**",
+
     // Playwright writes a bundled HTML viewer into e2e/report after a run.
     "e2e/report/**",
     "test-results/**",
