@@ -34,15 +34,23 @@ const FEATURES = [
   },
   {
     title: 'See what they actually did',
-    body: 'A diff review of every branch, one search across the fleet\u2019s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, beside each Claude account\u2019s 5 h and weekly limits.',
+    body: 'A diff review of every branch, one search across the fleet\u2019s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, down to what each task cost, with the work it handed on to other agents.',
   },
   {
     title: 'Several Claude subscriptions',
-    body: 'Run your Claude agents on up to five subscriptions. Each starts on the account with the most room left, and one cut short by a limit carries on from another account, in the same conversation.',
+    body: 'Run your Claude agents on up to five subscriptions. Tars asks Claude Code itself for each account\u2019s 5 h and weekly use, never its sign-in, and starts each agent on the account with the most room left; one cut short by a limit carries on from another, in the same conversation.',
   },
   {
     title: 'When an agent stops, or stalls',
-    body: 'Stop one, and its card, panel and window say who stopped it and when, and an orchestrator that stops one says why. One that reads running but has written nothing for 30 minutes and runs no command is marked stalled, and its orchestrator is told.',
+    body: 'Stop one, and its card, panel and window say who stopped it and when, and an orchestrator that stops one says why. On Claude Code 2.1.289 or newer, a Claude agent reports its state from inside it: one whose Claude Code froze is marked stalled after five minutes of silence, never for a long command or a subagent, and its orchestrator is told.',
+  },
+  {
+    title: 'Your Telegram, through Hermes',
+    body: 'Turn on Telegram through Hermes, and your own Hermes becomes Tars\u2019s voice on Telegram: your orchestrators\u2019 questions and the event reports reach you there, and your reply goes to the orchestrator it answers, or to the project you name with @project.',
+  },
+  {
+    title: 'Agents that sleep, and come back',
+    body: 'An agent with no turn for 30 minutes sleeps and gives back its memory; a message, a task or a key typed in its panel wakes it on its own conversation in about a second. After a crash or a power cut, the agents that were working start again on theirs, with a note of what was cut.',
   },
 ];
 
