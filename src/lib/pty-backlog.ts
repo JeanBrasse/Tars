@@ -1,4 +1,4 @@
-import type { PtyDataEvent } from '@/types/electron';
+import type { ElectronAPI, PtyDataEvent } from '@/types/electron';
 
 /**
  * What a PTY writes before its terminal listens. A project's shell writes its
@@ -32,4 +32,34 @@ export function ptyBacklog(onData: (callback: (event: PtyDataEvent) => void) => 
     take: id => end().filter(event => event.id === id).map(event => event.data),
     drop: () => { end(); },
   };
+}
+
+/**
+ * A PTY asked for with its listening started first, as the Projects page opens
+ * a terminal: the id is known only once pty:create answers. A page left before
+ * the answer would never take the backlog nor kill the shell, so the listening,
+ * which hears every agent's output, ran for the window's life and the shell
+ * lived on with nobody attached (the Audit's Low at the gate of PR 328): when
+ * `stillWanted` says no at the answer, the listening ends, the PTY is killed,
+ * and this answers null. A failed pty:create ends the listening and throws.
+ */
+export async function openPtyHeard(
+  pty: Pick<ElectronAPI['pty'], 'create' | 'onData' | 'kill'>,
+  params: { cwd: string },
+  stillWanted: () => boolean,
+): Promise<{ id: string; backlog: PtyBacklog } | null> {
+  const backlog = ptyBacklog(pty.onData);
+  let id: string;
+  try {
+    ({ id } = await pty.create(params));
+  } catch (err) {
+    backlog.drop();
+    throw err;
+  }
+  if (!stillWanted()) {
+    backlog.drop();
+    pty.kill({ id }).catch(() => {});
+    return null;
+  }
+  return { id, backlog };
 }
