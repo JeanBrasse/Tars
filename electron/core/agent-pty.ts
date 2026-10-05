@@ -7,6 +7,7 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
+import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
@@ -83,6 +84,8 @@ export function spawnAgentPty(opts: {
   // before a token is minted or an account worked out for a terminal that
   // will not exist.
   refuseWhileQuitting('agent terminal');
+  // Nor on a nearly full disk (core/disk-space.ts), whoever calls.
+  refuseOnFullDisk();
   // Whose process this is. Set by the callers through getPtyEnvVars, and read
   // back here rather than taken as a parameter so that a caller cannot spawn
   // an agent pty with one identity in the environment and another in the

@@ -201,3 +201,50 @@ describe("the window's stop", () => {
     expect(w2.stopReason).toBeUndefined();
   });
 });
+
+describe('a start after a stop (Noah, 05/10)', () => {
+  // An orchestrator may start again an agent Noah stopped, whenever it needs
+  // to, a scheduled task too: the one that restarts it is told who stopped it
+  // and why, and the restart is noted on the agent. How it fails, written
+  // before the code (2026-10-05):
+  // 7. The restarter hears nothing of the stop it undid.
+  // 8. Nothing on the agent says it was restarted after a stop, by whom.
+  // 9. A start of an agent that was not stopped reads as a restart.
+  it('7, 8. tells the restarter who stopped it, when and why, and notes the restart', async () => {
+    agent('orch', { status: 'idle' });
+    const w1 = agent('w1');
+    await call('POST', '/api/agents/w1/stop', { body: { reason: 'out of budget' }, caller: 'orch' });
+    const stoppedAt = w1.stoppedAt;
+
+    const r = await call('POST', '/api/agents/w1/start', { body: { prompt: 'go on' }, caller: 'orch' });
+
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.restartedAfterStop).toEqual({ stoppedBy: 'Agent orch', stoppedAt, stopReason: 'out of budget' });
+    expect(w1.lastRestartAfterStop).toMatchObject({ stoppedBy: 'Agent orch', stoppedAt, stopReason: 'out of budget', restartedBy: 'Agent orch' });
+    expect(Date.parse(w1.lastRestartAfterStop!.restartedAt)).toBeGreaterThan(0);
+  });
+
+  it('7. a /dispatch that starts it again says so too, as a scheduled task\'s does', async () => {
+    agent('orch', { status: 'idle' });
+    const w1 = agent('w1');
+    await call('POST', '/api/agents/w1/stop', { body: { reason: 'night' }, caller: 'orch' });
+
+    const r = await call('POST', '/api/agents/w1/dispatch', { body: { message: 'the morning task' }, caller: 'orch' });
+
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.restartedAfterStop).toMatchObject({ stopReason: 'night' });
+    expect(w1.lastRestartAfterStop).toMatchObject({ stopReason: 'night' });
+  }, 60_000);
+
+  it('9. a start of an agent that was not stopped is no restart', async () => {
+    agent('orch', { status: 'idle' });
+    const w1 = agent('w1', { status: 'idle', currentSessionId: undefined });
+
+    const r = await call('POST', '/api/agents/w1/start', { body: { prompt: 'go' }, caller: 'orch' });
+
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.restartedAfterStop).toBeUndefined();
+    expect(w1.lastRestartAfterStop).toBeUndefined();
+  });
+});
+
