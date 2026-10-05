@@ -387,7 +387,9 @@ export interface AgentStatus {
   /** ISO: since when it is asleep. */
   asleepSince?: string;
   /** Set by agent:list, agent:get and agents:tick from the moment a wake starts its CLI until
-   *  that CLI's session is up or its launch is given up: who woke it, how, and when. */
+   *  that CLI's session is up or its launch is given up: who woke it, how, and when. The status
+   *  beside it is `idle` (a key, `wake`, a room message, a start with no task) or `running` (a
+   *  message or a dispatch, a chat's cold start, a kanban task, a start with one): show waking whatever it says. */
   waking?: AgentWaking;
   /** "you", "Tars", or the name of the agent that stopped it. */
   stoppedBy?: string;
@@ -1040,7 +1042,7 @@ export interface ElectronAPI {
     /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
     stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
     remove: (id: string) => Promise<{ success: boolean }>;
-    /** Into the agent's terminal. Asleep, a key wakes it (`woke: true`), a mouse or focus report does nothing. */
+    /** Into the agent's terminal. Asleep, a key wakes it (`woke: true`); a lone Esc or Ctrl+C, a mouse or focus report does nothing. */
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean; woke?: boolean; error?: string }>;
     /** An asleep agent's CLI started on its own conversation, nothing typed; refused for one that is not asleep. */
     wake: (id: string) => Promise<{ success: boolean; error?: string }>;

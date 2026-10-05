@@ -1,8 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { stopAgent } from '../core/agent-stop';
-import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent } from '../core/agent-asleep';
-import { isKeystroke } from '../core/input-draft';
+import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -1291,9 +1290,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
     }
     // A key typed into the pane of an asleep agent wakes it on its own
-    // conversation; the key itself is not kept. A mouse or focus report, or a
-    // terminal's reply, is not a key (core/input-draft.ts) and wakes nothing.
-    if (agent?.status === 'asleep' && isKeystroke(input)) {
+    // conversation; the key itself is not kept. A lone Esc or Ctrl+C, a mouse
+    // or focus report, or a terminal's reply wakes nothing (wakesOnKey).
+    if (agent?.status === 'asleep' && wakesOnKey(input)) {
       const answer = await wakeAgent(agent, 'you', 'key');
       return answer.success ? { success: true, woke: true } : answer;
     }

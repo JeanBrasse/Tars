@@ -1,6 +1,7 @@
 import type { AgentStatus, AgentWakeVia, AgentWaking } from '../types';
 import { resumeOnNextStart } from '../utils/resume-session';
 import { launchAgent, sessionStarting } from './agent-launch';
+import { isKeystroke } from './input-draft';
 
 /**
  * An agent asleep, and how it wakes (Noah's choices 5 and 6 of 2026-10-05;
@@ -83,6 +84,16 @@ export function publishedWaking(agent: AgentStatus, starting: boolean): AgentWak
   if (starting) return agent.waking;
   agent.waking = undefined;
   return undefined;
+}
+
+/**
+ * Whether what a person typed into the pane of an asleep agent wakes it: a key,
+ * but not a lone Esc or Ctrl+C, which ask it to stop rather than to work (the
+ * Frontend's question on #324), and not a mouse, focus or terminal report.
+ */
+export function wakesOnKey(input: string): boolean {
+  if (input === '\x1b' || input === '\x03') return false;
+  return isKeystroke(input);
 }
 
 /**
