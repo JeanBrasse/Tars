@@ -23,7 +23,7 @@ const MAX_NAME = 40;
  */
 const HIDDEN_OR_LINE_BREAKING = /[\p{Zl}\p{Zp}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu;
 
-const flat = (text: string | undefined) => (text ?? '').replace(HIDDEN_OR_LINE_BREAKING, ' ').replace(/\s+/g, ' ').trim();
+export const flat = (text: string | undefined) => (text ?? '').replace(HIDDEN_OR_LINE_BREAKING, ' ').replace(/\s+/g, ' ').trim();
 
 /** Cut by code points, so a character beyond the BMP is never split in two. */
 function caller(name: string | undefined): string {

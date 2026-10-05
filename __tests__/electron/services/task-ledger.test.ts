@@ -350,3 +350,24 @@ describe("a worker's report to the agent that leads it", () => {
     expect(byAgent.helper.parentTaskId).toBe(byAgent.worker.id);
   });
 });
+
+describe('an agent put to sleep (#322)', () => {
+  // 11. The sleep is taken for an end: a task closed at the rest before it gets a second end, or one the rest kept
+  //     open for its background work is closed. Red as QA found it: TaskAgentView did not know `asleep` (tsc).
+  it('11. ends no task: the rest before it already did, and its outcome stays as that rest left it', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'typed by hand' });
+    ledger.stateChanged(agent({ status: 'idle' }));
+    clock += 31 * 60_000;
+    ledger.stateChanged(agent({ status: 'asleep' }));
+    expect(ledger.tasks()).toMatchObject([{ outcome: 'completed', endedAt: T0 }]);
+  });
+
+  it('11. nor one its rest kept open for work still in the background', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'typed by hand' });
+    ledger.stateChanged(agent({ status: 'idle' }), { backgroundLeft: true });
+    ledger.stateChanged(agent({ status: 'asleep' }));
+    expect(ledger.tasks()).toMatchObject([{ outcome: 'running', endedAt: null }]);
+  });
+});

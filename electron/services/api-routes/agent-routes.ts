@@ -10,6 +10,8 @@ import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
 import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
 import { diskRefusal, freeSpace } from '../../core/disk-space';
+import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
+import type { AgentWakeVia } from '../../types';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
@@ -52,6 +54,8 @@ type SpawnOpts = {
   printMode?: boolean;
   /** Who starts it: noted when the start undoes a stop (core/agent-stop.ts). */
   by?: string;
+  /** Who this session wakes the agent for, and how, should it be asleep (core/agent-asleep.ts). */
+  wokenBy?: { by: string; via: AgentWakeVia };
 };
 
 /**
@@ -370,9 +374,12 @@ async function spawnAgentSession(
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
   // A terminal again: a stop is over (core/agent-stop.ts), and if there was
-  // one, who undid it is noted beside who made it.
-  noteRestartAfterStop(agent, opts.by ?? 'Tars');
+  // one, who undid it is noted beside who made it; and a sleep is over too,
+  // the agent waking on its conversation, its task the message that woke it.
+  noteRestartAfterStop(agent, opts.by ?? opts.wokenBy?.by ?? 'Tars');
   clearStop(agent);
+  if (opts.wokenBy) noteWaker(agent.id, opts.wokenBy.by, opts.wokenBy.via);
+  wakeFromSleep(agent);
   agent.status = 'running';
   agent.workHandedAt = new Date().toISOString();
   // Work handed over, for the task its first turn opens (task-ledger.ts).
@@ -726,6 +733,9 @@ export interface DispatchOpts {
   sender?: MessageSender;
   /** Run once the agent takes keys, before anything is typed: never for a sender refused 409. */
   onAccepted?: () => void;
+  /** Typed into a live session: once it is written into the terminal, or once the terminal gives it up (WriteOrigin). */
+  onWritten?: () => void;
+  onDropped?: () => void;
 }
 
 export async function performDispatch(
@@ -824,8 +834,10 @@ async function performDispatchLocked(
       agentId: agent.id,
       from: opts.from ?? 'Tars',
       sender: opts.sender ?? { kind: 'tars' },
-      onWritten: handedOver,
-      onDropped: () => cancelRetell?.(),
+      // Both: the agent reads working once the message is in (#314), and the
+      // caller hears it went in or was given up (#292).
+      onWritten: () => { handedOver(); opts.onWritten?.(); },
+      onDropped: () => { cancelRetell?.(); opts.onDropped?.(); },
     });
     if (outcome !== 'held' && outcome !== 'refused') handedOver();
     if (outcome === 'held') cancelRetell = retellWhileHeld(agent, opts.sender, Date.now());
@@ -844,7 +856,8 @@ async function performDispatchLocked(
 
   // No session: spawn a fresh one with the message as the prompt.
   const since = new Date().toISOString();
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from }, ctx, sendJson))) {
+  const wokenBy = { by: opts.from ?? 'Tars', via: 'message' as const };
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy }, ctx, sendJson))) {
     return;
   }
   sendJson({ success: true, mode: 'start', previousStatus, ...restartedAfterStop(agent, since), agent: { id: agent.id, name: agent.name, status: agent.status } });
@@ -863,9 +876,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const currentStatus = agent.status;
 
     // Return immediately if already in terminal state
-    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped') {
+    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped' || currentStatus === 'asleep') {
       sendJson({
         status: agent.status,
+        // Asleep: a message wakes it on its conversation (core/agent-asleep.ts).
+        asleepSince: agent.asleepSince,
         lastCleanOutput: agent.lastCleanOutput,
         error: agent.error,
         waitingReason: agent.waitingReason,
@@ -1188,7 +1203,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req) }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' } }, ctx, sendJson);
     });
     if (!spawned) return;
 
@@ -1386,7 +1401,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
         const since = new Date().toISOString();
-        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req) }, ctx, sendJson))) {
+        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' } }, ctx, sendJson))) {
           return;
         }
         sendJson({ success: true, ...restartedAfterStop(agent, since) });

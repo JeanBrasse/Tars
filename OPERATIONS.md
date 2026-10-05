@@ -682,6 +682,7 @@ work.
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
+| `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
@@ -1560,6 +1561,47 @@ or the dashboard not restarted since); `unauthorized` (the dashboard refused the
 | "@name" got the list of projects back | no project, or more than one, is named that way (the folder's name), or there was none and several orchestrators |
 | Hermes answered your "@name" itself | the plugin does not have that name among Tars's projects: no project of Tars has that folder name (a space, @, colon or comma in it is written as a dash: `@my-project`), or the relay has not reached the plugin since the project was added (`jq .projects` on the plugin's `/status`) |
 | An agent's question never arrived | `relay-outbox.json` holds it while Hermes is down; past its 4 hours it is dropped and the agent told |
+
+### Sentry's errors on the board
+
+`electron/services/error-triage.ts` files the unresolved issues of Tars's Sentry project (the one
+the error reports go to) as parked tasks on the Hermes board of one project, and asks you on
+Telegram, through the relay, for a go-ahead on each. On "oui", that project's orchestrator is told
+which task to hand to QA or the Audit, who reproduce the error in a sandbox and report; on "non",
+the task is archived. SPECS.md, "The error triage", has the whole contract.
+
+To turn it on:
+
+1. Make a Sentry token with the `event:read` scope and nothing more: an internal integration with
+   Issue & Event on Read, or a personal token with that scope alone.
+2. Set the token and `sentryTriageProject` to the project's path, in Settings once it has the
+   section, or while Tars is closed: the token alone in `~/.tars-private/sentry-token` (`0600`, never
+   in `~/.dorothy`, which every agent is handed; one left in `app-settings.json` moves there at the
+   next start), the project in `~/.dorothy/app-settings.json`. Error reports must be
+   on, Hermes configured and the relay on (`hermesRelayEnabled`): with the relay off, nothing is filed.
+3. A minute after launch, then every 15 minutes, Tars's log says `[error-triage] filed N on
+   <project>: TARS-1 as t_...`, or, once each time the reason changes, `[error-triage] not polling
+   Sentry: <why>`. Nothing is logged while no token is set.
+
+4. Each task filed is one message on Telegram: `Sentry, a new error in Tars: TARS-1, 3 events.`, every
+   field the task quotes (issue, title, culprit, level, first and last seen, events, link), each
+   quoted, and the two answers. Reply to that message: "oui" hands it to the orchestrator,
+   "non" archives it, anything else gets the question again. Tars answers each reply.
+
+At most 10 tasks in any 24 hours, the oldest issue first; the others wait for room. What was filed
+is in `~/.dorothy/error-triage.json`. To have an issue filed again, remove its entry with Tars
+closed: the idempotency key hands back its task still on the board, unless that task was archived.
+Your answers are in `~/.tars-private/sentry-go-aheads.json`:
+
+```bash
+jq -r '.issues | to_entries[] | "\(.key) \(.value.name) \(.value.state) owed=\(.value.noteOwed // false)"' ~/.tars-private/sentry-go-aheads.json
+```
+
+| Symptom | Cause |
+|---|---|
+| "oui", and the orchestrator was told nothing | its CLI does not run, or it was at work (Tars said which): the note is owed in `sentry-go-aheads.json` (`owed=true` above), and goes once it is typed into the orchestrator's terminal, at its next state change or the next poll, after a quit of Tars too |
+| No Telegram message for a task on the board | the request waits for Hermes in `~/.tars-private/relay-outbox.json` (7 days), or the relay is off; it is asked again at the next poll once it can go |
+
 ---
 
 ## Tasmania (local models)
@@ -1679,6 +1721,20 @@ note in its orchestrator) means: `running`, no transcript write for 30 minutes, 
 with `ps -A -o pid,ppid,stat,etime,command | grep -A12 claude` (a frozen claude has no live `caffeinate` under it,
 often an unreaped zombie, and 0 % CPU) and `sample <pid> 1`. If nothing moves: stop it, and start it again with a
 brief of what is already done. A long tool that runs no process (a web fetch, a subagent) is not caught by this rule.
+
+### An agent asleep
+
+`asleep` (and a `[sleep] <name>: asleep, no turn for 30 minutes; its CLI ends, its conversation is kept` line in the
+main process log) means: no turn for 30 minutes, so its CLI and everything under it were ended, and its conversation is
+kept. It is not stopped: a message, a dispatch, a room message, a chat, a kanban task, `wake` or a key typed in its
+pane starts it again on that conversation (`--resume`), in about a second, and it reads `waking` until its session is
+up. An orchestrator is never put to sleep. SPECS.md, "An agent asleep", has the rules.
+
+| Symptom | Cause |
+|---|---|
+| An agent at rest for hours never sleeps | something keeps it: a timer of its own (a `/loop` ScheduleWakeup, a CronCreate) or a background agent its CLI runs, as its last Stop hook counted them (`STOP hook` lines in `/tmp/dorothy-hooks.log`), a process under its CLI (a dev server, a background task: `ps -A -o pid,ppid,command \| grep -A8 claude`), a draft in its field, a message, note or question waiting for it, an agent still holding work it handed out, or a conversation Tars cannot resume (a provider other than claude, or no transcript) |
+| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`), so there was nothing to resume |
+| Its pane is blank while it sleeps | Tars restarted since it fell asleep: the last screen is kept in memory only, by choice (SPECS.md, "An agent asleep") |
 
 ### Agent stuck in the wrong directory
 

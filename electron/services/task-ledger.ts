@@ -27,7 +27,8 @@ export type TaskOutcome = 'running' | 'completed' | 'error' | 'stopped';
 /** What the ledger reads of an agent: the fields of AgentStatus it needs. */
 export interface TaskAgentView {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** `asleep` ends no task: an agent sleeps only after the rest that ended it (services/agent-sleep.ts). */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
   waitingReason?: string;
   projectPath?: string;
   worktreePath?: string;
