@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   TASKS_PAGE,
+  agentName,
   agentOptions,
   averagesBy,
   dominantModel,
@@ -15,6 +16,7 @@ import {
   sinceDaysFor,
   sourceText,
   startLabel,
+  taskText,
   tokensTotal,
   totalText,
 } from '../../src/lib/task-costs';
@@ -48,7 +50,11 @@ import type { TaskEntry } from '../../src/types/electron';
  *    there is named, or an agent that never set its provider (Claude) reads
  *    as nothing;
  * 10. the tokens leave out the cache, or a task not counted shows 0;
- * 11. "show more" offers more tasks than are left.
+ * 11. "show more" offers more tasks than are left;
+ * 12. a task's text or an agent's name, written by an agent or a person,
+ *     carries what hides, turns or breaks a line (a U+202E, a line break, a
+ *     zero width space), and turns its row around on screen (the Audit's Low
+ *     at this PR's gate).
  */
 
 const DAY = 86_400_000;
@@ -235,3 +241,13 @@ describe('show more (11)', () => {
     expect(moreLabel(45, 45)).toBeNull();
   });
 });
+
+describe('what an agent or a person wrote (12)', () => {
+  it('flattens what hides, turns or breaks the line, in a task\'s text and in an agent\'s name', () => {
+    expect(taskText(task({ text: 'fix\u202Ethe build\n  now\u200B' }))).toBe('fix the build now');
+    expect(agentName('lead', { lead: 'Ev\u202Eil\u2028Lead' })).toBe('Ev il Lead');
+    expect(sourceText(task({ source: 'agent', requesterAgentId: 'lead' }), { lead: 'Ev\u202Eil' })).toBe('from Ev il');
+    expect(agentOptions([task()], { lead: 'Ev\u202Eil' }).map(o => o.label)).toEqual(['Ev il']);
+  });
+});
+
