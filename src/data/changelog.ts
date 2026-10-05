@@ -25,6 +25,7 @@ export const CHANGELOG: Release[] = [
       'A message to an agent idle at its prompt goes in again, where it could wait for hours: the answer its Dashboard panel gives the terminal when the CLI asks for its colours was read as something typed, and Tars waited for someone to send or clear a field that was empty. An agent no longer shows as working because of a message that has not gone in, and an agent whose message to another still waits three minutes on is told again why, and that only someone at that terminal can end the wait.',
       'A Dashboard panel keeps the last 5,000 lines of an agent\'s output to scroll back through, where it kept 10,000, which spares memory with many agents at work. The agent\'s transcript still keeps everything.',
       'The Review page lists a tree\'s changed files without building the patch of every file first, and reads a file\'s patch once you pick it: until then the panel asks for a file, where it showed the whole tree\'s patch. An agent\'s window marks the files it changed without reading their patches either.',
+      'A Kanban task an agent completes keeps the last 50 lines of its terminal as you read them, in its done summary, where it kept the whole screen with the codes that colour and place its text, about 170 KB a task.',
     ],
   },
   {
