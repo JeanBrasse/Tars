@@ -12,6 +12,7 @@ import NewChatModal from '@/components/NewChatModal';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 import { lastActiveLabel } from '@/lib/last-active';
+import { ptyBacklog, type PtyBacklog } from '@/lib/pty-backlog';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
 // browser - same reason Dashboard loads TerminalsView this way.
@@ -54,7 +55,7 @@ export default function ProjectsPage() {
   // Default project confirmation dialog
   const [pendingDefaultPath, setPendingDefaultPath] = useState<string | null>(null);
   // Project terminal dialog: the id of the live PTY, plus the folder it opened in
-  const [terminalPty, setTerminalPty] = useState<{ id: string; cwd: string } | null>(null);
+  const [terminalPty, setTerminalPty] = useState<{ id: string; cwd: string; backlog: PtyBacklog } | null>(null);
   const [terminalOpening, setTerminalOpening] = useState(false);
 
   // Load git branch for selected project
@@ -102,13 +103,21 @@ export default function ProjectsPage() {
   //
   // It now runs on `pty:create`, which the bridge really does expose, and the
   // shell appears in-app instead of in Terminal.app.
+  //
+  // The page listens to the PTY before it asks for one: the shell writes its
+  // banner and first prompt while <Terminal> is still on its way, a dynamic
+  // import away, and the terminal hears the PTY only once mounted. It takes
+  // what came then (lib/pty-backlog).
   const openProjectTerminal = useCallback(async (projectPath: string) => {
-    if (!window.electronAPI?.pty?.create) return;
+    const pty = window.electronAPI?.pty;
+    if (!pty?.create) return;
     setTerminalOpening(true);
+    const backlog = ptyBacklog(pty.onData);
     try {
-      const { id } = await window.electronAPI.pty.create({ cwd: projectPath });
-      setTerminalPty({ id, cwd: projectPath });
+      const { id } = await pty.create({ cwd: projectPath });
+      setTerminalPty({ id, cwd: projectPath, backlog });
     } catch (err) {
+      backlog.drop();
       console.error('Failed to open terminal:', err);
     } finally {
       setTerminalOpening(false);
@@ -131,6 +140,8 @@ export default function ProjectsPage() {
     });
     return () => {
       unsubscribe?.();
+      // Closed before its terminal came to take what the page heard for it.
+      terminalPty.backlog.drop();
       window.electronAPI?.pty?.kill({ id: ptyId }).catch(() => {});
     };
   }, [terminalPty]);
@@ -842,7 +853,7 @@ export default function ProjectsPage() {
             </Button>
           }
         >
-          <Terminal ptyId={terminalPty.id} className="h-[420px]" />
+          <Terminal ptyId={terminalPty.id} backlog={terminalPty.backlog} className="h-[420px]" />
         </DialogShell>
       )}
 
