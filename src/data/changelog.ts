@@ -11,6 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.9.3',
     date: '2026-10-04',
     updates: [
+      'Restarting an agent no longer moves its current task to done: the terminal the restart ended said it had finished, and the window took the new terminal\'s screen for the task\'s summary.',
       'With several Claude accounts on, Tars asks Claude Code itself for each account\'s 5 h and weekly use, every 10 minutes and when you refresh the accounts in Settings, so an account no agent has run on lately, or one you used on claude.ai, is no longer counted as empty when Tars picks the account an agent starts on. Tars never sees the account\'s sign-in: Claude Code answers with percentages',
       'The Review page shows a change of more than 8 MB cut short, and says so, where it showed nothing. It shows only what is in the repository: a link is shown as the path it points to, never the file behind it, and a path that leads out of the repository is refused.',
       'An agent that starts while Hermes answers one of its two memory files and stays silent on the other gets the one that came, where it lost both.',
@@ -26,6 +27,7 @@ export const CHANGELOG: Release[] = [
       'A message to an agent idle at its prompt goes in again, where it could wait for hours: the answer its Dashboard panel gives the terminal when the CLI asks for its colours was read as something typed, and Tars waited for someone to send or clear a field that was empty. An agent no longer shows as working because of a message that has not gone in, and an agent whose message to another still waits three minutes on is told again why, and that only someone at that terminal can end the wait.',
       'A Dashboard panel keeps the last 5,000 lines of an agent\'s output to scroll back through, where it kept 10,000, which spares memory with many agents at work. The agent\'s transcript still keeps everything.',
       'The Review page lists a tree\'s changed files without building the patch of every file first, and reads a file\'s patch once you pick it: until then the panel asks for a file, where it showed the whole tree\'s patch. An agent\'s window marks the files it changed without reading their patches either.',
+      'A Kanban task an agent completes keeps the last 50 lines of its terminal as you read them, in its done summary, where it kept the whole screen with the codes that colour and place its text, about 170 KB a task.',
     ],
   },
   {
