@@ -11,10 +11,13 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * The CLI is a stand-in named `claude` (a node script, as an npm install of Claude Code is) that asks the terminal for
  * its background colour, `ESC ] 11 ; ? ST`, the query Claude Code 2.1.289 carries. The panel mounted on the Dashboard
- * is an xterm, which answers it (`ESC ] 11 ; rgb:.... ST`), and the panel passes what xterm answers on to the main
+ * is an xterm, which answers it (`ESC ] 11 ; rgb:.... ST`), and the panel passed what xterm answers on to the main
  * process as if it were typed. Read as keys, that answer made the field's draft unknown, and every message after it
  * waited for a person to send or clear a field that was empty. Then a room message to the agent, at rest: it must reach
  * the CLI, and the agent must not read running before it does.
+ *
+ * The answer is sent through agent:input by the spec itself, in both endings, as the panel sent it: the panels no
+ * longer pass it on (#316), and this spec is the main process's own guard, which any other sender of agent:input meets.
  */
 
 type Agent = { id: string; status: string; cliRunning?: boolean };
@@ -93,6 +96,11 @@ test("a message to an idle agent goes in after its panel answered the terminal's
     // The two queries asked, and the panel's answers come back.
     await expect.poll(() => lines(standIn).filter((l) => l.asked).length, { timeout: 30_000 }).toBe(2);
     await new Promise((r) => setTimeout(r, 2_000));
+    // The answer, as a panel passed it on before #316, in both endings.
+    for (const reply of ['\x1b]11;rgb:0f0f/0f0f/0f0f\x1b\\', '\x1b]11;rgb:0f0f/0f0f/0f0f\x07']) {
+      await page.evaluate((input) => (window as unknown as { electronAPI: { agent: { sendInput(p: { id: string; input: string }): Promise<unknown> } } })
+        .electronAPI.agent.sendInput({ id: 'worker', input }), reply);
+    }
     const fromPanel = await app.evaluate(() => (globalThis as unknown as { __rec: string[] }).__rec);
     const answers = lines(standIn).filter((l) => l.stdin).map((l) => l.stdin as string);
 
@@ -105,7 +113,7 @@ test("a message to an idle agent goes in after its panel answered the terminal's
     const statusAfter = (await list()).find((a) => a.id === 'worker')?.status;
 
     recordValues({ fromPanel, answers, typedIn, statusAfter, standIn: lines(standIn) });
-    expect(fromPanel.some((c) => /\x1b\]11;rgb:/.test(c)), 'the panel answered the query, and passed the answer on').toBe(true);
+    expect(fromPanel.some((c) => /\x1b\]11;rgb:/.test(c)), 'the answer reached the main process as typed input').toBe(true);
     expect(typedIn, 'the room message reached the CLI').toBe(true);
   } finally {
     await app.close();
