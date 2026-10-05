@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ptyBacklog } from '../../src/lib/pty-backlog';
+import { openPtyHeard, ptyBacklog } from '../../src/lib/pty-backlog';
 
 /**
  * What a project's shell writes before its terminal is there to hear it
@@ -20,6 +20,17 @@ import { ptyBacklog } from '../../src/lib/pty-backlog';
  *    closed first, pty:create failed) left it listening too;
  * 5. the chunks are handed over twice: React runs an effect twice in
  *    development, the terminal's subscription with it.
+ *
+ * Opening the PTY with its listening (openPtyHeard), the Audit's Low at the
+ * gate of #328, written before the code:
+ * 6. the page that asked is gone when pty:create answers (it was left while
+ *    the PTY was being made): nothing would take the backlog or kill the
+ *    shell, so the listening, which hears every agent's output, went on for
+ *    the window's life, and the shell lived on with nobody attached. The
+ *    listening ends and the PTY is killed;
+ * 7. over-correction: a page still there gets its PTY, and its backlog still
+ *    listens, until its terminal takes it;
+ * 8. pty:create fails: the listening ends, and the failure reaches the page.
  */
 
 type Chunk = { id: string; data: string };
@@ -83,5 +94,58 @@ describe('what a PTY writes before its terminal listens', () => {
     pty.send('p1', 'banner\r\n');
     expect(backlog.take('p1')).toEqual(['banner\r\n']);
     expect(backlog.take('p1')).toEqual([]);
+  });
+});
+
+describe('opening a PTY with its listening', () => {
+  /** The bridge's pty, with what it was asked in view: create answers when the test says. */
+  function bridge() {
+    const data = channel();
+    const killed: string[] = [];
+    let answer!: (value: { id: string }) => void;
+    let refuse!: (reason: unknown) => void;
+    const created = new Promise<{ id: string }>((resolve, reject) => { answer = resolve; refuse = reject; });
+    return {
+      data, killed, answer, refuse,
+      pty: {
+        onData: data.onData,
+        create: async () => created,
+        kill: async ({ id }: { id: string }) => { killed.push(id); return { success: true }; },
+      },
+    };
+  }
+
+  it('lets go of the listening and kills the shell when the page is gone by the answer (6)', async () => {
+    const b = bridge();
+    let mounted = true;
+    const opening = openPtyHeard(b.pty, { cwd: '/p' }, () => mounted);
+    expect(b.data.listening).toBe(1);
+    mounted = false;
+    b.data.send('p1', 'Last login: Mon Oct  5 21:40\r\n');
+    b.answer({ id: 'p1' });
+    expect(await opening).toBeNull();
+    expect(b.data.listening).toBe(0);
+    expect(b.killed).toEqual(['p1']);
+  });
+
+  it('hands a page still there its PTY, with what it wrote so far (7)', async () => {
+    const b = bridge();
+    const opening = openPtyHeard(b.pty, { cwd: '/p' }, () => true);
+    b.data.send('p1', 'Last login: Mon Oct  5 21:40\r\n');
+    b.answer({ id: 'p1' });
+    const opened = await opening;
+    expect(opened?.id).toBe('p1');
+    expect(b.killed).toEqual([]);
+    expect(b.data.listening).toBe(1);
+    expect(opened!.backlog.take('p1')).toEqual(['Last login: Mon Oct  5 21:40\r\n']);
+    expect(b.data.listening).toBe(0);
+  });
+
+  it('stops listening when pty:create fails, and says so (8)', async () => {
+    const b = bridge();
+    const opening = openPtyHeard(b.pty, { cwd: '/p' }, () => true);
+    b.refuse(new Error('Tars is quitting: no terminal'));
+    await expect(opening).rejects.toThrow('Tars is quitting');
+    expect(b.data.listening).toBe(0);
   });
 });
