@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
@@ -13,6 +13,7 @@ import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, 
 import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 import { wakingLine } from '@/lib/asleep-line';
 import { lastActiveLabel } from '@/lib/last-active';
+import { openPtyHeard, type PtyBacklog } from '@/lib/pty-backlog';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
 // browser - same reason Dashboard loads TerminalsView this way.
@@ -55,7 +56,7 @@ export default function ProjectsPage() {
   // Default project confirmation dialog
   const [pendingDefaultPath, setPendingDefaultPath] = useState<string | null>(null);
   // Project terminal dialog: the id of the live PTY, plus the folder it opened in
-  const [terminalPty, setTerminalPty] = useState<{ id: string; cwd: string } | null>(null);
+  const [terminalPty, setTerminalPty] = useState<{ id: string; cwd: string; backlog: PtyBacklog } | null>(null);
   const [terminalOpening, setTerminalOpening] = useState(false);
 
   // Load git branch for selected project
@@ -103,12 +104,24 @@ export default function ProjectsPage() {
   //
   // It now runs on `pty:create`, which the bridge really does expose, and the
   // shell appears in-app instead of in Terminal.app.
+  //
+  // The page listens to the PTY before it asks for one: the shell writes its
+  // banner and first prompt while <Terminal> is still on its way, a dynamic
+  // import away, and the terminal hears the PTY only once mounted. It takes
+  // what came then (lib/pty-backlog). A page left before pty:create answers
+  // lets go of both, the listening and the shell.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const openProjectTerminal = useCallback(async (projectPath: string) => {
-    if (!window.electronAPI?.pty?.create) return;
+    const pty = window.electronAPI?.pty;
+    if (!pty?.create) return;
     setTerminalOpening(true);
     try {
-      const { id } = await window.electronAPI.pty.create({ cwd: projectPath });
-      setTerminalPty({ id, cwd: projectPath });
+      const opened = await openPtyHeard(pty, { cwd: projectPath }, () => mounted.current);
+      if (opened) setTerminalPty({ id: opened.id, cwd: projectPath, backlog: opened.backlog });
     } catch (err) {
       console.error('Failed to open terminal:', err);
     } finally {
@@ -132,6 +145,8 @@ export default function ProjectsPage() {
     });
     return () => {
       unsubscribe?.();
+      // Closed before its terminal came to take what the page heard for it.
+      terminalPty.backlog.drop();
       window.electronAPI?.pty?.kill({ id: ptyId }).catch(() => {});
     };
   }, [terminalPty]);
@@ -875,7 +890,7 @@ export default function ProjectsPage() {
             </Button>
           }
         >
-          <Terminal ptyId={terminalPty.id} className="h-[420px]" />
+          <Terminal ptyId={terminalPty.id} backlog={terminalPty.backlog} className="h-[420px]" />
         </DialogShell>
       )}
 
