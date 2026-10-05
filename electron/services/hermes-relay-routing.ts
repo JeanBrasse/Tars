@@ -15,7 +15,7 @@ import type { AgentStatus } from '../types';
  *   fleet's projects, which the relay registers with it at every change.
  * - A reply to a word from Tars reaches nobody: the user is told how to reach an orchestrator.
  * - A reply to a question goes to the agent that asked (user-questions.ts registers it); to a Sentry request, to
- *   Tars itself (its handler, when one is registered).
+ *   Tars itself: the error triage takes the user's go-ahead (error-triage.ts registers it).
  *
  * Each goes after the line "Message from the user via Telegram:", which only Tars writes, and holds the user's own
  * words: never the report or the message they answer, written from agents' output and page titles. A worker is
