@@ -16,6 +16,11 @@
  *    refuse, and the work is lost on the error path.
  * 7. A save that fails is reported as done: the caller would remove the
  *    worktree and lose the work it could not save.
+ * And from QA's gate of #312 (probe-312/):
+ * 8. A git repository the agent cloned or made inside its worktree is saved as
+ *    a gitlink only, a pointer to a commit that exists in that repository's own
+ *    .git and nowhere else: its files are in no saved tree. The save must name
+ *    it, so that its worktree is kept.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -55,7 +60,7 @@ describe('the uncommitted work of a worktree, saved before it goes', () => {
 
     const saved = await saveUncommittedWork(wt, 'Backend Engineer');
 
-    expect(saved).toEqual({ branch: 'wip/backend-engineer' });
+    expect(saved).toEqual({ branch: 'wip/backend-engineer', nestedRepos: [] });
     expect(git(repo, 'rev-parse', 'feat/x')).toBe(before);
     expect(git(repo, 'show', 'wip/backend-engineer:a.txt')).toBe('one\ntwo');
     expect(git(repo, 'show', 'wip/backend-engineer:new.txt')).toBe('fresh');
@@ -70,7 +75,7 @@ describe('the uncommitted work of a worktree, saved before it goes', () => {
     const kept = git(repo, 'rev-parse', 'wip/backend-engineer');
     fs.writeFileSync(path.join(wt, 'b.txt'), 'b\n');
 
-    expect(await saveUncommittedWork(wt, 'Backend Engineer')).toEqual({ branch: 'wip/backend-engineer-2' });
+    expect(await saveUncommittedWork(wt, 'Backend Engineer')).toEqual({ branch: 'wip/backend-engineer-2', nestedRepos: [] });
     expect(git(repo, 'rev-parse', 'wip/backend-engineer')).toBe(kept);
   });
 
@@ -86,7 +91,7 @@ describe('the uncommitted work of a worktree, saved before it goes', () => {
     fs.writeFileSync(path.join(wt, 'a.txt'), 'changed\n');
 
     const saved = await saveUncommittedWork(wt, 'QA');
-    expect(saved).toEqual({ branch: 'wip/qa' });
+    expect(saved).toEqual({ branch: 'wip/qa', nestedRepos: [] });
     expect(git(repo, 'log', '-1', '--format=%s', 'wip/qa')).toContain('QA');
   });
 
@@ -96,6 +101,26 @@ describe('the uncommitted work of a worktree, saved before it goes', () => {
     expect(wipBranchName('Dé ploy ✓ v2.0.')).toBe('wip/d-ploy-v2-0');
     expect(wipBranchName('...')).toBe('wip/agent');
     expect(wipBranchName('x'.repeat(200)).length).toBeLessThanOrEqual(4 + 60);
+  });
+
+  it('8. names a git repository inside the worktree, which the save can only point at', async () => {
+    const nested = path.join(wt, 'vendor-lib');
+    fs.mkdirSync(nested);
+    git(nested, 'init', '-q', '-b', 'main');
+    git(nested, 'config', 'user.email', 't@t.example');
+    git(nested, 'config', 'user.name', 'T');
+    fs.writeFileSync(path.join(nested, 'lib.js'), 'module.exports = 1;\n');
+    git(nested, 'add', '-A');
+    git(nested, 'commit', '-qm', 'lib');
+    fs.writeFileSync(path.join(wt, 'a.txt'), 'changed\n');
+
+    const saved = await saveUncommittedWork(wt, 'QA');
+    expect(saved).toEqual({ branch: 'wip/qa', nestedRepos: ['vendor-lib'] });
+  });
+
+  it('8. names none for a worktree without one', async () => {
+    fs.writeFileSync(path.join(wt, 'a.txt'), 'changed\n');
+    expect(await saveUncommittedWork(wt, 'QA')).toEqual({ branch: 'wip/qa', nestedRepos: [] });
   });
 
   it('7. a save that fails says so, and leaves the work where it was', async () => {

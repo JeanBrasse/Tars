@@ -16,6 +16,10 @@
  *    answer must name what kept it.
  * 5. Over-correction: a worktree whose only ignored files are caches
  *    (node_modules, .next, electron/dist...) is kept.
+ * And from QA's gate of #312: a git repository inside the worktree was saved
+ * as a pointer to a commit that exists only in its own .git, then lost with
+ * the worktree, while the answer named a wip branch.
+ * 6. A worktree holding a git repository of its own is removed.
  *
  * The handler and git are the real ones, on a repository in a throwaway folder.
  */
@@ -129,6 +133,23 @@ describe('the window\'s Delete', () => {
     expect(result.worktreeKept).toContain('test-results/');
     expect(result.worktreeKept).not.toContain('node_modules');
     expect(fs.readFileSync(path.join(wt, '.env'), 'utf8')).toBe('SECRET=1\n');
+    expect(agents.has('w1')).toBe(false);
+  });
+
+  it('6. keeps a worktree holding a git repository of its own, and names it', async () => {
+    const nested = path.join(wt, 'vendor-lib');
+    fs.mkdirSync(nested);
+    git(nested, 'init', '-q', '-b', 'main');
+    git(nested, 'config', 'user.email', 't@t.example');
+    git(nested, 'config', 'user.name', 'T');
+    fs.writeFileSync(path.join(nested, 'lib.js'), 'module.exports = 1;\n');
+    git(nested, 'add', '-A');
+    git(nested, 'commit', '-qm', 'lib');
+
+    const result = await handlers.get('agent:remove')!({}, 'w1') as { savedTo?: string; worktreeKept?: string };
+
+    expect(result.worktreeKept).toContain('vendor-lib');
+    expect(fs.readFileSync(path.join(nested, 'lib.js'), 'utf8')).toBe('module.exports = 1;\n');
     expect(agents.has('w1')).toBe(false);
   });
 
