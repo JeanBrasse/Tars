@@ -18,8 +18,16 @@
  * 5. A project's node_modules that is a link is followed out of the project.
  * 6. A system that cannot clone (no APFS, no reflink) copies the whole tree,
  *    gigabytes per worktree: it must clone or do nothing.
+ * And from the gates of #325 (05/10):
+ * 7. (QA) On macOS `cp -c -R` onto a volume that is not APFS makes a full copy
+ *    and exits 0 (measured on an HFS+ disk image): the volume of both ends
+ *    must be APFS, and the same one, before the clone is tried.
+ * 8. (Audit) A committed link at <package>/node_modules that points nowhere is
+ *    read as absent, and the failure branch then deletes it: anything there,
+ *    a link included, is left alone.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -124,6 +132,32 @@ describe("a new worktree's dependencies", () => {
     await cloneDependencies(project, worktree, { copy: async s => { copied.push(s); } });
     expect(copied).not.toContain(path.join(project, 'node_modules'));
   });
+
+  it('8. leaves a link at the worktree\'s node_modules alone, even one that points nowhere', async () => {
+    fs.symlinkSync(path.join(root, 'nowhere'), path.join(worktree, 'node_modules'));
+    const copied: string[] = [];
+    await cloneDependencies(project, worktree, { copy: async (_s, d) => { copied.push(d); throw new Error('no'); } });
+    expect(copied).not.toContain(path.join(worktree, 'node_modules'));
+    expect(fs.lstatSync(path.join(worktree, 'node_modules')).isSymbolicLink()).toBe(true);
+  });
+
+  it.runIf(process.platform === 'darwin')('7. copies nothing onto a volume that is not APFS, where cp -c would copy in full', async () => {
+    const dmg = path.join(root, 'hfs.dmg');
+    const mnt = path.join(root, 'mnt');
+    fs.mkdirSync(mnt);
+    execFileSync('hdiutil', ['create', '-size', '20m', '-fs', 'HFS+', '-volname', 'tarsdeps', '-quiet', dmg]);
+    execFileSync('hdiutil', ['attach', '-nobrowse', '-quiet', '-mountpoint', mnt, dmg]);
+    try {
+      const onHfs = path.join(mnt, 'feat-x');
+      pkg(onHfs, { left: '1.0.0' }, null);
+      const result = await cloneDependencies(project, onHfs);
+      expect(fs.existsSync(path.join(onHfs, 'node_modules'))).toBe(false);
+      expect(result.cloned).toEqual([]);
+      expect(result.skipped).toContainEqual({ dir: '', why: expect.stringMatching(/APFS/) });
+    } finally {
+      execFileSync('hdiutil', ['detach', '-quiet', mnt]);
+    }
+  }, 60_000);
 
   it('6. clones or does nothing: never a plain copy', () => {
     expect(cloneArgs('darwin', '/a', '/b')).toEqual(['-c', '-R', '/a', '/b']);
