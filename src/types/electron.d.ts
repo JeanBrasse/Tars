@@ -1043,7 +1043,7 @@ export interface ElectronAPI {
     onError: (callback: (event: AgentEvent) => void) => () => void;
     onComplete: (callback: (event: AgentEvent) => void) => () => void;
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
-    onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => () => void;
+    onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
     /** What is waiting right now, for a panel that opened after the wait
      *  began: the event below only reaches a window already listening. An

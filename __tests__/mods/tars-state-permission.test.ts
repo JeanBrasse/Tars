@@ -143,11 +143,11 @@ describe("the mod's tool.check", () => {
     });
   });
 
-  it('5. sends the path a file tool asks about, never the file\'s content', async () => {
+  it('5. sends only the fields a person decides on, never the rest of the input', async () => {
     await start();
-    await check({ tool: 'Write', input: { file_path: '/p/a.ts', content: 'x'.repeat(100_000) }, tool_use_id: 'toolu_2' }, ASK);
+    await check({ tool: 'Grep', input: { pattern: 'TODO', path: '/p', glob: 'x'.repeat(100_000) }, tool_use_id: 'toolu_2' }, ASK);
     const { body } = permissionPosts()[0];
-    expect(body.input).toEqual({ file_path: '/p/a.ts' });
+    expect(body.input).toEqual({ pattern: 'TODO', path: '/p' });
   });
 
   it('6. takes its deny, with the reason the model will read', async () => {
