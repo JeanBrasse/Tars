@@ -649,7 +649,7 @@ Files Tars writes **outside** its own directory:
 | `~/.local/share/claude/versions/`, `~/.local/bin/claude` | through `claude update`, which writes them itself |
 | `<npm prefix>/lib/node_modules/<package>`, `<npm prefix>/bin/amp` | through `npm install --global`, for Amp |
 | per-provider MCP config files | `codex`, `gemini`, `grok`, `opencode`, `pi` |
-| `<project>/.worktrees/<branch>` | git worktrees |
+| `<project>/.worktrees/<branch>` | git worktrees. An agent's new worktree (`agent:create`, `agent:update`) gets its project's dependencies as a clone (`services/worktree-deps.ts`, Noah's choice 17 of 05/10): each package, the root and every folder one level down with a `package.json`, whose `node_modules` was installed for the worktree's `package-lock.json` (same versions and integrity) gets it with `cp -c` on macOS (APFS shares the blocks: 1,185 MB in 23 s at load 130, no space measurably taken) or `cp --reflink=always` on Linux; anything else, another lock, a link, a file system that cannot clone, gets nothing and the agent installs as before, never a full copy |
 
 ### `AgentStatus`: what survives a restart
 

@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { stopAgent } from '../core/agent-stop';
+import { cloneDependencies, logDependencies } from '../services/worktree-deps';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -356,6 +357,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
             execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd, stdio: 'pipe' });
           }
         }
+        // Its dependencies, cloned from the project's where they were installed
+        // for this lock (Noah's choice 17, 05/10): each agent ran its own npm ci
+        // into its worktree.
+        await logDependencies(worktreePath, await cloneDependencies(cwd, worktreePath));
 
         // Use the worktree path as the working directory
         cwd = worktreePath;
@@ -1116,6 +1121,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
               execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
             }
           }
+          await logDependencies(worktreePath, await cloneDependencies(agent.projectPath, worktreePath));
           agent.worktreePath = worktreePath;
           agent.branchName = branchName;
           // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
