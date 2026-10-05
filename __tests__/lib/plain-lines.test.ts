@@ -86,6 +86,17 @@ describe('how much is kept', () => {
     expect(lastPlainLines([`abc${ESC}[3`, `2mdef${ESC}`, `[0m`])).toBe('abcdef');
   });
 
+  // Added after the code: a mutant without the cut at the very end survived.
+  it('a sequence the kept tail ends in the middle of leaves nothing (6)', () => {
+    expect(lastPlainLines([`done\r\nwaiting${ESC}[3`])).toBe('done\nwaiting');
+    expect(lastPlainLines([`ok${ESC}]0;claude: wor`])).toBe('ok');
+  });
+
+  // Added after the code: a mutant that kept the spaces a line ends on survived.
+  it('the spaces a line ends on go, as a screen padded to its width would add them by the kilobyte (7)', () => {
+    expect(lastPlainLines([`done${' '.repeat(200)}\r\nnext ${ESC}[4C\r\n`])).toBe('done\nnext');
+  });
+
   it('a line that never ends is cut, so the summary stays small (7)', () => {
     const out = lastPlainLines([`${'x'.repeat(100_000)}\r\nshort`]);
     const [long, short] = out.split('\n');
