@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:remove', id),
     sendInput: (params: { id: string; input: string }) =>
       ipcRenderer.invoke('agent:input', params),
+    wake: (id: string) =>
+      ipcRenderer.invoke('agent:wake', id),
     resize: (params: { id: string; cols: number; rows: number }) =>
       ipcRenderer.invoke('agent:resize', params),
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) =>
@@ -356,6 +358,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   usage: {
     byProvider: (sinceDays?: number) =>
       ipcRenderer.invoke('usage:by-provider', { sinceDays }),
+    tasks: (query?: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string }) =>
+      ipcRenderer.invoke('usage:tasks', query ?? {}),
   },
 
   logs: {

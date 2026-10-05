@@ -54,9 +54,34 @@ export interface AgentWaitingOn {
   text: string;
 }
 
+/** How an asleep agent was woken (core/agent-asleep.ts). */
+export type AgentWakeVia = 'message' | 'chat' | 'wake' | 'key' | 'start';
+
+/** An asleep agent whose CLI is on its way back: who woke it, how, and when. */
+export interface AgentWaking {
+  /** "you", "Tars", an agent's name, or a chat ("Telegram"). */
+  by: string;
+  via: AgentWakeVia;
+  /** ISO. */
+  since: string;
+}
+
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** 'asleep': its CLI was ended after 30 minutes without a turn, its
+   *  conversation kept; a message, a dispatch, a chat, the wake call or a key
+   *  typed into its terminal wakes it on that conversation (core/agent-asleep.ts,
+   *  services/agent-sleep.ts). Not stopped: nothing has to start it again. */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
+  /** ISO: since when it is asleep. Set with `asleep`, gone when it wakes. */
+  asleepSince?: string;
+  /** Set from the moment a wake starts its CLI until that CLI's session is up
+   *  or its launch is given up (AgentStatus.launching). Not saved. */
+  waking?: AgentWaking;
+  /** What its last Stop hook counted inside its CLI: timers (ScheduleWakeup,
+   *  CronCreate) and background tasks still running. Gone at its next turn or
+   *  session; absent when the hook counted nothing. Not saved. */
+  restPending?: { crons: number; background: number };
   /** Set by a stop (core/agent-stop.ts) until the agent gets a terminal again:
    *  "you", "Tars", or the name of the agent that asked. */
   stoppedBy?: string;
@@ -325,6 +350,14 @@ export interface AppSettings {
    * (services/error-reports). Off by default; followed live.
    */
   errorReportsEnabled: boolean;
+  /**
+   * The error triage (services/error-triage): a Sentry auth token with the
+   * event:read scope and nothing more, and the project whose Hermes board gets
+   * a parked task for each new error. While either is empty, or error reports
+   * are off, or Hermes is not configured, nothing polls. Read at each poll.
+   */
+  sentryAuthToken: string;
+  sentryTriageProject: string;
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;

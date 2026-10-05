@@ -18,6 +18,8 @@ type WaitResult = {
   stopReason?: string;
   /** ISO: running, yet nothing written and no tool at work since then (Tars's stall watch). */
   stalledSince?: string;
+  /** ISO: asleep since then, its CLI ended after 30 minutes without a turn. */
+  asleepSince?: string;
 };
 
 type DispatchResult = {
@@ -38,7 +40,9 @@ type DispatchResult = {
 function heldText(agentName: string, what: string, reason?: string): string {
   return `HELD: ${what} for "${agentName}" is waiting for its terminal and has not been typed in yet. `
     + (reason ?? "Its field is in use.")
-    + " Nothing needs resending: it goes in by itself once the field is free.";
+    // Never "nothing needs resending": a field only a person can free may not
+    // free (bug-held-forever-05-10.md). The route tells the sender again.
+    + " It goes in by itself once the field is free; if it still waits a few minutes on, Tars tells you again.";
 }
 
 /**
@@ -478,6 +482,10 @@ const AGENT_TOOLS: Tool[] = [
 
       if (data.status === "stopped") {
         return text(`Agent "${agentName}" was stopped by ${data.stoppedBy || "someone"}${data.stopReason ? `: ${data.stopReason}` : ""}. It does nothing until it is started again.`);
+      }
+
+      if (data.status === "asleep") {
+        return text(`Agent "${agentName}" is asleep${data.asleepSince ? ` since ${data.asleepSince}` : ""}: it had no turn for 30 minutes, so Tars ended its CLI and kept its conversation. Its last work is done; get_agent_output reads what it last said, and send_message wakes it on that conversation.`);
       }
 
       if (data.status === "waiting") {

@@ -16,6 +16,67 @@ export interface LogLine {
   position: number;
 }
 
+/** One task, as usage.tasks reports it (electron/services/task-ledger.ts and task-cost.ts). */
+export interface TaskEntry {
+  id: string;
+  agentId: string;
+  projectPath: string | null;
+  worktreePath: string | null;
+  /** The agent's provider, model and Claude account when the task started. */
+  provider: string | null;
+  model: string | null;
+  accountId: string | null;
+  /** Who handed it over: typed in its window ('terminal'), another agent, Tars, a chat, or a run over ACP. */
+  source: 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
+  requesterAgentId: string | null;
+  /** The task of the requester it was handed for; null when it was handed for none. */
+  parentTaskId: string | null;
+  /** What it was handed, or the prompt typed: one line, at most 200 characters. */
+  text: string;
+  /** Epoch ms. */
+  startedAt: number;
+  /** Null while it runs. */
+  endedAt: number | null;
+  lastAt: number;
+  /** 'stopped' also covers a task cut short by a quit of Tars. */
+  outcome: 'running' | 'completed' | 'error' | 'stopped';
+  turns: number;
+  sessionIds: string[];
+  acp?: { inputTokens: number; outputTokens: number; cachedReadTokens: number; cachedWriteTokens: number; costUSD: number | null };
+  /** Null: not counted (no transcript: a CLI that writes none). Never shown as 0. */
+  costUSD: number | null;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null;
+  /** Cost per model the replies came from. */
+  byModel: Record<string, number>;
+  /** Its own cost and that of every task handed on from it, down the line. */
+  totalCostUSD: number;
+  /** The total leaves out a task not counted. */
+  totalPartial: boolean;
+  /** Null while it runs. */
+  durationMs: number | null;
+}
+
+export interface TaskAverage {
+  tasks: number;
+  /** Of those, the ones whose cost is known. */
+  counted: number;
+  /** Mean over the counted ones; null when none is. */
+  costUSD: number | null;
+  /** Mean over the ended ones; null when none has. */
+  durationMs: number | null;
+}
+
+export interface TaskReport {
+  /** Newest first. */
+  tasks: TaskEntry[];
+  /** byModel: the model that did most of a task's work, or the one it was launched on when nothing was counted. */
+  averages: { byAgent: Record<string, TaskAverage>; byModel: Record<string, TaskAverage> };
+  /** Tasks in the report whose cost is not known. */
+  notCounted: number;
+  /** The agents' names as they are now; a deleted agent has none. */
+  agentNames: Record<string, string>;
+}
+
 export interface FleetEntry {
   agentId: string;
   agentName: string;
@@ -84,14 +145,18 @@ export interface CatalogModel {
   alias?: boolean;
 }
 
-export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
+export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error' | 'asleep' | 'waking';
 
 export interface AgentTickItem {
   id: string;
   name: string;
   character: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
   displayStatus: DisplayStatus;
+  /** Since when it is asleep (ISO). See AgentStatus.asleepSince. */
+  asleepSince?: string;
+  /** Who woke it and how, while its CLI comes back. See AgentStatus.waking. */
+  waking?: AgentWaking;
   statusLine: string;
   currentTask: string;
   projectName: string;
@@ -294,6 +359,18 @@ export type AgentProvider =
  *  the command, file or tool asked about; `question` is an AskUserQuestion's
  *  first question. One line, controls and direction overrides removed, at most
  *  200 characters. */
+/** How an asleep agent was woken. Mirror of `AgentWakeVia` in electron/types/index.ts. */
+export type AgentWakeVia = 'message' | 'chat' | 'wake' | 'key' | 'start';
+
+/** An asleep agent whose CLI is on its way back. Mirror of `AgentWaking`. */
+export interface AgentWaking {
+  /** "you", "Tars", an agent's name, or a chat ("Telegram"). */
+  by: string;
+  via: AgentWakeVia;
+  /** ISO. */
+  since: string;
+}
+
 export interface AgentWaitingOn {
   kind: 'permission' | 'question';
   text: string;
@@ -301,8 +378,19 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again. */
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again.
+   *  'asleep': its CLI was ended after 30 minutes without a turn (never an orchestrator), its
+   *  conversation kept, from asleepSince; a message, a dispatch, a chat, `wake` or a key typed into
+   *  its pane wakes it on that conversation. agent:get gives the pane the last screen of the CLI it
+   *  slept in, in `output`. */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
+  /** ISO: since when it is asleep. */
+  asleepSince?: string;
+  /** Set by agent:list, agent:get and agents:tick from the moment a wake starts its CLI until
+   *  that CLI's session is up or its launch is given up: who woke it, how, and when. The status
+   *  beside it is `idle` (a key, `wake`, a room message, a start with no task) or `running` (a
+   *  message or a dispatch, a chat's cold start, a kanban task, a start with one): show waking whatever it says. */
+  waking?: AgentWaking;
   /** "you", "Tars", or the name of the agent that stopped it. */
   stoppedBy?: string;
   /** ISO. */
@@ -954,7 +1042,10 @@ export interface ElectronAPI {
     /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
     stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
     remove: (id: string) => Promise<{ success: boolean }>;
-    sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
+    /** Into the agent's terminal. Asleep, a key wakes it (`woke: true`); a lone Esc or Ctrl+C, a mouse or focus report does nothing. */
+    sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean; woke?: boolean; error?: string }>;
+    /** An asleep agent's CLI started on its own conversation, nothing typed; refused for one that is not asleep. */
+    wake: (id: string) => Promise<{ success: boolean; error?: string }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;
     onOutput: (callback: (event: AgentEvent) => void) => () => void;
@@ -1187,6 +1278,22 @@ export interface ElectronAPI {
         turns: number;
       }>;
     }>;
+    /**
+     * What each task cost (PLAN-1.9.3.md, item 2). A task runs from the turn that starts it to the rest that ends
+     * it, in one agent; work handed on from it to other agents is a task of their own, under it. Priced from the
+     * transcripts when asked, the way the rest of the page prices them; an ACP run at what it reported.
+     */
+    tasks: (query?: {
+      /**
+       * An exact start, ms since the epoch: the tasks started from it, the averages over those alone. What a page whose
+       * window starts at a local midnight or at an hour asks for; before `sinceDays` when both are given.
+       */
+      since?: number;
+      /** The last `sinceDays` 24-hour periods back from now; all of the file without it. */
+      sinceDays?: number;
+      projectPath?: string;
+      agentId?: string;
+    }) => Promise<TaskReport>;
   };
 
   /** Search across every agent's output at once. */
@@ -1262,6 +1369,9 @@ export interface ElectronAPI {
       discordRequireMention: boolean;
       /** Error reports to Sentry, off by default (services/error-reports in main). */
       errorReportsEnabled: boolean;
+      /** The error triage (services/error-triage in main): a Sentry token with the event:read scope, and the project whose board gets the tasks. Empty, nothing polls. */
+      sentryAuthToken: string;
+      sentryTriageProject: string;
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1366,6 +1476,8 @@ export interface ElectronAPI {
       discordAllowedUserIds?: string[];
       discordRequireMention?: boolean;
       errorReportsEnabled?: boolean;
+      sentryAuthToken?: string;
+      sentryTriageProject?: string;
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;

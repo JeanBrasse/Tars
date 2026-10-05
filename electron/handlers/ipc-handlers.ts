@@ -2,6 +2,7 @@ import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { stopAgent } from '../core/agent-stop';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
+import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -45,6 +46,7 @@ import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
+import { tasksReport } from '../services/task-watch';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
@@ -910,15 +912,27 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     id: string;
     prompt: string;
     options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string }
-  }) =>
+  }) => {
+    // Started from a window while asleep: woken by you (core/agent-asleep.ts).
+    if (agents.get(id)?.status === 'asleep') noteWaker(id, 'you', 'start');
     // What a window may choose, and nothing else: the session a restart
     // resumes lands on a command line, and the permission the Kanban
     // automation imposes is its own. Neither is taken from an IPC message.
-    startAgentCli(id, prompt, {
+    return startAgentCli(id, prompt, {
       model: options?.model,
       provider: options?.provider,
       localModel: options?.localModel,
-    }));
+    });
+  });
+
+  // Wake an asleep agent: its CLI started on its own conversation, nothing
+  // typed (core/agent-asleep.ts). The window's `wake`.
+  ipcMain.handle('agent:wake', async (_event, id: string) => {
+    const agent = agents.get(id);
+    if (!agent) return { success: false, error: 'Agent not found' };
+    const answer = await wakeAgent(agent, 'you', 'wake');
+    return answer.success ? { success: true } : answer;
+  });
 
   // Get agent status
   ipcMain.handle('agent:get', async (_event, id: string) => {
@@ -932,7 +946,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the Chat's fleet list; agent:start opens the terminal a launch needs.
     const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
     if (!ptyProcess) {
-      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false, launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent) };
+      // Asleep, its pane shows the last screen of the CLI it slept in: the
+      // terminal and its mirror are gone, the screen is kept (core/agent-asleep.ts).
+      const kept = screenWhileAsleep(agent);
+      const launching = sessionStarting(agent);
+      return { ...agent, ptyId: undefined, output: kept ? [kept] : [], cliRunning: false, leftFullscreen: false, launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent) };
     }
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
@@ -940,12 +958,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // nothing awaited after it, so no chunk can reach a panel between the
     // snapshot and this reply.
     const screen = terminalSnapshot(ptyProcess);
+    const launching = sessionStarting(agent);
     return {
       ...agent,
       output: screen === undefined ? agent.output : [screen],
       cliRunning: cliRunningIn(ptyProcess),
       leftFullscreen: leftFullscreenIn(ptyProcess),
-      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
+      launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent),
     };
   });
 
@@ -963,7 +982,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: [],
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
-      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
+      launching: sessionStarting(agent), waking: publishedWaking(agent, sessionStarting(agent)), waitingOn: publishedWaitingOn(agent),
     }));
   });
 
@@ -1275,6 +1294,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           return { success: false, error: 'Failed to write to PTY' };
         }
       }
+    }
+    // A key typed into the pane of an asleep agent wakes it on its own
+    // conversation; the key itself is not kept. A lone Esc or Ctrl+C, a mouse
+    // or focus report, or a terminal's reply wakes nothing (wakesOnKey).
+    if (agent?.status === 'asleep' && wakesOnKey(input)) {
+      const answer = await wakeAgent(agent, 'you', 'key');
+      return answer.success ? { success: true, woke: true } : answer;
     }
     return { success: false, error: 'PTY not found' };
   });
@@ -1943,6 +1969,16 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   // page can cut the same window from them as from the transcripts' days.
   ipcMain.handle('usage:by-provider', async (_event, { sinceDays }: { sinceDays?: number } = {}) =>
     ledgerUsageByProvider(sinceDays));
+
+  // What each task cost, with who handed it over and the tasks handed on from
+  // it, priced from the transcripts when asked (services/task-watch.ts).
+  ipcMain.handle('usage:tasks', async (_event, query: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string } = {}) =>
+    tasksReport({
+      since: typeof query?.since === 'number' && Number.isFinite(query.since) ? query.since : undefined,
+      sinceDays: typeof query?.sinceDays === 'number' ? query.sinceDays : undefined,
+      projectPath: typeof query?.projectPath === 'string' ? query.projectPath : undefined,
+      agentId: typeof query?.agentId === 'string' ? query.agentId : undefined,
+    }));
 
   ipcMain.handle('review:repo', async (_event, { repoPath }: { repoPath: string }) => {
     try {
