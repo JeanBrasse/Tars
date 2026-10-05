@@ -702,7 +702,7 @@ work.
 | `~/.dorothy/rate-limits.d/<account>.json` | the `statusline.sh` it installs | each Claude account's last 5 h and weekly counters, `default` for account 1; what Tars chooses an agent's account from when several are on, and what the Usage page shows per account (`accountRateLimits` of `claude:getData`). With several accounts on, Tars also asks Claude Code itself every 10 minutes (`get_usage`, `usage-probe.ts`), so an account no agent ran on, or one used on claude.ai, is still read; a failed probe is a `[claude-accounts] the usage of <id> was not read` line in the main process's log, and the account keeps its status line's figures. An account whose own `projects/` is a real folder holding something gets no agent (they start on account 1, and Settings says why): move its contents into `~/.claude/projects` and delete it; an empty one is made the link at the next launch |
 | `~/.dorothy/token-stats.json` | the `statusline.sh` it installs | one entry per Claude session (tokens, cost, model, provider, account), rewritten at every render; anything that is not one JSON object starts again from `{}` |
 
-Four files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
+Six files live outside that directory, on purpose, in `~/.tars-private`. `~/.dorothy` is handed to
 every agent through `--add-dir`; this directory is handed to nothing, no path under it is ever passed
 to a CLI, and Tars makes it `0700` whichever write creates it:
 
@@ -712,6 +712,8 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/hermes-webhook-secret` | `electron/services/hermes-webhook-secret.ts` (`provisionWebhookSecret`) | the bearer for `POST /api/webhooks/hermes` and the only credential that opens it: 32 random bytes hex, mode `0600`, minted the first time Settings > Hermes asks for it. Moved out of `~/.dorothy/hermes-webhook-secret` at the first startup that finds it there, value unchanged, so Hermes keeps working; read back before the old file is deleted, and while it cannot be moved the webhook opens to nobody. An old file found beside the private one opens nothing and is deleted |
 | `~/.tars-private/overseer-hermes-sessions.json` | `electron/services/overseer-store.ts` (`rememberHermesSessions`) | the ids of the Hermes sessions the super chat's turns ran in, the last 5000, mode `0600`: `memory_search` leaves them out, so no agent is handed the super chat through Hermes |
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
+| `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
+| `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
 *Hooks*. Memory files it reads live in `~/.claude/projects/<encoded-path>/memory/`, where the
@@ -1746,6 +1748,23 @@ These buffers are **memory only**. Only the last 100 chunks per agent survive to
 `GET /api/agents/:id/output?lines=N` while the app is up.
 
 ---
+
+## After an abrupt stop
+
+When Tars did not quit (a crash, a kill, a power cut, a reboot without quitting it), the next launch resumes the agents that were working, three at a time, on their own conversation, with a note from Tars as their first prompt; their last request is not sent again. Agents that were at rest stay asleep. SPECS.md, "After an abrupt stop", has the rules.
+
+```bash
+jq '{cleanExit, resumed, working: [.working[] | {agentId, status, waitingReason}]}' ~/.tars-private/run-state.json
+jq '{notes: (.notes | length), kanban: (.kanban | length)}' ~/.tars-private/carry-over.json
+```
+
+Each decision is a `[resume] <agent id>: ...` line in the main process log (resumed with the note, already running and typed into, left alone and why), which goes to the terminal Tars was started from, or the Console app.
+
+| Symptom | Cause |
+|---|---|
+| agents resumed after a quit | the quit did not reach its last step (`cleanExit` stayed false): Tars was killed while quitting |
+| nobody resumed after a crash | the run before also resumed agents and stopped within two minutes (the log says so), or those agents were deleted, stopped, or their folder is gone |
+| To resume nobody at the next launch | quit Tars, or, with Tars closed, set `cleanExit` to `true` in `~/.tars-private/run-state.json` |
 
 ## Usage and cost accounting
 
