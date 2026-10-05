@@ -364,7 +364,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   usage: {
     byProvider: (sinceDays?: number) =>
       ipcRenderer.invoke('usage:by-provider', { sinceDays }),
-    tasks: (query?: { sinceDays?: number; projectPath?: string; agentId?: string }) =>
+    tasks: (query?: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string }) =>
       ipcRenderer.invoke('usage:tasks', query ?? {}),
   },
 

@@ -1291,6 +1291,11 @@ export interface ElectronAPI {
      * transcripts when asked, the way the rest of the page prices them; an ACP run at what it reported.
      */
     tasks: (query?: {
+      /**
+       * An exact start, ms since the epoch: the tasks started from it, the averages over those alone. What a page whose
+       * window starts at a local midnight or at an hour asks for; before `sinceDays` when both are given.
+       */
+      since?: number;
       /** The last `sinceDays` 24-hour periods back from now; all of the file without it. */
       sinceDays?: number;
       projectPath?: string;

@@ -1941,8 +1941,9 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   // What each task cost, with who handed it over and the tasks handed on from
   // it, priced from the transcripts when asked (services/task-watch.ts).
-  ipcMain.handle('usage:tasks', async (_event, query: { sinceDays?: number; projectPath?: string; agentId?: string } = {}) =>
+  ipcMain.handle('usage:tasks', async (_event, query: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string } = {}) =>
     tasksReport({
+      since: typeof query?.since === 'number' && Number.isFinite(query.since) ? query.since : undefined,
       sinceDays: typeof query?.sinceDays === 'number' ? query.sinceDays : undefined,
       projectPath: typeof query?.projectPath === 'string' ? query.projectPath : undefined,
       agentId: typeof query?.agentId === 'string' ? query.agentId : undefined,
