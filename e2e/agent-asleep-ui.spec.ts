@@ -220,7 +220,7 @@ test('an asleep agent reads asleep since when on its card, its panel, its window
     seen.window = (await dialog.innerText()).replace(/\s+/g, ' ').slice(0, 400);
     await stepShot(page, '06-window-asleep');
     // Escape closes the window, and wakes nothing: the window does not hand
-    // an asleep agent's terminal the focus, where a key wakes it.
+    // an asleep agent's terminal the focus, which would keep Escape.
     const before = lines(launchesFile).filter((l) => l.id === 'worker').length;
     await page.waitForTimeout(600);
     await page.keyboard.press('Escape');

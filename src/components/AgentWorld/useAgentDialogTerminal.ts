@@ -123,10 +123,11 @@ export function useAgentDialogTerminal({
         fitAndResize();
         setTimeout(fitAndResize, 50);
         setTimeout(fitAndResize, 200);
-        // Not an asleep agent's: a key typed into it wakes the agent, Escape
-        // included, and the Escape that closes this window would have woken it.
-        // A click in the terminal is how to type there. Frame: `Agent asleep ·
-        // and how it wakes`.
+        // Not an asleep agent's: a key typed into it wakes the agent, and a
+        // terminal with the focus keeps Escape, so the Escape that closes this
+        // window would not have closed it (a lone Escape no longer wakes it,
+        // #322). A click in the terminal is how to type there. Frame: `Agent
+        // asleep · and how it wakes`.
         setTimeout(() => { fitAndResize(); if (agent.status !== 'asleep') term.focus(); }, 350);
 
         // Keys that reach no terminal (an idle agent has none since #164) are

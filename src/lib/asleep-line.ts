@@ -29,10 +29,11 @@ const VIA: Record<string, (by: string) => string> = {
 
 /**
  * "Waking: a message from Orchestrator", or null when no wake is on its way.
- * Only while it is coming up: main sets `waking` with the status `idle`, or
- * `running` for a message or a dispatch, whose task is the message, and clears
- * it once the session is up; a copy that kept it on an agent waiting, done,
- * failed, stopped or asleep again is no wake.
+ * Only while it is coming up: main sets `waking` beside the status `idle` (a
+ * key, wake, a room message, a start with no task) or `running` (a message, a
+ * dispatch, a chat's cold start, a kanban task), and clears it once the
+ * session is up (the DB's answer on #322); a copy that kept it on an agent
+ * waiting, done, failed, stopped or asleep again is no wake.
  */
 export function wakingLine(agent: Pick<AgentStatus, 'status' | 'waking'>): string | null {
   if (!agent.waking || (agent.status !== 'idle' && agent.status !== 'running')) return null;
