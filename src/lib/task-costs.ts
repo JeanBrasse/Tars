@@ -1,6 +1,7 @@
 import type { TaskEntry } from '@/types/electron';
 import { getProviderDef } from '@/lib/providers';
 import { fmtUsd } from '@/lib/usage-format';
+import { flat } from '@/lib/stop-line';
 
 /**
  * What the Usage page says of each task (#305's usage.tasks), and the averages
@@ -67,8 +68,18 @@ export function agentOptions(tasks: TaskEntry[], names: Record<string, string>):
   return optionsBy(tasks, t => t.agentId, value => agentName(value, names));
 }
 
+/**
+ * An agent's name on one line: names are typed by a person or chosen by an
+ * agent, and a U+202E or a line break in one turned its row around (the
+ * Audit's Low at #311's gate). Flattened as stop-line flattens a name.
+ */
 export function agentName(agentId: string, names: Record<string, string>): string {
-  return names[agentId] ?? 'deleted agent';
+  return agentId in names ? flat(names[agentId]) : 'deleted agent';
+}
+
+/** A task's text on one line, the prompt as it was handed over, flattened as a name is. */
+export function taskText(task: TaskEntry): string {
+  return flat(task.text);
 }
 
 /** The model that did most of a task's work, as its replies name it; the one it was launched on when none was counted. */
@@ -119,7 +130,7 @@ const FROM: Record<string, string> = { tars: 'Tars', telegram: 'Telegram', slack
 
 /** Who handed the task over: typed in its window, an agent, Tars, a chat, or a run over ACP. */
 export function sourceText(task: TaskEntry, names: Record<string, string>): string {
-  const requester = task.requesterAgentId ? names[task.requesterAgentId] : undefined;
+  const requester = task.requesterAgentId && task.requesterAgentId in names ? agentName(task.requesterAgentId, names) : undefined;
   switch (task.source) {
     case 'terminal': return 'typed';
     case 'agent': return `from ${requester ?? 'an agent'}`;

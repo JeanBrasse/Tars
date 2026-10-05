@@ -24,6 +24,7 @@ import {
   sinceDaysFor,
   sourceText,
   startLabel,
+  taskText,
   tokensTotal,
   totalText,
 } from '@/lib/task-costs';
@@ -155,7 +156,7 @@ export function TaskCosts({ start, length, control }: {
               return (
                 <tr key={t.id} data-task-row className="align-top border-b border-border hover:bg-secondary">
                   <td className="py-[7px]">
-                    <p data-cell="text" className="text-xs text-foreground truncate" title={t.text}>{t.text}</p>
+                    <p data-cell="text" className="text-xs text-foreground truncate" title={taskText(t)}>{taskText(t)}</p>
                     <p data-cell="source" className="mt-0.5 font-mono text-[10.5px] text-muted-foreground truncate">
                       {sourceText(t, names)}
                       {ended && (
