@@ -39,6 +39,7 @@ export const CHANGELOG: Release[] = [
       'Tars starts no agent while the disk has less than 2 GB free, and says so, with the space left, where the agent was started and a full disk could stop the Mac.',
       'An orchestrator that starts again an agent you stopped is told who stopped it and why, and the restart is kept on the agent: who started it again and when, beside your stop.',
       'An agent stopped while it had no terminal says at once who stopped it, when and why, on its card, its pane and its window, where it read Stopped alone until the page was reloaded.',
+      'That question shows where you look: a line under the agent\'s Dashboard panel header, the top of its window and its card on the Agents page say what it would run, read or open, never what a file holds. Allow it, deny it with a reason the agent reads, or ask in terminal to answer it in the terminal\'s dialog, as before. A command too long for a panel\'s line is opened whole there before it can be allowed. Under the command, the window says why Claude Code asks and which of your rules asked, when it says, and an answer that comes after the question went back says so',
     ],
   },
   {
