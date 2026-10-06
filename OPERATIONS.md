@@ -1908,8 +1908,10 @@ network failure must never zero out cost accounting.
 
 What each task cost (`usage:tasks`) is read from the same transcripts, per session, over the
 tasks `~/.dorothy/task-ledger.jsonl` records: who handed each one over, its parent, its sessions,
-when it started and ended. A task whose sessions left no transcript reads `costUSD: null`, not
-counted. SPECS.md, "Tasks and what each cost", has the rules.
+when it started and ended. A task whose sessions left no transcript is priced from what each of
+its turns used, as the state mod reported it (`from: 'turns'` in the report; cache writes at the
+5-minute rate, no web searches); with neither it reads `costUSD: null`, not counted. SPECS.md,
+"Tasks and what each cost", has the rules.
 
 ```bash
 jq -s 'length' ~/.dorothy/usage-ledger.jsonl                 # turns recorded

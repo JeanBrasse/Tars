@@ -21,6 +21,10 @@
  * 4. The terminal a stop ended, the agent having no other, no longer sends
  *    agent:complete, and the window shows a stop without who or why. Pinned
  *    until the window fetches on the stop's own status event.
+ * Which it does since #329 (the follow-ups of 06/10): the window fetches the
+ * fleet on a `stopped` status event, and 4 turns round.
+ * 4. The terminal a stop ended sends agent:complete: it is no longer the
+ *    agent's, and the window takes it for the agent's task done.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -98,16 +102,15 @@ describe("a terminal's exit", () => {
     expect(status).not.toHaveBeenCalled();
   });
 
-  it('4. of the terminal a stop ended, with no other one, still sends agent:complete', async () => {
+  it('4. of the terminal a stop ended, with no other one, sends no agent:complete', async () => {
     const a = agent();
-    const ptyId = await initAgentPty(a, null, vi.fn(), vi.fn());
+    await initAgentPty(a, null, vi.fn(), vi.fn());
     a.ptyId = undefined;
     a.status = 'stopped';
 
     exit(0, 0);
 
-    expect(completes()).toHaveLength(1);
-    expect(completes()[0].payload).toMatchObject({ agentId: 'a1', ptyId });
+    expect(completes()).toEqual([]);
     expect(a.status).toBe('stopped');
   });
 

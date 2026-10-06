@@ -95,3 +95,41 @@ export async function ignoredNotCaches(worktreePath: string): Promise<string[]> 
     .map(line => line.slice(3))
     .filter(file => !CACHES.some(cache => cache.test(file)));
 }
+
+/**
+ * The submodules checked out in the worktree that hold work no remote has:
+ * commits on no remote-tracking branch (from any ref: a branch, a tag, a
+ * stash, the Audit's gate of #335), changes not committed, or files git
+ * ignores that are not caches (a .env), which the worktree's own ignored-files
+ * check does not see, its git status not going into a submodule. A worktree's
+ * submodule keeps its git store in the worktree's own
+ * (.git/worktrees/<name>/modules/), which a forced removal deletes; measured
+ * on 06/10, a commit made in one is gone after it (the Info of #312's gate).
+ * The wip save cannot keep them either: it commits a submodule as a pointer.
+ * Nested submodules are looked into the same way; one that cannot be read is
+ * named, never taken for empty. One never checked out holds nothing.
+ */
+export async function submodulesWithWork(worktreePath: string, prefix = ''): Promise<string[]> {
+  let staged: string;
+  try {
+    staged = await git(worktreePath, ['ls-files', '--stage']);
+  } catch {
+    return [];
+  }
+  const found: string[] = [];
+  const paths = staged.split('\n').filter(line => line.startsWith('160000 ')).map(line => line.slice(line.indexOf('\t') + 1));
+  for (const sub of paths) {
+    const dir = path.join(worktreePath, sub);
+    if (!fs.existsSync(path.join(dir, '.git'))) continue;
+    const named = prefix + sub;
+    try {
+      const dirty = await git(dir, ['status', '--porcelain', '--untracked-files=all']);
+      const unpushed = await git(dir, ['rev-list', '-n', '1', 'HEAD', '--all', '--not', '--remotes']);
+      if (dirty || unpushed || (await ignoredNotCaches(dir)).length) found.push(named);
+      else found.push(...await submodulesWithWork(dir, `${named}/`));
+    } catch {
+      found.push(named);
+    }
+  }
+  return found;
+}

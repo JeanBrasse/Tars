@@ -43,11 +43,15 @@ export interface TaskEntry {
   turns: number;
   sessionIds: string[];
   acp?: { inputTokens: number; outputTokens: number; cachedReadTokens: number; cachedWriteTokens: number; costUSD: number | null };
-  /** Null: not counted (no transcript: a CLI that writes none). Never shown as 0. */
+  /** Null: not counted (no transcript and no turn's usage: a CLI that writes none). Never shown as 0. */
   costUSD: number | null;
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null;
   /** Cost per model the replies came from. */
   byModel: Record<string, number>;
+  /** What priced it: its transcripts; its turns' usage, as the state mod reported each, when its transcript is
+   *  gone (cache writes at the 5-minute rate, no web searches: Claude Code does not report them per turn); the ACP
+   *  run's report; null when nothing did (costUSD null). */
+  from?: 'transcript' | 'turns' | 'acp' | null;
   /** Its own cost and that of every task handed on from it, down the line. */
   totalCostUSD: number;
   /** The total leaves out a task not counted. */
