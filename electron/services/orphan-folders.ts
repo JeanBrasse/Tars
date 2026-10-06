@@ -120,6 +120,22 @@ function gitMark(dir: string): GitMark {
 const NOT_SEARCHED = new Set(['node_modules', '.next', '.git']);
 const SEARCH_LIMIT = 50_000;
 
+/** Whether a package in `nodeModules`, scoped or not, is a repository: 'unknown' when it cannot be read. */
+function packageRepository(nodeModules: string): 'none' | 'some' | 'unknown' {
+  const has = (p: string) => fs.existsSync(path.join(p, '.git'));
+  let packages: fs.Dirent[];
+  try { packages = fs.readdirSync(nodeModules, { withFileTypes: true }); } catch { return 'unknown'; }
+  for (const pkg of packages) {
+    if (!pkg.isDirectory()) continue;
+    const p = path.join(nodeModules, pkg.name);
+    if (!pkg.name.startsWith('@')) { if (has(p)) return 'some'; continue; }
+    let scoped: fs.Dirent[];
+    try { scoped = fs.readdirSync(p, { withFileTypes: true }); } catch { return 'unknown'; }
+    if (scoped.some(s => s.isDirectory() && has(path.join(p, s.name)))) return 'some';
+  }
+  return 'none';
+}
+
 /**
  * Whether any folder below `dir` (not `dir` itself) has a `.git`, at any
  * depth, links not followed: 'unknown' when a folder cannot be read or there
@@ -135,6 +151,14 @@ function gitBelow(dir: string): 'none' | 'some' | 'unknown' {
     for (const entry of entries) {
       if (++seen > SEARCH_LIMIT) return 'unknown';
       if (current !== dir && entry.name === '.git') return 'some';
+      if (entry.isDirectory() && entry.name === 'node_modules') {
+        // Not searched through, but a package checked out as a repository
+        // (node_modules/<name>/.git, node_modules/@<scope>/<name>/.git) is
+        // looked for (the Audit's recheck of #334).
+        const found = packageRepository(path.join(current, entry.name));
+        if (found !== 'none') return found;
+        continue;
+      }
       if (entry.isDirectory() && !NOT_SEARCHED.has(entry.name)) stack.push(path.join(current, entry.name));
     }
   }
