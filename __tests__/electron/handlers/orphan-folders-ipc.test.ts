@@ -15,6 +15,10 @@
  *    worktreePath, has its folder offered and removed while no process sits
  *    in it (idle with no terminal, stopped, asleep, Tars just started).
  * 6. (the Audit's recheck) The same for an agent's secondaryProjectPath.
+ * And from the Audit's gate of #336 (M1):
+ * 7. The removal is not tied to the rows the window showed and the person
+ *    confirmed: called with no list, or with something that is not one, it
+ *    removes what main finds.
  */
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -93,7 +97,7 @@ describe("the window's calls", () => {
       path.join(added, '.worktrees', 'old-one'), path.join(agentsOnly, '.worktrees', 'stale'),
     ].sort());
 
-    const report = await handlers.get('system:removeOrphanFolders')!({}) as { removed: number; kept: unknown[] };
+    const report = await handlers.get('system:removeOrphanFolders')!({}, listing.folders.map(f => f.path)) as { removed: number; kept: unknown[] };
     expect(report.removed).toBe(2);
     expect(report.kept).toEqual([]);
     expect(fs.existsSync(owned)).toBe(true);
@@ -112,7 +116,7 @@ describe("the window's calls", () => {
 
     const listing = await handlers.get('system:orphanFolders')!({}) as { folders: Array<{ path: string }> };
     expect(listing.folders.map(f => f.path)).not.toContain(folder);
-    await handlers.get('system:removeOrphanFolders')!({});
+    await handlers.get('system:removeOrphanFolders')!({}, [folder]);
     expect(fs.readFileSync(path.join(folder, 'work'), 'utf8')).toBe('mine\n');
   });
 
@@ -127,8 +131,23 @@ describe("the window's calls", () => {
 
     const listing = await handlers.get('system:orphanFolders')!({}) as { folders: Array<{ path: string }> };
     expect(listing.folders.map(f => f.path)).not.toContain(folder);
-    await handlers.get('system:removeOrphanFolders')!({});
+    await handlers.get('system:removeOrphanFolders')!({}, [folder]);
     expect(fs.readFileSync(path.join(folder, 'work'), 'utf8')).toBe('mine\n');
+  });
+
+  it('7. removes nothing when the window names no folder, or sends something that is not a list of paths', async () => {
+    const host = project('host3');
+    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([host]));
+    const stray = path.join(host, '.worktrees', 'stray');
+    fs.mkdirSync(stray, { recursive: true });
+    fs.writeFileSync(path.join(stray, 'x.txt'), 'x');
+    agents.clear();
+
+    for (const sent of [undefined, [], 'all', [42], { paths: [stray] }]) {
+      const report = await handlers.get('system:removeOrphanFolders')!({}, sent) as { removed?: number; error?: string };
+      expect(report.removed ?? 0).toBe(0);
+    }
+    expect(fs.existsSync(path.join(stray, 'x.txt'))).toBe(true);
   });
 
   it("4. the disk is the home's, with the 30 GB floor", async () => {
@@ -141,12 +160,13 @@ describe("the window's calls", () => {
   it('3. the calls are in the preload, and typed for the renderer, together', () => {
     const preload = fs.readFileSync(path.join(ROOT, 'electron/preload.ts'), 'utf8');
     const types = fs.readFileSync(path.join(ROOT, 'src/types/electron.d.ts'), 'utf8');
-    for (const channel of ['system:disk', 'system:orphanFolders', 'system:removeOrphanFolders']) {
+    for (const channel of ['system:disk', 'system:orphanFolders']) {
       expect(preload).toContain(`ipcRenderer.invoke('${channel}')`);
     }
+    expect(preload).toContain("ipcRenderer.invoke('system:removeOrphanFolders', paths)");
     expect(preload).toContain("'system:orphanFolders:progress'");
     for (const name of ['disk: () => Promise<DiskSpace | null>', 'orphanFolders: () => Promise<OrphanListing>',
-      'removeOrphanFolders: () => Promise<OrphanRemovalReport | { error: string }>',
+      'removeOrphanFolders: (paths: string[]) => Promise<OrphanRemovalReport | { error: string }>',
       'onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void']) {
       expect(types).toContain(name);
     }
