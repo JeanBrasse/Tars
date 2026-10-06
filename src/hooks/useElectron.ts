@@ -204,11 +204,14 @@ export function useElectronAgents() {
     });
 
     const unsubStatus = window.electronAPI!.agent.onStatus?.((event: { agentId: string; status: string; timestamp: string }) => {
-      // Neither this event nor the tick says why an agent is in error: the
-      // reason is only on the full record. Patching the status alone put
-      // `error` beside whatever reason this copy last read, which is nothing
-      // for a first failure and the previous failure's sentence for a second.
-      if (event.status === 'error') {
+      // Neither this event nor the tick says why an agent is in error, nor
+      // who stopped it, when and why: those are only on the full record.
+      // Patching the status alone put `error` beside whatever reason this copy
+      // last read, which is nothing for a first failure and the previous
+      // failure's sentence for a second, and `stopped` beside nobody: the
+      // agent:complete a stopped terminal sends made the read, and an agent
+      // stopped with no terminal sends none.
+      if (event.status === 'error' || event.status === 'stopped') {
         fetchAgents();
         return;
       }
@@ -249,14 +252,14 @@ export function useElectronAgents() {
         fetchAgents();
         return;
       }
-      // An agent that has just entered error is read again rather than
-      // patched, for the reason given on onStatus above. The watches that
+      // An agent that has just entered error or stopped is read again rather
+      // than patched, for the reason given on onStatus above. The watches that
       // mark a task that never started only send this tick, not a status
-      // event, so the check has to be here as well.
-      const enteredError = tickAgents.some(t =>
-        t.status === 'error' && known.find(a => a.id === t.id)?.status !== 'error',
+      // event, and a window can miss an event, so the check is here as well.
+      const enteredUnexplained = tickAgents.some(t =>
+        (t.status === 'error' || t.status === 'stopped') && known.find(a => a.id === t.id)?.status !== t.status,
       );
-      if (enteredError) {
+      if (enteredUnexplained) {
         fetchAgents();
         return;
       }
