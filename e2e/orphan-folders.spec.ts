@@ -22,7 +22,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
 type Api = { electronAPI: { system: {
   disk(): Promise<{ freeBytes: number; totalBytes: number; floorBytes: number } | null>;
   orphanFolders(): Promise<{ folders: Array<Record<string, unknown>>; count: number; totalBytes: number }>;
-  removeOrphanFolders(): Promise<{ removed: number; freedBytes: number; kept: Array<Record<string, unknown>> }>;
+  removeOrphanFolders(paths: string[]): Promise<{ removed: number; freedBytes: number; kept: Array<Record<string, unknown>> }>;
   onOrphanRemovalProgress(cb: (p: Record<string, unknown>) => void): () => void;
 } } };
 
@@ -74,15 +74,17 @@ test('the folders no agent owns are listed, and removed when asked, but the one 
 
     const disk = await page.evaluate(() => (window as unknown as Api).electronAPI.system.disk());
     const listing = await page.evaluate(() => (window as unknown as Api).electronAPI.system.orphanFolders());
-    const { report, steps } = await page.evaluate(async () => {
+    // The rows shown, as the window passes them once the person confirms.
+    const shown = listing.folders.map(f => f.path as string);
+    const { report, steps } = await page.evaluate(async (paths) => {
       const api = (window as unknown as Api).electronAPI.system;
       const seen: Array<Record<string, unknown>> = [];
       const off = api.onOrphanRemovalProgress(p => seen.push(p));
-      const answer = await api.removeOrphanFolders();
+      const answer = await api.removeOrphanFolders(paths);
       await new Promise(r => setTimeout(r, 200));
       off();
       return { report: answer, steps: seen };
-    });
+    }, shown);
     const after = {
       relay: fs.existsSync(wt('feat-relay-retry')), noGit: fs.existsSync(wt('agent-7f3c1a')), busy: fs.existsSync(wt('busy')),
       live: git(wt('feat', 'live'), 'rev-parse', '--abbrev-ref', 'HEAD'), agent: fs.existsSync(wt('agent-wt', 'a.txt')),

@@ -871,7 +871,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   system: {
     disk: () => ipcRenderer.invoke('system:disk'),
     orphanFolders: () => ipcRenderer.invoke('system:orphanFolders'),
-    removeOrphanFolders: () => ipcRenderer.invoke('system:removeOrphanFolders'),
+    removeOrphanFolders: (paths: string[]) => ipcRenderer.invoke('system:removeOrphanFolders', paths),
     onOrphanRemovalProgress: (callback: (progress: { done: number; total: number; freedBytes: number; current: string }) => void) => {
       const listener = (_: unknown, progress: { done: number; total: number; freedBytes: number; current: string }) => callback(progress);
       ipcRenderer.on('system:orphanFolders:progress', listener);

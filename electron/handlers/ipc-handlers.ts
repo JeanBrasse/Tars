@@ -1237,10 +1237,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   });
   ipcMain.handle('system:disk', async () => diskSpace());
   ipcMain.handle('system:orphanFolders', async () => listOrphanFolders(orphanScope()));
-  ipcMain.handle('system:removeOrphanFolders', async () => {
+  // The rows the window showed and the person confirmed: nothing else goes.
+  ipcMain.handle('system:removeOrphanFolders', async (_event, paths: unknown) => {
+    if (!Array.isArray(paths) || !paths.every(p => typeof p === 'string')) {
+      return { error: 'the folders to remove must be the list of paths the window showed' };
+    }
     try {
       return await removeOrphanFolders({
         ...orphanScope(),
+        paths,
         onProgress: progress => broadcastToAllWindows('system:orphanFolders:progress', progress),
       });
     } catch (err) {

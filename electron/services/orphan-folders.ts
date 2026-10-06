@@ -295,6 +295,18 @@ export async function processCwds(): Promise<ProcessCwd[] | null> {
 let removing = false;
 
 /**
+ * Why a removal failed, for the window: the error's code and the path within
+ * the folder, never Node's message, which carries the absolute path and so
+ * the home folder (the Audit's gate of #336).
+ */
+function failureOf(err: unknown, folder: string): string {
+  const { code, path: where } = (err ?? {}) as NodeJS.ErrnoException;
+  if (!code) return 'it could not be removed';
+  const within = where ? path.relative(folder, where) : '';
+  return within && !within.startsWith('..') && !path.isAbsolute(within) ? `${code} on ${within}` : code;
+}
+
+/**
  * Removes every folder no agent owns, as it stands now: the list is read
  * again, and each folder is checked once more just before it goes, its .git
  * and what is below it, and the processes read again (a removal can last
@@ -304,16 +316,32 @@ let removing = false;
 export async function removeOrphanFolders(opts: {
   projects: string[];
   owned: string[];
+  /** The folders the window showed and the person confirmed (OrphanFolder.path): nothing else is removed. */
+  paths: string[];
   processCwds?: () => Promise<ProcessCwd[] | null>;
   onProgress?: (progress: RemovalProgress) => void;
 }): Promise<RemovalReport> {
   if (removing) throw new Error('a removal is already under way');
   removing = true;
   try {
-    const listing = await listOrphanFolders(opts);
+    // Only what was shown and confirmed, and of that only what is an orphan
+    // now: a folder that became one while Settings stayed open was never
+    // shown (the Audit's gate of #336).
+    const asked = [...new Set(opts.paths)];
     const report: RemovalReport = { removed: 0, freedBytes: 0, kept: [] };
+    if (!asked.length) return report;
+    const listing = await listOrphanFolders(opts);
+    const now = new Map(listing.folders.map(f => [f.path, f]));
     let done = 0;
-    for (const folder of listing.folders) {
+    for (const askedPath of asked) {
+      const folder = now.get(askedPath);
+      if (!folder) {
+        const project = opts.projects.find(p => inside(askedPath, path.join(p, '.worktrees'))) ?? '';
+        report.kept.push({ path: askedPath, project, reason: 'failed', detail: 'it is not a folder no agent owns now' });
+        done++;
+        opts.onProgress?.({ done, total: asked.length, freedBytes: report.freedBytes, current: askedPath });
+        continue;
+      }
       const cwds = await (opts.processCwds ?? processCwds)();
       const keep = (reason: KeptReason, detail?: string) => report.kept.push({ path: folder.path, project: folder.project, reason, ...(detail ? { detail } : {}) });
       if (!cwds) {
@@ -332,12 +360,12 @@ export async function removeOrphanFolders(opts: {
             report.removed++;
             report.freedBytes += folder.sizeBytes;
           } catch (err) {
-            keep('failed', err instanceof Error ? err.message : String(err));
+            keep('failed', failureOf(err, folder.path));
           }
         }
       }
       done++;
-      opts.onProgress?.({ done, total: listing.count, freedBytes: report.freedBytes, current: folder.path });
+      opts.onProgress?.({ done, total: asked.length, freedBytes: report.freedBytes, current: folder.path });
     }
     return report;
   } finally {

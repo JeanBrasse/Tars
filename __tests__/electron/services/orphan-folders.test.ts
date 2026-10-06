@@ -52,6 +52,15 @@
  *     .git below skips node_modules whole.
  * 18. A folder below an orphan that cannot be read, or more to look through
  *     than the search's bound, is taken for nothing and the orphan offered.
+ * And from the Audit's gate of #336, main's half:
+ * 19. (M1) The removal takes what main finds then, not what the window showed
+ *     and the person confirmed: a folder that became an orphan while Settings
+ *     stayed open goes unseen. Or a path the window names that is not an
+ *     orphan now (a live worktree, anything else) is removed; or an empty
+ *     list removes anything.
+ * 20. (M2) A folder that could not be removed says why with Node's message,
+ *     which carries its absolute path, the home folder included, to the
+ *     window.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -100,6 +109,12 @@ afterEach(() => {
 });
 
 const old = new Date('2026-05-01T10:00:00Z');
+
+/** The removal of what a listing just showed, as the window asks for it. */
+async function removeShown(opts: Omit<Parameters<typeof removeOrphanFolders>[0], 'paths'>) {
+  const shown = await listOrphanFolders({ projects: opts.projects, owned: opts.owned });
+  return removeOrphanFolders({ ...opts, paths: shown.folders.map(f => f.path) } as Parameters<typeof removeOrphanFolders>[0]);
+}
 
 describe('listing', () => {
   it('1, 2, 3. lists what git forgot and what has no .git, never a live worktree, an agent\'s, or a folder that holds them', async () => {
@@ -161,7 +176,7 @@ describe('removing them all', () => {
     const before = await listOrphanFolders({ projects: [project], owned: [] });
     const steps: Array<{ done: number; total: number; freedBytes: number }> = [];
 
-    const report = await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess, onProgress: p => steps.push(p) });
+    const report = await removeShown({ projects: [project], owned: [], processCwds: noProcess, onProgress: p => steps.push(p) });
 
     expect(report).toEqual({ removed: 2, freedBytes: before.totalBytes, kept: [] });
     expect(steps.map(s => [s.done, s.total])).toEqual([[1, 2], [2, 2]]);
@@ -175,7 +190,7 @@ describe('removing them all', () => {
     file(path.join(project, '.worktrees', 'busy', 'x.txt'), 10);
     file(path.join(project, '.worktrees', 'idle', 'x.txt'), 10);
     const busy = path.join(project, '.worktrees', 'busy');
-    const report = await removeOrphanFolders({
+    const report = await removeShown({
       projects: [project], owned: [],
       processCwds: async () => [{ pid: 4242, command: 'node', cwd: path.join(busy, 'sub') }],
     });
@@ -187,7 +202,9 @@ describe('removing them all', () => {
   it('6. takes what is true when it removes: an agent that took a folder since the list keeps it', async () => {
     const taken = path.join(project, '.worktrees', 'taken');
     file(path.join(taken, 'x.txt'), 10);
-    const report = await removeOrphanFolders({ projects: [project], owned: [taken], processCwds: noProcess });
+    const shown = (await listOrphanFolders({ projects: [project], owned: [] })).folders.map(f => f.path);
+    expect(shown).toEqual([taken]);
+    const report = await removeOrphanFolders({ projects: [project], owned: [taken], paths: shown, processCwds: noProcess } as Parameters<typeof removeOrphanFolders>[0]);
     expect(report.removed).toBe(0);
     expect(fs.existsSync(taken)).toBe(true);
   });
@@ -197,13 +214,13 @@ describe('removing them all', () => {
     file(path.join(outside, 'precious.txt'), 10);
     fs.mkdirSync(path.join(project, '.worktrees'), { recursive: true });
     fs.symlinkSync(outside, path.join(project, '.worktrees', 'a-link'));
-    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    await removeShown({ projects: [project], owned: [], processCwds: noProcess });
     expect(fs.readFileSync(path.join(outside, 'precious.txt'), 'utf8')).toHaveLength(10);
   });
 
   it('8. removes nothing when the processes cannot be read, and says why for each', async () => {
     file(path.join(project, '.worktrees', 'idle', 'x.txt'), 10);
-    const report = await removeOrphanFolders({ projects: [project], owned: [], processCwds: async () => null });
+    const report = await removeShown({ projects: [project], owned: [], processCwds: async () => null });
     expect(report.removed).toBe(0);
     expect(report.kept).toEqual([{ path: path.join(project, '.worktrees', 'idle'), project, reason: 'unknown-use' }]);
     expect(fs.existsSync(path.join(project, '.worktrees', 'idle'))).toBe(true);
@@ -230,7 +247,7 @@ describe('what the folder\'s own .git says', () => {
     fs.renameSync(path.join(project, '.git', 'HEAD'), path.join(project, '.git', 'HEAD.aside'));
     try {
       expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
-      const report = await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+      const report = await removeShown({ projects: [project], owned: [], processCwds: noProcess });
       expect(report.removed).toBe(0);
     } finally {
       fs.renameSync(path.join(project, '.git', 'HEAD.aside'), path.join(project, '.git', 'HEAD'));
@@ -265,7 +282,7 @@ describe('what the folder\'s own .git says', () => {
 
     const listing = await listOrphanFolders({ projects: [project], owned: [] });
     expect(listing.folders.map(f => f.name)).toEqual(['really-forgotten']);
-    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    await removeShown({ projects: [project], owned: [], processCwds: noProcess });
     expect(fs.readFileSync(wts('bench-clone', 'work'), 'utf8')).toBe('unpushed\n');
     expect(fs.existsSync(wts('garbled', 'x.txt'))).toBe(true);
     expect(fs.existsSync(wts('really-forgotten'))).toBe(false);
@@ -284,7 +301,7 @@ describe('what the folder\'s own .git says', () => {
     fs.writeFileSync(wts('other-repo', 'work'), 'uncommitted\n');
 
     expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
-    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    await removeShown({ projects: [project], owned: [], processCwds: noProcess });
     expect(fs.readFileSync(wts('other-repo', 'work'), 'utf8')).toBe('uncommitted\n');
     expect(git(other, 'worktree', 'list', '--porcelain')).not.toContain('prunable');
   });
@@ -296,7 +313,7 @@ describe('what the folder\'s own .git says', () => {
 
     const listing = await listOrphanFolders({ projects: [project], owned: [] });
     expect(listing.folders.map(f => f.name)).toEqual([]);
-    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    await removeShown({ projects: [project], owned: [], processCwds: noProcess });
     expect(fs.readFileSync(wts('bench', 'runs', 'repo', 'work'), 'utf8')).toBe('unpushed\n');
   });
 
@@ -307,7 +324,7 @@ describe('what the folder\'s own .git says', () => {
 
     const listing = await listOrphanFolders({ projects: [project], owned: [] });
     expect(listing.folders.map(f => f.name)).toEqual(['plain']);
-    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    await removeShown({ projects: [project], owned: [], processCwds: noProcess });
     expect(fs.readFileSync(wts('with-pkg', 'node_modules', 'pkg', 'work'), 'utf8')).toBe('unpushed\n');
     expect(fs.readFileSync(wts('with-scoped', 'node_modules', '@scope', 'pkg', 'work'), 'utf8')).toBe('unpushed\n');
   });
@@ -334,7 +351,7 @@ describe('what the folder\'s own .git says', () => {
     file(wts('small', 'x.bin'), 10);
     const small = wts('small');
     // A process starts in the second folder once the first is gone.
-    const report = await removeOrphanFolders({
+    const report = await removeShown({
       projects: [project], owned: [],
       processCwds: async () => (fs.existsSync(wts('big')) ? [] : [{ pid: 7, command: 'node', cwd: small }]),
     });
@@ -349,7 +366,7 @@ describe('a folder that changed since the list', () => {
     const wts = (...p: string[]) => path.join(project, '.worktrees', ...p);
     file(wts('big', 'x.bin'), 300_000);
     file(wts('small', 'x.bin'), 10);
-    const report = await removeOrphanFolders({
+    const report = await removeShown({
       projects: [project], owned: [],
       processCwds: async () => {
         // The first folder gone, somebody clones into the second.
@@ -363,6 +380,58 @@ describe('a folder that changed since the list', () => {
     expect(report.removed).toBe(1);
     expect(report.kept).toEqual([expect.objectContaining({ path: wts('small'), reason: 'failed' })]);
     expect(fs.existsSync(wts('small', 'inner', '.git'))).toBe(true);
+  });
+});
+
+describe('what the window showed', () => {
+  const noProcess = async () => [];
+  const wts = (...p: string[]) => path.join(project, '.worktrees', ...p);
+
+  it('19. removes only the folders the window showed, and nothing for an empty list', async () => {
+    file(wts('shown', 'x.txt'), 10);
+    const shown = (await listOrphanFolders({ projects: [project], owned: [] })).folders.map(f => f.path);
+    // Settings stays open; a folder becomes an orphan meanwhile.
+    file(wts('since', 'x.txt'), 10);
+
+    expect((await removeOrphanFolders({ projects: [project], owned: [], paths: [], processCwds: noProcess })).removed).toBe(0);
+    expect(fs.existsSync(wts('shown'))).toBe(true);
+
+    const steps: number[][] = [];
+    const report = await removeOrphanFolders({ projects: [project], owned: [], paths: shown, processCwds: noProcess, onProgress: p => steps.push([p.done, p.total]) });
+    expect(report.removed).toBe(1);
+    // One named, two orphans found: the progress counts what was named.
+    expect(steps).toEqual([[1, 1]]);
+    expect(fs.existsSync(wts('shown'))).toBe(false);
+    expect(fs.existsSync(wts('since', 'x.txt'))).toBe(true);
+  });
+
+  it('19. keeps, and says so, a path the window names that is not an orphan now', async () => {
+    file(wts('stray', 'x.txt'), 10);
+    const outside = path.join(root, 'outside');
+    file(path.join(outside, 'precious.txt'), 10);
+    const asked = [wt, outside, wts('stray')];
+
+    const steps: number[][] = [];
+    const report = await removeOrphanFolders({ projects: [project], owned: [], paths: asked, processCwds: noProcess, onProgress: p => steps.push([p.done, p.total]) });
+
+    expect(report.removed).toBe(1);
+    // Three named, one orphan found: still three steps of three.
+    expect(steps).toEqual([[1, 3], [2, 3], [3, 3]]);
+    expect(report.kept.map(k => [k.path, k.reason])).toEqual([[wt, 'failed'], [outside, 'failed']]);
+    expect(git(wt, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feat/live');
+    expect(fs.existsSync(path.join(outside, 'precious.txt'))).toBe(true);
+  });
+
+  it('20. says why a folder could not be removed without its absolute path', async () => {
+    file(wts('stuck', 'locked', 'f'), 10);
+    fs.chmodSync(wts('stuck', 'locked'), 0o555);
+    try {
+      const report = await removeShown({ projects: [project], owned: [], processCwds: noProcess });
+      expect(report.kept).toEqual([{ path: wts('stuck'), project, reason: 'failed', detail: 'EACCES on locked/f' }]);
+      for (const k of report.kept) expect(k.detail ?? '').not.toContain(root);
+    } finally {
+      fs.chmodSync(wts('stuck', 'locked'), 0o755);
+    }
   });
 });
 

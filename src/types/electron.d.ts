@@ -2149,8 +2149,8 @@ export interface ElectronAPI {
   system: {
     disk: () => Promise<DiskSpace | null>;
     orphanFolders: () => Promise<OrphanListing>;
-    /** Removes every folder no agent owns, as it stands now, one at a time; asks nothing itself (the window confirms first). A folder a process works in is kept. */
-    removeOrphanFolders: () => Promise<OrphanRemovalReport | { error: string }>;
+    /** Removes the folders named (the OrphanFolder.path of the rows shown), each only if it is still an orphan, and nothing else; one at a time, asking nothing itself (the window confirms first). A folder a process works in is kept. */
+    removeOrphanFolders: (paths: string[]) => Promise<OrphanRemovalReport | { error: string }>;
     onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void;
   };
 
