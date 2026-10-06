@@ -46,6 +46,12 @@
  *     listing does not say so: the window reads an empty listing as "every
  *     folder belongs to a worktree git knows", which is false for it. Or one
  *     such project hides the folders of the others.
+ * And from the Audit's recheck of 4e939d5c (Lows):
+ * 17. A repository inside a node_modules (a package cloned there, `npm link`'s
+ *     target checked out in place) goes with its folder: the search for a
+ *     .git below skips node_modules whole.
+ * 18. A folder below an orphan that cannot be read, or more to look through
+ *     than the search's bound, is taken for nothing and the orphan offered.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -293,6 +299,35 @@ describe('what the folder\'s own .git says', () => {
     await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
     expect(fs.readFileSync(wts('bench', 'runs', 'repo', 'work'), 'utf8')).toBe('unpushed\n');
   });
+
+  it('17. never offers a folder holding a repository inside its node_modules, a scoped package included', async () => {
+    clone(wts('with-pkg', 'node_modules', 'pkg'));
+    clone(wts('with-scoped', 'node_modules', '@scope', 'pkg'));
+    file(wts('plain', 'node_modules', 'dep', 'index.js'), 10);
+
+    const listing = await listOrphanFolders({ projects: [project], owned: [] });
+    expect(listing.folders.map(f => f.name)).toEqual(['plain']);
+    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    expect(fs.readFileSync(wts('with-pkg', 'node_modules', 'pkg', 'work'), 'utf8')).toBe('unpushed\n');
+    expect(fs.readFileSync(wts('with-scoped', 'node_modules', '@scope', 'pkg', 'work'), 'utf8')).toBe('unpushed\n');
+  });
+
+  it('18. keeps an orphan with a folder below it that cannot be read', async () => {
+    file(wts('locked', 'inner', 'x.txt'), 10);
+    fs.chmodSync(wts('locked', 'inner'), 0o000);
+    try {
+      expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
+    } finally {
+      fs.chmodSync(wts('locked', 'inner'), 0o755);
+    }
+  });
+
+  it('18. keeps an orphan with more below it than the search looks through', async () => {
+    const many = wts('huge', 'many');
+    fs.mkdirSync(many, { recursive: true });
+    for (let i = 0; i <= 50_000; i++) fs.writeFileSync(path.join(many, String(i)), '');
+    expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
+  }, 120_000);
 
   it('14. reads the processes again before each folder goes', async () => {
     file(wts('big', 'x.bin'), 300_000);
