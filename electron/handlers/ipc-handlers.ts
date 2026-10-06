@@ -1230,7 +1230,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   // its agents work in; an agent's worktree is never offered.
   const orphanScope = () => ({
     projects: [...new Set([...readCustomProjects(), ...[...agents.values()].map(a => a.projectPath).filter(Boolean)])],
-    owned: [...agents.values()].map(a => a.worktreePath).filter((p): p is string => !!p),
+    // Every folder an agent works in, its project's too: one created on a
+    // folder inside a .worktrees, with no worktree of its own, was offered
+    // (the Audit's gate of #334, M2).
+    owned: [...agents.values()].flatMap(a => [a.worktreePath, a.projectPath, a.secondaryProjectPath]).filter((p): p is string => !!p),
   });
   ipcMain.handle('system:disk', async () => diskSpace());
   ipcMain.handle('system:orphanFolders', async () => listOrphanFolders(orphanScope()));

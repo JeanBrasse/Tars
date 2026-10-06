@@ -286,6 +286,28 @@ describe('what the folder\'s own .git says', () => {
   });
 });
 
+describe('a folder that changed since the list', () => {
+  it('6. one that took a repository while the others went is kept, and says why', async () => {
+    const wts = (...p: string[]) => path.join(project, '.worktrees', ...p);
+    file(wts('big', 'x.bin'), 300_000);
+    file(wts('small', 'x.bin'), 10);
+    const report = await removeOrphanFolders({
+      projects: [project], owned: [],
+      processCwds: async () => {
+        // The first folder gone, somebody clones into the second.
+        if (!fs.existsSync(wts('big')) && !fs.existsSync(wts('small', 'inner'))) {
+          fs.mkdirSync(wts('small', 'inner'));
+          git(wts('small', 'inner'), 'init', '-q');
+        }
+        return [];
+      },
+    });
+    expect(report.removed).toBe(1);
+    expect(report.kept).toEqual([expect.objectContaining({ path: wts('small'), reason: 'failed' })]);
+    expect(fs.existsSync(wts('small', 'inner', '.git'))).toBe(true);
+  });
+});
+
 describe('the processes on Linux', () => {
   it("15. are unknown when /proc cannot be read, or when Tars's own working directory is not among them", () => {
     const fake = fs.mkdtempSync(path.join(root, 'proc-'));
