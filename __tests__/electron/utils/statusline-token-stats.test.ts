@@ -72,7 +72,12 @@ const NEW_SESSION = {
   account: '',
 };
 
-describe('the status line writing token-stats.json', () => {
+// Each case runs the script through bash and jq, and the one that rewrites a
+// file holding something that is not an object runs it five times: it took
+// 7.5 s in the full suite at a load average of about 40 (QA's gate of #311,
+// 2026-10-05), past vitest's 5 s, and 6.8 s alone. 30 s, as the status line's
+// git cache cases have (statusline-gnu-stat.test.ts).
+describe('the status line writing token-stats.json', { timeout: 30_000 }, () => {
   it('starts again from an empty object when the file is empty', () => {
     fs.writeFileSync(statsFile(), '');
 
