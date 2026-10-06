@@ -21,13 +21,16 @@
  *    a gitlink only, a pointer to a commit that exists in that repository's own
  *    .git and nowhere else: its files are in no saved tree. The save must name
  *    it, so that its worktree is kept.
+ * And from the Audit's gate of #335 (L1):
+ * 12. A submodule that cannot be read (its .git names a gitdir that is gone)
+ *     is taken for one with nothing in it, and its worktree removed.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { saveUncommittedWork, wipBranchName } from '../../../electron/services/save-worktree-work';
+import { saveUncommittedWork, submodulesWithWork, wipBranchName } from '../../../electron/services/save-worktree-work';
 
 let root: string;
 let repo: string;
@@ -135,5 +138,26 @@ describe('the uncommitted work of a worktree, saved before it goes', () => {
     }
     expect(fs.readFileSync(path.join(wt, 'a.txt'), 'utf8')).toBe('kept\n');
     expect(git(repo, 'branch', '--list', 'wip/*')).toBe('');
+  });
+});
+
+describe('the submodules of a worktree', () => {
+  it('12. names one that cannot be read, never taking it for empty', async () => {
+    const lib = path.join(root, 'lib');
+    fs.mkdirSync(lib);
+    git(lib, 'init', '-q', '-b', 'main');
+    git(lib, 'config', 'user.email', 't@t.example');
+    git(lib, 'config', 'user.name', 'T');
+    fs.writeFileSync(path.join(lib, 'l.txt'), 'one\n');
+    git(lib, 'add', '-A');
+    git(lib, 'commit', '-qm', 'lib');
+    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'vendor/lib');
+    git(repo, 'commit', '-qm', 'lib as a submodule');
+    git(wt, 'merge', '-q', 'main');
+    git(wt, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '-q');
+    expect(await submodulesWithWork(wt)).toEqual([]);
+
+    fs.writeFileSync(path.join(wt, 'vendor', 'lib', '.git'), `gitdir: ${path.join(repo, '.git', 'gone')}\n`);
+    expect(await submodulesWithWork(wt)).toEqual(['vendor/lib']);
   });
 });

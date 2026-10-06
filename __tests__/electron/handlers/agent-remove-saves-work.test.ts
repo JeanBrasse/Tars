@@ -30,6 +30,13 @@
  * 8. A worktree whose submodule has uncommitted changes is removed.
  * 9. Over-correction: a worktree whose submodules hold nothing their remote
  *    lacks, or were never checked out, is kept.
+ * And from the Audit's gate of #335 (bench gate-335/), work no branch holds:
+ * 10. A submodule's stash, or a commit only a local tag holds, is lost: only
+ *     HEAD and the branches were looked at.
+ * 11. A file git ignores inside a submodule (a .env) is lost: the worktree's
+ *     ignored files are read by a git status that does not go into it.
+ * (12, a submodule that cannot be read, is in save-worktree-work.test.ts: the
+ * worktree's own git status fails on it first, and the save keeps it.)
  *
  * The handler and git are the real ones, on a repository in a throwaway folder.
  */
@@ -221,6 +228,45 @@ describe('the window\'s Delete', () => {
     withSubmodule(false);
     expect(await handlers.get('agent:remove')!({}, 'w1')).toEqual({ success: true });
     expect(fs.existsSync(wt)).toBe(false);
+  });
+
+  it('10. keeps a worktree whose submodule holds a stash', async () => {
+    const sub = withSubmodule();
+    fs.writeFileSync(path.join(sub, 'l.txt'), 'one\nstashed\n');
+    git(sub, 'stash', '-q');
+    expect(git(wt, 'status', '--porcelain')).toBe('');
+
+    const result = await handlers.get('agent:remove')!({}, 'w1') as { worktreeKept?: string };
+
+    expect(result.worktreeKept).toContain('vendor/lib');
+    expect(git(sub, 'stash', 'list')).not.toBe('');
+  });
+
+  it('10. keeps a worktree whose submodule holds a commit only a local tag holds', async () => {
+    const sub = withSubmodule();
+    const pinned = git(sub, 'rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(sub, 'l.txt'), 'one\ntagged\n');
+    git(sub, 'commit', '-qam', 'tagged only');
+    git(sub, 'tag', 'keep');
+    git(sub, 'checkout', '-q', pinned);
+    expect(git(wt, 'status', '--porcelain')).toBe('');
+
+    const result = await handlers.get('agent:remove')!({}, 'w1') as { worktreeKept?: string };
+
+    expect(result.worktreeKept).toContain('vendor/lib');
+    expect(git(sub, 'cat-file', '-t', 'keep')).toBe('commit');
+  });
+
+  it('11. keeps a worktree whose submodule holds a file git ignores, such as a .env', async () => {
+    const sub = withSubmodule();
+    fs.appendFileSync(path.resolve(sub, git(sub, 'rev-parse', '--git-path', 'info/exclude')), '.env\n');
+    fs.writeFileSync(path.join(sub, '.env'), 'SECRET=1\n');
+    expect(git(sub, 'status', '--porcelain')).toBe('');
+
+    const result = await handlers.get('agent:remove')!({}, 'w1') as { worktreeKept?: string };
+
+    expect(result.worktreeKept).toContain('vendor/lib');
+    expect(fs.readFileSync(path.join(sub, '.env'), 'utf8')).toBe('SECRET=1\n');
   });
 
   it('5. removes a worktree whose only ignored files are rebuildable caches', async () => {
