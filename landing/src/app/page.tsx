@@ -58,7 +58,7 @@ const FEATURES = [
   },
   {
     title: 'Worktrees that start ready, and lose nothing',
-    body: 'On macOS an agent\u2019s worktree starts with its project\u2019s dependencies cloned, at almost no disk space. Delete the agent and what it had not committed is kept on a wip/ branch; a worktree holding what no branch can carry, such as a .env or a submodule\u2019s unpushed work, stays where it is, and Tars says why.',
+    body: 'An agent\u2019s worktree starts with its project\u2019s dependencies cloned, at almost no disk space, when the project\u2019s own install matches its lock on a volume that can clone. Delete the agent and what it had not committed is kept on a wip/ branch; a worktree holding what no branch can carry, such as a .env or a submodule\u2019s unpushed work, stays where it is, and Tars says why.',
   },
   {
     title: 'Your disk, in view',

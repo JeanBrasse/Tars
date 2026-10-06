@@ -79,13 +79,15 @@ off.
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
 
-**Worktrees that start ready, and lose nothing.** On macOS an agent created on a
-worktree starts with its project's dependencies already there, cloned from the
-project's own node_modules, which takes almost no disk space. Deleting an agent that
-works in a worktree keeps what it had not committed, on a branch named wip/ and the
-agent's name, then removes the worktree. A worktree holding what no branch can carry,
-such as a .env, a repository the agent cloned into it or a submodule with commits or
-changes its remote does not have, is left where it is, and Tars says why.
+**Worktrees that start ready, and lose nothing.** An agent created on a worktree
+starts with its project's dependencies already there, cloned at almost no disk
+space, when the project's own node_modules was installed for the same lock and both
+sit on one volume that can clone (APFS on macOS, reflink on Linux); otherwise it
+installs them as before. Deleting an agent that works in a worktree keeps what it
+had not committed, on a branch named wip/ and the agent's name, then removes the
+worktree. A worktree holding what no branch can carry, such as a .env, a repository
+the agent cloned into it or a submodule with commits or changes its remote does not
+have, is left where it is, and Tars says why.
 
 **Your disk, in view.** Settings, System says how much your disk has free, in the
 waiting ink below 30 GB, and lists the folders under your projects' .worktrees that
