@@ -1,5 +1,5 @@
 import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
-import { liveTaskLedger } from '../task-ledger';
+import { liveTaskLedger, turnUsageOf } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
 import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
 import { RouteApp, RouteContext } from './types';
@@ -524,6 +524,28 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
     const kept = noteModBeat(agent.id, session_id, typeof tool === 'string' && tool ? tool.slice(0, 200) : null);
     sendJson({ success: kept });
+  });
+
+  // POST /api/hooks/turn-usage: a turn's usage, from the state mod's
+  // turn.complete (mods step 4), into the task ledger. It comes after the Stop
+  // that ended the turn's task, so it is filed under the agent's latest task
+  // in that session (task-ledger.ts). Taken only from the agent's current
+  // session, as every post is.
+  app.post('/api/hooks/turn-usage', (req, sendJson) => {
+    const { agent_id, usage } = req.body as { agent_id?: string; session_id?: string; usage?: unknown };
+    const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
+    const parsed = turnUsageOf(usage);
+    if (!agent_id || !session_id || !parsed) {
+      sendJson({ error: 'agent_id, session_id and a usage are required' }, 400);
+      return;
+    }
+    const agent = agents.get(agent_id);
+    if (!agent || agent.currentSessionId !== session_id) {
+      sendJson({ success: false, message: agent ? 'stale' : 'Agent not found' });
+      return;
+    }
+    const taskId = liveTaskLedger()?.turnUsage(agent.id, session_id, parsed) ?? null;
+    sendJson({ success: !!taskId, taskId });
   });
 
   app.post('/api/hooks/agent-stopped', (req, sendJson) => {

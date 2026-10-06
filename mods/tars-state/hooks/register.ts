@@ -6,7 +6,8 @@
  * with the same inputs (SessionStart's registration, UserPromptSubmit's
  * running, Stop's output and idle, StopFailure's error), marked `via: 'mod'`,
  * and a heartbeat every 15 s from this process's own event loop, naming the
- * tool in flight. Every hook hands the event on unchanged (`next(e)`): the
+ * tool in flight, and each turn's usage from turn.complete, for the task ledger
+ * (mods step 4). Every hook hands the event on unchanged (`next(e)`): the
  * agent does exactly what it did without the mod, and the shell hooks still
  * run, Tars setting their four posts aside for a session the mod registered.
  *
@@ -164,6 +165,18 @@ export function register(on: On) {
       error_kind: typeof e.error === 'string' ? e.error : '',
       error_message: typeof e.last_assistant_message === 'string' ? e.last_assistant_message : '',
     });
+    return next(e);
+  });
+
+  // Each turn's usage, summed over its requests, for the task ledger (mods step
+  // 4). It comes after the Stop's posts, in the same queue, so Tars files it
+  // under the task that Stop ended. Claude Code gives no split of the cache
+  // writes and no web searches here: Tars keeps reading the transcript for
+  // those while it is there.
+  on<{ usage?: unknown }>('turn.complete', ($, e, next) => {
+    if (e.usage && typeof e.usage === 'object' && sessionId) {
+      report($, '/api/hooks/turn-usage', { session_id: sessionId, usage: e.usage });
+    }
     return next(e);
   });
 
