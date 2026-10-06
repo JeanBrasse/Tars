@@ -397,6 +397,8 @@ export interface AgentStatus {
   stoppedAt?: string;
   /** One line, or none when the window's stop gave none. */
   stopReason?: string;
+  /** The last start that undid a stop: who stopped it, when and why, and who started it again and when. */
+  lastRestartAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string; restartedBy: string; restartedAt: string };
   /** ISO: running, yet nothing written to its transcript since then (30 minutes
    *  at least) and no tool at work: it looks frozen. Cleared by a write or by any
    *  other status. */
@@ -1041,7 +1043,8 @@ export interface ElectronAPI {
     list: () => Promise<AgentStatus[]>;
     /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
     stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
-    remove: (id: string) => Promise<{ success: boolean }>;
+    /** savedTo: the wip/ branch its uncommitted work was saved on. worktreeKept: why its worktree was not removed (the save failed, or it holds what no commit keeps). */
+    remove: (id: string) => Promise<{ success: boolean; savedTo?: string; worktreeKept?: string }>;
     /** Into the agent's terminal. Asleep, a key wakes it (`woke: true`); a lone Esc or Ctrl+C, a mouse or focus report does nothing. */
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean; woke?: boolean; error?: string }>;
     /** An asleep agent's CLI started on its own conversation, nothing typed; refused for one that is not asleep. */
