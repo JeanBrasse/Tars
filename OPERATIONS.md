@@ -1152,6 +1152,21 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   card keeps the failure and no "is waiting" alert contradicts it. A permission prompt is not
   held back, since it only occurs inside a turn, and a turn has already left `error`.
 
+### A permission asked of Tars (the state mod, step 2)
+
+A claude agent that runs the state mod asks Tars, not its terminal, before a call Claude Code
+would put to its permission dialog (SPECS.md, "Permissions decided by Tars"). The agent reads
+`waiting` on a `permission` with `permissionAsk` set, its terminal shows no dialog, and the main
+process log says `[permission] <agent> asks Tars: Bash <command>`, then the answer:
+`allow (the user allowed it in Tars)`, `deny (the user refused it in Tars: <reason>)`, or
+`ask, back to its dialog`; `<agent>'s mod asks again after a failed request: <error>` when one of
+its requests (re-sent every 20 s while the question is held) failed. A typed message waits
+meanwhile (the `409` above). The window answers
+with `agent:answerPermission`; nothing else can. Unanswered for 10 minutes, or when the turn, the
+session or the agent ends, it goes back to Claude Code, which then shows its own dialog, and the
+`PermissionRequest` hook reports it as before. An agent waiting with no `permissionAsk` is at its
+terminal's dialog: the mod did not load, or the question went back.
+
 ### The idle prompt, and what an orchestrator is told (1.7.8)
 
 That 60 s is measured: of the 1,393 idle prompts that followed a `Stop` in a month of this
