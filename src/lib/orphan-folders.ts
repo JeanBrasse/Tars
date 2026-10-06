@@ -84,7 +84,8 @@ export function removingHint(progress: OrphanRemovalProgress | null): string {
 const KEPT_BECAUSE: Record<OrphanRemovalReport['kept'][number]['reason'], [one: string, many: string]> = {
   'in-use': ['a process works in it', 'a process works in each'],
   'unknown-use': ['Tars could not read whether a process works in it', 'Tars could not read whether a process works in them'],
-  failed: ['it could not be removed', 'they could not be removed'],
+  // Not removed: it failed, or holds a repository or a live worktree by now (PR 334); its title says which.
+  failed: ['its row says why', 'their rows say why'],
 };
 
 /** What the removal did, and why what stayed stayed. */
