@@ -18,6 +18,7 @@ import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
 import { app, BrowserWindow } from 'electron';
+import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -908,6 +909,8 @@ app.on('before-quit', (event) => {
       // Before the app exits, which neither the stop's timer nor a run left
       // reparented to launchd would wait for: at most a second, then SIGKILL.
       ['endAcpRunsOnQuit', endAcpRunsOnQuit],
+      // A permission question held for the window: the mod's request is answered, back to its dialog.
+      ['endPermissionAsks', endPermissionAsks],
       ['destroyTray', destroyTray],
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],

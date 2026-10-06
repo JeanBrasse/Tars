@@ -1,5 +1,6 @@
 import type { AgentStatus } from '../types';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { dropPermissionAsks } from '../services/permission-asks';
 import { emitAgentStatus } from '../services/agent-events';
 import { oneLine } from '../utils/waiting-on';
 import { ptyProcesses, endTerminalTree } from './pty-manager';
@@ -46,6 +47,8 @@ export async function stopAgent(
   if (agent.status === 'stopped') return false;
   // Its delegated run too, which has no terminal (the Audit's table, #6).
   await stopAcpRuns(agent.id, 'the agent was stopped');
+  // And a permission question it left with Tars: its CLI is being ended.
+  dropPermissionAsks(agent.id);
 
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   if (agent.ptyId) ptyProcesses.delete(agent.ptyId);
@@ -68,6 +71,24 @@ export async function stopAgent(
 
   if (terminal) await endTerminalTree(terminal);
   return true;
+}
+
+/**
+ * A start that undoes a stop, noted beside the stop it undid (Noah, 05/10: an
+ * orchestrator may start again an agent Noah stopped, whenever it needs to, a
+ * scheduled task too). Kept on the agent until the next one; nothing when the
+ * agent was not stopped. Called just before clearStop.
+ */
+export function noteRestartAfterStop(agent: AgentStatus, by: string): void {
+  if (agent.status !== 'stopped') return;
+  agent.lastRestartAfterStop = {
+    stoppedBy: agent.stoppedBy,
+    stoppedAt: agent.stoppedAt,
+    stopReason: agent.stopReason,
+    restartedBy: by,
+    restartedAt: new Date().toISOString(),
+  };
+  console.log(`[agent-stop] ${agent.name || agent.id}, stopped by ${agent.stoppedBy ?? 'someone'}${agent.stopReason ? ` (${agent.stopReason})` : ''}, started again by ${by}`);
 }
 
 /**

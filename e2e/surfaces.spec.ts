@@ -93,11 +93,14 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // Hermes reads the tailnet for its webhook row, two `tailscale` calls one
     // after the other, and the row says "detecting…" until both answer: it was
     // photographed that way at a load average of about 90 (2026-10-05).
-    for (const probe of ['[data-gateway-state="checking"]', 'input[placeholder="detecting…"]']) {
+    // Settings · AI & Providers asks each CLI for its version, and every row
+    // reads "checking" until all of them have answered: it was photographed
+    // that way at a load average of about 40, 5,161 pixels (QA's gate of #311,
+    // 2026-10-05). A probe with several rows waits for the last of them.
+    for (const probe of ['[data-gateway-state="checking"]', 'input[placeholder="detecting…"]', ':text-is("checking")']) {
       const probing = page.locator(probe);
-      if (await probing.count() > 0) {
-        await probing.first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
-      }
+      const until = Date.now() + 15_000;
+      while (await probing.count() > 0 && Date.now() < until) await page.waitForTimeout(100);
     }
 
     await page.waitForTimeout(surface.settle ?? 900);

@@ -6,17 +6,24 @@ import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { createXtermOptions, useTerminalTheme, TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { disposeTerminalSafely, stopWheelTyping, stripTerminalReplies } from '@/lib/terminal';
+import type { PtyBacklog } from '@/lib/pty-backlog';
 
 interface TerminalProps {
   ptyId?: string;
+  /** What the PTY wrote before this terminal listened, which its page heard for it (lib/pty-backlog). */
+  backlog?: Pick<PtyBacklog, 'take'>;
   onData?: (data: string) => void;
   className?: string;
 }
 
-export default function Terminal({ ptyId, onData, className = '' }: TerminalProps) {
+export default function Terminal({ ptyId, backlog, onData, className = '' }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  // What the PTY wrote before the xterm was made, a task after the mount
+  // (below): the shell's banner and first prompt come meanwhile. Written into
+  // it once it is, and kept for the PTY it came from only.
+  const earlyRef = useRef<{ id: string; chunks: string[] } | null>(null);
 
   // Follows the app theme; applied to the live terminal below instead of at
   // init, so a theme flip never tears down the PTY-attached instance.
@@ -43,6 +50,9 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
+    const early = earlyRef.current;
+    earlyRef.current = null;
+    if (early && early.id === ptyId) for (const chunk of early.chunks) term.write(chunk);
 
     // Handle terminal input. The terminal's own replies to queries from the
     // program in the pty (DA, CPR, DSR, focus, mouse) arrive here exactly like
@@ -111,18 +121,29 @@ export default function Terminal({ ptyId, onData, className = '' }: TerminalProp
     }
   }, [terminalTheme]);
 
-  // Listen for PTY data
+  // Listen for PTY data. Until the xterm is made it is kept, and written into
+  // it then (initTerminal): dropped, the shell's first lines never showed and
+  // the terminal opened empty (the QA's WHEEL-QA.md, 05/10).
   useEffect(() => {
     if (!ptyId || !window.electronAPI?.pty) return;
 
-    const unsubscribe = window.electronAPI.pty.onData(({ id, data }) => {
-      if (id === ptyId && xtermRef.current) {
+    const show = (data: string) => {
+      if (xtermRef.current) {
         xtermRef.current.write(data);
+        return;
       }
+      if (earlyRef.current?.id !== ptyId) earlyRef.current = { id: ptyId, chunks: [] };
+      earlyRef.current.chunks.push(data);
+    };
+    const unsubscribe = window.electronAPI.pty.onData(({ id, data }) => {
+      if (id === ptyId) show(data);
     });
+    // Then what the page heard before this listened: it goes ahead of all
+    // this hears, since no chunk can arrive between the line above and this.
+    for (const data of backlog?.take(ptyId) ?? []) show(data);
 
     return unsubscribe;
-  }, [ptyId]);
+  }, [ptyId, backlog]);
 
   // Public method to write to terminal
   const write = useCallback((data: string) => {

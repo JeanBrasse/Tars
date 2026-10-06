@@ -26,6 +26,8 @@ export interface AgentTickItem {
   statusSince?: string;
   /** What a waiting agent waits on. See AgentStatus.waitingOn. */
   waitingOn?: AgentWaitingOn;
+  /** A permission question Tars holds for the window. See AgentStatus.permissionAsk. */
+  permissionAsk?: AgentStatus['permissionAsk'];
   provider: string;
   /** A CLI runs in the agent's PTY, whatever its status says. See cliRunningIn. */
   cliRunning: boolean;
@@ -83,7 +85,8 @@ function agentCliRunning(a: AgentStatus): boolean {
   return cliRunningIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined);
 }
 
-function buildTickPayload(): AgentTickItem[] {
+/** What agents:tick carries, agent by agent. Exported for its tests. */
+export function buildTickPayload(): AgentTickItem[] {
   return Array.from(agents.values())
     .map(a => {
       const launching = sessionStarting(a);
@@ -100,6 +103,7 @@ function buildTickPayload(): AgentTickItem[] {
         lastActivity: a.lastActivity,
         statusSince: a.statusSince,
         waitingOn: publishedWaitingOn(a),
+        permissionAsk: a.permissionAsk,
         provider: a.provider || 'claude',
         cliRunning: agentCliRunning(a),
         launching,

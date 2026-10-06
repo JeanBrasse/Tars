@@ -1,7 +1,9 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { ignoredNotCaches, saveUncommittedWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
+import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
@@ -40,6 +42,7 @@ import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
+import { emitAgentStatus } from '../services/agent-events';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory, memoryStatus } from '../services/memory-hub';
 import { usableHermesConnection } from '../services/hermes-config';
@@ -1194,6 +1197,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { success: true };
   });
 
+  // The window's answer to a permission question the state mod asked Tars
+  // (services/permission-asks.ts): allow or deny decide the call, ask hands it
+  // back to the terminal's dialog. Given as the user: the model reads it.
+  ipcMain.handle('agent:answerPermission', async (_event, id: string, decision: unknown, reason?: unknown) => {
+    // The window hears of it through the question's own event (hooks-routes).
+    const answered = answerPermission(id, decision as PermissionDecision, 'the user', typeof reason === 'string' ? reason : undefined);
+    return { success: answered };
+  });
+
   // Remove an agent
   /**
    * Which providers actually enforce orchestrator mode.
@@ -1215,6 +1227,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
     if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
+    dropPermissionAsks(id);
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1225,8 +1238,37 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = undefined;
     }
 
+    // Its uncommitted work is saved on wip/<name> first, without asking (Noah,
+    // 05/10): `--force` below removes whatever was not committed. A save that
+    // fails keeps the worktree where it is, and says so.
+    let savedTo: string | undefined;
+    let worktreeKept: string | undefined;
+    if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
+      try {
+        const saved = await saveUncommittedWork(agent.worktreePath, agent.name || agent.id);
+        savedTo = saved?.branch;
+        if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
+        // What git ignores, a .env or an e2e run, no commit keeps: the
+        // worktree stays, rebuildable caches aside (the Audit's gate of #312).
+        // And a git repository of its own, which the save could only point at.
+        if (saved?.nestedRepos.length) {
+          worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
+        if (ignored.length) {
+          const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
+          worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+      } catch (err) {
+        worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+    }
+
     // Clean up worktree if it exists
-    if (agent?.worktreePath && agent?.branchName) {
+    if (agent?.worktreePath && agent?.branchName && !worktreeKept) {
       try {
         // argv, not a shell string: an apostrophe in the project path used to
         // make this fail silently and leak a stale worktree behind the deleted
@@ -1247,7 +1289,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Save agents to disk
     saveAgents();
 
-    return { success: true };
+    return { success: true, ...(savedTo ? { savedTo } : {}), ...(worktreeKept ? { worktreeKept } : {}) };
   });
 
   // Update agent's secondary project path
