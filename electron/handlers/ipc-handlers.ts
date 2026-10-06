@@ -1,6 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
-import { ignoredNotCaches, saveUncommittedWork } from '../services/save-worktree-work';
+import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
 import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
@@ -1253,6 +1253,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // And a git repository of its own, which the save could only point at.
         if (saved?.nestedRepos.length) {
           worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        // A submodule's commits and changes live in the worktree's own git
+        // store, which the removal deletes, and no remote may have them.
+        const submodules = worktreeKept ? [] : await submodulesWithWork(agent.worktreePath);
+        if (submodules.length) {
+          worktreeKept = `its submodules hold work no remote has (${submodules.slice(0, 5).join(', ')}), which removing the worktree would lose, so its worktree was kept at ${agent.worktreePath}`;
           console.warn(`[agent:remove] ${worktreeKept}`);
         }
         const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
