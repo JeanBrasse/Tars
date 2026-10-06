@@ -214,9 +214,9 @@ export function useElectronAgents() {
       // who stopped it, when and why: those are only on the full record.
       // Patching the status alone put `error` beside whatever reason this copy
       // last read, which is nothing for a first failure and the previous
-      // failure's sentence for a second, and `stopped` beside nobody: the
-      // agent:complete a stopped terminal sends made the read, and an agent
-      // stopped with no terminal sends none.
+      // failure's sentence for a second, and `stopped` beside nobody. A stop
+      // sends no agent:complete, with a terminal or without (main lets go of
+      // the terminal before it ends it), so this read is the only one.
       if (event.status === 'error' || event.status === 'stopped') {
         fetchAgents();
         return;
