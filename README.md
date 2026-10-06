@@ -231,9 +231,7 @@ Tars does not own a scheduler or a task board. If you run a
 [Hermes](https://github.com/gbrain-ai/hermes) gateway, its cron jobs dispatch
 work to your agents and its kanban board is a screen in the app: create, move
 and assign tasks, and edit a schedule's expression, prompt or enabled state
-without leaving Tars. Without a gateway the rest of Tars works fine, and the
-local board keeps running underneath for the bundled kanban MCP server and the
-completion hook, it simply has no screen of its own.
+without leaving Tars. Without a gateway the rest of Tars works fine.
 
 ![The Hermes board. Hermes owns the tasks, the workers and the runs](screenshots/kanban.png)
 
