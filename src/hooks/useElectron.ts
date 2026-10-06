@@ -8,6 +8,9 @@ export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
 };
 
+/** A wake on its way as one comparable value: who, how and since when. */
+const wakingKey = (waking: AgentStatus['waking']) => (waking ? `${waking.by}\u0000${waking.via}\u0000${waking.since}` : '');
+
 // Hook for agent management via Electron IPC
 export function useElectronAgents() {
   const [agents, setAgents] = useState<AgentStatus[]>([]);
@@ -58,7 +61,11 @@ export function useElectronAgents() {
             prevAgent.claudeAccountId !== agent.claudeAccountId ||
             prevAgent.claudeAccountPin !== agent.claudeAccountPin ||
             // The last move by Tars, which its control's title tells.
-            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at
+            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at ||
+            // Asleep since when, and who is waking it: the line in place of
+            // its task, branch or path says both.
+            prevAgent.asleepSince !== agent.asleepSince ||
+            wakingKey(prevAgent.waking) !== wakingKey(agent.waking)
           );
         });
         return hasChanged ? list : prev;
@@ -151,6 +158,18 @@ export function useElectronAgents() {
     await fetchAgents();
   }, [fetchAgents]);
 
+  // Wake an asleep agent on its own conversation, nothing typed (#322). The
+  // answer says why when it is refused: not asleep, or a launch that failed,
+  // after which it stays asleep.
+  const wakeAgent = useCallback(async (id: string) => {
+    if (!isElectron()) {
+      throw new Error('Electron API not available');
+    }
+    const result = await window.electronAPI!.agent.wake(id);
+    await fetchAgents();
+    return result;
+  }, [fetchAgents]);
+
   // Remove an agent
   const removeAgent = useCallback(async (id: string) => {
     if (!isElectron()) {
@@ -185,11 +204,14 @@ export function useElectronAgents() {
     });
 
     const unsubStatus = window.electronAPI!.agent.onStatus?.((event: { agentId: string; status: string; timestamp: string }) => {
-      // Neither this event nor the tick says why an agent is in error: the
-      // reason is only on the full record. Patching the status alone put
-      // `error` beside whatever reason this copy last read, which is nothing
-      // for a first failure and the previous failure's sentence for a second.
-      if (event.status === 'error') {
+      // Neither this event nor the tick says why an agent is in error, nor
+      // who stopped it, when and why: those are only on the full record.
+      // Patching the status alone put `error` beside whatever reason this copy
+      // last read, which is nothing for a first failure and the previous
+      // failure's sentence for a second, and `stopped` beside nobody: the
+      // agent:complete a stopped terminal sends made the read, and an agent
+      // stopped with no terminal sends none.
+      if (event.status === 'error' || event.status === 'stopped') {
         fetchAgents();
         return;
       }
@@ -230,14 +252,14 @@ export function useElectronAgents() {
         fetchAgents();
         return;
       }
-      // An agent that has just entered error is read again rather than
-      // patched, for the reason given on onStatus above. The watches that
+      // An agent that has just entered error or stopped is read again rather
+      // than patched, for the reason given on onStatus above. The watches that
       // mark a task that never started only send this tick, not a status
-      // event, so the check has to be here as well.
-      const enteredError = tickAgents.some(t =>
-        t.status === 'error' && known.find(a => a.id === t.id)?.status !== 'error',
+      // event, and a window can miss an event, so the check is here as well.
+      const enteredUnexplained = tickAgents.some(t =>
+        (t.status === 'error' || t.status === 'stopped') && known.find(a => a.id === t.id)?.status !== t.status,
       );
-      if (enteredError) {
+      if (enteredUnexplained) {
         fetchAgents();
         return;
       }
@@ -250,7 +272,9 @@ export function useElectronAgents() {
         // idle): the Chat counts it neither stopped nor idle.
         const changed = (a: AgentStatus, t: (typeof tickAgents)[number]) =>
           a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning ||
-          a.leftFullscreen !== t.leftFullscreen || !!a.launching !== !!t.launching;
+          a.leftFullscreen !== t.leftFullscreen || !!a.launching !== !!t.launching ||
+          // Asleep since when, and who is waking it (#322): the tick carries both.
+          a.asleepSince !== t.asleepSince || wakingKey(a.waking) !== wakingKey(t.waking);
         const hasChange = tickAgents.some(t => {
           const existing = prev.find(a => a.id === t.id);
           return existing && changed(existing, t);
@@ -259,7 +283,7 @@ export function useElectronAgents() {
         return prev.map(a => {
           const tick = tickAgents.find(t => t.id === a.id);
           if (tick && changed(a, tick)) {
-            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching };
+            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching, asleepSince: tick.asleepSince, waking: tick.waking };
           }
           return a;
         });
@@ -290,6 +314,7 @@ export function useElectronAgents() {
     updateAgent,
     startAgent,
     stopAgent,
+    wakeAgent,
     removeAgent,
     sendInput,
     refresh: fetchAgents,

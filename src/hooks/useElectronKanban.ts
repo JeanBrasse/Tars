@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { KanbanTask, KanbanColumn, KanbanTaskCreate, KanbanTaskUpdate, KanbanMoveResult } from '@/types/kanban';
+import type { AgentStatus } from '@/types/electron';
 import { isElectron } from './useElectron';
 import { useDesktopApi } from './useDesktopApi';
 import { lastPlainLines } from '@/lib/plain-lines';
@@ -215,22 +216,29 @@ export function useKanbanAgentSync(
       console.log(`[Kanban Sync] Agent ${event.agentId} completed with exit code: ${event.exitCode} for task "${task.title}"`);
 
       if (task.column === 'ongoing') {
-        const isSuccess = event.exitCode === 0;
-        console.log(`[Kanban Sync] Moving task ${task.id} to done (success: ${isSuccess})`);
-
-        // Get agent output for completion summary
-        let completionSummary = isSuccess ? 'Task completed successfully.' : 'Task completed with errors.';
+        let agent: AgentStatus | null | undefined;
         try {
-          const agent = await window.electronAPI?.agent.get(event.agentId);
-          // The last 50 lines a person can read. agent:get hands the terminal's
-          // screen as one chunk, serialized with its scrollback and its escape
-          // codes (core/terminal-mirror.ts): the last 50 chunks were all of it,
-          // about 170 KB in each completed task.
-          const lines = lastPlainLines(agent?.output ?? [], 50);
-          if (lines) completionSummary = lines;
+          agent = await window.electronAPI?.agent.get(event.agentId);
         } catch (err) {
           console.error('[Kanban Sync] Failed to get agent output:', err);
         }
+        // A stop is no task's end: the terminal a stop ended still sends
+        // agent:complete (core/agent-manager.ts), and the task stays where it
+        // is, for whoever starts the agent again.
+        if (agent?.status === 'stopped') {
+          console.log(`[Kanban Sync] Agent ${event.agentId} was stopped: task ${task.id} stays ${task.column}`);
+          return;
+        }
+        const isSuccess = event.exitCode === 0;
+        console.log(`[Kanban Sync] Moving task ${task.id} to done (success: ${isSuccess})`);
+
+        // The last 50 lines a person can read, for its summary. agent:get
+        // hands the terminal's screen as one chunk, serialized with its
+        // scrollback and its escape codes (core/terminal-mirror.ts): the last
+        // 50 chunks were all of it, about 170 KB in each completed task.
+        let completionSummary = isSuccess ? 'Task completed successfully.' : 'Task completed with errors.';
+        const lines = lastPlainLines(agent?.output ?? [], 50);
+        if (lines) completionSummary = lines;
 
         updateTaskRef.current({ id: task.id, progress: 100, completionSummary });
         moveTaskRef.current(task.id, 'done');
