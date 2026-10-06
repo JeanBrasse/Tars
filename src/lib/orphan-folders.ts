@@ -106,22 +106,32 @@ const KEPT_BECAUSE: Record<OrphanRemovalReport['kept'][number]['reason'], [one: 
   failed: ['its row says why', 'their rows say why'],
 };
 
-/** What the removal did, and why what stayed stayed. */
-export function doneHint(report: OrphanRemovalReport): string {
-  const kept = report.kept.length;
-  const reasons = new Set(report.kept.map(k => k.reason));
+/**
+ * What the removal did, and why what stayed stayed. `listed` is the list read
+ * again after it: a kept folder missing from it was no longer one no agent
+ * owns when its turn came (PR 334), so no row is left to say why, and this
+ * line says it. Without `listed`, every kept folder is taken as listed.
+ */
+export function doneHint(report: OrphanRemovalReport, listed?: ReadonlySet<string>): string {
+  const stays = listed ? report.kept.filter(k => listed.has(k.path)) : report.kept;
+  const changed = report.kept.length - stays.length;
+  const after = changed === 0 ? ''
+    : changed === 1 ? ' One was no longer a folder no agent owns.'
+    : ` ${changed} were no longer folders no agent owns.`;
+  const kept = stays.length;
+  const reasons = new Set(stays.map(k => k.reason));
   if (report.removed === 0 && kept > 0 && reasons.size === 1 && reasons.has('unknown-use')) {
-    return kept === 1
+    return (kept === 1
       ? 'None was removed: Tars could not read which processes work in it, so it was kept.'
-      : `None was removed: Tars could not read which processes work in them, so all ${kept} were kept.`;
+      : `None was removed: Tars could not read which processes work in them, so all ${kept} were kept.`) + after;
   }
   const head = report.removed > 0
     ? `Removed ${report.removed} ${plural(report.removed, 'folder')}: ${sizeLabel(report.freedBytes)} given back.`
     : 'None was removed.';
-  if (kept === 0) return head;
+  if (kept === 0) return head + after;
   const [reason] = [...reasons];
   const why = reasons.size === 1 ? KEPT_BECAUSE[reason][kept === 1 ? 0 : 1] : 'their rows say why';
-  return `${head} ${kept === 1 ? 'One was' : `${kept} were`} kept: ${why}.`;
+  return `${head} ${kept === 1 ? 'One was' : `${kept} were`} kept: ${why}.${after}`;
 }
 
 /** The disk's row: how much is free, of how much, and whether it is below the floor Tars warns under. */

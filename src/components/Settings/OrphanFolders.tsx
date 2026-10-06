@@ -47,7 +47,10 @@ export function OrphanFolders() {
 
   const remove = async () => {
     const system = window.electronAPI?.system;
-    if (!system) return;
+    if (!system || !listing) return;
+    // Exactly the rows the confirm named: a folder that became one no agent
+    // owns since the list was read goes only once it has been shown (PR 334).
+    const paths = listing.folders.map(f => f.path);
     setGone(new Set());
     setPhase({ kind: 'removing', progress: null });
     const off = system.onOrphanRemovalProgress(progress => {
@@ -57,7 +60,7 @@ export function OrphanFolders() {
     });
     let answer: OrphanRemovalReport | { error: string };
     try {
-      answer = await system.removeOrphanFolders();
+      answer = await system.removeOrphanFolders(paths);
     } catch (err) {
       answer = { error: err instanceof Error ? err.message : String(err) };
     } finally {
@@ -85,7 +88,7 @@ export function OrphanFolders() {
   const hint = (() => {
     switch (phase.kind) {
       case 'removing': return removingHint(phase.progress);
-      case 'done': return doneHint(phase.report);
+      case 'done': return doneHint(phase.report, new Set(listing.folders.map(f => f.path)));
       case 'failed': return <span className="text-status-error">Nothing was removed: {flat(phase.message)}</span>;
       default: return listingHint(listing);
     }
