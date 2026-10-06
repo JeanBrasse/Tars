@@ -396,8 +396,11 @@ describe('what the window showed', () => {
     expect((await removeOrphanFolders({ projects: [project], owned: [], paths: [], processCwds: noProcess })).removed).toBe(0);
     expect(fs.existsSync(wts('shown'))).toBe(true);
 
-    const report = await removeOrphanFolders({ projects: [project], owned: [], paths: shown, processCwds: noProcess });
+    const steps: number[][] = [];
+    const report = await removeOrphanFolders({ projects: [project], owned: [], paths: shown, processCwds: noProcess, onProgress: p => steps.push([p.done, p.total]) });
     expect(report.removed).toBe(1);
+    // One named, two orphans found: the progress counts what was named.
+    expect(steps).toEqual([[1, 1]]);
     expect(fs.existsSync(wts('shown'))).toBe(false);
     expect(fs.existsSync(wts('since', 'x.txt'))).toBe(true);
   });
@@ -408,9 +411,12 @@ describe('what the window showed', () => {
     file(path.join(outside, 'precious.txt'), 10);
     const asked = [wt, outside, wts('stray')];
 
-    const report = await removeOrphanFolders({ projects: [project], owned: [], paths: asked, processCwds: noProcess });
+    const steps: number[][] = [];
+    const report = await removeOrphanFolders({ projects: [project], owned: [], paths: asked, processCwds: noProcess, onProgress: p => steps.push([p.done, p.total]) });
 
     expect(report.removed).toBe(1);
+    // Three named, one orphan found: still three steps of three.
+    expect(steps).toEqual([[1, 3], [2, 3], [3, 3]]);
     expect(report.kept.map(k => [k.path, k.reason])).toEqual([[wt, 'failed'], [outside, 'failed']]);
     expect(git(wt, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feat/live');
     expect(fs.existsSync(path.join(outside, 'precious.txt'))).toBe(true);

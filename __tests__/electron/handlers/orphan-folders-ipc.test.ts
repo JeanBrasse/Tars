@@ -143,10 +143,10 @@ describe("the window's calls", () => {
     fs.writeFileSync(path.join(stray, 'x.txt'), 'x');
     agents.clear();
 
-    for (const sent of [undefined, [], 'all', [42], { paths: [stray] }]) {
-      const report = await handlers.get('system:removeOrphanFolders')!({}, sent) as { removed?: number; error?: string };
-      expect(report.removed ?? 0).toBe(0);
+    for (const sent of [undefined, 'all', [42], { paths: [stray] }]) {
+      expect(await handlers.get('system:removeOrphanFolders')!({}, sent), JSON.stringify(sent ?? null)).toEqual({ error: expect.stringContaining('list of paths') });
     }
+    expect(await handlers.get('system:removeOrphanFolders')!({}, [])).toEqual({ removed: 0, freedBytes: 0, kept: [] });
     expect(fs.existsSync(path.join(stray, 'x.txt'))).toBe(true);
   });
 
