@@ -94,7 +94,6 @@ import { resetResumeTracking, encodeProjectDirName } from '../../../electron/uti
 import { resetAgentRestarts } from '../../../electron/core/agent-restart';
 import { resetLaunches } from '../../../electron/core/agent-launch';
 import { emitAgentStatus } from '../../../electron/services/agent-events';
-import { startAgentForTask } from '../../../electron/services/kanban-automation';
 import { resetAgentWatch, queueBusMessage, deliverBusMessages, startAgentWatch, stopAgentWatch, holdsFor } from '../../../electron/services/agent-watch';
 import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks-routes';
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
@@ -310,29 +309,6 @@ describe('a start from the Dashboard', () => {
     expect(typed).not.toContain('--resume');
     expect(typed).not.toContain('owned');
     expect(typed).toContain('--dangerously-skip-permissions');
-  });
-});
-
-describe('a task started by the Kanban automation', () => {
-  it("runs through the same launch, on the agent's model and effort, unattended", async () => {
-    // It typed a bare `claude --dangerously-skip-permissions`: no model, no
-    // effort, no MCP configuration.
-    agentAtRest({ permissionMode: 'normal', effort: 'xhigh' });
-
-    await settled(startAgentForTask('agent-a', '# Task: fix the flaky test'));
-
-    const typed = typedInto(newTerminal(0));
-    expect(typed).toContain(" --model 'claude-opus-5-5'");
-    expect(typed).toContain(' --effort xhigh');
-    expect(typed).toContain('--dangerously-skip-permissions');
-    expect(typed).toContain("-- '# Task: fix the flaky test'");
-    expect(agents.get('agent-a')!.status).toBe('running');
-  });
-
-  it('fails the task, as a failed start always did, when a CLI already runs in the terminal', async () => {
-    agentWithTerminal({ foreground: '2.1.280' });
-
-    await expect(settled(startAgentForTask('agent-a', '# Task: anything'))).rejects.toThrow(/still running a CLI/);
   });
 });
 

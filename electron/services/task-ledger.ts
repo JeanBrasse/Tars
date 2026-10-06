@@ -71,7 +71,25 @@ export interface TaskRecord {
   sessionIds: string[];
   /** A delegation over ACP: what the run itself reported. */
   acp?: AcpUsage;
+  /**
+   * What its turns used, per model, as the state mod reported each one from
+   * Claude Code's turn.complete (mods step 4). Absent: no turn reported. It
+   * prices the task when its transcript is gone (task-cost.ts).
+   */
+  usageByModel?: Record<string, TurnTokens>;
+  /** How many turns' usage is in usageByModel. */
+  usageTurns?: number;
 }
+
+/** One turn's tokens, as Claude Code's turn.complete gives them: no split of the cache writes, no searches. */
+export interface TurnTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+export type TurnUsage = TurnTokens & { model: string };
 
 export interface HandOff {
   source: Exclude<TaskSource, 'terminal' | 'acp'>;
@@ -158,6 +176,19 @@ function taskOf(v: unknown): TaskRecord | null {
       costUSD: a.costUSD as number | null,
     };
   }
+  // What its turns used, as a rewrite of the file carries it: checked as a usage line is.
+  let usageByModel: Record<string, TurnTokens> | undefined;
+  if (t.usageByModel !== undefined) {
+    if (!t.usageByModel || typeof t.usageByModel !== 'object' || !isCount(t.usageTurns)) return null;
+    const entries = Object.entries(t.usageByModel as Record<string, unknown>);
+    if (entries.length > MAX_MODELS) return null;
+    usageByModel = {};
+    for (const [model, raw] of entries) {
+      const tokens = tokensOf(raw);
+      if (!isModel(model) || !tokens) return null;
+      usageByModel[model] = tokens;
+    }
+  }
   return {
     id: t.id, agentId: t.agentId,
     projectPath: t.projectPath as string | null, worktreePath: t.worktreePath as string | null,
@@ -166,7 +197,36 @@ function taskOf(v: unknown): TaskRecord | null {
     text: clip(t.text as string | undefined), startedAt: t.startedAt, endedAt: t.endedAt as number | null, lastAt: t.lastAt,
     outcome: t.outcome as TaskOutcome, turns: t.turns, sessionIds: [...t.sessionIds] as string[],
     ...(acp ? { acp } : {}),
+    ...(usageByModel ? { usageByModel, usageTurns: t.usageTurns as number } : {}),
   };
+}
+
+const MAX_MODELS = 20;
+const isModel = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 200;
+
+/** Tokens as a line or a task holds them, checked, or null. */
+function tokensOf(v: unknown): TurnTokens | null {
+  if (!v || typeof v !== 'object') return null;
+  const t = v as Record<string, unknown>;
+  return [t.input, t.output, t.cacheRead, t.cacheWrite].every(isCount)
+    ? { input: t.input as number, output: t.output as number, cacheRead: t.cacheRead as number, cacheWrite: t.cacheWrite as number }
+    : null;
+}
+
+/**
+ * A turn's usage as the state mod sends it, Claude Code's turn.complete
+ * `usage` (a count it leaves out is nought), or null when it is not one.
+ */
+export function turnUsageOf(raw: unknown): TurnUsage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const u = raw as Record<string, unknown>;
+  if (!isModel(u.model)) return null;
+  const count = (v: unknown) => (v === undefined ? 0 : v);
+  const tokens = tokensOf({
+    input: u.input_tokens, output: u.output_tokens,
+    cacheRead: count(u.cache_read_input_tokens), cacheWrite: count(u.cache_creation_input_tokens),
+  });
+  return tokens ? { model: u.model, ...tokens } : null;
 }
 
 /** A line of the file, checked as taskOf checks a task, or null. */
@@ -182,6 +242,10 @@ function lineOf(v: unknown): Line | null {
     if (l.sessionId !== undefined && !(typeof l.sessionId === 'string' && SESSION_ID.test(l.sessionId))) return null;
     return { t: 'turn', id: l.id, at: l.at, ...(typeof l.sessionId === 'string' ? { sessionId: l.sessionId } : {}) };
   }
+  if (l.t === 'usage') {
+    const tokens = tokensOf(l);
+    return tokens && isModel(l.model) ? { t: 'usage', id: l.id, at: l.at, model: l.model, ...tokens } : null;
+  }
   if (l.t === 'end' && OUTCOMES.includes(l.outcome as TaskOutcome) && l.outcome !== 'running') {
     return { t: 'end', id: l.id, at: l.at, outcome: l.outcome as Exclude<TaskOutcome, 'running'> };
   }
@@ -191,13 +255,34 @@ function lineOf(v: unknown): Line | null {
 type Line =
   | { t: 'task'; task: TaskRecord }
   | { t: 'turn'; id: string; at: number; sessionId?: string }
-  | { t: 'end'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'> };
+  | { t: 'end'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'> }
+  | ({ t: 'usage'; id: string; at: number } & TurnUsage);
+
+/** A turn's usage added to what its task holds, per model. */
+function addUsage(task: TaskRecord, usage: TurnUsage): void {
+  const byModel = task.usageByModel ?? {};
+  const prior = byModel[usage.model];
+  if (!prior && Object.keys(byModel).length >= MAX_MODELS) return;
+  byModel[usage.model] = {
+    input: (prior?.input ?? 0) + usage.input, output: (prior?.output ?? 0) + usage.output,
+    cacheRead: (prior?.cacheRead ?? 0) + usage.cacheRead, cacheWrite: (prior?.cacheWrite ?? 0) + usage.cacheWrite,
+  };
+  task.usageByModel = byModel;
+  task.usageTurns = (task.usageTurns ?? 0) + 1;
+}
 
 export interface TaskLedger {
   handedOff(agentId: string, handOff: HandOff): void;
   turnStarted(agent: TaskAgentView, turn: { sessionId?: string; text?: string }): void;
   stateChanged(agent: TaskAgentView, opts?: { backgroundLeft?: boolean }): void;
   acpRun(run: AcpRun): void;
+  /**
+   * A turn's usage, from the state mod: filed under the agent's latest task in
+   * that session, ended or not, since Claude Code's turn.complete comes after
+   * the Stop that ended it (8 to 14 ms after, measured on 2.1.289). Returns
+   * that task's id, or null when no task of the agent ran in that session.
+   */
+  turnUsage(agentId: string, sessionId: string, usage: TurnUsage): string | null;
   openTaskOf(agentId: string): TaskRecord | undefined;
   tasks(): TaskRecord[];
 }
@@ -231,6 +316,11 @@ export function createTaskLedger(opts: {
       return;
     }
     const task = byId.get(line.id);
+    // A turn's usage comes after the Stop that ended its task.
+    if (line.t === 'usage') {
+      if (task) addUsage(task, line);
+      return;
+    }
     if (!task || task.endedAt !== null) return;
     if (line.t === 'turn') {
       task.turns += 1;
@@ -432,10 +522,23 @@ export function createTaskLedger(opts: {
       });
     },
 
+    turnUsage(agentId, sessionId, usage) {
+      let task: TaskRecord | undefined;
+      for (const t of byId.values()) {
+        if (t.agentId === agentId && t.sessionIds.includes(sessionId) && (!task || t.startedAt >= task.startedAt)) task = t;
+      }
+      if (!task) return null;
+      write({ t: 'usage', id: task.id, at: now(), ...usage });
+      return task.id;
+    },
+
     openTaskOf,
 
     tasks() {
-      return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).map((t) => ({ ...t, sessionIds: [...t.sessionIds] }));
+      return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).map((t) => ({
+        ...t, sessionIds: [...t.sessionIds],
+        ...(t.usageByModel ? { usageByModel: Object.fromEntries(Object.entries(t.usageByModel).map(([m, u]) => [m, { ...u }])) } : {}),
+      }));
     },
   };
 }
