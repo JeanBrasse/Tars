@@ -837,7 +837,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### The IPC boundary
 
-`electron/preload.ts` (865 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 209 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`. Every event subscription returns its own unsubscribe closure.
+`electron/preload.ts` (868 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 210 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`. Every event subscription returns its own unsubscribe closure.
 
 ### What is validated where
 
