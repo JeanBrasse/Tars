@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   folderLabel, sizeLabel, changedLabel, whyLabel, removeLabel,
-  listingHint, confirmText, removingHint, doneHint, diskLine,
+  listingHint, confirmText, removingHint, doneHint, diskLine, unreadLine,
 } from '../../src/lib/orphan-folders';
 import type { OrphanFolder } from '../../src/types/electron';
 
@@ -26,7 +26,14 @@ import type { OrphanFolder } from '../../src/types/electron';
  * 8. a folder main did not remove reads as one it failed to: since #334's
  *    4e939d5c it also declines one that holds a repository or a live worktree
  *    by the time it comes to it, and its row's title says which (written
- *    before the change of the sentence).
+ *    before the change of the sentence);
+ * 9. a project git could not list reads as one with no orphan: since #334's
+ *    d1cc80a8 main names it in unreadProjects and offers none of its folders,
+ *    and the row still says every folder belongs to a worktree git knows, or
+ *    says nothing of it beside the folders offered; it is named by its path,
+ *    the home in it, where the rows name a project by its folder's name; a
+ *    name hides, turns or breaks the line; two projects read as one ("its
+ *    folders"). Git's reason stays in main's log: main does not send it.
  */
 
 const GB = 1024 ** 3;
@@ -122,5 +129,30 @@ describe('the disk', () => {
 
   it('marks it below the floor (7)', () => {
     expect(diskLine({ freeBytes: 24 * GB, totalBytes: 460 * GB, floorBytes: 30 * GB })).toMatchObject({ value: '24 GB free', low: true });
+  });
+});
+
+describe('a project git could not list (9)', () => {
+  const api = '/Users/you/projects/api-server';
+  const web = '/Users/you/web';
+
+  it('is named under the row as the rows name a project, never by its path', () => {
+    expect(unreadLine([api])).toBe('Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.');
+    expect(unreadLine([`${api}/`])).toBe('Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.');
+    expect(unreadLine([api, web])).toBe('Git could not list the worktrees of api-server and web, so Tars cannot say which of their folders no agent owns.');
+    expect(unreadLine([api, web, '/Users/you/projects/tars-hermes'])).toBe('Git could not list the worktrees of api-server, web and tars-hermes, so Tars cannot say which of their folders no agent owns.');
+    expect(unreadLine([])).toBeNull();
+  });
+
+  it('flattens what hides, turns or breaks the line', () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const ls = String.fromCodePoint(0x2028);
+    expect(unreadLine([`/Users/you/api${rlo}revres${ls}x`])).toBe('Git could not list the worktrees of api revres x, so Tars cannot say which of its folders no agent owns.');
+  });
+
+  it('keeps the row from saying every folder is known, and leaves the list as it reads beside it', () => {
+    expect(listingHint({ count: 0, totalBytes: 0, unreadProjects: [api] })).toBe('None in the projects git could read.');
+    expect(listingHint({ count: 0, totalBytes: 0, unreadProjects: [] })).toBe('None: every folder in your projects\' .worktrees belongs to a worktree git knows.');
+    expect(listingHint({ count: 59, totalBytes: 11 * GB, unreadProjects: [api] })).toBe('59 folders, 11.0 GB, in your projects\' .worktrees that git no longer knows, so nothing says whether they hold work. Tars never removes them on its own.');
   });
 });

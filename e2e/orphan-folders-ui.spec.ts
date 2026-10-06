@@ -13,20 +13,25 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * The real app, a sandbox HOME whose project holds a worktree git knows, an
  * agent's worktree, a worktree git forgot, a folder with no .git, and one a
- * real process works in. The person reads the list (the three, each with why,
- * its size and when it last changed) and the disk above it; remove asks first
- * and removes nothing; cancel takes the question away; remove again, then
- * remove in the question, and the end says two were removed and one kept,
- * which stays listed as in use, the process named in its title, with remove
- * 1 folder. The two idle folders are
- * gone from the disk, the busy one, the live worktree and the agent's are not.
+ * real process works in, and a second project, api-server, whose git cannot
+ * list its worktrees. The person reads the list (the three, each with why,
+ * its size and when it last changed), the line under it naming api-server as
+ * the rows name a project, without git's reason, and the disk above it;
+ * remove asks first and removes nothing; cancel takes the question away;
+ * remove again, then remove in the question, and the end says two were
+ * removed and one kept, which stays listed as in use, the process named in
+ * its title, with remove 1 folder. The two idle folders are gone from the
+ * disk, the busy one, the live worktree and the agent's are not. Once the
+ * process is gone, the last one goes too, and read again the row says none
+ * in the projects git could read, never that every folder is known, still
+ * naming api-server, whose folder was never offered and is still there.
  *
  * The artefact: a screenshot per state and values.json with what each one read.
  */
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
-test('the folders no agent owns are listed, asked about first, kept on cancel, and removed but the one in use, which the list keeps', async () => {
+test('the folders no agent owns are listed, asked about first, kept on cancel, and removed but the one in use, which the list keeps; a project git could not list is named, never read as having none', async () => {
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-orphans-ui-'));
   const project = path.join(fs.realpathSync(home), 'projects', 'tars-hermes');
@@ -52,16 +57,22 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
   // A process works in this one.
   fs.mkdirSync(wt('busy'), { recursive: true });
   fs.writeFileSync(wt('busy', 'x.txt'), 'x');
+  // A project git cannot list: its .git names a gitdir that is gone.
+  const unread = path.join(fs.realpathSync(home), 'projects', 'api-server');
+  const stale = path.join(unread, '.worktrees', 'stale-branch');
+  fs.mkdirSync(stale, { recursive: true });
+  fs.writeFileSync(path.join(stale, 'x.txt'), 'x');
+  fs.writeFileSync(path.join(unread, '.git'), `gitdir: ${path.join(unread, '.git-gone')}\n`);
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([{
     id: 'a1', name: 'Agent', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, worktreePath: wt('agent-wt'), branchName: 'agent-wt', skills: [],
     createdAt: '2026-10-06T08:00:00.000Z', lastActivity: '2026-10-06T08:00:00.000Z',
   }]));
-  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project, unread]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
   const busy = spawn('sleep', ['300'], { cwd: wt('busy'), stdio: 'ignore' });
-  const onDisk = () => ({ relay: fs.existsSync(wt('feat-relay-retry')), noGit: fs.existsSync(wt('agent-7f3c1a')), busy: fs.existsSync(wt('busy')) });
+  const onDisk = () => ({ relay: fs.existsSync(wt('feat-relay-retry')), noGit: fs.existsSync(wt('agent-7f3c1a')), busy: fs.existsSync(wt('busy')), stale: fs.existsSync(stale) });
 
   const app = await launchSandboxed(electron, home, {
     env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31460), DOROTHY_E2E: '1' },
@@ -88,6 +99,14 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
     await expect(byName('agent-7f3c1a')).toContainText('no .git');
     await expect(byName('busy')).toContainText('no .git');
     await expect(block).not.toContainText(project);
+    // The project git could not list, named as the rows name a project, never
+    // by its path, and without git's reason, which stays in main's log.
+    const unreadLine = block.locator('[data-orphan-unread]');
+    const UNREAD = 'Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.';
+    await expect(unreadLine).toHaveText(UNREAD);
+    await expect(block).not.toContainText(unread);
+    await expect(block).not.toContainText('not a git repository');
+    seen.unread = await unreadLine.innerText();
     const disk = page.locator('[data-settings-row]', { hasText: 'Disk' });
     await expect(disk).toContainText(/\d+ GB free of \d+ GB on the startup disk\. Tars warns below 30 GB\./);
     seen.disk = (await disk.innerText()).replace(/\s+/g, ' ');
@@ -100,13 +119,13 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
     await expect(confirm).toContainText('Remove these 3 folders,');
     await expect(confirm).toContainText('for good?');
     seen.asks = (await confirm.innerText()).replace(/\s+/g, ' ');
-    expect(onDisk(), 'asking removes nothing').toEqual({ relay: true, noGit: true, busy: true });
+    expect(onDisk(), 'asking removes nothing').toEqual({ relay: true, noGit: true, busy: true, stale: true });
     await stepShot(page, '02-asks-first');
 
     // Cancel takes the question away.
     await confirm.getByRole('button', { name: 'cancel', exact: true }).click();
     await expect(confirm).toHaveCount(0);
-    expect(onDisk(), 'cancel removes nothing').toEqual({ relay: true, noGit: true, busy: true });
+    expect(onDisk(), 'cancel removes nothing').toEqual({ relay: true, noGit: true, busy: true, stale: true });
     await expect(rows).toHaveCount(3);
 
     // Remove, then remove in the question.
@@ -120,13 +139,35 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
     // Which process, in the title of its why, as main names it.
     await expect(rows.first().locator('[data-orphan-why]')).toHaveAttribute('title', new RegExp(`\\(${busy.pid}\\)`));
     await expect(block.getByRole('button', { name: 'remove 1 folder', exact: true })).toBeEnabled();
+    await expect(unreadLine).toHaveText(UNREAD);
     seen.done = (await block.locator('[data-settings-hint]').first().innerText()).replace(/\s+/g, ' ');
     seen.kept = (await rows.allInnerTexts()).map(t => t.replace(/\s+/g, ' '));
     await stepShot(page, '03-done-one-kept');
 
+    const afterFirst = { ...onDisk(), live: git(wt('feat', 'live'), 'rev-parse', '--abbrev-ref', 'HEAD'), agent: fs.existsSync(wt('agent-wt', 'a.txt')) };
+    expect(afterFirst).toEqual({ relay: false, noGit: false, busy: true, stale: true, live: 'feat/live', agent: true });
+
+    // Once nothing works in it, the last one goes too; read again, the row
+    // says none in the projects git could read, never that every folder is
+    // known, and still names api-server, whose folder was never offered.
+    const gone = new Promise(resolve => busy.once('exit', resolve));
+    process.kill(busy.pid!, 'SIGKILL');
+    await gone;
+    await block.getByRole('button', { name: 'remove 1 folder', exact: true }).click();
+    await confirm.getByRole('button', { name: 'remove 1 folder', exact: true }).click();
+    await expect(block).toContainText('Removed 1 folder:', { timeout: 60_000 });
+    await expect(rows).toHaveCount(0);
+    await page.goto(`${DEV_URL}/settings?section=system`, { waitUntil: 'domcontentloaded' });
+    await expect(block.locator('[data-settings-hint]').first()).toHaveText('None in the projects git could read.', { timeout: 90_000 });
+    await expect(block).not.toContainText('belongs to a worktree git knows');
+    await expect(unreadLine).toHaveText(UNREAD);
+    await expect(block.getByRole('button', { name: /^remove/ })).toHaveCount(0);
+    seen.none = (await block.innerText()).replace(/\s+/g, ' ');
+    await stepShot(page, '04-none-api-server-unread');
+
     const after = { ...onDisk(), live: git(wt('feat', 'live'), 'rev-parse', '--abbrev-ref', 'HEAD'), agent: fs.existsSync(wt('agent-wt', 'a.txt')) };
-    recordValues({ ...seen, after, pageErrors });
-    expect(after).toEqual({ relay: false, noGit: false, busy: true, live: 'feat/live', agent: true });
+    recordValues({ ...seen, afterFirst, after, pageErrors });
+    expect(after).toEqual({ relay: false, noGit: false, busy: false, stale: true, live: 'feat/live', agent: true });
     expect(pageErrors).toEqual([]);
   } finally {
     if (busy.pid) { try { process.kill(busy.pid, 'SIGKILL'); } catch { /* gone */ } }
