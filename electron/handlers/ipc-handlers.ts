@@ -709,12 +709,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         const newStatus = agentStatusOnExit(exitCode);
         if (!newStatus) return;
         const agentData = agents.get(id);
-        // Guard: only mutate if this PTY is still the active one (prevents race on restart)
-        if (agentData && agentData.ptyId === newPtyId) {
-          agentData.status = newStatus;
-          agentData.lastActivity = new Date().toISOString();
-          handleStatusChangeNotification(agentData, newStatus);
-        }
+        // Only while this terminal is still the agent's: a stop or a restart
+        // has moved on, and its end is not the agent's news (as initAgentPty).
+        if (!agentData || agentData.ptyId !== newPtyId) return;
+        agentData.status = newStatus;
+        agentData.lastActivity = new Date().toISOString();
+        handleStatusChangeNotification(agentData, newStatus);
         broadcastToAllWindows('agent:complete', {
           type: 'complete',
           agentId: id,
