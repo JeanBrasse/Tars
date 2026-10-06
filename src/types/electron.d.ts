@@ -1015,7 +1015,13 @@ export interface OrphanFolder {
   /** The newest change in it (caches and .git aside), or null. */
   lastChangedAt: string | null;
 }
-export interface OrphanListing { folders: OrphanFolder[]; count: number; totalBytes: number }
+export interface OrphanListing {
+  folders: OrphanFolder[];
+  count: number;
+  totalBytes: number;
+  /** The projects whose worktrees git could not list (as OrphanFolder.project): none of their folders is offered, which an empty list does not say. */
+  unreadProjects: string[];
+}
 export interface OrphanRemovalProgress { done: number; total: number; freedBytes: number; current: string }
 /** in-use: a process works in it (detail names it). unknown-use: the processes could not be read. failed: detail says why. */
 export interface OrphanRemovalReport {

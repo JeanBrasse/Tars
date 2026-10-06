@@ -14,6 +14,7 @@
  * 5. An agent whose folder is its projectPath, inside a .worktrees, with no
  *    worktreePath, has its folder offered and removed while no process sits
  *    in it (idle with no terminal, stopped, asleep, Tars just started).
+ * 6. (the Audit's recheck) The same for an agent's secondaryProjectPath.
  */
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -108,6 +109,21 @@ describe("the window's calls", () => {
     fs.writeFileSync(path.join(folder, 'work'), 'mine\n');
     agents.clear();
     agents.set('a2', { id: 'a2', name: 'B', status: 'idle', projectPath: folder, skills: [], output: [] } as unknown as AgentStatus);
+
+    const listing = await handlers.get('system:orphanFolders')!({}) as { folders: Array<{ path: string }> };
+    expect(listing.folders.map(f => f.path)).not.toContain(folder);
+    await handlers.get('system:removeOrphanFolders')!({});
+    expect(fs.readFileSync(path.join(folder, 'work'), 'utf8')).toBe('mine\n');
+  });
+
+  it("6. never offers an agent's secondary project folder inside a .worktrees", async () => {
+    const host = project('host2');
+    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([host]));
+    const folder = path.join(host, '.worktrees', 'second-home');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'work'), 'mine\n');
+    agents.clear();
+    agents.set('a3', { id: 'a3', name: 'C', status: 'idle', projectPath: host, secondaryProjectPath: folder, skills: [], output: [] } as unknown as AgentStatus);
 
     const listing = await handlers.get('system:orphanFolders')!({}) as { folders: Array<{ path: string }> };
     expect(listing.folders.map(f => f.path)).not.toContain(folder);

@@ -1688,8 +1688,9 @@ Settings · System lists the folders under each project's `.worktrees` (the proj
 `~/.dorothy/projects.json` and of the agents) that no git worktree holds and no agent owns:
 `git-forgot` (their `.git` names a gitdir that is gone) or `no-git`. A repository of its own (a
 clone), a live worktree of any repository, and a folder holding either at any depth are never
-listed; nor is anything of a project whose `git worktree list` fails, which the main process log
-says (`[orphan-folders] git cannot list the worktrees of ...`). Tars never removes one on its
+listed; nor is anything of a project whose `git worktree list` fails: the window names that
+project, and the main process log says why (`[orphan-folders] git cannot list the worktrees of
+<project> (<code>): <git's message>`). Tars never removes one on its
 own. The window's remove asks first, then removes them all one at a time; a folder a process
 works in stays listed as `in-use`, with the process named, and when `lsof` cannot be read every
 folder stays (`unknown-use`). To see what a process holds there: `lsof -a -d cwd +D <folder>`.
