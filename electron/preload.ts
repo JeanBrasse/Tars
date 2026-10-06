@@ -550,59 +550,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('orchestrator:remove'),
   },
 
-  // Kanban Board
-  kanban: {
-    list: () =>
-      ipcRenderer.invoke('kanban:list'),
-    get: (id: string) =>
-      ipcRenderer.invoke('kanban:get', id),
-    create: (params: {
-      title: string;
-      description: string;
-      projectId: string;
-      projectPath: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-    }) =>
-      ipcRenderer.invoke('kanban:create', params),
-    update: (params: {
-      id: string;
-      title?: string;
-      description?: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-      progress?: number;
-      assignedAgentId?: string | null;
-    }) =>
-      ipcRenderer.invoke('kanban:update', params),
-    move: (params: { id: string; column: 'backlog' | 'planned' | 'ongoing' | 'done'; order?: number }) =>
-      ipcRenderer.invoke('kanban:move', params),
-    delete: (id: string) =>
-      ipcRenderer.invoke('kanban:delete', id),
-    reorder: (params: { taskIds: string[]; column: 'backlog' | 'planned' | 'ongoing' | 'done' }) =>
-      ipcRenderer.invoke('kanban:reorder', params),
-    generate: (params: { prompt: string; availableProjects: Array<{ path: string; name: string }> }) =>
-      ipcRenderer.invoke('kanban:generate', params),
-    // Event listeners
-    onTaskCreated: (callback: (task: unknown) => void) => {
-      const listener = (_: unknown, task: unknown) => callback(task);
-      ipcRenderer.on('kanban:task-created', listener);
-      return () => ipcRenderer.removeListener('kanban:task-created', listener);
-    },
-    onTaskUpdated: (callback: (task: unknown) => void) => {
-      const listener = (_: unknown, task: unknown) => callback(task);
-      ipcRenderer.on('kanban:task-updated', listener);
-      return () => ipcRenderer.removeListener('kanban:task-updated', listener);
-    },
-    onTaskDeleted: (callback: (event: { id: string }) => void) => {
-      const listener = (_: unknown, event: { id: string }) => callback(event);
-      ipcRenderer.on('kanban:task-deleted', listener);
-      return () => ipcRenderer.removeListener('kanban:task-deleted', listener);
-    },
-  },
-
   // Agent templates
   template: {
     list: () =>
@@ -864,6 +811,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     detectVault: (projectPath: string) => ipcRenderer.invoke('obsidian:detectVault', projectPath),
     addVault: (vaultPath: string) => ipcRenderer.invoke('obsidian:addVault', vaultPath),
     removeVault: (vaultPath: string) => ipcRenderer.invoke('obsidian:removeVault', vaultPath),
+  },
+
+  // The disk, and the folders no agent owns (Settings · System). The removal
+  // asks nothing itself: the window confirms before it calls.
+  system: {
+    disk: () => ipcRenderer.invoke('system:disk'),
+    orphanFolders: () => ipcRenderer.invoke('system:orphanFolders'),
+    removeOrphanFolders: (paths: string[]) => ipcRenderer.invoke('system:removeOrphanFolders', paths),
+    onOrphanRemovalProgress: (callback: (progress: { done: number; total: number; freedBytes: number; current: string }) => void) => {
+      const listener = (_: unknown, progress: { done: number; total: number; freedBytes: number; current: string }) => callback(progress);
+      ipcRenderer.on('system:orphanFolders:progress', listener);
+      return () => ipcRenderer.removeListener('system:orphanFolders:progress', listener);
+    },
   },
 
   // Tray menu events

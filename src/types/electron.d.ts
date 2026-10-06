@@ -235,23 +235,6 @@ export interface AgentEvent {
   exitCode?: number;
 }
 
-export interface KanbanTaskElectron {
-  id: string;
-  title: string;
-  description: string;
-  column: 'backlog' | 'planned' | 'ongoing' | 'done';
-  projectId: string;
-  projectPath: string;
-  assignedAgentId: string | null;
-  requiredSkills: string[];
-  priority: 'low' | 'medium' | 'high';
-  progress: number;
-  createdAt: string;
-  updatedAt: string;
-  order: number;
-  labels: string[];
-}
-
 export interface VaultDocumentElectron {
   id: string;
   title: string;
@@ -1002,6 +985,36 @@ export interface ClaudeAccountAgentChange {
   claudeAccountId: ClaudeAccountId | null;
   /** The account it is held to; null is automatic. */
   claudeAccountPin: ClaudeAccountId | null;
+}
+
+/** The disk Tars runs on: its free and total space, and the floor below which Tars warns (30 GB). */
+export interface DiskSpace { freeBytes: number; totalBytes: number; floorBytes: number }
+
+/** A folder under a project's .worktrees that no git worktree holds and no agent owns. */
+export interface OrphanFolder {
+  project: string;
+  path: string;
+  /** Its path under the project's .worktrees. */
+  name: string;
+  /** git-forgot: its .git points to a gitdir that is gone. no-git: it never had one. */
+  reason: 'git-forgot' | 'no-git';
+  sizeBytes: number;
+  /** The newest change in it (caches and .git aside), or null. */
+  lastChangedAt: string | null;
+}
+export interface OrphanListing {
+  folders: OrphanFolder[];
+  count: number;
+  totalBytes: number;
+  /** The projects whose worktrees git could not list (as OrphanFolder.project): none of their folders is offered, which an empty list does not say. */
+  unreadProjects: string[];
+}
+export interface OrphanRemovalProgress { done: number; total: number; freedBytes: number; current: string }
+/** in-use: a process works in it (detail names it). unknown-use: the processes could not be read. failed: detail says why. */
+export interface OrphanRemovalReport {
+  removed: number;
+  freedBytes: number;
+  kept: Array<{ path: string; project: string; reason: 'in-use' | 'unknown-use' | 'failed'; detail?: string }>;
 }
 
 /** What the claude-accounts channels answer: the result, or a sentence. */
@@ -1887,65 +1900,6 @@ export interface ElectronAPI {
     onThread: (callback: (thread: BusThread) => void) => () => void;
   };
 
-  kanban?: {
-    list: () => Promise<{ tasks: KanbanTaskElectron[]; error?: string }>;
-    get: (id: string) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
-    create: (params: {
-      title: string;
-      description: string;
-      projectId: string;
-      projectPath: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-    }) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
-    update: (params: {
-      id: string;
-      title?: string;
-      description?: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-      progress?: number;
-      assignedAgentId?: string | null;
-    }) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
-    move: (params: {
-      id: string;
-      column: 'backlog' | 'planned' | 'ongoing' | 'done';
-      order?: number;
-    }) => Promise<{
-      success: boolean;
-      task?: KanbanTaskElectron;
-      agentSpawned?: boolean;
-      agentId?: string;
-      error?: string;
-    }>;
-    delete: (id: string) => Promise<{ success: boolean; error?: string }>;
-    reorder: (params: {
-      taskIds: string[];
-      column: 'backlog' | 'planned' | 'ongoing' | 'done';
-    }) => Promise<{ success: boolean; error?: string }>;
-    generate: (params: {
-      prompt: string;
-      availableProjects: Array<{ path: string; name: string }>;
-    }) => Promise<{
-      success: boolean;
-      task?: {
-        title: string;
-        description: string;
-        projectPath: string;
-        projectId: string;
-        priority: 'low' | 'medium' | 'high';
-        labels: string[];
-        requiredSkills: string[];
-      };
-      error?: string;
-    }>;
-    onTaskCreated: (callback: (task: KanbanTaskElectron) => void) => () => void;
-    onTaskUpdated: (callback: (task: KanbanTaskElectron) => void) => () => void;
-    onTaskDeleted: (callback: (event: { id: string }) => void) => () => void;
-  };
-
   // Agent templates
   template?: {
     list: () => Promise<{ templates: AgentTemplate[]; error?: string }>;
@@ -2117,6 +2071,15 @@ export interface ElectronAPI {
     }) => void) => () => void;
     onUpdateDownloaded: (callback: () => void) => () => void;
     onUpdateError: (callback: (error: string) => void) => () => void;
+  };
+
+  // The disk and the folders no agent owns (Settings · System)
+  system: {
+    disk: () => Promise<DiskSpace | null>;
+    orphanFolders: () => Promise<OrphanListing>;
+    /** Removes the folders named (the OrphanFolder.path of the rows shown), each only if it is still an orphan, and nothing else; one at a time, asking nothing itself (the window confirms first). A folder a process works in is kept. */
+    removeOrphanFolders: (paths: string[]) => Promise<OrphanRemovalReport | { error: string }>;
+    onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void;
   };
 
   // Obsidian vault browsing & editing

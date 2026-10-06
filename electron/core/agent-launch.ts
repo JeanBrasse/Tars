@@ -10,20 +10,20 @@ import { lastInterruptAt } from '../services/agent-truth';
  *
  * Every start from a window (the Dashboard, autostart, the Agents and Projects
  * pages, templates, team deployment) goes through the `agent:start` handler.
- * Two starts come from the main process itself and used to build their own
- * command instead: the Kanban automation, which typed a bare
- * `claude --dangerously-skip-permissions` with no model, no effort and no MCP
- * configuration, so its agents ran on whatever the CLI defaulted to; and the
- * restart that applies a changed model or effort, which did not exist. The
- * handler registers its launch here and both call it, so there is one way an
- * agent's CLI is typed into its terminal, not three.
+ * Starts from the main process itself used to build their own command: the
+ * Kanban automation, which typed a bare `claude --dangerously-skip-permissions`
+ * with no model, no effort and no MCP configuration, so its agents ran on
+ * whatever the CLI defaulted to (it went with the old local board, 06/10); and
+ * the restart that applies a changed model or effort, which did not exist. The
+ * handler registers its launch here and the restart calls it, so there is one
+ * way an agent's CLI is typed into its terminal.
  */
 export interface AgentLaunchOptions {
   /** A model chosen for this launch alone, over the agent's own. */
   model?: string;
   provider?: AgentProvider;
   localModel?: string;
-  /** Over the agent's own: the Kanban automation runs its tasks unattended. */
+  /** Over the agent's own, for this launch alone. */
   permissionMode?: AgentPermissionMode;
   /**
    * Which conversation to pick up. Absent: the usual rule, the last session

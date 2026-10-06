@@ -9,11 +9,11 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
  *
  * `~/.claude.json` is read and rewritten by every live Claude Code, Claude's
  * `settings.json` is read by every claude binary, `~/.claude/mcp.json` by every
- * Claude session Tars starts, through --mcp-config, and `kanban-tasks.json` is
- * written whole by Tars (and by mcp-kanban, until #171 sent its tools through
- * Tars). All four were rewritten in place, so a reader that opened one
- * mid-write got a truncated JSON document; both kanban writers read that as an
- * empty board, and their next save wrote it.
+ * Claude session Tars starts, through --mcp-config. All three were rewritten in
+ * place, so a reader that opened one mid-write got a truncated JSON document.
+ * (`kanban-tasks.json` was a fourth, written whole by Tars and by mcp-kanban,
+ * until #171 sent the tools to the Hermes board and the old local board went,
+ * 06/10: nothing writes it now.)
  *
  * Every case runs the real writer and cuts into its writeFileSync: halfway
  * through, a reader parses the file, or the process dies. HOME is the
@@ -74,7 +74,6 @@ const handlers = new Map<string, Handler>();
 
 import { ensureProjectTrusted } from '../../electron/core/agent-manager';
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../electron/handlers/ipc-handlers';
-import { registerKanbanHandlers, type KanbanHandlerDependencies } from '../../electron/handlers/kanban-handlers';
 import { registerMcpConfigHandlers } from '../../electron/handlers/mcp-config-handlers';
 import { ClaudeProvider } from '../../electron/providers/claude-provider';
 import { getAllProviders } from '../../electron/providers';
@@ -944,56 +943,5 @@ describe("fs:write-text-file and Claude's own files", () => {
     expect(await writeText('~/.claude/CLAUDE.md', '# Notes\n')).toMatchObject({ success: true });
 
     expect(fs.readFileSync(path.join(home(), '.claude', 'CLAUDE.md'), 'utf-8')).toBe('# Notes\n');
-  });
-});
-
-describe('kanban-tasks.json, written by Tars', () => {
-  const board = [{ id: 't1', title: 'keep me', column: 'backlog', order: 0 }, { id: 't2', title: 'and me', column: 'done', order: 0 }];
-
-  function kanbanDeps(): KanbanHandlerDependencies {
-    return {
-      getMainWindow: () => null,
-      findMatchingAgent: vi.fn(async () => null),
-      createAgentForTask: vi.fn(async () => 'agent'),
-      startAgent: vi.fn(async () => undefined),
-      stopAgent: vi.fn(async () => undefined),
-      deleteAgent: vi.fn(async () => undefined),
-      getAgentOutput: vi.fn(() => []),
-    };
-  }
-
-  beforeEach(() => {
-    handlers.clear();
-    registerKanbanHandlers(kanbanDeps());
-    fs.mkdirSync(path.dirname(KANBAN_FILE), { recursive: true });
-    fs.writeFileSync(KANBAN_FILE, JSON.stringify(board, null, 2));
-  });
-
-  const create = () => handlers.get('kanban:create')!({}, {
-    title: 'a new task', description: '', projectId: 'p', projectPath: '/work/p', requiredSkills: [], priority: 'low', labels: [],
-  });
-
-  it('Tars never shows the board half-written to a reader', async () => {
-    const seenMidway: unknown[] = [];
-    const undo = cutWrites(path.dirname(KANBAN_FILE), () => seenMidway.push(readAsJson(KANBAN_FILE)));
-    try {
-      await create();
-    } finally {
-      undo();
-    }
-
-    expect(seenMidway.length).toBeGreaterThan(0);
-    for (const seen of seenMidway) expect(seen).toEqual(board);
-  });
-
-  it('Tars leaves the board whole when its write dies halfway', async () => {
-    const undo = cutWrites(path.dirname(KANBAN_FILE), () => {}, { die: true });
-    try {
-      await create();
-    } finally {
-      undo();
-    }
-
-    expect(readAsJson(KANBAN_FILE)).toEqual(board);
   });
 });

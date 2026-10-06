@@ -54,9 +54,10 @@ const NODE_PTY_HELPER = 'spawn-helper';
  * agent from the renderer spawned one too. Both predate all of this, both put
  * CLAUDE_AGENT_ID in the environment through getPtyEnvVars, and neither had
  * the API address, so both posted their hooks to whichever Tars owned 31415.
- * Five sites now, all through here. The fifth is the kanban automation in
+ * Five sites, all through here. The fifth was the kanban automation in
  * main.ts, creating agents of its own under a comment saying it duplicates the
- * agent:create handler, which it did, defect included. What deliberately does not are the shells that run no
+ * agent:create handler, which it did, defect included; it went with the old
+ * local board (06/10). What deliberately does not are the shells that run no
  * agent: the quick terminal, the skill and plugin runners, and the npx
  * installer. They carry no CLAUDE_AGENT_ID, so a hook fired from one of them
  * has no agent to name and is refused. Anything that spawns an agent belongs

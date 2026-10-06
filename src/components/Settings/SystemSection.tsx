@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { Button, StatusBadge } from '@/components/ui';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
+import { OrphanFolders } from './OrphanFolders';
 import type { ClaudeInfo, AppSettings } from './types';
+import type { DiskSpace } from '@/types/electron';
+import { diskLine } from '@/lib/orphan-folders';
 
 /** Strip HTML tags and collapse whitespace so release notes render as plain text. */
 function stripHtml(html: string): string {
@@ -50,9 +53,11 @@ export const SystemSection = ({ info }: SystemSectionProps) => {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [downloadPercent, setDownloadPercent] = useState(0);
+  const [disk, setDisk] = useState<DiskSpace | null>(null);
 
   useEffect(() => {
     window.electronAPI?.app?.getVersion().then(r => setAppVersion(r?.version ?? null)).catch(() => {});
+    window.electronAPI?.system?.disk().then(setDisk).catch(() => {});
   }, []);
 
   // Listen for download progress, completion, and error events
@@ -158,6 +163,7 @@ export const SystemSection = ({ info }: SystemSectionProps) => {
   };
 
   const version = appVersion || updateInfo?.currentVersion || '...';
+  const diskRow = disk ? diskLine(disk) : null;
 
   // The state used to be four coloured cards under the button. It is one line
   // under the label now, and the button itself says what happens next.
@@ -251,6 +257,17 @@ export const SystemSection = ({ info }: SystemSectionProps) => {
           />
         </>
       )}
+
+      {/* The disk, and the folders no agent owns under the projects' .worktrees:
+          frame `Settings · System · folders no agent owns`. */}
+      {diskRow && (
+        <SettingsRow
+          label="Disk"
+          description={diskRow.hint}
+          control={<span className={`font-mono text-[11px] ${diskRow.low ? 'text-status-waiting' : 'text-muted-foreground'}`}>{diskRow.value}</span>}
+        />
+      )}
+      <OrphanFolders />
     </SettingsCard>
   );
 };
