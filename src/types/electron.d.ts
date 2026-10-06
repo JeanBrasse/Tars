@@ -165,6 +165,8 @@ export interface AgentTickItem {
   statusSince?: string;
   /** What a waiting agent waits on. See AgentStatus.waitingOn. */
   waitingOn?: AgentWaitingOn;
+  /** A permission question Tars holds for the window. See AgentStatus.permissionAsk. */
+  permissionAsk?: AgentStatus['permissionAsk'];
   /** A launch is on its way. See AgentStatus.launching. Always set on agents:tick. */
   launching?: boolean;
   provider: string;
@@ -397,6 +399,23 @@ export interface AgentStatus {
   stoppedAt?: string;
   /** One line, or none when the window's stop gave none. */
   stopReason?: string;
+  /** A permission question the state mod asked Tars instead of showing its
+   *  dialog (services/permission-asks.ts): the window answers it with
+   *  agent:answerPermission. Without it, a permission wait is the terminal's
+   *  dialog. Not saved. */
+  permissionAsk?: {
+    tool: string;
+    askedAt: string;
+    /** When Tars hands the question back to the terminal's dialog if nobody answers. */
+    until: string;
+    /** What is asked, whole: the command, the path or the address (the fields' first), the tool when none. */
+    subject: string;
+    /** The fields the person decides on, whole (each at most 2,000 characters). */
+    fields: Record<string, string>;
+    /** Why Claude Code asks, and the settings rule that asked, when it gave them. */
+    reason?: string;
+    rule?: string;
+  };
   /** The last start that undid a stop: who stopped it, when and why, and who started it again and when. */
   lastRestartAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string; restartedBy: string; restartedAt: string };
   /** ISO: running, yet nothing written to its transcript since then (30 minutes
@@ -1045,6 +1064,8 @@ export interface ElectronAPI {
     stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
     /** savedTo: the wip/ branch its uncommitted work was saved on. worktreeKept: why its worktree was not removed (the save failed, or it holds what no commit keeps). */
     remove: (id: string) => Promise<{ success: boolean; savedTo?: string; worktreeKept?: string }>;
+    /** Answers the permission question the state mod asked Tars for this agent (AgentStatus.permissionAsk): allow or deny decide the call, ask shows it in the terminal's dialog. False when there was none. */
+    answerPermission: (id: string, decision: 'allow' | 'deny' | 'ask', reason?: string) => Promise<{ success: boolean }>;
     /** Into the agent's terminal. Asleep, a key wakes it (`woke: true`); a lone Esc or Ctrl+C, a mouse or focus report does nothing. */
     sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean; woke?: boolean; error?: string }>;
     /** An asleep agent's CLI started on its own conversation, nothing typed; refused for one that is not asleep. */
@@ -1055,7 +1076,7 @@ export interface ElectronAPI {
     onError: (callback: (event: AgentEvent) => void) => () => void;
     onComplete: (callback: (event: AgentEvent) => void) => () => void;
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
-    onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => () => void;
+    onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
     /** What is waiting right now, for a panel that opened after the wait
      *  began: the event below only reaches a window already listening. An

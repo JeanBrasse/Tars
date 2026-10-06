@@ -8,6 +8,8 @@ export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
 };
 
+/** A permission question as one comparable value: when it was asked, and what it asks. */
+const askKey = (ask: AgentStatus['permissionAsk'] | null | undefined) => (ask ? `${ask.askedAt}\u0000${ask.subject}` : '');
 /** A wake on its way as one comparable value: who, how and since when. */
 const wakingKey = (waking: AgentStatus['waking']) => (waking ? `${waking.by}\u0000${waking.via}\u0000${waking.since}` : '');
 
@@ -62,6 +64,10 @@ export function useElectronAgents() {
             prevAgent.claudeAccountPin !== agent.claudeAccountPin ||
             // The last move by Tars, which its control's title tells.
             prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at ||
+            // A permission question Tars holds, and what it asks: ask in
+            // terminal takes the question away and moves nothing else.
+            askKey(prevAgent.permissionAsk) !== askKey(agent.permissionAsk) ||
+            prevAgent.waitingOn?.text !== agent.waitingOn?.text ||
             // Asleep since when, and who is waking it: the line in place of
             // its task, branch or path says both.
             prevAgent.asleepSince !== agent.asleepSince ||
@@ -203,7 +209,7 @@ export function useElectronAgents() {
       fetchAgents();
     });
 
-    const unsubStatus = window.electronAPI!.agent.onStatus?.((event: { agentId: string; status: string; timestamp: string }) => {
+    const unsubStatus = window.electronAPI!.agent.onStatus?.((event) => {
       // Neither this event nor the tick says why an agent is in error, nor
       // who stopped it, when and why: those are only on the full record.
       // Patching the status alone put `error` beside whatever reason this copy
@@ -215,9 +221,16 @@ export function useElectronAgents() {
         fetchAgents();
         return;
       }
+      // A permission question Tars holds rides every event of its own, null
+      // at its end (#318): an answer, ask in terminal, its ten minutes, a
+      // stop. Ask in terminal leaves the agent waiting, and only the question
+      // goes. An event that does not name it leaves it as it was.
       setAgents(prev => prev.map(a =>
         a.id === event.agentId
-          ? { ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString() }
+          ? {
+            ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString(),
+            ...('permissionAsk' in event ? { permissionAsk: event.permissionAsk ?? undefined } : {}),
+          }
           : a
       ));
     });
@@ -273,6 +286,8 @@ export function useElectronAgents() {
         const changed = (a: AgentStatus, t: (typeof tickAgents)[number]) =>
           a.status !== t.status || a.currentTask !== t.currentTask || a.cliRunning !== t.cliRunning ||
           a.leftFullscreen !== t.leftFullscreen || !!a.launching !== !!t.launching ||
+          // A permission question Tars holds, which the tick carries (#318).
+          askKey(a.permissionAsk) !== askKey(t.permissionAsk) ||
           // Asleep since when, and who is waking it (#322): the tick carries both.
           a.asleepSince !== t.asleepSince || wakingKey(a.waking) !== wakingKey(t.waking);
         const hasChange = tickAgents.some(t => {
@@ -283,7 +298,7 @@ export function useElectronAgents() {
         return prev.map(a => {
           const tick = tickAgents.find(t => t.id === a.id);
           if (tick && changed(a, tick)) {
-            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching, asleepSince: tick.asleepSince, waking: tick.waking };
+            return { ...a, status: tick.status as AgentStatus['status'], currentTask: tick.currentTask, lastActivity: tick.lastActivity, cliRunning: tick.cliRunning, leftFullscreen: tick.leftFullscreen, launching: tick.launching, permissionAsk: tick.permissionAsk ?? undefined, asleepSince: tick.asleepSince, waking: tick.waking };
           }
           return a;
         });
