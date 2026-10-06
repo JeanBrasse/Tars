@@ -1,6 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
-import { ignoredNotCaches, saveUncommittedWork } from '../services/save-worktree-work';
+import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
@@ -532,8 +532,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   });
 
   // Start an agent with a prompt (sends command to PTY). The one launch of an
-  // agent's CLI into its terminal: the handler below, the Kanban automation and
-  // the restart that applies changed settings all come through here. See
+  // agent's CLI into its terminal: the handler below and the restart that
+  // applies changed settings both come through here. See
   // core/agent-launch.ts.
   const launchInTerminal: AgentLauncher = async (id, prompt, options) => {
     const agent = agents.get(id);
@@ -710,12 +710,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         const newStatus = agentStatusOnExit(exitCode);
         if (!newStatus) return;
         const agentData = agents.get(id);
-        // Guard: only mutate if this PTY is still the active one (prevents race on restart)
-        if (agentData && agentData.ptyId === newPtyId) {
-          agentData.status = newStatus;
-          agentData.lastActivity = new Date().toISOString();
-          handleStatusChangeNotification(agentData, newStatus);
-        }
+        // Only while this terminal is still the agent's: a stop or a restart
+        // has moved on, and its end is not the agent's news (as initAgentPty).
+        if (!agentData || agentData.ptyId !== newPtyId) return;
+        agentData.status = newStatus;
+        agentData.lastActivity = new Date().toISOString();
+        handleStatusChangeNotification(agentData, newStatus);
         broadcastToAllWindows('agent:complete', {
           type: 'complete',
           agentId: id,
@@ -823,7 +823,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // done. This one put every orchestrator in bypass whatever it was set
       // to, so a permission mode changed in the Agents page never reached an
       // orchestrator, restart or not, and a worker switched to orchestrator
-      // was quietly given bypass. The Kanban automation still asks for it.
+      // was quietly given bypass. A start may still ask for another, for
+      // that launch alone.
       permissionMode: options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'),
       effort: agent.effort,
       secondaryProjectPath: agent.secondaryProjectPath,
@@ -1282,6 +1283,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // And a git repository of its own, which the save could only point at.
         if (saved?.nestedRepos.length) {
           worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        // A submodule's commits and changes live in the worktree's own git
+        // store, which the removal deletes, and no remote may have them.
+        const submodules = worktreeKept ? [] : await submodulesWithWork(agent.worktreePath);
+        if (submodules.length) {
+          worktreeKept = `its submodules hold work no remote has (${submodules.slice(0, 5).join(', ')}), which removing the worktree would lose, so its worktree was kept at ${agent.worktreePath}`;
           console.warn(`[agent:remove] ${worktreeKept}`);
         }
         const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);

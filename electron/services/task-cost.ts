@@ -16,9 +16,14 @@ import type { TaskRecord } from './task-ledger';
  * before every task of its session (a resumed session copies the earlier
  * conversation in, with its old timestamps) belongs to none.
  *
- * A task none of whose sessions left a transcript is not counted, and says so
- * with a null: a CLI that writes none, an agent of another provider, a task
- * whose session was never heard of. Zero would read as free.
+ * A task none of whose sessions left a transcript is priced from what its
+ * turns used, as the state mod reported each (task-ledger.ts, mods step 4),
+ * its cache writes at the 5-minute rate, as a transcript line without the
+ * split is: Claude Code's turn.complete does not say how they split, nor how
+ * many web searches a turn made. Where the transcript is there it stays the
+ * source, so the figures do not move. A task with neither is not counted, and
+ * says so with a null: a CLI that writes none, an agent of another provider, a
+ * task whose session was never heard of. Zero would read as free.
  */
 
 export interface TaskTokens {
@@ -34,6 +39,8 @@ export interface TaskCost {
   tokens: TaskTokens | null;
   /** Cost per model the replies came from. */
   byModel: Record<string, number>;
+  /** What priced it: its transcripts, its turns' usage, the ACP run's report; null when nothing did. */
+  from: 'transcript' | 'turns' | 'acp' | null;
 }
 
 interface TimedLine {
@@ -105,6 +112,7 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
         costUSD: task.acp.costUSD,
         tokens: { input: task.acp.inputTokens, output: task.acp.outputTokens, cacheRead: task.acp.cachedReadTokens, cacheWrite: task.acp.cachedWriteTokens },
         byModel: task.acp.costUSD !== null && task.model ? { [task.model]: task.acp.costUSD } : {},
+        from: 'acp',
       });
       continue;
     }
@@ -159,14 +167,19 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
   const prices = new Map<string, Pricing>();
   for (const task of tasks) {
     if (task.acp) continue;
-    if (!found.has(task.id)) {
-      out.set(task.id, { costUSD: null, tokens: null, byModel: {} });
+    const fromTranscript = found.has(task.id);
+    const turns = !fromTranscript && task.usageByModel ? Object.entries(task.usageByModel) : [];
+    if (!fromTranscript && turns.length === 0) {
+      out.set(task.id, { costUSD: null, tokens: null, byModel: {}, from: null });
       continue;
     }
     const tokens: TaskTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     const byModel: Record<string, number> = {};
     let costUSD = 0;
-    for (const [model, counts] of perTask.get(task.id) ?? []) {
+    const counted: Array<[string, Counts]> = fromTranscript
+      ? [...(perTask.get(task.id) ?? [])]
+      : turns.map(([model, t]) => [model, { ...ZERO, input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, write5m: t.cacheWrite }]);
+    for (const [model, counts] of counted) {
       let price = prices.get(model);
       if (!price) {
         price = pricingFor(model);
@@ -180,7 +193,7 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
       tokens.cacheRead += counts.cacheRead;
       tokens.cacheWrite += counts.cacheWrite;
     }
-    out.set(task.id, { costUSD, tokens, byModel });
+    out.set(task.id, { costUSD, tokens, byModel, from: fromTranscript ? 'transcript' : 'turns' });
   }
   return out;
 }
@@ -270,7 +283,7 @@ export function taskReport(tasks: TaskRecord[], costs: Map<string, TaskCost>, qu
   const views: TaskView[] = selectTasks(tasks, query, now)
     .sort((a, b) => b.startedAt - a.startedAt)
     .map((t) => {
-      const cost = costs.get(t.id) ?? { costUSD: null, tokens: null, byModel: {} };
+      const cost: TaskCost = costs.get(t.id) ?? { costUSD: null, tokens: null, byModel: {}, from: null };
       const total = totalOf(t.id, new Set());
       return {
         ...t,

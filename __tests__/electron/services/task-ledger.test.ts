@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createTaskLedger, type TaskAgentView } from '../../../electron/services/task-ledger';
+import { createTaskLedger, turnUsageOf, type TaskAgentView } from '../../../electron/services/task-ledger';
 
 /**
  * The tasks the Usage page prices (PLAN-1.9.3.md, item 2; DESIGN-COUT-PAR-TACHE.md): one record per piece of work an
@@ -42,6 +42,13 @@ import { createTaskLedger, type TaskAgentView } from '../../../electron/services
  * 14. A ledger written before, its texts inline in ~/.dorothy, keeps them there after the first start.
  * 15. Rewritten past its bound, the ledger keeps the texts of the tasks it dropped, or loses those of the tasks it kept.
  * 16. A text line that is not one (no id, a text that is not text, a megabyte) is taken as it is.
+ * 17. (mods step 4, Noah's go) A turn's usage, which the state mod reports from Claude Code's turn.complete, is not
+ *     kept, or kept on the wrong task. It arrives after the Stop that ended its task (measured on 2.1.289: 8 to 14 ms
+ *     after), so it belongs to the agent's latest task in that session, ended or not; a session none of the agent's
+ *     tasks ran in has no task to take it.
+ * 18. The usage does not survive a restart; or a usage line that is not one (counts that are not counts, a model that
+ *     is not text, a task the ledger does not know) is taken.
+ * 19. Several turns of a task, on one model or several, are not summed per model.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -446,5 +453,67 @@ describe('where a task\'s text is kept (Noah, 05/10)', () => {
     expect(open().tasks()[0].text).toBe('kept');
     fs.appendFileSync(textFile, JSON.stringify({ id, text: 'y'.repeat(1_000_000) }) + '\n');
     expect(Array.from(open().tasks()[0].text)).toHaveLength(200);
+  });
+});
+
+describe('the usage of each turn (mods step 4)', () => {
+  const usage = (input: number, output: number, model = 'claude-opus-5-5', cacheRead = 0, cacheWrite = 0) => ({ model, input, output, cacheRead, cacheWrite });
+
+  it('17. goes to the agent\'s latest task in its session, even once that task ended at the Stop before it', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'first' });
+    ledger.stateChanged(agent({ status: 'idle' }));
+    clock += 1_000;
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'second' });
+    ledger.stateChanged(agent({ status: 'idle' }));
+    const second = ledger.tasks()[1];
+    expect(ledger.turnUsage('worker-1', 'sess-1', usage(10, 5))).toBe(second.id);
+    expect(ledger.tasks()[1].usageByModel).toEqual({ 'claude-opus-5-5': { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } });
+    expect(ledger.tasks()[0].usageByModel).toBeUndefined();
+    // No task of this agent ran in that session, or no such agent: nothing to take it.
+    expect(ledger.turnUsage('worker-1', 'sess-9', usage(1, 1))).toBeNull();
+    expect(ledger.turnUsage('nobody', 'sess-1', usage(1, 1))).toBeNull();
+  });
+
+  it('19. sums the turns of a task, per model', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'work' });
+    ledger.turnUsage('worker-1', 'sess-1', usage(10, 5, 'claude-opus-5-5', 100, 50));
+    ledger.turnStarted(agent(), { sessionId: 'sess-1' });
+    ledger.turnUsage('worker-1', 'sess-1', usage(20, 10, 'claude-opus-5-5', 200, 100));
+    ledger.turnUsage('worker-1', 'sess-1', usage(3, 1, 'claude-haiku-4-5'));
+    expect(ledger.tasks()[0].usageByModel).toEqual({
+      'claude-opus-5-5': { input: 30, output: 15, cacheRead: 300, cacheWrite: 150 },
+      'claude-haiku-4-5': { input: 3, output: 1, cacheRead: 0, cacheWrite: 0 },
+    });
+    expect(ledger.tasks()[0].usageTurns).toBe(3);
+  });
+
+  it('18. survives a restart, and a usage line that is not one is skipped', () => {
+    const ledger = open();
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'work' });
+    ledger.turnUsage('worker-1', 'sess-1', usage(10, 5));
+    const id = ledger.tasks()[0].id;
+    fs.appendFileSync(file, [
+      { t: 'usage', id, at: clock, model: 'm', input: -1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      { t: 'usage', id, at: clock, model: 'm', input: 1.5, output: 0, cacheRead: 0, cacheWrite: 0 },
+      { t: 'usage', id, at: clock, model: { x: 1 }, input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      { t: 'usage', id: 'unknown-task', at: clock, model: 'm', input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+      { t: 'usage', id, at: 'x', model: 'm', input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+    ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const again = open().tasks();
+    expect(again[0].usageByModel).toEqual({ 'claude-opus-5-5': { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } });
+    expect(again[0].usageTurns).toBe(1);
+  });
+
+  it('18. reads what the mod sends only when it is a usage', () => {
+    expect(turnUsageOf({ input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 50, model: 'claude-opus-5-5' }))
+      .toEqual({ model: 'claude-opus-5-5', input: 10, output: 5, cacheRead: 100, cacheWrite: 50 });
+    // Claude Code leaves a count out when it is nought.
+    expect(turnUsageOf({ input_tokens: 10, output_tokens: 5, model: 'm' })).toEqual({ model: 'm', input: 10, output: 5, cacheRead: 0, cacheWrite: 0 });
+    for (const bad of [null, 'x', {}, { input_tokens: 1, output_tokens: 1 }, { input_tokens: -1, output_tokens: 1, model: 'm' },
+      { input_tokens: '1', output_tokens: 1, model: 'm' }, { input_tokens: 1, output_tokens: 1, model: 'm'.repeat(201) }]) {
+      expect(turnUsageOf(bad), JSON.stringify(bad)).toBeNull();
+    }
   });
 });

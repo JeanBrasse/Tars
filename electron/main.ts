@@ -20,9 +20,7 @@ import { reportsOn } from './services/event-reports';
 import { app, BrowserWindow } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { defaultShell } from './utils/default-shell';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
@@ -58,15 +56,12 @@ import {
   endAllTerminals,
   setFieldProbe,
 } from './core/pty-manager';
-import { agentStatusOnExit } from './core/quit-state';
 import { startErrorReports } from './services/error-reports';
 import { lastLocalCommandAt } from './services/agent-truth';
 
 import { runShutdownSteps } from './core/shutdown';
 import { initTray, destroyTray } from './core/tray-manager';
 import { broadcastToAllWindows } from './utils/broadcast';
-import { extractStatusLine } from './utils/ansi';
-import { scheduleTick } from './utils/agents-tick';
 
 // Services
 import { startApiServer } from './services/api-server';
@@ -104,9 +99,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe } from './core/agent-manager';
-import { assignRole } from './core/agent-role';
-import { forgetRestart } from './core/agent-restart';
+import { startAgentAutosave, stopAgentAutosave, wireDialogProbe } from './core/agent-manager';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -117,7 +110,6 @@ import {
 // Handlers
 import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-handlers';
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
-import { registerKanbanHandlers } from './handlers/kanban-handlers';
 import { registerBusHandlers } from './handlers/bus-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
@@ -137,13 +129,12 @@ import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
-import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
 import { agentStatusEmitter } from './services/agent-events';
-import { stopAcpRuns, endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
+import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
@@ -158,8 +149,6 @@ import {
   ensureAgentInstructions,
   migrateFromClaudeManager,
 } from './utils';
-import { spawnAgentPty } from './core/agent-pty';
-import { getProvider } from './providers';
 import { endVersionProbes } from './core/version-probe';
 
 // ============== App Settings Management ==============
@@ -563,179 +552,12 @@ app.whenReady().then(async () => {
   // through the same broadcast channel every other live update uses.
   startOverseerWatch((message) => broadcastToAllWindows('overseer:briefing', message));
 
-  // Register kanban handlers
-  registerKanbanHandlers({
-    getMainWindow,
-    findMatchingAgent,
-    createAgentForTask,
-    startAgent: startAgentForTask,
-    stopAgent: async (agentId: string) => {
-      const agent = agents.get(agentId);
-      await stopAcpRuns(agentId, 'the agent was stopped');
-      if (agent?.ptyId) {
-        const ptyProcess = ptyProcesses.get(agent.ptyId);
-        if (ptyProcess) {
-          // Send Ctrl+C to interrupt
-          ptyProcess.write('\x03');
-        }
-        agent.status = 'idle';
-        agent.currentTask = undefined;
-        agent.lastActivity = new Date().toISOString();
-        saveAgents();
-
-        broadcastToAllWindows('agent:status', {
-          type: 'status',
-          agentId,
-          status: 'idle',
-          timestamp: new Date().toISOString(),
-        });
-      }
-    },
-    deleteAgent: async (agentId: string) => {
-      const agent = agents.get(agentId);
-      await stopAcpRuns(agentId, 'the agent was deleted');
-      if (agent) {
-        // Stop PTY if running
-        if (agent.ptyId) {
-          const ptyProcess = ptyProcesses.get(agent.ptyId);
-          if (ptyProcess) {
-            ptyProcess.kill();
-          }
-          ptyProcesses.delete(agent.ptyId);
-        }
-        // Remove agent
-        agents.delete(agentId);
-        forgetRestart(agentId);
-        saveAgents();
-        console.log(`Agent ${agentId} deleted`);
-      }
-    },
-    getAgentOutput: (agentId: string) => {
-      const agent = agents.get(agentId);
-      return agent?.output || [];
-    },
-  });
-
   // Initialize vault database
   initVaultDb();
 
   // Register vault handlers
   registerVaultHandlers({ getMainWindow });
 
-
-  // Initialize kanban automation service
-  initKanbanAutomation({
-    agents,
-    createAgent: async (config) => {
-      // Create agent directly - similar to agent:create handler
-      const { v4: uuidv4 } = await import('uuid');
-
-      const id = uuidv4();
-      const shell = defaultShell();
-      let cwd = config.projectPath;
-
-      if (!fs.existsSync(cwd)) {
-        cwd = os.homedir();
-      }
-
-      const allSkills = [...new Set(config.skills)];
-
-      // Through spawnAgentPty, like every other agent pty. This is the kanban
-      // automation creating an agent by itself, and the comment above says it
-      // duplicates the agent:create handler: it duplicated the defect too,
-      // setting CLAUDE_AGENT_ID with no API address beside it, so an agent a
-      // sandbox created from a board posted its hooks into the live Tars.
-      const ptyProcess = spawnAgentPty({
-        binaryName: getProvider('claude').binaryName,
-        shell,
-        args: ['-l'],
-        cols: 120,
-        rows: 30,
-        cwd,
-        env: {
-          ...process.env as { [key: string]: string },
-          CLAUDE_SKILLS: allSkills.join(','),
-          CLAUDE_AGENT_ID: id,
-          CLAUDE_PROJECT_PATH: config.projectPath,
-        },
-      });
-
-      const ptyId = uuidv4();
-      ptyProcesses.set(ptyId, ptyProcess);
-
-      const status: AgentStatus = {
-        id,
-        status: 'idle',
-        projectPath: config.projectPath,
-        skills: allSkills,
-        output: [],
-        lastActivity: new Date().toISOString(),
-        ptyId,
-        ptyCwd: cwd,
-        character: config.character || 'robot',
-        name: config.name || `Agent ${id.slice(0, 4)}`,
-        permissionMode: config.permissionMode || 'auto',
-      };
-      // A board creates workers, whatever it names them.
-      assignRole(status, 'worker', agents.values());
-
-      agents.set(id, status);
-      saveAgents();
-
-      // Setup PTY event handlers
-      ptyProcess.onData((data) => {
-        const agent = agents.get(id);
-        if (agent) {
-          appendAgentOutput(agent, data);
-          agent.lastActivity = new Date().toISOString();
-          agent.statusLine = extractStatusLine(agent.output);
-        }
-        broadcastToAllWindows('agent:output', {
-          type: 'output',
-          agentId: id,
-          ptyId,
-          data,
-          timestamp: new Date().toISOString(),
-        });
-        scheduleTick();
-      });
-
-      ptyProcess.onExit(({ exitCode }) => {
-        ptyProcesses.delete(ptyId);
-        // Ended by the quit: neither the agent's completion nor its error, and
-        // the closing window is not told it was (the Audit's gate of #235).
-        const newStatus = agentStatusOnExit(exitCode);
-        if (!newStatus) return;
-        const agent = agents.get(id);
-        // Only while this pty is still the agent's: a stop (core/agent-stop.ts)
-        // or a restart has moved on, and its record is not this exit's.
-        if (agent?.ptyId !== ptyId) return;
-        if (agent) {
-          agent.status = newStatus;
-          agent.lastActivity = new Date().toISOString();
-          handleStatusChangeNotificationWrapper(agent, newStatus);
-        }
-        // Emit status event so kanban sync can detect completion
-        broadcastToAllWindows('agent:status', {
-          type: 'status',
-          agentId: id,
-          status: newStatus,
-          timestamp: new Date().toISOString(),
-        });
-        broadcastToAllWindows('agent:complete', {
-          type: 'complete',
-          agentId: id,
-          ptyId,
-          exitCode,
-          timestamp: new Date().toISOString(),
-        });
-        scheduleTick();
-      });
-
-      return status;
-    },
-    saveAgents,
-  });
 
   // The relay to the user's Telegram through their Hermes, following its switch
   // live (services/hermes-relay.ts). On, it is the only voice there: the Tars

@@ -10,12 +10,8 @@ import HermesBoard from '@/components/KanbanBoard/HermesBoard';
  * still asked every time, and a stale 'local' pick silently opened a different
  * board. Hermes owns the task harness, so there is nothing to choose.
  *
- * The local board is NOT dead code and was deliberately left in place: its store
- * (~/.dorothy/kanban-tasks.json) is shared by non-UI consumers - the bundled
- * mcp-kanban MCP server, and the kanban-automation service that matches or
- * creates an agent when a task reaches the planned column. Only the on-screen
- * choice was removed; the data, the IPC handlers and the local board component
- * are untouched.
+ * The local board itself was removed on 2026-10-06 (#332): no page mounted it,
+ * and the bundled mcp-kanban server talks to the Hermes board through /api/kanban.
  */
 export default function KanbanPage() {
   return (

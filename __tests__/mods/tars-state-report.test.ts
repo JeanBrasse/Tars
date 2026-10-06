@@ -25,6 +25,11 @@
  *    timer or a background task is put to sleep, which loses both.
  * 6. It counts them otherwise than on-stop.sh: a finished task counted, or a
  *    count sent when Claude Code sent no lists (nothing is known then).
+ * And mods step 4 (Noah's go): each turn's usage, for the task ledger.
+ * 7. A turn's usage (turn.complete) is not posted, or without its session, or
+ *    ahead of the Stop's posts that came before it.
+ * 8. The event is not handed on unchanged, or a turn.complete with no usage
+ *    posts one.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -147,5 +152,23 @@ describe("the mod's posts", () => {
     expect(slept.length).toBe(2);
     expect(slept[0]).toBeGreaterThan(0);
     expect(slept[1]).toBeGreaterThan(slept[0]);
+  });
+});
+
+describe("a turn's usage (mods step 4)", () => {
+  const usage = { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 200, cache_creation_input_tokens: 100, model: 'claude-opus-5-5' };
+
+  it('7. is posted with its session, after the Stop that came before it', async () => {
+    await fire('classic.Stop', { session_id: SESSION, stop_hook_active: false, last_assistant_message: 'ok' });
+    const e = { answer: 'ok', reason: 'answer', turnId: 't1', durationMs: 85, usage };
+    const handed = await fire('turn.complete', e);
+    expect(await drained()).toEqual(['/api/hooks/output', '/api/hooks/status idle', '/api/hooks/agent-stopped', '/api/hooks/turn-usage']);
+    expect(sent[3].body).toMatchObject({ agent_id: 'a1', session_id: SESSION, usage, via: 'mod' });
+    expect(handed, '8. handed on unchanged').toBe(e);
+  });
+
+  it('8. posts nothing for a turn.complete with no usage', async () => {
+    await fire('turn.complete', { answer: 'ok', reason: 'aborted', turnId: 't2' });
+    expect(await drained()).toEqual([]);
   });
 });

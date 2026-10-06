@@ -680,7 +680,7 @@ work.
 | `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
 | `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
-| `~/.dorothy/kanban-tasks.json` | `electron/handlers/kanban-handlers.ts` | the old local board, which no page shows: its open tasks move to the Hermes board once, and it stays as the backup |
+| `~/.dorothy/kanban-tasks.json` | nothing (read at launch by `moveLocalKanbanToHermes`, `electron/main.ts`) | the old local board, gone since 06/10: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
@@ -1511,8 +1511,9 @@ neither is a place to park.
 - **The old local board** (`~/.dorothy/kanban-tasks.json`): its open tasks move to the Hermes
   board once at launch, parked. `kanban-moved-to-hermes.json` records which, and a task left
   behind is tried again at the next launch. The file itself is never written again: it is the
-  backup. The kanban-automation that matched an agent when a local task reached `planned` only
-  served that board, which no page shows.
+  backup. The board itself went on 06/10, with its `kanban:*` channels and the kanban-automation
+  that matched an agent when a local task reached `planned`; the move stays, for an install
+  that still holds tasks there (one that never had a Hermes configured never moved them).
 - **Nothing is written to a Hermes nobody configured**: without `hermes-connection.json`, the tools
   answer "Hermes is not configured". With one that cannot be read, is not a JSON object, or names
   no address for its mode (a `local` port, an `ssh` host, a `remote` or `cloud` URL), they say what
@@ -1920,8 +1921,10 @@ network failure must never zero out cost accounting.
 
 What each task cost (`usage:tasks`) is read from the same transcripts, per session, over the
 tasks `~/.dorothy/task-ledger.jsonl` records: who handed each one over, its parent, its sessions,
-when it started and ended. A task whose sessions left no transcript reads `costUSD: null`, not
-counted. SPECS.md, "Tasks and what each cost", has the rules.
+when it started and ended. A task whose sessions left no transcript is priced from what each of
+its turns used, as the state mod reported it (`from: 'turns'` in the report; cache writes at the
+5-minute rate, no web searches); with neither it reads `costUSD: null`, not counted. SPECS.md,
+"Tasks and what each cost", has the rules.
 
 ```bash
 jq -s 'length' ~/.dorothy/usage-ledger.jsonl                 # turns recorded

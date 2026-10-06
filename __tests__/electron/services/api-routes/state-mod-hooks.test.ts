@@ -20,6 +20,11 @@
  * 4. A mod post from another session drives the agent (the stale guard).
  * 5. The heartbeat is taken from a session that is not the agent's current
  *    one, or without a usable session id.
+ * 6. (mods step 4) A turn's usage is not handed to the task ledger, or is
+ *    taken from a session that is not the agent's current one, or taken when
+ *    it is not a usage.
+ * 7. It is refused when it arrives after the Stop that ended its task: it
+ *    always does (measured: 8 to 14 ms after).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
@@ -37,6 +42,7 @@ import { agents } from '../../../../electron/core/agent-manager';
 import { modRunsSession, modBeatFor, resetStateMod } from '../../../../electron/services/state-mod';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
+import { setLiveTaskLedger, type TaskLedger } from '../../../../electron/services/task-ledger';
 
 const S1 = '11111111-1111-4111-8111-111111111111';
 const S2 = '22222222-2222-4222-8222-222222222222';
@@ -182,5 +188,31 @@ describe('the heartbeat', () => {
     expect(await post('/api/hooks/mod-beat', { agent_id: 'a1', session_id: S2 })).toMatchObject({ success: false });
     expect((await post('/api/hooks/mod-beat', { agent_id: 'a1' })).error).toBeTruthy();
     expect(modBeatFor('a1')?.tool).toBeNull();
+  });
+});
+
+describe("a turn's usage (mods step 4)", () => {
+  const usage = { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 200, cache_creation_input_tokens: 100, model: 'claude-opus-5-5' };
+  let taken: Array<{ agentId: string; sessionId: string; usage: unknown }>;
+  beforeEach(() => {
+    taken = [];
+    setLiveTaskLedger({ turnUsage: (agentId: string, sessionId: string, u: unknown) => { taken.push({ agentId, sessionId, usage: u }); return 'task-1'; } } as unknown as TaskLedger);
+  });
+
+  it("6, 7. goes to the ledger for the agent's current session, its task ended or not", async () => {
+    const a = agent();
+    await register('mod');
+    a.status = 'idle';
+    expect(await post('/api/hooks/turn-usage', { agent_id: 'a1', session_id: S1, usage, via: 'mod' })).toMatchObject({ success: true, taskId: 'task-1' });
+    expect(taken).toEqual([{ agentId: 'a1', sessionId: S1, usage: { model: 'claude-opus-5-5', input: 20, output: 10, cacheRead: 200, cacheWrite: 100 } }]);
+  });
+
+  it('6. is refused from another session, or when it is not a usage', async () => {
+    agent();
+    await register('mod');
+    expect(await post('/api/hooks/turn-usage', { agent_id: 'a1', session_id: S2, usage })).toMatchObject({ success: false });
+    expect((await post('/api/hooks/turn-usage', { agent_id: 'a1', session_id: S1, usage: { input_tokens: 'x' } })).error).toBeTruthy();
+    expect((await post('/api/hooks/turn-usage', { agent_id: 'a1', usage })).error).toBeTruthy();
+    expect(taken).toEqual([]);
   });
 });
