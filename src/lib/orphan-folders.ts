@@ -24,10 +24,24 @@ export function sizeLabel(bytes: number): string {
 /** The disk in whole GB, as its row reads. */
 const diskSize = (bytes: number) => `${Math.round(bytes / GB)} GB`;
 
+/** A project by its folder's name: its path holds the home. */
+const projectName = (project: string) => project.replace(/\/+$/, '').split('/').pop() || project;
+
 /** A folder by its project and its place under .worktrees: its path holds the home, and a name is whatever made it. */
 export function folderLabel(folder: Pick<OrphanFolder, 'project' | 'name'>): string {
-  const project = folder.project.replace(/\/+$/, '').split('/').pop() || folder.project;
-  return flat(`${project}/.worktrees/${folder.name}`);
+  return flat(`${projectName(folder.project)}/.worktrees/${folder.name}`);
+}
+
+/**
+ * The line under the row naming the projects git could not list, as the rows
+ * name a project: none of their folders is offered (PR 334), and git's reason
+ * stays in the main process log. Null when git listed them all.
+ */
+export function unreadLine(projects: readonly string[]): string | null {
+  if (projects.length === 0) return null;
+  const names = projects.map(p => flat(projectName(p)));
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `Git could not list the worktrees of ${list}, so Tars cannot say which of ${names.length === 1 ? 'its' : 'their'} folders no agent owns.`;
 }
 
 const WHY: Record<OrphanFolder['reason'] | OrphanRemovalReport['kept'][number]['reason'], string> = {
@@ -59,10 +73,14 @@ export function changedLabel(iso: string | null, now = new Date()): string {
 
 export const removeLabel = (count: number) => `remove ${count} ${plural(count, 'folder')}`;
 
-/** The row's sentence over its list, or that there is none. */
-export function listingHint(listing: Pick<OrphanListing, 'count' | 'totalBytes'>): string {
+/** The row's sentence over its list, or that there is none: never that every folder is known when git could not list a project. */
+export function listingHint(listing: Pick<OrphanListing, 'count' | 'totalBytes' | 'unreadProjects'>): string {
   const { count, totalBytes } = listing;
-  if (count === 0) return 'None: every folder in your projects\' .worktrees belongs to a worktree git knows.';
+  if (count === 0) {
+    return listing.unreadProjects.length > 0
+      ? 'None in the projects git could read.'
+      : 'None: every folder in your projects\' .worktrees belongs to a worktree git knows.';
+  }
   const one = count === 1;
   return `${count} ${plural(count, 'folder')}, ${sizeLabel(totalBytes)}, in your projects' .worktrees that git no longer knows, so nothing says whether ${one ? 'it holds' : 'they hold'} work. Tars never removes ${one ? 'it' : 'them'} on its own.`;
 }

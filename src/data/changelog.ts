@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.9.3',
     date: '2026-10-04',
     updates: [
-      'Settings, System says how much your disk has free, in the waiting ink below 30 GB, and lists the folders under your projects\' .worktrees that git no longer knows and no agent owns, with why, their size and when they last changed. Tars never removes them on its own: remove asks first, then removes them all, one at a time, and keeps a folder a process works in, which stays listed as in use and names that process.',
+      'Settings, System says how much your disk has free, in the waiting ink below 30 GB, and lists the folders under your projects\' .worktrees that git no longer knows and no agent owns, with why, their size and when they last changed, and names a project whose worktrees git could not list. Tars never removes them on its own: remove asks first, then removes them all, one at a time, and keeps a folder a process works in, which stays listed as in use and names that process.',
       'A terminal opened from the Projects page shows the first lines its shell writes, its login message and its first prompt, where it could open empty: what the shell wrote before the terminal was drawn was lost. Leaving the page while it opens no longer leaves its shell running.',
       'Restarting an agent no longer moves its current task to done: the terminal the restart ended said it had finished, and the window took the new terminal\'s screen for the task\'s summary.',
       'An agent created on a worktree starts with its project\'s dependencies already there, cloned from the project\'s own node_modules on macOS, which takes almost no disk space, where each agent installed its own copy of them.',

@@ -5,7 +5,7 @@ import type { OrphanListing, OrphanRemovalProgress, OrphanRemovalReport } from '
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { flat } from '@/lib/stop-line';
 import {
-  changedLabel, confirmText, doneHint, folderLabel, listingHint, removeLabel, removingHint, sizeLabel, whyLabel,
+  changedLabel, confirmText, doneHint, folderLabel, listingHint, removeLabel, removingHint, sizeLabel, unreadLine, whyLabel,
 } from '@/lib/orphan-folders';
 
 type Phase =
@@ -23,7 +23,8 @@ const HEAD = 'text-[10px] uppercase tracking-[0.08em] text-text-muted';
  * agent owns (PR 334): listed with why, their size and when they last changed,
  * and removed all at once only when the person says so, the folders a process
  * works in kept and listed. Frames: `Settings · System · folders no agent owns`
- * and its states: the list, asking first, removing, done with one kept, none.
+ * and its states: the list, asking first, removing, done with one kept, none,
+ * and a project git could not read, alone and beside folders offered.
  */
 export function OrphanFolders() {
   const [listing, setListing] = useState<OrphanListing | null>(null);
@@ -34,7 +35,7 @@ export function OrphanFolders() {
 
   const read = useCallback(async () => {
     const next = await window.electronAPI?.system?.orphanFolders().catch(() => null);
-    if (mounted.current) setListing(next ?? { folders: [], count: 0, totalBytes: 0 });
+    if (mounted.current) setListing(next ?? { folders: [], count: 0, totalBytes: 0, unreadProjects: [] });
     return next ?? null;
   }, []);
 
@@ -80,6 +81,7 @@ export function OrphanFolders() {
   const busy = phase.kind === 'removing';
   const kept = phase.kind === 'done' ? new Map(phase.report.kept.map(k => [k.path, k])) : null;
   const rows = listing.folders.filter(f => !gone.has(f.path));
+  const unread = unreadLine(listing.unreadProjects);
   const hint = (() => {
     switch (phase.kind) {
       case 'removing': return removingHint(phase.progress);
@@ -103,8 +105,15 @@ export function OrphanFolders() {
   return (
     <div data-orphan-folders>
       <SettingsRow label="Folders no agent owns" description={hint} control={button} wrap />
-      {(phase.kind === 'asking' || rows.length > 0) && (
+      {(unread || phase.kind === 'asking' || rows.length > 0) && (
         <div className="px-4 pb-[11px] flex flex-col gap-2.5">
+          {/* A project git could not list: named, so the row never reads it as having none. */}
+          {unread && (
+            <div data-orphan-unread className="flex items-center gap-2">
+              <StatusSquare tone="waiting" />
+              <p className="min-w-0 flex-1 text-[11px] leading-[1.4] text-muted-foreground">{unread}</p>
+            </div>
+          )}
           {phase.kind === 'asking' && (
             <div data-orphan-confirm className="flex items-center gap-2.5 px-3 py-2 bg-secondary border border-border">
               <StatusSquare tone="waiting" />

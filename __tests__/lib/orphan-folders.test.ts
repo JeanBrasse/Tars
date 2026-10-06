@@ -88,12 +88,12 @@ describe('a folder\'s row', () => {
 });
 
 describe('the row\'s sentences', () => {
-  const listing = { folders: [folder()], count: 59, totalBytes: 11 * GB };
+  const listing = { folders: [folder()], count: 59, totalBytes: 11 * GB, unreadProjects: [] };
 
   it('the list, and the button, one folder as one (1, 2)', () => {
     expect(listingHint(listing)).toBe('59 folders, 11.0 GB, in your projects\' .worktrees that git no longer knows, so nothing says whether they hold work. Tars never removes them on its own.');
-    expect(listingHint({ folders: [folder()], count: 1, totalBytes: 412 * MB })).toBe('1 folder, 412 MB, in your projects\' .worktrees that git no longer knows, so nothing says whether it holds work. Tars never removes it on its own.');
-    expect(listingHint({ folders: [], count: 0, totalBytes: 0 })).toBe('None: every folder in your projects\' .worktrees belongs to a worktree git knows.');
+    expect(listingHint({ folders: [folder()], count: 1, totalBytes: 412 * MB, unreadProjects: [] })).toBe('1 folder, 412 MB, in your projects\' .worktrees that git no longer knows, so nothing says whether it holds work. Tars never removes it on its own.');
+    expect(listingHint({ folders: [], count: 0, totalBytes: 0, unreadProjects: [] })).toBe('None: every folder in your projects\' .worktrees belongs to a worktree git knows.');
     expect(removeLabel(59)).toBe('remove 59 folders');
     expect(removeLabel(1)).toBe('remove 1 folder');
   });
