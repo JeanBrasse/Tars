@@ -78,7 +78,7 @@ export function OrphanFolders() {
   }
 
   const busy = phase.kind === 'removing';
-  const kept = phase.kind === 'done' ? new Map(phase.report.kept.map(k => [k.path, k.reason])) : null;
+  const kept = phase.kind === 'done' ? new Map(phase.report.kept.map(k => [k.path, k])) : null;
   const rows = listing.folders.filter(f => !gone.has(f.path));
   const hint = (() => {
     switch (phase.kind) {
@@ -126,8 +126,13 @@ export function OrphanFolders() {
                 return (
                   <div key={folder.path} data-orphan-row className="h-[26px] px-2.5 flex items-center gap-2.5 border-b border-border last:border-b-0 font-mono">
                     <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={folderLabel(folder)}>{folderLabel(folder)}</span>
-                    <span className={`w-24 shrink-0 text-[10.5px] ${keptFor ? (keptFor === 'failed' ? 'text-status-error' : 'text-status-waiting') : 'text-text-muted'}`}>
-                      {whyLabel(keptFor ?? folder.reason)}
+                    {/* A kept folder's why: in use names the process, failed says why, in the title. */}
+                    <span
+                      data-orphan-why
+                      title={keptFor?.detail ? flat(keptFor.detail) : undefined}
+                      className={`w-24 shrink-0 text-[10.5px] ${keptFor ? (keptFor.reason === 'failed' ? 'text-status-error' : 'text-status-waiting') : 'text-text-muted'}`}
+                    >
+                      {whyLabel(keptFor?.reason ?? folder.reason)}
                     </span>
                     <span className="w-16 shrink-0 text-right text-[11px] text-muted-foreground">{sizeLabel(folder.sizeBytes)}</span>
                     <span className="w-24 shrink-0 text-right text-[11px] text-text-muted">{changedLabel(folder.lastChangedAt)}</span>
