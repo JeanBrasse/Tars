@@ -63,7 +63,7 @@ test('the folders no agent owns are listed, and removed when asked, but the one 
   const busy = spawn('sleep', ['120'], { cwd: wt('busy'), stdio: 'ignore' });
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31462), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31459), DOROTHY_E2E: '1' },
   });
   const pageErrors: string[] = [];
   try {

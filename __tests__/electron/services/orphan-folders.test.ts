@@ -24,6 +24,23 @@
  * 8. The processes cannot be read, and the folders are removed anyway.
  * 9. The disk's free and total space are not the disk's, or the floor is not
  *    30 GB.
+ * And from the Audit's gate of #334 (NOT AS IS, bench gate-334/) and QA's Low:
+ * the code took "absent from this project's `git worktree list`" for an
+ * orphan, and never read the folder's own .git. Each of these lost real work:
+ * 10. (H1) `git worktree list` fails (spawn under memory pressure, xcrun after
+ *     an update, safe.directory), and every live worktree is listed
+ *     git-forgot, then removed.
+ * 11. (H2, QA) A repository of its own (its .git a folder: a clone, a git init)
+ *     is listed and removed, its unpushed commits with it; or a .git file that
+ *     cannot be read as a gitdir is taken for a forgotten one.
+ * 12. (H2) A live worktree of another repository (its gitdir there, alive) is
+ *     listed and removed.
+ * 13. (M1) A repository two levels or more under a folder with no .git goes
+ *     with that folder; or one too deep to look through is listed whole.
+ * 14. (L1) The processes are read once, before a removal that can last
+ *     minutes: one that starts in a folder meanwhile is not seen.
+ * 15. (L2) On Linux, processes that cannot be read count as none, where
+ *     macOS keeps every folder.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -31,7 +48,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import {
-  listOrphanFolders, removeOrphanFolders, diskSpace, DISK_FLOOR_BYTES,
+  listOrphanFolders, removeOrphanFolders, diskSpace, DISK_FLOOR_BYTES, procCwds,
 } from '../../../electron/services/orphan-folders';
 
 let root: string;
@@ -179,6 +196,128 @@ describe('removing them all', () => {
     expect(report.removed).toBe(0);
     expect(report.kept).toEqual([{ path: path.join(project, '.worktrees', 'idle'), project, reason: 'unknown-use' }]);
     expect(fs.existsSync(path.join(project, '.worktrees', 'idle'))).toBe(true);
+  });
+});
+
+/** A repository of its own at `p`, with a commit nobody else has. */
+function clone(p: string): void {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  git(root, 'clone', '-q', project, p);
+  git(p, 'config', 'user.email', 't@t.example');
+  git(p, 'config', 'user.name', 'T');
+  fs.writeFileSync(path.join(p, 'work'), 'unpushed\n');
+  git(p, 'add', '-A');
+  git(p, 'commit', '-qm', 'unpushed');
+}
+
+describe('what the folder\'s own .git says', () => {
+  const noProcess = async () => [];
+  const wts = (...p: string[]) => path.join(project, '.worktrees', ...p);
+
+  it('10. lists nothing of a project whose git cannot list its worktrees, and removes nothing', async () => {
+    file(wts('stray', 'x.txt'), 10);
+    fs.renameSync(path.join(project, '.git', 'HEAD'), path.join(project, '.git', 'HEAD.aside'));
+    try {
+      expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
+      const report = await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+      expect(report.removed).toBe(0);
+    } finally {
+      fs.renameSync(path.join(project, '.git', 'HEAD.aside'), path.join(project, '.git', 'HEAD'));
+    }
+    expect(fs.existsSync(path.join(wt, 'a.txt'))).toBe(true);
+    expect(fs.existsSync(wts('stray', 'x.txt'))).toBe(true);
+  });
+
+  it('11. never lists a repository of its own, nor a .git that names no gitdir, and removes neither', async () => {
+    clone(wts('bench-clone'));
+    file(wts('garbled', 'x.txt'), 10);
+    fs.writeFileSync(wts('garbled', '.git'), 'not a pointer\n');
+    forgotten(wts('really-forgotten'));
+
+    const listing = await listOrphanFolders({ projects: [project], owned: [] });
+    expect(listing.folders.map(f => f.name)).toEqual(['really-forgotten']);
+    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    expect(fs.readFileSync(wts('bench-clone', 'work'), 'utf8')).toBe('unpushed\n');
+    expect(fs.existsSync(wts('garbled', 'x.txt'))).toBe(true);
+    expect(fs.existsSync(wts('really-forgotten'))).toBe(false);
+  });
+
+  it("12. never lists another repository's live worktree, and leaves it to that repository", async () => {
+    const other = path.join(root, 'other');
+    fs.mkdirSync(other);
+    git(other, 'init', '-q', '-b', 'main');
+    git(other, 'config', 'user.email', 't@t.example');
+    git(other, 'config', 'user.name', 'T');
+    fs.writeFileSync(path.join(other, 'b.txt'), 'b\n');
+    git(other, 'add', '-A');
+    git(other, 'commit', '-qm', 'b');
+    git(other, 'worktree', 'add', '-q', wts('other-repo'), '-b', 'other-live');
+    fs.writeFileSync(wts('other-repo', 'work'), 'uncommitted\n');
+
+    expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
+    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    expect(fs.readFileSync(wts('other-repo', 'work'), 'utf8')).toBe('uncommitted\n');
+    expect(git(other, 'worktree', 'list', '--porcelain')).not.toContain('prunable');
+  });
+
+  it('13. never removes a repository nested deep under a folder with no .git, nor lists that folder whole', async () => {
+    clone(wts('bench', 'runs', 'repo'));
+    file(wts('bench', 'runs', 'log.txt'), 10);
+    file(wts('bench', 'notes.md'), 10);
+
+    const listing = await listOrphanFolders({ projects: [project], owned: [] });
+    expect(listing.folders.map(f => f.name)).toEqual([]);
+    await removeOrphanFolders({ projects: [project], owned: [], processCwds: noProcess });
+    expect(fs.readFileSync(wts('bench', 'runs', 'repo', 'work'), 'utf8')).toBe('unpushed\n');
+  });
+
+  it('14. reads the processes again before each folder goes', async () => {
+    file(wts('big', 'x.bin'), 300_000);
+    file(wts('small', 'x.bin'), 10);
+    const small = wts('small');
+    // A process starts in the second folder once the first is gone.
+    const report = await removeOrphanFolders({
+      projects: [project], owned: [],
+      processCwds: async () => (fs.existsSync(wts('big')) ? [] : [{ pid: 7, command: 'node', cwd: small }]),
+    });
+    expect(report.removed).toBe(1);
+    expect(report.kept).toEqual([{ path: small, project, reason: 'in-use', detail: 'node (7)' }]);
+    expect(fs.existsSync(small)).toBe(true);
+  });
+});
+
+describe('a folder that changed since the list', () => {
+  it('6. one that took a repository while the others went is kept, and says why', async () => {
+    const wts = (...p: string[]) => path.join(project, '.worktrees', ...p);
+    file(wts('big', 'x.bin'), 300_000);
+    file(wts('small', 'x.bin'), 10);
+    const report = await removeOrphanFolders({
+      projects: [project], owned: [],
+      processCwds: async () => {
+        // The first folder gone, somebody clones into the second.
+        if (!fs.existsSync(wts('big')) && !fs.existsSync(wts('small', 'inner'))) {
+          fs.mkdirSync(wts('small', 'inner'));
+          git(wts('small', 'inner'), 'init', '-q');
+        }
+        return [];
+      },
+    });
+    expect(report.removed).toBe(1);
+    expect(report.kept).toEqual([expect.objectContaining({ path: wts('small'), reason: 'failed' })]);
+    expect(fs.existsSync(wts('small', 'inner', '.git'))).toBe(true);
+  });
+});
+
+describe('the processes on Linux', () => {
+  it("15. are unknown when /proc cannot be read, or when Tars's own working directory is not among them", () => {
+    const fake = fs.mkdtempSync(path.join(root, 'proc-'));
+    expect(procCwds(path.join(fake, 'missing'), 999)).toBeNull();
+    fs.mkdirSync(path.join(fake, '123'));
+    fs.writeFileSync(path.join(fake, '123', 'comm'), 'node\n');
+    fs.symlinkSync(root, path.join(fake, '123', 'cwd'));
+    // hidepid: only some processes can be read, and not this one.
+    expect(procCwds(fake, 999)).toBeNull();
+    expect(procCwds(fake, 123)).toEqual([{ pid: 123, command: 'node', cwd: root }]);
   });
 });
 

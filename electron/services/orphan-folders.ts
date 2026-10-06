@@ -15,6 +15,15 @@ import * as path from 'path';
  * again at that moment (still an orphan, no agent's, no process working in
  * it, no link) and removed one at a time, the progress told as it goes. Git is
  * never told --force: these are folders git no longer knows.
+ *
+ * What a folder is comes from its own `.git`, not from this project's
+ * `git worktree list` alone (the Audit's gate of #334, which lost a clone,
+ * another repository's worktree and a repository nested two levels down that
+ * way): a `.git` folder is a repository, a `.git` file whose gitdir exists is
+ * a live worktree of some repository, and neither is ever listed, nor is a
+ * folder with either anywhere below it. When anything cannot be read (the
+ * project's git, a `.git`, a folder too deep to look through), the folder is
+ * kept.
  */
 
 /** Tars warns below this much free space on the disk (the frames' 30 GB). */
@@ -58,15 +67,73 @@ function inside(child: string, parent: string): boolean {
   return child === parent || child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep);
 }
 
-/** The worktrees git knows for a project, as real paths. */
-async function knownWorktrees(project: string): Promise<string[]> {
+/** The worktrees git knows for a project, as real paths; null when git cannot say. */
+async function knownWorktrees(project: string): Promise<string[] | null> {
   const r = await run('git', ['worktree', 'list', '--porcelain'], project);
-  if (r.code !== 0) return [];
+  if (r.code !== 0) return null;
   return r.stdout.split('\n').filter(l => l.startsWith('worktree ')).map(l => real(l.slice('worktree '.length)));
 }
 
 function isRealDir(p: string): boolean {
   try { return fs.lstatSync(p).isDirectory(); } catch { return false; }
+}
+
+type GitMark = 'none' | 'repository' | 'live-worktree' | 'forgotten' | 'unreadable';
+
+/** What a folder's own `.git` says it is. */
+function gitMark(dir: string): GitMark {
+  const dotGit = path.join(dir, '.git');
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(dotGit);
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'none' : 'unreadable';
+  }
+  if (stat.isDirectory()) return 'repository';
+  if (!stat.isFile()) return 'unreadable';
+  let text: string;
+  try { text = fs.readFileSync(dotGit, 'utf8'); } catch { return 'unreadable'; }
+  const gitdir = /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(text)?.[1];
+  if (!gitdir) return 'unreadable';
+  try {
+    fs.statSync(path.resolve(dir, gitdir));
+    return 'live-worktree';
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'forgotten' : 'unreadable';
+  }
+}
+
+/** Folders a `.git` below is looked for in: rebuildable caches aside. */
+const NOT_SEARCHED = new Set(['node_modules', '.next', '.git']);
+const SEARCH_LIMIT = 50_000;
+
+/**
+ * Whether any folder below `dir` (not `dir` itself) has a `.git`, at any
+ * depth, links not followed: 'unknown' when a folder cannot be read or there
+ * is more than SEARCH_LIMIT entries to look through.
+ */
+function gitBelow(dir: string): 'none' | 'some' | 'unknown' {
+  const stack = [dir];
+  let seen = 0;
+  while (stack.length) {
+    const current = stack.pop()!;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return 'unknown'; }
+    for (const entry of entries) {
+      if (++seen > SEARCH_LIMIT) return 'unknown';
+      if (current !== dir && entry.name === '.git') return 'some';
+      if (entry.isDirectory() && !NOT_SEARCHED.has(entry.name)) stack.push(path.join(current, entry.name));
+    }
+  }
+  return 'none';
+}
+
+/** Why a folder is an orphan, or null when it is not one (or cannot be told). */
+function orphanReason(dir: string): OrphanReason | null {
+  const mark = gitMark(dir);
+  if (mark !== 'none' && mark !== 'forgotten') return null;
+  if (gitBelow(dir) !== 'none') return null;
+  return mark === 'forgotten' ? 'git-forgot' : 'no-git';
 }
 
 /** Size on disk, in bytes, as du counts it. */
@@ -108,7 +175,12 @@ function lastChangeOf(dir: string): string | null {
 async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>>> {
   const base = path.join(project, '.worktrees');
   if (!isRealDir(base)) return [];
-  const live = [...await knownWorktrees(project), ...owned].map(real);
+  const known = await knownWorktrees(project);
+  if (!known) {
+    console.warn(`[orphan-folders] git cannot list the worktrees of ${project}: none of its folders is offered`);
+    return [];
+  }
+  const live = [...known, ...owned].map(real);
   const holdsLive = (dir: string) => live.some(w => inside(w, real(dir)) && w !== real(dir));
   const found: Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>> = [];
   const walk = (dir: string) => {
@@ -120,13 +192,16 @@ async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omi
       const r = real(p);
       if (live.includes(r)) continue;
       if (holdsLive(p)) { walk(p); continue; }
-      const hasGit = fs.existsSync(path.join(p, '.git'));
-      if (!hasGit && fs.readdirSync(p, { withFileTypes: true }).some(e => e.isDirectory() && fs.existsSync(path.join(p, e.name, '.git')))) {
-        // A folder of forgotten worktrees: each is listed for itself.
-        walk(p);
-        continue;
-      }
-      found.push({ project, path: p, name: path.relative(base, p), reason: hasGit ? 'git-forgot' : 'no-git' });
+      const mark = gitMark(p);
+      // A repository, a live worktree of any repository, or a .git that
+      // cannot be read: never offered.
+      if (mark !== 'none' && mark !== 'forgotten') continue;
+      const below = gitBelow(p);
+      if (below === 'unknown') continue;
+      // Something with a .git below, at any depth: each folder around it is
+      // looked at for itself.
+      if (below === 'some') { walk(p); continue; }
+      found.push({ project, path: p, name: path.relative(base, p), reason: mark === 'forgotten' ? 'git-forgot' : 'no-git' });
     }
   };
   walk(base);
@@ -146,19 +221,29 @@ export async function listOrphanFolders(opts: { projects: string[]; owned: strin
 }
 
 /**
+ * The working directories /proc shows. Null when it cannot be read, or when
+ * this process's own is not among them (hidepid, a /proc that is not this
+ * system's): then nothing is removed, as when lsof fails on macOS.
+ */
+export function procCwds(root = '/proc', self = process.pid): ProcessCwd[] | null {
+  let names: string[];
+  try { names = fs.readdirSync(root); } catch { return null; }
+  const found: ProcessCwd[] = [];
+  for (const pid of names.filter(n => /^\d+$/.test(n))) {
+    try {
+      found.push({ pid: Number(pid), command: fs.readFileSync(path.join(root, pid, 'comm'), 'utf8').trim(), cwd: fs.readlinkSync(path.join(root, pid, 'cwd')) });
+    } catch { /* gone, or not ours to read */ }
+  }
+  return found.some(p => p.pid === self) ? found : null;
+}
+
+/**
  * Every process's working directory: /proc on Linux, lsof elsewhere. Null when
  * neither answers, and then nothing is removed. As scripts/worktree.mjs reads it.
  */
 export async function processCwds(): Promise<ProcessCwd[] | null> {
+  if (process.platform === 'linux') return procCwds();
   const found: ProcessCwd[] = [];
-  if (process.platform === 'linux') {
-    for (const pid of fs.readdirSync('/proc').filter(n => /^\d+$/.test(n))) {
-      try {
-        found.push({ pid: Number(pid), command: fs.readFileSync(`/proc/${pid}/comm`, 'utf8').trim(), cwd: fs.readlinkSync(`/proc/${pid}/cwd`) });
-      } catch { /* gone, or not ours to read */ }
-    }
-    return found;
-  }
   const r = await run('lsof', ['-w', '-a', '-d', 'cwd', '-F', 'pcn']);
   if (r.code !== 0 && !r.stdout) return null;
   let current: ProcessCwd | null = null;
@@ -174,9 +259,10 @@ let removing = false;
 
 /**
  * Removes every folder no agent owns, as it stands now: the list is read
- * again, and each folder is checked once more just before it goes. One at a
- * time; `onProgress` after each. A folder a process works in is kept, and so
- * is every one when the processes cannot be read.
+ * again, and each folder is checked once more just before it goes, its .git
+ * and what is below it, and the processes read again (a removal can last
+ * minutes). One at a time; `onProgress` after each. A folder a process works
+ * in is kept, and so is every one when the processes cannot be read.
  */
 export async function removeOrphanFolders(opts: {
   projects: string[];
@@ -189,9 +275,9 @@ export async function removeOrphanFolders(opts: {
   try {
     const listing = await listOrphanFolders(opts);
     const report: RemovalReport = { removed: 0, freedBytes: 0, kept: [] };
-    const cwds = await (opts.processCwds ?? processCwds)();
     let done = 0;
     for (const folder of listing.folders) {
+      const cwds = await (opts.processCwds ?? processCwds)();
       const keep = (reason: KeptReason, detail?: string) => report.kept.push({ path: folder.path, project: folder.project, reason, ...(detail ? { detail } : {}) });
       if (!cwds) {
         keep('unknown-use');
@@ -201,6 +287,8 @@ export async function removeOrphanFolders(opts: {
           keep('in-use', `${user.command} (${user.pid})`);
         } else if (!isRealDir(folder.path) || !inside(real(folder.path), real(path.join(folder.project, '.worktrees')))) {
           keep('failed', 'it is no longer a folder of the project\'s .worktrees');
+        } else if (orphanReason(folder.path) === null) {
+          keep('failed', 'it holds a git repository or a live worktree now, or could not be read');
         } else {
           try {
             fs.rmSync(folder.path, { recursive: true, force: true });
