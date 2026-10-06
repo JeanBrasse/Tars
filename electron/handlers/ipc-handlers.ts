@@ -2,6 +2,7 @@ import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
+import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
 import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
@@ -1223,6 +1224,34 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       out[provider.id] = enforcesOrchestratorMode(provider.binaryName);
     }
     return out;
+  });
+
+  // The disk and the folders no agent owns (Settings · System; Noah's choice
+  // 16 of 05/10). The projects are Tars's own: those added by hand and those
+  // its agents work in; an agent's worktree is never offered.
+  const orphanScope = () => ({
+    projects: [...new Set([...readCustomProjects(), ...[...agents.values()].map(a => a.projectPath).filter(Boolean)])],
+    // Every folder an agent works in, its project's too: one created on a
+    // folder inside a .worktrees, with no worktree of its own, was offered
+    // (the Audit's gate of #334, M2).
+    owned: [...agents.values()].flatMap(a => [a.worktreePath, a.projectPath, a.secondaryProjectPath]).filter((p): p is string => !!p),
+  });
+  ipcMain.handle('system:disk', async () => diskSpace());
+  ipcMain.handle('system:orphanFolders', async () => listOrphanFolders(orphanScope()));
+  // The rows the window showed and the person confirmed: nothing else goes.
+  ipcMain.handle('system:removeOrphanFolders', async (_event, paths: unknown) => {
+    if (!Array.isArray(paths) || !paths.every(p => typeof p === 'string')) {
+      return { error: 'the folders to remove must be the list of paths the window showed' };
+    }
+    try {
+      return await removeOrphanFolders({
+        ...orphanScope(),
+        paths,
+        onProgress: progress => broadcastToAllWindows('system:orphanFolders:progress', progress),
+      });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('agent:remove', async (_event, id: string) => {
