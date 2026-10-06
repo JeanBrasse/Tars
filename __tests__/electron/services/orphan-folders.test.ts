@@ -41,6 +41,11 @@
  *     minutes: one that starts in a folder meanwhile is not seen.
  * 15. (L2) On Linux, processes that cannot be read count as none, where
  *     macOS keeps every folder.
+ * And from the Frontend (06/10), on 10's fix:
+ * 16. A project whose git cannot list its worktrees offers nothing, and the
+ *     listing does not say so: the window reads an empty listing as "every
+ *     folder belongs to a worktree git knows", which is false for it. Or one
+ *     such project hides the folders of the others.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -226,6 +231,24 @@ describe('what the folder\'s own .git says', () => {
     }
     expect(fs.existsSync(path.join(wt, 'a.txt'))).toBe(true);
     expect(fs.existsSync(wts('stray', 'x.txt'))).toBe(true);
+  });
+
+  it('16. names the project git could not read, offers none of its folders, and still offers the others\'', async () => {
+    const second = path.join(root, 'second');
+    fs.mkdirSync(second);
+    git(second, 'init', '-q', '-b', 'main');
+    file(path.join(second, '.worktrees', 'left-over', 'x.txt'), 10);
+    file(wts('stray', 'x.txt'), 10);
+    fs.renameSync(path.join(project, '.git', 'HEAD'), path.join(project, '.git', 'HEAD.aside'));
+    try {
+      const listing = await listOrphanFolders({ projects: [project, second], owned: [] });
+      expect(listing.unreadProjects).toEqual([project]);
+      expect(listing.folders.map(f => f.path)).toEqual([path.join(second, '.worktrees', 'left-over')]);
+      expect(listing.count).toBe(1);
+    } finally {
+      fs.renameSync(path.join(project, '.git', 'HEAD.aside'), path.join(project, '.git', 'HEAD'));
+    }
+    expect((await listOrphanFolders({ projects: [project, second], owned: [] })).unreadProjects).toEqual([]);
   });
 
   it('11. never lists a repository of its own, nor a .git that names no gitdir, and removes neither', async () => {
