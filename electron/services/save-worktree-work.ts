@@ -98,7 +98,10 @@ export async function ignoredNotCaches(worktreePath: string): Promise<string[]> 
 
 /**
  * The submodules checked out in the worktree that hold work no remote has:
- * commits on no remote-tracking branch, or changes not committed. A worktree's
+ * commits on no remote-tracking branch (from any ref: a branch, a tag, a
+ * stash, the Audit's gate of #335), changes not committed, or files git
+ * ignores that are not caches (a .env), which the worktree's own ignored-files
+ * check does not see, its git status not going into a submodule. A worktree's
  * submodule keeps its git store in the worktree's own
  * (.git/worktrees/<name>/modules/), which a forced removal deletes; measured
  * on 06/10, a commit made in one is gone after it (the Info of #312's gate).
@@ -121,8 +124,8 @@ export async function submodulesWithWork(worktreePath: string, prefix = ''): Pro
     const named = prefix + sub;
     try {
       const dirty = await git(dir, ['status', '--porcelain', '--untracked-files=all']);
-      const unpushed = await git(dir, ['rev-list', '-n', '1', 'HEAD', '--branches', '--not', '--remotes']);
-      if (dirty || unpushed) found.push(named);
+      const unpushed = await git(dir, ['rev-list', '-n', '1', 'HEAD', '--all', '--not', '--remotes']);
+      if (dirty || unpushed || (await ignoredNotCaches(dir)).length) found.push(named);
       else found.push(...await submodulesWithWork(dir, `${named}/`));
     } catch {
       found.push(named);
