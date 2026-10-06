@@ -17,7 +17,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * its size and when it last changed) and the disk above it; remove asks first
  * and removes nothing; cancel takes the question away; remove again, then
  * remove in the question, and the end says two were removed and one kept,
- * which stays listed as in use, with remove 1 folder. The two idle folders are
+ * which stays listed as in use, the process named in its title, with remove
+ * 1 folder. The two idle folders are
  * gone from the disk, the busy one, the live worktree and the agent's are not.
  *
  * The artefact: a screenshot per state and values.json with what each one read.
@@ -116,6 +117,8 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('tars-hermes/.worktrees/busy');
     await expect(rows.first()).toContainText('in use');
+    // Which process, in the title of its why, as main names it.
+    await expect(rows.first().locator('[data-orphan-why]')).toHaveAttribute('title', new RegExp(`\\(${busy.pid}\\)`));
     await expect(block.getByRole('button', { name: 'remove 1 folder', exact: true })).toBeEnabled();
     seen.done = (await block.locator('[data-settings-hint]').first().innerText()).replace(/\s+/g, ' ');
     seen.kept = (await rows.allInnerTexts()).map(t => t.replace(/\s+/g, ' '));
