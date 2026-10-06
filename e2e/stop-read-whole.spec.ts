@@ -19,11 +19,6 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * stop_agent does, while the Agents page is open. Its card says who stopped it,
  * when and why, with no reload.
  *
- * The Kanban sync's side of this change (a stop is no task's end) is pinned by
- * __tests__/components/stop-read-whole.test.tsx only: useKanbanAgentSync runs
- * in the local board, which no page mounts since Kanban became the Hermes
- * board, so the app cannot drive it.
- *
  * The artefact: a screenshot of the card and values.json with the line read.
  */
 
