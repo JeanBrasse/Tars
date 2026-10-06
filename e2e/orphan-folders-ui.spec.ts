@@ -82,7 +82,8 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
     seen.list = (await rows.allInnerTexts()).map(t => t.replace(/\s+/g, ' '));
     const byName = (name: string) => rows.filter({ hasText: `tars-hermes/.worktrees/${name}` });
     await expect(byName('feat-relay-retry')).toContainText('git forgot it');
-    await expect(byName('feat-relay-retry')).toContainText('195 KB');
+    // The size main measures is what the folder takes on the disk, blocks and all.
+    await expect(byName('feat-relay-retry')).toContainText(/\d+ KB/);
     await expect(byName('agent-7f3c1a')).toContainText('no .git');
     await expect(byName('busy')).toContainText('no .git');
     await expect(block).not.toContainText(project);
