@@ -33,7 +33,13 @@ import type { OrphanFolder } from '../../src/types/electron';
  *    says nothing of it beside the folders offered; it is named by its path,
  *    the home in it, where the rows name a project by its folder's name; a
  *    name hides, turns or breaks the line; two projects read as one ("its
- *    folders"). Git's reason stays in main's log: main does not send it.
+ *    folders"). Git's reason stays in main's log: main does not send it;
+ * 10. a folder the confirm named that main kept because it was no longer one
+ *    no agent owns when its turn came (since #334's 9db11f16 main removes
+ *    only the paths the window showed, and keeps one gone by hand or a
+ *    worktree again) has no row once the list is read again, and the end
+ *    says its row says why, or counts it among the folders kept for a
+ *    reason the rows give.
  */
 
 const GB = 1024 ** 3;
@@ -154,5 +160,23 @@ describe('a project git could not list (9)', () => {
     expect(listingHint({ count: 0, totalBytes: 0, unreadProjects: [api] })).toBe('None in the projects git could read.');
     expect(listingHint({ count: 0, totalBytes: 0, unreadProjects: [] })).toBe('None: every folder in your projects\' .worktrees belongs to a worktree git knows.');
     expect(listingHint({ count: 59, totalBytes: 11 * GB, unreadProjects: [api] })).toBe('59 folders, 11.0 GB, in your projects\' .worktrees that git no longer knows, so nothing says whether they hold work. Tars never removes them on its own.');
+  });
+});
+
+describe('a folder that was no longer one no agent owns when its turn came (10)', () => {
+  const k = (path: string, reason: 'in-use' | 'unknown-use' | 'failed') => ({ path, project: '/p', reason });
+  const x = '/p/.worktrees/x';
+
+  it('is said in the end, since no row is left to say it', () => {
+    expect(doneHint({ removed: 2, freedBytes: 2 * MB, kept: [k(x, 'failed')] }, new Set())).toBe('Removed 2 folders: 2 MB given back. One was no longer a folder no agent owns.');
+    expect(doneHint({ removed: 0, freedBytes: 0, kept: [k(x, 'failed'), k('/p/.worktrees/y', 'failed')] }, new Set())).toBe('None was removed. 2 were no longer folders no agent owns.');
+  });
+
+  it('leaves the rows to say why for the ones still listed', () => {
+    const busy = '/p/.worktrees/busy';
+    expect(doneHint({ removed: 2, freedBytes: 2 * MB, kept: [k(busy, 'in-use'), k(x, 'failed')] }, new Set([busy]))).toBe('Removed 2 folders: 2 MB given back. One was kept: a process works in it. One was no longer a folder no agent owns.');
+    expect(doneHint({ removed: 0, freedBytes: 0, kept: [k(busy, 'failed'), k(x, 'failed')] }, new Set([busy]))).toBe('None was removed. One was kept: its row says why. One was no longer a folder no agent owns.');
+    expect(doneHint({ removed: 0, freedBytes: 0, kept: [k(busy, 'unknown-use'), k(x, 'failed')] }, new Set([busy]))).toBe('None was removed: Tars could not read which processes work in it, so it was kept. One was no longer a folder no agent owns.');
+    expect(doneHint({ removed: 1, freedBytes: 2 * MB, kept: [k(busy, 'in-use')] }, new Set([busy]))).toBe('Removed 1 folder: 2 MB given back. One was kept: a process works in it.');
   });
 });

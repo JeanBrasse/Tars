@@ -30,9 +30,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * folder was never offered and is still there.
  *
  * The second test: a folder that cannot be removed, holding a read-only
- * folder. Its row reads not removed, and its title says why as main sends it,
- * by the error's code, never with an absolute path, the home being in it:
- * which code and which path Node names differ between macOS and Linux.
+ * folder, and one removed by hand once the list was read. The end says the
+ * one is kept and its row says why, and the other was no longer a folder no
+ * agent owns: it has no row left to say so. The kept one's row reads not
+ * removed, and its title says why as main sends it, by the error's code,
+ * never with an absolute path, the home being in it: which code and which
+ * path Node names differ between macOS and Linux.
  *
  * The artefact: a screenshot per state and values.json with what each one read.
  */
@@ -192,7 +195,7 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
   }
 });
 
-test('a folder that could not be removed says why in its title, never with its path', async () => {
+test('a folder that could not be removed says why in its title, never with its path, and one gone meanwhile is said in the end', async () => {
   test.skip(process.getuid?.() === 0, 'root removes a read-only folder, so nothing is kept to read');
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-orphans-stuck-'));
@@ -208,6 +211,10 @@ test('a folder that could not be removed says why in its title, never with its p
   fs.mkdirSync(locked, { recursive: true });
   fs.writeFileSync(path.join(locked, 'f'), 'x');
   fs.chmodSync(locked, 0o555);
+  // Listed, then removed by hand before the confirm.
+  const meanwhile = path.join(project, '.worktrees', 'gone-meanwhile');
+  fs.mkdirSync(meanwhile, { recursive: true });
+  fs.writeFileSync(path.join(meanwhile, 'x.txt'), 'x');
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
@@ -224,10 +231,13 @@ test('a folder that could not be removed says why in its title, never with its p
     await page.goto(`${DEV_URL}/settings?section=system`, { waitUntil: 'domcontentloaded' });
     const block = page.locator('[data-orphan-folders]');
     const rows = block.locator('[data-orphan-row]');
-    await expect(rows).toHaveCount(1, { timeout: 90_000 });
-    await block.getByRole('button', { name: 'remove 1 folder', exact: true }).click();
-    await block.locator('[data-orphan-confirm]').getByRole('button', { name: 'remove 1 folder', exact: true }).click();
-    await expect(block).toContainText('None was removed. One was kept: its row says why.', { timeout: 60_000 });
+    await expect(rows).toHaveCount(2, { timeout: 90_000 });
+    fs.rmSync(meanwhile, { recursive: true, force: true });
+    await block.getByRole('button', { name: 'remove 2 folders', exact: true }).click();
+    await block.locator('[data-orphan-confirm]').getByRole('button', { name: 'remove 2 folders', exact: true }).click();
+    await expect(block.locator('[data-settings-hint]').first()).toHaveText('None was removed. One was kept: its row says why. One was no longer a folder no agent owns.', { timeout: 60_000 });
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('tars-hermes/.worktrees/stuck');
     const why = rows.first().locator('[data-orphan-why]');
     await expect(why).toHaveText('not removed');
     const title = (await why.getAttribute('title')) ?? '';
