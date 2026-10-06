@@ -75,19 +75,6 @@ const AGENTS = [
   ...a,
 }));
 
-const KANBAN = {
-  tasks: [
-    { id: 't1', title: 'Statusline spawns 32 processes per render', column: 'triage', tags: ['perf'], assignee: 'Audit', createdAt: ISO(3) },
-    { id: 't2', title: 'Gemini writes memory but never reads it', column: 'triage', tags: ['memory'], assignee: 'Audit', createdAt: ISO(3) },
-    { id: 't3', title: 'Wire ACP into the terminal view', column: 'todo', tags: ['acp'], assignee: 'Backend Engineer', createdAt: ISO(2) },
-    { id: 't4', title: 'Light theme pass on Review', column: 'todo', tags: ['design'], assignee: 'Frontend Engineer', createdAt: ISO(2) },
-    { id: 't5', title: 'Per-provider budgets in Usage', column: 'running', tags: ['usage'], assignee: 'Frontend Engineer', createdAt: ISO(1) },
-    { id: 't6', title: 'Atomic writes for agents.json', column: 'review', tags: ['persistence'], assignee: 'Backend Engineer', createdAt: ISO(1) },
-    { id: 't7', title: 'Memory hub federates five sources', column: 'done', tags: ['memory'], assignee: 'Backend Engineer', createdAt: ISO(4) },
-    { id: 't8', title: 'Schedules page', column: 'done', tags: ['hermes'], assignee: 'Frontend Engineer', createdAt: ISO(5) },
-  ],
-};
-
 /**
  * The port the sandbox's Hermes points at, and nothing listens on it.
  *
@@ -415,7 +402,6 @@ export function seedSandbox(home, { chatRooms = false } = {}) {
     }
   }
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents, null, 2));
-  fs.writeFileSync(path.join(dir, 'kanban-tasks.json'), JSON.stringify(KANBAN, null, 2));
 
   // Paths, as the app keeps them. It reads this file with
   // `parsed.filter(p => typeof p === 'string')` and writes back a plain array
