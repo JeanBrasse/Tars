@@ -10,6 +10,10 @@
  *    (no progress event), or answers without what was kept and why.
  * 3. The calls are not in the preload, or the renderer has no type for them.
  * 4. The disk is not the home's.
+ * And from the Audit's gate of #334 (M2):
+ * 5. An agent whose folder is its projectPath, inside a .worktrees, with no
+ *    worktreePath, has its folder offered and removed while no process sits
+ *    in it (idle with no terminal, stopped, asleep, Tars just started).
  */
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -94,6 +98,21 @@ describe("the window's calls", () => {
     expect(fs.existsSync(owned)).toBe(true);
     const steps = pushed.filter(p => p.channel === 'system:orphanFolders:progress').map(p => p.payload as { done: number; total: number });
     expect(steps.map(s => [s.done, s.total])).toEqual([[1, 2], [2, 2]]);
+  });
+
+  it("5. never offers an agent's own project folder inside a .worktrees", async () => {
+    const host = project('host');
+    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([host]));
+    const folder = path.join(host, '.worktrees', 'agent-project');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'work'), 'mine\n');
+    agents.clear();
+    agents.set('a2', { id: 'a2', name: 'B', status: 'idle', projectPath: folder, skills: [], output: [] } as unknown as AgentStatus);
+
+    const listing = await handlers.get('system:orphanFolders')!({}) as { folders: Array<{ path: string }> };
+    expect(listing.folders.map(f => f.path)).not.toContain(folder);
+    await handlers.get('system:removeOrphanFolders')!({});
+    expect(fs.readFileSync(path.join(folder, 'work'), 'utf8')).toBe('mine\n');
   });
 
   it("4. the disk is the home's, with the 30 GB floor", async () => {
