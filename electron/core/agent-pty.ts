@@ -7,8 +7,8 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
-import { stateModLaunchEnv } from '../services/state-mod';
 import { refuseOnFullDisk } from './disk-space';
+import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
 export { setAccountEnvResolver } from './account-env';
