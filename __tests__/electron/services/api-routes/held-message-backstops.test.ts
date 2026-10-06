@@ -21,6 +21,9 @@ import { EventEmitter } from 'node:events';
  * 12. (main into #292) A caller of performDispatch that asks to hear where its message went (the error triage's
  *     note, #292) is not told: the writer's callbacks are Tars's own (#314) and the caller's are left out, or the
  *     other way round. Only its own test, which replaces performDispatch, covered the caller's side.
+ * 13. (#314's gate, the follow-ups of 06/10) A held message that is given up (its terminal ends with it held) is still
+ *     told again a few minutes on, as if it were waiting: the drop does not cancel the note, on /message or through
+ *     performDispatch (/dispatch, the triage note). No test named that call, and removing it left the suite green.
  */
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
@@ -256,6 +259,39 @@ describe('a message still held a few minutes on', () => {
     worker.status = 'idle';
     vi.advanceTimersByTime(HELD_RETELL_MS + 1000 + PROGRAMMATIC_SUBMIT_DELAY_MS);
     expect(told()).toMatch(/still not/);
+  });
+});
+
+describe('a held message given up before the note is due', () => {
+  it('13. /message: is not told again once its terminal ended with it held', async () => {
+    orchTerminal();
+    agents.get('worker')!.status = 'idle';
+    anUnfollowableKey();
+    const answer = await call('POST', '/api/agents/worker/message', { message: 'run the gate' }, 'orch');
+    expect(answer?.data.held).toBe(true);
+
+    terminalExited(terminal as never);
+    vi.advanceTimersByTime(HELD_RETELL_MS * 2 + PROGRAMMATIC_SUBMIT_DELAY_MS);
+    expect(told()).not.toMatch(/still not in its terminal/);
+  });
+
+  it('13. performDispatch: is not told again once its terminal ended with it held, and its caller hears the drop', async () => {
+    orchTerminal();
+    const worker = agents.get('worker')!;
+    worker.status = 'idle';
+    anUnfollowableKey();
+    const heard: string[] = [];
+    let answer: unknown;
+    await performDispatch(worker, {
+      message: 'run the gate', from: 'Orchestrator', sender: { kind: 'agent', id: 'orch', name: 'Orchestrator' },
+      onDropped: () => heard.push('dropped'),
+    }, ctx, (data) => { answer = data; });
+    expect(answer).toMatchObject({ held: true });
+
+    terminalExited(terminal as never);
+    vi.advanceTimersByTime(HELD_RETELL_MS * 2 + PROGRAMMATIC_SUBMIT_DELAY_MS);
+    expect(heard).toEqual(['dropped']);
+    expect(told()).not.toMatch(/still not in its terminal/);
   });
 });
 

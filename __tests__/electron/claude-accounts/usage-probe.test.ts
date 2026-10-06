@@ -45,11 +45,18 @@
  * 11. A claude that answered is killed rather than let to exit and clean up.
  * 12. A claude that answered and does not exit when its input closes is left
  *     running, or the quit no longer ends it while it is closing.
+ *
+ * And of the tests themselves (06/10): the stand-ins of the two tests 12 ignore
+ * their input closing, so only the code under test ends them. Run against a
+ * mutant, red first, or failing before the grace, they outlived the run: two
+ * from #303's bench were still running 43 h on, and QA ended one at 17 h.
+ * 13. A test leaves a stand-in, or what it started, running after it ends.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { parseUsageAnswer, probeUsage, usageProbeEnv, recordProbe, resetProbes } from '../../../electron/services/claude-accounts/usage-probe';
 import { readAccountUsage, countersDir } from '../../../electron/services/claude-accounts/counters';
 
@@ -137,10 +144,27 @@ describe('the environment of a probe', () => {
   });
 });
 
+/** The processes whose argv names `dir`: a test's stand-in and what it started. */
+function startedIn(dir: string): number[] {
+  const ps = execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' });
+  return ps.split('\n').flatMap(line => {
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line);
+    return m && m[2].includes(dir + path.sep) && Number(m[1]) !== process.pid ? [Number(m[1])] : [];
+  });
+}
+
 describe('a probe of the real protocol, against a stand-in claude', () => {
   let dir: string;
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-usage-probe-')); });
-  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+  afterEach(() => {
+    // 13. Whatever the code under test did, each test ends what it started: every
+    // process whose argv names this test's own folder (the stand-in, and what it
+    // spawned), by PID, before the folder goes.
+    for (const pid of startedIn(dir)) {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 
   /** A claude that reads one control request on stdin and does what `script` says. */
   function standIn(script: string): string {
