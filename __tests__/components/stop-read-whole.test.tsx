@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, settle, type Mount } from './hook-runtime';
 import { useElectronAgents } from '../../src/hooks/useElectron';
-import { useKanbanAgentSync } from '../../src/hooks/useElectronKanban';
 import type { AgentStatus, AgentTickItem } from '../../src/types/electron';
-import type { KanbanTask, KanbanTaskUpdate } from '../../src/types/kanban';
 
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
@@ -11,14 +9,12 @@ vi.mock('react', async (importOriginal) => ({
 }));
 
 /**
- * A stop, read whole, and no task's end. A stopped agent says who stopped it,
+ * A stop, read whole. A stopped agent says who stopped it,
  * when and why (`stoppedBy`, `stoppedAt`, `stopReason`, core/agent-stop.ts),
  * which only its full record carries: the status event and the tick name the
  * status alone. The window read the record again only on agent:complete, which
  * comes when a stopped agent's terminal ends, so an agent stopped with no
- * terminal sent none and read "Stopped", by nobody, for no reason. And the
- * Kanban sync took that same agent:complete for the end of the agent's task,
- * and moved it to done with the terminal's last lines for a summary. Written
+ * terminal sent none and read "Stopped", by nobody, for no reason. Written
  * before the code. How it can fail:
  *
  * The list the pages read (useElectronAgents), as for an error:
@@ -29,18 +25,12 @@ vi.mock('react', async (importOriginal) => ({
  * 3. over-correction: an agent that stays stopped is read again on every
  *    tick, where entering stopped is read once.
  *
- * The Kanban sync (useKanbanAgentSync), which runs in the local board, and no
- * page mounts that board since Kanban became the Hermes board: these two pin
- * it without the app.
- * 4. agent:complete for a stopped agent moves its ongoing task to done, with a
- *    summary: a stop is no task's end, and the task stays where it is;
- * 5. over-correction: a terminal that ended on its own no longer moves its
- *    task to done.
+ * The Kanban sync's failures 4 and 5 (a stop is no task's end) went with the
+ * sync itself, when the old local board was removed (Noah, 06/10).
  */
 
 type Tick = (items: AgentTickItem[]) => void;
 type Status = (event: { agentId: string; status: string; timestamp: string }) => void;
-type Complete = (event: { agentId: string; exitCode: number }) => void;
 
 const STOP = { stoppedBy: 'Project Lead', stoppedAt: '2026-10-05T18:40:00.000Z', stopReason: 'frozen on a file read for 40 minutes' };
 
@@ -117,60 +107,5 @@ describe('useElectronAgents reads a stop whole', () => {
     tick!(listed.map(a => tickItem(a)));
     await settle();
     expect(list.mock.calls.length).toBe(reads);
-  });
-});
-
-describe('the Kanban sync takes no stop for a task\'s end', () => {
-  const TASK: KanbanTask = {
-    id: 't1', title: 'Build the page', description: '', column: 'ongoing', projectId: 'p', projectPath: '/p',
-    assignedAgentId: 'a1', agentCreatedForTask: false, requiredSkills: [], priority: 'medium', progress: 50,
-    createdAt: '2026-10-05T08:00:00.000Z', updatedAt: '2026-10-05T08:00:00.000Z', order: 0, labels: [], attachments: [],
-  };
-  let complete: Complete | undefined;
-  let record: Partial<AgentStatus>;
-  let updates: KanbanTaskUpdate[];
-  let moves: Array<[string, string]>;
-  let hook: Mount<void>;
-
-  beforeEach(async () => {
-    updates = [];
-    moves = [];
-    g.window = {
-      electronAPI: {
-        agent: {
-          onStatus: () => () => {},
-          onComplete: (cb: Complete) => { complete = cb; return () => { complete = undefined; }; },
-          get: vi.fn(async () => record),
-        },
-      },
-    };
-    hook = mount(() => useKanbanAgentSync(
-      [TASK],
-      async params => { updates.push(params); },
-      async (id, column) => { moves.push([id, column]); },
-    ));
-    await settle();
-  });
-
-  afterEach(() => {
-    hook.unmount();
-    delete g.window;
-  });
-
-  it('a stopped agent\'s task stays where it is, and keeps no summary (4)', async () => {
-    // The terminal a stop ended: its exit still sends agent:complete.
-    record = agent({ status: 'stopped', currentTask: undefined, cliRunning: false, output: ['the last screen\r\n'], ...STOP });
-    complete!({ agentId: 'a1', exitCode: 0 });
-    await settle();
-    expect(moves).toEqual([]);
-    expect(updates).toEqual([]);
-  });
-
-  it('a terminal that ended on its own still moves its task to done (5)', async () => {
-    record = agent({ status: 'completed', cliRunning: false, output: ['all tests pass\r\n'] });
-    complete!({ agentId: 'a1', exitCode: 0 });
-    await settle();
-    expect(moves).toEqual([['t1', 'done']]);
-    expect(updates[0]).toMatchObject({ id: 't1', progress: 100, completionSummary: 'all tests pass' });
   });
 });

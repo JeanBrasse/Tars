@@ -120,7 +120,7 @@ Agent · Claude account (and their light copies).
   stopped group in Agent stopped · who and why; an asleep agent's, and the
   rail's asleep group, in Agent asleep · and how it wakes
 - Start prompt (`StartPromptModal`)
-- Kanban: new task, card detail, done summary
+- Kanban (the Hermes board): new task, a task's detail
 - Plugin install, Install terminal (settings)
 
 ## Menus, dropdowns and controls
