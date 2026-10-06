@@ -663,7 +663,7 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "A diff review of every branch, one search across the fleet’s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, beside each Claude account’s 5 h and weekly limits.",
+                          "content": "A diff review of every branch, one search across the fleet’s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, down to what each task cost, with the work it handed on to other agents.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,
@@ -699,7 +699,7 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Run your Claude agents on up to five subscriptions. Each starts on the account with the most room left, and one cut short by a limit carries on from another account, in the same conversation.",
+                          "content": "Run your Claude agents on up to five subscriptions. Tars asks Claude Code itself for each account’s 5 h and weekly use, never its sign-in, and starts each agent on the account with the most room left; one cut short by a limit carries on from another, in the same conversation.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,
@@ -744,7 +744,88 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Stop one, and its card, panel and window say who stopped it and when, and an orchestrator that stops one says why. One that reads running but has written nothing for 30 minutes and runs no command is marked stalled, and its orchestrator is told.",
+                          "content": "Stop one, and its card, panel and window say who stopped it and when, and an orchestrator that stops one says why. On Claude Code 2.1.289 or newer, a Claude agent reports its state from inside it: one whose Claude Code froze is marked stalled after five minutes of silence, never for a long command or a subagent, and its orchestrator is told.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Dct23",
+                      "name": "f Your Telegram, through Hermes",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "MLD3V",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Your Telegram, through Hermes",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "kZkgD",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Turn on Telegram through Hermes, and your own Hermes becomes Tars’s voice on Telegram: your orchestrators’ questions and the event reports reach you there, and your reply goes to the orchestrator it answers, or to the project you name with @project.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "So6vC",
+                  "name": "row5",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ABCGl",
+                      "name": "f Agents that sleep, and come back",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UXkf0",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Agents that sleep, and come back",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "SEn1D",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "An agent with no turn for 30 minutes sleeps and gives back its memory; a message, a task or a key typed in its panel wakes it on its own conversation in about a second. After a crash or a power cut, the agents that were working start again on theirs, with a note of what was cut.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,

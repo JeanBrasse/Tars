@@ -2,6 +2,8 @@ import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { ignoredNotCaches, saveUncommittedWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
+import { cloneDependencies, logDependencies } from '../services/worktree-deps';
+import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
@@ -40,6 +42,7 @@ import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
+import { emitAgentStatus } from '../services/agent-events';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory, memoryStatus } from '../services/memory-hub';
 import { usableHermesConnection } from '../services/hermes-config';
@@ -359,6 +362,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
             execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd, stdio: 'pipe' });
           }
         }
+        // Its dependencies, cloned from the project's where they were installed
+        // for this lock (Noah's choice 17, 05/10): each agent ran its own npm ci
+        // into its worktree.
+        await logDependencies(worktreePath, await cloneDependencies(cwd, worktreePath));
 
         // Use the worktree path as the working directory
         cwd = worktreePath;
@@ -1137,6 +1144,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
               execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
             }
           }
+          await logDependencies(worktreePath, await cloneDependencies(agent.projectPath, worktreePath));
           agent.worktreePath = worktreePath;
           agent.branchName = branchName;
           // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
@@ -1190,6 +1198,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { success: true };
   });
 
+  // The window's answer to a permission question the state mod asked Tars
+  // (services/permission-asks.ts): allow or deny decide the call, ask hands it
+  // back to the terminal's dialog. Given as the user: the model reads it.
+  ipcMain.handle('agent:answerPermission', async (_event, id: string, decision: unknown, reason?: unknown) => {
+    // The window hears of it through the question's own event (hooks-routes).
+    const answered = answerPermission(id, decision as PermissionDecision, 'the user', typeof reason === 'string' ? reason : undefined);
+    return { success: answered };
+  });
+
   // Remove an agent
   /**
    * Which providers actually enforce orchestrator mode.
@@ -1211,6 +1228,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
     if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
+    dropPermissionAsks(id);
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { BrandSpinner, DialogShell, SegmentedControl } from '@/components/ui';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
+import PermissionAskNotice from '@/components/PermissionAskNotice';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { stopLine } from '@/lib/stop-line';
@@ -283,6 +284,9 @@ export default function AgentTerminalDialog({
               not across the rail: it is about this field, and the window's own
               header rows are not the panel header the board uses. */}
           <div className="flex-1 min-w-0 flex flex-col">
+            {/* A permission question Tars holds for this agent, in full, with
+                when it was asked. Frame: `Permission asked of Tars`. */}
+            <PermissionAskNotice agent={agent} layout="window" />
             <MessageWaitingNotice waiting={messageWaiting} />
             <div className="flex-1 min-h-0 relative">
               <div

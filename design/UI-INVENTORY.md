@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 125 root frames.
-`design/chat-design.pen` holds 72 of those, the other fifty-three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 127 root frames.
+`design/chat-design.pen` holds 72 of those, the other fifty-five being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -44,9 +44,9 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 
 | Route | Name | Frame |
 |---|---|---|
-| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy) |
+| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy) |
 | `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states, · Composer · states and · Room head · states (a long path, a long name); each with its `· light`; A · notes and A · every state · notes |
-| `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy) |
+| `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy), Permission asked of Tars (an agent's card, and its window; and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
 | `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy |
@@ -148,6 +148,7 @@ read the transcript instead, is gone since 1.9.2.
 | Message waiting · notice | The line a panel shows while a message waits for a field somebody is typing in, with the two ways out |
 | Left fullscreen · notice | The line a panel shows when its claude left fullscreen and the wheel can no longer scroll it, with restart (and its light copy) |
 | Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
+| Permission asked of Tars | The question Claude Code would put to its permission dialog, asked of Tars by the state mod instead: the line a panel shows, with allow, deny with a reason and ask in terminal; a call too long for that line, shown whole in the panel before allow; the same question in full in the agent's window, with why Claude Code asks and the rule that asked under the call, and on its card; too late, when the question went back first (and its light copy) |
 
 ## States every data surface must show
 
