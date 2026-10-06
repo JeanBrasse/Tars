@@ -1691,7 +1691,7 @@ clone), a live worktree of any repository, and a folder holding either at any de
 listed; nor is anything of a project whose `git worktree list` fails: the window names that
 project, and the main process log says why (`[orphan-folders] git cannot list the worktrees of
 <project> (<code>): <git's message>`). Tars never removes one on its
-own. The window's remove asks first, then removes them all one at a time; a folder a process
+own. The window's remove asks first, then removes the folders it showed, and only those, one at a time; a folder a process
 works in stays listed as `in-use`, with the process named, and when `lsof` cannot be read every
 folder stays (`unknown-use`). To see what a process holds there: `lsof -a -d cwd +D <folder>`.
 
