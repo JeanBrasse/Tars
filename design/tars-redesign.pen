@@ -204034,7 +204034,7 @@
                           "id": "wMfgb",
                           "name": "b remove 59 folders",
                           "height": 26,
-                          "stroke": "$status-error",
+                          "stroke": "#E5534B66",
                           "strokeWidth": 1,
                           "padding": [
                             6,
@@ -205478,6 +205478,721 @@
                               "fontFamily": "$font-ui",
                               "fontSize": 11,
                               "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "y8hmlp",
+          "name": "col unread, alone: git could not list a project's worktrees, and the row no longer says every folder is known",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "Yvc6x",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "a project git could not read, alone: nothing is offered, and the row no longer says every folder belongs to a worktree git knows",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "L3NHPW",
+              "name": "none",
+              "width": 946,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                14,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "smyIv",
+                  "name": "row Folders no agent owns",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "D2KGd",
+                      "name": "top",
+                      "width": "fill_container",
+                      "gap": 16,
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "nLcIq",
+                          "name": "l",
+                          "width": 560,
+                          "layout": "vertical",
+                          "gap": 2,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "E3bHgR",
+                              "name": "n",
+                              "fill": "$text-primary",
+                              "content": "Folders no agent owns",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "MjJgi",
+                              "name": "h",
+                              "fill": "$text-muted",
+                              "textGrowth": "fixed-width",
+                              "width": 560,
+                              "content": "None in the projects git could read.",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "vgM1X",
+                      "name": "unread",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "j6uGju",
+                          "name": "square",
+                          "fill": "$status-waiting",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "nb3cc",
+                          "name": "text",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "tpTLe",
+          "name": "col unread, beside folders offered: the project named as the rows name it, with no reason",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "pSyVM",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "a project git could not read, beside folders offered: named as the rows name it, without git's reason",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "z4nJj",
+              "name": "asking",
+              "width": 946,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                14,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "AQ7Sn",
+                  "name": "row Folders no agent owns",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "hRm2E",
+                      "name": "top",
+                      "width": "fill_container",
+                      "gap": 16,
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "mvFst",
+                          "name": "l",
+                          "width": 560,
+                          "layout": "vertical",
+                          "gap": 2,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "D3f5nz",
+                              "name": "n",
+                              "fill": "$text-primary",
+                              "content": "Folders no agent owns",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "Q8xgo",
+                              "name": "h",
+                              "fill": "$text-muted",
+                              "textGrowth": "fixed-width",
+                              "width": 560,
+                              "content": "59 folders, 11.0 GB, in your projects' .worktrees that git no longer knows, so nothing says whether they hold work. Tars never removes them on its own.",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ZxeGn",
+                          "name": "b remove 59 folders",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "padding": [
+                            6,
+                            11
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "tk14r",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "remove 59 folders",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "CPaRl",
+                      "name": "unread",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "jnTDL",
+                          "name": "square",
+                          "fill": "$status-waiting",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "Fj1lR",
+                          "name": "text",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "pqz3w",
+                      "name": "folders",
+                      "clip": true,
+                      "width": "fill_container",
+                      "height": 104,
+                      "fill": "$term-bg",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "ibpMa",
+                          "name": "head",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "VKju2",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "RVC2z",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "FOLDER",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "QySgI",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "P0RZ6k",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "WHY",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "C0pmo",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "K78F8",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "SIZE",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "y5cnh",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "TDVtE",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "LAST CHANGED",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "caJCS",
+                          "name": "folder tars-hermes/.worktrees/feat-relay-retry",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "xNw92",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ARNd4",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "tars-hermes/.worktrees/feat-relay-retry",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "d2F4e",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "SvM7a",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "git forgot it",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "sOFHb",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "MBD6X",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "412 MB",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "KOtRT",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "l5bzG",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "5 months",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "O2xBuG",
+                          "name": "folder tars-hermes/.worktrees/fix-session-resume",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "t11fN8",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "BkUuj",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "tars-hermes/.worktrees/fix-session-resume",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "P0dUAt",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "W7q1Aa",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "git forgot it",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "kMlQs",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "u1tvo",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "388 MB",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "iMiAV",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Gq32p",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "5 months",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "y0GKkb",
+                          "name": "folder tars-hermes/.worktrees/feat-kanban-board",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "fzKn2",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "VzsSh",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "tars-hermes/.worktrees/feat-kanban-board",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "SBbYC",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "X3YyP",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "git forgot it",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "z3woO",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "hKPG7",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "301 MB",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "zuQRr",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "OYxDe",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "5 months",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
                             }
                           ]
                         }
@@ -212681,7 +213396,7 @@
                           "id": "mVg7W",
                           "name": "b remove 59 folders",
                           "height": 26,
-                          "stroke": "$status-error",
+                          "stroke": "#CF222E66",
                           "strokeWidth": 1,
                           "padding": [
                             6,
@@ -214125,6 +214840,721 @@
                               "fontFamily": "$font-ui",
                               "fontSize": 11,
                               "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OBBME",
+          "name": "col unread, alone: git could not list a project's worktrees, and the row no longer says every folder is known",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "Dh5PB",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "a project git could not read, alone: nothing is offered, and the row no longer says every folder belongs to a worktree git knows",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "CUrVA",
+              "name": "none",
+              "width": 946,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                14,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Mx4a5",
+                  "name": "row Folders no agent owns",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "bNrd6",
+                      "name": "top",
+                      "width": "fill_container",
+                      "gap": 16,
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "v6yxkN",
+                          "name": "l",
+                          "width": 560,
+                          "layout": "vertical",
+                          "gap": 2,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Jt2OW",
+                              "name": "n",
+                              "fill": "$text-primary",
+                              "content": "Folders no agent owns",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "vP2Cd",
+                              "name": "h",
+                              "fill": "$text-muted",
+                              "textGrowth": "fixed-width",
+                              "width": 560,
+                              "content": "None in the projects git could read.",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "vntHJ",
+                      "name": "unread",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "X972a",
+                          "name": "square",
+                          "fill": "$status-waiting",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "e2Tmv",
+                          "name": "text",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "TTFSL",
+          "name": "col unread, beside folders offered: the project named as the rows name it, with no reason",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "LQWjU",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "a project git could not read, beside folders offered: named as the rows name it, without git's reason",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "okgEt",
+              "name": "asking",
+              "width": 946,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                14,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "P57Zx9",
+                  "name": "row Folders no agent owns",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "A2rDXP",
+                      "name": "top",
+                      "width": "fill_container",
+                      "gap": 16,
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "RVFRk",
+                          "name": "l",
+                          "width": 560,
+                          "layout": "vertical",
+                          "gap": 2,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "G7gBBH",
+                              "name": "n",
+                              "fill": "$text-primary",
+                              "content": "Folders no agent owns",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "R2A7w",
+                              "name": "h",
+                              "fill": "$text-muted",
+                              "textGrowth": "fixed-width",
+                              "width": 560,
+                              "content": "59 folders, 11.0 GB, in your projects' .worktrees that git no longer knows, so nothing says whether they hold work. Tars never removes them on its own.",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "K7ygyh",
+                          "name": "b remove 59 folders",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "padding": [
+                            6,
+                            11
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "l5YD4B",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "remove 59 folders",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "L3LY2N",
+                      "name": "unread",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "ERwK0",
+                          "name": "square",
+                          "fill": "$status-waiting",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "CVFAx",
+                          "name": "text",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Git could not list the worktrees of api-server, so Tars cannot say which of its folders no agent owns.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "m7NoD",
+                      "name": "folders",
+                      "clip": true,
+                      "width": "fill_container",
+                      "height": 104,
+                      "fill": "$term-bg",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "AhPyq",
+                          "name": "head",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "K9fRh",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "JaU2x",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "FOLDER",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "XRCGl",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "bbgDs",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "WHY",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "RPTVX",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "p2Aesf",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "SIZE",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "dVy1X",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "vaGYG",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "LAST CHANGED",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 10,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 0.8
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "RVC4Q",
+                          "name": "folder tars-hermes/.worktrees/feat-relay-retry",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "yzcIw",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "UczN4",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "tars-hermes/.worktrees/feat-relay-retry",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "SyyJI",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "k7bht8",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "git forgot it",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "HBGXx",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "c13Ay",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "412 MB",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "D6Tf7",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "RFT5M",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "5 months",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ghdmF",
+                          "name": "folder tars-hermes/.worktrees/fix-session-resume",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "Tsysj",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "vvfHv",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "tars-hermes/.worktrees/fix-session-resume",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "YqHtJ",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "HcGpW",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "git forgot it",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "tK2Q4",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "aO4UJ",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "388 MB",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "e1NgL",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "cdXrD",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "5 months",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ik3Ld",
+                          "name": "folder tars-hermes/.worktrees/feat-kanban-board",
+                          "width": "fill_container",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "xizNb",
+                              "name": "c folder",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "MBdAR",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "tars-hermes/.worktrees/feat-kanban-board",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "F94Fo",
+                              "name": "c why",
+                              "width": 96,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ZZRo0",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "git forgot it",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "spQXf",
+                              "name": "c size",
+                              "width": 64,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ZDezi",
+                                  "name": "v",
+                                  "fill": "$text-secondary",
+                                  "content": "301 MB",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "tyNM1",
+                              "name": "c last changed",
+                              "width": 96,
+                              "layout": "vertical",
+                              "alignItems": "end",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "SLCE9",
+                                  "name": "v",
+                                  "fill": "$text-muted",
+                                  "content": "5 months",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
                             }
                           ]
                         }

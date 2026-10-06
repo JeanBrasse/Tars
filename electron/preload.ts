@@ -813,6 +813,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeVault: (vaultPath: string) => ipcRenderer.invoke('obsidian:removeVault', vaultPath),
   },
 
+  // The disk, and the folders no agent owns (Settings · System). The removal
+  // asks nothing itself: the window confirms before it calls.
+  system: {
+    disk: () => ipcRenderer.invoke('system:disk'),
+    orphanFolders: () => ipcRenderer.invoke('system:orphanFolders'),
+    removeOrphanFolders: (paths: string[]) => ipcRenderer.invoke('system:removeOrphanFolders', paths),
+    onOrphanRemovalProgress: (callback: (progress: { done: number; total: number; freedBytes: number; current: string }) => void) => {
+      const listener = (_: unknown, progress: { done: number; total: number; freedBytes: number; current: string }) => callback(progress);
+      ipcRenderer.on('system:orphanFolders:progress', listener);
+      return () => ipcRenderer.removeListener('system:orphanFolders:progress', listener);
+    },
+  },
+
   // Tray menu events
   tray: {
     onFocusAgent: (callback: (agentId: string) => void) => {

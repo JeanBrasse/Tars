@@ -223,6 +223,11 @@ export const VOLATILE = {
     selector: 'text=/^\\d+\\.\\d+\\.\\d+ · Node /',
     why: 'the Electron and Node versions of the machine recording, which move with every dependency bump',
   },
+  'disk-space': {
+    surfaces: ['settings-system'],
+    selector: 'text=/^\\d+ GB free/',
+    why: 'the free and total space of the disk the run is on, which moves with everything written to it',
+  },
   'cli-versions': {
     surfaces: ['settings-ai-providers'],
     selector: 'text=/^[a-z][a-z-]* · \\d+\\.\\d+/',
