@@ -16,12 +16,14 @@ colors:
     text-muted: "#898989"
     accent: "#FF9E42"
     accent-dim: "#FF9E4216"
+    accent-focus: "#FF9E4266"
     on-accent: "#1E1E1E"
     scrim: "#00000099"
     knob: "#121212"
     status-running: "#4CC38A"
     status-waiting: "#E8C547"
     status-error: "#E5534B"
+    status-error-40: "#E5534B66"
     status-idle: "#898989"
   light:
     bg: "#FAF9F7"
@@ -36,12 +38,14 @@ colors:
     text-muted: "#6B6B6B"
     accent: "#C77012"
     accent-dim: "#C7701214"
+    accent-focus: "#C7701266"
     on-accent: "#1E1E1E"
     scrim: "#1E1E1E66"
     knob: "#FFFFFF"
     status-running: "#1A7F37"
     status-waiting: "#9A6700"
     status-error: "#CF222E"
+    status-error-40: "#CF222E66"
     status-idle: "#6B6B6B"
 typography:
   families:
@@ -200,10 +204,12 @@ re-exported to Tailwind through `@theme inline`.
 | `text-muted` | `#898989` | `#6B6B6B` | `--text-muted` | Meta, timestamps, hints |
 | `accent` | `#FF9E42` | `#C77012` | `--primary`, `--accent`, `--ring`, `--info` | The mark, one CTA, focus ring |
 | `accent-dim` | `#FF9E42` @ 8.6% | `#C77012` @ 7.8% | `bg-primary/…` | Active-item fill |
+| `accent-focus` | `#FF9E42` @ 40% | `#C77012` @ 40% | `border-primary/40` | A field's border while it holds the focus |
 | `on-accent` | `#1E1E1E` | `#1E1E1E` | `--primary-foreground` | Text on an accent fill |
 | `status-running` | `#4CC38A` | `#1A7F37` | `--success` | Agent working |
 | `status-waiting` | `#E8C547` | `#9A6700` | `--warning` | Agent asking |
 | `status-error` | `#E5534B` | `#CF222E` | `--danger`, `--destructive` | Agent failed, destructive action |
+| `status-error-40` | `#E5534B` @ 40% | `#CF222E` @ 40% | `border-danger/40` | The danger button's border |
 | `status-idle` | `#898989` | `#6B6B6B` | `--color-status-idle` → `--text-muted` | Agent spawned, doing nothing, or stopped |
 
 Two colours are deliberately not what the Pencil frames drew:

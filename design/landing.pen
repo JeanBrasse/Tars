@@ -832,6 +832,123 @@
                           "fontWeight": "normal"
                         }
                       ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "bxmTK",
+                      "name": "f Permissions, asked in Tars",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "aSKKQ",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Permissions, asked in Tars",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "d2q4F",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "On Claude Code 2.1.289 or newer, a Claude agent asks Tars, not its terminal, before a command or a call Claude Code would ask you about. Its card, its panel and its window say what it would run, read or open; allow it, or deny it with a reason the agent reads.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "b2mS7K",
+                  "name": "row6",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "kVYlN",
+                      "name": "f Worktrees that start ready, and lose nothing",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "xDtV2",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Worktrees that start ready, and lose nothing",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Sg0iY",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "An agent’s worktree starts with its project’s dependencies cloned, at almost no disk space, when the project’s own install matches its lock on a volume that can clone. Delete the agent and what it had not committed is kept on a wip/ branch; a worktree holding what no branch can carry, such as a .env or a submodule’s unpushed work, stays where it is, and Tars says why.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "E6nW2S",
+                      "name": "f Your disk, in view",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "MMcNK",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Your disk, in view",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "NNbEI",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Settings, System says how much your disk has free and lists the folders under your projects’ .worktrees that git no longer knows and no agent owns, with their size. Tars removes them only once you confirm, keeps one a process works in, and starts no agent under 2 GB free.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
                     }
                   ]
                 }

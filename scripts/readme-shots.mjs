@@ -34,7 +34,17 @@
  *   agent the seed declares running, waiting or in error read idle once
  *   started. Here each agent runs a stand-in that reports the status the seed
  *   declares for it, through the same hook route and with the same token as
- *   the hooks Tars installs in a real CLI. The e2e's fake CLI is left alone.
+ *   the hooks Tars installs in a real CLI. The e2e's fake CLI is left alone;
+ * - tasks that cost nothing: the seed has no transcript, so a Claude task read
+ *   not counted, as only a CLI that writes none should (the Audit's L2 of
+ *   #330). A Claude agent at work writes one, as Claude Code does, where Tars
+ *   reads it: the usage of each of its replies, which prices its task. The
+ *   page's totals add it up at the scan after the one at launch, which is
+ *   kept a minute (transcript-usage.ts): the shot waits for it, and fails
+ *   rather than show tasks that cost something under a total of $0.00;
+ * - a task list cut at the bottom of the window: the Usage page runs past one
+ *   screen, so the window grows to its height, sidebar included, for that
+ *   shot (the Audit's L1 of #330).
  */
 import { _electron as electron } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -51,13 +61,34 @@ const SHOTS = [
   { file: 'chat.png', route: '/chat' },
   { file: 'agents.png', route: '/agents' },
   { file: 'kanban.png', route: '/kanban' },
-  { file: 'usage.png', route: '/usage' },
+  { file: 'usage.png', route: '/usage', whole: true, ready: totalsCounted },
   { file: 'vault.png', route: '/vault' },
   { file: 'review.png', route: '/review' },
   { file: 'brain.png', route: '/memory' },
   { file: 'extensions.png', route: '/skills' },
   { file: 'providers.png', route: '/settings?section=ai-providers' },
 ];
+
+/** The Usage page's total cost, once the transcripts the stand-ins wrote are in it. */
+async function totalsCounted(page) {
+  await page.waitForFunction(() => {
+    const caption = [...document.querySelectorAll('body *')].find(el => el.children.length === 0 && el.textContent?.trim() === 'TOTAL COST');
+    let box = caption?.parentElement;
+    while (box && !box.querySelector('.font-serif')) box = box.parentElement;
+    const value = box?.querySelector('.font-serif')?.textContent?.trim();
+    return !!value && value !== '$0.00';
+  }, null, { timeout: 150_000, polling: 1000 });
+}
+
+/** The window grown to the page's height, so a page that runs past one screen shows whole. */
+async function showWhole(page) {
+  for (let i = 0; i < 3; i++) {
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (height <= (page.viewportSize()?.height ?? 900)) return;
+    await page.setViewportSize({ width: 1440, height });
+    await page.waitForTimeout(500);
+  }
+}
 
 /** What's New's newest entry, as the page compares it with what was last seen. */
 function newestChangelogId() {
@@ -79,14 +110,21 @@ function newestChangelogId() {
 function writeStandIn(home) {
   const agentsFile = join(home, '.dorothy', 'agents.json');
   const agents = JSON.parse(readFileSync(agentsFile, 'utf8'));
-  const declared = Object.fromEntries(agents.map(a => [a.id, { status: a.status, task: a.currentTask ?? '' }]));
+  // What a Claude agent at work has used so far, reply by reply, as Claude
+  // Code's transcript says it: input, cache write, cache read and output tokens.
+  const replies = a => a.provider !== 'claude' || (a.status !== 'running' && a.status !== 'waiting') ? []
+    : a.role === 'orchestrator'
+      ? [[9, 21400, 0, 412], [4, 1850, 21400, 268], [4, 640, 23250, 931]]
+      : [[12, 14200, 0, 655], [6, 2300, 14200, 1240], [6, 880, 16500, 402], [5, 410, 17380, 1876]];
+  const declared = Object.fromEntries(agents.map(a => [a.id, { status: a.status, task: a.currentTask ?? '', model: a.model ?? '', replies: replies(a) }]));
   const dir = join(home, 'bin');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'readme-cli.cjs');
   writeFileSync(file, [
     `#!${process.execPath}`,
     "const { randomUUID } = require('crypto');",
-    `const declared = ${JSON.stringify(declared)}[process.env.CLAUDE_AGENT_ID] || { status: 'idle', task: '' };`,
+    "const fs = require('fs'), path = require('path'), os = require('os');",
+    `const declared = ${JSON.stringify(declared)}[process.env.CLAUDE_AGENT_ID] || { status: 'idle', task: '', model: '', replies: [] };`,
     "process.stdout.write('\\x1b[2J\\x1b[HA CLI of the README sandbox: no model, no network\\r\\n> ');",
     'process.stdin.resume();',
     'const session = randomUUID();',
@@ -96,14 +134,28 @@ function writeStandIn(home) {
     "  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CLAUDE_MGR_API_TOKEN}` },",
     '  body: JSON.stringify({ agent_id: process.env.CLAUDE_AGENT_ID, session_id: session, ...body }),',
     '}).catch(() => undefined);',
+    "// The transcript Claude Code writes under its folder's name, the prompt and",
+    "// then each reply with its usage, after the task's start, so the task owns it.",
+    'const transcript = () => {',
+    "  const dir = path.join(os.homedir(), '.claude', 'projects', process.cwd().replace(/[/.]/g, '-'));",
+    '  fs.mkdirSync(dir, { recursive: true });',
+    '  const at = () => new Date().toISOString();',
+    "  const lines = [{ type: 'user', sessionId: session, timestamp: at(), message: { role: 'user', content: declared.task } }];",
+    '  declared.replies.forEach(([input, write, read, output], i) => lines.push({',
+    "    type: 'assistant', sessionId: session, timestamp: at(), requestId: `req_${session.slice(0, 8)}_${i}`,",
+    "    message: { id: `msg_${session.slice(0, 8)}_${i}`, role: 'assistant', model: declared.model, content: [{ type: 'text', text: 'Working on it.' }],",
+    '      usage: { input_tokens: input, cache_creation_input_tokens: write, cache_read_input_tokens: read, output_tokens: output } },',
+    '  }));',
+    "  fs.writeFileSync(path.join(dir, `${session}.jsonl`), lines.map(l => JSON.stringify(l)).join('\\n') + '\\n');",
+    '};',
     '(async () => {',
     "  await post({ status: 'idle', source: 'startup' });",
-    "  if (declared.status === 'running') await post({ status: 'running', event: 'UserPromptSubmit', current_task: declared.task });",
-    "  if (declared.status === 'waiting') {",
-    "    // The task first, as a turn that reached a permission dialog had it.",
+    "  if (declared.status === 'running' || declared.status === 'waiting') {",
     "    await post({ status: 'running', event: 'UserPromptSubmit', current_task: declared.task });",
-    "    await post({ status: 'waiting', waiting_reason: 'permission', opened_at: Date.now(), tool_name: 'Edit', tool_input: { file_path: declared.task } });",
-    "  }",
+    '    if (declared.replies.length) transcript();',
+    '  }',
+    "  // The task first, as a turn that reached a permission dialog had it.",
+    "  if (declared.status === 'waiting') await post({ status: 'waiting', waiting_reason: 'permission', opened_at: Date.now(), tool_name: 'Edit', tool_input: { file_path: declared.task } });",
     "  if (declared.status === 'error') await post({ status: 'error', error_kind: 'server_error', error_message: declared.task });",
     '})();',
     '',
@@ -149,13 +201,16 @@ try {
   }
   await page.waitForTimeout(3000);
 
-  for (const { file, route } of SHOTS) {
+  for (const { file, route, whole, ready } of SHOTS) {
     await page.goto(`${DEV_URL}${route}`);
     await page.waitForLoadState('networkidle').catch(() => {});
     // Terminals mount asynchronously and the catalogue fetch settles late.
     await page.waitForTimeout(2500);
+    if (ready) await ready(page);
     await page.addStyleTag({ content: hideDevIndicator });
+    if (whole) await showWhole(page);
     await page.screenshot({ path: join(OUT, file), animations: 'disabled' });
+    if (whole) await page.setViewportSize({ width: 1440, height: 900 });
     console.log(`wrote ${join(OUT, file)}`);
   }
 } finally {

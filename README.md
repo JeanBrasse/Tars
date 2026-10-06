@@ -79,6 +79,24 @@ off.
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
 
+**Worktrees that start ready, and lose nothing.** An agent created on a worktree
+starts with its project's dependencies already there, cloned at almost no disk
+space, when the project's own node_modules was installed for the same lock and both
+sit on one volume that can clone (APFS on macOS, reflink on Linux); otherwise it
+installs them as before. Deleting an agent that works in a worktree keeps what it
+had not committed, on a branch named wip/ and the agent's name, then removes the
+worktree. A worktree holding what no branch can carry, such as a .env, a repository
+the agent cloned into it or a submodule with commits or changes its remote does not
+have, is left where it is, and Tars says why.
+
+**Your disk, in view.** Settings, System says how much your disk has free, in the
+waiting ink below 30 GB, and lists the folders under your projects' .worktrees that
+git no longer knows and no agent owns, with why, their size and when they last
+changed. Tars never removes them on its own: remove asks first, then removes the
+folders it listed, one at a time, and keeps one a process works in, naming that
+process. A project whose worktrees git could not list is named, never counted as
+having none. Tars starts no agent while the disk has less than 2 GB free.
+
 **Several Claude subscriptions.** Turn on Claude accounts in Settings and Tars
 runs your Claude agents on up to five subscriptions. Each account signs in
 through Claude Code's own login, in a terminal Tars opens, and Tars keeps none
@@ -105,6 +123,17 @@ minutes of silence, never for a long command, a wait on another agent or a
 subagent. Any other agent that reads running but has written nothing for 30
 minutes and runs no command is marked stalled. Either way the orchestrator that
 gave it the work, or its project's orchestrator, is told.
+
+**A permission asked in Tars, not in a terminal.** On Claude Code 2.1.289 or newer,
+a Claude agent asks Tars before a command or another call Claude Code would ask you
+about, and nothing is typed into its terminal. The question shows where you look:
+under its Dashboard panel's header, at the top of its window and on its card, with
+what it would run, read or open, never what a file holds, and the window says why
+Claude Code asks and which of your rules asked, when Claude Code says. Allow it,
+deny it with a reason the agent reads, or answer it in the terminal's dialog, as
+before. A call that carries what Tars does not show, such as an edit, a new file or
+a message, stays with the terminal's dialog, and so does a question left unanswered
+for ten minutes.
 
 **Agents that sleep, and come back.** An agent with no turn for 30 minutes is put
 to sleep, which gives back its memory, a few hundred MB each: its CLI ends, its
@@ -138,9 +167,11 @@ day, against a budget you set, beside each Claude account's 5 h and weekly
 limits. And, under the Usage page's charts, what each task cost: who handed it
 over, the agent, the model, its turns and tokens, its own cost, and its total with
 the work it handed on to other agents. A task whose CLI writes no transcript reads
-not counted rather than $0.00.
+not counted rather than $0.00. On Claude Code 2.1.289 or newer, a Claude agent's
+task stays counted once its transcript is cleaned up: Tars keeps what each of its
+turns used as it ends.
 
-![Usage: what each provider actually cost, against the budget you set](screenshots/usage.png)
+![Usage: what each provider actually cost, against the budget you set, and under it what each task cost](screenshots/usage.png)
 
 ---
 

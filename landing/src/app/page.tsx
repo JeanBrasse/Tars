@@ -52,6 +52,18 @@ const FEATURES = [
     title: 'Agents that sleep, and come back',
     body: 'An agent with no turn for 30 minutes sleeps and gives back its memory; a message, a task or a key typed in its panel wakes it on its own conversation in about a second. After a crash or a power cut, the agents that were working start again on theirs, with a note of what was cut.',
   },
+  {
+    title: 'Permissions, asked in Tars',
+    body: 'On Claude Code 2.1.289 or newer, a Claude agent asks Tars, not its terminal, before a command or a call Claude Code would ask you about. Its card, its panel and its window say what it would run, read or open; allow it, or deny it with a reason the agent reads.',
+  },
+  {
+    title: 'Worktrees that start ready, and lose nothing',
+    body: 'An agent\u2019s worktree starts with its project\u2019s dependencies cloned, at almost no disk space, when the project\u2019s own install matches its lock on a volume that can clone. Delete the agent and what it had not committed is kept on a wip/ branch; a worktree holding what no branch can carry, such as a .env or a submodule\u2019s unpushed work, stays where it is, and Tars says why.',
+  },
+  {
+    title: 'Your disk, in view',
+    body: 'Settings, System says how much your disk has free and lists the folders under your projects\u2019 .worktrees that git no longer knows and no agent owns, with their size. Tars removes them only once you confirm, keeps one a process works in, and starts no agent under 2 GB free.',
+  },
 ];
 
 export default function Home() {
