@@ -41,7 +41,13 @@ export type OrphanFolder = {
   /** The newest change in it (caches and .git aside), or null when none could be read. */
   lastChangedAt: string | null;
 };
-export type OrphanListing = { folders: OrphanFolder[]; count: number; totalBytes: number };
+export type OrphanListing = {
+  folders: OrphanFolder[];
+  count: number;
+  totalBytes: number;
+  /** The projects whose worktrees git could not list: none of their folders is offered. Why is in the log. */
+  unreadProjects: string[];
+};
 export type KeptReason = 'in-use' | 'unknown-use' | 'failed';
 export type RemovalReport = {
   removed: number;
@@ -51,10 +57,14 @@ export type RemovalReport = {
 export type RemovalProgress = { done: number; total: number; freedBytes: number; current: string };
 type ProcessCwd = { pid: number; command: string; cwd: string };
 
-function run(file: string, args: string[], cwd?: string): Promise<{ code: number; stdout: string }> {
+function run(file: string, args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise(resolve => {
-    execFile(file, args, { cwd, maxBuffer: 32 * 1024 * 1024 }, (err, stdout) => {
-      resolve({ code: err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0, stdout: String(stdout) });
+    execFile(file, args, { cwd, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({
+        code: err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0,
+        stdout: String(stdout),
+        stderr: String(stderr || (err ? err.message : '')),
+      });
     });
   });
 }
@@ -70,7 +80,10 @@ function inside(child: string, parent: string): boolean {
 /** The worktrees git knows for a project, as real paths; null when git cannot say. */
 async function knownWorktrees(project: string): Promise<string[] | null> {
   const r = await run('git', ['worktree', 'list', '--porcelain'], project);
-  if (r.code !== 0) return null;
+  if (r.code !== 0) {
+    console.warn(`[orphan-folders] git cannot list the worktrees of ${project} (${r.code}): ${r.stderr.trim().slice(0, 300)}; none of its folders is offered`);
+    return null;
+  }
   return r.stdout.split('\n').filter(l => l.startsWith('worktree ')).map(l => real(l.slice('worktree '.length)));
 }
 
@@ -172,14 +185,11 @@ function lastChangeOf(dir: string): string | null {
  * worktree git knows nor an agent's, walked into when it holds one (a branch
  * name with a slash nests its worktree), never through a link.
  */
-async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>>> {
+async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>> | null> {
   const base = path.join(project, '.worktrees');
   if (!isRealDir(base)) return [];
   const known = await knownWorktrees(project);
-  if (!known) {
-    console.warn(`[orphan-folders] git cannot list the worktrees of ${project}: none of its folders is offered`);
-    return [];
-  }
+  if (!known) return null;
   const live = [...known, ...owned].map(real);
   const holdsLive = (dir: string) => live.some(w => inside(w, real(dir)) && w !== real(dir));
   const found: Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>> = [];
@@ -211,13 +221,16 @@ async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omi
 export async function listOrphanFolders(opts: { projects: string[]; owned: string[] }): Promise<OrphanListing> {
   const owned = new Set(opts.owned.map(real));
   const folders: OrphanFolder[] = [];
+  const unreadProjects: string[] = [];
   for (const project of [...new Set(opts.projects)]) {
-    for (const orphan of await orphansOf(project, owned)) {
+    const orphans = await orphansOf(project, owned);
+    if (!orphans) { unreadProjects.push(project); continue; }
+    for (const orphan of orphans) {
       folders.push({ ...orphan, sizeBytes: await sizeOf(orphan.path), lastChangedAt: lastChangeOf(orphan.path) });
     }
   }
   folders.sort((a, b) => b.sizeBytes - a.sizeBytes);
-  return { folders, count: folders.length, totalBytes: folders.reduce((sum, f) => sum + f.sizeBytes, 0) };
+  return { folders, count: folders.length, totalBytes: folders.reduce((sum, f) => sum + f.sizeBytes, 0), unreadProjects };
 }
 
 /**
