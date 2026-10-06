@@ -204034,7 +204034,7 @@
                           "id": "wMfgb",
                           "name": "b remove 59 folders",
                           "height": 26,
-                          "stroke": "$status-error",
+                          "stroke": "#E5534B66",
                           "strokeWidth": 1,
                           "padding": [
                             6,
@@ -213396,7 +213396,7 @@
                           "id": "mVg7W",
                           "name": "b remove 59 folders",
                           "height": 26,
-                          "stroke": "$status-error",
+                          "stroke": "#CF222E66",
                           "strokeWidth": 1,
                           "padding": [
                             6,
