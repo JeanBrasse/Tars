@@ -12,14 +12,6 @@ vi.mock('../../../../electron/utils/kanban-generate', () => ({
   })),
 }));
 
-const mockLoadTasks = vi.fn(() => []);
-const mockSaveTasks = vi.fn();
-
-vi.mock('../../../../electron/handlers/kanban-handlers', () => ({
-  loadTasks: (...args: unknown[]) => mockLoadTasks(...args),
-  saveTasks: (...args: unknown[]) => mockSaveTasks(...args),
-}));
-
 import { registerKanbanRoutes } from '../../../../electron/services/api-routes/kanban-routes';
 import { agents } from '../../../../electron/core/agent-manager';
 import { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
@@ -41,8 +33,6 @@ let ctx: RouteContext;
 
 beforeEach(() => {
   agents.clear();
-  mockLoadTasks.mockClear();
-  mockSaveTasks.mockClear();
 
   ctx = {
     mainWindow: { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,

@@ -531,8 +531,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   });
 
   // Start an agent with a prompt (sends command to PTY). The one launch of an
-  // agent's CLI into its terminal: the handler below, the Kanban automation and
-  // the restart that applies changed settings all come through here. See
+  // agent's CLI into its terminal: the handler below and the restart that
+  // applies changed settings both come through here. See
   // core/agent-launch.ts.
   const launchInTerminal: AgentLauncher = async (id, prompt, options) => {
     const agent = agents.get(id);
@@ -822,7 +822,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // done. This one put every orchestrator in bypass whatever it was set
       // to, so a permission mode changed in the Agents page never reached an
       // orchestrator, restart or not, and a worker switched to orchestrator
-      // was quietly given bypass. The Kanban automation still asks for it.
+      // was quietly given bypass. A start may still ask for another, for
+      // that launch alone.
       permissionMode: options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'),
       effort: agent.effort,
       secondaryProjectPath: agent.secondaryProjectPath,

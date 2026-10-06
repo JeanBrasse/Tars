@@ -193,7 +193,7 @@ describe('every spawn site and exit handler in electron/', () => {
     expect(direct).toEqual([]);
     const users = files.filter(({ text }) => text.includes('agentStatusOnExit(')).map(({ f }) => f).sort();
     expect(users).toEqual(expect.arrayContaining([
-      'main.ts', path.join('core', 'agent-manager.ts'), path.join('handlers', 'ipc-handlers.ts'), path.join('services', 'api-routes', 'agent-routes.ts'),
+      path.join('core', 'agent-manager.ts'), path.join('handlers', 'ipc-handlers.ts'), path.join('services', 'api-routes', 'agent-routes.ts'),
     ]));
   });
 });
