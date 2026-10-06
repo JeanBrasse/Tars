@@ -22,7 +22,11 @@ import type { OrphanFolder } from '../../src/types/electron';
  *    one month reads "1 months";
  * 6. the end of a removal that removed nothing reads "Removed 0 folders", and
  *    one that kept folders does not say why they stay;
- * 7. the disk below Tars's floor reads like any other.
+ * 7. the disk below Tars's floor reads like any other;
+ * 8. a folder main did not remove reads as one it failed to: since #334's
+ *    4e939d5c it also declines one that holds a repository or a live worktree
+ *    by the time it comes to it, and its row's title says which (written
+ *    before the change of the sentence).
  */
 
 const GB = 1024 ** 3;
@@ -103,7 +107,8 @@ describe('the row\'s sentences', () => {
     expect(doneHint({ removed: 2, freedBytes: 2 * MB, kept: [] })).toBe('Removed 2 folders: 2 MB given back.');
     expect(doneHint({ removed: 1, freedBytes: 2 * MB, kept: [kept('in-use'), kept('in-use')] })).toBe('Removed 1 folder: 2 MB given back. 2 were kept: a process works in each.');
     expect(doneHint({ removed: 0, freedBytes: 0, kept: [kept('unknown-use'), kept('unknown-use')] })).toBe('None was removed: Tars could not read which processes work in them, so all 2 were kept.');
-    expect(doneHint({ removed: 3, freedBytes: 3 * MB, kept: [kept('failed')] })).toBe('Removed 3 folders: 3 MB given back. One was kept: it could not be removed.');
+    expect(doneHint({ removed: 3, freedBytes: 3 * MB, kept: [kept('failed')] })).toBe('Removed 3 folders: 3 MB given back. One was kept: its row says why.');
+    expect(doneHint({ removed: 0, freedBytes: 0, kept: [kept('failed'), kept('failed')] })).toBe('None was removed. 2 were kept: their rows say why.');
     expect(doneHint({ removed: 3, freedBytes: 3 * MB, kept: [kept('in-use'), kept('failed')] })).toBe('Removed 3 folders: 3 MB given back. 2 were kept: their rows say why.');
   });
 });
