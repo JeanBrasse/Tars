@@ -24,6 +24,8 @@
  * And from the Audit's gate of #335 (L1):
  * 12. A submodule that cannot be read (its .git names a gitdir that is gone)
  *     is taken for one with nothing in it, and its worktree removed.
+ * 13. A submodule inside a submodule is not looked into: work its parent's
+ *     status cannot see (a stash) goes with the worktree.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -160,4 +162,36 @@ describe('the submodules of a worktree', () => {
     fs.writeFileSync(path.join(wt, 'vendor', 'lib', '.git'), `gitdir: ${path.join(repo, '.git', 'gone')}\n`);
     expect(await submodulesWithWork(wt)).toEqual(['vendor/lib']);
   });
+
+  it('13. looks into a submodule inside a submodule, and names the inner one', async () => {
+    const repoAt = (dir: string) => {
+      fs.mkdirSync(dir);
+      git(dir, 'init', '-q', '-b', 'main');
+      git(dir, 'config', 'user.email', 't@t.example');
+      git(dir, 'config', 'user.name', 'T');
+      fs.writeFileSync(path.join(dir, 'f.txt'), 'one\n');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-qm', 'first');
+    };
+    const inner = path.join(root, 'inner');
+    const lib = path.join(root, 'lib');
+    repoAt(inner);
+    repoAt(lib);
+    git(lib, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', inner, 'inner');
+    git(lib, 'commit', '-qm', 'inner as a submodule');
+    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'vendor/lib');
+    git(repo, 'commit', '-qm', 'lib as a submodule');
+    git(wt, 'merge', '-q', 'main');
+    git(wt, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '--recursive', '-q');
+    const nested = path.join(wt, 'vendor', 'lib', 'inner');
+    expect(await submodulesWithWork(wt)).toEqual([]);
+
+    git(nested, 'config', 'user.email', 't@t.example');
+    git(nested, 'config', 'user.name', 'T');
+    fs.writeFileSync(path.join(nested, 'f.txt'), 'one\nstashed\n');
+    git(nested, 'stash', '-q');
+    expect(git(path.join(wt, 'vendor', 'lib'), 'status', '--porcelain')).toBe('');
+    expect(await submodulesWithWork(wt)).toEqual(['vendor/lib/inner']);
+  });
 });
+
