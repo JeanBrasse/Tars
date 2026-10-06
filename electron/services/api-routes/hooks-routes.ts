@@ -6,11 +6,12 @@ import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
-import { waitingOnFrom } from '../../utils/waiting-on';
+import { oneLine, waitingOnFrom } from '../../utils/waiting-on';
 import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
 import { restPendingOf } from '../../core/agent-asleep';
 import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
+import { dropPermissionAsks, holdPermissionAsk } from '../permission-asks';
 
 /**
  * The four shell hooks whose posts the state mod makes instead, for a session
@@ -24,6 +25,28 @@ const MOD_HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFail
 
 function setAsideForMod(agentId: string, sessionId: string | undefined, body: { hook?: unknown }): boolean {
   return typeof body.hook === 'string' && MOD_HOOKS.has(body.hook) && modRunsSession(agentId, sessionId);
+}
+
+/** The mod's cap on one asked field: a call whose field is longer is left to the terminal's dialog, which shows it whole. */
+const ASKED_FIELD_CAP = 2000;
+
+/**
+ * The fields a permission question is about, as the mod sent them: strings
+ * only, kept whole. Null when one is past the mod's cap or there are more than
+ * a call has, and the question then goes to the dialog: Tars shows and
+ * decides only what it holds in full (the gate of #318, Medium 2).
+ */
+function askedFields(input: unknown): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const fields: Record<string, string> = {};
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 16) return null;
+  for (const [key, value] of entries) {
+    if (typeof value !== 'string') continue;
+    if (value.length > ASKED_FIELD_CAP) return null;
+    fields[key.slice(0, 64)] = value;
+  }
+  return fields;
 }
 
 /**
@@ -311,6 +334,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // Registered is not started: this only puts the task this session was
       // spawned with on the clock.
       noteSessionRegistered(agent);
+      // A permission question an earlier session left with Tars goes back to it.
+      dropPermissionAsks(agent.id);
       // Registered by the state mod: the shell hooks' four posts for this
       // session are set aside from now on, and its heartbeat is taken.
       if ((req.body as { via?: unknown }).via === 'mod') noteModSession(agent.id, session_id);
@@ -369,6 +394,13 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const oldStatus = agent.status;
+
+    // The turn ended: a permission question it left with Tars goes back to its
+    // engine, which has moved on, and a later answer allows nothing.
+    if (status === 'idle' || status === 'completed' || status === 'error') dropPermissionAsks(agent.id);
+    // Claude Code showed its dialog after all (a request of the mod's that
+    // failed): the terminal asks now, and the window's answer would reach nothing.
+    if (status === 'waiting' && waiting_reason === 'permission') dropPermissionAsks(agent.id);
 
     // Only the idle prompt: a permission prompt is the wait that matters, and
     // it comes in the middle of a turn by definition.
@@ -546,6 +578,46 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
     const taskId = liveTaskLedger()?.turnUsage(agent.id, session_id, parsed) ?? null;
     sendJson({ success: !!taskId, taskId });
+  });
+
+  // POST /api/hooks/permission: the state mod's tool.check, when Claude Code
+  // would show its permission dialog (services/permission-asks.ts). Held until
+  // the window answers: allow or deny is then the decision, with no dialog.
+  // `pending` after 20 s, and the mod asks again for the same call. `ask`
+  // hands it back to the dialog: for a session that is not the agent's
+  // current one, nothing to name, a question nobody answers, or one dropped.
+  app.post('/api/hooks/permission', async (req, sendJson) => {
+    const { agent_id, tool, input, tool_use_id, reason, rule } = req.body as {
+      agent_id?: string; tool?: unknown; input?: unknown; tool_use_id?: unknown; reason?: unknown; rule?: unknown;
+    };
+    const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
+    const agent = agent_id ? agents.get(agent_id) : undefined;
+    const fields = askedFields(input);
+    if (!agent || !session_id || agent.currentSessionId !== session_id || agent.status === 'stopped'
+      || typeof tool !== 'string' || !tool || typeof tool_use_id !== 'string' || !tool_use_id || !fields) {
+      sendJson({ decision: 'ask' });
+      return;
+    }
+    const question = {
+      tool: tool.slice(0, 200),
+      toolUseId: tool_use_id.slice(0, 200),
+      fields,
+      waitingOn: waitingOnFrom(tool, fields),
+      ...(typeof reason === 'string' && reason ? { reason: reason.slice(0, 1000) } : {}),
+      ...(typeof rule === 'string' && rule ? { rule: rule.slice(0, 1000) } : {}),
+    };
+    const afterError = (req.body as { after_error?: unknown }).after_error;
+    if (typeof afterError === 'string') console.log(`[permission] ${agent.name || agent.id}'s mod asks again after a failed request: ${oneLine(afterError)}`);
+    const answer = await holdPermissionAsk(agent, question, changed => {
+      saveAgents();
+      ctx.handleStatusChangeNotificationCallback(changed, changed.status);
+      emitAgentStatus(changed.id);
+      broadcastToAllWindows('agent:status', {
+        agentId: changed.id, status: changed.status, waitingReason: changed.waitingReason, permissionAsk: changed.permissionAsk ?? null,
+      });
+      scheduleTick();
+    });
+    sendJson(answer);
   });
 
   app.post('/api/hooks/agent-stopped', (req, sendJson) => {

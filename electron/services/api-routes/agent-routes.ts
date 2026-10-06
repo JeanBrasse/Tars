@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { stopAcpRuns } from '../acp/delegate';
+import { dropPermissionAsks } from '../permission-asks';
 import { publishedWaitingOn } from '../../utils/waiting-on';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -1451,6 +1452,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
     await stopAcpRuns(agent.id, 'the agent was deleted');
+    dropPermissionAsks(agent.id);
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);

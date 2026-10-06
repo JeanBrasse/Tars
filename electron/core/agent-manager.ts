@@ -620,6 +620,8 @@ export function loadAgents() {
       // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts),
       // and what a Stop hook counted inside one died with it.
       agent.stalledSince = undefined;
+      // A permission question held for the window died with the CLI that asked.
+      agent.permissionAsk = undefined;
       agent.restPending = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
