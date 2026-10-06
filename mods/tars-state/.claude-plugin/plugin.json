@@ -1,6 +1,6 @@
 {
   "name": "tars-state",
   "version": "1.0.0",
-  "description": "Reports this agent's state to the Tars that started it: sessions, turns, failures and a heartbeat. Reads and reports only.",
+  "description": "Reports this agent's state to the Tars that started it (sessions, turns, failures and a heartbeat), and asks that Tars before a tool call Claude Code would put to its permission dialog.",
   "author": { "name": "Cooper Labs" }
 }

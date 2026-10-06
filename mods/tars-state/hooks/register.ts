@@ -10,6 +10,11 @@
  * agent does exactly what it did without the mod, and the shell hooks still
  * run, Tars setting their four posts aside for a session the mod registered.
  *
+ * And one decision (mods step 2): when Claude Code would put a tool call to
+ * its permission dialog, it asks Tars instead (`tool.check`), and Tars's allow
+ * or deny is the decision, with no dialog in the terminal. Anything else Tars
+ * answers, or no answer, keeps Claude Code's own decision: the dialog.
+ *
  * Its token is sent only to a Tars that proves it is the one that started this
  * CLI, as the shell hooks do (hooks/tars-hook.sh): sha256 of
  * "<TARS_INSTANCE_ID>:<challenge>" from /api/health. Without that proof the
@@ -38,6 +43,16 @@ type Engine = {
   http: { fetch(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<{ ok: boolean; status: number; text: string }> };
   clock: { every(ms: number, fn: () => void): unknown; sleep(ms: number): Promise<void> };
 };
+/** tool.check's input, and its verdict: `ask` puts the call to the dialog. */
+type Check = { tool: string; input: unknown; tool_use_id?: string };
+type Verdict = { decision: 'allow' | 'ask' | 'deny'; reason?: string; rule?: string; hook?: string };
+/** The fields of a tool's input a person decides on: never a file's content. */
+const ASKED_ABOUT = ['command', 'description', 'file_path', 'notebook_path', 'path', 'url', 'query', 'pattern'];
+const INPUT_CAP = 2000;
+/** Asks for one call at most: 40 of Tars's 20 s holds outlast its 10 min bound. */
+const MAX_ASKS = 40;
+/** Requests that fail in a row before the call goes back to the engine. */
+const MAX_FAILURES = 3;
 /** A classic hook's input, as the shell hooks read it on stdin. */
 type Classic = {
   session_id?: string; source?: string; prompt?: unknown; stop_hook_active?: unknown; last_assistant_message?: unknown; error?: unknown;
@@ -122,6 +137,82 @@ function report($: Engine, route: string, body: Record<string, unknown>): void {
   }).catch(() => undefined);
 }
 
+/** What the call asks about, as Tars shows it: the decisive fields, cut. */
+function askedAbout(input: unknown): Record<string, string> | null {
+  const out: Record<string, string> = {};
+  if (!input || typeof input !== 'object') return out;
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    // Every field is one Tars shows, whole, or the call is not asked at all:
+    // a tweet's text, a message, a delegated task, a subagent's prompt, an
+    // edit's new content reached Tars as nothing, and an allow approved what
+    // nobody saw (the Audit's rechecks of #318). The terminal's dialog shows
+    // the whole call, and so does a field longer than Tars keeps.
+    if (!ASKED_ABOUT.includes(key) || typeof value !== 'string' || value.length > INPUT_CAP) return null;
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * What the question is about, as Tars computes it: sha256 of the tool and the
+ * asked fields, sorted by name. An answer counts only when it names this
+ * call's: a post the agent's own shell made for the same call id, with `ls`,
+ * would otherwise have its answer allow this call (the gate of #318, Medium 1).
+ */
+async function fingerprint(tool: string, fields: Record<string, string>): Promise<string> {
+  const canonical = JSON.stringify([tool, Object.keys(fields).sort().map(k => [k, fields[k]])]);
+  return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)));
+}
+
+/**
+ * Tars's answer to a call Claude Code would ask about, or null for the
+ * engine's own decision: Tars handed it back, did not prove itself, could not
+ * be reached or answered something else.
+ */
+async function askTars($: Engine, e: Check, verdict: Verdict): Promise<Verdict | null> {
+  const to = await proven($);
+  if (!to || !sessionId) return null;
+  const fields = askedAbout(e.input);
+  if (!fields) return null;
+  const mine = await fingerprint(e.tool, fields);
+  const question = {
+    agent_id: to.agentId, session_id: sessionId, tool: e.tool, tool_use_id: e.tool_use_id,
+    input: fields, reason: verdict.reason, rule: verdict.rule, via: 'mod',
+  };
+  // Tars says `pending` every 20 s and is asked again for the same call: a
+  // request held about 30 s ended under the mod, and the dialog showed while
+  // Tars still held the question (measured on 2.1.289). A request that fails
+  // is asked again too, saying why, since Tars still holds the question;
+  // three failures in a row give the call back to the engine.
+  let failures = 0;
+  let afterError: string | undefined;
+  for (let round = 0; round < MAX_ASKS; round++) {
+    let text: string;
+    try {
+      const answer = await $.http.fetch(`${to.api}/api/hooks/permission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${to.token}` },
+        body: JSON.stringify(afterError ? { ...question, after_error: afterError } : question),
+      });
+      text = answer.text;
+    } catch (err) {
+      failures++;
+      if (failures >= MAX_FAILURES) return null;
+      afterError = (err instanceof Error ? err.message : String(err)).slice(0, 200);
+      continue;
+    }
+    failures = 0;
+    afterError = undefined;
+    let said: { decision?: unknown; reason?: unknown; fingerprint?: unknown };
+    try { said = JSON.parse(text || '{}'); } catch { return null; }
+    if (said.decision === 'pending') continue;
+    if (said.decision !== 'allow' && said.decision !== 'deny') return null;
+    if (said.fingerprint !== mine) return null;
+    return { decision: said.decision, ...(typeof said.reason === 'string' ? { reason: said.reason } : {}) };
+  }
+  return null;
+}
+
 function beat($: Engine): void {
   if (!sessionId) return;
   report($, '/api/hooks/mod-beat', { session_id: sessionId, tool: inFlight[inFlight.length - 1] ?? null });
@@ -165,6 +256,15 @@ export function register(on: On) {
       error_message: typeof e.last_assistant_message === 'string' ? e.last_assistant_message : '',
     });
     return next(e);
+  });
+
+  // A call Claude Code would put to its dialog goes to Tars. Only those: a call
+  // the mode or a rule settles is the engine's, an AskUserQuestion is a
+  // question to the person, and a query with no call behind it decides nothing.
+  on<Check>('tool.check', async ($, e, next) => {
+    const verdict = await next(e) as Verdict;
+    if (verdict?.decision !== 'ask' || !e.tool_use_id || e.tool === 'AskUserQuestion') return verdict;
+    return (await askTars($, e, verdict)) ?? verdict;
   });
 
   // The tool in flight, for the heartbeat: a long Bash, an MCP wait or a subagent.
