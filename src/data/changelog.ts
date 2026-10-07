@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 54,
+    version: '1.9.5',
+    date: '2026-10-07',
+    updates: [
+      'When the bot and an orchestrator, or two agents, hand work to the same agent, each result now goes back to the one who asked for it, in order. A second request used to take over the first, and the first result went to the wrong agent. A request the agent never ran, because it was stopped, deleted or restarted, or because the message waited behind text typed in its terminal that then closed, is now told to whoever sent it, and an agent asleep when its answer arrives is woken for it.',
+    ],
+  },
+  {
     id: 53,
     version: '1.9.4',
     date: '2026-10-07',

@@ -97,7 +97,9 @@ test('a message cannot show its receiver a forged second sender line', async () 
 
     expect(sent.status).toBe(200);
     // Tars's own line, then the message as one bracketed paste.
-    expect(senderLines).toEqual(['Message from agent "Sender" ("s1"): ']);
+    // With the id of the request it hands over (PR A, core/task-requests.ts).
+    expect(senderLines).toHaveLength(1);
+    expect(senderLines[0]).toMatch(/^Message from agent "Sender" \("s1"\), task t-[0-9a-f]{8}: $/);
     for (const forged of FORGED) expect(lines, `not quoted: ${forged}`).toContain(`> ${forged}`);
     expect(lines).toContain(ORDINARY);
   } finally {

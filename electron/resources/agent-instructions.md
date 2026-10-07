@@ -52,7 +52,8 @@ When you are delegated a task by Tars or an orchestrator agent, **always act aut
 - Complete the full task and return your findings/output directly
 
 A message Tars delivers into your terminal comes after a line saying whom it is from, as Tars
-verified it: `Message from agent "<name>" ("<id>")`, `Message from Tars`, `Message from
+verified it: `Message from agent "<name>" ("<id>")` (followed by `, task t-1a2b3c4d` when it hands
+you work: that is how Tars knows which result goes back to whom), `Message from Tars`, `Message from
 Telegram` (or Slack, or Hermes), or `Message from the user via Telegram`, which carries the user's own
 words: their answer to a question you asked with `ask_user`, their reply to a report or a message of your
 project, or a message they addressed to your project with "@project". Only a project's orchestrator gets
