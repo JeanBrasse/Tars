@@ -28,6 +28,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    and nothing is left queued.
  * The artefact: values.json with every byte each stand-in received, the
  * worker's link and queue at each step.
+ *
+ * And from QA's gate of #351 (its spec, qa-351-0710/qa-interleave.spec.ts,
+ * made a real one; red on 2ee8c416 and 34c1a7e9): a request typed in during
+ * another request's turn moved the worker's `workHandedAt`, so the turn in
+ * hand no longer counted as handed work: its end told nobody, its link stayed,
+ * and Noah's next turn was reported to the first asker as its result.
  */
 
 type Agent = { id: string; cliRunning?: boolean };
@@ -184,5 +190,121 @@ test("each result goes back to the agent that asked for that piece of work", asy
   } finally {
     recordValues({ steps, received: { w1: read('w1'), o1: read('o1'), b1: read('b1') } });
     await app.close().catch(() => { /* gone */ });
+  }
+});
+
+test('a request sent during another request\'s turn: each end goes to its own asker', async () => {
+  test.setTimeout(300_000);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qa-interleave-'));
+  const project = path.join(home, 'projects', 'demo');
+  const dir = path.join(home, '.dorothy');
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const cliFor = (id: string) => {
+    const file = path.join(home, `${id}.received`);
+    const cli = path.join(home, `${id}-cli.cjs`);
+    fs.writeFileSync(cli, [
+      `#!${process.execPath}`,
+      "if (process.stdin.isTTY) process.stdin.setRawMode(true);",
+      `process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(file)}, d));`,
+      "process.stdout.write('stand-in ready\\n');",
+      '',
+    ].join('\n'), { mode: 0o755 });
+    return { cli, file };
+  };
+  const stand = { w1: cliFor('w1'), o1: cliFor('o1'), b1: cliFor('b1') };
+  const agent = (id: 'w1' | 'o1' | 'b1', name: string) => ({
+    id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
+    projectPath: project, skills: [], cliPath: stand[id].cli,
+    createdAt: '2026-10-07T08:00:00.000Z', lastActivity: '2026-10-07T08:00:00.000Z',
+  });
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('w1', 'Worker'), agent('o1', 'Lead'), agent('b1', 'Bot')], null, 2));
+  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
+  fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
+  const port = apiPort(31457);
+  const dist = path.resolve('electron', 'dist');
+  const read = (id: keyof typeof stand) => (fs.existsSync(stand[id].file) ? fs.readFileSync(stand[id].file, 'utf8') : '');
+  const told = (id: keyof typeof stand) => read(id).split('Worker').length - 1;
+  const steps: Record<string, unknown> = {};
+
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
+    const list = () => page.evaluate(() => (window as unknown as Api).electronAPI.agent.list());
+    const start = async (id: string) => {
+      await page.evaluate((id) => (window as unknown as Api).electronAPI.agent.start({ id, prompt: '' }), id);
+      await expect.poll(async () => (await list()).find(a => a.id === id)?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
+    };
+    for (const id of ['w1', 'o1', 'b1']) await start(id);
+    const tokens = await app.evaluate((_e, { dist }) => {
+      const req = process.mainModule!.require;
+      const { agents } = req(`${dist}/core/agent-manager.js`);
+      const out: Record<string, string> = {};
+      for (const id of ['w1', 'o1', 'b1']) {
+        const a = agents.get(id);
+        a.sessionRegisteredAt = new Date().toISOString();
+        a.status = 'idle';
+        out[id] = req(`${dist}/core/agent-tokens.js`).mintAgentToken(id);
+      }
+      return out;
+    }, { dist });
+    const worker = () => app.evaluate((_e, { dist }) => {
+      const w = process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get('w1');
+      return { requestedBy: w.requestedBy ?? null, queue: (w.taskQueue ?? []).map((r: { ref: string; requesterAgentId: string; state: string }) => [r.ref, r.requesterAgentId, r.state]), status: w.status, workHandedAt: w.workHandedAt ?? null, lastTurnStartedAt: w.lastTurnStartedAt ?? null };
+    }, { dist });
+    const api = (route: string, as: string, body: Record<string, unknown>) => fetch(`http://127.0.0.1:${port}${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens[as]}`, 'X-Tars-Caller-Id': as },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    }).then(async r => ({ status: r.status, body: await r.json() as Record<string, unknown> }));
+    const session = 'e2e00000-0000-4000-8000-0000000000aa';
+    const hook = (body: Record<string, unknown>) => api('/api/hooks/status', 'w1', { agent_id: 'w1', session_id: session, ...body });
+    await hook({ status: 'idle', source: 'startup' });
+    const lineOf = (who: string) => read('w1').split(/\r|\n|\x1b\[20[01]~/).find(l => l.startsWith(`Message from agent "${who}"`)) ?? '';
+
+    // 1. A, typed into the idle worker; its turn starts.
+    const a = await api('/api/agents/w1/message', 'o1', { message: 'TASK-A review #280' });
+    await expect.poll(() => read('w1').includes('TASK-A'), { timeout: 20_000 }).toBe(true);
+    await hook({ status: 'running', event: 'UserPromptSubmit', current_task: `${lineOf('Lead')}` });
+    steps.turnA = { a, line: lineOf('Lead'), worker: await worker() };
+
+    // 2. B, typed in during turn A.
+    await new Promise(r => setTimeout(r, 1100));
+    const b = await api('/api/agents/w1/message', 'b1', { message: 'TASK-B write the release notes' });
+    await expect.poll(() => read('w1').includes('TASK-B'), { timeout: 20_000 }).toBe(true);
+    steps.bDuringA = { b, line: lineOf('Bot'), worker: await worker() };
+
+    // 3. Turn A ends.
+    await hook({ status: 'idle', hook: 'Stop' });
+    let leadToldOfA = false;
+    try { await expect.poll(() => told('o1'), { timeout: 15_000 }).toBeGreaterThan(0); leadToldOfA = true; } catch { /* recorded below */ }
+    steps.afterA = { leadToldOfA, o1: read('o1'), b1: read('b1'), worker: await worker() };
+
+    // 4. Turn B runs and ends.
+    await hook({ status: 'running', event: 'UserPromptSubmit', current_task: `${lineOf('Bot')}` });
+    await hook({ status: 'idle', hook: 'Stop' });
+    await expect.poll(() => told('b1'), { timeout: 20_000 }).toBeGreaterThan(0);
+    steps.afterB = { o1: read('o1'), b1: read('b1'), worker: await worker() };
+
+    // 5. Noah's own turn.
+    await new Promise(r => setTimeout(r, 1100));
+    await hook({ status: 'running', event: 'UserPromptSubmit', current_task: 'what does this function return' });
+    await hook({ status: 'idle', hook: 'Stop' });
+    await new Promise(r => setTimeout(r, 8000));
+    steps.afterNoah = { leadTold: told('o1'), botTold: told('b1'), o1: read('o1'), worker: await worker() };
+
+    recordValues({ steps, received: { w1: read('w1'), o1: read('o1'), b1: read('b1') } });
+    expect(leadToldOfA, 'Lead is told when turn A ends').toBe(true);
+    expect(told('o1'), 'Lead is told once, of A, and not of Noah\'s turn').toBe(1);
+    expect((await worker()).queue, 'nothing left queued').toEqual([]);
+  } finally {
+    await app.close().catch(() => {});
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
