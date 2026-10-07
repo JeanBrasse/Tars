@@ -54,6 +54,15 @@ import { createTaskLedger, turnUsageOf, type TaskAgentView } from '../../../elec
  *     sessions cannot be priced per session.
  * 27. (the Audit's gate of #343) How many of a task's turns named their session is not kept, so a task whose
  *     every turn did cannot be told from one with 1.9.3's turns, which named none; or it is lost in a rewrite.
+ * And from the per-task requester link (ORCHESTRATOR-PER-CHAT.md v2.2, PR A, the Audit's R1), written before the code
+ * (2026-10-07). The ledger kept one pending hand-off per agent, and the next turn to start took it, whoever started it:
+ * 28. Two hand-offs to one worker (the bot's and an orchestrator's): the second replaces the first, and the turn that
+ *     runs the first is filed under the second's sender.
+ * 29. A turn with no task id in its prompt (Noah typing into the worker, a scheduled task, a /loop) takes a hand-off
+ *     Tars typed, and the turn of that hand-off then opens a task from nobody.
+ * 30. A hand-off with no id (a launch's prompt, which carries no sender line) no longer opens the next turn's task.
+ * 31. (the Audit's gate of #351, H1) An agent named "x, task t-<another's id>: y" files its turn under that other
+ *     hand-off: the id is read from anywhere in the prompt, not from the envelope Tars wrote.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -576,5 +585,52 @@ describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
     expect(read.usageBySession ?? {}).toEqual({});
     expect(read.usageTurns).toBe(1);
     expect(read.sessionedTurns ?? 0, '27. a 1.9.3 turn names no session').toBe(0);
+  });
+});
+
+describe('hand-offs in order, each to the turn that runs it (R1)', () => {
+  const said = (ref: string, text: string, from = 'orch') => `Message from agent "X" ("${from}"), task ${ref}: ${text}`;
+
+  it("28. two hand-offs to one worker: each turn takes the one whose id it carries, the first's sender kept", () => {
+    const ledger = open();
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'orch', text: 'review #280', ref: 't-aaaaaaaa' });
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'bot', text: 'and the release notes', ref: 't-bbbbbbbb' });
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: said('t-aaaaaaaa', 'review #280') });
+    ledger.stateChanged(agent({ status: 'idle' }));
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: said('t-bbbbbbbb', 'and the release notes', 'bot') });
+
+    expect(ledger.tasks().map((t) => [t.source, t.requesterAgentId, t.text])).toEqual([
+      ['agent', 'orch', 'review #280'],
+      ['agent', 'bot', 'and the release notes'],
+    ]);
+  });
+
+  it('29. a turn with no task id takes no hand-off Tars typed, and that hand-off still opens its own turn', () => {
+    const ledger = open();
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'orch', text: 'review #280', ref: 't-aaaaaaaa' });
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'fix the typo first' });
+    ledger.stateChanged(agent({ status: 'idle' }));
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: said('t-aaaaaaaa', 'review #280') });
+
+    expect(ledger.tasks().map((t) => [t.source, t.requesterAgentId, t.text])).toEqual([
+      ['terminal', null, 'fix the typo first'],
+      ['agent', 'orch', 'review #280'],
+    ]);
+  });
+
+  it('30. a hand-off with no id, a launch prompt, opens the next turn as before', () => {
+    const ledger = open();
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'orch', text: 'review #280' });
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'review #280' });
+    expect(ledger.tasks().map((t) => [t.source, t.requesterAgentId])).toEqual([['agent', 'orch']]);
+  });
+
+  it("31. a name carrying another hand-off's id takes nothing of that hand-off", () => {
+    const ledger = open();
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'lead', text: 'review #280', ref: 't-aaaaaaaa' });
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'mallory', text: 'please ack', ref: 't-bbbbbbbb' });
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'Message from agent "M, task t-aaaaaaaa: x" ("mallory"), task t-bbbbbbbb: please ack' });
+
+    expect(ledger.tasks().map((t) => [t.requesterAgentId, t.text])).toEqual([['mallory', 'please ack']]);
   });
 });

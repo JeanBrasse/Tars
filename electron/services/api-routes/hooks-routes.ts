@@ -1,4 +1,5 @@
 import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
+import { bindTurn } from '../../core/task-requests';
 import { liveTaskLedger, turnUsageOf } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
 import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
@@ -379,6 +380,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // already set that status at spawn, so the hook names the event instead.
     if (event === 'UserPromptSubmit') {
       noteTurnStarted(agent);
+      // The turn whose prompt carries a request's id is that request's: its
+      // asker is who this turn's result goes to (core/task-requests.ts).
+      if (bindTurn(agent, current_task)) saveAgents();
       // The turn opens a task, or is counted in the one open (task-ledger.ts).
       try {
         liveTaskLedger()?.turnStarted(agent, { sessionId: session_id, text: current_task });

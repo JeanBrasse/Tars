@@ -3,6 +3,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { ensureSecretFileMode, writeAtomicSync, writeSecretFileSync } from '../utils/secret-file';
 import type { MessageSender } from '../core/pty-manager';
+import { taskOfPrompt } from '../core/task-requests';
 
 /**
  * The tasks the Usage page prices: one record per piece of work an agent does,
@@ -108,7 +109,14 @@ export interface HandOff {
   source: Exclude<TaskSource, 'terminal' | 'acp'>;
   requesterAgentId?: string;
   text: string;
+  /**
+   * The id Tars typed in the sender line before it (core/task-requests.ts):
+   * only the turn whose prompt carries it is this hand-off's. Without one (a
+   * launch's prompt, which has no sender line), the next turn is.
+   */
+  ref?: string;
 }
+
 
 export interface AcpRun {
   agent: TaskAgentView;
@@ -356,7 +364,9 @@ export function createTaskLedger(opts: {
 
   const byId = new Map<string, TaskRecord>();
   const open = new Map<string, string>();
-  const pending = new Map<string, HandOff & { at: number; parentTaskId: string | null }>();
+  // Each agent's hand-offs in the order Tars made them (the Audit's R1): one
+  // per agent was kept, and the next turn took it, whoever started that turn.
+  const pending = new Map<string, Array<HandOff & { at: number; parentTaskId: string | null }>>();
   let lines = 0;
 
   const apply = (line: Line): void => {
@@ -485,17 +495,30 @@ export function createTaskLedger(opts: {
       // from the worker's (QA's gate of #305: the lead's next task and all it
       // delegated after nested under the worker's, a task of 1 read 21).
       const reports = !!senderId && ((requester?.requesterAgentId === agentId) || (opts.leads?.(agentId, senderId) ?? false));
-      pending.set(agentId, { ...handOff, text: clip(handOff.text), at: now(), parentTaskId: reports ? null : requester?.id ?? null });
+      const list = (pending.get(agentId) ?? []).filter((h) => now() - h.at <= HAND_OFF_TTL_MS);
+      list.push({ ...handOff, text: clip(handOff.text), at: now(), parentTaskId: reports ? null : requester?.id ?? null });
+      pending.set(agentId, list);
     },
 
     turnStarted(agent, turnIn) {
       const at = now();
       // Only a session id that reads back (taskOf): anything else is no session to price.
       const turn = { ...turnIn, sessionId: turnIn.sessionId && SESSION_ID.test(turnIn.sessionId) ? turnIn.sessionId : undefined };
-      // A hand-off is taken by the first turn after it, whichever task that
-      // turn belongs to: typed in while a task was open, it is that task's.
-      const handOff = pending.get(agent.id);
-      pending.delete(agent.id);
+      // A hand-off is taken by the turn that runs it, whichever task that turn
+      // belongs to: typed in while a task was open, it is that task's. The turn
+      // whose prompt carries a hand-off's id takes that one; a turn with no id
+      // takes the oldest hand-off that has none (a launch's prompt), and never
+      // one Tars typed with an id: Noah typing into the worker, a scheduled
+      // task or a /loop is a task of its own.
+      const list = pending.get(agent.id) ?? [];
+      // Read from the envelope Tars wrote at the prompt's start, for the agent it names (the Audit's gate of #351).
+      const tagged = taskOfPrompt(turnIn.text);
+      const index = tagged
+        ? list.findIndex((h) => h.ref === tagged.ref && h.requesterAgentId === tagged.senderId)
+        : list.findIndex((h) => !h.ref);
+      const handOff = index >= 0 ? list[index] : undefined;
+      if (index >= 0) list.splice(index, 1);
+      if (list.length) pending.set(agent.id, list); else pending.delete(agent.id);
       const current = openTaskOf(agent.id);
       if (current) {
         write({ t: 'turn', id: current.id, at, sessionId: turn.sessionId });

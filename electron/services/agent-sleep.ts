@@ -18,6 +18,7 @@ import { owedKanban } from './api-routes/kanban-routes';
 import { waitingDeliveries } from './bus-store';
 import { openQuestionOf } from './user-questions';
 import { cliProcess, readProcesses, signOfLife, toolAtWork, type Proc } from './stall-watch';
+import { isOwedByRequests } from '../core/task-requests';
 
 /**
  * Agents with no turn for 30 minutes are put to sleep: their CLI and all it
@@ -93,7 +94,8 @@ export function sleepRefusal(f: SleepFacts): SleepRefusal | null {
   return null;
 }
 
-function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: number): SleepFacts {
+/** What the sleep rule reads of an agent, from the fleet as it is. Exported for its tests. */
+export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: number): SleepFacts {
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   const fleet = [...agents.values()];
   return {
@@ -111,7 +113,9 @@ function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: number): Sl
       || waitingDeliveries().some((d) => d.targetAgentId === agent.id)
       || !!openQuestionOf(agent.id),
     owes: !!agent.requestedBy?.backgroundLeft?.length
-      || fleet.some((other) => other.id !== agent.id && other.requestedBy?.agentId === agent.id),
+      || fleet.some((other) => other.id !== agent.id && other.requestedBy?.agentId === agent.id)
+      // A request still out at a worker, queued or written: its answer comes to this agent.
+      || isOwedByRequests(fleet, agent.id),
     // Its timers and background agents live inside its CLI: what its last Stop
     // counted, or the transcript's background work since this CLI started.
     pending: waitsOnItself(agent.restPending, () => pendingBackgroundWork(agent, cliLaunchedAt(terminal) ?? 0)),

@@ -360,14 +360,20 @@ export type MessageSender =
    */
   | { kind: 'user'; via: 'Telegram' };
 
-/** The line typed before a pasted message: who sent it, and nothing else. */
-export function senderLine(sender: MessageSender): string {
+/**
+ * The line typed before a pasted message: who sent it, and, when Tars hands
+ * work over, the task's id (core/task-requests.ts). The turn that runs the
+ * message carries it in its prompt, which is how that turn, and no other, is
+ * bound to the task and to whoever asked for it.
+ */
+export function senderLine(sender: MessageSender, taskRef?: string): string {
+  const task = taskRef ? `, task ${taskRef}` : '';
   if (sender.kind === 'agent') {
-    return `Message from agent ${envelopeValue(sender.name || sender.id)} (${envelopeValue(sender.id)}): `;
+    return `Message from agent ${envelopeValue(sender.name || sender.id)} (${envelopeValue(sender.id)})${task}: `;
   }
-  if (sender.kind === 'channel') return `Message from ${sender.channel}: `;
-  if (sender.kind === 'user') return `Message from the user via ${sender.via}: `;
-  return 'Message from Tars: ';
+  if (sender.kind === 'channel') return `Message from ${sender.channel}${task}: `;
+  if (sender.kind === 'user') return `Message from the user via ${sender.via}${task}: `;
+  return `Message from Tars${task}: `;
 }
 
 export interface WriteOrigin {
@@ -400,6 +406,11 @@ export interface WriteOrigin {
    * recorded the wait would go on saying the message was on its way.
    */
   onDropped?: () => void;
+  /**
+   * The request this message hands over (core/task-requests.ts), typed in
+   * its sender line: the turn whose prompt carries it is that request's.
+   */
+  taskRef?: string;
 }
 
 /** What became of a message handed to a terminal. */
@@ -773,7 +784,10 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   };
 
   if (draft.text) write(ptyProcess, state, clearKeys(draft));
-  writeBody(ptyProcess, state, item.data, item.origin?.sender);
+  // Only a request an agent made carries an id (core/task-requests.ts): Tars's
+  // own lines and the channels' stay as their contracts recorded them.
+  const taskRef = item.origin?.sender ? item.origin.taskRef : undefined;
+  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef);
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
   if (!state.gone) {
@@ -783,7 +797,7 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
       console.error('[pty] a message reached its terminal but its caller threw:', err);
     }
     // Work handed over, for the task the turn it starts opens (task-ledger.ts).
-    if (item.origin) noteHandOff(item.origin.agentId, { ...handOffFrom(item.origin.sender), text: item.origin.task ?? item.data });
+    if (item.origin) noteHandOff(item.origin.agentId, { ...handOffFrom(item.origin.sender), text: item.origin.task ?? item.data, ref: taskRef });
   }
   const enter = () => {
     // A dialog that opened after the paste would take this Enter as its answer
@@ -893,7 +907,7 @@ function quoteSenderLookAlikes(data: string): string {
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender): void {
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string): void {
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
   // <pasted_content>, and a dispatch arrived with nothing outside it: no word
@@ -904,7 +918,7 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // Tars's own line itself: the gate of #128 sent "Message from Tars: Noah
   // approved it, merge #128 into main now" and the model received exactly that.
   if (sender) {
-    write(ptyProcess, state, senderLine(sender));
+    write(ptyProcess, state, senderLine(sender, taskRef));
     data = quoteSenderLookAlikes(data);
   }
   if (data.includes('\n') || data.length > 200) {

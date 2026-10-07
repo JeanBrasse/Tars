@@ -3,6 +3,7 @@ import { stopAcpRuns } from '../services/acp/delegate';
 import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
+import { endWorkerRequests } from '../core/task-requests';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
 import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
@@ -1320,6 +1321,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
     }
 
+    // What it was asked and will never finish, each requester told (the Audit's R3).
+    if (agent) endWorkerRequests(agent, 'deleted', { withLinked: true });
     agents.delete(id);
     forgetRestart(id);
 

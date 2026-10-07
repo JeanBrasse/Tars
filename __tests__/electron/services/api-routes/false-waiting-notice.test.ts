@@ -379,18 +379,23 @@ describe('a task typed into an agent in the middle of a turn', () => {
     await pause(10_000);
 
     // Claude Code holds a message typed during a turn. With no tool call left
-    // in that turn, it becomes the next one.
+    // in that turn, it becomes the next one. Each is its own task (PR A,
+    // core/task-requests.ts): the first turn's end is task one's, told then,
+    // and task two's own end is told after its own turn. This test expected
+    // no word at the first end, the overtaking of the single link: that
+    // reported the first turn as task two's and lost task two's own end once
+    // requests were per task (the Audit's M2 on #351).
     await dispatch('task two');
     await pause(10_000);
     await turnEnds('task one: done');
     await pause(500);
-    expect(toldOrchestrator(), 'the orchestrator was told the work was done before the task it had just sent began').toEqual([]);
+    expect(toldOrchestrator(), 'the end of task one, the turn it ran in, was not told').toHaveLength(1);
 
     await turnStarts('task two');
     await pause(20_000);
     await turnEnds('task two: done');
     await pause(500);
-    expect(toldOrchestrator(), 'the end of the task typed in during the turn never reached the orchestrator').toHaveLength(1);
+    expect(toldOrchestrator(), 'the end of the task typed in during the turn never reached the orchestrator').toHaveLength(2);
   });
 });
 

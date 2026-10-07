@@ -698,3 +698,102 @@ describe('an agent that ends its turn with background work still running (2026-0
     expect(agentManager.agents.get('audit')!.requestedBy).toBeUndefined();
   });
 });
+
+describe('two requests at one worker, each told to its own asker (PR A, core/task-requests.ts)', () => {
+  // Written with the code, not before it (Rule 3, said plainly): each is
+  // shown to bite by a mutant of the code it covers, in the PR.
+  it('the first result goes to the first asker, and the next delivered request takes the link', async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const orchTerminal = attachTerminal('pty-orch');
+    const botTerminal = attachTerminal('pty-bot');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'bot', name: 'Release-Bot', status: 'idle', ptyId: 'pty-bot' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    const a = tasks.enqueueRequest(w, 'orch');
+    const b = tasks.enqueueRequest(w, 'bot');
+    tasks.requestDelivered(w, a);
+    tasks.requestDelivered(w, b);
+
+    move('w', 'completed');
+    expect(received(orchTerminal)).toContain('Worker');
+    expect(received(botTerminal)).toBe('');
+    expect(w.requestedBy).toMatchObject({ agentId: 'bot', taskRef: b });
+
+    move('w', 'running');
+    move('w', 'completed');
+    expect(received(botTerminal)).toContain('Worker');
+  });
+
+  it("a stopped worker's queued request is told to its asker as never run", async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const botTerminal = attachTerminal('pty-bot');
+    putAgent({ id: 'bot', name: 'Release-Bot', status: 'idle', ptyId: 'pty-bot' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    tasks.enqueueRequest(w, 'bot');
+
+    tasks.endWorkerRequests(w, 'stopped');
+
+    expect(received(botTerminal)).toContain('never ran what you asked of it');
+    expect(w.taskQueue).toEqual([]);
+  });
+
+  it("a stopped worker's running task is told to its asker as cut, not as never run", async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const orchTerminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    tasks.requestDelivered(w, tasks.enqueueRequest(w, 'orch'));
+
+    tasks.endWorkerRequests(w, 'stopped', { withLinked: true });
+
+    expect(received(orchTerminal)).toContain('was stopped while working on what you asked of it');
+    expect(w.requestedBy).toBeUndefined();
+    expect(w.taskQueue).toEqual([]);
+  });
+
+  it('a requester with no terminal has its news carried, not dropped', () => {
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'stopped' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', requestedBy: { agentId: 'orch', ptyId: '' } });
+
+    move('w', 'completed');
+
+    expect(watch.owedNews().map(n => [n.requesterId, n.childId])).toContainEqual(['orch', 'w']);
+  });
+
+  // The Audit's probe of #351 at 2dac4fda (gate-351/audit-takeover.test.ts),
+  // red there: a follow-up from the same asker, typed during its first task's
+  // turn, took that task's link; the first end was reported as the follow-up,
+  // and the follow-up's own result reached nobody.
+  it('a follow-up from the same asker, typed during its first task, is reported on its own, after its own turn', async () => {
+    const tasks = await import('../../../electron/core/task-requests');
+    const { senderLine } = await import('../../../electron/core/pty-manager');
+    const terminal = attachTerminal('pty-orch');
+    putAgent({ id: 'orch', name: 'Orchestrator', status: 'idle', ptyId: 'pty-orch' });
+    putAgent({ id: 'w', name: 'Worker', status: 'running', ptyId: 'pty-w' });
+    const w = agentManager.agents.get('w')!;
+    const asOrch = (ref: string) => senderLine({ kind: 'agent', id: 'orch', name: 'Orchestrator' }, ref);
+    const a1 = tasks.enqueueRequest(w, 'orch');
+    tasks.requestDelivered(w, a1);
+    tasks.bindTurn(w, `${asOrch(a1)}task one`);
+    const a2 = tasks.enqueueRequest(w, 'orch');
+    tasks.requestDelivered(w, a2);
+    expect(w.requestedBy).toMatchObject({ taskRef: a1 });
+
+    move('w', 'completed');
+    const told = () => received(terminal).split('Worker').length - 1;
+    expect(told(), 'the first task\'s end').toBe(1);
+
+    move('w', 'running');
+    expect(tasks.bindTurn(w, `${asOrch(a2)}task two`)).toBe(true);
+    move('w', 'completed');
+    // The first note's carriage return goes out after a short delay; a second
+    // note to the same terminal waits for it (agent-watch, `delivering`).
+    await new Promise(r => setTimeout(r, ptyManager.PROGRAMMATIC_SUBMIT_DELAY_MS + 300));
+    expect(told(), "the follow-up's own end").toBe(2);
+    expect(w.taskQueue).toEqual([]);
+  });
+});
+

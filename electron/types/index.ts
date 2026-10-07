@@ -1,3 +1,4 @@
+import type { TaskRequest } from '../core/task-requests';
 export interface WorktreeConfig {
   enabled: boolean;
   branchName: string;
@@ -186,10 +187,18 @@ export interface AgentStatus {
   requestedBy?: {
     agentId: string;
     ptyId: string;
+    /** The request this link is for (core/task-requests.ts); absent on a link an older Tars wrote. */
+    taskRef?: string;
     /** Set while the link is kept for work the agent left running in the
      *  background: its requester is owed one more note (agent-watch). */
     backgroundLeft?: string[];
   };
+  /**
+   * Who asked this agent for each piece of work still out, in order
+   * (core/task-requests.ts): queued when sent, delivered when Tars wrote it
+   * into the terminal. `requestedBy` is the one whose work it is doing.
+   */
+  taskQueue?: TaskRequest[];
   currentSessionId?: string;
   /**
    * The last session this agent ran, kept so it can be resumed.
