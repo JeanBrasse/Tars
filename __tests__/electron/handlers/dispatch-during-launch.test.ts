@@ -706,7 +706,7 @@ describe('QA #158: every sender answered in time, and the link a refusal leaves'
     expect(at[1], `the second sender was answered ${JSON.stringify(answers[1])} after ${at[1]} ms`).toBeLessThan(30_000);
   });
 
-  it('leaves the link alone when a /message is refused, and gives it to a /message once typed', async () => {
+  it('leaves the link alone when a /message is refused, and queues a /message once typed behind the work in hand', async () => {
     const { agent, terminal } = plannerBeingStarted();
     await send('orch', agent.id, 'Rebase onto main');
     terminal().process = '2.1.280';
@@ -723,6 +723,11 @@ describe('QA #158: every sender answered in time, and the link a refusal leaves'
     const typed = send('qa', agent.id, 'WORD?', 'message');
     await vi.advanceTimersByTimeAsync(1_000);
     expect((await typed).status).toBe(200);
-    expect(agent.requestedBy?.agentId, 'a /message typed in did not become the requester').toBe('qa');
+    // The orchestrator's task is still the agent's work: the link stays its
+    // own, and QA's request waits, delivered, to take it when that work ends
+    // (PR A, core/task-requests.ts). It used to be overwritten here, and the
+    // orchestrator's result went to QA.
+    expect(agent.requestedBy?.agentId, 'a second request took the link of the work in hand').toBe('orch');
+    expect(agent.taskQueue?.map(r => [r.requesterAgentId, r.state])).toContainEqual(['qa', 'delivered']);
   });
 });

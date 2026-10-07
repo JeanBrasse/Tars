@@ -120,9 +120,11 @@ describe("a worker's requests", () => {
     requestDelivered(w, a);
     const out = takeAllRequests(w);
     expect(out.map(r => [r.ref, r.requesterAgentId])).toEqual([[b, 'second']]);
-    expect(w.taskQueue).toEqual([]);
-    // The linked one is the work in hand, told by its own end (stop), not here.
+    // The linked one is the work in hand, told by its own end (stop), not here:
+    // it stays recorded, the link with it, until that end spends it.
+    expect(w.taskQueue!.map(r => r.ref)).toEqual([a]);
     expect(w.requestedBy).toMatchObject({ taskRef: a });
+    expect(takeAllRequests(w)).toEqual([]);
   });
 
   it('8. a requester with a request out at any worker is owed', () => {

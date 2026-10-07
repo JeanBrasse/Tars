@@ -4,6 +4,7 @@ import { dropPermissionAsks } from '../services/permission-asks';
 import { emitAgentStatus } from '../services/agent-events';
 import { oneLine } from '../utils/waiting-on';
 import { ptyProcesses, endTerminalTree } from './pty-manager';
+import { endWorkerRequests } from './task-requests';
 
 /**
  * Stopping an agent: it is ended, and it says who stopped it, when and why
@@ -65,6 +66,9 @@ export async function stopAgent(
   agent.currentSessionId = undefined;
   agent.lastActivity = agent.stoppedAt;
 
+  // The requests it will never run: off it, each requester told (the Audit's
+  // R3). The one in hand is told by the stop itself, its status event.
+  endWorkerRequests(agent, 'stopped');
   notify.save();
   emitAgentStatus(agent.id);
   notify.announce(agent);

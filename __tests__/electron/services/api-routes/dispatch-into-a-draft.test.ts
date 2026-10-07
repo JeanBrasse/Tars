@@ -200,7 +200,8 @@ describe('who a dispatch is from', () => {
     vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
 
     expect(answer?.data.mode).toBe('message');
-    expect(written[0]).toBe('Message from agent "Orchestrator" ("orch"): ');
+    // With the id of the request it hands over (PR A, core/task-requests.ts).
+    expect(written[0]).toMatch(/^Message from agent "Orchestrator" \("orch"\), task t-[0-9a-f]{8}: $/);
     expect(written[1]).toBe(`\x1b[200~${BRIEF}\x1b[201~`);
   });
 
@@ -210,7 +211,7 @@ describe('who a dispatch is from', () => {
     await call('POST', '/api/agents/worker/message', { message: BRIEF }, 'orch');
     vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
 
-    expect(written[0]).toBe('Message from agent "Noah" ("orch"): ');
+    expect(written[0]).toMatch(/^Message from agent "Noah" \("orch"\), task t-[0-9a-f]{8}: $/);
   });
 
   it('is Tars when Tars makes the call itself (the super chat)', async () => {

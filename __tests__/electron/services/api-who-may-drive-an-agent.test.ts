@@ -624,7 +624,7 @@ describe('a call that is refused changes nothing', () => {
     const { status, body } = await call('POST', `/api/agents/${worker.id}/dispatch`, bearer(alphaToken), { message: 'your turn' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(worker.requestedBy).toEqual({ agentId: ALPHA.id, ptyId: worker.ptyId });
+    expect(worker.requestedBy).toMatchObject({ agentId: ALPHA.id, ptyId: worker.ptyId, taskRef: expect.stringMatching(/^t-/) });
   });
 });
 
@@ -678,7 +678,7 @@ describe('an agent reporting to the agent that leads it', () => {
     const { status, body } = await call('POST', `/api/agents/${peer.id}/message`, bearer(workerToken), { message: 'can you check this' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(peer.requestedBy).toEqual({ agentId: 'agent-alpha-worker', ptyId: peer.ptyId });
+    expect(peer.requestedBy).toMatchObject({ agentId: 'agent-alpha-worker', ptyId: peer.ptyId, taskRef: expect.stringMatching(/^t-/) });
   });
 });
 
