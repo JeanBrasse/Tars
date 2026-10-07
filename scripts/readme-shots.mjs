@@ -44,14 +44,26 @@
  *   rather than show tasks that cost something under a total of $0.00;
  * - a task list cut at the bottom of the window: the Usage page runs past one
  *   screen, so the window grows to its height, sidebar included, for that
- *   shot (the Audit's L1 of #330).
+ *   shot (the Audit's L1 of #330);
+ * - a project of Noah's: the seed's second project is named after a real one,
+ *   so here it is renamed to an invented one before anything reads it, and
+ *   French quotes in a seeded task read as English ones (Noah's go of 07/10).
+ *   A shot whose page still shows the old name or a guillemet fails;
+ * - Hermes not answering: the seed points every suite at a dead port, so the
+ *   Chat led with its error and the Kanban page was that error whole. A
+ *   stand-in Hermes of the script's own, on a free port of 127.0.0.1, answers
+ *   what those pages ask: its status, signed in, and a board. Anything else it
+ *   is asked is a 404, printed. No real Hermes is ever reached.
  */
 import { _electron as electron } from '@playwright/test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { basename, dirname, join } from 'node:path';
 import { launchSandboxed, seedSandbox } from '../e2e/fixture.mjs';
 
 const DEV_URL = process.env.DOROTHY_DEV_URL || 'http://localhost:3100';
+/** The seed's second project, as a public picture names it: invented. */
+const SECOND_NAME = 'harbor-billing';
 const API_PORT = '31495';
 const OUT = process.env.README_SHOTS_DIR || 'screenshots';
 
@@ -166,10 +178,74 @@ function writeStandIn(home) {
   return agents.filter(a => a.status === 'error').map(a => a.id);
 }
 
+/**
+ * The seed made fit for a public picture: its second project renamed, folder
+ * included, and the guillemets of its tasks turned into English quotes.
+ * Returns the old name, which no picture may show.
+ */
+function publicSeed(home) {
+  const dir = join(home, '.dorothy');
+  const projectsFile = join(dir, 'projects.json');
+  const projects = JSON.parse(readFileSync(projectsFile, 'utf8'));
+  if (projects.length !== 2) throw new Error(`the seed has ${projects.length} projects, not 2: say which one to rename`);
+  const from = projects[1];
+  const to = join(dirname(from), SECOND_NAME);
+  renameSync(from, to);
+  writeFileSync(projectsFile, JSON.stringify(projects.map(p => (p === from ? to : p)), null, 2));
+  const agentsFile = join(dir, 'agents.json');
+  const agents = JSON.parse(readFileSync(agentsFile, 'utf8')).map(a => ({
+    ...a,
+    ...(a.projectPath === from ? { projectPath: to } : {}),
+    ...(typeof a.currentTask === 'string' ? { currentTask: a.currentTask.replace(/\u00ab\s*/g, '"').replace(/\s*\u00bb/g, '"') } : {}),
+  }));
+  writeFileSync(agentsFile, JSON.stringify(agents, null, 2));
+  return basename(from);
+}
+
+/** The stand-in Hermes's board: a few tasks in Hermes's own columns, held by the seed's agents. */
+const BOARD = {
+  columns: [
+    { name: 'triage', tasks: [{ id: 'readme-1', title: 'Flaky e2e on the Usage page', status: 'triage' }] },
+    { name: 'todo', tasks: [{ id: 'readme-2', title: 'Retry the invoice webhook on a 502', status: 'todo', assignee: 'Backend Engineer' }] },
+    { name: 'scheduled', tasks: [] },
+    { name: 'ready', tasks: [{ id: 'readme-3', title: 'Check the scroll lock fix on a long session', status: 'ready', assignee: 'QA' }] },
+    { name: 'running', tasks: [
+      { id: 'readme-4', title: 'Fix the scroll lock in TerminalGrid', status: 'running', assignee: 'Frontend Engineer' },
+      { id: 'readme-5', title: 'npm run build on the release branch', status: 'running', assignee: 'Backend Engineer' },
+    ] },
+    { name: 'blocked', tasks: [{ id: 'readme-6', title: 'Migrate the invoices table', status: 'blocked', assignee: 'Database migration and schema review' }] },
+    { name: 'review', tasks: [] },
+    { name: 'done', tasks: [{ id: 'readme-7', title: 'Bump Electron to 44.4.4', status: 'done', assignee: 'Backend Engineer' }] },
+  ],
+};
+
+/**
+ * A Hermes of the script's own, on a free port of 127.0.0.1: what the Chat and
+ * the Kanban page ask, it answers (its status, no sign-in needed, and the
+ * board); anything else is a 404, printed so a new question shows.
+ */
+function standInHermes() {
+  const server = createServer((req, res) => {
+    const path = new URL(req.url ?? '/', 'http://hermes').pathname;
+    const send = (status, body) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+    if (req.method === 'GET' && path === '/api/status') return send(200, { gateway_state: 'running', auth_required: false });
+    if (req.method === 'GET' && path === '/api/plugins/kanban/board') return send(200, BOARD);
+    console.log(`stand-in Hermes: ${req.method} ${path} answered 404`);
+    return send(404, { detail: 'Not Found' });
+  });
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
 // Spelled /tmp, as the 1.9.0 pictures were taken: the project line shows the
 // path, and the system's temp folder is a long random one.
 const home = mkdtempSync('/tmp/tars-readme-');
 seedSandbox(home);
+const oldName = publicSeed(home);
+const hermes = await standInHermes();
+writeFileSync(join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: hermes.address().port, authMode: 'token' }, null, 2));
 const startHere = writeStandIn(home);
 const seen = newestChangelogId();
 const hideDevIndicator = readFileSync(join('e2e', 'screenshot.css'), 'utf8');
@@ -209,11 +285,16 @@ try {
     if (ready) await ready(page);
     await page.addStyleTag({ content: hideDevIndicator });
     if (whole) await showWhole(page);
+    const shown = await page.evaluate(() => document.body.innerText);
+    for (const word of [oldName, '\u00ab', '\u00bb']) {
+      if (shown.includes(word)) throw new Error(`${file} would show ${JSON.stringify(word)}`);
+    }
     await page.screenshot({ path: join(OUT, file), animations: 'disabled' });
     if (whole) await page.setViewportSize({ width: 1440, height: 900 });
     console.log(`wrote ${join(OUT, file)}`);
   }
 } finally {
   await app?.close().catch(() => {});
+  hermes.close();
   rmSync(home, { recursive: true, force: true });
 }
