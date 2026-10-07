@@ -140,7 +140,7 @@ export function requestStartsSession(worker: RequestWorker, ref: string): void {
 }
 
 /** Why a worker's requests ended without being done: told to each requester. */
-export type RequestsEndedWhy = 'stopped' | 'deleted' | 'restart' | 'given-up';
+export type RequestsEndedWhy = 'stopped' | 'deleted' | 'restart' | 'given-up' | 'cut';
 
 type RequestsEndedHook = (worker: RequestWorker, requests: TaskRequest[], why: RequestsEndedWhy) => void;
 let requestsEnded: RequestsEndedHook | undefined;
@@ -158,13 +158,18 @@ export function setRequestsEndedHook(hook: RequestsEndedHook | undefined): void 
  */
 export function endWorkerRequests(worker: RequestWorker, why: RequestsEndedWhy, opts: { withLinked?: boolean } = {}): TaskRequest[] {
   const ended = takeAllRequests(worker);
+  if (ended.length) requestsEnded?.(worker, ended, why);
   if (opts.withLinked && worker.requestedBy?.taskRef) {
     const linked = worker.taskQueue?.find(r => r.ref === worker.requestedBy!.taskRef);
     worker.taskQueue = [];
     worker.requestedBy = undefined;
-    if (linked) ended.unshift(linked);
+    // The work in hand was cut, not left undone: told as such. A stop clears
+    // the worker's terminal first, so its own end never reaches its asker.
+    if (linked) {
+      requestsEnded?.(worker, [linked], why === 'deleted' ? 'deleted' : 'cut');
+      ended.unshift(linked);
+    }
   }
-  if (ended.length) requestsEnded?.(worker, ended, why);
   return ended;
 }
 

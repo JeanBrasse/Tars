@@ -66,9 +66,10 @@ export async function stopAgent(
   agent.currentSessionId = undefined;
   agent.lastActivity = agent.stoppedAt;
 
-  // The requests it will never run: off it, each requester told (the Audit's
-  // R3). The one in hand is told by the stop itself, its status event.
-  endWorkerRequests(agent, 'stopped');
+  // Every request it will not finish: off it, each requester told (the
+  // Audit's R3), the one in hand as cut. The stop clears the terminal before
+  // its status event, so that event alone never told the asker.
+  endWorkerRequests(agent, 'stopped', { withLinked: true });
   notify.save();
   emitAgentStatus(agent.id);
   notify.announce(agent);

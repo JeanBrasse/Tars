@@ -831,6 +831,7 @@ function describeNews(news: News): string {
   }
   if (news.kind === 'not_delivered') {
     if (news.reason === 'deleted') return 'was deleted before it finished what you asked of it. Nothing was retried; ask again if it is still needed';
+    if (news.reason === 'cut') return 'was stopped while working on what you asked of it, and did not finish. Nothing was retried; ask again if it is still needed';
     const why = news.reason === 'stopped' ? 'it was stopped before it ran it'
       : news.reason === 'restart' ? 'Tars stopped before it ran it'
       : 'it was waiting behind text typed in its field, and its terminal ended before it could go in';
