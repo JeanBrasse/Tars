@@ -30,6 +30,12 @@ import { spawn, execFileSync } from 'node:child_process';
  *    three reads at 2 s each stretched it to 6.5 s. One deadline bounds them all.
  * 10. (same gate) With no run under way, ps is run anyway: the shortcut that
  *    skips it had no test, and a mutant that removed it survived.
+ *
+ * And of the tests themselves (2026-10-07): a case that fails before it has
+ * read its run's pids, as one did on 2026-10-06, never handed them to the
+ * cleanup, and the stand-ins that ignore SIGTERM ran on for 23 minutes until
+ * they were ended by hand.
+ * 11. A test leaves a stand-in, or what it started, running after it ends.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-quit-'));
@@ -141,12 +147,24 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
   while (!test()) { if (Date.now() > end) throw new Error(`timed out: ${what}`); await new Promise(r => setTimeout(r, 50)); }
 };
 
+/** The processes whose argv names this file's folder: a run's adapter, and the commands it started. */
+function startedIn(dir: string): number[] {
+  const ps = execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' });
+  return ps.split('\n').flatMap(line => {
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line);
+    return m && m[2].includes(dir + path.sep) && Number(m[1]) !== process.pid ? [Number(m[1])] : [];
+  });
+}
+
 const leftovers: number[] = [];
 afterEach(() => {
   psBroken.value = false;
   psHung.value = false;
   psRuns.counting = false;
   for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  // 11. Whatever the case did, and even when it failed before it read its run's
+  // pids: every process whose argv names this file's folder, by PID.
+  for (const pid of startedIn(tmp)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
 });
 
 /** Starts a delegated run of `tag`, and never awaits it: the app quits under it. */
