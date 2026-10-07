@@ -40,7 +40,7 @@ export function ensureDataDir() {
  * is the repository, so Tars's own two hundred and fifty lines of development
  * rules were handed to every agent in every unrelated project: draw the frame
  * in design/tars-redesign.pen first, never touch electron/, open the pull
- * request against JeanBrasse/Tars, run npm run e2e:guard before calling it
+ * request against cooper-labs-tech/Tars, run npm run e2e:guard before calling it
  * done. Reading it was not even useful for Tars itself, where an agent already
  * loads that file natively as its project instructions.
  *

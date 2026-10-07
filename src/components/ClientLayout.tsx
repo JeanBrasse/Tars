@@ -404,7 +404,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
                     variant="primary"
                     className="flex-1"
                     onClick={() => window.electronAPI?.updates?.openExternal(
-                      updateInfo?.downloadUrl || 'https://github.com/JeanBrasse/Tars/releases/latest',
+                      updateInfo?.downloadUrl || 'https://github.com/cooper-labs-tech/Tars/releases/latest',
                     )}
                   >
                     Download it instead

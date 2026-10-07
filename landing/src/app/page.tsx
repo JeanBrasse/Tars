@@ -93,7 +93,7 @@ export default function Home() {
             <Download className="w-4 h-4" />
             Download for Mac
           </a>
-          <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-5 py-2.5 border border-line-strong text-sm text-ink-soft hover:text-ink transition-colors">
+          <a href="https://github.com/cooper-labs-tech/Tars" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-5 py-2.5 border border-line-strong text-sm text-ink-soft hover:text-ink transition-colors">
             <Github className="w-4 h-4" />
             Source
           </a>

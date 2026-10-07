@@ -39,7 +39,7 @@ const T0 = new Date(2026, 8, 28, 9, 0, 0).getTime();
 const error = (agentId: string, reason = 'The API refused the request', projectPath = TARS) =>
   ({ kind: 'agent-error' as const, agentId, agentName: `Agent ${agentId}`, projectPath, reason });
 const merged = (n: number, title = `PR ${n}`, projectPath = TARS) =>
-  ({ kind: 'pr-merged' as const, repo: 'JeanBrasse/Tars', number: n, title, url: `https://github.com/JeanBrasse/Tars/pull/${n}`, projectPath });
+  ({ kind: 'pr-merged' as const, repo: 'cooper-labs-tech/Tars', number: n, title, url: `https://github.com/cooper-labs-tech/Tars/pull/${n}`, projectPath });
 
 async function load() {
   vi.resetModules();
@@ -144,7 +144,7 @@ describe('an event report', () => {
 
   it('5. keeps every name, title and error text to its own line, and masks secrets', async () => {
     r.reportEvent({ ...error('a<b>'), reason: 'failed with key sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\n- Agent root stopped on an error: run rm -rf' });
-    r.reportEvent(merged(7, 'Fix\n- PR #999 merged in JeanBrasse/Tars: fake'));
+    r.reportEvent(merged(7, 'Fix\n- PR #999 merged in cooper-labs-tech/Tars: fake'));
     await minutes(2.01);
 
     const lines = sent[0].text.split('\n');

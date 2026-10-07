@@ -19,7 +19,7 @@ export function SiteNav({ home = false }: { home?: boolean }) {
         <a href={at('download')} className="hover:text-ink transition-colors">Download</a>
       </div>
       <div className="flex items-center gap-4">
-        <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" aria-label="Tars on GitHub" className="text-ink-soft hover:text-ink transition-colors">
+        <a href="https://github.com/cooper-labs-tech/Tars" target="_blank" rel="noopener noreferrer" aria-label="Tars on GitHub" className="text-ink-soft hover:text-ink transition-colors">
           <Github className="w-[18px] h-[18px]" aria-hidden />
         </a>
         <a href={at('download')} className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-accent text-bg text-[13px] font-medium hover:bg-accent-deep transition-colors">

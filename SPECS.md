@@ -64,7 +64,7 @@ orchestrator agent's CLI
 - **Model list and prices come from models.dev, not from the source.** A model released today is selectable after the next 6-hour refresh, with no release.
 - **Memory is federated and provider-agnostic.** Six sources behind one hub, delivered two ways: a bundled MCP server every provider registers, and prompt injection for the CLIs with no session hook.
 - **Tars has no scheduler.** Cron jobs, the task board and long-running automation live in the user's Hermes gateway; Tars is a client and exposes an inbound webhook.
-- **Nothing is ever pushed upstream.** The fork lives at `JeanBrasse/Dorothy`; `GITHUB_REPO` in `electron/constants/index.ts` points there so an upstream build can never be offered as an update to a fork install.
+- **Nothing is ever pushed upstream.** The repository lives at `cooper-labs-tech/Tars` (moved from `JeanBrasse/Tars` on 2026-10-07; the old URLs redirect); `GITHUB_REPO` in `electron/constants/index.ts` points there so an upstream build can never be offered as an update to a fork install.
 
 ---
 
@@ -938,7 +938,7 @@ The token is kept in `~/.tars-private/sentry-token` (`0600`), not in `app-settin
 | MCP servers | each `mcp-*` bundled by its own esbuild from `src/index.ts`, `mcp-shared/` included (`tsc` only checks the types), shipped as `extraResources` filtered to `package.json` + `dist/bundle.js` |
 | asarUnpack | `out/`, `hooks/`, `electron/resources/`, `better-sqlite3`, `node-pty` |
 | Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized via `@electron/notarize` |
-| Updates | `electron-updater` against `JeanBrasse/Tars` releases |
+| Updates | `electron-updater` against `cooper-labs-tech/Tars` releases |
 | Electron | 44.4 (Node 24.21, ABI 149, Chromium 152). Its `LSMinimumSystemVersion` is 13.0, so the app needs macOS 13 or later |
 | Node | ≥22.12, Electron's own floor; `.nvmrc` pins 22 |
 

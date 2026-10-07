@@ -10,7 +10,7 @@ export function SiteFooter() {
         <div className="flex items-center gap-6 font-mono text-xs text-ink-muted">
           <a href="/privacy" className="hover:text-ink transition-colors">privacy</a>
           <a href="/terms" className="hover:text-ink transition-colors">terms</a>
-          <a href="https://github.com/JeanBrasse/Tars" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">
+          <a href="https://github.com/cooper-labs-tech/Tars" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">
             github
           </a>
         </div>

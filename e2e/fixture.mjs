@@ -128,7 +128,7 @@ const SKILLS_ROWS = [
   ['prototype', 'mattpocock/skills', 4_300],
   ['web-design-guidelines', 'vercel-labs/skills', 3_800],
   ['superpowers', 'obra/superpowers', 3_200],
-  ['remember', 'JeanBrasse/Tars', 940],
+  ['remember', 'cooper-labs-tech/Tars', 940],
 ];
 
 /** One line, because the scraper's regex does not cross a newline. */

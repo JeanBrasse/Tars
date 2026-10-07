@@ -367,7 +367,7 @@ visual.
 
 **It runs, and it is the only check made on Linux.** Measured on 2026-09-17, it had never run:
 Actions stay off on a fork until somebody enables them. They are on now, and
-`gh api repos/JeanBrasse/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
+`gh api repos/cooper-labs-tech/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
 part of every gate, because the code stays Linux compatible (Noah, 2026-09-24): a test that
 passes on your Mac and fails there is a finding, not noise.
 
@@ -488,13 +488,13 @@ xcrun notarytool store-credentials Tars \
 
 ### The two update paths
 
-Two independent code paths check for updates. **Both point at `JeanBrasse/Tars`**, and each
+Two independent code paths check for updates. **Both point at `cooper-labs-tech/Tars`**, and each
 reads its own setting, so they agree only as long as both are kept in step:
 
 | path | target | source |
 |---|---|---|
-| `electron-updater` (`latest-mac.yml`) | `JeanBrasse/Tars` | `package.json` → `build.publish` |
-| GitHub-API fallback | `JeanBrasse/Tars` | `electron/constants/index.ts` → `GITHUB_REPO` |
+| `electron-updater` (`latest-mac.yml`) | `cooper-labs-tech/Tars` | `package.json` → `build.publish` |
+| GitHub-API fallback | `cooper-labs-tech/Tars` | `electron/constants/index.ts` → `GITHUB_REPO` |
 
 `electron/services/update-checker.ts` sets `autoDownload = false` and
 `autoInstallOnAppQuit = true`, calls `autoUpdater.checkForUpdates()`, and **only** on throw
