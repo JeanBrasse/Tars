@@ -50,11 +50,15 @@ export interface TaskEntry {
   byModel: Record<string, number>;
   /** What priced it: its transcripts; its turns' usage, as the state mod reported each, when its transcript is
    *  gone (cache writes at the 5-minute rate, no web searches: Claude Code does not report them per turn); the ACP
-   *  run's report; null when nothing did (costUSD null). */
-  from?: 'transcript' | 'turns' | 'acp' | null;
+   *  run's report; null when nothing did (costUSD null). `mixed`: a session each, one's transcript gone and priced
+   *  from its turns, the other's from its transcript. */
+  from?: 'transcript' | 'turns' | 'mixed' | 'acp' | null;
+  /** A session of it left neither a transcript nor its turns' usage: the figure is lower than it was, and its total
+   *  says partial too (totalPartial). */
+  partial?: boolean;
   /** Its own cost and that of every task handed on from it, down the line. */
   totalCostUSD: number;
-  /** The total leaves out a task not counted. */
+  /** The total leaves out a task not counted, or one counted only in part (partial). */
   totalPartial: boolean;
   /** Null while it runs. */
   durationMs: number | null;
