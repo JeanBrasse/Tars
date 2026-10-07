@@ -79,6 +79,13 @@ export interface TaskRecord {
   usageByModel?: Record<string, TurnTokens>;
   /** How many turns' usage is in usageByModel. */
   usageTurns?: number;
+  /**
+   * The same usage, per session and per model, so that a task whose sessions
+   * left only some of their transcripts is priced per session (the Audit's L1
+   * on #333). Turns recorded by 1.9.3 carry no session: they are in
+   * usageByModel only.
+   */
+  usageBySession?: Record<string, Record<string, TurnTokens>>;
 }
 
 /** One turn's tokens, as Claude Code's turn.complete gives them: no split of the cache writes, no searches. */
@@ -189,6 +196,25 @@ function taskOf(v: unknown): TaskRecord | null {
       usageByModel[model] = tokens;
     }
   }
+  let usageBySession: Record<string, Record<string, TurnTokens>> | undefined;
+  if (t.usageBySession !== undefined) {
+    if (!t.usageBySession || typeof t.usageBySession !== 'object') return null;
+    const sessions = Object.entries(t.usageBySession as Record<string, unknown>);
+    if (sessions.length > 1000) return null;
+    usageBySession = {};
+    for (const [sessionId, models] of sessions) {
+      if (!SESSION_ID.test(sessionId) || !models || typeof models !== 'object') return null;
+      const entries = Object.entries(models as Record<string, unknown>);
+      if (entries.length > MAX_MODELS) return null;
+      const kept: Record<string, TurnTokens> = {};
+      for (const [model, raw] of entries) {
+        const tokens = tokensOf(raw);
+        if (!isModel(model) || !tokens) return null;
+        kept[model] = tokens;
+      }
+      usageBySession[sessionId] = kept;
+    }
+  }
   return {
     id: t.id, agentId: t.agentId,
     projectPath: t.projectPath as string | null, worktreePath: t.worktreePath as string | null,
@@ -198,6 +224,7 @@ function taskOf(v: unknown): TaskRecord | null {
     outcome: t.outcome as TaskOutcome, turns: t.turns, sessionIds: [...t.sessionIds] as string[],
     ...(acp ? { acp } : {}),
     ...(usageByModel ? { usageByModel, usageTurns: t.usageTurns as number } : {}),
+    ...(usageBySession ? { usageBySession } : {}),
   };
 }
 
@@ -244,7 +271,11 @@ function lineOf(v: unknown): Line | null {
   }
   if (l.t === 'usage') {
     const tokens = tokensOf(l);
-    return tokens && isModel(l.model) ? { t: 'usage', id: l.id, at: l.at, model: l.model, ...tokens } : null;
+    // A session id since the Audit's L1 on #333; none on a line 1.9.3 wrote.
+    if (l.sessionId !== undefined && !(typeof l.sessionId === 'string' && SESSION_ID.test(l.sessionId))) return null;
+    return tokens && isModel(l.model)
+      ? { t: 'usage', id: l.id, at: l.at, ...(typeof l.sessionId === 'string' ? { sessionId: l.sessionId } : {}), model: l.model, ...tokens }
+      : null;
   }
   if (l.t === 'end' && OUTCOMES.includes(l.outcome as TaskOutcome) && l.outcome !== 'running') {
     return { t: 'end', id: l.id, at: l.at, outcome: l.outcome as Exclude<TaskOutcome, 'running'> };
@@ -256,19 +287,29 @@ type Line =
   | { t: 'task'; task: TaskRecord }
   | { t: 'turn'; id: string; at: number; sessionId?: string }
   | { t: 'end'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'> }
-  | ({ t: 'usage'; id: string; at: number } & TurnUsage);
+  | ({ t: 'usage'; id: string; at: number; sessionId?: string } & TurnUsage);
 
-/** A turn's usage added to what its task holds, per model. */
-function addUsage(task: TaskRecord, usage: TurnUsage): void {
-  const byModel = task.usageByModel ?? {};
+/** Tokens added to a per-model record, false when it already holds as many models as it may. */
+function addTo(byModel: Record<string, TurnTokens>, usage: TurnUsage): boolean {
   const prior = byModel[usage.model];
-  if (!prior && Object.keys(byModel).length >= MAX_MODELS) return;
+  if (!prior && Object.keys(byModel).length >= MAX_MODELS) return false;
   byModel[usage.model] = {
     input: (prior?.input ?? 0) + usage.input, output: (prior?.output ?? 0) + usage.output,
     cacheRead: (prior?.cacheRead ?? 0) + usage.cacheRead, cacheWrite: (prior?.cacheWrite ?? 0) + usage.cacheWrite,
   };
+  return true;
+}
+
+/** A turn's usage added to what its task holds, per model, and per session when it names one. */
+function addUsage(task: TaskRecord, usage: TurnUsage, sessionId: string | undefined): void {
+  const byModel = task.usageByModel ?? {};
+  if (!addTo(byModel, usage)) return;
   task.usageByModel = byModel;
   task.usageTurns = (task.usageTurns ?? 0) + 1;
+  if (!sessionId) return;
+  const bySession = task.usageBySession ?? {};
+  addTo(bySession[sessionId] ??= {}, usage);
+  task.usageBySession = bySession;
 }
 
 export interface TaskLedger {
@@ -318,7 +359,7 @@ export function createTaskLedger(opts: {
     const task = byId.get(line.id);
     // A turn's usage comes after the Stop that ended its task.
     if (line.t === 'usage') {
-      if (task) addUsage(task, line);
+      if (task) addUsage(task, line, line.sessionId);
       return;
     }
     if (!task || task.endedAt !== null) return;
@@ -528,7 +569,7 @@ export function createTaskLedger(opts: {
         if (t.agentId === agentId && t.sessionIds.includes(sessionId) && (!task || t.startedAt >= task.startedAt)) task = t;
       }
       if (!task) return null;
-      write({ t: 'usage', id: task.id, at: now(), ...usage });
+      write({ t: 'usage', id: task.id, at: now(), sessionId, ...usage });
       return task.id;
     },
 
@@ -538,6 +579,7 @@ export function createTaskLedger(opts: {
       return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).map((t) => ({
         ...t, sessionIds: [...t.sessionIds],
         ...(t.usageByModel ? { usageByModel: Object.fromEntries(Object.entries(t.usageByModel).map(([m, u]) => [m, { ...u }])) } : {}),
+        ...(t.usageBySession ? { usageBySession: Object.fromEntries(Object.entries(t.usageBySession).map(([sid, models]) => [sid, Object.fromEntries(Object.entries(models).map(([m, u]) => [m, { ...u }]))])) } : {}),
       }));
     },
   };

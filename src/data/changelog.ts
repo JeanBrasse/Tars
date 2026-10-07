@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 53,
+    version: '1.9.4',
+    date: '2026-10-07',
+    updates: [
+      'The Usage page prices a task that ran over two sessions from what each session left: the transcript of one, and what each turn of the other used once its transcript was cleaned up, where it counted only the one still there. A task one of whose sessions left neither now says partial, and so does its total.',
+    ],
+  },
+  {
     id: 52,
     version: '1.9.3',
     date: '2026-10-04',

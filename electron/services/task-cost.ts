@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readUsageLines, pricingFor, costOf, diff, add, type Counts, type Pricing } from './transcript-usage';
 import { transcriptPath, transcriptRoots } from '../utils/resume-session';
-import type { TaskRecord } from './task-ledger';
+import type { TaskRecord, TurnTokens } from './task-ledger';
 
 /**
  * What each task cost, read from the transcripts of the sessions it ran in and
@@ -39,8 +39,14 @@ export interface TaskCost {
   tokens: TaskTokens | null;
   /** Cost per model the replies came from. */
   byModel: Record<string, number>;
-  /** What priced it: its transcripts, its turns' usage, the ACP run's report; null when nothing did. */
-  from: 'transcript' | 'turns' | 'acp' | null;
+  /**
+   * What priced it: its transcripts; its turns' usage; both, a session each
+   * (`mixed`: one session's transcript is gone, the other's is there); the ACP
+   * run's report; null when nothing did.
+   */
+  from: 'transcript' | 'turns' | 'mixed' | 'acp' | null;
+  /** A session of it left neither a transcript nor its turns' usage: the figure is lower than it was. */
+  partial: boolean;
 }
 
 interface TimedLine {
@@ -104,7 +110,8 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
 
   // Each session's tasks, in the order they started.
   const sessions = new Map<string, TaskRecord[]>();
-  const found = new Set<string>();
+  /** The sessions whose transcript was read. */
+  const foundSessions = new Set<string>();
   const files: Array<{ file: string; sessionId: string }> = [];
   for (const task of tasks) {
     if (task.acp) {
@@ -113,6 +120,7 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
         tokens: { input: task.acp.inputTokens, output: task.acp.outputTokens, cacheRead: task.acp.cachedReadTokens, cacheWrite: task.acp.cachedWriteTokens },
         byModel: task.acp.costUSD !== null && task.model ? { [task.model]: task.acp.costUSD } : {},
         from: 'acp',
+        partial: false,
       });
       continue;
     }
@@ -133,7 +141,7 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
     const parsed = await timedLinesOf(file);
     if (!parsed) continue;
     read.push({ sessionId, ...parsed });
-    for (const task of sessions.get(sessionId) ?? []) found.add(task.id);
+    foundSessions.add(sessionId);
   }
   // Oldest first, as on the Usage page: a reply is its first writer's.
   read.sort((a, b) => a.mtimeMs - b.mtimeMs);
@@ -141,7 +149,8 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
   // One reply is written as several lines whose usage grows, the last one
   // whole: each line tops up what its key has already given (transcript-usage.ts).
   const applied = new Map<string, { taskId: string; counts: Counts }>();
-  const perTask = new Map<string, Map<string, Counts>>();
+  /** What each task's replies used, per session, per model. */
+  const perTask = new Map<string, Map<string, Map<string, Counts>>>();
   for (const { sessionId, lines } of read) {
     const owners = sessions.get(sessionId) ?? [];
     for (const line of lines) {
@@ -155,30 +164,59 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
       }
       const delta = diff(line.counts, prior?.counts ?? ZERO);
       applied.set(line.key, { taskId, counts: add(prior?.counts ?? ZERO, delta) });
-      let models = perTask.get(taskId);
+      let bySession = perTask.get(taskId);
+      if (!bySession) {
+        bySession = new Map();
+        perTask.set(taskId, bySession);
+      }
+      let models = bySession.get(sessionId);
       if (!models) {
         models = new Map();
-        perTask.set(taskId, models);
+        bySession.set(sessionId, models);
       }
       models.set(line.model, add(models.get(line.model) ?? ZERO, delta));
     }
   }
 
   const prices = new Map<string, Pricing>();
+  const turnCounts = (t: TurnTokens): Counts => ({ ...ZERO, input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, write5m: t.cacheWrite });
   for (const task of tasks) {
     if (task.acp) continue;
-    const fromTranscript = found.has(task.id);
-    const turns = !fromTranscript && task.usageByModel ? Object.entries(task.usageByModel) : [];
-    if (!fromTranscript && turns.length === 0) {
-      out.set(task.id, { costUSD: null, tokens: null, byModel: {}, from: null });
+    // Per session (the Audit's L1 on #333): its transcript where it is, its
+    // turns where it is gone, and a session with neither makes the task partial.
+    const counted = new Map<string, Counts>();
+    const merge = (model: string, counts: Counts) => counted.set(model, add(counted.get(model) ?? ZERO, counts));
+    let fromTranscript = false;
+    let fromTurns = false;
+    let missing = false;
+    for (const sessionId of task.sessionIds) {
+      if (foundSessions.has(sessionId)) {
+        fromTranscript = true;
+        for (const [model, counts] of perTask.get(task.id)?.get(sessionId) ?? []) merge(model, counts);
+      } else if (task.usageBySession?.[sessionId]) {
+        fromTurns = true;
+        for (const [model, t] of Object.entries(task.usageBySession[sessionId])) merge(model, turnCounts(t));
+      } else {
+        missing = true;
+      }
+    }
+    // No transcript at all: every turn recorded, those 1.9.3 wrote without
+    // their session included, as 1.9.3 priced it. With some transcript there,
+    // a turn with no session cannot be told from the other session's, and is
+    // not taken: the session that lost its transcript reads missing.
+    if (!fromTranscript && task.usageByModel) {
+      counted.clear();
+      fromTurns = true;
+      missing = false;
+      for (const [model, t] of Object.entries(task.usageByModel)) merge(model, turnCounts(t));
+    }
+    if (!fromTranscript && !fromTurns) {
+      out.set(task.id, { costUSD: null, tokens: null, byModel: {}, from: null, partial: false });
       continue;
     }
     const tokens: TaskTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     const byModel: Record<string, number> = {};
     let costUSD = 0;
-    const counted: Array<[string, Counts]> = fromTranscript
-      ? [...(perTask.get(task.id) ?? [])]
-      : turns.map(([model, t]) => [model, { ...ZERO, input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite, write5m: t.cacheWrite }]);
     for (const [model, counts] of counted) {
       let price = prices.get(model);
       if (!price) {
@@ -193,7 +231,8 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
       tokens.cacheRead += counts.cacheRead;
       tokens.cacheWrite += counts.cacheWrite;
     }
-    out.set(task.id, { costUSD, tokens, byModel, from: fromTranscript ? 'transcript' : 'turns' });
+    const from = fromTranscript && fromTurns ? 'mixed' : fromTranscript ? 'transcript' : 'turns';
+    out.set(task.id, { costUSD, tokens, byModel, from, partial: missing });
   }
   return out;
 }
@@ -209,7 +248,7 @@ export interface TaskQuery {
 export interface TaskView extends TaskRecord, TaskCost {
   /** Its own cost and that of every task handed on from it, down the line. */
   totalCostUSD: number;
-  /** The total leaves out a task not counted. */
+  /** The total leaves out a task not counted, or one counted only in part (partial). */
   totalPartial: boolean;
   /** Null while it runs. */
   durationMs: number | null;
@@ -270,7 +309,7 @@ export function taskReport(tasks: TaskRecord[], costs: Map<string, TaskCost>, qu
     seen.add(id);
     const own = costs.get(id)?.costUSD ?? null;
     let cost = own ?? 0;
-    let partial = own === null;
+    let partial = own === null || costs.get(id)?.partial === true;
     for (const child of children.get(id) ?? []) {
       if (seen.has(child.id)) continue;
       const sub = totalOf(child.id, seen);
@@ -283,7 +322,7 @@ export function taskReport(tasks: TaskRecord[], costs: Map<string, TaskCost>, qu
   const views: TaskView[] = selectTasks(tasks, query, now)
     .sort((a, b) => b.startedAt - a.startedAt)
     .map((t) => {
-      const cost: TaskCost = costs.get(t.id) ?? { costUSD: null, tokens: null, byModel: {}, from: null };
+      const cost: TaskCost = costs.get(t.id) ?? { costUSD: null, tokens: null, byModel: {}, from: null, partial: false };
       const total = totalOf(t.id, new Set());
       return {
         ...t,
