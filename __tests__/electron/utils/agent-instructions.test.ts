@@ -11,7 +11,7 @@ import * as path from 'path';
  * next to the application, which packaged is nothing, and run from a clone is
  * Tars's own development rules: draw the frame in design/tars-redesign.pen
  * before writing TSX, never touch electron/, open the pull request against
- * JeanBrasse/Tars, run npm run e2e:guard. Two hundred and fifty lines of one
+ * cooper-labs-tech/Tars, run npm run e2e:guard. Two hundred and fifty lines of one
  * project's rules, delivered to agents working on someone else's.
  *
  * So the assertions are about what actually lands in the destination file when
@@ -112,7 +112,7 @@ describe('the instructions Tars publishes for its agents', () => {
     for (const marker of [
       'tars-redesign.pen',
       'electron/core/pty-manager.ts',
-      'JeanBrasse/Tars',
+      'cooper-labs-tech/Tars',
       'lint:design',
       'e2e:guard',
       'mcp-orchestrator',
@@ -131,7 +131,7 @@ describe('the instructions Tars publishes for its agents', () => {
 
     utils.ensureAgentInstructions();
 
-    expect(fs.readFileSync(dest(), 'utf-8')).not.toContain('JeanBrasse/Tars');
+    expect(fs.readFileSync(dest(), 'utf-8')).not.toContain('cooper-labs-tech/Tars');
   });
 
   it('tell the agent that its own project comes first', () => {
@@ -170,7 +170,7 @@ describe('a machine that already has the wrong document', () => {
     const markers = [
       'tars-redesign.pen',
       'electron/core/pty-manager.ts',
-      'JeanBrasse/Tars',
+      'cooper-labs-tech/Tars',
       'lint:design',
       'e2e:guard',
       'DOROTHY_API_PORT',

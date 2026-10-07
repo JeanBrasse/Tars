@@ -2,8 +2,8 @@
 
 - **App**: Tars, an Electron desktop app that runs many AI coding-agent CLIs in parallel, each in its own PTY terminal, and orchestrates them
 - **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and thirteen API-key providers) work on your projects at once, are delegated to, report back, and are billed
-- **Repo**: https://github.com/JeanBrasse/Tars, a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
-- **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `JeanBrasse/Tars`. The code stays Linux compatible (Noah, 2026-09-24): the CI runs the tests on ubuntu, and no macOS-only code path ships without a Linux one or a clean failure.
+- **Repo**: https://github.com/cooper-labs-tech/Tars (moved from `JeanBrasse/Tars` on 2026-10-07, Noah's decision; GitHub redirects the old URLs, so an installed 1.9.x still finds its updates), a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
+- **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `cooper-labs-tech/Tars`. The code stays Linux compatible (Noah, 2026-09-24): the CI runs the tests on ubuntu, and no macOS-only code path ships without a Linux one or a clean failure.
 - **Docs**: all four exist and are current. `DESIGN.md` (tokens + components) before touching a pixel, `SPECS.md` (what it is), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). This line used to say only DESIGN.md had been written; the other three were added on 2026-08-23 and the README links to all of them. A fifth, `SECURITY.md`, was added on 2026-09-18: what is a boundary, what only looks like one, and the measurements behind each
 
 ## Stack
@@ -167,7 +167,7 @@ Never the other way round. Do not "build it then draw it". If a surface is new, 
 | What | Where | When |
 |---|---|---|
 | Changelog entry + version bump | `src/data/changelog.ts`, `package.json` | Every change a user would notice. **Once a version has been released, it is frozen** - bump the patch (1.5.0 → 1.5.1 → 1.5.2) and add a new entry rather than editing the shipped one. Only extend the top entry while `gh release list` shows it has never been cut |
-| Download link | `landing/src/app/api/download/route.ts` | It resolves the latest GitHub release at request time, so it needs **no edit**, but a new version is only downloadable once it has actually been published, and publishing goes through `npm run release`, never `gh release create` by hand. Check `gh release list --repo JeanBrasse/Tars` before claiming a version is available |
+| Download link | `landing/src/app/api/download/route.ts` | It resolves the latest GitHub release at request time, so it needs **no edit**, but a new version is only downloadable once it has actually been published, and publishing goes through `npm run release`, never `gh release create` by hand. Check `gh release list --repo cooper-labs-tech/Tars` before claiming a version is available |
 | The docs that are now wrong | `README.md`, `SPECS.md`, `OPERATIONS.md`, `DESIGN.md` | Whichever ones the change falsified. A version number in the Tech Stack table, a file path in the structure tree, a limitation in §13 that is no longer true |
 | No em dashes | everywhere | `—` and `–` never appear in anything a user reads: interface copy, the changelog, the agent prompts Tars writes, the landing page, or the repo's own documents. Noah has asked for this twice. Rewrite the sentence rather than swapping in ` - ` every time. The one exception is the `next dev` block at the tail of this file, which is regenerated on every run |
 | Screenshots | `screenshots/` | If a surface changed. They come from `npx playwright test --update-snapshots`, which photographs the real app against a seeded sandbox, never hand-made or reused from an older UI |
@@ -207,7 +207,7 @@ Pencil traps that will cost you an afternoon:
 ### 2. Delivery
 
 - Work on a feature branch. Never commit to `main` directly
-- Deliver as a **PR into `JeanBrasse/Tars` `main`**, then merge it
+- Deliver as a **PR into `cooper-labs-tech/Tars` `main`**, then merge it
 - **Never push to `Charlie85270/Dorothy`.** Its push URL is deliberately set to `DISABLED-no-push`. If a command would push there, stop. You have the wrong remote
 - Commit subjects say what changed for the user, in lowercase, prefixed `feat:` / `fix:` / `chore:` / `perf:` / `security:` / `test:` / `design:`
 - `.worktrees/` and `.claude/worktrees/` are embedded checkouts of other branches. They are gitignored and eslint-ignored. Never edit a file inside them and never commit one

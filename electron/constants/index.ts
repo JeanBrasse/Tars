@@ -91,7 +91,7 @@ export const HERMES_WEBHOOK_SECRET_LEGACY_FILE = path.join(DATA_DIR, 'hermes-web
 
 // Updates come from the fork. Pointing this at the upstream repo offered an
 // upstream build as an update to a fork install, which would overwrite it.
-export const GITHUB_REPO = 'JeanBrasse/Tars';
+export const GITHUB_REPO = 'cooper-labs-tech/Tars';
 
 export const MIME_TYPES: { [key: string]: string } = {
   '.html': 'text/html',

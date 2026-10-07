@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
  *    an hour is taken as a new baseline.
  */
 
-const REPO = 'JeanBrasse/Tars';
+const REPO = 'cooper-labs-tech/Tars';
 type Pr = { number: number; title: string; url: string; mergedAt?: string; reviewDecision?: string };
 let merged: Pr[];
 let open: Pr[];
@@ -94,9 +94,9 @@ describe('polling GitHub', () => {
 
 describe('the repository of a project', () => {
   it('6. is its GitHub origin, and nothing for another host or no remote', () => {
-    expect(githubRepoOf('https://github.com/JeanBrasse/Tars.git')).toBe('JeanBrasse/Tars');
-    expect(githubRepoOf('git@github.com:JeanBrasse/Tars.git')).toBe('JeanBrasse/Tars');
-    expect(githubRepoOf('ssh://git@github.com/JeanBrasse/Tars')).toBe('JeanBrasse/Tars');
+    expect(githubRepoOf('https://github.com/cooper-labs-tech/Tars.git')).toBe('cooper-labs-tech/Tars');
+    expect(githubRepoOf('git@github.com:cooper-labs-tech/Tars.git')).toBe('cooper-labs-tech/Tars');
+    expect(githubRepoOf('ssh://git@github.com/cooper-labs-tech/Tars')).toBe('cooper-labs-tech/Tars');
     expect(githubRepoOf('https://gitlab.com/x/y.git')).toBeUndefined();
     expect(githubRepoOf('https://github.com.evil.example/x/y')).toBeUndefined();
     expect(githubRepoOf(undefined)).toBeUndefined();
@@ -126,7 +126,7 @@ describe('the gh and git a real poll runs', () => {
     fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" >> '${log}'\necho '[]'\n`, { mode: 0o755 });
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-gh-project-'));
     execFileSync('git', ['init', '-q', project]);
-    execFileSync('git', ['-C', project, 'remote', 'add', 'origin', 'https://github.com/JeanBrasse/Tars.git']);
+    execFileSync('git', ['-C', project, 'remote', 'add', 'origin', 'https://github.com/cooper-labs-tech/Tars.git']);
 
     const saved = process.env.PATH;
     process.env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -136,7 +136,7 @@ describe('the gh and git a real poll runs', () => {
       process.env.PATH = saved;
     }
 
-    expect(fs.existsSync(log) ? fs.readFileSync(log, 'utf-8') : '', 'gh was never run').toMatch(/^pr list --repo JeanBrasse\/Tars/m);
+    expect(fs.existsSync(log) ? fs.readFileSync(log, 'utf-8') : '', 'gh was never run').toMatch(/^pr list --repo cooper-labs-tech\/Tars/m);
   });
 });
 

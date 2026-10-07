@@ -9,7 +9,7 @@
  * Tars: on 2026-09-24 they were 1,434 of 1,439.
  */
 
-export const REPO = 'JeanBrasse/Tars';
+export const REPO = 'cooper-labs-tech/Tars';
 
 interface Asset {
   name: string;
