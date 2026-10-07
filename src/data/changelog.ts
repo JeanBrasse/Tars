@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-07',
     updates: [
       'The Usage page prices a task that ran over two sessions from what each session left: the transcript of one, and what each turn of the other used once its transcript was cleaned up, where it counted only the one still there. A total that holds a task one of whose sessions left neither now says partial.',
+      'In Settings, System, pointing at a folder\'s "not removed" says why in plain words, such as permission denied or not empty, before the system\'s code, where it showed the code alone, such as ENOTEMPTY, or the code and the path inside the folder.',
     ],
   },
   {

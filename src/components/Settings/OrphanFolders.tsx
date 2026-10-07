@@ -5,7 +5,7 @@ import type { OrphanListing, OrphanRemovalProgress, OrphanRemovalReport } from '
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { flat } from '@/lib/stop-line';
 import {
-  changedLabel, confirmText, doneHint, folderLabel, listingHint, removeLabel, removingHint, sizeLabel, unreadLine, whyLabel,
+  changedLabel, confirmText, doneHint, folderLabel, keptTitle, listingHint, removeLabel, removingHint, sizeLabel, unreadLine, whyLabel,
 } from '@/lib/orphan-folders';
 
 type Phase =
@@ -138,10 +138,10 @@ export function OrphanFolders() {
                 return (
                   <div key={folder.path} data-orphan-row className="h-[26px] px-2.5 flex items-center gap-2.5 border-b border-border last:border-b-0 font-mono">
                     <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={folderLabel(folder)}>{folderLabel(folder)}</span>
-                    {/* A kept folder's why: in use names the process, failed says why, in the title. */}
+                    {/* A kept folder's why: in use names the process, failed says why in words, in the title. */}
                     <span
                       data-orphan-why
-                      title={keptFor?.detail ? flat(keptFor.detail) : undefined}
+                      title={keptFor ? keptTitle(keptFor) : undefined}
                       className={`w-24 shrink-0 text-[10.5px] ${keptFor ? (keptFor.reason === 'failed' ? 'text-status-error' : 'text-status-waiting') : 'text-text-muted'}`}
                     >
                       {whyLabel(keptFor?.reason ?? folder.reason)}

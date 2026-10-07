@@ -33,9 +33,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * folder, and one removed by hand once the list was read. The end says the
  * one is kept and its row says why, and the other was no longer a folder no
  * agent owns: it has no row left to say so. The kept one's row reads not
- * removed, and its title says why as main sends it, by the error's code,
- * never with an absolute path, the home being in it: which code and which
- * path Node names differ between macOS and Linux.
+ * removed, and its title says why in plain words, then the error's code
+ * (not empty on macOS, permission denied on Linux: which code and which path
+ * Node names differ), never with an absolute path, the home being in it.
  *
  * The artefact: a screenshot per state and values.json with what each one read.
  */
@@ -243,8 +243,9 @@ test('a folder that could not be removed says why in its title, never with its p
     const title = (await why.getAttribute('title')) ?? '';
     await stepShot(page, '05-not-removed');
     recordValues({ title, block: (await block.innerText()).replace(/\s+/g, ' '), stuck: fs.existsSync(stuck), pageErrors });
-    // Why, as main says it: the error's code.
-    expect(title).toMatch(/\bE[A-Z]+\b/);
+    // Why, in plain words, then the error's code as main sent it.
+    expect(title).toMatch(/^(not empty|permission denied)\b/);
+    expect(title).toMatch(/\(E[A-Z]+\)$/);
     // Never an absolute path, here or anywhere else in the block: the home is in it.
     expect(title).not.toMatch(/(^|[\s'"(:])\//);
     for (const p of [home, realHome]) await expect(block).not.toContainText(p);
