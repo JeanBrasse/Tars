@@ -548,8 +548,13 @@ describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
       ledger.stateChanged(agent({ status: 'idle' }));
       clock += 1_000;
     }
-    const last = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 }).tasks().at(-1)!;
-    expect(last.usageBySession).toEqual({ 'sess-39': { 'claude-opus-5-5': { input: 40, output: 1, cacheRead: 0, cacheWrite: 0 } } });
+    const kept = createTaskLedger({ file, textFile, now: () => clock, maxLines: 50 }).tasks();
+    // The oldest kept were carried by the rewrite's task lines alone; the newest by lines written after it.
+    expect(kept.length).toBeGreaterThan(10);
+    for (const t of kept) {
+      const i = Number(t.sessionIds[0].slice('sess-'.length));
+      expect(t.usageBySession, t.sessionIds[0]).toEqual({ [`sess-${i}`]: { 'claude-opus-5-5': { input: i + 1, output: 1, cacheRead: 0, cacheWrite: 0 } } });
+    }
   });
 
   it('26. a usage line whose session is not one is skipped; one written by 1.9.3, with none, is kept as a session not known', () => {
