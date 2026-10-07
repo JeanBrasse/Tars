@@ -201,13 +201,16 @@ export async function readTaskCosts(tasks: TaskRecord[], opts: { homeDir?: strin
       }
     }
     // No transcript at all: every turn recorded, those 1.9.3 wrote without
-    // their session included, as 1.9.3 priced it. With some transcript there,
-    // a turn with no session cannot be told from the other session's, and is
-    // not taken: the session that lost its transcript reads missing.
+    // their session included. When every turn named its session, a session
+    // with none is missing, as above (the Audit's gate of #343); with 1.9.3's
+    // turns among them, which cannot be told apart, as 1.9.3 read it: whole.
+    // With some transcript there, a turn with no session cannot be told from
+    // the other session's, and is not taken: the session that lost its
+    // transcript reads missing.
     if (!fromTranscript && task.usageByModel) {
       counted.clear();
       fromTurns = true;
-      missing = false;
+      if ((task.usageTurns ?? 0) > (task.sessionedTurns ?? 0)) missing = false;
       for (const [model, t] of Object.entries(task.usageByModel)) merge(model, turnCounts(t));
     }
     if (!fromTranscript && !fromTurns) {

@@ -86,6 +86,12 @@ export interface TaskRecord {
    * usageByModel only.
    */
   usageBySession?: Record<string, Record<string, TurnTokens>>;
+  /**
+   * How many of usageTurns named their session. Fewer: some were recorded by
+   * 1.9.3, which named none, and cannot be told apart (the Audit's gate of
+   * #343).
+   */
+  sessionedTurns?: number;
 }
 
 /** One turn's tokens, as Claude Code's turn.complete gives them: no split of the cache writes, no searches. */
@@ -225,6 +231,7 @@ function taskOf(v: unknown): TaskRecord | null {
     ...(acp ? { acp } : {}),
     ...(usageByModel ? { usageByModel, usageTurns: t.usageTurns as number } : {}),
     ...(usageBySession ? { usageBySession } : {}),
+    ...(isCount(t.sessionedTurns) && usageByModel && t.sessionedTurns <= (t.usageTurns as number) ? { sessionedTurns: t.sessionedTurns } : {}),
   };
 }
 
@@ -310,6 +317,7 @@ function addUsage(task: TaskRecord, usage: TurnUsage, sessionId: string | undefi
   const bySession = task.usageBySession ?? {};
   addTo(bySession[sessionId] ??= {}, usage);
   task.usageBySession = bySession;
+  task.sessionedTurns = (task.sessionedTurns ?? 0) + 1;
 }
 
 export interface TaskLedger {
