@@ -107,7 +107,7 @@ export const SECTION_GROUPS: SettingsGroup[] = [
 export const SECTIONS: SettingsLeaf[] = SECTION_GROUPS.flatMap(g => g.children);
 
 /** The privacy policy Cooper Labs publishes, as the repository holds it. */
-export const PRIVACY_POLICY_URL = 'https://github.com/JeanBrasse/Tars/blob/main/landing/src/content/privacy.md';
+export const PRIVACY_POLICY_URL = 'https://github.com/cooper-labs-tech/Tars/blob/main/landing/src/content/privacy.md';
 
 export const DEFAULT_APP_SETTINGS = {
   notificationsEnabled: true,

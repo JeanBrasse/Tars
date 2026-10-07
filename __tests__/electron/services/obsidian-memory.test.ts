@@ -91,7 +91,7 @@ describe('search', () => {
 describe('write', () => {
   it('appends into a Tars folder rather than a note the user maintains', async () => {
     const [res] = await hub.writeMemory({
-      content: 'The fork is JeanBrasse/Tars.',
+      content: 'The fork is cooper-labs-tech/Tars.',
       targets: ['obsidian'],
       projectPath: home,
       settings: settings(),
@@ -99,7 +99,7 @@ describe('write', () => {
 
     expect(res.success).toBe(true);
     expect(res.path).toBe(path.join(vault, 'Tars', 'Tars memory.md'));
-    expect(fs.readFileSync(res.path!, 'utf-8')).toContain('JeanBrasse/Tars');
+    expect(fs.readFileSync(res.path!, 'utf-8')).toContain('cooper-labs-tech/Tars');
     // The user's own notes are untouched.
     expect(fs.readFileSync(path.join(vault, 'Index.md'), 'utf-8')).toBe('Everything starts here.\n');
   });

@@ -179,7 +179,7 @@ turns used as it ends.
 
 Download the latest release for macOS 13 (Ventura) or later:
 
-**[github.com/JeanBrasse/Tars/releases/latest](https://github.com/JeanBrasse/Tars/releases/latest)**
+**[github.com/cooper-labs-tech/Tars/releases/latest](https://github.com/cooper-labs-tech/Tars/releases/latest)**
 
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
@@ -357,7 +357,7 @@ from it.
 
 This is a fork of [Charlie85270/Dorothy](https://github.com/Charlie85270/Dorothy),
 substantially rewritten. Issues and pull requests go to
-[JeanBrasse/Tars](https://github.com/JeanBrasse/Tars); nothing is pushed
+[cooper-labs-tech/Tars](https://github.com/cooper-labs-tech/Tars); nothing is pushed
 upstream.
 
 ## License

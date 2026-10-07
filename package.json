@@ -30,7 +30,7 @@
     "productName": "Tars",
     "publish": {
       "provider": "github",
-      "owner": "JeanBrasse",
+      "owner": "cooper-labs-tech",
       "repo": "Tars"
     },
     "directories": {

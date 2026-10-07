@@ -1,9 +1,9 @@
 name: tars-relay
 version: 1.0.0
 description: "Tars writes to its user through this Hermes's Telegram bot; his replies to those messages, and his @project messages, go back to Tars and never to the model, which only gets a read-only copy of what Tars sent."
-author: Tars (github.com/JeanBrasse/Tars)
+author: Tars (github.com/cooper-labs-tech/Tars)
 license: MIT
-homepage: https://github.com/JeanBrasse/Tars/tree/main/hermes-plugins/tars-relay
+homepage: https://github.com/cooper-labs-tech/Tars/tree/main/hermes-plugins/tars-relay
 requires_hermes: ">=0.21"
 python_dependencies:
   - python-telegram-bot>=22

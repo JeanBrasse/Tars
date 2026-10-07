@@ -56,8 +56,8 @@ describe('reading GitHub (3, 4)', () => {
     };
     expect(await downloadCount(fetchImpl as typeof fetch)).toBe(105);
     expect(asked).toEqual([
-      'https://api.github.com/repos/JeanBrasse/Tars/releases?per_page=100&page=1',
-      'https://api.github.com/repos/JeanBrasse/Tars/releases?per_page=100&page=2',
+      'https://api.github.com/repos/cooper-labs-tech/Tars/releases?per_page=100&page=1',
+      'https://api.github.com/repos/cooper-labs-tech/Tars/releases?per_page=100&page=2',
     ]);
   });
 
