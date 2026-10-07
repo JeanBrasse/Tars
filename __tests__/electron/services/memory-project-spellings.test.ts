@@ -17,6 +17,19 @@
  *    reads: a MEMORY.md made there from the Brain page is never loaded.
  * 4. Over-correction: a project Claude Code has no folder for is no longer
  *    listed, or two projects of the same name in different folders become one.
+ * And from QA's gate of #346 (d97db1bc, NOT AS IS): the one row left carried
+ * Claude Code's real path, and the readers keyed by Tars's saved path missed
+ * it, the class of #138's re-gate:
+ * 5. The row is not under the path Tars saved: the window counts a project's
+ *    agents (and sorts by that count) by agent.projectPath, so the project
+ *    lost its count; the hooks file session observations under
+ *    CLAUDE_PROJECT_PATH, so the Backends tab read "nothing recorded yet".
+ * 6. Handed the saved path, the memory hub does not find Claude Code's memory
+ *    folder under the real one, nor observations filed under the other
+ *    spelling.
+ * 7. A Claude Code folder under the saved spelling (a MEMORY.md made by
+ *    1.9.3's Brain, or a session filed that way) is not taken as the
+ *    project's, or two rows end up under one path.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
@@ -31,6 +44,7 @@ vi.mock('os', async (importOriginal) => {
 });
 
 import { listProjectMemories } from '../../../electron/services/memory-service';
+import { memoryStatus, projectMemoryDir } from '../../../electron/services/memory-hub';
 
 let base: string;
 /** The folder Claude Code keeps for a project at `real`, as it names it. */
@@ -66,7 +80,8 @@ describe("the Brain page's projects, through a link", () => {
     const { real, link } = project('alpha', true);
     const listed = of(await listProjectMemories([link]), real, link);
     expect(listed).toHaveLength(1);
-    expect(listed[0]).toMatchObject({ projectPath: real, hasMemory: true });
+    // 5. Under the path Tars saved, the window's key; the memory is Claude Code's.
+    expect(listed[0]).toMatchObject({ projectPath: link, hasMemory: true, memoryDir: path.join(claudeFolder(real), 'memory') });
   });
 
   it('2. lists it once when Tars saved it both ways', async () => {
@@ -90,5 +105,42 @@ describe("the Brain page's projects, through a link", () => {
     expect(of(list, real, link)).toHaveLength(1);
     expect(list.filter(p => p.projectPath === other)).toHaveLength(1);
     expect(list.filter(p => p.projectName === 'delta')).toHaveLength(2);
+  });
+});
+
+describe('the same project, as the other readers key it', () => {
+  it('7. takes a Claude Code folder under the saved spelling as the project\'s, and never puts two rows under one path', async () => {
+    const { real, link } = project('epsilon', true);
+    // A MEMORY.md 1.9.3's Brain made under the saved spelling.
+    fs.mkdirSync(path.join(claudeFolder(link), 'memory'), { recursive: true });
+    fs.writeFileSync(path.join(claudeFolder(link), 'memory', 'MEMORY.md'), '# made by 1.9.3\n');
+    const listed = of(await listProjectMemories([link]), real, link);
+    expect(listed.filter(p => p.projectPath === link)).toHaveLength(1);
+    expect(new Set(listed.map(p => p.projectPath)).size).toBe(listed.length);
+
+    const { real: r2, link: l2 } = project('zeta', false);
+    fs.mkdirSync(path.join(claudeFolder(l2), 'memory'), { recursive: true });
+    fs.writeFileSync(path.join(claudeFolder(l2), 'memory', 'MEMORY.md'), '# only here\n');
+    const only = of(await listProjectMemories([l2]), r2, l2);
+    expect(only).toHaveLength(1);
+    expect(only[0]).toMatchObject({ projectPath: l2, hasMemory: true });
+  });
+
+  it("6. the memory hub, handed the saved path, finds Claude Code's memory under the real one", async () => {
+    const { real, link } = project('eta', true);
+    expect(projectMemoryDir(link)).toBe(path.join(claudeFolder(real), 'memory'));
+    const status = await memoryStatus({ settings: {}, hermes: null, projectPath: link });
+    expect(status.find(s => s.id === 'project')).toMatchObject({ reachable: true });
+  });
+
+  it('6. the memory hub, handed the saved path, reads the observations filed under either spelling', async () => {
+    const { real, link } = project('theta', false);
+    const ledgers = path.join(tmpHome, '.dorothy', 'observations');
+    fs.mkdirSync(ledgers, { recursive: true });
+    const line = (content: string, ts: string) => JSON.stringify({ ts, agentId: 'a1', type: 'observation', content }) + '\n';
+    fs.writeFileSync(path.join(ledgers, `${link.replace(/[^a-zA-Z0-9]/g, '-')}.jsonl`), line('by the saved path', '2026-10-07T10:00:00.000Z'));
+    fs.writeFileSync(path.join(ledgers, `${real.replace(/[^a-zA-Z0-9]/g, '-')}.jsonl`), line('by the real path', '2026-10-07T11:00:00.000Z'));
+    const status = await memoryStatus({ settings: {}, hermes: null, projectPath: link });
+    expect(status.find(s => s.id === 'observations')?.detail).toMatch(/^2 recorded, latest 2026-10-07T11:00/);
   });
 });
