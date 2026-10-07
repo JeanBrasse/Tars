@@ -134,6 +134,37 @@ export function doneHint(report: OrphanRemovalReport, listed?: ReadonlySet<strin
   return `${head} ${kept === 1 ? 'One was' : `${kept} were`} kept: ${why}.${after}`;
 }
 
+/** Node's codes for a removal that failed, in plain words: the title gave the code alone. */
+const FAILED_BECAUSE: Record<string, string> = {
+  EACCES: 'permission denied',
+  EPERM: 'not permitted',
+  ENOTEMPTY: 'not empty',
+  EBUSY: 'in use',
+  ENOENT: 'no longer there',
+  ENOTDIR: 'not a folder',
+  EROFS: 'on a read-only disk',
+  EIO: 'the disk failed to read or write it',
+  ENAMETOOLONG: 'a name too long',
+  ELOOP: 'too many links',
+  EMFILE: 'too many files open',
+  ENFILE: 'too many files open',
+};
+
+/**
+ * The title of a kept folder's why. A failure as main sends it since PR 334,
+ * `CODE` or `CODE on <path inside the folder>`, reads in plain words, then the
+ * path, then the code a search needs. A code without words, one of main's own
+ * sentences and a process's name stay as main sent them. Nothing when main
+ * said nothing.
+ */
+export function keptTitle(kept: Pick<OrphanRemovalReport['kept'][number], 'detail'>): string | undefined {
+  if (!kept.detail) return undefined;
+  const failure = /^(E[A-Z]+)(?: on ([\s\S]+))?$/.exec(kept.detail);
+  const words = failure ? FAILED_BECAUSE[failure[1]] : undefined;
+  if (!failure || !words) return flat(kept.detail);
+  return flat(failure[2] ? `${words}: ${failure[2]} (${failure[1]})` : `${words} (${failure[1]})`);
+}
+
 /** The disk's row: how much is free, of how much, and whether it is below the floor Tars warns under. */
 export function diskLine(disk: DiskSpace): { hint: string; value: string; low: boolean } {
   const free = diskSize(disk.freeBytes);

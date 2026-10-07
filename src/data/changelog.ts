@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 53,
+    version: '1.9.4',
+    date: '2026-10-07',
+    updates: [
+      'In Settings, System, pointing at a folder\'s "not removed" says why in plain words, such as permission denied or not empty, with the path inside the folder and the system\'s code after them, where it showed the code alone, such as ENOTEMPTY.',
+    ],
+  },
+  {
     id: 52,
     version: '1.9.3',
     date: '2026-10-04',
