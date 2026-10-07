@@ -24,6 +24,9 @@ import { EventEmitter } from 'node:events';
  * 13. (#314's gate, the follow-ups of 06/10) A held message that is given up (its terminal ends with it held) is still
  *     told again a few minutes on, as if it were waiting: the drop does not cancel the note, on /message or through
  *     performDispatch (/dispatch, the triage note). No test named that call, and removing it left the suite green.
+ * 14. (the per-task requester link, PR A of ORCHESTRATOR-PER-CHAT.md v2.2, written before the code, 07/10) Two agents
+ *     message one busy worker: the second's send overwrites the first's link (`recordRequester`), and the first's
+ *     result goes to the second; or the sender line Tars types carries no task id, so the turn cannot be told apart.
  */
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
@@ -292,6 +295,26 @@ describe('a held message given up before the note is due', () => {
     vi.advanceTimersByTime(HELD_RETELL_MS * 2 + PROGRAMMATIC_SUBMIT_DELAY_MS);
     expect(heard).toEqual(['dropped']);
     expect(told()).not.toMatch(/still not in its terminal/);
+  });
+});
+
+describe('two agents asking one busy worker', () => {
+  it("14. the first's link is kept while its work runs, and each line Tars types names its task", async () => {
+    agents.set('second', {
+      id: 'second', name: 'Release-Bot', status: 'idle', projectPath: project,
+      skills: [], output: [], lastActivity: new Date().toISOString(),
+    } as AgentStatus);
+    const worker = agents.get('worker')!;
+    worker.status = 'running';
+
+    await call('POST', '/api/agents/worker/message', { message: 'review #280' }, 'orch');
+    await call('POST', '/api/agents/worker/message', { message: 'and the release notes' }, 'second');
+    vi.advanceTimersByTime(PROGRAMMATIC_SUBMIT_DELAY_MS + 100);
+
+    expect(worker.requestedBy?.agentId).toBe('orch');
+    const refs = [...written.join('').matchAll(/, task (t-[0-9a-f]{8}): /g)].map(m => m[1]);
+    expect(refs).toHaveLength(2);
+    expect(new Set(refs).size).toBe(2);
   });
 });
 
