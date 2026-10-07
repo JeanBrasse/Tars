@@ -3,6 +3,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { ensureSecretFileMode, writeAtomicSync, writeSecretFileSync } from '../utils/secret-file';
 import type { MessageSender } from '../core/pty-manager';
+import { taskOfPrompt } from '../core/task-requests';
 
 /**
  * The tasks the Usage page prices: one record per piece of work an agent does,
@@ -116,7 +117,6 @@ export interface HandOff {
   ref?: string;
 }
 
-const REF_IN_PROMPT = /, task (t-[0-9a-f]{8}): /;
 
 export interface AcpRun {
   agent: TaskAgentView;
@@ -511,8 +511,11 @@ export function createTaskLedger(opts: {
       // one Tars typed with an id: Noah typing into the worker, a scheduled
       // task or a /loop is a task of its own.
       const list = pending.get(agent.id) ?? [];
-      const ref = turnIn.text ? REF_IN_PROMPT.exec(turnIn.text)?.[1] : undefined;
-      const index = ref ? list.findIndex((h) => h.ref === ref) : list.findIndex((h) => !h.ref);
+      // Read from the envelope Tars wrote at the prompt's start, for the agent it names (the Audit's gate of #351).
+      const tagged = taskOfPrompt(turnIn.text);
+      const index = tagged
+        ? list.findIndex((h) => h.ref === tagged.ref && h.requesterAgentId === tagged.senderId)
+        : list.findIndex((h) => !h.ref);
       const handOff = index >= 0 ? list[index] : undefined;
       if (index >= 0) list.splice(index, 1);
       if (list.length) pending.set(agent.id, list); else pending.delete(agent.id);

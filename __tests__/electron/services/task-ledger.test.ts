@@ -589,19 +589,19 @@ describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
 });
 
 describe('hand-offs in order, each to the turn that runs it (R1)', () => {
-  const said = (ref: string, text: string) => `Message from agent "X" ("x"), task ${ref}: ${text}`;
+  const said = (ref: string, text: string, from = 'orch') => `Message from agent "X" ("${from}"), task ${ref}: ${text}`;
 
   it("28. two hand-offs to one worker: each turn takes the one whose id it carries, the first's sender kept", () => {
     const ledger = open();
     ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'orch', text: 'review #280', ref: 't-aaaaaaaa' });
-    ledger.handedOff('worker-1', { source: 'telegram', text: 'and the release notes', ref: 't-bbbbbbbb' });
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'bot', text: 'and the release notes', ref: 't-bbbbbbbb' });
     ledger.turnStarted(agent(), { sessionId: 'sess-1', text: said('t-aaaaaaaa', 'review #280') });
     ledger.stateChanged(agent({ status: 'idle' }));
-    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: said('t-bbbbbbbb', 'and the release notes') });
+    ledger.turnStarted(agent(), { sessionId: 'sess-1', text: said('t-bbbbbbbb', 'and the release notes', 'bot') });
 
     expect(ledger.tasks().map((t) => [t.source, t.requesterAgentId, t.text])).toEqual([
       ['agent', 'orch', 'review #280'],
-      ['telegram', null, 'and the release notes'],
+      ['agent', 'bot', 'and the release notes'],
     ]);
   });
 

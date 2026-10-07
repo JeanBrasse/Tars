@@ -45,7 +45,7 @@ import {
 import { envelopeValue } from '../../../electron/utils/envelope-value';
 
 const worker = (): RequestWorker => ({ id: 'w', ptyId: 'pty-w', taskQueue: [] });
-const line = (ref: string) => `Message from agent "Orchestrator" ("orch"), task ${ref}: run the gate`;
+const line = (ref: string, senderId = 'orch') => `Message from agent "Sender" ("${senderId}"), task ${ref}: run the gate`;
 
 describe('a request', () => {
   it('has a short id Tars can type and find again', () => {
@@ -89,7 +89,7 @@ describe("a worker's requests", () => {
     const b = enqueueRequest(w, 'second');
     requestDelivered(w, a);
     requestDelivered(w, b);
-    expect(bindTurn(w, line(b))).toBe(true);
+    expect(bindTurn(w, line(b, 'second'))).toBe(true);
     expect(w.requestedBy).toMatchObject({ agentId: 'second', taskRef: b });
     expect(bindTurn(w, line(a))).toBe(true);
     expect(w.requestedBy).toMatchObject({ agentId: 'orch', taskRef: a });

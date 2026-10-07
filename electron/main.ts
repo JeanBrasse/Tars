@@ -120,7 +120,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
-import { endWorkerRequests } from './core/task-requests';
+import { endRequestsAtLaunch } from './core/task-requests';
 import { startTaskWatch } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
@@ -592,8 +592,10 @@ app.whenReady().then(async () => {
   startAgentWatch();
   // Requests still out from the run before: what was queued or typed into a
   // terminal that is gone never ran, and each requester is told (the Audit's
-  // R3). The one in hand is the work the resume above restarts.
-  for (const agent of agents.values()) endWorkerRequests(agent, 'restart');
+  // R3). The one in hand stays only for a worker the resume restarts (after an
+  // abrupt stop); after a clean quit it is ended too (the Audit's M1).
+  endRequestsAtLaunch(agents.values(), new Set(previousRun && !previousRun.resumedAndCrashedAgain
+    ? previousRun.working.map((w) => w.agentId) : []));
   saveAgents();
   // The tasks the Usage page prices: who handed what, from turn to rest
   // (services/task-ledger.ts).

@@ -1187,6 +1187,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    // The name is typed before the task id in the line that says who a message
+    // is from: one that carries a task id would read as Tars's own (the Audit's
+    // gate of #351; core/task-requests.ts reads the envelope, this keeps the
+    // line plain for whoever reads it).
+    if (typeof name === 'string' && /,\s*task\s+t-/i.test(name)) {
+      sendJson({ error: 'An agent\'s name cannot contain ", task t-": Tars types the task id after the name in the line that says who a message is from.' }, 400);
+      return;
+    }
+
     const id = uuidv4();
     const resolvedName = name || `Agent ${id.slice(0, 6)}`;
     const agent: AgentStatus = {

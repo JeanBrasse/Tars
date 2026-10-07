@@ -45,7 +45,23 @@ export interface RequestWorker {
   requestedBy?: { agentId: string; ptyId: string; backgroundLeft?: string[]; taskRef?: string };
 }
 
-const REF_IN_PROMPT = /, task (t-[0-9a-f]{8}): /;
+/**
+ * The envelope Tars types before an agent's request, at the very start of the
+ * prompt: `Message from agent "<name>" ("<id>"), task t-xxxxxxxx: `. Name and
+ * id are JSON strings (envelopeValue), read as such, so a quote or a
+ * `, task t-...: ` inside the name cannot end it early: an agent named after
+ * another request's id took that request (the Audit's gate of #351).
+ */
+const ENVELOPE = /^Message from agent "(?:[^"\\]|\\.)*" \(("(?:[^"\\]|\\.)*")\), task (t-[0-9a-f]{8}): /;
+
+/** The request id and its sender's id, from the envelope at the start of a prompt; undefined without one. */
+export function taskOfPrompt(prompt: string | undefined): { ref: string; senderId: string } | undefined {
+  const m = prompt ? ENVELOPE.exec(prompt) : null;
+  if (!m) return undefined;
+  let senderId: unknown;
+  try { senderId = JSON.parse(m[1]); } catch { return undefined; }
+  return typeof senderId === 'string' ? { ref: m[2], senderId } : undefined;
+}
 
 export function newTaskRef(): string {
   return `t-${randomBytes(4).toString('hex')}`;
@@ -83,9 +99,10 @@ export function requestDelivered(worker: RequestWorker, ref: string): void {
  */
 export function bindTurn(worker: RequestWorker, prompt: string | undefined): boolean {
   const queue = worker.taskQueue ?? [];
-  const ref = prompt ? REF_IN_PROMPT.exec(prompt)?.[1] : undefined;
-  const request = ref
-    ? queue.find(r => r.ref === ref)
+  const task = taskOfPrompt(prompt);
+  // Only the request this envelope names, sent by the agent it names.
+  const request = task
+    ? queue.find(r => r.ref === task.ref && r.requesterAgentId === task.senderId)
     : queue.find(r => r.newSession && r.state === 'delivered');
   if (!request) return false;
   request.state = 'delivered';
@@ -122,6 +139,16 @@ export function takeAllRequests(worker: RequestWorker): TaskRequest[] {
   const out = (worker.taskQueue ?? []).filter(r => r.ref !== linked);
   worker.taskQueue = (worker.taskQueue ?? []).filter(r => r.ref === linked);
   return out;
+}
+
+/**
+ * At launch, after Tars stopped (the Audit's M1): every request left on a
+ * worker is ended and told, the one in hand too unless the resume restarts
+ * that worker (an abrupt stop's `working`). After a clean quit nothing is
+ * resumed, and a link to a terminal that is gone was never spent.
+ */
+export function endRequestsAtLaunch(workers: Iterable<RequestWorker>, resumed: ReadonlySet<string>): void {
+  for (const worker of workers) endWorkerRequests(worker, 'restart', { withLinked: !resumed.has(worker.id) });
 }
 
 /** Whether a request of this requester is still out at any worker of the fleet. */
