@@ -52,6 +52,8 @@ import { createTaskLedger, turnUsageOf, type TaskAgentView } from '../../../elec
  * 26. (the Audit's L1 on #333) A turn's usage loses its session: written without it, read back without it, or lost
  *     when the file is rewritten; or a session id that is not one is taken with it. Without it a task over two
  *     sessions cannot be priced per session.
+ * 27. (the Audit's gate of #343) How many of a task's turns named their session is not kept, so a task whose
+ *     every turn did cannot be told from one with 1.9.3's turns, which named none; or it is lost in a rewrite.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -538,6 +540,8 @@ describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
     expect(ledger.tasks()[0].usageBySession).toEqual(want);
     expect(fs.readFileSync(file, 'utf-8')).toContain('"sessionId":"sess-2"');
     expect(open().tasks()[0].usageBySession).toEqual(want);
+    expect(ledger.tasks()[0]).toMatchObject({ usageTurns: 3, sessionedTurns: 3 });
+    expect(open().tasks()[0]).toMatchObject({ usageTurns: 3, sessionedTurns: 3 });
   });
 
   it('26. survives a rewrite of the file past its bound', () => {
@@ -554,6 +558,7 @@ describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
     for (const t of kept) {
       const i = Number(t.sessionIds[0].slice('sess-'.length));
       expect(t.usageBySession, t.sessionIds[0]).toEqual({ [`sess-${i}`]: { 'claude-opus-5-5': { input: i + 1, output: 1, cacheRead: 0, cacheWrite: 0 } } });
+      expect(t.sessionedTurns, `27. ${t.sessionIds[0]}`).toBe(1);
     }
   });
 
@@ -570,5 +575,6 @@ describe('the session of each turn\'s usage (the Audit\'s L1 on #333)', () => {
     expect(read.usageByModel).toEqual({ m: { input: 7, output: 0, cacheRead: 0, cacheWrite: 0 } });
     expect(read.usageBySession ?? {}).toEqual({});
     expect(read.usageTurns).toBe(1);
+    expect(read.sessionedTurns ?? 0, '27. a 1.9.3 turn names no session').toBe(0);
   });
 });
