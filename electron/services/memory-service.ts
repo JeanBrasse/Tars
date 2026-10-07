@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
+import { spellingsOf } from '../utils/resume-session';
 
 export interface MemoryFile {
   name: string;
@@ -145,15 +146,22 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
   }
 
   // Tars-known projects with no memory yet: surfaced as empty entries so
-  // the user can create their MEMORY.md from the UI.
+  // the user can create their MEMORY.md from the UI. Compared by both
+  // spellings, as Tars saved it and its real path: Claude Code files a
+  // session under the real one, so a project saved through a link (/tmp on
+  // macOS, a symlinked checkout) was listed twice, and its memory folder,
+  // named from the saved spelling, was one Claude Code never reads.
   for (const projectPath of extraProjectPaths) {
-    if (!projectPath || seenPaths.has(projectPath)) continue;
-    seenPaths.add(projectPath);
+    if (!projectPath) continue;
+    const spellings = spellingsOf(projectPath);
+    if (spellings.some(spelling => seenPaths.has(spelling))) continue;
+    for (const spelling of spellings) seenPaths.add(spelling);
+    const real = spellings[spellings.length - 1];
     results.push({
       id: `tars:${projectPath}`,
       projectName: getProjectName(projectPath),
       projectPath,
-      memoryDir: path.join(CLAUDE_PROJECTS_DIR, encodeProjectPath(projectPath), 'memory'),
+      memoryDir: path.join(CLAUDE_PROJECTS_DIR, encodeProjectPath(real), 'memory'),
       files: [],
       totalSize: 0,
       lastModified: '',
