@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
+import { spellingsOf } from '../utils/resume-session';
 import { probeMcpEndpoint, callMcpTool, listMcpTools, type McpEndpoint } from './mcp-http-client';
 import {
   fetchHermesMemoryFiles,
@@ -65,12 +66,17 @@ export interface SourceStatus {
 
 /* ── Local sources ─────────────────────────────────────── */
 
+/**
+ * The folder names Claude Code may keep a project under, its real path first:
+ * Claude Code files a session under the real path, and Tars hands this the
+ * path it saved, which may go through a link (QA's gate of #346).
+ */
 function candidateProjectDirs(projectPath: string): string[] {
-  return [...new Set([
-    projectPath.replace(/[^a-zA-Z0-9]/g, '-'),
-    projectPath.replace(/[/.]/g, '-'),
-    projectPath.replace(/\//g, '-'),
-  ])];
+  return [...new Set([...spellingsOf(projectPath)].reverse().flatMap(spelling => [
+    spelling.replace(/[^a-zA-Z0-9]/g, '-'),
+    spelling.replace(/[/.]/g, '-'),
+    spelling.replace(/\//g, '-'),
+  ]))];
 }
 
 export function projectMemoryDir(projectPath: string): string | null {
@@ -170,16 +176,19 @@ function ledgerPathFor(projectPath: string): string {
   return path.join(OBSERVATIONS_DIR, `${projectPath.replace(/[^a-zA-Z0-9]/g, '-')}.jsonl`);
 }
 
+/** A project's observations, filed under the path it was saved by or its real path, oldest first. */
 function readObservations(projectPath: string, limit: number): Observation[] {
-  try {
-    const p = ledgerPathFor(projectPath);
-    if (!fs.existsSync(p)) return [];
-    return fs.readFileSync(p, 'utf-8').trim().split('\n').slice(-limit).flatMap(line => {
-      try { return [JSON.parse(line) as Observation]; } catch { return []; }
-    });
-  } catch {
-    return [];
-  }
+  const all = [...new Set(spellingsOf(projectPath).map(ledgerPathFor))].flatMap(p => {
+    try {
+      if (!fs.existsSync(p)) return [];
+      return fs.readFileSync(p, 'utf-8').trim().split('\n').slice(-limit).flatMap(line => {
+        try { return [JSON.parse(line) as Observation]; } catch { return []; }
+      });
+    } catch {
+      return [];
+    }
+  });
+  return all.sort((a, b) => String(a.ts).localeCompare(String(b.ts))).slice(-limit);
 }
 
 /* ── Remote backends ───────────────────────────────────── */

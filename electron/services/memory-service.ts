@@ -95,6 +95,8 @@ function encodeProjectPath(projectPath: string): string {
 export async function listProjectMemories(extraProjectPaths: string[] = []): Promise<ProjectMemory[]> {
   const results: ProjectMemory[] = [];
   const seenPaths = new Set<string>();
+  /** The rows read from the CLIs' folders, by the path each folder stands for. */
+  const byPath = new Map<string, ProjectMemory>();
 
   for (const { provider, dir: projectsDir } of PROVIDER_MEMORY_DIRS) {
     // Read without blocking, each folder's path decoded once (project-index.ts).
@@ -141,6 +143,7 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
       }
 
       seenPaths.add(project.projectPath);
+      if (!byPath.has(project.projectPath)) byPath.set(project.projectPath, project);
       results.push(project);
     }
   }
@@ -151,9 +154,23 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
   // session under the real one, so a project saved through a link (/tmp on
   // macOS, a symlinked checkout) was listed twice, and its memory folder,
   // named from the saved spelling, was one Claude Code never reads.
+  // A row found under the real spelling is shown under the path Tars saved,
+  // its memory still Claude Code's: the window counts a project's agents by
+  // that path and the hooks file observations under it (QA's gate of #346).
+  const claimed = new Set<ProjectMemory>();
   for (const projectPath of extraProjectPaths) {
     if (!projectPath) continue;
     const spellings = spellingsOf(projectPath);
+    const exact = byPath.get(projectPath);
+    if (exact) { claimed.add(exact); continue; }
+    const other = spellings.slice(1).map(spelling => byPath.get(spelling)).find(row => row && !claimed.has(row));
+    if (other) {
+      claimed.add(other);
+      other.projectPath = projectPath;
+      other.projectName = getProjectName(projectPath);
+      for (const spelling of spellings) seenPaths.add(spelling);
+      continue;
+    }
     if (spellings.some(spelling => seenPaths.has(spelling))) continue;
     for (const spelling of spellings) seenPaths.add(spelling);
     const real = spellings[spellings.length - 1];
