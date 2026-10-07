@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   folderLabel, sizeLabel, changedLabel, whyLabel, removeLabel,
-  listingHint, confirmText, removingHint, doneHint, diskLine, unreadLine,
+  listingHint, confirmText, removingHint, doneHint, diskLine, unreadLine, keptTitle,
 } from '../../src/lib/orphan-folders';
 import type { OrphanFolder } from '../../src/types/electron';
 
@@ -39,7 +39,14 @@ import type { OrphanFolder } from '../../src/types/electron';
  *    only the paths the window showed, and keeps one gone by hand or a
  *    worktree again) has no row once the list is read again, and the end
  *    says its row says why, or counts it among the folders kept for a
- *    reason the rows give.
+ *    reason the rows give;
+ * 11. a folder main could not remove says why in its title with Node's code
+ *    alone (ENOTEMPTY, EACCES), which tells a person nothing: since #334's
+ *    9db11f16 main sends the code and a path inside the folder. The words
+ *    lose the code a search needs, or the path; a code without words reads
+ *    as nothing; one of main's own sentences or a process's name is
+ *    rewritten; a path inside the folder hides, turns or breaks the line
+ *    (written before the code, Noah's go of 07/10).
  */
 
 const GB = 1024 ** 3;
@@ -178,5 +185,33 @@ describe('a folder that was no longer one no agent owns when its turn came (10)'
     expect(doneHint({ removed: 0, freedBytes: 0, kept: [k(busy, 'failed'), k(x, 'failed')] }, new Set([busy]))).toBe('None was removed. One was kept: its row says why. One was no longer a folder no agent owns.');
     expect(doneHint({ removed: 0, freedBytes: 0, kept: [k(busy, 'unknown-use'), k(x, 'failed')] }, new Set([busy]))).toBe('None was removed: Tars could not read which processes work in it, so it was kept. One was no longer a folder no agent owns.');
     expect(doneHint({ removed: 1, freedBytes: 2 * MB, kept: [k(busy, 'in-use')] }, new Set([busy]))).toBe('Removed 1 folder: 2 MB given back. One was kept: a process works in it.');
+  });
+});
+
+describe('why a folder was kept, in its title (11)', () => {
+  const failed = (detail?: string) => ({ path: '/p/.worktrees/x', project: '/p', reason: 'failed' as const, detail });
+
+  it('says a failure in plain words, the path inside the folder and the code after them', () => {
+    expect(keptTitle(failed('ENOTEMPTY'))).toBe('not empty (ENOTEMPTY)');
+    expect(keptTitle(failed('EACCES on locked/f'))).toBe('permission denied: locked/f (EACCES)');
+    expect(keptTitle(failed('EPERM on node_modules/.bin/x'))).toBe('not permitted: node_modules/.bin/x (EPERM)');
+    expect(keptTitle(failed('EBUSY'))).toBe('in use (EBUSY)');
+  });
+
+  it('leaves a code it has no words for, a sentence of main\'s and a process as main sent them', () => {
+    expect(keptTitle(failed('EXDEV on a/b'))).toBe('EXDEV on a/b');
+    expect(keptTitle(failed('it is no longer a folder of the project\'s .worktrees'))).toBe('it is no longer a folder of the project\'s .worktrees');
+    expect(keptTitle({ path: '/p/.worktrees/busy', project: '/p', reason: 'in-use', detail: 'sleep (33193)' })).toBe('sleep (33193)');
+  });
+
+  it('says nothing when main said nothing', () => {
+    expect(keptTitle(failed())).toBeUndefined();
+    expect(keptTitle({ path: '/p/.worktrees/a', project: '/p', reason: 'unknown-use' })).toBeUndefined();
+  });
+
+  it('flattens what hides, turns or breaks the line in the path', () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const ls = String.fromCodePoint(0x2028);
+    expect(keptTitle(failed(`EACCES on a${rlo}b${ls}c`))).toBe('permission denied: a b c (EACCES)');
   });
 });
